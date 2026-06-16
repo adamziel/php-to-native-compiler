@@ -3554,6 +3554,7 @@ static void ptn_json_encode_append_value(
     PtnValue value,
     PtnDumpSeenArrays *seen,
     size_t depth,
+    int64_t flags,
     int *ok
 );
 
@@ -3564,7 +3565,12 @@ static void ptn_json_encode_append_hex4(PtnStringBuffer *buffer, unsigned char b
     ptn_string_buffer_append_char(buffer, hex[byte & 0xf]);
 }
 
-static void ptn_json_encode_append_string(PtnStringBuffer *buffer, const unsigned char *data, size_t len) {
+static void ptn_json_encode_append_string(
+    PtnStringBuffer *buffer,
+    const unsigned char *data,
+    size_t len,
+    int64_t flags
+) {
     ptn_string_buffer_append_char(buffer, '"');
     for (size_t i = 0; i < len; i++) {
         unsigned char byte = data[i];
@@ -3576,7 +3582,11 @@ static void ptn_json_encode_append_string(PtnStringBuffer *buffer, const unsigne
                 ptn_string_buffer_append(buffer, "\\\\");
                 break;
             case '/':
-                ptn_string_buffer_append(buffer, "\\/");
+                if ((flags & PTN_JSON_UNESCAPED_SLASHES) != 0) {
+                    ptn_string_buffer_append_char(buffer, '/');
+                } else {
+                    ptn_string_buffer_append(buffer, "\\/");
+                }
                 break;
             case '\b':
                 ptn_string_buffer_append(buffer, "\\b");
@@ -3623,6 +3633,7 @@ static void ptn_json_encode_append_array(
     PtnArray *array,
     PtnDumpSeenArrays *seen,
     size_t depth,
+    int64_t flags,
     int *ok
 ) {
     if (depth == 0 || ptn_dump_seen_arrays_contains(seen, array)) {
@@ -3644,13 +3655,13 @@ static void ptn_json_encode_append_array(
                 if (written < 0 || (size_t)written >= sizeof(key_buffer)) {
                     ptn_abort_out_of_memory();
                 }
-                ptn_json_encode_append_string(buffer, (const unsigned char *)key_buffer, (size_t)written);
+                ptn_json_encode_append_string(buffer, (const unsigned char *)key_buffer, (size_t)written, flags);
             } else {
-                ptn_json_encode_append_string(buffer, (const unsigned char *)key.as.string, key.string_len);
+                ptn_json_encode_append_string(buffer, (const unsigned char *)key.as.string, key.string_len, flags);
             }
             ptn_string_buffer_append_char(buffer, ':');
         }
-        ptn_json_encode_append_value(buffer, array->entries[i].value, seen, depth - 1, ok);
+        ptn_json_encode_append_value(buffer, array->entries[i].value, seen, depth - 1, flags, ok);
         if (!*ok) {
             ptn_dump_seen_arrays_pop(seen);
             return;
@@ -3665,6 +3676,7 @@ static void ptn_json_encode_append_object(
     PtnObject *object,
     PtnDumpSeenArrays *seen,
     size_t depth,
+    int64_t flags,
     int *ok
 ) {
     if (depth == 0) {
@@ -3689,10 +3701,11 @@ static void ptn_json_encode_append_object(
         ptn_json_encode_append_string(
             buffer,
             (const unsigned char *)entry->key.as.string,
-            entry->key.string_len
+            entry->key.string_len,
+            flags
         );
         ptn_string_buffer_append_char(buffer, ':');
-        ptn_json_encode_append_value(buffer, entry->value, seen, depth - 1, ok);
+        ptn_json_encode_append_value(buffer, entry->value, seen, depth - 1, flags, ok);
         if (!*ok) {
             return;
         }
@@ -3706,6 +3719,7 @@ static void ptn_json_encode_append_value(
     PtnValue value,
     PtnDumpSeenArrays *seen,
     size_t depth,
+    int64_t flags,
     int *ok
 ) {
     value = ptn_value_deref(value);
@@ -3730,13 +3744,13 @@ static void ptn_json_encode_append_value(
             break;
         }
         case PTN_STRING:
-            ptn_json_encode_append_string(buffer, value.as.string.data, value.as.string.len);
+            ptn_json_encode_append_string(buffer, value.as.string.data, value.as.string.len, flags);
             break;
         case PTN_ARRAY:
-            ptn_json_encode_append_array(buffer, value.as.array, seen, depth, ok);
+            ptn_json_encode_append_array(buffer, value.as.array, seen, depth, flags, ok);
             break;
         case PTN_OBJECT:
-            ptn_json_encode_append_object(buffer, value.as.object, seen, depth, ok);
+            ptn_json_encode_append_object(buffer, value.as.object, seen, depth, flags, ok);
             break;
         case PTN_RESOURCE:
         case PTN_CLOSURE:
@@ -3749,6 +3763,7 @@ static void ptn_json_encode_append_value(
 
 static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
+    int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     size_t depth = 512;
     if (argc >= 3) {
         int64_t requested_depth = ptn_value_to_integer(args[2]);
@@ -3768,7 +3783,7 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
     PtnDumpSeenArrays seen;
     ptn_dump_seen_arrays_init(&seen);
     int ok = 1;
-    ptn_json_encode_append_value(&buffer, args[0], &seen, depth, &ok);
+    ptn_json_encode_append_value(&buffer, args[0], &seen, depth, flags, &ok);
     ptn_dump_seen_arrays_free(&seen);
     if (!ok) {
         free(buffer.data);
