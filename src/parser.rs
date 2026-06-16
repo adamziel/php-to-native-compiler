@@ -11564,6 +11564,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "fgetc"
             | "fgetcsv"
             | "fgets"
+            | "fscanf"
             | "file"
             | "file_exists"
             | "file_get_contents"

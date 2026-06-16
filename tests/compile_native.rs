@@ -7436,6 +7436,9 @@ var_dump(str_getcsv(\"\\\"f\\\", \\\"o\\\", \\\"\\\"\", escape: \"\"));\n\
 var_dump(str_getcsv(\".foo..bar.\", \".\", \".\", \".\"));\n\
 var_dump(str_getcsv(\"foo||bar\", \"|\", \"\\\"\", \"\"));\n\
 var_dump(str_getcsv(\"\", escape: \"\"));\n\
+var_dump(str_getcsv(\"0\\t \\t'2'\\n\", \"\\t\", \"'\", \"\"));\n\
+var_export(str_getcsv(\"y\", \",\", \"y\", \"\\0\")); echo \"\\n\";\n\
+var_export(str_getcsv(\"\\0yy\", \"y\", \"y\", \"\\0\")); echo \"\\n\";\n\
 try { str_getcsv(\"csv\", \"separator\", \"\\\"\", \"\"); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { str_getcsv(\"csv\", \",\", \"\\\"\", \"escape\"); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists(\"strspn\"), function_exists(\"STR_GETCSV\"));",
@@ -7481,10 +7484,109 @@ array(1) {\n\
 \x20\x20[0]=>\n\
 \x20\x20NULL\n\
 }\n\
+array(3) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(1) \"0\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(1) \" \"\n\
+\x20\x20[2]=>\n\
+\x20\x20string(1) \"2\"\n\
+}\n\
+array (\n\
+\x20\x200 => '' . \"\\0\" . '',\n\
+)\n\
+array (\n\
+\x20\x200 => '' . \"\\0\" . '',\n\
+\x20\x201 => '' . \"\\0\" . '',\n\
+)\n\
 str_getcsv(): Argument #2 ($separator) must be a single character\n\
 str_getcsv(): Argument #4 ($escape) must be empty or a single character\n\
 bool(true)\n\
 bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_scanf_and_fscanf_string_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-scanf-fscanf-string-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scanf-fscanf-string-edges.php");
+    let output = root.join("scanf-fscanf-string-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(sscanf(\"ABC = DEF\", \"%s = %s %n\"));\n\
+var_dump(sscanf(\"one two\", \"%2\\$s %1\\$s\"));\n\
+var_dump(sscanf(\"18446744073709551615\", \"%u\"));\n\
+$path = __DIR__ . \"/scanner-fixture.txt\";\n\
+file_put_contents($path, \"\\n \\n0\\nstring\\n123\\n\\0\\n\");\n\
+$h = fopen($path, \"r\");\n\
+var_dump(fscanf($h, \"%d\"));\n\
+var_dump(fscanf($h, \"%d\"));\n\
+var_dump(fscanf($h, \"%d\"));\n\
+var_dump(fscanf($h, \"%d\"));\n\
+var_dump(fscanf($h, \"%4c\"));\n\
+var_dump(fscanf($h, \"%c\"));\n\
+fclose($h);\n\
+file_put_contents($path, \"\\n\");\n\
+$h = fopen($path, \"r\"); var_dump(fscanf($h, \"%c\")); fclose($h);\n\
+file_put_contents($path, \"\\n\");\n\
+$h = fopen($path, \"r\"); var_dump(fscanf($h, \"%[0-9]\")); fclose($h);\n\
+file_put_contents($path, \"\\n\");\n\
+$h = fopen($path, \"r\"); var_dump(fscanf($h, \"%*d\")); fclose($h);\n\
+unlink($path);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(3) \"ABC\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(3) \"DEF\"\n\
+\x20\x20[2]=>\n\
+\x20\x20int(9)\n\
+}\n\
+array(2) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(3) \"two\"\n\
+\x20\x20[1]=>\n\
+\x20\x20string(3) \"one\"\n\
+}\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(20) \"18446744073709551615\"\n\
+}\n\
+NULL\n\
+NULL\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20int(0)\n\
+}\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20NULL\n\
+}\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(3) \"123\"\n\
+}\n\
+NULL\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20string(0) \"\"\n\
+}\n\
+array(1) {\n\
+\x20\x20[0]=>\n\
+\x20\x20NULL\n\
+}\n\
+NULL\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
