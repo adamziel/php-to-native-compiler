@@ -454,6 +454,8 @@ typedef struct {
 
 struct PtnGenerator {
     PtnArray *values;
+    PtnArray *keys;
+    int64_t next_auto_key;
     int yields_by_ref;
 };
 

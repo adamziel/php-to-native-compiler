@@ -517,13 +517,20 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("    const char *given = ptn_user_type_hint_given_name(value);\n");
     out.push_str(
+        "    int has_parameter_name = parameter_name != NULL && parameter_name[0] != '\\0';\n",
+    );
+    out.push_str(
         "    const char *path = runtime->source_path != NULL ? runtime->source_path : \"ptn\";\n",
     );
     out.push_str("    int needed;\n");
-    out.push_str("    if (line != 0) {\n");
+    out.push_str("    if (line != 0 && has_parameter_name) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
-    out.push_str("    } else {\n");
+    out.push_str("    } else if (line != 0) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, path, line);\n");
+    out.push_str("    } else if (has_parameter_name) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu must be of type %s, %s given\", function_name, position, expected_class_name, given);\n");
     out.push_str("    }\n");
     out.push_str("    if (needed < 0) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
@@ -532,12 +539,107 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    if (line != 0) {\n");
+    out.push_str("    if (line != 0 && has_parameter_name) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
-    out.push_str("    } else {\n");
+    out.push_str("    } else if (line != 0) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, path, line);\n");
+    out.push_str("    } else if (has_parameter_name) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given\", function_name, position, expected_class_name, given);\n");
     out.push_str("    }\n");
     out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime->source_path, line);\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_user_parameter_string_is_numeric(PtnString string, double *number) {\n");
+    out.push_str(
+        "    char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);\n",
+    );
+    out.push_str("    int is_numeric = ptn_is_numeric_string(copy, number);\n");
+    out.push_str("    free(copy);\n");
+    out.push_str("    return is_numeric;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_int(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_INT) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types) {\n");
+    out.push_str("        if (resolved.type == PTN_BOOL || resolved.type == PTN_FLOAT) {\n");
+    out.push_str("            *out = ptn_cast_int(resolved);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (resolved.type == PTN_STRING) {\n");
+    out.push_str("            double number = 0.0;\n");
+    out.push_str(
+        "            if (ptn_user_parameter_string_is_numeric(resolved.as.string, &number)) {\n",
+    );
+    out.push_str("                *out = ptn_int((int64_t)number);\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_float(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_FLOAT) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_INT) {\n");
+    out.push_str("        *out = ptn_cast_float(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types) {\n");
+    out.push_str("        if (resolved.type == PTN_BOOL) {\n");
+    out.push_str("            *out = ptn_cast_float(resolved);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (resolved.type == PTN_STRING) {\n");
+    out.push_str("            double number = 0.0;\n");
+    out.push_str(
+        "            if (ptn_user_parameter_string_is_numeric(resolved.as.string, &number)) {\n",
+    );
+    out.push_str("                *out = ptn_float(number);\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_string(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_STRING) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_BOOL)) {\n");
+    out.push_str("        *out = ptn_cast_string(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_bool(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_BOOL) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_STRING)) {\n");
+    out.push_str("        *out = ptn_bool(ptn_is_truthy(resolved));\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    return 0;\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -982,12 +1084,14 @@ fn emit_user_functions(
                         out.push_str("        return ptn_null();\n");
                         out.push_str("    }\n");
                     }
-                    if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
+                    if let Some(coercion_helper) =
+                        type_hint_scalar_parameter_coercion_helper(effective_type_hint)
+                    {
                         let temp = format!("ptn_parameter_{}", parameter_index);
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(";\n");
                         if allows_null {
-                            out.push_str("    PtnValue ");
-                            out.push_str(&temp);
-                            out.push_str(";\n");
                             out.push_str("    if (ptn_value_deref(");
                             out.push_str(&parameter_source);
                             out.push_str(").type == PTN_NULL) {\n");
@@ -995,22 +1099,42 @@ fn emit_user_functions(
                             out.push_str(&temp);
                             out.push_str(" = ptn_null();\n");
                             out.push_str("    } else {\n");
-                            out.push_str("        ");
-                            out.push_str(&temp);
-                            out.push_str(" = ");
-                            out.push_str(cast_helper);
-                            out.push('(');
+                            out.push_str("        if (!");
+                            out.push_str(coercion_helper);
+                            out.push_str("(&runtime, \"");
+                            out.push_str(&c_string(&function.display_name));
+                            out.push_str("\", ");
+                            out.push_str(&(parameter_index + 1).to_string());
+                            out.push_str(", \"");
+                            out.push_str(&c_string(&parameter.name));
+                            out.push_str("\", \"");
+                            out.push_str(&c_string(&type_hint_label(type_hint)));
+                            out.push_str("\", ");
                             out.push_str(&parameter_source);
-                            out.push_str(");\n");
+                            out.push_str(", line, &");
+                            out.push_str(&temp);
+                            out.push_str(")) {\n");
+                            out.push_str("            return ptn_null();\n");
+                            out.push_str("        }\n");
                             out.push_str("    }\n");
                         } else {
-                            out.push_str("    PtnValue ");
-                            out.push_str(&temp);
-                            out.push_str(" = ");
-                            out.push_str(cast_helper);
-                            out.push('(');
+                            out.push_str("    if (!");
+                            out.push_str(coercion_helper);
+                            out.push_str("(&runtime, \"");
+                            out.push_str(&c_string(&function.display_name));
+                            out.push_str("\", ");
+                            out.push_str(&(parameter_index + 1).to_string());
+                            out.push_str(", \"");
+                            out.push_str(&c_string(&parameter.name));
+                            out.push_str("\", \"");
+                            out.push_str(&c_string(&type_hint_label(type_hint)));
+                            out.push_str("\", ");
                             out.push_str(&parameter_source);
-                            out.push_str(");\n");
+                            out.push_str(", line, &");
+                            out.push_str(&temp);
+                            out.push_str(")) {\n");
+                            out.push_str("        return ptn_null();\n");
+                            out.push_str("    }\n");
                         }
                         Some(temp)
                     } else {
@@ -1353,12 +1477,14 @@ fn emit_variadic_parameter_binding(
         out.push_str("        }\n");
     }
 
-    let value_expr = if let Some(cast_helper) = type_hint_scalar_cast_helper(effective_type_hint) {
+    let value_expr = if let Some(coercion_helper) =
+        type_hint_scalar_parameter_coercion_helper(effective_type_hint)
+    {
         let value_temp = format!("ptn_variadic_value_{}", parameter_index);
+        out.push_str("        PtnValue ");
+        out.push_str(&value_temp);
+        out.push_str(";\n");
         if allows_null {
-            out.push_str("        PtnValue ");
-            out.push_str(&value_temp);
-            out.push_str(";\n");
             out.push_str("        if (ptn_value_deref(args[");
             out.push_str(&index_temp);
             out.push_str("]).type == PTN_NULL) {\n");
@@ -1366,22 +1492,48 @@ fn emit_variadic_parameter_binding(
             out.push_str(&value_temp);
             out.push_str(" = ptn_null();\n");
             out.push_str("        } else {\n");
-            out.push_str("            ");
-            out.push_str(&value_temp);
-            out.push_str(" = ");
-            out.push_str(cast_helper);
-            out.push_str("(args[");
+            out.push_str("            if (!");
+            out.push_str(coercion_helper);
+            out.push_str("(&runtime, \"");
+            out.push_str(&c_string(&function.display_name));
+            out.push_str("\", ");
             out.push_str(&index_temp);
-            out.push_str("]);\n");
+            out.push_str(" + 1, NULL, \"");
+            out.push_str(&c_string(&type_hint_label(
+                type_hint.expect("scalar variadic type has source type hint"),
+            )));
+            out.push_str("\", args[");
+            out.push_str(&index_temp);
+            out.push_str("], line, &");
+            out.push_str(&value_temp);
+            out.push_str(")) {\n");
+            out.push_str("                ptn_value_drop(&");
+            out.push_str(&array_temp);
+            out.push_str(");\n");
+            out.push_str("                return ptn_null();\n");
+            out.push_str("            }\n");
             out.push_str("        }\n");
         } else {
-            out.push_str("        PtnValue ");
-            out.push_str(&value_temp);
-            out.push_str(" = ");
-            out.push_str(cast_helper);
-            out.push_str("(args[");
+            out.push_str("        if (!");
+            out.push_str(coercion_helper);
+            out.push_str("(&runtime, \"");
+            out.push_str(&c_string(&function.display_name));
+            out.push_str("\", ");
             out.push_str(&index_temp);
-            out.push_str("]);\n");
+            out.push_str(" + 1, NULL, \"");
+            out.push_str(&c_string(&type_hint_label(
+                type_hint.expect("scalar variadic type has source type hint"),
+            )));
+            out.push_str("\", args[");
+            out.push_str(&index_temp);
+            out.push_str("], line, &");
+            out.push_str(&value_temp);
+            out.push_str(")) {\n");
+            out.push_str("            ptn_value_drop(&");
+            out.push_str(&array_temp);
+            out.push_str(");\n");
+            out.push_str("            return ptn_null();\n");
+            out.push_str("        }\n");
         }
         if parameter.by_ref {
             out.push_str("        if (args[");
@@ -2102,6 +2254,35 @@ fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static
         Some(TypeHint::Float) => Some("ptn_cast_float"),
         Some(TypeHint::String) => Some("ptn_cast_string"),
         Some(TypeHint::Bool) => Some("ptn_cast_bool"),
+        Some(
+            TypeHint::Null
+            | TypeHint::Array
+            | TypeHint::True
+            | TypeHint::False
+            | TypeHint::Object
+            | TypeHint::Iterable
+            | TypeHint::Static
+            | TypeHint::Callable
+            | TypeHint::Mixed
+            | TypeHint::Void
+            | TypeHint::Never
+            | TypeHint::Nullable(_)
+            | TypeHint::Union(_)
+            | TypeHint::Intersection(_)
+            | TypeHint::Class(_),
+        )
+        | None => None,
+    }
+}
+
+fn type_hint_scalar_parameter_coercion_helper(
+    type_hint: Option<&TypeHint>,
+) -> Option<&'static str> {
+    match type_hint {
+        Some(TypeHint::Int) => Some("ptn_coerce_user_parameter_int"),
+        Some(TypeHint::Float) => Some("ptn_coerce_user_parameter_float"),
+        Some(TypeHint::String) => Some("ptn_coerce_user_parameter_string"),
+        Some(TypeHint::Bool) => Some("ptn_coerce_user_parameter_bool"),
         Some(
             TypeHint::Null
             | TypeHint::Array

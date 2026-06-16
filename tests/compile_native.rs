@@ -1938,6 +1938,20 @@ fn parser_accepts_arrow_function_by_reference_returns() {
 }
 
 #[test]
+fn parser_accepts_static_arrow_function_by_reference_returns() {
+    let program = parser::parse("<?php $value = 1; $callback = static fn&() => $value;").unwrap();
+
+    let Statement::Assign { value, .. } = &program.statements[1] else {
+        panic!("expected arrow function assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected arrow function to lower to anonymous function");
+    };
+    assert!(closure.is_static);
+    assert!(closure.return_by_ref);
+}
+
+#[test]
 fn parser_accepts_throw_statement_and_expression() {
     let program = parser::parse(
         "<?php try { throw new Exception('boom'); } catch (Exception $e) {} \
@@ -6943,6 +6957,22 @@ function collect(...$args) {
     var_dump($args);
 }
 collect(...gen_args());
+function gen_float_key() {
+    yield 1.23 => 123;
+}
+try {
+    collect(...gen_float_key());
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+function gen_array_key() {
+    yield [] => 1;
+}
+try {
+    var_dump([...gen_array_key()]);
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
 "#,
     )
     .unwrap();
@@ -6953,7 +6983,7 @@ collect(...gen_args());
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\n"
+        "array(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\nKeys must be of type int|string during argument unpacking\nKeys must be of type int|string during array unpacking\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -16550,6 +16580,43 @@ done\n",
 }
 
 #[test]
+fn compile_foreach_iteratoraggregate_rejects_array_result_to_native_binary() {
+    let root = temp_dir("ptn-native-iteratoraggregate-array-result");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iteratoraggregate-array-result.php");
+    let output = root.join("iteratoraggregate-array-result-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BadAggregate implements IteratorAggregate {
+    public function getIterator() {
+        return ["foo", "bar"];
+    }
+}
+
+try {
+    foreach (new BadAggregate as $value) {
+        var_dump($value);
+    }
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Objects returned by BadAggregate::getIterator() must be traversable or implement interface Iterator\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_object_properties_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-object-properties");
     fs::create_dir_all(&root).unwrap();
@@ -17929,6 +17996,47 @@ fn compile_array_literal_unpack_literal_scalar_fatal_to_native_binary() {
             input.display()
         )
     );
+}
+
+#[test]
+fn compile_array_and_call_unpack_traversables_to_native_binary() {
+    let root = temp_dir("ptn-native-traversable-unpack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("traversable-unpack.php");
+    let output = root.join("traversable-unpack-bin");
+    fs::write(
+        &input,
+        "<?php
+function gen_values() {
+    for ($i = 3; $i < 5; $i++) {
+        yield $i;
+    }
+}
+function collect(...$args) {
+    var_dump($args);
+}
+
+var_dump([...gen_values()]);
+var_dump([...new ArrayIterator([1, 2, \"foo\" => 3, 4])]);
+collect(...new ArrayIterator([5, 6]));
+try {
+    var_dump(...new ArrayIterator([1, \"foo\" => 2, 3]));
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  int(3)\n  [1]=>\n  int(4)\n}\narray(4) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [\"foo\"]=>\n  int(3)\n  [2]=>\n  int(4)\n}\narray(2) {\n  [0]=>\n  int(5)\n  [1]=>\n  int(6)\n}\nCannot use positional argument after named argument during unpacking\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -29139,6 +29247,11 @@ $x = 5;
 $copy = fn() => ++$x;
 var_dump($copy());
 var_dump($x);
+$refSource = 1;
+$refFn = fn&(&$value) => $value;
+$ref =& $refFn($refSource);
+$ref++;
+var_dump($refSource);
 $outer = 6;
 var_dump((fn() => fn() => $outer)()());
 $missingFn = fn() => $missing;
@@ -29171,8 +29284,8 @@ echo $propertyText();
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "int(6)\nint(5)\nint(6)\nmade\n{}NULL\nbool(true)\nbool(false)\nint(12)\nname=captured\nname=changed\n",
-            undefined_variable_warning(&input, "missing", 8)
+            "int(6)\nint(5)\nint(2)\nint(6)\nmade\n{}NULL\nbool(true)\nbool(false)\nint(12)\nname=captured\nname=changed\n",
+            undefined_variable_warning(&input, "missing", 13)
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
