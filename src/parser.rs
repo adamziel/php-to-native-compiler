@@ -53,6 +53,7 @@ pub fn parse(source: &str) -> Result<Program> {
         constant_aliases: HashMap::new(),
         runtime_class_aliases: HashMap::new(),
         declared_functions: HashSet::new(),
+        declared_constants: HashSet::new(),
         declared_class_names: HashMap::new(),
         anonymous_classes: Vec::new(),
         nested_functions: Vec::new(),
@@ -80,6 +81,7 @@ struct Parser<'a> {
     constant_aliases: HashMap<String, String>,
     runtime_class_aliases: HashMap<String, String>,
     declared_functions: HashSet<String>,
+    declared_constants: HashSet<String>,
     declared_class_names: HashMap<String, SourceSpan>,
     anonymous_classes: Vec<ClassDecl>,
     nested_functions: Vec<FunctionDecl>,
@@ -700,7 +702,7 @@ impl Parser<'_> {
             None
         };
         let first_token = self.advance().clone();
-        let TokenKind::Identifier(first_segment) = first_token.kind else {
+        let Some(first_segment) = name_segment_from_token(&first_token.kind) else {
             return Err(Diagnostic::new(expected, Some(first_token.span)));
         };
         let mut span = start_span
@@ -715,9 +717,15 @@ impl Parser<'_> {
                 self.advance();
                 break;
             }
-            self.advance();
+            let separator_span = self.advance().span;
             let segment_token = self.advance().clone();
-            let TokenKind::Identifier(segment) = segment_token.kind else {
+            if self.has_namespace_separator_whitespace(span, separator_span, segment_token.span) {
+                return Err(Diagnostic::parse_error(
+                    "syntax error, unexpected token \"\\\"",
+                    Some(separator_span),
+                ));
+            }
+            let Some(segment) = name_segment_from_token(&segment_token.kind) else {
                 return Err(Diagnostic::new(expected, Some(segment_token.span)));
             };
             span = combine_spans(span, segment_token.span);
@@ -790,7 +798,7 @@ impl Parser<'_> {
             None
         };
         let first_token = self.advance().clone();
-        let TokenKind::Identifier(first_segment) = first_token.kind else {
+        let Some(first_segment) = name_segment_from_token(&first_token.kind) else {
             return Err(Diagnostic::new(expected, Some(first_token.span)));
         };
         self.parse_name_from_first(first_segment, first_token.span, start_span, expected)
@@ -808,9 +816,15 @@ impl Parser<'_> {
             .unwrap_or(first_span);
         let mut segments = vec![first_segment];
         while matches!(self.peek().kind, TokenKind::Backslash) {
-            self.advance();
+            let separator_span = self.advance().span;
             let segment_token = self.advance().clone();
-            let TokenKind::Identifier(segment) = segment_token.kind else {
+            if self.has_namespace_separator_whitespace(span, separator_span, segment_token.span) {
+                return Err(Diagnostic::parse_error(
+                    "syntax error, unexpected token \"\\\"",
+                    Some(separator_span),
+                ));
+            }
+            let Some(segment) = name_segment_from_token(&segment_token.kind) else {
                 return Err(Diagnostic::new(expected, Some(segment_token.span)));
             };
             span = combine_spans(span, segment_token.span);
@@ -901,12 +915,19 @@ impl Parser<'_> {
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
             NameResolution::Unqualified => {
                 let alias_key = parsed.name.to_ascii_lowercase();
+                let namespaced = self.qualify_current_namespace(&parsed.name);
                 if let Some(target) = self.constant_aliases.get(&alias_key) {
                     target.clone()
+                } else if namespaced != parsed.name
+                    && self
+                        .declared_constants
+                        .contains(&namespaced.to_ascii_lowercase())
+                {
+                    namespaced
                 } else if is_modeled_global_constant_name(&parsed.name) {
                     parsed.name.clone()
                 } else {
-                    self.qualify_current_namespace(&parsed.name)
+                    namespaced
                 }
             }
             NameResolution::Qualified => {
@@ -930,6 +951,23 @@ impl Parser<'_> {
         } else {
             self.qualify_current_namespace(name)
         }
+    }
+
+    fn has_namespace_separator_whitespace(
+        &self,
+        previous_span: SourceSpan,
+        separator_span: SourceSpan,
+        next_span: SourceSpan,
+    ) -> bool {
+        let before = self
+            .source
+            .get(previous_span.byte_end..separator_span.byte_start)
+            .unwrap_or("");
+        let after = self
+            .source
+            .get(separator_span.byte_end..next_span.byte_start)
+            .unwrap_or("");
+        before.chars().any(char::is_whitespace) || after.chars().any(char::is_whitespace)
     }
 
     fn note_runtime_class_alias_statement(&mut self, statement: &Statement) {
@@ -2660,7 +2698,9 @@ impl Parser<'_> {
                 self.advance();
                 TypeHint::Float
             }
-            TokenKind::StringType | TokenKind::BinaryType => {
+            TokenKind::StringType | TokenKind::BinaryType
+                if !matches!(self.peek_next().kind, TokenKind::Backslash) =>
+            {
                 self.advance();
                 TypeHint::String
             }
@@ -2699,6 +2739,12 @@ impl Parser<'_> {
                 TypeHint::Class(self.resolve_class_name(&parsed))
             }
             TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
+                let parsed = self.parse_name("expected type hint")?;
+                TypeHint::Class(self.resolve_class_name(&parsed))
+            }
+            _ if name_segment_from_token(&token.kind).is_some()
+                && matches!(self.peek_next().kind, TokenKind::Backslash) =>
+            {
                 let parsed = self.parse_name("expected type hint")?;
                 TypeHint::Class(self.resolve_class_name(&parsed))
             }
@@ -3220,6 +3266,14 @@ impl Parser<'_> {
 
     fn parse_const_declaration(&mut self) -> Result<ConstDeclaration> {
         let (name, token_span) = self.parse_declaration_name("expected constant name")?;
+        if is_reserved_compile_time_constant_declaration_name(&name) {
+            let local_name = name.rsplit('\\').next().unwrap_or(&name);
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare constant '{local_name}'"),
+                Some(token_span),
+            ));
+        }
+        self.declared_constants.insert(name.to_ascii_lowercase());
         self.expect_equal()?;
         let value = self.parse_expr()?;
         if !is_supported_const_declaration_expr(&value) {
@@ -3375,6 +3429,7 @@ impl Parser<'_> {
                 Diagnostic::new("expected foreach variable", Some(target_span))
             }
         })?;
+        reject_this_foreach_target(&target)?;
         if by_ref {
             validate_foreach_by_reference_target(&target, span)?;
         }
@@ -4735,7 +4790,7 @@ impl Parser<'_> {
             }
             TokenKind::Backslash => {
                 let first_token = self.advance().clone();
-                let TokenKind::Identifier(first_segment) = first_token.kind else {
+                let Some(first_segment) = name_segment_from_token(&first_token.kind) else {
                     return Err(Diagnostic::new(
                         "expected fully qualified name",
                         Some(first_token.span),
@@ -6749,6 +6804,58 @@ fn object_member_name_from_token(kind: &TokenKind) -> Option<String> {
         _ => return None,
     };
     Some(name.to_string())
+}
+
+fn name_segment_from_token(kind: &TokenKind) -> Option<String> {
+    match kind {
+        TokenKind::Identifier(name) => Some(name.clone()),
+        TokenKind::Echo
+        | TokenKind::Print
+        | TokenKind::If
+        | TokenKind::Elseif
+        | TokenKind::Else
+        | TokenKind::Do
+        | TokenKind::While
+        | TokenKind::For
+        | TokenKind::Foreach
+        | TokenKind::As
+        | TokenKind::Switch
+        | TokenKind::Match
+        | TokenKind::Case
+        | TokenKind::Default
+        | TokenKind::Break
+        | TokenKind::Continue
+        | TokenKind::Return
+        | TokenKind::Include
+        | TokenKind::IncludeOnce
+        | TokenKind::Require
+        | TokenKind::RequireOnce
+        | TokenKind::Try
+        | TokenKind::Catch
+        | TokenKind::Throw
+        | TokenKind::Yield
+        | TokenKind::Goto
+        | TokenKind::Const
+        | TokenKind::Function
+        | TokenKind::Global
+        | TokenKind::New
+        | TokenKind::Clone
+        | TokenKind::True
+        | TokenKind::False
+        | TokenKind::Null
+        | TokenKind::KeywordAnd
+        | TokenKind::KeywordOr
+        | TokenKind::KeywordXor
+        | TokenKind::IntType
+        | TokenKind::IntegerType
+        | TokenKind::FloatType
+        | TokenKind::DoubleType
+        | TokenKind::StringType
+        | TokenKind::BinaryType
+        | TokenKind::BoolType
+        | TokenKind::BooleanType => Some(token_text(kind).to_string()),
+        _ => None,
+    }
 }
 
 fn method_name_from_token(kind: &TokenKind) -> Option<String> {
@@ -11344,6 +11451,15 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
     )
 }
 
+fn is_reserved_compile_time_constant_declaration_name(name: &str) -> bool {
+    name.rsplit('\\').next().is_some_and(|local| {
+        matches!(
+            local.to_ascii_lowercase().as_str(),
+            "true" | "false" | "null"
+        )
+    })
+}
+
 fn is_array_cursor_mutation_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -12142,6 +12258,37 @@ fn validate_foreach_by_reference_target(target: &AssignmentTarget, span: SourceS
     }
 }
 
+fn reject_this_foreach_target(target: &AssignmentTarget) -> Result<()> {
+    match target {
+        AssignmentTarget::Variable { name, span } if name.eq_ignore_ascii_case("this") => {
+            Err(Diagnostic::new("Cannot re-assign $this", Some(*span)))
+        }
+        AssignmentTarget::List(list) => reject_this_foreach_list_target(list),
+        _ => Ok(()),
+    }
+}
+
+fn reject_this_foreach_list_target(target: &ListAssignmentTarget) -> Result<()> {
+    for element in &target.elements {
+        match &element.target {
+            ListAssignmentElementTarget::Value(target) => reject_this_foreach_target(target)?,
+            ListAssignmentElementTarget::Reference(target) => {
+                reject_this_foreach_reference_target(target)?
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reject_this_foreach_reference_target(target: &ReferenceTarget) -> Result<()> {
+    match target {
+        ReferenceTarget::Variable { name, span } if name.eq_ignore_ascii_case("this") => {
+            Err(Diagnostic::new("Cannot re-assign $this", Some(*span)))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn validate_coalesce_assignment_target(
     op: AssignmentOp,
     target: &AssignmentTarget,
@@ -12350,10 +12497,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
     match expr {
         Expr::ArrayAccess { array, index, span } => {
             if index.is_none() {
-                return Err(Diagnostic::new(
-                    "append array access is only valid as an assignment target",
-                    Some(*span),
-                ));
+                return Err(Diagnostic::new("Cannot use [] for reading", Some(*span)));
             }
             reject_append_array_read(array)?;
             if let Some(index) = index {

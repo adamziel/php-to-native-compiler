@@ -1494,16 +1494,6 @@ ptn_phpt_first_unsupported_language_surface() {
                     ptn_class_body_depth = 0
                 }
             }
-            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*\$[a-z_][a-z0-9_]*[[:space:]]*\[[[:space:]]*\][^)]*as([^[:alnum:]_]|$)/) {
-                print "unsupported-expression-diagnostics\trequires array-append read diagnostics (`[]` in read context), outside PTN expression diagnostics"
-                found = 1
-                exit
-            }
-            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*\$this([^[:alnum:]_]|$)/) {
-                print "unsupported-expression-diagnostics\trequires foreach assignment diagnostics for `$this`, outside PTN special-variable assignment diagnostics"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])eval[[:space:]]*\(/) {
                 print "unsupported-dynamic-eval\trequires eval runtime fallback, outside PTN native dynamic-code boundary"
                 found = 1

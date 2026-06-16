@@ -3344,6 +3344,37 @@ static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     PtnValue container,
     size_t line
 );
+static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(
+    PtnRuntime *runtime,
+    const char *key,
+    size_t line
+);
+static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, int *warn_illegal);
+
+static PTN_UNUSED void ptn_warn_illegal_string_reference_key(
+    PtnRuntime *runtime,
+    PtnValue container,
+    const PtnValue *key_value,
+    size_t line
+) {
+    PtnValue value = ptn_value_deref(container);
+    if (value.type != PTN_STRING || key_value == NULL) {
+        return;
+    }
+
+    PtnValue key = ptn_value_deref(*key_value);
+    if (key.type != PTN_STRING) {
+        return;
+    }
+
+    int64_t offset = 0;
+    int warn_illegal = 0;
+    char *key_string = ptn_duplicate_string_len((const char *)key.as.string.data, key.as.string.len);
+    if (ptn_string_to_offset(key_string, &offset, &warn_illegal) && warn_illegal) {
+        ptn_emit_illegal_string_offset_warning(runtime, key_string, line);
+    }
+    free(key_string);
+}
 
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     PtnRuntime *runtime,
@@ -3364,6 +3395,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
             ptn_emit_indirect_modification_overloaded_element_notice(runtime, slot_value, line);
             return ptn_reference_value(ptn_reference_new_owned(value));
         }
+        ptn_warn_illegal_string_reference_key(runtime, slot_value, key_value, line);
     }
 
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);

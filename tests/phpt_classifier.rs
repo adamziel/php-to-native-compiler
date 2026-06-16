@@ -575,18 +575,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires top-level static variable diagnostics",
         ),
         (
-            "foreach append read",
-            "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
-            "unsupported-expression-diagnostics\t",
-            "requires array-append read diagnostics",
-        ),
-        (
-            "foreach assigns this",
-            "--TEST--\nthis target\n--FILE--\n<?php\nforeach ($items as list($this)) {}\n--EXPECTF--\n",
-            "unsupported-expression-diagnostics\t",
-            "requires foreach assignment diagnostics for `$this`",
-        ),
-        (
             "eval dynamic code",
             "--TEST--\neval\n--FILE--\n<?php\n$code = 'echo \"x\\n\";';\neval($code);\n--EXPECT--\nx\n",
             "unsupported-dynamic-eval\t",
@@ -641,6 +629,22 @@ fn phpt_classifier_keeps_nullable_never_and_function_static_rows_runnable() {
         "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
         "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => throw new Exception('done');\n--EXPECT--\n",
         "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
+    ];
+
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
+        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_supported_foreach_diagnostics_runnable() {
+    let cases = [
+        "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
+        "--TEST--\nthis target\n--FILE--\n<?php\nforeach ($items as list($this)) {}\n--EXPECTF--\n",
     ];
 
     for phpt in cases {
