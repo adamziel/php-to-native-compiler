@@ -19825,6 +19825,80 @@ var_dump($nested);",
 }
 
 #[test]
+fn compile_object_offset_errors_and_false_type_name_to_native_binary() {
+    let root = temp_dir("ptn-native-object-offset-errors-and-false-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-offset-errors-and-false-type.php");
+    let output = root.join("object-offset-errors-and-false-type-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$false = false;\n\
+var_dump($false[0]);\n\
+$object = new stdClass();\n\
+try { var_dump($object[0]); } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $object[0] = 1; } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $object[0] += 1; } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(isset($object[0])); } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(empty($object[0])); } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump($object[0] ?? 'default'); } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $ref =& $object[0]; } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { unset($object[0]); } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Trying to access array offset on false in ptn on line 3\nNULL\n\
+Cannot use object of type stdClass as array\n\
+Cannot use object of type stdClass as array\n\
+Cannot use object of type stdClass as array\n\
+Cannot use object of type stdClass as array\n\
+Cannot use object of type stdClass as array\n\
+Cannot use object of type stdClass as array\n\
+Cannot use object of type stdClass as array\n\
+Cannot use object of type stdClass as array\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_concat_assignment_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-concat-assignment-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("concat-assignment-memory-limit.php");
+    let output = root.join("concat-assignment-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Foo {\n\
+    public function __toString() { return str_repeat('a', 10); }\n\
+}\n\
+$i = str_repeat('a', 5 * 1024 * 1024);\n\
+$e = new Foo();\n\
+$e .= $i;\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "10M")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: Allowed memory size of 10485760 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 5242891 bytes"));
+    assert!(stderr.contains("concat-assignment-memory-limit.php on line 7"));
+}
+
+#[test]
 fn compile_array_offset_assignment_and_unset_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-assignment-unset");
     fs::create_dir_all(&root).unwrap();
