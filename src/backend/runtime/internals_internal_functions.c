@@ -1916,7 +1916,12 @@ static PtnValue ptn_internal__ptn_cow_debug_assert_balanced(PtnRuntime *runtime,
     return ptn_bool(1);
 }
 
-static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent);
+static void ptn_print_r_value_indented(
+    PtnStringBuffer *buffer,
+    PtnValue value,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+);
 
 static void ptn_print_r_key(PtnStringBuffer *buffer, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
@@ -1935,10 +1940,16 @@ static void ptn_print_r_object_key(PtnStringBuffer *buffer, PtnObject *object, P
     ptn_string_buffer_append(buffer, metadata == NULL ? key.as.string : metadata->display_name);
 }
 
-static void ptn_print_r_array(PtnStringBuffer *buffer, PtnArray *array, size_t indent) {
+static void ptn_print_r_array(
+    PtnStringBuffer *buffer,
+    PtnArray *array,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
     ptn_string_buffer_append(buffer, "Array\n");
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, "(\n");
+    ptn_dump_seen_arrays_push(seen, array);
     for (size_t i = 0; i < array->len; i++) {
         ptn_string_buffer_append_indent(buffer, indent + 4);
         ptn_string_buffer_append_char(buffer, '[');
@@ -1946,40 +1957,53 @@ static void ptn_print_r_array(PtnStringBuffer *buffer, PtnArray *array, size_t i
         ptn_string_buffer_append(buffer, "] => ");
         PtnValue entry_value = ptn_value_deref(array->entries[i].value);
         if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
-            ptn_print_r_value_indented(buffer, entry_value, indent + 8);
+            ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
             ptn_string_buffer_append_char(buffer, '\n');
         } else {
-            ptn_print_r_value_indented(buffer, entry_value, indent);
+            ptn_print_r_value_indented(buffer, entry_value, indent, seen);
             ptn_string_buffer_append_char(buffer, '\n');
         }
     }
+    ptn_dump_seen_arrays_pop(seen);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, ")\n");
 }
 
-static void ptn_print_r_object(PtnStringBuffer *buffer, PtnObject *object, size_t indent) {
+static void ptn_print_r_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
     ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, "(\n");
+    ptn_dump_seen_objects_push(seen, object);
     for (size_t i = 0; i < object->properties->len; i++) {
         ptn_string_buffer_append_indent(buffer, indent + 4);
         ptn_string_buffer_append_char(buffer, '[');
         ptn_print_r_object_key(buffer, object, object->properties->entries[i].key);
         ptn_string_buffer_append(buffer, "] => ");
         PtnValue entry_value = ptn_value_deref(object->properties->entries[i].value);
-        if (entry_value.type == PTN_ARRAY) {
-            ptn_print_r_value_indented(buffer, entry_value, indent + 8);
+        if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+            ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
             ptn_string_buffer_append_char(buffer, '\n');
         } else {
-            ptn_print_r_value_indented(buffer, entry_value, indent);
+            ptn_print_r_value_indented(buffer, entry_value, indent, seen);
             ptn_string_buffer_append_char(buffer, '\n');
         }
     }
+    ptn_dump_seen_objects_pop(seen);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, ")\n");
 }
 
-static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, size_t indent) {
+static void ptn_print_r_value_indented(
+    PtnStringBuffer *buffer,
+    PtnValue value,
+    size_t indent,
+    PtnDumpSeenArrays *seen
+) {
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
@@ -2006,10 +2030,20 @@ static void ptn_print_r_value_indented(PtnStringBuffer *buffer, PtnValue value, 
             );
             break;
         case PTN_ARRAY:
-            ptn_print_r_array(buffer, value.as.array, indent);
+            if (ptn_dump_seen_arrays_contains(seen, value.as.array)) {
+                ptn_string_buffer_append(buffer, "Array\n");
+                ptn_string_buffer_append(buffer, " *RECURSION*");
+                break;
+            }
+            ptn_print_r_array(buffer, value.as.array, indent, seen);
             break;
         case PTN_OBJECT:
-            ptn_print_r_object(buffer, value.as.object, indent);
+            if (ptn_dump_seen_objects_contains(seen, value.as.object)) {
+                ptn_string_buffer_append_format(buffer, "%s Object\n", value.as.object->class_name);
+                ptn_string_buffer_append(buffer, " *RECURSION*");
+                break;
+            }
+            ptn_print_r_object(buffer, value.as.object, indent, seen);
             break;
         case PTN_CLOSURE:
             ptn_string_buffer_append(buffer, "Object");
@@ -2030,7 +2064,10 @@ static PtnValue ptn_internal_print_r(PtnRuntime *runtime, size_t argc, const Ptn
     int return_output = argc >= 2 && ptn_is_truthy(args[1]);
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    ptn_print_r_value_indented(&buffer, args[0], 0);
+    PtnDumpSeenArrays seen;
+    ptn_dump_seen_arrays_init(&seen);
+    ptn_print_r_value_indented(&buffer, args[0], 0, &seen);
+    ptn_dump_seen_arrays_free(&seen);
     if (return_output) {
         return ptn_owned_string_len(buffer.data, buffer.len);
     }
@@ -2382,10 +2419,25 @@ static void ptn_serialize_append_value_with_id(
 static PtnValue ptn_internal_serialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringBuffer buffer;
-    PtnSerializeState state;
     ptn_string_buffer_init(&buffer);
+    PtnSerializeState *active_state = runtime == NULL
+        ? NULL
+        : (PtnSerializeState *)runtime->active_serialize_state;
+    if (active_state != NULL) {
+        ptn_serialize_append_value_with_id(&buffer, args[0], active_state, 0);
+        return ptn_owned_string_len(buffer.data, buffer.len);
+    }
+
+    PtnSerializeState state;
     ptn_serialize_state_init(&state, runtime, line);
+    void *previous_active_state = runtime == NULL ? NULL : runtime->active_serialize_state;
+    if (runtime != NULL) {
+        runtime->active_serialize_state = &state;
+    }
     ptn_serialize_append_value_with_id(&buffer, args[0], &state, 0);
+    if (runtime != NULL) {
+        runtime->active_serialize_state = previous_active_state;
+    }
     ptn_serialize_state_free(&state);
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
@@ -2591,6 +2643,19 @@ static int ptn_unserialize_parse_unsigned(PtnUnserializeState *state, size_t *va
     return 1;
 }
 
+static int ptn_unserialize_parse_unsigned_fail_at(
+    PtnUnserializeState *state,
+    size_t fail_pos,
+    size_t *value
+) {
+    int was_failed = state->failed;
+    int parsed = ptn_unserialize_parse_unsigned(state, value);
+    if (!parsed && !was_failed && state->failed && !state->unexpected_end) {
+        state->error_pos = fail_pos <= state->len ? fail_pos : state->len;
+    }
+    return parsed;
+}
+
 static int ptn_unserialize_parse_int64(PtnUnserializeState *state, int64_t *value) {
     int negative = 0;
     if (ptn_unserialize_has(state, 1) && state->data[state->pos] == '-') {
@@ -2783,8 +2848,17 @@ static void ptn_unserialize_emit_extra_data_warning(
     ptn_emit_runtime_warning(runtime, message, line);
 }
 
-static PtnValue ptn_unserialize_new_object_shell(PtnRuntime *runtime, const char *class_name) {
+static PtnValue ptn_unserialize_new_object_shell(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
     if (ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) {
+        if (runtime != NULL &&
+            runtime->new_instance_without_constructor != NULL &&
+            ptn_declared_class_exists(class_name)) {
+            return runtime->new_instance_without_constructor(runtime, class_name, line);
+        }
         return ptn_object_new_shell(runtime, class_name);
     }
 
@@ -2889,6 +2963,7 @@ static void ptn_spl_object_storage_validate_payload(
 }
 
 static int ptn_unserialize_store_entry(
+    PtnRuntime *runtime,
     PtnUnserializeState *state,
     PtnArray *array,
     PtnArrayKey key,
@@ -2896,6 +2971,22 @@ static int ptn_unserialize_store_entry(
 ) {
     size_t existing_index = ptn_array_find_key(array, key);
     if (existing_index < array->len) {
+        if (array->entries[existing_index].value.type == PTN_REFERENCE) {
+            ptn_array_update_next_auto_key(array, key);
+            if (!ptn_reference_assign_publish_first(
+                    runtime,
+                    array->entries[existing_index].value.as.reference,
+                    parsed.value
+                )) {
+                ptn_array_key_free(key);
+                ptn_value_destroy(&parsed.value);
+                return 0;
+            }
+            ptn_value_destroy(&parsed.value);
+            ptn_array_key_free(key);
+            ptn_unserialize_update_slot(state, parsed.id, &array->entries[existing_index].value);
+            return 1;
+        }
         ptn_unserialize_invalidate_slot(state, &array->entries[existing_index].value);
         ptn_array_set_entry(array, key, parsed.value);
         ptn_unserialize_invalidate_id(state, parsed.id);
@@ -2989,7 +3080,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         }
         case 's': {
             size_t len = 0;
-            if (!ptn_unserialize_parse_unsigned(state, &len) ||
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
                 !ptn_unserialize_require(state, len)) {
@@ -3007,7 +3098,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         }
         case 'a': {
             size_t count = 0;
-            if (!ptn_unserialize_parse_unsigned(state, &count) ||
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &count) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{')) {
                 return result;
@@ -3026,7 +3117,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 }
                 PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
                 if (state->failed ||
-                    !ptn_unserialize_store_entry(state, array, key, parsed)) {
+                    !ptn_unserialize_store_entry(runtime, state, array, key, parsed)) {
                     return result;
                 }
             }
@@ -3039,7 +3130,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         case 'O': {
             size_t class_len = 0;
             size_t property_count = 0;
-            if (!ptn_unserialize_parse_unsigned(state, &class_len) ||
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &class_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
                 !ptn_unserialize_require(state, class_len)) {
@@ -3049,7 +3140,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             state->pos += class_len;
             if (!ptn_unserialize_consume(state, '"') ||
                 !ptn_unserialize_consume(state, ':') ||
-                !ptn_unserialize_parse_unsigned(state, &property_count) ||
+                !ptn_unserialize_parse_unsigned_fail_at(state, value_start, &property_count) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{')) {
                 free(class_name);
@@ -3060,7 +3151,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 ptn_unserialize_fail(state);
                 return result;
             }
-            result.value = ptn_unserialize_new_object_shell(runtime, class_name);
+            result.value = ptn_unserialize_new_object_shell(runtime, class_name, state->line);
             free(class_name);
             result.id = ptn_unserialize_add_slot(state, &result.value);
             PtnArray *properties = result.value.as.object->properties;
@@ -3072,7 +3163,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
                 PtnArrayKey property_key = ptn_unserialize_object_property_key(key);
                 if (state->failed ||
-                    !ptn_unserialize_store_entry(state, properties, property_key, parsed)) {
+                    !ptn_unserialize_store_entry(runtime, state, properties, property_key, parsed)) {
                     return result;
                 }
             }
@@ -3085,7 +3176,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         case 'C': {
             size_t class_len = 0;
             size_t payload_len = 0;
-            if (!ptn_unserialize_parse_unsigned(state, &class_len) ||
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &class_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '"') ||
                 !ptn_unserialize_require(state, class_len)) {
@@ -3095,7 +3186,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             state->pos += class_len;
             if (!ptn_unserialize_consume(state, '"') ||
                 !ptn_unserialize_consume(state, ':') ||
-                !ptn_unserialize_parse_unsigned(state, &payload_len) ||
+                !ptn_unserialize_parse_unsigned_fail_at(state, value_start, &payload_len) ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_consume(state, '{') ||
                 !ptn_unserialize_require_payload(state, payload_len)) {
@@ -3117,7 +3208,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
 
-            result.value = ptn_unserialize_new_object_shell(runtime, class_name);
+            result.value = ptn_unserialize_new_object_shell(runtime, class_name, state->line);
             result.id = ptn_unserialize_add_slot(state, &result.value);
             if (runtime != NULL &&
                 runtime->method_dispatch != NULL &&
@@ -3145,7 +3236,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         }
         case 'R': {
             size_t id = 0;
-            if (!ptn_unserialize_parse_unsigned(state, &id) ||
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &id) ||
                 !ptn_unserialize_consume(state, ';')) {
                 return result;
             }
@@ -3154,7 +3245,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
         }
         case 'r': {
             size_t id = 0;
-            if (!ptn_unserialize_parse_unsigned(state, &id) ||
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &id) ||
                 !ptn_unserialize_consume(state, ';')) {
                 return result;
             }

@@ -868,6 +868,7 @@ struct PtnRuntime {
     int suppress_user_call_frame_location;
     int warn_by_ref_argument_mismatch;
     int throw_argument_count_errors;
+    void *active_serialize_state;
     void *active_unserialize_state;
     char *strtok_string;
     size_t strtok_len;

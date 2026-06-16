@@ -5338,11 +5338,37 @@ fn class_transitive_interfaces<'a>(class: &'a ClassDecl, classes: &'a [ClassDecl
         }
     }
 
-    let mut seen = HashSet::new();
-    let mut interfaces = Vec::new();
-    for interface in &class.interfaces {
-        collect(interface, classes, &mut seen, &mut interfaces);
+    fn collect_class<'a>(
+        class: &'a ClassDecl,
+        classes: &'a [ClassDecl],
+        seen_classes: &mut HashSet<String>,
+        seen_interfaces: &mut HashSet<String>,
+        interfaces: &mut Vec<&'a str>,
+    ) {
+        let class_key = class.name.to_ascii_lowercase();
+        if !seen_classes.insert(class_key) {
+            return;
+        }
+        for interface in &class.interfaces {
+            collect(interface, classes, seen_interfaces, interfaces);
+        }
+        if let Some(parent_name) = &class.parent_name {
+            if let Some(parent) = class_by_name(classes, parent_name) {
+                collect_class(parent, classes, seen_classes, seen_interfaces, interfaces);
+            }
+        }
     }
+
+    let mut seen_classes = HashSet::new();
+    let mut seen_interfaces = HashSet::new();
+    let mut interfaces = Vec::new();
+    collect_class(
+        class,
+        classes,
+        &mut seen_classes,
+        &mut seen_interfaces,
+        &mut interfaces,
+    );
     interfaces
 }
 
