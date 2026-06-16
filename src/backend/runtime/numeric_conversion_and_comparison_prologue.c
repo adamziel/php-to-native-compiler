@@ -59,6 +59,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->magic_property_set = caller_runtime->magic_property_set;
     runtime->magic_property_unset = caller_runtime->magic_property_unset;
     runtime->magic_debug_info = caller_runtime->magic_debug_info;
+    runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
