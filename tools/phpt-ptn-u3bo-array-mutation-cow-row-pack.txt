@@ -1,0 +1,14 @@
+# ptn-u3bo focused ordered-array mutation/COW row pack.
+# Rows are relative to PHP_SRC_PHPT.
+ext/standard/tests/array/array_merge.phpt
+ext/standard/tests/array/array_merge_recursive_variation3.phpt
+ext/standard/tests/array/array_merge_recursive_variation7.phpt
+ext/standard/tests/array/array_next_error1.phpt
+ext/standard/tests/array/array_next_error2.phpt
+ext/standard/tests/array/array_push.phpt
+ext/standard/tests/array/array_push_error2.phpt
+ext/standard/tests/array/array_push_variation3.phpt
+ext/standard/tests/array/array_replace.phpt
+ext/standard/tests/array/array_replace_merge_recursive_ref.phpt
+ext/standard/tests/array/array_shift_variation5.phpt
+ext/standard/tests/array/array_shift_variation8.phpt
