@@ -24540,6 +24540,22 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new(
     char *class_name = NULL;
     char *method_name = NULL;
     if (argc == 1) {
+        PtnValue method_arg = ptn_value_deref(args[0]);
+        if (method_arg.type != PTN_STRING) {
+            const char *actual_type = ptn_property_exists_target_type_name(method_arg);
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be of type object|string, %s given",
+                actual_type
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
         char *qualified_name = ptn_value_to_string(args[0]);
         char *separator = strstr(qualified_name, "::");
         if (separator == NULL) {
@@ -24559,8 +24575,39 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new(
             class_name = ptn_duplicate_string(class_arg.as.exception->class_name);
         } else if (class_arg.type == PTN_CLOSURE) {
             class_name = ptn_duplicate_string("Closure");
+        } else if (class_arg.type != PTN_STRING) {
+            const char *actual_type = ptn_property_exists_target_type_name(class_arg);
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be of type object|string, %s given",
+                actual_type
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
         } else {
             class_name = ptn_value_to_string(class_arg);
+        }
+        PtnValue method_arg = ptn_value_deref(args[1]);
+        if (method_arg.type != PTN_NULL && method_arg.type != PTN_STRING) {
+            const char *actual_type = ptn_property_exists_target_type_name(method_arg);
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionMethod::__construct(): Argument #2 ($method) must be of type ?string, %s given",
+                actual_type
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            free(class_name);
+            return ptn_null();
         }
         method_name = ptn_value_to_string(args[1]);
     }
