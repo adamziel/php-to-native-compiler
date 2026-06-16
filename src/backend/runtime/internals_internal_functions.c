@@ -12624,9 +12624,15 @@ static int ptn_html_codepoint_allowed(unsigned int value, int64_t flags) {
         }
         return 1;
     }
-    return value == 0x09 || value == 0x0a ||
-        (value == 0x0d && (flags & PTN_ENT_DOC_TYPE_MASK) != PTN_ENT_HTML5) ||
+    return value == 0x09 || value == 0x0a || value == 0x0d ||
         (value == 0x0c && (flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_HTML5);
+}
+
+static int ptn_html_decode_codepoint_allowed(unsigned int value, int64_t flags) {
+    if ((flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_HTML5 && value == 0x0d) {
+        return 0;
+    }
+    return ptn_html_codepoint_allowed(value, flags);
 }
 
 typedef struct {
@@ -12637,15 +12643,21 @@ typedef struct {
 typedef enum {
     PTN_HTML_ENCODING_UTF8,
     PTN_HTML_ENCODING_ISO_8859_1,
+    PTN_HTML_ENCODING_WINDOWS_1252,
+    PTN_HTML_ENCODING_CP866,
+    PTN_HTML_ENCODING_ISO_8859_15,
+    PTN_HTML_ENCODING_ISO_8859_5,
+    PTN_HTML_ENCODING_KOI8_R,
+    PTN_HTML_ENCODING_MACROMAN,
+    PTN_HTML_ENCODING_WINDOWS_1251,
+    PTN_HTML_ENCODING_LEGACY_BYTE,
+    PTN_HTML_ENCODING_LEGACY_MULTIBYTE,
 } PtnHtmlEncoding;
 
-static void ptn_html_consume_optional_encoding(
-    PtnRuntime *runtime,
-    const char *function_name,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-);
+typedef enum {
+    PTN_HTML_ESCAPE_SPECIALCHARS,
+    PTN_HTML_ESCAPE_ENTITIES,
+} PtnHtmlEscapeMode;
 
 static const PtnHtmlNamedEntity *ptn_html_named_entities(size_t *count) {
     static const PtnHtmlNamedEntity entities[] = {
@@ -12953,6 +12965,97 @@ static int ptn_html_ascii_case_equal_literal(const char *data, size_t len, const
     return 1;
 }
 
+static int ptn_html_encoding_from_operand(PtnStringOperand encoding, PtnHtmlEncoding *out) {
+    if (encoding.len == 0 ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "UTF-8") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "UTF8")) {
+        *out = PTN_HTML_ENCODING_UTF8;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-1") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-1")) {
+        *out = PTN_HTML_ENCODING_ISO_8859_1;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "WINDOWS-1252") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "CP1252") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "1252")) {
+        *out = PTN_HTML_ENCODING_WINDOWS_1252;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "CP866") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "IBM866") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "866")) {
+        *out = PTN_HTML_ENCODING_CP866;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-15") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-15")) {
+        *out = PTN_HTML_ENCODING_ISO_8859_15;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-5") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-5")) {
+        *out = PTN_HTML_ENCODING_ISO_8859_5;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "KOI8-R")) {
+        *out = PTN_HTML_ENCODING_KOI8_R;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "MACROMAN")) {
+        *out = PTN_HTML_ENCODING_MACROMAN;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "WINDOWS-1251") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "CP1251")) {
+        *out = PTN_HTML_ENCODING_WINDOWS_1251;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SJIS") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SHIFT_JIS") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SHIFT-JIS") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "EUC-JP") ||
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "BIG5")) {
+        *out = PTN_HTML_ENCODING_LEGACY_MULTIBYTE;
+        return 1;
+    }
+    return 0;
+}
+
+static void ptn_html_emit_unsupported_encoding_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand encoding,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Charset \"%.*s\" is not supported, assuming UTF-8",
+        function_name,
+        (int)encoding.len,
+        encoding.data
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Charset \"%.*s\" is not supported, assuming UTF-8",
+        function_name,
+        (int)encoding.len,
+        encoding.data
+    );
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
 static PtnHtmlEncoding ptn_html_optional_encoding(
     PtnRuntime *runtime,
     const char *function_name,
@@ -12965,11 +13068,15 @@ static PtnHtmlEncoding ptn_html_optional_encoding(
     }
     PtnStringOperand encoding =
         ptn_internal_expect_string_arg(runtime, function_name, 3, "encoding", args[2], line);
-    PtnHtmlEncoding result =
-        (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-1") ||
-         ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-1"))
-        ? PTN_HTML_ENCODING_ISO_8859_1
-        : PTN_HTML_ENCODING_UTF8;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(encoding);
+        return PTN_HTML_ENCODING_UTF8;
+    }
+    PtnHtmlEncoding result = PTN_HTML_ENCODING_UTF8;
+    if (!ptn_html_encoding_from_operand(encoding, &result)) {
+        ptn_html_emit_unsupported_encoding_warning(runtime, function_name, encoding, line);
+        result = PTN_HTML_ENCODING_UTF8;
+    }
     ptn_string_operand_free(encoding);
     return result;
 }
@@ -13021,15 +13128,328 @@ static int ptn_html_utf8_codepoint(const char *data, size_t len, unsigned int *c
     return 0;
 }
 
+static size_t ptn_html_utf8_expected_len(unsigned char first) {
+    if (first < 0x80) {
+        return 1;
+    }
+    if (first >= 0xc0 && first <= 0xdf) {
+        return 2;
+    }
+    if (first >= 0xe0 && first <= 0xef) {
+        return 3;
+    }
+    if (first >= 0xf0 && first <= 0xf4) {
+        return 4;
+    }
+    return 0;
+}
+
+static int ptn_html_read_utf8(
+    const char *data,
+    size_t len,
+    size_t offset,
+    unsigned int *codepoint,
+    size_t *sequence_len
+) {
+    if (offset >= len) {
+        return 0;
+    }
+    size_t expected = ptn_html_utf8_expected_len((unsigned char)data[offset]);
+    if (expected == 0 || expected > len - offset) {
+        return 0;
+    }
+    for (size_t i = 1; i < expected; i++) {
+        if (((unsigned char)data[offset + i] & 0xc0) != 0x80) {
+            return 0;
+        }
+    }
+    if (!ptn_html_utf8_codepoint(data + offset, expected, codepoint)) {
+        return 0;
+    }
+    if (*codepoint >= 0xd800 && *codepoint <= 0xdfff) {
+        return 0;
+    }
+    *sequence_len = expected;
+    return 1;
+}
+
+static size_t ptn_html_invalid_utf8_len(const char *data, size_t len, size_t offset) {
+    if (offset >= len) {
+        return 0;
+    }
+    size_t expected = ptn_html_utf8_expected_len((unsigned char)data[offset]);
+    if (expected == 0) {
+        return 1;
+    }
+    size_t consumed = 1;
+    while (consumed < expected && offset + consumed < len) {
+        if (((unsigned char)data[offset + consumed] & 0xc0) != 0x80) {
+            break;
+        }
+        consumed++;
+    }
+    return consumed;
+}
+
+static const unsigned int PTN_HTML_CP866_TABLE[128] = {
+    0x0410, 0x0411, 0x0412, 0x0413, 0x0414, 0x0415, 0x0416, 0x0417,
+    0x0418, 0x0419, 0x041a, 0x041b, 0x041c, 0x041d, 0x041e, 0x041f,
+    0x0420, 0x0421, 0x0422, 0x0423, 0x0424, 0x0425, 0x0426, 0x0427,
+    0x0428, 0x0429, 0x042a, 0x042b, 0x042c, 0x042d, 0x042e, 0x042f,
+    0x0430, 0x0431, 0x0432, 0x0433, 0x0434, 0x0435, 0x0436, 0x0437,
+    0x0438, 0x0439, 0x043a, 0x043b, 0x043c, 0x043d, 0x043e, 0x043f,
+    0x2591, 0x2592, 0x2593, 0x2502, 0x2524, 0x2561, 0x2562, 0x2556,
+    0x2555, 0x2563, 0x2551, 0x2557, 0x255d, 0x255c, 0x255b, 0x2510,
+    0x2514, 0x2534, 0x252c, 0x251c, 0x2500, 0x253c, 0x255e, 0x255f,
+    0x255a, 0x2554, 0x2569, 0x2566, 0x2560, 0x2550, 0x256c, 0x2567,
+    0x2568, 0x2564, 0x2565, 0x2559, 0x2558, 0x2552, 0x2553, 0x256b,
+    0x256a, 0x2518, 0x250c, 0x2588, 0x2584, 0x258c, 0x2590, 0x2580,
+    0x0440, 0x0441, 0x0442, 0x0443, 0x0444, 0x0445, 0x0446, 0x0447,
+    0x0448, 0x0449, 0x044a, 0x044b, 0x044c, 0x044d, 0x044e, 0x044f,
+    0x0401, 0x0451, 0x0404, 0x0454, 0x0407, 0x0457, 0x040e, 0x045e,
+    0x00b0, 0x2219, 0x00b7, 0x221a, 0x2116, 0x00a4, 0x25a0, 0x00a0,
+};
+
+static const unsigned int PTN_HTML_ISO_8859_15_TABLE[128] = {
+    0x0080, 0x0081, 0x0082, 0x0083, 0x0084, 0x0085, 0x0086, 0x0087,
+    0x0088, 0x0089, 0x008a, 0x008b, 0x008c, 0x008d, 0x008e, 0x008f,
+    0x0090, 0x0091, 0x0092, 0x0093, 0x0094, 0x0095, 0x0096, 0x0097,
+    0x0098, 0x0099, 0x009a, 0x009b, 0x009c, 0x009d, 0x009e, 0x009f,
+    0x00a0, 0x00a1, 0x00a2, 0x00a3, 0x20ac, 0x00a5, 0x0160, 0x00a7,
+    0x0161, 0x00a9, 0x00aa, 0x00ab, 0x00ac, 0x00ad, 0x00ae, 0x00af,
+    0x00b0, 0x00b1, 0x00b2, 0x00b3, 0x017d, 0x00b5, 0x00b6, 0x00b7,
+    0x017e, 0x00b9, 0x00ba, 0x00bb, 0x0152, 0x0153, 0x0178, 0x00bf,
+    0x00c0, 0x00c1, 0x00c2, 0x00c3, 0x00c4, 0x00c5, 0x00c6, 0x00c7,
+    0x00c8, 0x00c9, 0x00ca, 0x00cb, 0x00cc, 0x00cd, 0x00ce, 0x00cf,
+    0x00d0, 0x00d1, 0x00d2, 0x00d3, 0x00d4, 0x00d5, 0x00d6, 0x00d7,
+    0x00d8, 0x00d9, 0x00da, 0x00db, 0x00dc, 0x00dd, 0x00de, 0x00df,
+    0x00e0, 0x00e1, 0x00e2, 0x00e3, 0x00e4, 0x00e5, 0x00e6, 0x00e7,
+    0x00e8, 0x00e9, 0x00ea, 0x00eb, 0x00ec, 0x00ed, 0x00ee, 0x00ef,
+    0x00f0, 0x00f1, 0x00f2, 0x00f3, 0x00f4, 0x00f5, 0x00f6, 0x00f7,
+    0x00f8, 0x00f9, 0x00fa, 0x00fb, 0x00fc, 0x00fd, 0x00fe, 0x00ff,
+};
+
+static const unsigned int PTN_HTML_ISO_8859_5_TABLE[128] = {
+    0x0080, 0x0081, 0x0082, 0x0083, 0x0084, 0x0085, 0x0086, 0x0087,
+    0x0088, 0x0089, 0x008a, 0x008b, 0x008c, 0x008d, 0x008e, 0x008f,
+    0x0090, 0x0091, 0x0092, 0x0093, 0x0094, 0x0095, 0x0096, 0x0097,
+    0x0098, 0x0099, 0x009a, 0x009b, 0x009c, 0x009d, 0x009e, 0x009f,
+    0x00a0, 0x0401, 0x0402, 0x0403, 0x0404, 0x0405, 0x0406, 0x0407,
+    0x0408, 0x0409, 0x040a, 0x040b, 0x040c, 0x00ad, 0x040e, 0x040f,
+    0x0410, 0x0411, 0x0412, 0x0413, 0x0414, 0x0415, 0x0416, 0x0417,
+    0x0418, 0x0419, 0x041a, 0x041b, 0x041c, 0x041d, 0x041e, 0x041f,
+    0x0420, 0x0421, 0x0422, 0x0423, 0x0424, 0x0425, 0x0426, 0x0427,
+    0x0428, 0x0429, 0x042a, 0x042b, 0x042c, 0x042d, 0x042e, 0x042f,
+    0x0430, 0x0431, 0x0432, 0x0433, 0x0434, 0x0435, 0x0436, 0x0437,
+    0x0438, 0x0439, 0x043a, 0x043b, 0x043c, 0x043d, 0x043e, 0x043f,
+    0x0440, 0x0441, 0x0442, 0x0443, 0x0444, 0x0445, 0x0446, 0x0447,
+    0x0448, 0x0449, 0x044a, 0x044b, 0x044c, 0x044d, 0x044e, 0x044f,
+    0x2116, 0x0451, 0x0452, 0x0453, 0x0454, 0x0455, 0x0456, 0x0457,
+    0x0458, 0x0459, 0x045a, 0x045b, 0x045c, 0x00a7, 0x045e, 0x045f,
+};
+
+static const unsigned int PTN_HTML_KOI8_R_TABLE[128] = {
+    0x2500, 0x2502, 0x250c, 0x2510, 0x2514, 0x2518, 0x251c, 0x2524,
+    0x252c, 0x2534, 0x253c, 0x2580, 0x2584, 0x2588, 0x258c, 0x2590,
+    0x2591, 0x2592, 0x2593, 0x2320, 0x25a0, 0x2219, 0x221a, 0x2248,
+    0x2264, 0x2265, 0x00a0, 0x2321, 0x00b0, 0x00b2, 0x00b7, 0x00f7,
+    0x2550, 0x2551, 0x2552, 0x0451, 0x2553, 0x2554, 0x2555, 0x2556,
+    0x2557, 0x2558, 0x2559, 0x255a, 0x255b, 0x255c, 0x255d, 0x255e,
+    0x255f, 0x2560, 0x2561, 0x0401, 0x2562, 0x2563, 0x2564, 0x2565,
+    0x2566, 0x2567, 0x2568, 0x2569, 0x256a, 0x256b, 0x256c, 0x00a9,
+    0x044e, 0x0430, 0x0431, 0x0446, 0x0434, 0x0435, 0x0444, 0x0433,
+    0x0445, 0x0438, 0x0439, 0x043a, 0x043b, 0x043c, 0x043d, 0x043e,
+    0x043f, 0x044f, 0x0440, 0x0441, 0x0442, 0x0443, 0x0436, 0x0432,
+    0x044c, 0x044b, 0x0437, 0x0448, 0x044d, 0x0449, 0x0447, 0x044a,
+    0x042e, 0x0410, 0x0411, 0x0426, 0x0414, 0x0415, 0x0424, 0x0413,
+    0x0425, 0x0418, 0x0419, 0x041a, 0x041b, 0x041c, 0x041d, 0x041e,
+    0x041f, 0x042f, 0x0420, 0x0421, 0x0422, 0x0423, 0x0416, 0x0412,
+    0x042c, 0x042b, 0x0417, 0x0428, 0x042d, 0x0429, 0x0427, 0x042a,
+};
+
+static const unsigned int PTN_HTML_MACROMAN_TABLE[128] = {
+    0x00c4, 0x00c5, 0x00c7, 0x00c9, 0x00d1, 0x00d6, 0x00dc, 0x00e1,
+    0x00e0, 0x00e2, 0x00e4, 0x00e3, 0x00e5, 0x00e7, 0x00e9, 0x00e8,
+    0x00ea, 0x00eb, 0x00ed, 0x00ec, 0x00ee, 0x00ef, 0x00f1, 0x00f3,
+    0x00f2, 0x00f4, 0x00f6, 0x00f5, 0x00fa, 0x00f9, 0x00fb, 0x00fc,
+    0x2020, 0x00b0, 0x00a2, 0x00a3, 0x00a7, 0x2022, 0x00b6, 0x00df,
+    0x00ae, 0x00a9, 0x2122, 0x00b4, 0x00a8, 0x2260, 0x00c6, 0x00d8,
+    0x221e, 0x00b1, 0x2264, 0x2265, 0x00a5, 0x00b5, 0x2202, 0x2211,
+    0x220f, 0x03c0, 0x222b, 0x00aa, 0x00ba, 0x03a9, 0x00e6, 0x00f8,
+    0x00bf, 0x00a1, 0x00ac, 0x221a, 0x0192, 0x2248, 0x2206, 0x00ab,
+    0x00bb, 0x2026, 0x00a0, 0x00c0, 0x00c3, 0x00d5, 0x0152, 0x0153,
+    0x2013, 0x2014, 0x201c, 0x201d, 0x2018, 0x2019, 0x00f7, 0x25ca,
+    0x00ff, 0x0178, 0x2044, 0x20ac, 0x2039, 0x203a, 0xfb01, 0xfb02,
+    0x2021, 0x00b7, 0x201a, 0x201e, 0x2030, 0x00c2, 0x00ca, 0x00c1,
+    0x00cb, 0x00c8, 0x00cd, 0x00ce, 0x00cf, 0x00cc, 0x00d3, 0x00d4,
+    0xf8ff, 0x00d2, 0x00da, 0x00db, 0x00d9, 0x0131, 0x02c6, 0x02dc,
+    0x00af, 0x02d8, 0x02d9, 0x02da, 0x00b8, 0x02dd, 0x02db, 0x02c7,
+};
+
+static const unsigned int PTN_HTML_WINDOWS_1251_TABLE[128] = {
+    0x0402, 0x0403, 0x201a, 0x0453, 0x201e, 0x2026, 0x2020, 0x2021,
+    0x20ac, 0x2030, 0x0409, 0x2039, 0x040a, 0x040c, 0x040b, 0x040f,
+    0x0452, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+    0x0000, 0x2122, 0x0459, 0x203a, 0x045a, 0x045c, 0x045b, 0x045f,
+    0x00a0, 0x040e, 0x045e, 0x0408, 0x00a4, 0x0490, 0x00a6, 0x00a7,
+    0x0401, 0x00a9, 0x0404, 0x00ab, 0x00ac, 0x00ad, 0x00ae, 0x0407,
+    0x00b0, 0x00b1, 0x0406, 0x0456, 0x0491, 0x00b5, 0x00b6, 0x00b7,
+    0x0451, 0x2116, 0x0454, 0x00bb, 0x0458, 0x0405, 0x0455, 0x0457,
+    0x0410, 0x0411, 0x0412, 0x0413, 0x0414, 0x0415, 0x0416, 0x0417,
+    0x0418, 0x0419, 0x041a, 0x041b, 0x041c, 0x041d, 0x041e, 0x041f,
+    0x0420, 0x0421, 0x0422, 0x0423, 0x0424, 0x0425, 0x0426, 0x0427,
+    0x0428, 0x0429, 0x042a, 0x042b, 0x042c, 0x042d, 0x042e, 0x042f,
+    0x0430, 0x0431, 0x0432, 0x0433, 0x0434, 0x0435, 0x0436, 0x0437,
+    0x0438, 0x0439, 0x043a, 0x043b, 0x043c, 0x043d, 0x043e, 0x043f,
+    0x0440, 0x0441, 0x0442, 0x0443, 0x0444, 0x0445, 0x0446, 0x0447,
+    0x0448, 0x0449, 0x044a, 0x044b, 0x044c, 0x044d, 0x044e, 0x044f,
+};
+
+static const unsigned int *ptn_html_single_byte_table(PtnHtmlEncoding encoding) {
+    switch (encoding) {
+        case PTN_HTML_ENCODING_CP866: return PTN_HTML_CP866_TABLE;
+        case PTN_HTML_ENCODING_ISO_8859_15: return PTN_HTML_ISO_8859_15_TABLE;
+        case PTN_HTML_ENCODING_ISO_8859_5: return PTN_HTML_ISO_8859_5_TABLE;
+        case PTN_HTML_ENCODING_KOI8_R: return PTN_HTML_KOI8_R_TABLE;
+        case PTN_HTML_ENCODING_MACROMAN: return PTN_HTML_MACROMAN_TABLE;
+        case PTN_HTML_ENCODING_WINDOWS_1251: return PTN_HTML_WINDOWS_1251_TABLE;
+        default: return NULL;
+    }
+}
+
+static int ptn_html_single_byte_for_codepoint(
+    PtnHtmlEncoding encoding,
+    unsigned int codepoint,
+    unsigned char *out
+) {
+    if (codepoint <= 0x7f) {
+        *out = (unsigned char)codepoint;
+        return 1;
+    }
+    const unsigned int *table = ptn_html_single_byte_table(encoding);
+    if (table == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < 128; i++) {
+        if (table[i] != 0 && table[i] == codepoint) {
+            *out = (unsigned char)(0x80 + i);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static unsigned int ptn_html_single_byte_codepoint_for_byte(PtnHtmlEncoding encoding, unsigned char byte) {
+    if (byte <= 0x7f) {
+        return (unsigned int)byte;
+    }
+    const unsigned int *table = ptn_html_single_byte_table(encoding);
+    if (table != NULL && table[byte - 0x80] != 0) {
+        return table[byte - 0x80];
+    }
+    return (unsigned int)byte;
+}
+
+static int ptn_html_windows_1252_byte_for_codepoint(unsigned int codepoint, unsigned char *out) {
+    if ((codepoint <= 0x7f) || (codepoint >= 0xa0 && codepoint <= 0xff)) {
+        *out = (unsigned char)codepoint;
+        return 1;
+    }
+    switch (codepoint) {
+        case 0x20ac: *out = 0x80; return 1;
+        case 0x201a: *out = 0x82; return 1;
+        case 0x0192: *out = 0x83; return 1;
+        case 0x201e: *out = 0x84; return 1;
+        case 0x2026: *out = 0x85; return 1;
+        case 0x2020: *out = 0x86; return 1;
+        case 0x2021: *out = 0x87; return 1;
+        case 0x02c6: *out = 0x88; return 1;
+        case 0x2030: *out = 0x89; return 1;
+        case 0x0160: *out = 0x8a; return 1;
+        case 0x2039: *out = 0x8b; return 1;
+        case 0x0152: *out = 0x8c; return 1;
+        case 0x017d: *out = 0x8e; return 1;
+        case 0x2018: *out = 0x91; return 1;
+        case 0x2019: *out = 0x92; return 1;
+        case 0x201c: *out = 0x93; return 1;
+        case 0x201d: *out = 0x94; return 1;
+        case 0x2022: *out = 0x95; return 1;
+        case 0x2013: *out = 0x96; return 1;
+        case 0x2014: *out = 0x97; return 1;
+        case 0x02dc: *out = 0x98; return 1;
+        case 0x2122: *out = 0x99; return 1;
+        case 0x0161: *out = 0x9a; return 1;
+        case 0x203a: *out = 0x9b; return 1;
+        case 0x0153: *out = 0x9c; return 1;
+        case 0x017e: *out = 0x9e; return 1;
+        case 0x0178: *out = 0x9f; return 1;
+        default:
+            return 0;
+    }
+}
+
+static int ptn_html_encoding_append_codepoint(
+    PtnStringBuffer *output,
+    unsigned int codepoint,
+    PtnHtmlEncoding encoding
+) {
+    if (encoding == PTN_HTML_ENCODING_UTF8 ||
+        encoding == PTN_HTML_ENCODING_LEGACY_BYTE ||
+        encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
+        ptn_html_append_utf8_codepoint(output, codepoint);
+        return 1;
+    }
+    if (encoding == PTN_HTML_ENCODING_ISO_8859_1) {
+        if (codepoint > 0xff) {
+            return 0;
+        }
+        ptn_string_buffer_append_char(output, (char)(unsigned char)codepoint);
+        return 1;
+    }
+    if (encoding == PTN_HTML_ENCODING_WINDOWS_1252) {
+        unsigned char byte = 0;
+        if (!ptn_html_windows_1252_byte_for_codepoint(codepoint, &byte)) {
+            return 0;
+        }
+        ptn_string_buffer_append_char(output, (char)byte);
+        return 1;
+    }
+    if (ptn_html_single_byte_table(encoding) != NULL) {
+        unsigned char byte = 0;
+        if (!ptn_html_single_byte_for_codepoint(encoding, codepoint, &byte)) {
+            return 0;
+        }
+        ptn_string_buffer_append_char(output, (char)byte);
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_html_codepoint_representable(unsigned int codepoint, PtnHtmlEncoding encoding) {
+    PtnStringBuffer scratch;
+    ptn_string_buffer_init(&scratch);
+    int represented = ptn_html_encoding_append_codepoint(&scratch, codepoint, encoding);
+    free(scratch.data);
+    return represented;
+}
+
+static int ptn_html_decoded_entity_codepoint(const char *decoded, size_t decoded_len, unsigned int *codepoint) {
+    size_t sequence_len = 0;
+    return ptn_html_read_utf8(decoded, decoded_len, 0, codepoint, &sequence_len) &&
+           sequence_len == decoded_len;
+}
+
 static int ptn_html_decoded_entity_representable(const char *decoded, size_t decoded_len, PtnHtmlEncoding encoding) {
-    if (encoding != PTN_HTML_ENCODING_ISO_8859_1) {
+    if (encoding == PTN_HTML_ENCODING_UTF8 ||
+        encoding == PTN_HTML_ENCODING_LEGACY_BYTE ||
+        encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
         return 1;
     }
     unsigned int codepoint = 0;
-    if (!ptn_html_utf8_codepoint(decoded, decoded_len, &codepoint)) {
+    if (!ptn_html_decoded_entity_codepoint(decoded, decoded_len, &codepoint)) {
         return 0;
     }
-    return codepoint <= 0xff;
+    return ptn_html_codepoint_representable(codepoint, encoding);
 }
 
 static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -13048,10 +13468,14 @@ static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc
             unsigned int value = 0;
             size_t entity_len = 0;
             if (ptn_html_numeric_entity_value(string.data, string.len, i, &entity_len, &value) &&
-                ptn_html_codepoint_allowed(value, flags)) {
-                ptn_html_append_utf8_codepoint(&output, value);
-                i += entity_len - 1;
-                continue;
+                ptn_html_decode_codepoint_allowed(value, flags)) {
+                int quote_allowed = value != 34 || (flags & PTN_ENT_COMPAT) != 0;
+                int apostrophe_allowed = value != 39 || (flags & PTN_ENT_SINGLE_QUOTE) != 0;
+                if (quote_allowed && apostrophe_allowed &&
+                    ptn_html_encoding_append_codepoint(&output, value, encoding)) {
+                    i += entity_len - 1;
+                    continue;
+                }
             }
             const char *decoded = NULL;
             size_t decoded_len = 0;
@@ -13065,9 +13489,12 @@ static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc
                     &entity_len
                 ) &&
                 ptn_html_decoded_entity_representable(decoded, decoded_len, encoding)) {
-                ptn_string_buffer_append_len(&output, decoded, decoded_len);
-                i += entity_len - 1;
-                continue;
+                unsigned int codepoint = 0;
+                if (ptn_html_decoded_entity_codepoint(decoded, decoded_len, &codepoint) &&
+                    ptn_html_encoding_append_codepoint(&output, codepoint, encoding)) {
+                    i += entity_len - 1;
+                    continue;
+                }
             }
         }
         ptn_string_buffer_append_char(&output, string.data[i]);
@@ -13077,28 +13504,76 @@ static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc
     return ptn_owned_string_len(output.data, output.len);
 }
 
-static void ptn_html_translation_table_add(PtnValue table, const char *decoded, const char *entity) {
-    ptn_array_set_entry(table.as.array, ptn_array_string_key(decoded), ptn_string(entity));
+static int ptn_html_entity_allowed_for_doc(const char *entity, int64_t flags);
+
+static int ptn_html_encoded_key_for_decoded(
+    const char *decoded,
+    size_t decoded_len,
+    PtnHtmlEncoding encoding,
+    PtnStringBuffer *key
+) {
+    if (encoding == PTN_HTML_ENCODING_UTF8 || encoding == PTN_HTML_ENCODING_LEGACY_BYTE) {
+        ptn_string_buffer_append_len(key, decoded, decoded_len);
+        return 1;
+    }
+    unsigned int codepoint = 0;
+    if (!ptn_html_decoded_entity_codepoint(decoded, decoded_len, &codepoint)) {
+        return 0;
+    }
+    return ptn_html_encoding_append_codepoint(key, codepoint, encoding);
 }
 
-static void ptn_html_translation_table_add_special(PtnValue table, int64_t flags) {
+static void ptn_html_translation_table_add_encoded(
+    PtnValue table,
+    const char *decoded,
+    const char *entity,
+    PtnHtmlEncoding encoding
+) {
+    PtnStringBuffer key;
+    ptn_string_buffer_init(&key);
+    if (!ptn_html_encoded_key_for_decoded(decoded, strlen(decoded), encoding, &key)) {
+        free(key.data);
+        return;
+    }
+    ptn_array_set_entry(table.as.array, ptn_array_string_key_len(key.data, key.len), ptn_string(entity));
+    free(key.data);
+}
+
+static void ptn_html_translation_table_add_special(PtnValue table, int64_t flags, PtnHtmlEncoding encoding) {
     int64_t doc_type = flags & PTN_ENT_DOC_TYPE_MASK;
-    ptn_html_translation_table_add(table, "&", "&amp;");
-    ptn_html_translation_table_add(table, ">", "&gt;");
-    ptn_html_translation_table_add(table, "<", "&lt;");
+    ptn_html_translation_table_add_encoded(table, "&", "&amp;", encoding);
+    ptn_html_translation_table_add_encoded(table, ">", "&gt;", encoding);
+    ptn_html_translation_table_add_encoded(table, "<", "&lt;", encoding);
     if ((flags & PTN_ENT_COMPAT) != 0) {
-        ptn_html_translation_table_add(table, "\"", "&quot;");
+        ptn_html_translation_table_add_encoded(table, "\"", "&quot;", encoding);
     }
     if ((flags & PTN_ENT_SINGLE_QUOTE) != 0) {
-        ptn_html_translation_table_add(table, "'", doc_type == PTN_ENT_HTML401 ? "&#039;" : "&apos;");
+        ptn_html_translation_table_add_encoded(
+            table,
+            "'",
+            doc_type == PTN_ENT_HTML401 ? "&#039;" : "&apos;",
+            encoding
+        );
     }
 }
 
 static PtnValue ptn_internal_get_html_translation_table(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
-    int64_t table_kind = argc >= 1 ? ptn_value_to_integer(args[0]) : PTN_HTML_SPECIALCHARS;
-    int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_HTML_DEFAULT_FLAGS;
+    int64_t table_kind = argc >= 1
+        ? ptn_internal_expect_integer_arg(runtime, "get_html_translation_table", 1, "table", args[0], line)
+        : PTN_HTML_SPECIALCHARS;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "get_html_translation_table", 2, "flags", args[1], line)
+        : PTN_HTML_DEFAULT_FLAGS;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnHtmlEncoding encoding = ptn_html_optional_encoding(runtime, "get_html_translation_table", argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     PtnValue table = ptn_array_from_literal_entries(0, NULL);
     if (table_kind == PTN_HTML_ENTITIES && (flags & PTN_ENT_DOC_TYPE_MASK) != PTN_ENT_XML1) {
         size_t count = 0;
@@ -13110,30 +13585,61 @@ static PtnValue ptn_internal_get_html_translation_table(PtnRuntime *runtime, siz
             if ((flags & PTN_ENT_SINGLE_QUOTE) == 0 && strcmp(entities[i].decoded, "'") == 0) {
                 continue;
             }
-            ptn_array_set_entry(
-                table.as.array,
-                ptn_array_string_key(entities[i].decoded),
-                ptn_string(entities[i].entity)
-            );
+            if (!ptn_html_entity_allowed_for_doc(entities[i].entity, flags)) {
+                continue;
+            }
+            ptn_html_translation_table_add_encoded(table, entities[i].decoded, entities[i].entity, encoding);
         }
     } else {
-        ptn_html_translation_table_add_special(table, flags);
+        ptn_html_translation_table_add_special(table, flags, encoding);
     }
     return table;
 }
 
-static int ptn_html_entity_len_at(
+static int ptn_html_any_entity_len_at(
     const char *data,
     size_t len,
     size_t offset,
+    int64_t flags,
     size_t *matched_len
 ) {
-    unsigned int value = 0;
-    if (ptn_html_numeric_entity_value(data, len, offset, matched_len, &value) &&
-        ptn_html_codepoint_allowed(value, PTN_ENT_QUOTES | PTN_ENT_HTML5)) {
+    unsigned int numeric_value = 0;
+    if (ptn_html_numeric_entity_value(data, len, offset, matched_len, &numeric_value)) {
+        if (numeric_value > 0x10ffff) {
+            return 0;
+        }
+        if ((flags & PTN_ENT_DISALLOWED) == 0) {
+            return 1;
+        }
+        int64_t doc_type = flags & PTN_ENT_DOC_TYPE_MASK;
+        if (doc_type == PTN_ENT_HTML401) {
+            return 1;
+        }
+        if (doc_type == PTN_ENT_HTML5) {
+            if (numeric_value == 0 ||
+                (numeric_value < 0x20 &&
+                    numeric_value != 0x09 &&
+                    numeric_value != 0x0a &&
+                    numeric_value != 0x0c) ||
+                (numeric_value >= 0x7f && numeric_value <= 0x9f) ||
+                (numeric_value >= 0xfdd0 && numeric_value <= 0xfdef) ||
+                ((numeric_value & 0xfffe) == 0xfffe)) {
+                return 0;
+            }
+            return 1;
+        }
+        if (numeric_value == 0 ||
+            (numeric_value < 0x20 &&
+                numeric_value != 0x09 &&
+                numeric_value != 0x0a &&
+                numeric_value != 0x0d) ||
+            (numeric_value >= 0xd800 && numeric_value <= 0xdfff) ||
+            numeric_value == 0xfffe ||
+            numeric_value == 0xffff) {
+            return 0;
+        }
         return 1;
     }
-
     const char *decoded = NULL;
     size_t decoded_len = 0;
     return ptn_html_decode_named_entity(
@@ -13147,19 +13653,253 @@ static int ptn_html_entity_len_at(
     );
 }
 
-static void ptn_html_consume_optional_encoding(
-    PtnRuntime *runtime,
-    const char *function_name,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-) {
-    if (argc < 3 || ptn_value_deref(args[2]).type == PTN_NULL) {
-        return;
+static int ptn_html_entity_allowed_for_doc(const char *entity, int64_t flags) {
+    int64_t doc_type = flags & PTN_ENT_DOC_TYPE_MASK;
+    if (doc_type == PTN_ENT_XML1) {
+        return strcmp(entity, "&amp;") == 0 ||
+               strcmp(entity, "&lt;") == 0 ||
+               strcmp(entity, "&gt;") == 0 ||
+               strcmp(entity, "&quot;") == 0 ||
+               strcmp(entity, "&apos;") == 0;
     }
-    PtnStringOperand encoding =
-        ptn_internal_expect_string_arg(runtime, function_name, 3, "encoding", args[2], line);
-    ptn_string_operand_free(encoding);
+    if (doc_type == PTN_ENT_HTML401 && strcmp(entity, "&apos;") == 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static const char *ptn_html_entity_for_codepoint(unsigned int codepoint, int64_t flags) {
+    int64_t doc_type = flags & PTN_ENT_DOC_TYPE_MASK;
+    if (doc_type == PTN_ENT_HTML5) {
+        if (codepoint == '#') {
+            return "&num;";
+        }
+        if (codepoint == ';') {
+            return "&semi;";
+        }
+        if (codepoint == 0x09) {
+            return "&Tab;";
+        }
+        if (codepoint == 0x0a) {
+            return "&NewLine;";
+        }
+    }
+    size_t count = 0;
+    const PtnHtmlNamedEntity *entities = ptn_html_named_entities(&count);
+    for (size_t i = 0; i < count; i++) {
+        unsigned int entity_codepoint = 0;
+        if (!ptn_html_decoded_entity_codepoint(
+                entities[i].decoded,
+                strlen(entities[i].decoded),
+                &entity_codepoint
+            )) {
+            continue;
+        }
+        if (entity_codepoint != codepoint) {
+            continue;
+        }
+        if (!ptn_html_entity_allowed_for_doc(entities[i].entity, flags)) {
+            continue;
+        }
+        if ((flags & PTN_ENT_COMPAT) == 0 && strcmp(entities[i].entity, "&quot;") == 0) {
+            continue;
+        }
+        if ((flags & PTN_ENT_SINGLE_QUOTE) == 0 &&
+            (strcmp(entities[i].entity, "&#039;") == 0 || strcmp(entities[i].decoded, "'") == 0)) {
+            continue;
+        }
+        return entities[i].entity;
+    }
+    return NULL;
+}
+
+static void ptn_html_append_replacement_character(PtnStringBuffer *output) {
+    ptn_string_buffer_append(output, "\357\277\275");
+}
+
+static void ptn_html_append_escaped_codepoint(
+    PtnStringBuffer *output,
+    unsigned int codepoint,
+    const char *original,
+    size_t original_len,
+    int64_t flags,
+    PtnHtmlEscapeMode mode
+) {
+    switch (codepoint) {
+        case '&':
+            ptn_string_buffer_append(output, "&amp;");
+            return;
+        case '<':
+            ptn_string_buffer_append(output, "&lt;");
+            return;
+        case '>':
+            ptn_string_buffer_append(output, "&gt;");
+            return;
+        case '"':
+            if ((flags & PTN_ENT_COMPAT) != 0) {
+                ptn_string_buffer_append(output, "&quot;");
+            } else {
+                ptn_string_buffer_append_len(output, original, original_len);
+            }
+            return;
+        case '\'':
+            if ((flags & PTN_ENT_SINGLE_QUOTE) != 0) {
+                ptn_string_buffer_append(
+                    output,
+                    (flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_HTML401 ? "&#039;" : "&apos;"
+                );
+            } else {
+                ptn_string_buffer_append_len(output, original, original_len);
+            }
+            return;
+        default:
+            break;
+    }
+
+    if (mode == PTN_HTML_ESCAPE_ENTITIES) {
+        const char *entity = ptn_html_entity_for_codepoint(codepoint, flags);
+        if (entity != NULL) {
+            ptn_string_buffer_append(output, entity);
+            return;
+        }
+    }
+    ptn_string_buffer_append_len(output, original, original_len);
+}
+
+static int ptn_html_escape_utf8_string(
+    PtnStringBuffer *output,
+    PtnStringOperand string,
+    int64_t flags,
+    int double_encode,
+    PtnHtmlEscapeMode mode
+) {
+    for (size_t i = 0; i < string.len;) {
+        if (!double_encode && string.data[i] == '&') {
+            size_t entity_len = 0;
+            if (ptn_html_any_entity_len_at(string.data, string.len, i, flags, &entity_len)) {
+                ptn_string_buffer_append_len(output, string.data + i, entity_len);
+                i += entity_len;
+                continue;
+            }
+        }
+
+        unsigned int codepoint = 0;
+        size_t sequence_len = 0;
+        if (!ptn_html_read_utf8(string.data, string.len, i, &codepoint, &sequence_len)) {
+            size_t invalid_len = ptn_html_invalid_utf8_len(string.data, string.len, i);
+            if ((flags & PTN_ENT_IGNORE) != 0) {
+                i += invalid_len;
+                continue;
+            }
+            if ((flags & PTN_ENT_SUBSTITUTE) != 0) {
+                ptn_html_append_replacement_character(output);
+                i += invalid_len;
+                continue;
+            }
+            return 0;
+        }
+
+        if ((flags & PTN_ENT_DISALLOWED) != 0 && !ptn_html_codepoint_allowed(codepoint, flags)) {
+            ptn_html_append_replacement_character(output);
+            i += sequence_len;
+            continue;
+        }
+
+        ptn_html_append_escaped_codepoint(
+            output,
+            codepoint,
+            string.data + i,
+            sequence_len,
+            flags,
+            mode
+        );
+        i += sequence_len;
+    }
+    return 1;
+}
+
+static unsigned int ptn_html_windows_1252_codepoint_for_byte(unsigned char byte) {
+    switch (byte) {
+        case 0x80: return 0x20ac;
+        case 0x82: return 0x201a;
+        case 0x83: return 0x0192;
+        case 0x84: return 0x201e;
+        case 0x85: return 0x2026;
+        case 0x86: return 0x2020;
+        case 0x87: return 0x2021;
+        case 0x88: return 0x02c6;
+        case 0x89: return 0x2030;
+        case 0x8a: return 0x0160;
+        case 0x8b: return 0x2039;
+        case 0x8c: return 0x0152;
+        case 0x8e: return 0x017d;
+        case 0x91: return 0x2018;
+        case 0x92: return 0x2019;
+        case 0x93: return 0x201c;
+        case 0x94: return 0x201d;
+        case 0x95: return 0x2022;
+        case 0x96: return 0x2013;
+        case 0x97: return 0x2014;
+        case 0x98: return 0x02dc;
+        case 0x99: return 0x2122;
+        case 0x9a: return 0x0161;
+        case 0x9b: return 0x203a;
+        case 0x9c: return 0x0153;
+        case 0x9e: return 0x017e;
+        case 0x9f: return 0x0178;
+        default:
+            return (unsigned int)byte;
+    }
+}
+
+static int ptn_html_escape_byte_string(
+    PtnStringBuffer *output,
+    PtnStringOperand string,
+    int64_t flags,
+    int double_encode,
+    PtnHtmlEscapeMode mode,
+    PtnHtmlEncoding encoding
+) {
+    for (size_t i = 0; i < string.len; i++) {
+        if (!double_encode && string.data[i] == '&') {
+            size_t entity_len = 0;
+            if (ptn_html_any_entity_len_at(string.data, string.len, i, flags, &entity_len)) {
+                ptn_string_buffer_append_len(output, string.data + i, entity_len);
+                i += entity_len - 1;
+                continue;
+            }
+        }
+        unsigned char byte = (unsigned char)string.data[i];
+        unsigned int codepoint = encoding == PTN_HTML_ENCODING_WINDOWS_1252
+            ? ptn_html_windows_1252_codepoint_for_byte(byte)
+            : ptn_html_single_byte_codepoint_for_byte(encoding, byte);
+        char original[1] = { (char)byte };
+        if ((flags & PTN_ENT_DISALLOWED) != 0 && !ptn_html_codepoint_allowed(codepoint, flags)) {
+            ptn_html_append_replacement_character(output);
+            continue;
+        }
+        ptn_html_append_escaped_codepoint(output, codepoint, original, 1, flags, mode);
+    }
+    return 1;
+}
+
+static PtnValue ptn_html_escape_value(
+    PtnStringOperand string,
+    int64_t flags,
+    int double_encode,
+    PtnHtmlEscapeMode mode,
+    PtnHtmlEncoding encoding
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    int ok = encoding == PTN_HTML_ENCODING_UTF8
+        ? ptn_html_escape_utf8_string(&output, string, flags, double_encode, mode)
+        : ptn_html_escape_byte_string(&output, string, flags, double_encode, mode, encoding);
+    if (!ok) {
+        free(output.data);
+        return ptn_string("");
+    }
+    return ptn_owned_string_len(output.data, output.len);
 }
 
 static PtnValue ptn_internal_htmlspecialchars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -13167,56 +13907,25 @@ static PtnValue ptn_internal_htmlspecialchars(PtnRuntime *runtime, size_t argc, 
     int64_t flags = argc >= 2
         ? ptn_internal_expect_integer_arg(runtime, "htmlspecialchars", 2, "flags", args[1], line)
         : PTN_HTML_DEFAULT_FLAGS;
-    ptn_html_consume_optional_encoding(runtime, "htmlspecialchars", argc, args, line);
-    int double_encode = argc < 4 || ptn_is_truthy(args[3]);
-
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
-    for (size_t i = 0; i < string.len; i++) {
-        unsigned char byte = (unsigned char)string.data[i];
-        switch (byte) {
-            case '&': {
-                size_t entity_len = 0;
-                if (!double_encode && ptn_html_entity_len_at(string.data, string.len, i, &entity_len)) {
-                    ptn_string_buffer_append_len(&output, string.data + i, entity_len);
-                    i += entity_len - 1;
-                } else {
-                    ptn_string_buffer_append(&output, "&amp;");
-                }
-                break;
-            }
-            case '<':
-                ptn_string_buffer_append(&output, "&lt;");
-                break;
-            case '>':
-                ptn_string_buffer_append(&output, "&gt;");
-                break;
-            case '"':
-                if ((flags & PTN_ENT_COMPAT) != 0) {
-                    ptn_string_buffer_append(&output, "&quot;");
-                } else {
-                    ptn_string_buffer_append_char(&output, (char)byte);
-                }
-                break;
-            case '\'':
-                if ((flags & PTN_ENT_SINGLE_QUOTE) != 0) {
-                    if ((flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_HTML401) {
-                        ptn_string_buffer_append(&output, "&#039;");
-                    } else {
-                        ptn_string_buffer_append(&output, "&apos;");
-                    }
-                } else {
-                    ptn_string_buffer_append_char(&output, (char)byte);
-                }
-                break;
-            default:
-                ptn_string_buffer_append_char(&output, (char)byte);
-                break;
-        }
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
     }
-
+    PtnHtmlEncoding encoding = ptn_html_optional_encoding(runtime, "htmlspecialchars", argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    int double_encode = argc < 4 || ptn_is_truthy(args[3]);
+    PtnValue result = ptn_html_escape_value(
+        string,
+        flags,
+        double_encode,
+        PTN_HTML_ESCAPE_SPECIALCHARS,
+        encoding
+    );
     ptn_string_operand_free(string);
-    return ptn_owned_string_len(output.data, output.len);
+    return result;
 }
 
 static PtnValue ptn_internal_htmlentities(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -13224,78 +13933,38 @@ static PtnValue ptn_internal_htmlentities(PtnRuntime *runtime, size_t argc, cons
     int64_t flags = argc >= 2
         ? ptn_internal_expect_integer_arg(runtime, "htmlentities", 2, "flags", args[1], line)
         : PTN_HTML_DEFAULT_FLAGS;
-    ptn_html_consume_optional_encoding(runtime, "htmlentities", argc, args, line);
-    int double_encode = argc < 4 || ptn_is_truthy(args[3]);
-
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
-    for (size_t i = 0; i < string.len; i++) {
-        unsigned char byte = (unsigned char)string.data[i];
-        if (!double_encode && byte == '&') {
-            size_t entity_len = 0;
-            if (ptn_html_entity_len_at(string.data, string.len, i, &entity_len)) {
-                ptn_string_buffer_append_len(&output, string.data + i, entity_len);
-                i += entity_len - 1;
-                continue;
-            }
-        }
-        switch (byte) {
-            case '&':
-                ptn_string_buffer_append(&output, "&amp;");
-                break;
-            case '<':
-                ptn_string_buffer_append(&output, "&lt;");
-                break;
-            case '>':
-                ptn_string_buffer_append(&output, "&gt;");
-                break;
-            case '"':
-                if ((flags & PTN_ENT_COMPAT) != 0) {
-                    ptn_string_buffer_append(&output, "&quot;");
-                } else {
-                    ptn_string_buffer_append_char(&output, (char)byte);
-                }
-                break;
-            case '\'':
-                if ((flags & PTN_ENT_SINGLE_QUOTE) != 0) {
-                    if ((flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_HTML401) {
-                        ptn_string_buffer_append(&output, "&#039;");
-                    } else {
-                        ptn_string_buffer_append(&output, "&apos;");
-                    }
-                } else {
-                    ptn_string_buffer_append_char(&output, (char)byte);
-                }
-                break;
-            case 0xa0:
-                ptn_string_buffer_append(&output, "&nbsp;");
-                break;
-            case 0xa2:
-                ptn_string_buffer_append(&output, "&cent;");
-                break;
-            case 0xa3:
-                ptn_string_buffer_append(&output, "&pound;");
-                break;
-            case 0xa4:
-                ptn_string_buffer_append(&output, "&curren;");
-                break;
-            case 0xa5:
-                ptn_string_buffer_append(&output, "&yen;");
-                break;
-            case 0xc4:
-                ptn_string_buffer_append(&output, "&Auml;");
-                break;
-            case 0xe5:
-                ptn_string_buffer_append(&output, "&aring;");
-                break;
-            default:
-                ptn_string_buffer_append_char(&output, (char)byte);
-                break;
-        }
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
     }
-
+    PtnHtmlEncoding encoding = ptn_html_optional_encoding(runtime, "htmlentities", argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    if (encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
+        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_NOTICE)) {
+            fputc('\n', stdout);
+        }
+        ptn_emit_notice(
+            &runtime->diagnostics,
+            "htmlentities(): Only basic entities substitution is supported for multi-byte encodings other than UTF-8; functionality is equivalent to htmlspecialchars",
+            line
+        );
+    }
+    int double_encode = argc < 4 || ptn_is_truthy(args[3]);
+    PtnHtmlEscapeMode mode = encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE
+        ? PTN_HTML_ESCAPE_SPECIALCHARS
+        : PTN_HTML_ESCAPE_ENTITIES;
+    PtnValue result = ptn_html_escape_value(
+        string,
+        flags,
+        double_encode,
+        mode,
+        encoding
+    );
     ptn_string_operand_free(string);
-    return ptn_owned_string_len(output.data, output.len);
+    return result;
 }
 
 static PtnValue ptn_internal_htmlspecialchars_decode(
