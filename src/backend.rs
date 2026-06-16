@@ -2903,6 +2903,7 @@ fn emit_method_visibility_prototypes(out: &mut String) {
     out.push_str("static PTN_UNUSED PtnValue ptn_throw_method_visibility_error(PtnRuntime *runtime, const char *declaring_class, const char *method_name, int visibility, size_t line);\n");
     out.push_str("static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);\n");
     out.push_str("static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);\n");
+    out.push_str("static PTN_UNUSED int ptn_declared_protected_static_method_root_allows(const char *access_scope, const char *target_class, const char *method_name);\n");
     out.push_str(
         "static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);\n",
     );
@@ -3592,20 +3593,20 @@ fn emit_class_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         for constant in class_constant_lookup_chain(class, classes) {
-            out.push_str("        PtnValue ptn_constant_");
-            out.push_str(&c_identifier(&constant.name));
-            out.push_str(" = ptn_runtime_read_class_constant(runtime, class_name, \"");
+            out.push_str("        {\n");
+            out.push_str("            PtnValue ptn_constant_value = ptn_runtime_read_class_constant(runtime, class_name, \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\", 0);\n");
-            out.push_str("        if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
-            out.push_str("            ptn_value_destroy(&result);\n");
-            out.push_str("            return ptn_null();\n");
-            out.push_str("        }\n");
-            out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str("            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
+            out.push_str("                ptn_value_destroy(&result);\n");
+            out.push_str("                return ptn_null();\n");
+            out.push_str("            }\n");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
+            );
             out.push_str(&c_string(&constant.name));
-            out.push_str("\"), ptn_constant_");
-            out.push_str(&c_identifier(&constant.name));
-            out.push_str(");\n");
+            out.push_str("\"), ptn_constant_value);\n");
+            out.push_str("        }\n");
         }
         out.push_str("        return result;\n");
         out.push_str("    }\n");
@@ -18652,7 +18653,15 @@ impl ValueEmitter {
             out.push_str(&c_string(&visibility_check.target_class_name));
             out.push_str("\", \"");
             out.push_str(&c_string(&visibility_check.method_name));
-            out.push_str("\", runtime.current_class_name)) {\n");
+            out.push_str("\", runtime.current_class_name)");
+            if visibility_check.visibility == PropertyVisibility::Protected {
+                out.push_str(" && !ptn_declared_protected_static_method_root_allows(runtime.current_class_name, \"");
+                out.push_str(&c_string(&visibility_check.target_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&visibility_check.method_name));
+                out.push_str("\")");
+            }
+            out.push_str(") {\n");
             out.push_str("        ");
             out.push_str(result_temp);
             out.push_str(" = ptn_throw_method_visibility_error(&runtime, \"");
