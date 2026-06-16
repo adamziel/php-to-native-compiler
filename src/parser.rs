@@ -4338,6 +4338,12 @@ impl Parser<'_> {
                         Some(span),
                     ));
                 }
+                TokenKind::ObjectOperator if bracket_depth == 1 && paren_depth > 0 => {
+                    return Err(Diagnostic::new(
+                        "Dynamic class names are not allowed in compile-time class constant references",
+                        Some(span),
+                    ));
+                }
                 TokenKind::Identifier(name)
                     if bracket_depth == 1
                         && paren_depth == 1

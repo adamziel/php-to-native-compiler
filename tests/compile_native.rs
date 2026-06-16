@@ -4765,6 +4765,13 @@ fn parser_validates_attribute_argument_surface() {
         "Constant expression contains invalid operations"
     );
 
+    let dynamic_class_constant = parser::parse("<?php #[A(a->b::c)] class C {}").unwrap_err();
+    assert_eq!(dynamic_class_constant.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        dynamic_class_constant.message,
+        "Dynamic class names are not allowed in compile-time class constant references"
+    );
+
     let unpack_argument = parser::parse("<?php #[A(...[1])] class C {}").unwrap_err();
     assert_eq!(unpack_argument.kind, DiagnosticKind::Fatal);
     assert_eq!(
