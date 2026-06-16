@@ -4222,6 +4222,7 @@ static int ptn_json_decode_string(
 }
 
 static PtnValue ptn_internal_json_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
     PtnStringOperand json = ptn_value_to_string_operand(args[0]);
     int64_t flags = argc >= 4 ? ptn_value_to_integer(args[3]) : 0;
     int assoc = (flags & 1) != 0;
@@ -4254,6 +4255,7 @@ static PtnValue ptn_internal_json_decode(PtnRuntime *runtime, size_t argc, const
 }
 
 static PtnValue ptn_internal_json_validate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
     PtnStringOperand json = ptn_value_to_string_operand(args[0]);
     int64_t requested_depth = argc >= 2 ? ptn_value_to_integer(args[1]) : 512;
     if (requested_depth <= 0) {
