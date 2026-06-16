@@ -1,9 +1,11 @@
-# refreshed_at_utc=2026-06-15T22:24:10Z
-# source_commit=52604f155feb
+# refreshed_at_utc=2026-06-16T14:49:15Z
+# source_commit=4cc1a06c47bb
 # php_src_revision=8c63ec400ce8e07c57a8d9499317b96a8beafb8b
-# window_start_utc=2026-06-08T23:00Z
+# window_start_utc=2026-06-09T15:00Z
 # window_hours=168
 feature	ported_tests	passed_tests	upstream_tests	completed_hour_utc	newly_passed_tests	evidence
+ptn-c8fa parser/runtime row pack	20	20	20	2026-06-16T14:00Z	20	.runtime/phpt-progress/manifest-20260616T142645Z.txt
+ptn-gmd6 object/class metadata row pack	64	63	64	2026-06-16T14:00Z	8	tools/phpt-ptn-zchp-object-class-metadata-row-pack.txt+tools/phpt-ptn-xcmz-property-object-metadata-row-pack.txt
 ptn-snt7 object/class metadata row pack	8	8	8	2026-06-15T20:00Z	8	.runtime/merge-ptn-snt7-object-class-metadata/summary-20260615T203520Z.txt
 ptn-456b ext-standard strings row pack	27	27	47	2026-06-15T20:00Z	27	.runtime/merge-ptn-456b-ext-standard-strings/summary-20260615T202910Z.txt
 ptn-y4f1 COW/reference sort/object walk row pack	72	59	72	2026-06-15T20:00Z	7	.runtime/merge-ptn-y4f1-array-internal/summary-20260615T201659Z.txt
