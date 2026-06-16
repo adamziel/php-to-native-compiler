@@ -2241,6 +2241,24 @@ static PTN_UNUSED char *ptn_class_constant_key(const char *class_name, const cha
     return key;
 }
 
+static PTN_UNUSED char *ptn_class_constant_deprecation_key(
+    const char *class_name,
+    const char *constant
+) {
+    const char *prefix = "@deprecated-class-constant:";
+    size_t prefix_len = strlen(prefix);
+    char *constant_key = ptn_class_constant_key(class_name, constant);
+    size_t constant_key_len = strlen(constant_key);
+    char *key = malloc(prefix_len + constant_key_len + 1);
+    if (key == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(key, prefix, prefix_len);
+    memcpy(key + prefix_len, constant_key, constant_key_len + 1);
+    free(constant_key);
+    return key;
+}
+
 static PTN_UNUSED char ptn_ascii_lower_char(char ch) {
     return (ch >= 'A' && ch <= 'Z') ? (char)(ch - 'A' + 'a') : ch;
 }
@@ -2423,6 +2441,93 @@ static PTN_UNUSED void ptn_runtime_define_class_constant(
     free(key);
 }
 
+static PTN_UNUSED void ptn_runtime_define_class_constant_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *message,
+    const char *since
+) {
+    char *subject = ptn_class_constant_key(class_name, constant);
+    const char *prefix = "Constant ";
+    const char *middle = " is deprecated";
+    const char *since_prefix = " since ";
+    const char *message_prefix = ", ";
+    size_t warning_len = strlen(prefix) + strlen(subject) + strlen(middle);
+    if (since != NULL && since[0] != '\0') {
+        warning_len += strlen(since_prefix) + strlen(since);
+    }
+    if (message != NULL && message[0] != '\0') {
+        warning_len += strlen(message_prefix) + strlen(message);
+    }
+    char *warning = malloc(warning_len + 1);
+    if (warning == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    warning[0] = '\0';
+    strcat(warning, prefix);
+    strcat(warning, subject);
+    strcat(warning, middle);
+    if (since != NULL && since[0] != '\0') {
+        strcat(warning, since_prefix);
+        strcat(warning, since);
+    }
+    if (message != NULL && message[0] != '\0') {
+        strcat(warning, message_prefix);
+        strcat(warning, message);
+    }
+
+    char *key = ptn_class_constant_deprecation_key(class_name, constant);
+    PtnValue warning_value = ptn_owned_string(warning);
+    ptn_symbols_set(ptn_runtime_class_constant_table(runtime), key, warning_value);
+    ptn_value_destroy(&warning_value);
+    free(key);
+    free(subject);
+}
+
+static PTN_UNUSED void ptn_runtime_define_class_constant_deprecation_value(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    PtnValue message_value,
+    const char *since
+) {
+    char *message = ptn_value_to_string(message_value);
+    ptn_runtime_define_class_constant_deprecation(runtime, class_name, constant, message, since);
+    free(message);
+}
+
+static PTN_UNUSED void ptn_runtime_emit_class_constant_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    size_t line
+) {
+    if (line == 0) {
+        return;
+    }
+    char *key = ptn_class_constant_deprecation_key(class_name, constant);
+    PtnValue warning_value;
+    int found = ptn_symbols_get(
+        ptn_runtime_class_constant_table(runtime),
+        key,
+        &warning_value
+    );
+    free(key);
+    if (!found) {
+        return;
+    }
+    warning_value = ptn_value_deref(warning_value);
+    if (warning_value.type != PTN_STRING) {
+        return;
+    }
+    ptn_emit_deprecation(
+        &runtime->diagnostics,
+        (const char *)warning_value.as.string.data,
+        line
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     PtnRuntime *runtime,
     const char *class_name,
@@ -2449,13 +2554,14 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
     const char *constant,
     size_t line
 ) {
-    (void)line;
-    const char *lookup_class_name = class_name;
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    const char *lookup_class_name = resolved_class_name;
     while (lookup_class_name != NULL) {
         char *key = ptn_class_constant_key(lookup_class_name, constant);
         PtnValue value;
         if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
             free(key);
+            ptn_runtime_emit_class_constant_deprecation(runtime, lookup_class_name, constant, line);
             return ptn_value_clone_deref(value);
         }
         if (runtime->class_constant_initializer != NULL &&
@@ -2466,6 +2572,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
             }
             if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
                 free(key);
+                ptn_runtime_emit_class_constant_deprecation(runtime, lookup_class_name, constant, line);
                 return ptn_value_clone_deref(value);
             }
         }
@@ -2473,7 +2580,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
         lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
     }
     PtnValue builtin_value;
-    if (ptn_builtin_class_constant_value(class_name, constant, &builtin_value)) {
+    if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
         return builtin_value;
     }
     return ptn_runtime_undefined_class_constant(runtime, class_name, constant);

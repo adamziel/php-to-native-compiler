@@ -2035,6 +2035,33 @@ fn emit_class_constant_initializer_helper(
             out.push_str(&value_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "            ", &value_temp);
+            if constant.deprecated_message.is_some() || constant.deprecated_since.is_some() {
+                if let Some(message_expr) = &constant.deprecated_message_expr {
+                    let message_temp = values.emit_const_materialized_value(out, message_expr);
+                    out.push_str("            ptn_runtime_define_class_constant_deprecation_value(&runtime, \"");
+                    out.push_str(&c_string(&class.name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&constant.name));
+                    out.push_str("\", ");
+                    out.push_str(&message_temp);
+                    out.push_str(", ");
+                    out.push_str(&c_optional_string(constant.deprecated_since.as_deref()));
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "            ", &message_temp);
+                } else {
+                    out.push_str(
+                        "            ptn_runtime_define_class_constant_deprecation(&runtime, \"",
+                    );
+                    out.push_str(&c_string(&class.name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&constant.name));
+                    out.push_str("\", ");
+                    out.push_str(&c_optional_string(constant.deprecated_message.as_deref()));
+                    out.push_str(", ");
+                    out.push_str(&c_optional_string(constant.deprecated_since.as_deref()));
+                    out.push_str(");\n");
+                }
+            }
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }

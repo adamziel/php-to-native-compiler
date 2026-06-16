@@ -142,6 +142,7 @@ pub enum PropertyTypeKind {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub attributes: AttributeMetadata,
     pub value: Expr,
     pub span: SourceSpan,
 }
@@ -207,12 +208,13 @@ pub struct AnonymousFunction {
     pub span: SourceSpan,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct AttributeMetadata {
     pub has_override: bool,
     pub has_attribute: bool,
     pub has_allow_dynamic_properties: bool,
     pub deprecated_message: Option<String>,
+    pub deprecated_message_expr: Option<Box<Expr>>,
     pub deprecated_since: Option<String>,
     pub no_discard_message: Option<String>,
 }

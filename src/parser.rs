@@ -1626,7 +1626,7 @@ impl Parser<'_> {
                 ));
             }
             return Ok(ParsedClassMember::Constants(
-                self.parse_class_constant_declarations(modifiers.visibility)?,
+                self.parse_class_constant_declarations(modifiers.visibility, attributes)?,
             ));
         }
         if class_is_interface && matches!(self.peek().kind, TokenKind::Variable(_)) {
@@ -1916,12 +1916,14 @@ impl Parser<'_> {
     fn parse_class_constant_declarations(
         &mut self,
         visibility: PropertyVisibility,
+        attributes: ParsedAttributes,
     ) -> Result<Vec<ClassConstantDecl>> {
         self.expect_const()?;
-        let mut constants = vec![self.parse_class_constant_declaration(visibility)?];
+        let mut constants =
+            vec![self.parse_class_constant_declaration(visibility, attributes.clone())?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
-            constants.push(self.parse_class_constant_declaration(visibility)?);
+            constants.push(self.parse_class_constant_declaration(visibility, attributes.clone())?);
         }
         self.expect_const_statement_terminator()?;
         Ok(constants)
@@ -1930,6 +1932,7 @@ impl Parser<'_> {
     fn parse_class_constant_declaration(
         &mut self,
         visibility: PropertyVisibility,
+        attributes: ParsedAttributes,
     ) -> Result<ClassConstantDecl> {
         let looks_like_typed_constant = (self.peek_is_type_hint()
             || matches!(self.peek().kind, TokenKind::Identifier(_)))
@@ -1958,6 +1961,7 @@ impl Parser<'_> {
         Ok(ClassConstantDecl {
             name,
             visibility,
+            attributes,
             value,
             span: token.span,
         })
@@ -4296,67 +4300,94 @@ impl Parser<'_> {
 
     fn parse_attribute_group(&mut self) -> Result<ParsedAttributes> {
         let start = self.advance().span;
-        let mut bracket_depth = 1usize;
-        let mut paren_depth = 0usize;
-        let mut name_segments = Vec::new();
-        let mut arguments = ParsedAttributeArguments::default();
-        let mut pending_argument_name = None;
-        let mut collecting_name = true;
         let mut attributes = ParsedAttributes::default();
-        while bracket_depth > 0 {
+        loop {
+            if matches!(self.peek().kind, TokenKind::Eof) {
+                return Err(Diagnostic::new("unterminated attribute", Some(start)));
+            }
+            let name = self.parse_name("expected attribute name")?;
+            let modeled = is_modeled_builtin_attribute_name(&name.name);
+            let arguments = if matches!(self.peek().kind, TokenKind::LeftParen) {
+                if modeled {
+                    self.parse_attribute_arguments()?
+                } else {
+                    self.skip_attribute_arguments(start)?;
+                    ParsedAttributeArguments::default()
+                }
+            } else {
+                ParsedAttributeArguments::default()
+            };
+            apply_parsed_attribute(&mut attributes, &name.name, &arguments);
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RightBracket) {
+                    self.advance();
+                    break;
+                }
+                continue;
+            }
+            self.expect_right_bracket()?;
+            break;
+        }
+        Ok(attributes)
+    }
+
+    fn skip_attribute_arguments(&mut self, start: SourceSpan) -> Result<()> {
+        self.expect_left_paren()?;
+        let mut paren_depth = 1usize;
+        let mut bracket_depth = 0usize;
+        let mut brace_depth = 0usize;
+        while paren_depth > 0 {
             let token = self.advance().clone();
             match token.kind {
-                TokenKind::Identifier(name)
-                    if bracket_depth == 1 && paren_depth == 0 && collecting_name =>
-                {
-                    name_segments.push(name);
-                }
-                TokenKind::Backslash
-                    if bracket_depth == 1 && paren_depth == 0 && collecting_name => {}
-                TokenKind::LeftParen if bracket_depth == 1 => {
-                    collecting_name = false;
-                    paren_depth += 1;
-                }
-                TokenKind::Identifier(name)
-                    if bracket_depth == 1
-                        && paren_depth == 1
-                        && matches!(self.peek().kind, TokenKind::Colon) =>
-                {
-                    pending_argument_name = Some(name);
-                }
-                TokenKind::String(value) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record(pending_argument_name.take(), value);
-                }
-                TokenKind::RightParen if bracket_depth == 1 && paren_depth > 0 => {
-                    paren_depth -= 1;
-                    if paren_depth == 0 {
-                        pending_argument_name = None;
-                    }
-                }
-                TokenKind::Comma if bracket_depth == 1 && paren_depth == 1 => {
-                    pending_argument_name = None;
-                }
-                TokenKind::Comma if bracket_depth == 1 && paren_depth == 0 => {
-                    apply_parsed_attribute(&mut attributes, &name_segments, &arguments);
-                    name_segments.clear();
-                    arguments = ParsedAttributeArguments::default();
-                    pending_argument_name = None;
-                    collecting_name = true;
-                }
+                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::RightParen => paren_depth -= 1,
                 TokenKind::LeftBracket => bracket_depth += 1,
-                TokenKind::RightBracket => {
-                    if bracket_depth == 1 && paren_depth == 0 {
-                        apply_parsed_attribute(&mut attributes, &name_segments, &arguments);
-                    }
-                    bracket_depth -= 1;
-                }
+                TokenKind::RightBracket if bracket_depth > 0 => bracket_depth -= 1,
+                TokenKind::LeftBrace => brace_depth += 1,
+                TokenKind::RightBrace if brace_depth > 0 => brace_depth -= 1,
                 TokenKind::Eof => {
                     return Err(Diagnostic::new("unterminated attribute", Some(start)));
                 }
                 _ => {}
             }
         }
-        Ok(attributes)
+        Ok(())
+    }
+
+    fn parse_attribute_arguments(&mut self) -> Result<ParsedAttributeArguments> {
+        self.expect_left_paren()?;
+        let mut arguments = ParsedAttributeArguments::default();
+        if matches!(self.peek().kind, TokenKind::RightParen) {
+            self.advance();
+            return Ok(arguments);
+        }
+        loop {
+            let name = if let TokenKind::Identifier(name) = &self.peek().kind {
+                if matches!(self.peek_next().kind, TokenKind::Colon) {
+                    let name = name.clone();
+                    self.advance();
+                    self.expect_colon()?;
+                    Some(name)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let value = self.parse_expr()?;
+            arguments.record(name, value);
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                if matches!(self.peek().kind, TokenKind::RightParen) {
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
+        self.expect_right_paren()?;
+        Ok(arguments)
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -7968,41 +7999,54 @@ fn escape_token_text(value: &str) -> String {
 
 #[derive(Default)]
 struct ParsedAttributeArguments {
-    positional: Vec<String>,
-    message: Option<String>,
+    positional: Vec<Expr>,
+    message: Option<Expr>,
     since: Option<String>,
 }
 
 impl ParsedAttributeArguments {
-    fn record(&mut self, name: Option<String>, value: String) {
+    fn record(&mut self, name: Option<String>, value: Expr) {
         match name.as_deref() {
             Some(name) if name.eq_ignore_ascii_case("message") => {
                 self.message = Some(value);
             }
             Some(name) if name.eq_ignore_ascii_case("since") => {
-                self.since = Some(value);
+                self.since = string_literal_attribute_value(&value);
             }
             Some(_) => {}
             None => self.positional.push(value),
         }
     }
 
-    fn message(&self) -> Option<String> {
+    fn message_expr(&self) -> Option<Expr> {
         self.message
             .clone()
             .or_else(|| self.positional.first().cloned())
     }
+
+    fn message(&self) -> Option<String> {
+        self.message_expr()
+            .as_ref()
+            .and_then(string_literal_attribute_value)
+    }
+}
+
+fn is_modeled_builtin_attribute_name(name: &str) -> bool {
+    !name.contains('\\')
+        && matches!(
+            name.to_ascii_lowercase().as_str(),
+            "override" | "attribute" | "allowdynamicproperties" | "deprecated" | "nodiscard"
+        )
 }
 
 fn apply_parsed_attribute(
     attributes: &mut AttributeMetadata,
-    name_segments: &[String],
+    name: &str,
     arguments: &ParsedAttributeArguments,
 ) {
-    if name_segments.len() != 1 {
+    if name.contains('\\') {
         return;
     }
-    let name = &name_segments[0];
     if name.eq_ignore_ascii_case("Override") {
         attributes.has_override = true;
     } else if name.eq_ignore_ascii_case("Attribute") {
@@ -8011,9 +8055,17 @@ fn apply_parsed_attribute(
         attributes.has_allow_dynamic_properties = true;
     } else if name.eq_ignore_ascii_case("Deprecated") {
         attributes.deprecated_message = Some(arguments.message().unwrap_or_default());
+        attributes.deprecated_message_expr = arguments.message_expr().map(Box::new);
         attributes.deprecated_since = arguments.since.clone();
     } else if name.eq_ignore_ascii_case("NoDiscard") {
         attributes.no_discard_message = Some(arguments.message().unwrap_or_default());
+    }
+}
+
+fn string_literal_attribute_value(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::String(value, _) => Some(value.clone()),
+        _ => None,
     }
 }
 
@@ -8023,6 +8075,7 @@ fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeM
     attributes.has_allow_dynamic_properties |= group.has_allow_dynamic_properties;
     if group.deprecated_message.is_some() {
         attributes.deprecated_message = group.deprecated_message;
+        attributes.deprecated_message_expr = group.deprecated_message_expr;
         attributes.deprecated_since = group.deprecated_since;
     }
     if group.no_discard_message.is_some() {

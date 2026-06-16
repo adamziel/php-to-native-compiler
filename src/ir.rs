@@ -131,6 +131,10 @@ pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub value: ValueExpr,
+    pub deprecated_message: Option<String>,
+    pub deprecated_message_expr: Option<ValueExpr>,
+    pub deprecated_since: Option<String>,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1078,6 +1082,14 @@ impl<'a> LoweringContext<'a> {
                 name: constant.name.clone(),
                 visibility: lower_property_visibility(constant.visibility),
                 value: self.lower_expr(&constant.value),
+                deprecated_message: constant.attributes.deprecated_message.clone(),
+                deprecated_message_expr: constant
+                    .attributes
+                    .deprecated_message_expr
+                    .as_ref()
+                    .map(|expr| self.lower_expr(expr)),
+                deprecated_since: constant.attributes.deprecated_since.clone(),
+                line: constant.span.line,
             })
             .collect();
         let methods = class
