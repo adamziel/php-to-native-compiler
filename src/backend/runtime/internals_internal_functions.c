@@ -9716,18 +9716,59 @@ static PtnValue ptn_internal_levenshtein(PtnRuntime *runtime, size_t argc, const
     return ptn_int(result);
 }
 
-static void ptn_quoted_printable_encode_append(
+static void ptn_quoted_printable_encode_append_soft_break(PtnStringBuffer *output) {
+    ptn_string_buffer_append(output, "=\r\n");
+}
+
+static int ptn_quoted_printable_encode_should_escape(unsigned char byte, unsigned char next) {
+    return byte < 32 || byte == 127 || (byte & 0x80) != 0 || byte == '=' || (byte == ' ' && next == '\r');
+}
+
+static int ptn_quoted_printable_encode_should_break_after_escape(unsigned char byte, size_t line_len) {
+    if (byte <= 0x7f) {
+        return line_len > 75;
+    }
+    if (byte <= 0xdf) {
+        return line_len + 3 > 75;
+    }
+    if (byte <= 0xef) {
+        return line_len + 6 > 75;
+    }
+    if (byte <= 0xf4) {
+        return line_len + 9 > 75;
+    }
+    return 0;
+}
+
+static void ptn_quoted_printable_encode_append_escape(
     PtnStringBuffer *output,
-    const char *encoded,
-    size_t encoded_len,
+    unsigned char byte,
     size_t *line_len
 ) {
-    if (*line_len > 0 && *line_len + encoded_len > 75) {
-        ptn_string_buffer_append(output, "=\r\n");
-        *line_len = 0;
+    static const char hex[] = "0123456789ABCDEF";
+    char encoded[3];
+    *line_len += 3;
+    if (ptn_quoted_printable_encode_should_break_after_escape(byte, *line_len)) {
+        ptn_quoted_printable_encode_append_soft_break(output);
+        *line_len = 3;
     }
-    ptn_string_buffer_append_len(output, encoded, encoded_len);
-    *line_len += encoded_len;
+    encoded[0] = '=';
+    encoded[1] = hex[(byte >> 4) & 0x0f];
+    encoded[2] = hex[byte & 0x0f];
+    ptn_string_buffer_append_len(output, encoded, sizeof(encoded));
+}
+
+static void ptn_quoted_printable_encode_append_literal(
+    PtnStringBuffer *output,
+    unsigned char byte,
+    size_t *line_len
+) {
+    (*line_len)++;
+    if (*line_len > 75) {
+        ptn_quoted_printable_encode_append_soft_break(output);
+        *line_len = 1;
+    }
+    ptn_string_buffer_append_char(output, (char)byte);
 }
 
 static char *ptn_url_decode_component(const char *input, size_t len, size_t *output_len_out) {
@@ -9925,38 +9966,22 @@ static PtnValue ptn_internal_quoted_printable_encode(PtnRuntime *runtime, size_t
     (void)argc;
     PtnStringOperand string =
         ptn_internal_expect_string_arg(runtime, "quoted_printable_encode", 1, "string", args[0], line);
-    static const char hex[] = "0123456789ABCDEF";
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     size_t line_len = 0;
     for (size_t i = 0; i < string.len; i++) {
         unsigned char byte = (unsigned char)string.data[i];
-        if (byte == '\r') {
-            if (i + 1 < string.len && string.data[i + 1] == '\n') {
-                ptn_string_buffer_append(&output, "\r\n");
-                i++;
-            } else {
-                ptn_string_buffer_append_char(&output, '\r');
-            }
+        if (byte == '\r' && i + 1 < string.len && string.data[i + 1] == '\n') {
+            ptn_string_buffer_append(&output, "\r\n");
+            i++;
             line_len = 0;
             continue;
         }
-        if (byte == '\n') {
-            ptn_string_buffer_append_char(&output, '\n');
-            line_len = 0;
-            continue;
-        }
-
-        int at_line_end = i + 1 == string.len || string.data[i + 1] == '\r' || string.data[i + 1] == '\n';
-        char encoded[3];
-        if ((byte >= 33 && byte <= 60) || (byte >= 62 && byte <= 126) || ((byte == ' ' || byte == '\t') && !at_line_end)) {
-            encoded[0] = (char)byte;
-            ptn_quoted_printable_encode_append(&output, encoded, 1, &line_len);
+        unsigned char next = i + 1 < string.len ? (unsigned char)string.data[i + 1] : '\0';
+        if (ptn_quoted_printable_encode_should_escape(byte, next)) {
+            ptn_quoted_printable_encode_append_escape(&output, byte, &line_len);
         } else {
-            encoded[0] = '=';
-            encoded[1] = hex[(byte >> 4) & 0x0f];
-            encoded[2] = hex[byte & 0x0f];
-            ptn_quoted_printable_encode_append(&output, encoded, 3, &line_len);
+            ptn_quoted_printable_encode_append_literal(&output, byte, &line_len);
         }
     }
     ptn_string_operand_free(string);
