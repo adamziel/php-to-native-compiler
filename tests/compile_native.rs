@@ -37932,6 +37932,68 @@ echo $a->func2(), \"\\n\";
 }
 
 #[test]
+fn compile_overloaded_property_reference_assign_ops_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-property-reference-assign-ops");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-property-reference-assign-ops.php");
+    let output = root.join("overloaded-property-reference-assign-ops-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    protected $a = 0;
+    protected $b = 0;
+    protected $c = 0;
+
+    public function &__get($name) {
+        echo \"get($name)\\n\";
+        return $this->$name;
+    }
+
+    public function __set($name, $value) {
+        echo \"set($name, $value)\\n\";
+    }
+}
+
+$test = new Test();
+var_dump($test->a += 1);
+var_dump($test->b++);
+var_dump(++$test->c);
+var_dump($test);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "get(a)\n",
+            "set(a, 1)\n",
+            "int(1)\n",
+            "get(b)\n",
+            "set(b, 1)\n",
+            "int(0)\n",
+            "get(c)\n",
+            "set(c, 1)\n",
+            "int(1)\n",
+            "object(Test)#1 (3) {\n",
+            "  [\"a\":protected]=>\n",
+            "  int(0)\n",
+            "  [\"b\":protected]=>\n",
+            "  int(0)\n",
+            "  [\"c\":protected]=>\n",
+            "  int(0)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stream_resources_to_native_binary() {
     let root = temp_dir("ptn-native-stream-resources");
     fs::create_dir_all(&root).unwrap();

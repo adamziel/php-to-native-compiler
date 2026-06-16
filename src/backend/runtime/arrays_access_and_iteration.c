@@ -1009,6 +1009,15 @@ static PTN_UNUSED PtnObjectPropertyMetadata *ptn_object_blocked_magic_metadata(
     return metadata;
 }
 
+static PTN_UNUSED int ptn_blocked_property_write_should_call_magic_set(
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (metadata == NULL) {
+        return 0;
+    }
+    return metadata->is_unset || metadata->set_visibility == metadata->read_visibility;
+}
+
 static PTN_UNUSED const char *ptn_property_value_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -2500,7 +2509,10 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
-    if (blocked_metadata != NULL && blocked_metadata->is_unset) {
+    if (
+        blocked_metadata != NULL &&
+        ptn_blocked_property_write_should_call_magic_set(blocked_metadata)
+    ) {
         if (ptn_magic_property_set(runtime, receiver, property, value, line)) {
             return ptn_value_clone_deref(value);
         }
