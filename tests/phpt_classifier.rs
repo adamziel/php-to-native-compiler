@@ -1055,12 +1055,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires ReflectionFunction closure binding metadata",
         ),
         (
-            "non-public static property visibility",
-            "--TEST--\nproperty visibility\n--FILE--\n<?php\nclass Box { protected static $value = 1; }\n--EXPECT--\n",
-            "unsupported-property-visibility-metadata\t",
-            "requires non-public static property visibility metadata",
-        ),
-        (
             "readonly static property",
             "--TEST--\nreadonly static\n--FILE--\n<?php\nclass Bag { public static readonly int $value; }\n--EXPECT--\n",
             "unsupported-readonly-property-metadata\t",
@@ -1172,14 +1166,17 @@ fn phpt_classifier_keeps_dynamic_member_dispatch_rows_runnable() {
 
 #[test]
 fn phpt_classifier_keeps_modeled_instance_property_metadata_runnable() {
-    let classification = classify(
+    let cases = [
         "--TEST--\nprivate property\n--FILE--\n<?php\nclass Box { private $value = 1; public function value() { return $this->value; } }\necho (new Box())->value();\n--EXPECT--\n1\n",
-    );
+        "--TEST--\nnon-public static property\n--FILE--\n<?php\nclass Box { protected static $value = 1; public static function value() { return self::$value; } }\necho Box::value();\n--EXPECT--\n1\n",
+    ];
 
-    assert_eq!(
-        classification,
-        "runnable\tselected for PTN semantic measurement\n"
-    );
+    for source in cases {
+        assert_eq!(
+            classify(source),
+            "runnable\tselected for PTN semantic measurement\n"
+        );
+    }
 }
 
 #[test]
@@ -1576,6 +1573,11 @@ fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
             "array_splice destructor reentrancy",
             "--TEST--\nsplice destructor\n--FILE--\n<?php\nclass C { function __destruct() { global $items; $items[] = 0; } }\n$items = [1, new C, 2];\narray_splice($items, 1, 1);\n--EXPECT--\n",
             "requires array_splice() destructor reentrancy detection",
+        ),
+        (
+            "destructor __call object resurrection",
+            "--TEST--\ndestructor call resurrection\n--FILE--\n<?php\nclass Driver { public $obj; function close() { echo $this->obj->i; } }\nclass A { function __call($m, $a) { $d = new Driver; $d->obj = $this; } function __destruct() { $this->close(); } }\nnew A;\n--EXPECT--\n",
+            "requires destructor-driven __call object resurrection/lifetime semantics",
         ),
     ];
 
