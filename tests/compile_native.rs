@@ -9675,6 +9675,45 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_ctype_extension_to_native_binary() {
+    let root = temp_dir("ptn-native-ctype-extension");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ctype-extension.php");
+    let output = root.join("ctype-extension-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+setlocale(LC_CTYPE, 'C');\n\
+var_dump(extension_loaded('ctype'), phpversion('ctype') !== false);\n\
+var_dump(function_exists('ctype_digit'), function_exists('CTYPE_XDIGIT'));\n\
+var_dump(ctype_digit('12345'), ctype_digit('12x'), ctype_alpha('abcXYZ'), ctype_alnum('abc123'));\n\
+var_dump(ctype_space(\" \\t\\n\"), ctype_cntrl(chr(0) . chr(31)), ctype_graph('!A9'), ctype_print(' A9'));\n\
+var_dump(ctype_punct('!@#'), ctype_lower('abc'), ctype_upper('ABC'), ctype_xdigit('09afAF'));\n\
+var_dump(ctype_digit(48), ctype_digit(12345), ctype_digit(1));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nbool(true)\n"));
+    assert!(stdout.contains("bool(true)\nbool(false)\nbool(true)\nbool(true)\n"));
+    assert!(stdout.contains("bool(true)\nbool(true)\nbool(true)\nbool(true)\n"));
+    assert!(stdout.contains("bool(true)\nbool(true)\nbool(true)\nbool(true)\n"));
+    assert!(stdout.contains(
+        "Deprecated: ctype_digit(): Argument of type int will be interpreted as string in the future"
+    ));
+    assert!(stdout.ends_with("bool(true)\nbool(true)\nbool(false)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_ctype_digit"));
+    assert!(c_source.contains("ptn_ctype_check"));
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();

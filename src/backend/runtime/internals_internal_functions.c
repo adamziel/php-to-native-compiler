@@ -3777,6 +3777,158 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
+typedef int (*PtnCtypePredicate)(int ch);
+
+static const char *ptn_ctype_argument_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_REFERENCE:
+            return ptn_ctype_argument_type_name(value);
+    }
+    return "unknown";
+}
+
+static void ptn_ctype_emit_non_string_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument of type %s will be interpreted as string in the future",
+        function_name,
+        ptn_ctype_argument_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
+
+static PtnValue ptn_ctype_check(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    PtnCtypePredicate predicate,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    unsigned char single_byte = 0;
+    char integer_buffer[64];
+    const unsigned char *data = NULL;
+    size_t len = 0;
+
+    if (value.type == PTN_STRING) {
+        data = value.as.string.data;
+        len = value.as.string.len;
+    } else if (value.type == PTN_INT) {
+        ptn_ctype_emit_non_string_deprecation(runtime, function_name, value, line);
+        if (value.as.integer >= -128 && value.as.integer <= 255) {
+            single_byte = (unsigned char)value.as.integer;
+            data = &single_byte;
+            len = 1;
+        } else {
+            int written = snprintf(integer_buffer, sizeof(integer_buffer), "%lld", (long long)value.as.integer);
+            if (written < 0 || (size_t)written >= sizeof(integer_buffer)) {
+                ptn_abort_out_of_memory();
+            }
+            data = (const unsigned char *)integer_buffer;
+            len = (size_t)written;
+        }
+    } else {
+        ptn_ctype_emit_non_string_deprecation(runtime, function_name, value, line);
+        return ptn_bool(0);
+    }
+
+    if (len == 0) {
+        return ptn_bool(0);
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!predicate((int)data[i])) {
+            return ptn_bool(0);
+        }
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_ctype_alnum(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_alnum", args[0], isalnum, line);
+}
+
+static PtnValue ptn_internal_ctype_alpha(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_alpha", args[0], isalpha, line);
+}
+
+static PtnValue ptn_internal_ctype_cntrl(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_cntrl", args[0], iscntrl, line);
+}
+
+static PtnValue ptn_internal_ctype_digit(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_digit", args[0], isdigit, line);
+}
+
+static PtnValue ptn_internal_ctype_graph(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_graph", args[0], isgraph, line);
+}
+
+static PtnValue ptn_internal_ctype_lower(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_lower", args[0], islower, line);
+}
+
+static PtnValue ptn_internal_ctype_print(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_print", args[0], isprint, line);
+}
+
+static PtnValue ptn_internal_ctype_punct(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_punct", args[0], ispunct, line);
+}
+
+static PtnValue ptn_internal_ctype_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_space", args[0], isspace, line);
+}
+
+static PtnValue ptn_internal_ctype_upper(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_upper", args[0], isupper, line);
+}
+
+static PtnValue ptn_internal_ctype_xdigit(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_ctype_check(runtime, "ctype_xdigit", args[0], isxdigit, line);
+}
+
 static const char *ptn_internal_array_arg_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_BOOL) {
@@ -28685,6 +28837,7 @@ static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requ
 
 static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
     return ptn_string_operand_ascii_case_equal(extension, "Core") ||
+        ptn_string_operand_ascii_case_equal(extension, "ctype") ||
         ptn_string_operand_ascii_case_equal(extension, "date") ||
         ptn_string_operand_ascii_case_equal(extension, "pcre") ||
         ptn_string_operand_ascii_case_equal(extension, "Reflection") ||
@@ -29161,10 +29314,11 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
         return result;
     }
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("date"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("pcre"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("Reflection"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("standard"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("ctype"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("date"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("pcre"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("Reflection"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("standard"));
     return result;
 }
 
@@ -31129,6 +31283,17 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "count", 1, 2, ptn_internal_count },
         { "count_chars", 1, 2, ptn_internal_count_chars },
         { "crc32", 1, 1, ptn_internal_crc32 },
+        { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
+        { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },
+        { "ctype_cntrl", 1, 1, ptn_internal_ctype_cntrl },
+        { "ctype_digit", 1, 1, ptn_internal_ctype_digit },
+        { "ctype_graph", 1, 1, ptn_internal_ctype_graph },
+        { "ctype_lower", 1, 1, ptn_internal_ctype_lower },
+        { "ctype_print", 1, 1, ptn_internal_ctype_print },
+        { "ctype_punct", 1, 1, ptn_internal_ctype_punct },
+        { "ctype_space", 1, 1, ptn_internal_ctype_space },
+        { "ctype_upper", 1, 1, ptn_internal_ctype_upper },
+        { "ctype_xdigit", 1, 1, ptn_internal_ctype_xdigit },
         { "current", 1, 1, ptn_internal_current },
         { "date", 1, 2, ptn_internal_date },
         { "date_default_timezone_get", 0, 0, ptn_internal_date_default_timezone_get },

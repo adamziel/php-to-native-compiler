@@ -1034,4 +1034,5 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->strtok_len = 0;
     runtime->strtok_offset = 0;
     runtime->strtok_has_state = 0;
+    runtime->json_last_error = 0;
 }

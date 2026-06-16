@@ -826,6 +826,7 @@ struct PtnRuntime {
     size_t strtok_len;
     size_t strtok_offset;
     int strtok_has_state;
+    int json_last_error;
 };
 
 typedef struct {

@@ -116,6 +116,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->strtok_len = 0;
     runtime->strtok_offset = 0;
     runtime->strtok_has_state = 0;
+    runtime->json_last_error = caller_runtime->json_last_error;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(
