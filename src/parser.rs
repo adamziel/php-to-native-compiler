@@ -183,13 +183,18 @@ enum TypeHintContext {
     Return,
 }
 
-impl TypeHintContext {
-    fn allows_void(self) -> bool {
-        matches!(self, Self::Return)
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FunctionLikeKind {
+    Function,
+    Method,
+}
 
-    fn allows_never(self) -> bool {
-        matches!(self, Self::Return)
+impl FunctionLikeKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Method => "method",
+        }
     }
 }
 
@@ -305,7 +310,11 @@ impl Parser<'_> {
                     )?;
                 }
                 if matches!(&method.return_type, Some(TypeHint::Void)) {
-                    validate_void_returns_in_statements(&method.body)?;
+                    validate_void_returns_in_statements(&method.body, FunctionLikeKind::Method)?;
+                }
+                if matches!(&method.return_type, Some(TypeHint::Never)) {
+                    validate_never_returns_in_statements(&method.body, FunctionLikeKind::Method)?;
+                    validate_never_generator_return_type(&method.body, method.span)?;
                 }
                 validate_anonymous_functions_in_statements(&method.body, &functions)?;
                 validate_reference_assignment_sources(&method.body, &functions)?;
@@ -316,6 +325,7 @@ impl Parser<'_> {
         validate_function_names(&functions)?;
         validate_by_reference_returns(&functions)?;
         validate_void_returns(&functions)?;
+        validate_never_returns(&functions)?;
         validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
         validate_control_transfers_in_statements(&statements, 0)?;
@@ -3066,7 +3076,9 @@ impl Parser<'_> {
             None
         };
         let type_hint = if self.peek_is_type_hint() {
-            Some(self.parse_type_hint()?)
+            let parsed = self.parse_type_hint_with_context(TypeHintContext::Parameter)?;
+            validate_parameter_type_hint(&parsed.type_hint, parsed.span)?;
+            Some(parsed.type_hint)
         } else {
             None
         };
@@ -3172,11 +3184,6 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_type_hint(&mut self) -> Result<TypeHint> {
-        self.parse_type_hint_with_context(TypeHintContext::Parameter)
-            .map(|parsed| parsed.type_hint)
-    }
-
     fn parse_return_type_hint(&mut self) -> Result<TypeHint> {
         self.parse_type_hint_with_context(TypeHintContext::Return)
             .map(|parsed| parsed.type_hint)
@@ -3271,15 +3278,11 @@ impl Parser<'_> {
                 self.advance();
                 TypeHint::Mixed
             }
-            TokenKind::Identifier(name)
-                if context.allows_void() && name.eq_ignore_ascii_case("void") =>
-            {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("void") => {
                 self.advance();
                 TypeHint::Void
             }
-            TokenKind::Identifier(name)
-                if context.allows_never() && name.eq_ignore_ascii_case("never") =>
-            {
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("never") => {
                 self.advance();
                 TypeHint::Never
             }
@@ -3423,6 +3426,8 @@ impl Parser<'_> {
                     || name.eq_ignore_ascii_case("mixed")
                     || name.eq_ignore_ascii_case("object")
                     || name.eq_ignore_ascii_case("iterable")
+                    || name.eq_ignore_ascii_case("void")
+                    || name.eq_ignore_ascii_case("never")
                     || name.eq_ignore_ascii_case("self")
                     || name.eq_ignore_ascii_case("parent")
                     || name.eq_ignore_ascii_case("static")
@@ -7493,6 +7498,27 @@ fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
             kind: PropertyTypeKind::Class(name.clone()),
             allows_null: false,
         },
+    }
+}
+
+fn validate_parameter_type_hint(type_hint: &TypeHint, span: SourceSpan) -> Result<()> {
+    match type_hint {
+        TypeHint::Void => Err(Diagnostic::new(
+            "void cannot be used as a parameter type",
+            Some(span),
+        )),
+        TypeHint::Never => Err(Diagnostic::new(
+            "never cannot be used as a parameter type",
+            Some(span),
+        )),
+        TypeHint::Nullable(inner) => validate_parameter_type_hint(inner, span),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            for type_hint in types {
+                validate_parameter_type_hint(type_hint, span)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -12308,21 +12334,99 @@ fn validate_by_reference_returns(functions: &[FunctionDecl]) -> Result<()> {
 fn validate_void_returns(functions: &[FunctionDecl]) -> Result<()> {
     for function in functions {
         if matches!(&function.return_type, Some(TypeHint::Void)) {
-            validate_void_returns_in_statements(&function.body)?;
+            validate_void_returns_in_statements(&function.body, FunctionLikeKind::Function)?;
         }
     }
     Ok(())
 }
 
-fn validate_void_returns_in_statements(statements: &[Statement]) -> Result<()> {
+fn validate_never_returns(functions: &[FunctionDecl]) -> Result<()> {
+    for function in functions {
+        if matches!(&function.return_type, Some(TypeHint::Never)) {
+            validate_never_returns_in_statements(&function.body, FunctionLikeKind::Function)?;
+            validate_never_generator_return_type(&function.body, function.span)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_void_returns_in_statements(
+    statements: &[Statement],
+    kind: FunctionLikeKind,
+) -> Result<()> {
     for statement in statements {
         match statement {
-            Statement::Return {
-                value: Some(_),
-                span,
+            Statement::Return { value, span } => {
+                if let Some(value) = value {
+                    let message = if value_is_null_literal(value) {
+                        format!(
+                            "A void {} must not return a value (did you mean \"return;\" instead of \"return null;\"?)",
+                            kind.label()
+                        )
+                    } else {
+                        format!("A void {} must not return a value", kind.label())
+                    };
+                    return Err(Diagnostic::new(message, Some(*span)));
+                }
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
             } => {
+                validate_void_returns_in_statements(then_body, kind)?;
+                validate_void_returns_in_statements(else_body, kind)?;
+            }
+            Statement::Block { statements, .. } => {
+                validate_void_returns_in_statements(statements, kind)?;
+            }
+            Statement::While { body, .. }
+            | Statement::DoWhile { body, .. }
+            | Statement::Foreach { body, .. } => {
+                validate_void_returns_in_statements(body, kind)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_void_returns_in_statements(initializers, kind)?;
+                validate_void_returns_in_statements(updates, kind)?;
+                validate_void_returns_in_statements(body, kind)?;
+            }
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                validate_void_returns_in_statements(body, kind)?;
+                for catch in catches {
+                    validate_void_returns_in_statements(&catch.body, kind)?;
+                }
+                validate_void_returns_in_statements(finally_body, kind)?;
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_void_returns_in_statements(&case.body, kind)?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_never_returns_in_statements(
+    statements: &[Statement],
+    kind: FunctionLikeKind,
+) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::Return { span, .. } => {
                 return Err(Diagnostic::new(
-                    "A void function must not return a value",
+                    format!("A never-returning {} must not return", kind.label()),
                     Some(*span),
                 ));
             }
@@ -12331,16 +12435,16 @@ fn validate_void_returns_in_statements(statements: &[Statement]) -> Result<()> {
                 else_body,
                 ..
             } => {
-                validate_void_returns_in_statements(then_body)?;
-                validate_void_returns_in_statements(else_body)?;
+                validate_never_returns_in_statements(then_body, kind)?;
+                validate_never_returns_in_statements(else_body, kind)?;
             }
             Statement::Block { statements, .. } => {
-                validate_void_returns_in_statements(statements)?;
+                validate_never_returns_in_statements(statements, kind)?;
             }
             Statement::While { body, .. }
             | Statement::DoWhile { body, .. }
             | Statement::Foreach { body, .. } => {
-                validate_void_returns_in_statements(body)?;
+                validate_never_returns_in_statements(body, kind)?;
             }
             Statement::For {
                 initializers,
@@ -12348,9 +12452,9 @@ fn validate_void_returns_in_statements(statements: &[Statement]) -> Result<()> {
                 body,
                 ..
             } => {
-                validate_void_returns_in_statements(initializers)?;
-                validate_void_returns_in_statements(updates)?;
-                validate_void_returns_in_statements(body)?;
+                validate_never_returns_in_statements(initializers, kind)?;
+                validate_never_returns_in_statements(updates, kind)?;
+                validate_never_returns_in_statements(body, kind)?;
             }
             Statement::Try {
                 body,
@@ -12358,21 +12462,377 @@ fn validate_void_returns_in_statements(statements: &[Statement]) -> Result<()> {
                 finally_body,
                 ..
             } => {
-                validate_void_returns_in_statements(body)?;
+                validate_never_returns_in_statements(body, kind)?;
                 for catch in catches {
-                    validate_void_returns_in_statements(&catch.body)?;
+                    validate_never_returns_in_statements(&catch.body, kind)?;
                 }
-                validate_void_returns_in_statements(finally_body)?;
+                validate_never_returns_in_statements(finally_body, kind)?;
             }
             Statement::Switch { cases, .. } => {
                 for case in cases {
-                    validate_void_returns_in_statements(&case.body)?;
+                    validate_never_returns_in_statements(&case.body, kind)?;
                 }
             }
             _ => {}
         }
     }
     Ok(())
+}
+
+fn validate_never_generator_return_type(statements: &[Statement], span: SourceSpan) -> Result<()> {
+    if statements_contain_yield(statements) {
+        return Err(Diagnostic::new(
+            "Generator return type must be a supertype of Generator, never given",
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn value_is_null_literal(value: &Expr) -> bool {
+    match value {
+        Expr::Null(_) => true,
+        Expr::Grouped { expr, .. } => value_is_null_literal(expr),
+        _ => false,
+    }
+}
+
+fn statements_contain_yield(statements: &[Statement]) -> bool {
+    statements.iter().any(statement_contains_yield)
+}
+
+fn statement_contains_yield(statement: &Statement) -> bool {
+    match statement {
+        Statement::Assign { value, .. } | Statement::ArrayAssign { value, .. } => {
+            expr_contains_yield(value)
+        }
+        Statement::AssignRef { source, .. } | Statement::ArrayAssignRef { source, .. } => {
+            expr_contains_yield(source)
+        }
+        Statement::Increment { target, .. } => inc_dec_target_contains_yield(target),
+        Statement::Unset { targets, .. } => targets.iter().any(unset_target_contains_yield),
+        Statement::Static { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| declaration.value.as_ref().is_some_and(expr_contains_yield)),
+        Statement::Call { arguments, .. }
+        | Statement::Echo {
+            expressions: arguments,
+            ..
+        } => arguments.iter().any(expr_contains_yield),
+        Statement::Print { expression, .. } | Statement::Expression { expression, .. } => {
+            expr_contains_yield(expression)
+        }
+        Statement::Const { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| expr_contains_yield(&declaration.value)),
+        Statement::Block { statements, .. } => statements_contain_yield(statements),
+        Statement::If {
+            condition,
+            then_body,
+            else_body,
+            ..
+        } => {
+            expr_contains_yield(condition)
+                || statements_contain_yield(then_body)
+                || statements_contain_yield(else_body)
+        }
+        Statement::While {
+            condition, body, ..
+        } => expr_contains_yield(condition) || statements_contain_yield(body),
+        Statement::DoWhile {
+            body, condition, ..
+        } => statements_contain_yield(body) || expr_contains_yield(condition),
+        Statement::For {
+            initializers,
+            condition,
+            updates,
+            body,
+            ..
+        } => {
+            statements_contain_yield(initializers)
+                || condition.as_ref().is_some_and(expr_contains_yield)
+                || statements_contain_yield(updates)
+                || statements_contain_yield(body)
+        }
+        Statement::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => {
+            expr_contains_yield(iterable)
+                || key.as_ref().is_some_and(assignment_target_contains_yield)
+                || assignment_target_contains_yield(value)
+                || statements_contain_yield(body)
+        }
+        Statement::Switch {
+            expression, cases, ..
+        } => {
+            expr_contains_yield(expression)
+                || cases.iter().any(|case| {
+                    case.condition.as_ref().is_some_and(expr_contains_yield)
+                        || statements_contain_yield(&case.body)
+                })
+        }
+        Statement::Return {
+            value: Some(value), ..
+        }
+        | Statement::Throw { value, .. } => expr_contains_yield(value),
+        Statement::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            statements_contain_yield(body)
+                || catches
+                    .iter()
+                    .any(|catch| statements_contain_yield(&catch.body))
+                || statements_contain_yield(finally_body)
+        }
+        Statement::Empty { .. }
+        | Statement::ClassDeclaration { .. }
+        | Statement::FunctionDeclaration { .. }
+        | Statement::Global { .. }
+        | Statement::Break { .. }
+        | Statement::Continue { .. }
+        | Statement::Return { value: None, .. }
+        | Statement::Label { .. }
+        | Statement::Goto { .. }
+        | Statement::InlineHtml { .. } => false,
+    }
+}
+
+fn expr_contains_yield(expr: &Expr) -> bool {
+    match expr {
+        Expr::Yield { .. } => true,
+        Expr::AnonymousFunction(_) => false,
+        Expr::DynamicVariable { name, .. }
+        | Expr::FirstClassCallable { callable: name, .. }
+        | Expr::DynamicClassNameFetch { receiver: name, .. }
+        | Expr::Clone { expr: name, .. }
+        | Expr::Print {
+            expression: name, ..
+        }
+        | Expr::Include { path: name, .. }
+        | Expr::Throw { value: name, .. }
+        | Expr::Unary { expr: name, .. }
+        | Expr::Cast { expr: name, .. }
+        | Expr::Grouped { expr: name, .. }
+        | Expr::PipeValue { expr: name, .. } => expr_contains_yield(name),
+        Expr::IncDec { target, .. } => inc_dec_target_contains_yield(target),
+        Expr::Assign { target, value, .. } => {
+            assignment_target_contains_yield(target) || expr_contains_yield(value)
+        }
+        Expr::AssignRef { target, source, .. } => {
+            assignment_target_contains_yield(target) || expr_contains_yield(source)
+        }
+        Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
+            arguments.iter().any(expr_contains_yield)
+        }
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => expr_contains_yield(callee) || arguments.iter().any(expr_contains_yield),
+        Expr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => expr_contains_yield(receiver) || arguments.iter().any(expr_contains_yield),
+        Expr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            expr_contains_yield(receiver)
+                || expr_contains_yield(name)
+                || arguments.iter().any(expr_contains_yield)
+        }
+        Expr::DynamicNewObject {
+            class_name,
+            arguments,
+            ..
+        } => expr_contains_yield(class_name) || arguments.iter().any(expr_contains_yield),
+        Expr::PropertyFetch { receiver, .. }
+        | Expr::NullsafePropertyFetch { receiver, .. }
+        | Expr::DynamicStaticPropertyFetch { receiver, .. } => expr_contains_yield(receiver),
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
+        Expr::InstanceOf { expr, target, .. } => {
+            expr_contains_yield(expr)
+                || matches!(target, InstanceOfTarget::Expr(target) if expr_contains_yield(target))
+        }
+        Expr::Match { subject, arms, .. } => {
+            expr_contains_yield(subject)
+                || arms.iter().any(|arm| {
+                    arm.conditions.iter().any(expr_contains_yield)
+                        || expr_contains_yield(&arm.value)
+                })
+        }
+        Expr::Array { elements, .. } => elements.iter().any(array_element_contains_yield),
+        Expr::List(list) => list.elements.iter().any(list_expr_element_contains_yield),
+        Expr::ArrayAccess { array, index, .. } => {
+            expr_contains_yield(array)
+                || index
+                    .as_ref()
+                    .is_some_and(|index| expr_contains_yield(index))
+        }
+        Expr::Isset { targets, .. } => targets.iter().any(expr_contains_yield),
+        Expr::Empty { target, .. } => expr_contains_yield(target),
+        Expr::Binary { left, right, .. } => expr_contains_yield(left) || expr_contains_yield(right),
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            expr_contains_yield(condition)
+                || if_true
+                    .as_ref()
+                    .is_some_and(|if_true| expr_contains_yield(if_true))
+                || expr_contains_yield(if_false)
+        }
+        Expr::String(_, _)
+        | Expr::InterpolatedString(_, _)
+        | Expr::ShellExec { .. }
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. } => false,
+    }
+}
+
+fn array_element_contains_yield(element: &ArrayElement) -> bool {
+    element.key.as_ref().is_some_and(expr_contains_yield)
+        || match &element.value {
+            ArrayElementValue::Hole(_) => false,
+            ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                expr_contains_yield(value)
+            }
+            ArrayElementValue::Reference(target) => reference_target_contains_yield(target),
+        }
+}
+
+fn list_expr_element_contains_yield(element: &ListExprElement) -> bool {
+    element.key.as_ref().is_some_and(expr_contains_yield)
+        || element.target.as_ref().is_some_and(|target| match target {
+            ListExprElementTarget::Value(value) => expr_contains_yield(value),
+            ListExprElementTarget::Reference(target) => reference_target_contains_yield(target),
+        })
+}
+
+fn assignment_target_contains_yield(target: &AssignmentTarget) -> bool {
+    match target {
+        AssignmentTarget::DynamicVariable { name, .. } => expr_contains_yield(name),
+        AssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => expr_contains_yield(name) || dimensions.iter().flatten().any(expr_contains_yield),
+        AssignmentTarget::ArrayDim(target) => {
+            target.dimensions.iter().flatten().any(expr_contains_yield)
+        }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        }
+        | AssignmentTarget::ValueArrayDim {
+            array: receiver,
+            dimensions,
+            ..
+        }
+        | AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        AssignmentTarget::Property { receiver, .. }
+        | AssignmentTarget::DynamicStaticProperty { receiver, .. } => expr_contains_yield(receiver),
+        AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
+        AssignmentTarget::List(list) => list_assignment_target_contains_yield(list),
+        AssignmentTarget::Variable { .. }
+        | AssignmentTarget::StaticPropertyArrayDim { .. }
+        | AssignmentTarget::StaticProperty { .. } => false,
+    }
+}
+
+fn list_assignment_target_contains_yield(target: &ListAssignmentTarget) -> bool {
+    target.elements.iter().any(|element| {
+        element.key.as_ref().is_some_and(expr_contains_yield)
+            || match &element.target {
+                ListAssignmentElementTarget::Value(target) => {
+                    assignment_target_contains_yield(target)
+                }
+                ListAssignmentElementTarget::Reference(target) => {
+                    reference_target_contains_yield(target)
+                }
+            }
+    })
+}
+
+fn reference_target_contains_yield(target: &ReferenceTarget) -> bool {
+    match target {
+        ReferenceTarget::DynamicVariable { name, .. } => expr_contains_yield(name),
+        ReferenceTarget::ArrayDim(target) => {
+            target.dimensions.iter().flatten().any(expr_contains_yield)
+        }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        ReferenceTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
+        ReferenceTarget::Variable { .. } => false,
+    }
+}
+
+fn inc_dec_target_contains_yield(target: &IncDecTarget) -> bool {
+    match target {
+        IncDecTarget::DynamicVariable { name, .. } => expr_contains_yield(name),
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => expr_contains_yield(name) || dimensions.iter().flatten().any(expr_contains_yield),
+        IncDecTarget::ArrayDim(target) => {
+            target.dimensions.iter().flatten().any(expr_contains_yield)
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        IncDecTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => false,
+    }
+}
+
+fn unset_target_contains_yield(target: &UnsetTarget) -> bool {
+    match target {
+        UnsetTarget::DynamicVariable { name, .. } => expr_contains_yield(name),
+        UnsetTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => expr_contains_yield(name) || dimensions.iter().any(expr_contains_yield),
+        UnsetTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().any(expr_contains_yield),
+        UnsetTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        UnsetTarget::ArrayDim(target) => {
+            target.dimensions.iter().flatten().any(expr_contains_yield)
+        }
+        UnsetTarget::Variable { .. } => false,
+    }
 }
 
 fn validate_anonymous_functions_in_statements(
@@ -12559,7 +13019,11 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
                 validate_by_reference_returns_in_statements(&function.body, "{closure}")?;
             }
             if matches!(&function.return_type, Some(TypeHint::Void)) {
-                validate_void_returns_in_statements(&function.body)?;
+                validate_void_returns_in_statements(&function.body, FunctionLikeKind::Function)?;
+            }
+            if !function.is_arrow && matches!(&function.return_type, Some(TypeHint::Never)) {
+                validate_never_returns_in_statements(&function.body, FunctionLikeKind::Function)?;
+                validate_never_generator_return_type(&function.body, function.span)?;
             }
             validate_anonymous_functions_in_statements(&function.body, functions)?;
             validate_reference_assignment_sources(&function.body, functions)?;

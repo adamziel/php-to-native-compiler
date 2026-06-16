@@ -1154,15 +1154,19 @@ fn emit_user_functions(
         if function.is_anonymous {
             out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
-        let tracks_return_type_context = !function.is_generator
+        let tracks_return_line = !function.is_generator
+            && (function.return_by_ref
+                || function
+                    .return_type
+                    .as_ref()
+                    .is_some_and(return_type_needs_runtime_context));
+        let tracks_return_value_was_set = !function.is_generator
             && function
                 .return_type
                 .as_ref()
-                .is_some_and(return_type_needs_runtime_context);
-        let tracks_return_line =
-            (!function.is_generator && function.return_by_ref) || tracks_return_type_context;
+                .is_some_and(return_type_needs_return_value_was_set);
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
-        if tracks_return_type_context {
+        if tracks_return_value_was_set {
             out.push_str("    int ptn_return_value_was_set = 0;\n");
         }
         if tracks_return_line {
@@ -2436,6 +2440,13 @@ fn return_type_needs_runtime_context(return_type: &TypeHint) -> bool {
     )
 }
 
+fn return_type_needs_return_value_was_set(return_type: &TypeHint) -> bool {
+    !matches!(
+        return_type,
+        TypeHint::Callable | TypeHint::Mixed | TypeHint::Void | TypeHint::Never
+    )
+}
+
 fn emit_return_type_boundary(
     out: &mut String,
     return_type: &TypeHint,
@@ -2490,11 +2501,25 @@ fn emit_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Never => {
-            out.push_str("    ptn_throw_user_return_type_error(&runtime, \"");
+            out.push_str("    {\n");
+            out.push_str("        const char *ptn_never_return_kind = strchr(\"");
             out.push_str(&c_string(function_name));
-            out.push_str(
-                "\", \"never\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n",
-            );
+            out.push_str("\", ':') != NULL ? \"method\" : \"function\";\n");
+            out.push_str("        int ptn_never_return_needed = snprintf(NULL, 0, \"%s(): never-returning %s must not implicitly return\", \"");
+            out.push_str(&c_string(function_name));
+            out.push_str("\", ptn_never_return_kind);\n");
+            out.push_str("        if (ptn_never_return_needed < 0) {\n");
+            out.push_str("            ptn_abort_out_of_memory();\n");
+            out.push_str("        }\n");
+            out.push_str("        char *ptn_never_return_message = malloc((size_t)ptn_never_return_needed + 1);\n");
+            out.push_str("        if (ptn_never_return_message == NULL) {\n");
+            out.push_str("            ptn_abort_out_of_memory();\n");
+            out.push_str("        }\n");
+            out.push_str("        snprintf(ptn_never_return_message, (size_t)ptn_never_return_needed + 1, \"%s(): never-returning %s must not implicitly return\", \"");
+            out.push_str(&c_string(function_name));
+            out.push_str("\", ptn_never_return_kind);\n");
+            out.push_str("        ptn_throw_exception_owned_message_at(&runtime, \"TypeError\", ptn_never_return_message, runtime.source_path, ptn_return_line);\n");
+            out.push_str("    }\n");
             out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    ptn_runtime_free(&runtime);\n");
             out.push_str("    return ptn_null();\n");
@@ -9968,6 +9993,47 @@ fn magic_declaration_fatal_message(
         ));
     }
 
+    if matches!(method_key.as_str(), "__construct" | "__destruct") && function.return_type.is_some()
+    {
+        return Some(format!(
+            "Method {}::{}() cannot declare a return type",
+            class.name, method.name
+        ));
+    }
+
+    if let Some(return_type) = function.return_type.as_ref() {
+        let expected_label = match method_key.as_str() {
+            "__clone" | "__set" | "__unset"
+                if !magic_return_type_is_void_compatible(return_type) =>
+            {
+                Some("void")
+            }
+            "__isset" if !magic_return_type_is_exact_or_never(return_type, &TypeHint::Bool) => {
+                Some("bool")
+            }
+            "__tostring"
+                if !magic_return_type_is_exact_or_never(return_type, &TypeHint::String) =>
+            {
+                Some("string")
+            }
+            "__debuginfo" if !magic_return_type_is_debug_info_compatible(return_type) => {
+                Some("?array")
+            }
+            "__set_state"
+                if !magic_return_type_is_exact_or_never(return_type, &TypeHint::Object) =>
+            {
+                Some("object")
+            }
+            _ => None,
+        };
+        if let Some(expected_label) = expected_label {
+            return Some(format!(
+                "{}::{}(): Return type must be {} when declared",
+                class.name, method.name, expected_label
+            ));
+        }
+    }
+
     match method_key.as_str() {
         "__get" | "__set" | "__isset" | "__unset" | "__call" | "__callstatic" => {
             if let Some(message) =
@@ -9986,6 +10052,31 @@ fn magic_declaration_fatal_message(
             magic_parameter_type_fatal(class, method, function, 0, TypeHint::Array, "array")
         }
         _ => None,
+    }
+}
+
+fn magic_return_type_is_exact_or_never(return_type: &TypeHint, expected: &TypeHint) -> bool {
+    return_type == expected || matches!(return_type, TypeHint::Never)
+}
+
+fn magic_return_type_is_void_compatible(return_type: &TypeHint) -> bool {
+    matches!(return_type, TypeHint::Void | TypeHint::Never)
+}
+
+fn magic_return_type_is_debug_info_compatible(return_type: &TypeHint) -> bool {
+    match return_type {
+        TypeHint::Array | TypeHint::Never => true,
+        TypeHint::Nullable(inner) => matches!(inner.as_ref(), TypeHint::Array),
+        TypeHint::Union(types) => {
+            types.len() == 2
+                && types
+                    .iter()
+                    .any(|type_hint| matches!(type_hint, TypeHint::Array))
+                && types
+                    .iter()
+                    .any(|type_hint| matches!(type_hint, TypeHint::Null))
+        }
+        _ => false,
     }
 }
 
@@ -13521,7 +13612,7 @@ impl ValueEmitter {
                 && function
                     .return_type
                     .as_ref()
-                    .is_some_and(return_type_needs_runtime_context),
+                    .is_some_and(return_type_needs_return_value_was_set),
             function.is_anonymous,
             function.is_anonymous,
         )
