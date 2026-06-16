@@ -1,0 +1,18 @@
+# ptn-0224 declared property reflection metadata row pack.
+ext/reflection/tests/ReflectionClass_getProperties_001.phpt
+ext/reflection/tests/ReflectionClass_getProperty_001.phpt
+ext/reflection/tests/ReflectionClass_getProperty_002.phpt
+ext/reflection/tests/ReflectionClass_getProperty_003.phpt
+ext/reflection/tests/ReflectionProperty_basic1.phpt
+ext/reflection/tests/ReflectionProperty_constructor_error.phpt
+ext/reflection/tests/ReflectionProperty_constructor_variation1.phpt
+ext/reflection/tests/ReflectionProperty_double_construct.phpt
+ext/reflection/tests/ReflectionProperty_error.phpt
+ext/reflection/tests/ReflectionProperty_getDeclaringClass_variation1.phpt
+ext/reflection/tests/ReflectionProperty_getDefaultValue.phpt
+ext/reflection/tests/ReflectionProperty_getModifiers.001.phpt
+ext/reflection/tests/ReflectionProperty_getModifiers_basic.phpt
+ext/reflection/tests/ReflectionProperty_hasDefaultValue.phpt
+ext/reflection/tests/ReflectionProperty_isDefault_basic.phpt
+ext/reflection/tests/bug39067.phpt
+ext/reflection/tests/bug49719.phpt

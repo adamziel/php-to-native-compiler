@@ -1023,6 +1023,12 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_reflection_property_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
