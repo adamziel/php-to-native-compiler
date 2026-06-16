@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     ArrayDimTarget, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CatchClause, Expr,
     IncDecTarget, InstanceOfTarget, ListAssignmentElementTarget, MagicConstantKind, Program,
-    ReferenceTarget, Statement, SwitchCase, UnsetTarget,
+    ReferenceTarget, Statement, StringPart, SwitchCase, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
@@ -1075,6 +1075,7 @@ fn bounded_include_paths(
 ) -> Option<Vec<String>> {
     match expr {
         Expr::String(value, _) => Some(vec![value.clone()]),
+        Expr::InterpolatedString(parts, _) => bounded_interpolated_string_paths(parts, path_env),
         Expr::ShellExec { .. } => None,
         Expr::Variable(name, _) => path_env.get(name).cloned(),
         Expr::MagicConstant(MagicConstantKind::File, _) => Some(vec![source_file.to_string()]),
@@ -1162,6 +1163,42 @@ fn bounded_include_paths(
         }
         _ => None,
     }
+}
+
+fn bounded_interpolated_string_paths(
+    parts: &[StringPart],
+    path_env: &IncludePathEnv,
+) -> Option<Vec<String>> {
+    let mut paths = vec![String::new()];
+    for part in parts {
+        match part {
+            StringPart::Literal(value) => {
+                for path in &mut paths {
+                    path.push_str(value);
+                }
+            }
+            StringPart::Variable(name) | StringPart::LegacyDollarBraceVariable(name) => {
+                let values = path_env.get(name)?;
+                if paths.len().saturating_mul(values.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                    return None;
+                }
+                let mut expanded = Vec::new();
+                for path in &paths {
+                    for value in values {
+                        let mut expanded_path = path.clone();
+                        expanded_path.push_str(value);
+                        push_unique_string(&mut expanded, expanded_path);
+                    }
+                }
+                paths = expanded;
+            }
+            StringPart::PropertyFetch { .. }
+            | StringPart::PropertyChain { .. }
+            | StringPart::MethodCall { .. }
+            | StringPart::ArrayAccess { .. } => return None,
+        }
+    }
+    Some(paths)
 }
 
 fn concat_bounded_include_paths(

@@ -21335,6 +21335,7 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
+static int ptn_lstat_path(const char *path, struct stat *info);
 static const char *ptn_runtime_current_include_path(PtnRuntime *runtime);
 static void ptn_emit_function_warning(
     PtnRuntime *runtime,
@@ -23853,6 +23854,268 @@ static int ptn_path_is_separator(char byte) {
     return 0;
 }
 
+static char *ptn_internal_path_arg_c_string_or_value_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand operand = ptn_internal_expect_string_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        value,
+        line
+    );
+    if (memchr(operand.data, '\0', operand.len) != NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must not contain any null bytes",
+            function_name,
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_operand_free(operand);
+        ptn_throw_exception(runtime, "ValueError", message);
+        return NULL;
+    }
+    char *path = ptn_duplicate_string_len(operand.data, operand.len);
+    ptn_string_operand_free(operand);
+    return path;
+}
+
+static int ptn_paths_are_same_existing_file(const char *source, const char *dest) {
+    if (strcmp(source, dest) == 0) {
+        return 1;
+    }
+    struct stat source_stat;
+    struct stat dest_stat;
+    if (stat(source, &source_stat) != 0 || stat(dest, &dest_stat) != 0) {
+        return 0;
+    }
+    return source_stat.st_dev == dest_stat.st_dev && source_stat.st_ino == dest_stat.st_ino;
+}
+
+static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *source = ptn_internal_path_arg_c_string_or_value_error(runtime, "copy", 1, "from", args[0], line);
+    if (source == NULL) {
+        return ptn_null();
+    }
+    char *dest = ptn_internal_path_arg_c_string_or_value_error(runtime, "copy", 2, "to", args[1], line);
+    if (dest == NULL) {
+        free(source);
+        return ptn_null();
+    }
+    if (ptn_paths_are_same_existing_file(source, dest)) {
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
+
+    FILE *input = fopen(source, "rb");
+    if (input == NULL) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "copy", source, detail, line);
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
+
+    FILE *output = fopen(dest, "wb");
+    if (output == NULL) {
+        char detail[192];
+        int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            fclose(input);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "copy", dest, detail, line);
+        fclose(input);
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
+
+    int ok = 1;
+    unsigned char buffer[8192];
+    for (;;) {
+        size_t read_len = fread(buffer, 1, sizeof(buffer), input);
+        if (read_len != 0 && fwrite(buffer, 1, read_len, output) != read_len) {
+            ok = 0;
+            break;
+        }
+        if (read_len < sizeof(buffer)) {
+            if (ferror(input)) {
+                ok = 0;
+            }
+            break;
+        }
+    }
+    if (fclose(output) != 0) {
+        ok = 0;
+    }
+    fclose(input);
+    if (!ok) {
+        ptn_emit_file_warning(runtime, "copy", dest, strerror(errno), line);
+    }
+    free(dest);
+    free(source);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *source = ptn_internal_path_arg_c_string_or_value_error(runtime, "rename", 1, "from", args[0], line);
+    if (source == NULL) {
+        return ptn_null();
+    }
+    char *dest = ptn_internal_path_arg_c_string_or_value_error(runtime, "rename", 2, "to", args[1], line);
+    if (dest == NULL) {
+        free(source);
+        return ptn_null();
+    }
+    if (rename(source, dest) == 0) {
+        free(dest);
+        free(source);
+        return ptn_bool(1);
+    }
+    int needed = snprintf(NULL, 0, "rename(%s,%s): %s", source, dest, strerror(errno));
+    if (needed < 0) {
+        free(dest);
+        free(source);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(dest);
+        free(source);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "rename(%s,%s): %s", source, dest, strerror(errno));
+    if (written < 0 || written != needed) {
+        free(message);
+        free(dest);
+        free(source);
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        fputc('\n', stdout);
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+    free(dest);
+    free(source);
+    return ptn_bool(0);
+}
+
+static const char *ptn_system_temp_dir(void) {
+    const char *candidates[] = {
+        getenv("TMPDIR"),
+        getenv("TEMP"),
+        getenv("TMP"),
+#if defined(_WIN32)
+        ".",
+#else
+        "/tmp",
+#endif
+    };
+    for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+        if (candidates[i] != NULL && candidates[i][0] != '\0') {
+            return candidates[i];
+        }
+    }
+    return ".";
+}
+
+static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_owned_string(ptn_duplicate_string(ptn_system_temp_dir()));
+}
+
+static char *ptn_tempnam_template(const char *directory, const char *prefix) {
+    const char *selected_dir = directory;
+    struct stat info;
+    if (selected_dir[0] == '\0' || stat(selected_dir, &info) != 0 || !S_ISDIR(info.st_mode)) {
+        selected_dir = ptn_system_temp_dir();
+    }
+    size_t dir_len = strlen(selected_dir);
+    size_t prefix_len = strlen(prefix);
+    int needs_separator = dir_len > 0 && !ptn_path_is_separator(selected_dir[dir_len - 1]);
+    size_t len = dir_len + (needs_separator ? 1 : 0) + prefix_len + 6;
+    if (len < dir_len || len < prefix_len) {
+        ptn_abort_out_of_memory();
+    }
+    char *templ = malloc(len + 1);
+    if (templ == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(templ, selected_dir, dir_len);
+    size_t offset = dir_len;
+    if (needs_separator) {
+        templ[offset++] = '/';
+    }
+    memcpy(templ + offset, prefix, prefix_len);
+    offset += prefix_len;
+    memcpy(templ + offset, "XXXXXX", 6);
+    templ[len] = '\0';
+    return templ;
+}
+
+static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *directory = ptn_internal_path_arg_c_string_or_value_error(runtime, "tempnam", 1, "directory", args[0], line);
+    if (directory == NULL) {
+        return ptn_null();
+    }
+    char *prefix = ptn_internal_path_arg_c_string_or_value_error(runtime, "tempnam", 2, "prefix", args[1], line);
+    if (prefix == NULL) {
+        free(directory);
+        return ptn_null();
+    }
+    char *templ = ptn_tempnam_template(directory, prefix);
+    free(prefix);
+    free(directory);
+#if defined(_WIN32)
+    if (_mktemp_s(templ, strlen(templ) + 1) != 0) {
+        ptn_emit_function_warning(runtime, "tempnam", strerror(errno), line);
+        free(templ);
+        return ptn_bool(0);
+    }
+    FILE *created = fopen(templ, "wb");
+    if (created == NULL) {
+        ptn_emit_file_warning(runtime, "tempnam", templ, strerror(errno), line);
+        free(templ);
+        return ptn_bool(0);
+    }
+    fclose(created);
+#else
+    int fd = mkstemp(templ);
+    if (fd < 0) {
+        ptn_emit_file_warning(runtime, "tempnam", templ, strerror(errno), line);
+        free(templ);
+        return ptn_bool(0);
+    }
+    close(fd);
+#endif
+    return ptn_owned_string(templ);
+}
+
 static PtnValue ptn_internal_basename(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "basename", 1, "path", args[0], line);
     PtnStringOperand suffix = argc >= 2
@@ -24069,9 +24332,6 @@ static void ptn_emit_stat_warning(
         free(message);
         ptn_abort_out_of_memory();
     }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
-    }
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);
 }
@@ -24094,9 +24354,6 @@ static void ptn_emit_function_warning(
     if (written < 0 || written != needed) {
         free(message);
         ptn_abort_out_of_memory();
-    }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
     }
     ptn_emit_warning(&runtime->diagnostics, message, line);
     free(message);
@@ -24632,6 +24889,15 @@ static PtnValue ptn_internal_realpath(PtnRuntime *runtime, size_t argc, const Pt
         return ptn_bool(0);
     }
 
+    if (path[0] == '\0') {
+        free(path);
+        char *cwd = ptn_platform_getcwd_alloc();
+        if (cwd == NULL) {
+            return ptn_bool(0);
+        }
+        return ptn_owned_string(cwd);
+    }
+
 #if defined(_WIN32)
     char *resolved = _fullpath(NULL, path, 0);
 #else
@@ -24743,6 +25009,296 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
     }
     free(names);
     return result;
+#endif
+}
+
+static int ptn_fnmatch_flags(int64_t flags) {
+    int c_flags = 0;
+#if defined(FNM_NOESCAPE)
+    if ((flags & PTN_FNM_NOESCAPE) != 0) {
+        c_flags |= FNM_NOESCAPE;
+    }
+#endif
+#if defined(FNM_PATHNAME)
+    if ((flags & PTN_FNM_PATHNAME) != 0) {
+        c_flags |= FNM_PATHNAME;
+    }
+#endif
+#if defined(FNM_PERIOD)
+    if ((flags & PTN_FNM_PERIOD) != 0) {
+        c_flags |= FNM_PERIOD;
+    }
+#endif
+#if defined(FNM_CASEFOLD)
+    if ((flags & PTN_FNM_CASEFOLD) != 0) {
+        c_flags |= FNM_CASEFOLD;
+    }
+#endif
+    return c_flags;
+}
+
+static PtnValue ptn_internal_fnmatch(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand pattern = ptn_internal_expect_string_arg(runtime, "fnmatch", 1, "pattern", args[0], line);
+    PtnStringOperand filename = ptn_internal_expect_string_arg(runtime, "fnmatch", 2, "filename", args[1], line);
+    int64_t flags = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "fnmatch", 3, "flags", args[2], line)
+        : 0;
+    char *pattern_c = ptn_path_operand_to_c_string(pattern);
+    char *filename_c = ptn_path_operand_to_c_string(filename);
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(filename);
+    if (pattern_c == NULL || filename_c == NULL) {
+        free(pattern_c);
+        free(filename_c);
+        ptn_throw_exception(runtime, "ValueError", "fnmatch(): Arguments must not contain any null bytes");
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    int matched = strcmp(pattern_c, filename_c) == 0;
+#else
+    int matched = fnmatch(pattern_c, filename_c, ptn_fnmatch_flags(flags)) == 0;
+#endif
+    free(pattern_c);
+    free(filename_c);
+    return ptn_bool(matched);
+}
+
+static int ptn_glob_flags(int64_t flags) {
+    int c_flags = 0;
+#if defined(GLOB_MARK)
+    if ((flags & PTN_GLOB_MARK) != 0) {
+        c_flags |= GLOB_MARK;
+    }
+#endif
+#if defined(GLOB_NOSORT)
+    if ((flags & PTN_GLOB_NOSORT) != 0) {
+        c_flags |= GLOB_NOSORT;
+    }
+#endif
+#if defined(GLOB_NOCHECK)
+    if ((flags & PTN_GLOB_NOCHECK) != 0) {
+        c_flags |= GLOB_NOCHECK;
+    }
+#endif
+#if defined(GLOB_NOESCAPE)
+    if ((flags & PTN_GLOB_NOESCAPE) != 0) {
+        c_flags |= GLOB_NOESCAPE;
+    }
+#endif
+#if defined(GLOB_BRACE)
+    if ((flags & PTN_GLOB_BRACE) != 0) {
+        c_flags |= GLOB_BRACE;
+    }
+#endif
+#if defined(GLOB_ONLYDIR)
+    if ((flags & PTN_GLOB_ONLYDIR) != 0) {
+        c_flags |= GLOB_ONLYDIR;
+    }
+#endif
+#if defined(GLOB_ERR)
+    if ((flags & PTN_GLOB_ERR) != 0) {
+        c_flags |= GLOB_ERR;
+    }
+#endif
+    return c_flags;
+}
+
+static PtnValue ptn_internal_glob(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *pattern = ptn_internal_path_arg_c_string_or_value_error(runtime, "glob", 1, "pattern", args[0], line);
+    if (pattern == NULL) {
+        return ptn_null();
+    }
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "glob", 2, "flags", args[1], line)
+        : 0;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+#if defined(_WIN32)
+    (void)flags;
+    free(pattern);
+    return result;
+#else
+    glob_t matches;
+    memset(&matches, 0, sizeof(matches));
+    int status = glob(pattern, ptn_glob_flags(flags), NULL, &matches);
+    free(pattern);
+    if (status != 0 && status != GLOB_NOMATCH) {
+        globfree(&matches);
+        return ptn_bool(0);
+    }
+    for (size_t i = 0; i < matches.gl_pathc; i++) {
+        if (i > (size_t)INT64_MAX) {
+            globfree(&matches);
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_owned_string(ptn_duplicate_string(matches.gl_pathv[i]))
+        );
+    }
+    globfree(&matches);
+    return result;
+#endif
+}
+
+static PtnValue ptn_internal_disk_space(PtnRuntime *runtime, const char *function_name, PtnValue value, int total, size_t line) {
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, function_name, 1, "directory", value, line);
+    if (path == NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    free(path);
+    return ptn_bool(0);
+#else
+    struct statvfs info;
+    if (statvfs(path, &info) != 0) {
+        ptn_emit_file_warning(runtime, function_name, path, strerror(errno), line);
+        free(path);
+        return ptn_bool(0);
+    }
+    free(path);
+    unsigned long blocks = total ? info.f_blocks : info.f_bavail;
+    return ptn_float((double)blocks * (double)info.f_frsize);
+#endif
+}
+
+static PtnValue ptn_internal_disk_free_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_disk_space(runtime, "disk_free_space", args[0], 0, line);
+}
+
+static PtnValue ptn_internal_diskfreespace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_disk_space(runtime, "diskfreespace", args[0], 0, line);
+}
+
+static PtnValue ptn_internal_disk_total_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    return ptn_internal_disk_space(runtime, "disk_total_space", args[0], 1, line);
+}
+
+static PtnValue ptn_internal_link(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *target = ptn_internal_path_arg_c_string_or_value_error(runtime, "link", 1, "target", args[0], line);
+    if (target == NULL) {
+        return ptn_null();
+    }
+    char *link_name = ptn_internal_path_arg_c_string_or_value_error(runtime, "link", 2, "link", args[1], line);
+    if (link_name == NULL) {
+        free(target);
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    int ok = 0;
+#else
+    int ok = link(target, link_name) == 0;
+#endif
+    if (!ok) {
+        ptn_emit_function_warning(runtime, "link", strerror(errno), line);
+    }
+    free(link_name);
+    free(target);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *target = ptn_internal_path_arg_c_string_or_value_error(runtime, "symlink", 1, "target", args[0], line);
+    if (target == NULL) {
+        return ptn_null();
+    }
+    char *link_name = ptn_internal_path_arg_c_string_or_value_error(runtime, "symlink", 2, "link", args[1], line);
+    if (link_name == NULL) {
+        free(target);
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    int ok = 0;
+#else
+    int ok = symlink(target, link_name) == 0;
+#endif
+    if (!ok) {
+        ptn_emit_function_warning(runtime, "symlink", strerror(errno), line);
+    }
+    free(link_name);
+    free(target);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "linkinfo", 1, "path", args[0], line);
+    if (path == NULL) {
+        return ptn_null();
+    }
+    struct stat info;
+    if (ptn_lstat_path(path, &info) != 0) {
+        ptn_emit_function_warning(runtime, "linkinfo", strerror(errno), line);
+        free(path);
+        return ptn_int(-1);
+    }
+    free(path);
+    return ptn_int(info.st_dev > 0 ? (int64_t)info.st_dev : 1);
+}
+
+static PtnValue ptn_internal_readlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *path = ptn_internal_path_arg_c_string_or_value_error(runtime, "readlink", 1, "path", args[0], line);
+    if (path == NULL) {
+        return ptn_null();
+    }
+#if defined(_WIN32)
+    ptn_emit_function_warning(runtime, "readlink", "Invalid argument", line);
+    free(path);
+    return ptn_bool(0);
+#else
+    size_t capacity = 256;
+    char *buffer = NULL;
+    for (;;) {
+        char *next = realloc(buffer, capacity + 1);
+        if (next == NULL) {
+            free(buffer);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        buffer = next;
+        ssize_t len = readlink(path, buffer, capacity);
+        if (len < 0) {
+            ptn_emit_function_warning(runtime, "readlink", strerror(errno), line);
+            free(buffer);
+            free(path);
+            return ptn_bool(0);
+        }
+        if ((size_t)len < capacity) {
+            buffer[len] = '\0';
+            free(path);
+            return ptn_owned_string_len(buffer, (size_t)len);
+        }
+        if (capacity > SIZE_MAX / 2) {
+            free(buffer);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        capacity *= 2;
+    }
+#endif
+}
+
+static PtnValue ptn_internal_umask(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+#if defined(_WIN32)
+    (void)args;
+    return ptn_int(0);
+#else
+    mode_t old_mask;
+    if (argc == 0) {
+        old_mask = umask(0);
+        umask(old_mask);
+    } else {
+        old_mask = umask((mode_t)ptn_value_to_integer(args[0]));
+    }
+    return ptn_int((int64_t)old_mask);
 #endif
 }
 
@@ -29394,6 +29950,11 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_string(".");
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "open_basedir")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        *out = ptn_owned_string(ptn_duplicate_string(root == NULL || root->open_basedir == NULL ? "" : root->open_basedir));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "max_memory_limit")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_max_memory_limit(runtime)));
         return 1;
@@ -29437,6 +29998,24 @@ static void ptn_runtime_set_include_path(PtnRuntime *runtime, const char *path) 
     char *copy = ptn_duplicate_string(path);
     free(root->include_path);
     root->include_path = copy;
+}
+
+static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->open_basedir == NULL) {
+        return "";
+    }
+    return root->open_basedir;
+}
+
+static void ptn_runtime_set_open_basedir(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    char *copy = ptn_duplicate_string(path);
+    free(root->open_basedir);
+    root->open_basedir = copy;
 }
 
 static int ptn_environment_put_owned(char *assignment) {
@@ -29539,6 +30118,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "open_basedir")) {
+        ptn_runtime_set_open_basedir(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         PtnRuntime *root = ptn_runtime_config_root(runtime);
         root->zend_assertions = root->initial_zend_assertions;
@@ -29572,6 +30156,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_include_path(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "open_basedir")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_open_basedir(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_open_basedir(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -31420,6 +32014,25 @@ static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_int((int64_t)time(NULL));
 }
 
+static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    struct timeval now;
+    if (gettimeofday(&now, NULL) != 0) {
+        return ptn_bool(0);
+    }
+    double seconds = (double)now.tv_sec + ((double)now.tv_usec / 1000000.0);
+    if (argc >= 1 && ptn_is_truthy(args[0])) {
+        return ptn_float(seconds);
+    }
+    char buffer[64];
+    int written = snprintf(buffer, sizeof(buffer), "%.6f %lld", (double)now.tv_usec / 1000000.0, (long long)now.tv_sec);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_owned_string(ptn_duplicate_string(buffer));
+}
+
 static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -31666,6 +32279,7 @@ static PtnValue ptn_internal_is_subclass_of(PtnRuntime *runtime, size_t argc, co
 static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -31673,6 +32287,10 @@ static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, con
 static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_disk_free_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_disk_total_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_diskfreespace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -31689,9 +32307,15 @@ static PtnValue ptn_internal_fseek(PtnRuntime *runtime, size_t argc, const PtnVa
 static PtnValue ptn_internal_fstat(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_ftell(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_ftruncate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fnmatch(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_glob(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_link(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_linkinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readdir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_readlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_rename(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_rewind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_rewinddir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_context_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -31701,7 +32325,11 @@ static PtnValue ptn_internal_stream_filter_prepend(PtnRuntime *runtime, size_t a
 static PtnValue ptn_internal_stream_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_line(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_symlink(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_tmpfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_umask(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
     static const PtnInternalFunction functions[] = {
@@ -31807,6 +32435,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "constant", 1, 1, ptn_internal_constant },
         { "convert_uudecode", 1, 1, ptn_internal_convert_uudecode },
         { "convert_uuencode", 1, 1, ptn_internal_convert_uuencode },
+        { "copy", 2, 3, ptn_internal_copy },
         { "cos", 1, 1, ptn_internal_cos },
         { "cosh", 1, 1, ptn_internal_cosh },
         { "count", 1, 2, ptn_internal_count },
@@ -31837,6 +32466,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "deg2rad", 1, 1, ptn_internal_deg2rad },
         { "die", 0, 1, ptn_internal_die },
         { "dirname", 1, 2, ptn_internal_dirname },
+        { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
+        { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
+        { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
         { "doubleval", 1, 1, ptn_internal_floatval },
         { "end", 1, 1, ptn_internal_end },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
@@ -31882,6 +32514,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fstat", 1, 1, ptn_internal_fstat },
         { "ftell", 1, 1, ptn_internal_ftell },
         { "ftruncate", 2, 2, ptn_internal_ftruncate },
+        { "fnmatch", 2, 3, ptn_internal_fnmatch },
         { "func_get_arg", 1, 1, ptn_internal_func_get_arg },
         { "func_get_args", 0, 0, ptn_internal_func_get_args },
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
@@ -31911,6 +32544,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "gettype", 1, 1, ptn_internal_gettype },
+        { "glob", 1, 2, ptn_internal_glob },
         { "gmdate", 1, 2, ptn_internal_gmdate },
         { "gmmktime", 0, 6, ptn_internal_gmmktime },
         { "hebrev", 1, 2, ptn_internal_hebrev },
@@ -31973,6 +32607,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ksort", 1, 2, ptn_internal_ksort },
         { "lcfirst", 1, 1, ptn_internal_lcfirst },
         { "levenshtein", 2, 5, ptn_internal_levenshtein },
+        { "link", 2, 2, ptn_internal_link },
+        { "linkinfo", 1, 1, ptn_internal_linkinfo },
         { "localeconv", 0, 0, ptn_internal_localeconv },
         { "localtime", 0, 2, ptn_internal_localtime },
         { "log", 1, 2, ptn_internal_log },
@@ -31985,6 +32621,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "md5_file", 1, 2, ptn_internal_md5_file },
         { "metaphone", 1, 2, ptn_internal_metaphone },
         { "method_exists", 2, 2, ptn_internal_method_exists },
+        { "microtime", 0, 1, ptn_internal_microtime },
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
         { "mktime", 0, 6, ptn_internal_mktime },
@@ -32038,7 +32675,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "range", 2, 3, ptn_internal_range },
         { "readdir", 1, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
+        { "readlink", 1, 1, ptn_internal_readlink },
         { "realpath", 1, 1, ptn_internal_realpath },
+        { "rename", 2, 3, ptn_internal_rename },
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "reset", 1, 1, ptn_internal_reset },
@@ -32121,8 +32760,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "substr_compare", 3, 5, ptn_internal_substr_compare },
         { "substr_count", 2, 4, ptn_internal_substr_count },
         { "substr_replace", 3, 4, ptn_internal_substr_replace },
+        { "symlink", 2, 2, ptn_internal_symlink },
+        { "sys_get_temp_dir", 0, 0, ptn_internal_sys_get_temp_dir },
         { "tan", 1, 1, ptn_internal_tan },
         { "tanh", 1, 1, ptn_internal_tanh },
+        { "tempnam", 2, 2, ptn_internal_tempnam },
         { "time", 0, 0, ptn_internal_time },
         { "tmpfile", 0, 0, ptn_internal_tmpfile },
         { "touch", 1, 3, ptn_internal_touch },
@@ -32132,7 +32774,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
         { "ucwords", 1, 2, ptn_internal_ucwords },
         { "uksort", 2, 2, ptn_internal_uksort },
-        { "unlink", 1, 1, ptn_internal_unlink },
+        { "umask", 0, 1, ptn_internal_umask },
+        { "unlink", 1, 2, ptn_internal_unlink },
         { "unpack", 2, 3, ptn_internal_unpack },
         { "unserialize", 1, 1, ptn_internal_unserialize },
         { "urldecode", 1, 1, ptn_internal_urldecode },

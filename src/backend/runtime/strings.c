@@ -1065,6 +1065,50 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_ARRAY_FILTER_USE_KEY);
         return 1;
     }
+    if (strcmp(name, "FNM_NOESCAPE") == 0) {
+        *out = ptn_int(PTN_FNM_NOESCAPE);
+        return 1;
+    }
+    if (strcmp(name, "FNM_PATHNAME") == 0) {
+        *out = ptn_int(PTN_FNM_PATHNAME);
+        return 1;
+    }
+    if (strcmp(name, "FNM_PERIOD") == 0) {
+        *out = ptn_int(PTN_FNM_PERIOD);
+        return 1;
+    }
+    if (strcmp(name, "FNM_CASEFOLD") == 0) {
+        *out = ptn_int(PTN_FNM_CASEFOLD);
+        return 1;
+    }
+    if (strcmp(name, "GLOB_MARK") == 0) {
+        *out = ptn_int(PTN_GLOB_MARK);
+        return 1;
+    }
+    if (strcmp(name, "GLOB_NOSORT") == 0) {
+        *out = ptn_int(PTN_GLOB_NOSORT);
+        return 1;
+    }
+    if (strcmp(name, "GLOB_NOCHECK") == 0) {
+        *out = ptn_int(PTN_GLOB_NOCHECK);
+        return 1;
+    }
+    if (strcmp(name, "GLOB_NOESCAPE") == 0) {
+        *out = ptn_int(PTN_GLOB_NOESCAPE);
+        return 1;
+    }
+    if (strcmp(name, "GLOB_BRACE") == 0) {
+        *out = ptn_int(PTN_GLOB_BRACE);
+        return 1;
+    }
+    if (strcmp(name, "GLOB_ONLYDIR") == 0) {
+        *out = ptn_int(PTN_GLOB_ONLYDIR);
+        return 1;
+    }
+    if (strcmp(name, "GLOB_ERR") == 0) {
+        *out = ptn_int(PTN_GLOB_ERR);
+        return 1;
+    }
     if (strcmp(name, "STR_PAD_LEFT") == 0) {
         *out = ptn_int(PTN_STR_PAD_LEFT);
         return 1;

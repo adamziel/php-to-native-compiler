@@ -23,8 +23,12 @@
 #include <sys/utime.h>
 #else
 #include <dirent.h>
+#include <fnmatch.h>
+#include <glob.h>
 #include <langinfo.h>
 #include <regex.h>
+#include <sys/time.h>
+#include <sys/statvfs.h>
 #include <sys/utsname.h>
 #include <utime.h>
 #include <unistd.h>
@@ -185,6 +189,17 @@ typedef struct {
 #define PTN_FILE_USE_INCLUDE_PATH 1
 #define PTN_FILE_IGNORE_NEW_LINES 2
 #define PTN_FILE_SKIP_EMPTY_LINES 4
+#define PTN_FNM_NOESCAPE 1
+#define PTN_FNM_PATHNAME 2
+#define PTN_FNM_PERIOD 4
+#define PTN_FNM_CASEFOLD 16
+#define PTN_GLOB_MARK 2
+#define PTN_GLOB_NOSORT 4
+#define PTN_GLOB_NOCHECK 16
+#define PTN_GLOB_NOESCAPE 64
+#define PTN_GLOB_BRACE 1024
+#define PTN_GLOB_ONLYDIR 8192
+#define PTN_GLOB_ERR 1
 #define PTN_SEEK_SET SEEK_SET
 #define PTN_SEEK_CUR SEEK_CUR
 #define PTN_SEEK_END SEEK_END
@@ -837,6 +852,7 @@ struct PtnRuntime {
     char **included_files;
     size_t included_files_len;
     size_t included_files_capacity;
+    char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
     size_t exception_string_param_max_len;
