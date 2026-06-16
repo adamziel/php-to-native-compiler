@@ -22269,6 +22269,7 @@ var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_call_user_func_array"));
     assert!(c_source.contains("ptn_internal_call_callback(runtime, args[0], arguments->len"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, argc, args, line)"));
 }
 
 #[test]
@@ -22390,6 +22391,43 @@ var_dump($ref);",
     assert!(c_source.contains("ptn_dynamic_call_effective_internal_name"));
     assert!(c_source.contains("ptn_dynamic_call_warn_internal_reference_argument_mismatches"));
     assert!(c_source.contains("ptn_dynamic_call_prepare_first_array_argument"));
+}
+
+#[test]
+fn compile_call_user_func_array_str_replace_count_prefer_ref_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-str-replace-count-prefer-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-str-replace-count-prefer-ref.php");
+    let output = root.join("call-user-func-array-str-replace-count-prefer-ref-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+namespace Foo;\n\
+call_user_func_array('str_replace', ['a', 'b', 'c', new \\stdClass]);\n\
+call_user_func_array('str_replace', ['a', 'b', 'c', 'count' => new \\stdClass]);\n\
+\\call_user_func_array('str_replace', ['a', 'b', 'c', new \\stdClass]);\n\
+\\call_user_func_array('str_replace', ['a', 'b', 'c', 'count' => new \\stdClass]);\n\
+$count = null;\n\
+call_user_func_array('str_replace', ['a', 'b', 'a', &$count]);\n\
+var_dump($count);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: str_replace(): Argument #4 ($count) must be passed by reference, value given in ptn on line 3\n",
+            "\nWarning: str_replace(): Argument #4 ($count) must be passed by reference, value given in ptn on line 4\n",
+            "\nWarning: str_replace(): Argument #4 ($count) must be passed by reference, value given in ptn on line 5\n",
+            "\nWarning: str_replace(): Argument #4 ($count) must be passed by reference, value given in ptn on line 6\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
