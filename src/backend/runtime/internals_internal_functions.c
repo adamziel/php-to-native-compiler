@@ -27121,6 +27121,8 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "getDeclaringClass")
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "invoke")
+        || ptn_ascii_case_equal(method_name, "invokeArgs")
         || ptn_ascii_case_equal(method_name, "isAbstract")
         || ptn_ascii_case_equal(method_name, "isConstructor")
         || ptn_ascii_case_equal(method_name, "isDestructor")
@@ -27129,6 +27131,7 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isPrivate")
         || ptn_ascii_case_equal(method_name, "isProtected")
         || ptn_ascii_case_equal(method_name, "isPublic")
+        || ptn_ascii_case_equal(method_name, "setAccessible")
         || ptn_ascii_case_equal(method_name, "isStatic")
         || ptn_ascii_case_equal(method_name, "isUserDefined");
 }
@@ -27328,6 +27331,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getDeclaringClass",
             "getModifiers",
             "getName",
+            "invoke",
+            "invokeArgs",
             "isAbstract",
             "isConstructor",
             "isDestructor",
@@ -27336,6 +27341,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isPrivate",
             "isProtected",
             "isPublic",
+            "setAccessible",
             "isStatic",
             "isUserDefined",
         };
@@ -28108,6 +28114,205 @@ static void ptn_reflection_method_check_exact_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static void ptn_reflection_method_check_at_least_arguments(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    size_t minimum
+) {
+    if (argc >= minimum) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionMethod::%s() expects at least %zu argument%s, %zu given",
+        method_name,
+        minimum,
+        minimum == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static void ptn_reflection_method_throw_abstract(
+    PtnRuntime *runtime,
+    PtnReflectionMethodData *data
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Trying to invoke abstract method %s::%s()",
+        data->class_name,
+        data->name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Trying to invoke abstract method %s::%s()",
+        data->class_name,
+        data->name
+    );
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static void ptn_reflection_method_throw_non_static_without_object(
+    PtnRuntime *runtime,
+    PtnReflectionMethodData *data
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Trying to invoke non static method %s::%s() without an object",
+        data->class_name,
+        data->name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Trying to invoke non static method %s::%s() without an object",
+        data->class_name,
+        data->name
+    );
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static void ptn_reflection_method_throw_receiver_not_instance(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ReflectionException",
+        "Given object is not an instance of the class this method was declared in"
+    );
+}
+
+static int ptn_reflection_method_check_object_argument(
+    PtnRuntime *runtime,
+    const char *method_name,
+    PtnValue arg,
+    PtnValue *object_out
+) {
+    PtnValue resolved = ptn_value_deref(arg);
+    if (
+        resolved.type == PTN_NULL
+        || resolved.type == PTN_OBJECT
+        || resolved.type == PTN_CLOSURE
+        || resolved.type == PTN_EXCEPTION
+    ) {
+        *object_out = resolved;
+        return 1;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionMethod::%s(): Argument #1 ($object) must be of type ?object, %s given",
+        method_name,
+        ptn_count_operand_type_name(resolved)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
+static int ptn_reflection_method_collect_invoke_args(
+    PtnRuntime *runtime,
+    const char *method_name,
+    PtnValue arg,
+    size_t *argc_out,
+    PtnValue **args_out
+) {
+    PtnValue resolved = ptn_value_deref(arg);
+    if (resolved.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionMethod::%s(): Argument #2 ($args) must be of type array, %s given",
+            method_name,
+            ptn_count_operand_type_name(resolved)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    *argc_out = resolved.as.array->len;
+    *args_out = NULL;
+    if (resolved.as.array->len == 0) {
+        return 1;
+    }
+    *args_out = malloc(resolved.as.array->len * sizeof(PtnValue));
+    if (*args_out == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < resolved.as.array->len; i++) {
+        (*args_out)[i] = ptn_value_clone(resolved.as.array->entries[i].value);
+    }
+    return 1;
+}
+
+static PtnValue ptn_reflection_method_dispatch_invoke(
+    PtnRuntime *runtime,
+    PtnReflectionMethodData *data,
+    int is_static,
+    PtnValue object_arg,
+    size_t method_argc,
+    const PtnValue *method_args,
+    size_t line
+) {
+    if (!is_static && ptn_value_deref(object_arg).type == PTN_NULL) {
+        ptn_reflection_method_throw_non_static_without_object(runtime, data);
+        return ptn_null();
+    }
+    if (runtime->reflected_method_dispatch == NULL) {
+        ptn_reflection_method_throw_receiver_not_instance(runtime);
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_null();
+    const char *previous_current_class = runtime->current_class_name;
+    runtime->current_class_name = data->class_name;
+    int handled = runtime->reflected_method_dispatch(
+        runtime,
+        is_static ? ptn_null() : object_arg,
+        data->class_name,
+        data->name,
+        data->class_name,
+        method_argc,
+        method_args,
+        line,
+        &result
+    );
+    runtime->current_class_name = previous_current_class;
+    if (handled) {
+        return result;
+    }
+
+    ptn_reflection_method_throw_receiver_not_instance(runtime);
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -28116,12 +28321,6 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)args;
-    (void)line;
-    ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
     PtnReflectionMethodData *data = ptn_reflection_method_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
@@ -28138,6 +28337,84 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             &visibility,
             &is_abstract
         );
+    }
+    if (ptn_ascii_case_equal(name, "invoke")) {
+        if (is_abstract) {
+            ptn_reflection_method_throw_abstract(runtime, data);
+            return ptn_null();
+        }
+        ptn_reflection_method_check_at_least_arguments(runtime, "invoke", argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object_arg = ptn_null();
+        if (!ptn_reflection_method_check_object_argument(runtime, "invoke", args[0], &object_arg)) {
+            return ptn_null();
+        }
+        return ptn_reflection_method_dispatch_invoke(
+            runtime,
+            data,
+            is_static,
+            object_arg,
+            argc - 1,
+            args + 1,
+            line
+        );
+    }
+    if (ptn_ascii_case_equal(name, "invokeArgs")) {
+        if (is_abstract) {
+            ptn_reflection_method_throw_abstract(runtime, data);
+            return ptn_null();
+        }
+        ptn_reflection_method_check_exact_arguments(runtime, "invokeArgs", argc, 2);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object_arg = ptn_null();
+        if (!ptn_reflection_method_check_object_argument(runtime, "invokeArgs", args[0], &object_arg)) {
+            return ptn_null();
+        }
+        size_t method_argc = 0;
+        PtnValue *method_args = NULL;
+        if (!ptn_reflection_method_collect_invoke_args(
+                runtime,
+                "invokeArgs",
+                args[1],
+                &method_argc,
+                &method_args
+            )) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_reflection_method_dispatch_invoke(
+            runtime,
+            data,
+            is_static,
+            object_arg,
+            method_argc,
+            method_args,
+            line
+        );
+        for (size_t i = 0; i < method_argc; i++) {
+            ptn_value_destroy(&method_args[i]);
+        }
+        free(method_args);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "setAccessible")) {
+        ptn_reflection_method_check_exact_arguments(runtime, "setAccessible", argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Method ReflectionMethod::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1",
+            line
+        );
+        return ptn_null();
+    }
+    ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(data->name));

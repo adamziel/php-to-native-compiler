@@ -195,6 +195,9 @@ pub fn emit_c(module: &Module) -> String {
     }
     if needs_method_dispatch {
         out.push_str("    runtime.method_dispatch = ptn_call_declared_method;\n");
+        out.push_str(
+            "    runtime.reflected_method_dispatch = ptn_call_declared_method_in_scope;\n",
+        );
         out.push_str("    runtime.declared_method_exists = ptn_declared_class_method_exists;\n");
     }
     if needs_magic_property_read {
@@ -11654,7 +11657,7 @@ impl ValueEmitter {
             return false;
         };
         self.classes.iter().any(|class| {
-            self.class_is_same_or_descendant(access_scope, &class.name)
+            self.class_scope_allows(access_scope, &class.name)
                 && self.class_is_same_or_descendant(target_class, &class.name)
                 && class.methods.iter().any(|method| {
                     method.is_static
