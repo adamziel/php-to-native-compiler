@@ -7719,6 +7719,18 @@ fn collect_inc_dec_target_legacy_dollar_brace_deprecations(
                 }
             }
         }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
         IncDecTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -7747,6 +7759,10 @@ fn collect_reference_target_legacy_dollar_brace_deprecations(
         }
         ReferenceTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
     }
 }
@@ -8262,6 +8278,10 @@ fn collect_reference_target_runtime_requirements(
         ReferenceTarget::Property { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
     }
 }
 
@@ -8359,6 +8379,18 @@ fn collect_inc_dec_target_runtime_requirements(
             }
         }
         IncDecTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -9057,6 +9089,15 @@ fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
             name: name.clone(),
             line: *line,
         }),
+        ValueExpr::DynamicPropertyFetch {
+            receiver,
+            name,
+            line,
+        } => Some(ReferenceTarget::DynamicProperty {
+            receiver: receiver.clone(),
+            name: name.clone(),
+            line: *line,
+        }),
         _ => None,
     }
 }
@@ -9375,7 +9416,9 @@ fn emit_increment_statement(
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
-        IncDecTarget::Property { .. } | IncDecTarget::StaticProperty { .. } => {
+        IncDecTarget::PropertyArrayDim { .. }
+        | IncDecTarget::Property { .. }
+        | IncDecTarget::StaticProperty { .. } => {
             let result_temp =
                 values.emit_inc_dec_expression(out, target, op, IncDecResult::Pre, line);
             emit_value_cleanup(out, "    ", &result_temp);
@@ -9646,6 +9689,7 @@ impl AssignmentTargetLine for ReferenceTarget {
             ReferenceTarget::ArrayDim(target) => target.line,
             ReferenceTarget::PropertyArrayDim { line, .. } => *line,
             ReferenceTarget::Property { line, .. } => *line,
+            ReferenceTarget::DynamicProperty { line, .. } => *line,
         }
     }
 }
@@ -9746,6 +9790,11 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
         ReferenceTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
+        ReferenceTarget::DynamicProperty {
+            receiver,
+            name: property_name,
+            ..
+        } => value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name),
     }
 }
 
@@ -9769,6 +9818,18 @@ fn inc_dec_target_mentions_variable(target: &IncDecTarget, name: &str) -> bool {
             array, dimensions, ..
         } => {
             array == name
+                || dimensions.iter().any(|dimension| {
+                    dimension
+                        .as_ref()
+                        .is_some_and(|dimension| value_mentions_variable(dimension, name))
+                })
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
                 || dimensions.iter().any(|dimension| {
                     dimension
                         .as_ref()
@@ -12361,6 +12422,29 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
             }
+            ReferenceTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                out.push_str("    ptn_object_bind_property_reference(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+            }
         }
     }
 
@@ -13197,6 +13281,111 @@ impl ValueEmitter {
                     result_temp
                 }
             }
+            IncDecTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                ..
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let path = emit_array_path_segments(out, self, dimensions);
+                out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let current_value_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_value_temp);
+                out.push_str(" = ptn_object_read_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let current_element_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_element_temp);
+                out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(&current_value_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_element_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push_str("(&runtime, ");
+                out.push_str(&current_element_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+                out.push_str(&current_value_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&current_value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &assigned_temp);
+                emit_value_cleanup(out, "    ", &current_element_temp);
+                emit_value_cleanup(out, "    ", &current_value_temp);
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
             IncDecTarget::Property { receiver, name, .. } => {
                 let receiver_temp = self.emit_materialized_value(out, receiver);
                 let current_temp = self.next_temp();
@@ -13541,9 +13730,9 @@ impl ValueEmitter {
         let class_name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&class_name_temp);
-        out.push_str(" = ptn_value_to_string(ptn_value_deref(");
+        out.push_str(" = ptn_dynamic_new_class_name_from_value(");
         out.push_str(&class_value_temp);
-        out.push_str("));\n");
+        out.push_str(");\n");
         emit_value_cleanup(out, "    ", &class_value_temp);
         let class_lookup_temp = self.next_temp();
         out.push_str("    const char *");
@@ -16354,6 +16543,31 @@ impl ValueEmitter {
                 out.push_str(&c_optional_string(self.current_class_name.as_deref()));
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                temp
+            }
+            ReferenceTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_object_reference_for_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
                 temp

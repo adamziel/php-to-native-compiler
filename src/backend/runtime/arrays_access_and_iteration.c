@@ -219,6 +219,7 @@ static PTN_UNUSED void ptn_emit_array_runtime_warning(PtnRuntime *runtime, const
         return;
     }
     ptn_emit_array_runtime_diagnostic("Warning", message, line);
+    runtime->diagnostics.emitted_warning = 1;
 }
 
 static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, PtnResource *resource, size_t line) {
@@ -279,6 +280,20 @@ static PTN_UNUSED int ptn_class_name_is_generator(const char *class_name) {
         generator++;
     }
     return *class_name == '\0' && *generator == '\0';
+}
+
+static PTN_UNUSED char *ptn_dynamic_new_class_name_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return ptn_duplicate_string(value.as.object->class_name);
+        case PTN_EXCEPTION:
+            return ptn_duplicate_string(value.as.exception->class_name);
+        case PTN_CLOSURE:
+            return ptn_duplicate_string("Closure");
+        default:
+            return ptn_value_to_string(value);
+    }
 }
 
 static PTN_UNUSED PtnValue ptn_new_exception_object(
@@ -3744,11 +3759,11 @@ static PTN_UNUSED void ptn_emit_undefined_array_key_warning(PtnRuntime *runtime,
     free(display);
 }
 
-static PTN_UNUSED void ptn_emit_string_offset_cast_warning(size_t line) {
-    ptn_emit_array_runtime_diagnostic("Warning", "String offset cast occurred", line);
+static PTN_UNUSED void ptn_emit_string_offset_cast_warning(PtnRuntime *runtime, size_t line) {
+    ptn_emit_array_runtime_warning(runtime, "String offset cast occurred", line);
 }
 
-static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(const char *key, size_t line) {
+static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(PtnRuntime *runtime, const char *key, size_t line) {
     const char *prefix = "Illegal string offset \"";
     size_t prefix_len = strlen(prefix);
     size_t key_len = strlen(key);
@@ -3763,31 +3778,31 @@ static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(const char *key, s
     memcpy(message + prefix_len, key, key_len);
     message[prefix_len + key_len] = '"';
     message[prefix_len + key_len + 1] = '\0';
-    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+    ptn_emit_array_runtime_warning(runtime, message, line);
     free(message);
 }
 
-static PTN_UNUSED void ptn_emit_uninitialized_string_offset_warning(int64_t offset, size_t line) {
+static PTN_UNUSED void ptn_emit_uninitialized_string_offset_warning(PtnRuntime *runtime, int64_t offset, size_t line) {
     char message[96];
     int written = snprintf(message, sizeof(message), "Uninitialized string offset %lld", (long long)offset);
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+    ptn_emit_array_runtime_warning(runtime, message, line);
 }
 
-static PTN_UNUSED void ptn_emit_illegal_string_offset_integer_warning(int64_t offset, size_t line) {
+static PTN_UNUSED void ptn_emit_illegal_string_offset_integer_warning(PtnRuntime *runtime, int64_t offset, size_t line) {
     char message[96];
     int written = snprintf(message, sizeof(message), "Illegal string offset %lld", (long long)offset);
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_array_runtime_diagnostic("Warning", message, line);
+    ptn_emit_array_runtime_warning(runtime, message, line);
 }
 
-static PTN_UNUSED void ptn_emit_string_offset_assignment_byte_warning(size_t line) {
-    ptn_emit_array_runtime_diagnostic(
-        "Warning",
+static PTN_UNUSED void ptn_emit_string_offset_assignment_byte_warning(PtnRuntime *runtime, size_t line) {
+    ptn_emit_array_runtime_warning(
+        runtime,
         "Only the first byte will be assigned to the string offset",
         line
     );
@@ -3834,6 +3849,16 @@ static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, 
     return 1;
 }
 
+static PTN_UNUSED int64_t ptn_string_offset_float_to_int(double value) {
+    if (value >= 9223372036854775808.0) {
+        return INT64_MAX;
+    }
+    if (value <= -9223372036854775808.0) {
+        return INT64_MIN;
+    }
+    return (int64_t)value;
+}
+
 static PTN_UNUSED int ptn_string_offset_from_value(
     PtnRuntime *runtime,
     PtnValue key_value,
@@ -3848,13 +3873,13 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             return 1;
         case PTN_BOOL:
             if (!quiet) {
-                ptn_emit_string_offset_cast_warning(line);
+                ptn_emit_string_offset_cast_warning(runtime, line);
             }
             *offset = key_value.as.boolean ? 1 : 0;
             return 1;
         case PTN_NULL:
             if (!quiet) {
-                ptn_emit_string_offset_cast_warning(line);
+                ptn_emit_string_offset_cast_warning(runtime, line);
             }
             *offset = 0;
             return 1;
@@ -3869,9 +3894,9 @@ static PTN_UNUSED int ptn_string_offset_from_value(
                     );
                 }
             } else {
-                ptn_emit_string_offset_cast_warning(line);
+                ptn_emit_string_offset_cast_warning(runtime, line);
             }
-            *offset = (int64_t)key_value.as.floating;
+            *offset = ptn_string_offset_float_to_int(key_value.as.floating);
             return 1;
         case PTN_RESOURCE:
             if (quiet) {
@@ -3890,7 +3915,7 @@ static PTN_UNUSED int ptn_string_offset_from_value(
                     if (quiet) {
                         return 0;
                     }
-                    ptn_emit_illegal_string_offset_warning(key_string, line);
+                    ptn_emit_illegal_string_offset_warning(runtime, key_string, line);
                 }
                 return 1;
             }
@@ -3957,7 +3982,7 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
     size_t index = 0;
     if (!ptn_string_offset_index(container.as.string.len, offset, &index)) {
         if (!quiet) {
-            ptn_emit_uninitialized_string_offset_warning(offset, line);
+            ptn_emit_uninitialized_string_offset_warning(runtime, offset, line);
             return ptn_lookup_found(ptn_string(""));
         }
         return ptn_lookup_missing();
@@ -3973,6 +3998,7 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
 }
 
 static PTN_UNUSED int ptn_string_offset_assignment_index(
+    PtnRuntime *runtime,
     size_t string_len,
     int64_t offset,
     size_t line,
@@ -3994,7 +4020,7 @@ static PTN_UNUSED int ptn_string_offset_assignment_index(
         return 1;
     }
 
-    ptn_emit_illegal_string_offset_integer_warning(offset, line);
+    ptn_emit_illegal_string_offset_integer_warning(runtime, offset, line);
     return 0;
 }
 
@@ -4015,7 +4041,7 @@ static PTN_UNUSED unsigned char ptn_string_offset_assignment_byte(
         return 0;
     }
     if (string.len > 1) {
-        ptn_emit_string_offset_assignment_byte_warning(line);
+        ptn_emit_string_offset_assignment_byte_warning(runtime, line);
     }
 
     unsigned char byte = (unsigned char)string.data[0];
@@ -4041,7 +4067,7 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
 
     size_t index = 0;
     size_t new_len = 0;
-    if (!ptn_string_offset_assignment_index(target->as.string.len, offset, line, &index, &new_len)) {
+    if (!ptn_string_offset_assignment_index(runtime, target->as.string.len, offset, line, &index, &new_len)) {
         return;
     }
 

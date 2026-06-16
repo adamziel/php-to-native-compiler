@@ -502,6 +502,19 @@ impl IncludeCollector {
                 self.path_env.remove(&target.array);
                 Ok(())
             }
+            IncDecTarget::PropertyArrayDim {
+                receiver,
+                dimensions,
+                ..
+            } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             IncDecTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
@@ -547,7 +560,9 @@ impl IncludeCollector {
             ReferenceTarget::ArrayDim(target) => {
                 self.path_env.remove(&target.array);
             }
-            ReferenceTarget::PropertyArrayDim { .. } | ReferenceTarget::Property { .. } => {}
+            ReferenceTarget::PropertyArrayDim { .. }
+            | ReferenceTarget::Property { .. }
+            | ReferenceTarget::DynamicProperty { .. } => {}
         }
     }
 
@@ -816,6 +831,10 @@ impl IncludeCollector {
             }
             ReferenceTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
+            }
+            ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                self.collect_expr(name, source_file, source_dir)
             }
             ReferenceTarget::PropertyArrayDim {
                 receiver,

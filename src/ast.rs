@@ -475,6 +475,11 @@ pub enum ReferenceTarget {
         name: String,
         span: SourceSpan,
     },
+    DynamicProperty {
+        receiver: Box<Expr>,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -493,6 +498,12 @@ pub enum IncDecTarget {
         span: SourceSpan,
     },
     ArrayDim(ArrayDimTarget),
+    PropertyArrayDim {
+        receiver: Box<Expr>,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,

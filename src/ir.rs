@@ -655,6 +655,11 @@ pub enum ReferenceTarget {
         name: String,
         line: usize,
     },
+    DynamicProperty {
+        receiver: Box<ValueExpr>,
+        name: Box<ValueExpr>,
+        line: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -822,6 +827,12 @@ pub enum IncDecTarget {
     },
     ArrayDim {
         array: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+    PropertyArrayDim {
+        receiver: Box<ValueExpr>,
+        name: String,
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
@@ -1723,6 +1734,9 @@ fn reference_target_contains_yield(target: &AstReferenceTarget) -> bool {
             ..
         } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
         AstReferenceTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        AstReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            expr_contains_yield(receiver) || expr_contains_yield(name)
+        }
     }
 }
 
@@ -1858,6 +1872,24 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: target.span.line,
             },
+            AstIncDecTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                span,
+            } => IncDecTarget::PropertyArrayDim {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstIncDecTarget::Property {
                 receiver,
                 name,
@@ -1946,6 +1978,15 @@ impl<'a> LoweringContext<'a> {
             } => ReferenceTarget::Property {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
+                line: span.line,
+            },
+            AstReferenceTarget::DynamicProperty {
+                receiver,
+                name,
+                span,
+            } => ReferenceTarget::DynamicProperty {
+                receiver: Box::new(self.lower_expr(receiver)),
+                name: Box::new(self.lower_expr(name)),
                 line: span.line,
             },
         }
@@ -3112,6 +3153,9 @@ fn assertion_reference_target_text(target: &AstReferenceTarget) -> String {
         AstReferenceTarget::Property { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }
+        AstReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            format!("{}->{{{}}}", assertion_expr_text(receiver), assertion_expr_text(name))
+        }
     }
 }
 
@@ -3121,6 +3165,22 @@ fn assertion_inc_dec_target_text(target: &AstIncDecTarget) -> String {
         AstIncDecTarget::DynamicVariable { .. } => "${...}".to_string(),
         AstIncDecTarget::DynamicArrayDim { .. } => "${...}[...]".to_string(),
         AstIncDecTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+        AstIncDecTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            let mut text = format!("{}->{name}", assertion_expr_text(receiver));
+            for dimension in dimensions {
+                text.push('[');
+                if let Some(dimension) = dimension {
+                    text.push_str(&assertion_expr_text(dimension));
+                }
+                text.push(']');
+            }
+            text
+        }
         AstIncDecTarget::Property { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }

@@ -3974,6 +3974,21 @@ impl Parser<'_> {
             return Ok(left);
         }
 
+        if let Expr::Unary {
+            op: UnaryOp::ErrorSuppress,
+            expr,
+            span: suppress_span,
+        } = left
+        {
+            let assignment = self.parse_assignment_expr_from_left(*expr)?;
+            let span = combine_spans(suppress_span, assignment.span());
+            return Ok(Expr::Unary {
+                op: UnaryOp::ErrorSuppress,
+                expr: Box::new(assignment),
+                span,
+            });
+        }
+
         let operator = self.peek().clone();
         let op = self.expect_assignment_op()?;
         let left_span = left.span();
@@ -5055,7 +5070,7 @@ impl Parser<'_> {
             self.peek().kind,
             TokenKind::Variable(_) | TokenKind::Dollar | TokenKind::LeftParen
         ) {
-            let class_name = self.parse_primary_expr()?;
+            let class_name = self.parse_postfix_expr()?;
             let mut span = combine_spans(start_span, class_name.span());
             let (arguments, argument_names, argument_unpacks) =
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
@@ -7152,6 +7167,10 @@ fn collect_arrow_captures_from_reference_target(
         ReferenceTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
     }
 }
 
@@ -7181,6 +7200,18 @@ fn collect_arrow_captures_from_inc_dec_target(
         IncDecTarget::ArrayDim(target) => {
             add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
             collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
         }
         IncDecTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
@@ -9783,6 +9814,10 @@ fn validate_control_transfers_in_reference_target(target: &ReferenceTarget) -> R
         ReferenceTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_expr(name)?;
+        }
     }
     Ok(())
 }
@@ -9805,6 +9840,14 @@ fn validate_control_transfers_in_inc_dec_target(target: &IncDecTarget) -> Result
         }
         IncDecTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
         }
         IncDecTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
@@ -10050,6 +10093,10 @@ fn reference_target_reference_to_variable(
                 .flatten()
                 .find_map(|dimension| expr_array_literal_reference_to_variable(dimension, variable))
         }),
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            expr_array_literal_reference_to_variable(receiver, variable)
+                .or_else(|| expr_array_literal_reference_to_variable(name, variable))
+        }
         _ => None,
     }
 }
@@ -10346,6 +10393,19 @@ fn validate_anonymous_functions_in_inc_dec_target(
         }
         IncDecTarget::ArrayDim(target) => {
             for dimension in &target.dimensions {
+                if let Some(dimension) = dimension {
+                    validate_anonymous_functions_in_expr(dimension, functions)?;
+                }
+            }
+            Ok(())
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_anonymous_functions_in_expr(receiver, functions)?;
+            for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     validate_anonymous_functions_in_expr(dimension, functions)?;
                 }
@@ -11642,10 +11702,17 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             dimensions,
             span,
         }),
-        AssignmentTarget::PropertyArrayDim { span, .. } => Err(Diagnostic::new(
-            "increment/decrement expression target must be a variable, array offset, or property",
-            Some(span),
-        )),
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            span,
+        } => Ok(IncDecTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            span,
+        }),
         AssignmentTarget::Property {
             receiver,
             name,
@@ -11677,6 +11744,7 @@ fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
         IncDecTarget::DynamicVariable { span, .. } => *span,
         IncDecTarget::DynamicArrayDim { span, .. } => *span,
         IncDecTarget::ArrayDim(target) => target.span,
+        IncDecTarget::PropertyArrayDim { span, .. } => *span,
         IncDecTarget::Property { span, .. } => *span,
         IncDecTarget::StaticProperty { span, .. } => *span,
     }
@@ -11695,6 +11763,15 @@ fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
             name,
             span,
         } => Ok(ReferenceTarget::Property {
+            receiver,
+            name,
+            span,
+        }),
+        Expr::DynamicPropertyFetch {
+            receiver,
+            name,
+            span,
+        } => Ok(ReferenceTarget::DynamicProperty {
             receiver,
             name,
             span,
@@ -11908,6 +11985,7 @@ fn reference_target_span(target: &ReferenceTarget) -> SourceSpan {
         ReferenceTarget::ArrayDim(target) => target.span,
         ReferenceTarget::PropertyArrayDim { span, .. } => *span,
         ReferenceTarget::Property { span, .. } => *span,
+        ReferenceTarget::DynamicProperty { span, .. } => *span,
     }
 }
 
@@ -12351,6 +12429,24 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
         IncDecTarget::DynamicArrayDim {
             dimensions, span, ..
         } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_append_array_read(dimension)?;
+                } else {
+                    return Err(Diagnostic::new(
+                        "increment/decrement cannot use append array access",
+                        Some(*span),
+                    ));
+                }
+            }
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            span,
+            ..
+        } => {
+            reject_append_array_read(receiver)?;
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     reject_append_array_read(dimension)?;
