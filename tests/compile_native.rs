@@ -5004,6 +5004,23 @@ function old_fn() {}
         "Attribute \"Deprecated\" must not be repeated"
     );
 
+    let return_type_will_change_function =
+        parser::parse("<?php #[ReturnTypeWillChange] function demo() {}").unwrap_err();
+    assert_eq!(return_type_will_change_function.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        return_type_will_change_function.message,
+        "Attribute \"ReturnTypeWillChange\" cannot target function (allowed targets: method)"
+    );
+
+    let return_type_will_change_property =
+        parser::parse("<?php class Demo { #[ReturnTypeWillChange] public int $value; }")
+            .unwrap_err();
+    assert_eq!(return_type_will_change_property.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        return_type_will_change_property.message,
+        "Attribute \"ReturnTypeWillChange\" cannot target property (allowed targets: method)"
+    );
+
     let multiple_constants =
         parser::parse("<?php #[Foo] const First = 1, Second = 2;").unwrap_err();
     assert_eq!(multiple_constants.kind, DiagnosticKind::Fatal);

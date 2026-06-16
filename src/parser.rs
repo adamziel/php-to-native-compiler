@@ -2029,6 +2029,14 @@ impl Parser<'_> {
             attributes.clone(),
             class_name,
         )?];
+        validate_builtin_attributes_for_target(
+            &attributes,
+            AttributeTarget::Property,
+            properties
+                .first()
+                .map(|property| property.span)
+                .unwrap_or_else(|| self.previous_span()),
+        )?;
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
             properties.push(self.parse_static_property_declaration(
@@ -2167,6 +2175,14 @@ impl Parser<'_> {
             class_name,
         )?;
         let mut properties = vec![first_property];
+        validate_builtin_attributes_for_target(
+            &attributes,
+            AttributeTarget::Property,
+            properties
+                .first()
+                .map(|property| property.span)
+                .unwrap_or_else(|| self.previous_span()),
+        )?;
         self.reject_asymmetric_virtual_property_hook(
             &properties[0],
             set_visibility_span,
@@ -8826,6 +8842,9 @@ fn apply_parsed_attribute(
             strict_types,
         )?;
         attributes.no_discard_message = Some(arguments.message().unwrap_or_default());
+    } else if name.eq_ignore_ascii_case("ReturnTypeWillChange") {
+        attributes.return_type_will_change_count =
+            attributes.return_type_will_change_count.saturating_add(1);
     }
     Ok(())
 }
@@ -8850,6 +8869,9 @@ fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeM
     attributes.override_count = attributes
         .override_count
         .saturating_add(group.override_count);
+    attributes.return_type_will_change_count = attributes
+        .return_type_will_change_count
+        .saturating_add(group.return_type_will_change_count);
     attributes.has_override |= group.has_override;
     attributes.has_attribute |= group.has_attribute;
     attributes.has_allow_dynamic_properties |= group.has_allow_dynamic_properties;
@@ -10123,6 +10145,7 @@ enum TypeAtom {
     Callable,
     Object,
     Mixed,
+    Void,
     Never,
     Static,
     Class(String),
@@ -10188,8 +10211,11 @@ fn type_hint_alternatives(type_hint: &TypeHint) -> Vec<TypeAlternative> {
                 atoms: vec![TypeAtom::Class("Traversable".to_string())],
             },
         ],
-        TypeHint::Mixed | TypeHint::Void => vec![TypeAlternative {
+        TypeHint::Mixed => vec![TypeAlternative {
             atoms: vec![TypeAtom::Mixed],
+        }],
+        TypeHint::Void => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Void],
         }],
         TypeHint::Never => vec![TypeAlternative {
             atoms: vec![TypeAtom::Never],
@@ -10246,6 +10272,9 @@ fn type_atom_is_subtype(
     classes: &[ClassDecl],
     runtime_class_aliases: &HashMap<String, String>,
 ) -> bool {
+    if matches!(candidate, TypeAtom::Void) && matches!(target, TypeAtom::Mixed) {
+        return false;
+    }
     if matches!(candidate, TypeAtom::Never) || matches!(target, TypeAtom::Mixed) {
         return true;
     }
@@ -10796,6 +10825,7 @@ enum AttributeTarget {
     Function,
     Method,
     Parameter,
+    Property,
     ClassConstant,
     Constant,
 }
@@ -10819,6 +10849,11 @@ fn validate_builtin_attributes_for_target(
     validate_builtin_attribute_repetition("Deprecated", attributes.deprecated_count, span)?;
     validate_builtin_attribute_repetition("NoDiscard", attributes.no_discard_count, span)?;
     validate_builtin_attribute_repetition("Override", attributes.override_count, span)?;
+    validate_builtin_attribute_repetition(
+        "ReturnTypeWillChange",
+        attributes.return_type_will_change_count,
+        span,
+    )?;
 
     if attributes.delayed_target_validation_count > 0 {
         return Ok(());
@@ -10862,6 +10897,14 @@ fn validate_builtin_attributes_for_target(
         "function, method",
         span,
     )?;
+    validate_builtin_attribute_target(
+        "ReturnTypeWillChange",
+        attributes.return_type_will_change_count,
+        target,
+        &[AttributeTarget::Method],
+        "method",
+        span,
+    )?;
     Ok(())
 }
 
@@ -10901,6 +10944,7 @@ fn attribute_target_name(target: AttributeTarget) -> &'static str {
         AttributeTarget::Function => "function",
         AttributeTarget::Method => "method",
         AttributeTarget::Parameter => "parameter",
+        AttributeTarget::Property => "property",
         AttributeTarget::ClassConstant => "class constant",
         AttributeTarget::Constant => "constant",
     }

@@ -233,6 +233,7 @@ pub struct AttributeMetadata {
     pub deprecated_count: u16,
     pub no_discard_count: u16,
     pub override_count: u16,
+    pub return_type_will_change_count: u16,
     pub has_override: bool,
     pub has_attribute: bool,
     pub has_allow_dynamic_properties: bool,
