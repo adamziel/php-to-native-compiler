@@ -2,8 +2,8 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-16T23:35:07Z |
-| source commit | `b6029f5197f1` |
+| last refresh | 2026-06-16T23:53:19Z |
+| source commit | `2c63841927fa` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
 | evidence source | `tools/status-dashboard-features.tsv` |
@@ -13,17 +13,17 @@
 
 | metric | tests |
 | --- | ---: |
-| ported tests | 963 |
-| passed tests | 668 |
+| ported tests | 990 |
+| passed tests | 695 |
 | upstream tests | 21867 |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-16T23:00Z) | 17 |
-| last 24 hours (2026-06-16T00:00Z - 2026-06-16T23:00Z) | 97 |
-| last 7 days (2026-06-10T00:00Z - 2026-06-16T23:00Z) | 532 |
+| latest hour (2026-06-16T23:00Z) | 44 |
+| last 24 hours (2026-06-16T00:00Z - 2026-06-16T23:00Z) | 124 |
+| last 7 days (2026-06-10T00:00Z - 2026-06-16T23:00Z) | 559 |
 
 ## Feature Table
 
@@ -42,6 +42,8 @@
 | ptn-xe1e shell/process helper rows | 14 | 14 | 14 |
 | ptn-d06v builtin attribute diagnostic rows | 7 | 7 | 8 |
 | ptn-nvk4 COW reference PHPT rows | 10 | 10 | 10 |
+| ptn-p4cv generator yield-from delegation rows | 23 | 23 | 23 |
+| ptn-88g7 generator reference COW rows | 4 | 4 | 4 |
 | ptn-snt7 object/class metadata row pack | 8 | 8 | 8 |
 | ptn-456b ext-standard strings row pack | 27 | 27 | 47 |
 | ptn-y4f1 COW/reference sort/object walk row pack | 72 | 59 | 72 |
@@ -77,7 +79,7 @@
 | ptn-w17z.18 numeric/math/conversions row pack | 35 | 35 | 35 |
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 | 13 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 | 126 |
-| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18652 |
+| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18625 |
 
 ## Last 7 Days
 
@@ -250,4 +252,4 @@
 | 2026-06-16T20:00Z | 0 | 571 |
 | 2026-06-16T21:00Z | 46 | 617 |
 | 2026-06-16T22:00Z | 34 | 651 |
-| 2026-06-16T23:00Z | 17 | 668 |
+| 2026-06-16T23:00Z | 44 | 695 |
