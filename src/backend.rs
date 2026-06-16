@@ -12891,6 +12891,29 @@ impl ValueEmitter {
         ))
     }
 
+    fn static_magic_call_may_handle_resolved_name(&self, resolved_name: &str) -> bool {
+        let Some((class_name, method_name)) = self.split_static_call_name(resolved_name) else {
+            return false;
+        };
+        let Some(class) = class_by_name(&self.classes, class_name) else {
+            return false;
+        };
+        if class_magic_call_static_method(class, &self.classes).is_none() {
+            return false;
+        }
+        for entry in class_method_lookup_chain(class, &self.classes) {
+            let method = entry.method;
+            if !method.name.eq_ignore_ascii_case(method_name) {
+                continue;
+            }
+            if method.is_static {
+                return !self.method_visibility_allows(method.visibility, entry.declaring_class);
+            }
+            return method.visibility != PropertyVisibility::Public;
+        }
+        true
+    }
+
     fn emit_called_class_override_expr(out: &mut String, override_: &CalledClassOverride) {
         match override_ {
             CalledClassOverride::Literal(class_name) => {
@@ -20513,13 +20536,15 @@ impl ValueEmitter {
             let direct_parameters = direct_user
                 .as_ref()
                 .map(|direct_user| direct_user.parameters.as_slice());
+            let dynamic_argument_materialization = direct_user.is_none()
+                && self.static_magic_call_may_handle_resolved_name(&resolved_name);
             let args_temp = self.emit_call_arguments_builder(
                 out,
                 name,
                 arguments,
                 argument_unpacks,
                 line,
-                false,
+                dynamic_argument_materialization,
                 direct_parameters,
             );
             if let Some(direct_user) = &direct_user {
@@ -20632,6 +20657,8 @@ impl ValueEmitter {
 
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_append_reference_temps = Vec::new();
+        let dynamic_argument_materialization =
+            direct_user.is_none() && self.static_magic_call_may_handle_resolved_name(&resolved_name);
         for (argument_index, argument) in arguments.iter().enumerate() {
             let by_ref_parameter = direct_user.as_ref().and_then(|direct_user| {
                 by_ref_parameter_for_argument(&direct_user.parameters, argument_index)
@@ -20675,6 +20702,8 @@ impl ValueEmitter {
                     unwrap_append_reference_temps.push(temp.clone());
                 }
                 temps.push(temp);
+            } else if dynamic_argument_materialization {
+                temps.push(self.emit_dynamic_call_argument(out, argument));
             } else {
                 temps.push(self.emit_call_argument(out, name, argument_index, argument));
             }
