@@ -9,7 +9,8 @@ use crate::ast::{
     ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program, PromotedProperty,
     PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
     Statement, StaticLocalDeclaration, StaticPropertyDecl, StringInterpolationIndex, StringPart,
-    SwitchCase, TraitDecl, TraitUseDecl, TypeHint, UnaryOp, UnsetTarget,
+    SwitchCase, TraitAdaptation, TraitAliasAdaptation, TraitDecl, TraitMethodReference,
+    TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -1272,23 +1273,156 @@ impl Parser<'_> {
 
     fn parse_trait_use_declarations(&mut self) -> Result<Vec<TraitUseDecl>> {
         self.advance();
-        let mut trait_uses = Vec::new();
+        let mut trait_names = Vec::new();
         loop {
             let (name, span) = self.parse_resolved_class_name("expected trait name")?;
-            trait_uses.push(TraitUseDecl { name, span });
+            trait_names.push((name, span));
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
             self.advance();
         }
-        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+        let adaptations = if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            self.parse_trait_adaptations()?
+        } else {
+            self.expect_semicolon()?;
+            Vec::new()
+        };
+        Ok(trait_names
+            .into_iter()
+            .map(|(name, span)| TraitUseDecl {
+                name,
+                adaptations: adaptations.clone(),
+                span,
+            })
+            .collect())
+    }
+
+    fn parse_trait_adaptations(&mut self) -> Result<Vec<TraitAdaptation>> {
+        self.expect_left_brace()?;
+        let mut adaptations = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::RightBrace) {
+            let method = self.parse_trait_method_reference()?;
+            if matches!(self.peek().kind, TokenKind::As) {
+                let span_start = method.span;
+                self.advance();
+                let mut visibility = None;
+                let mut alias = None;
+                if let Some(parsed_visibility) = self.parse_optional_trait_alias_visibility() {
+                    visibility = Some(parsed_visibility);
+                    if !matches!(self.peek().kind, TokenKind::Semicolon) {
+                        alias = Some(self.parse_trait_adaptation_method_name()?);
+                    }
+                } else if !matches!(self.peek().kind, TokenKind::Semicolon) {
+                    alias = Some(self.parse_trait_adaptation_method_name()?);
+                }
+                let semicolon = self.expect_semicolon()?;
+                adaptations.push(TraitAdaptation::Alias(TraitAliasAdaptation {
+                    method,
+                    alias,
+                    visibility,
+                    span: combine_spans(span_start, semicolon),
+                }));
+                continue;
+            }
+            if token_is_identifier_named(self.peek(), "insteadof") {
+                let span_start = method.span;
+                self.advance();
+                let mut instead_of = Vec::new();
+                loop {
+                    let (name, _) = self.parse_resolved_class_name("expected trait name")?;
+                    instead_of.push(name);
+                    if !matches!(self.peek().kind, TokenKind::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+                let semicolon = self.expect_semicolon()?;
+                adaptations.push(TraitAdaptation::Precedence(TraitPrecedenceAdaptation {
+                    method,
+                    instead_of,
+                    span: combine_spans(span_start, semicolon),
+                }));
+                continue;
+            }
             return Err(Diagnostic::new(
-                "trait adaptations are unsupported",
+                "expected trait adaptation operator",
                 Some(self.peek().span),
             ));
         }
-        self.expect_semicolon()?;
-        Ok(trait_uses)
+        self.expect_right_brace()?;
+        Ok(adaptations)
+    }
+
+    fn parse_trait_method_reference(&mut self) -> Result<TraitMethodReference> {
+        let start = self.peek().span;
+        if self.trait_method_reference_has_scope() {
+            let (trait_name, trait_span) = self.parse_resolved_class_name("expected trait name")?;
+            let double_colon = self.advance();
+            if !matches!(double_colon.kind, TokenKind::DoubleColon) {
+                return Err(Diagnostic::new("expected ::", Some(double_colon.span)));
+            }
+            let method_name = self.parse_trait_adaptation_method_name()?;
+            return Ok(TraitMethodReference {
+                trait_name: Some(trait_name),
+                method_name,
+                span: combine_spans(trait_span, self.previous_span()),
+            });
+        }
+        let method_name = self.parse_trait_adaptation_method_name()?;
+        Ok(TraitMethodReference {
+            trait_name: None,
+            method_name,
+            span: combine_spans(start, self.previous_span()),
+        })
+    }
+
+    fn trait_method_reference_has_scope(&self) -> bool {
+        let mut index = self.index;
+        while index < self.tokens.len() {
+            let token = &self.tokens[index];
+            if matches!(token.kind, TokenKind::DoubleColon) {
+                return true;
+            }
+            if matches!(
+                token.kind,
+                TokenKind::As | TokenKind::Semicolon | TokenKind::RightBrace
+            ) || token_is_identifier_named(token, "insteadof")
+            {
+                return false;
+            }
+            index += 1;
+        }
+        false
+    }
+
+    fn parse_optional_trait_alias_visibility(&mut self) -> Option<PropertyVisibility> {
+        let TokenKind::Identifier(name) = &self.peek().kind else {
+            return None;
+        };
+        let visibility = match name.to_ascii_lowercase().as_str() {
+            "public" => PropertyVisibility::Public,
+            "protected" => PropertyVisibility::Protected,
+            "private" => PropertyVisibility::Private,
+            _ => return None,
+        };
+        self.advance();
+        Some(visibility)
+    }
+
+    fn parse_trait_adaptation_method_name(&mut self) -> Result<String> {
+        let token = self.advance();
+        if let Some(name) = method_name_from_token(&token.kind) {
+            return Ok(name);
+        }
+        Err(Diagnostic::new("expected method name", Some(token.span)))
+    }
+
+    fn previous_span(&self) -> SourceSpan {
+        self.tokens
+            .get(self.index.saturating_sub(1))
+            .map(|token| token.span)
+            .unwrap_or_else(|| SourceSpan::new(0, 0, 0, 0))
     }
 
     fn parse_class_member(
@@ -7852,14 +7986,18 @@ fn compose_trait_decl(
     let mut composed = trait_decl.clone();
     for trait_use in &trait_decl.trait_uses {
         let used_trait = compose_trait_decl(&trait_use.name, traits, visiting, cache)?;
-        import_trait_members_into_trait(&mut composed, &used_trait);
+        import_trait_members_into_trait(&mut composed, &used_trait, trait_use)?;
     }
     visiting.remove(&lookup_name);
     cache.insert(lookup_name, composed.clone());
     Ok(composed)
 }
 
-fn import_trait_members_into_trait(target: &mut TraitDecl, source: &TraitDecl) {
+fn import_trait_members_into_trait(
+    target: &mut TraitDecl,
+    source: &TraitDecl,
+    trait_use: &TraitUseDecl,
+) -> Result<()> {
     for property in &source.properties {
         if !target
             .properties
@@ -7888,16 +8026,9 @@ fn import_trait_members_into_trait(target: &mut TraitDecl, source: &TraitDecl) {
         }
     }
     for method in &source.methods {
-        if !target
-            .methods
-            .iter()
-            .any(|candidate| candidate.name.eq_ignore_ascii_case(&method.name))
-        {
-            target
-                .methods
-                .push(method_with_trait_origin(method, source));
-        }
+        import_trait_method_into_method_list(&mut target.methods, source, trait_use, method)?;
     }
+    Ok(())
 }
 
 fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Result<()> {
@@ -7925,6 +8056,7 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
             import_trait_members_into_class(
                 class,
                 trait_decl,
+                &trait_use,
                 &own_method_names,
                 &mut imported_method_names,
             )?;
@@ -7936,6 +8068,7 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
 fn import_trait_members_into_class(
     class: &mut ClassDecl,
     trait_decl: &TraitDecl,
+    trait_use: &TraitUseDecl,
     own_method_names: &HashSet<String>,
     imported_method_names: &mut HashSet<String>,
 ) -> Result<()> {
@@ -7967,10 +8100,70 @@ fn import_trait_members_into_class(
         }
     }
     for method in &trait_decl.methods {
-        let method_key = method.name.to_ascii_lowercase();
-        if own_method_names.contains(&method_key) {
-            continue;
-        }
+        import_trait_method_into_class(
+            class,
+            trait_decl,
+            trait_use,
+            method,
+            own_method_names,
+            imported_method_names,
+        )?;
+    }
+    Ok(())
+}
+
+fn import_trait_method_into_method_list(
+    methods: &mut Vec<MethodDecl>,
+    trait_decl: &TraitDecl,
+    trait_use: &TraitUseDecl,
+    method: &MethodDecl,
+) -> Result<()> {
+    let own_method_names = methods
+        .iter()
+        .map(|candidate| candidate.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    let mut imported_method_names = own_method_names.clone();
+    let mut pseudo_class = ClassDecl {
+        name: trait_decl.name.clone(),
+        parent_name: None,
+        interfaces: Vec::new(),
+        trait_uses: Vec::new(),
+        attributes: AttributeMetadata::default(),
+        is_abstract: false,
+        is_final: false,
+        is_interface: false,
+        is_readonly: false,
+        properties: Vec::new(),
+        static_properties: Vec::new(),
+        constants: Vec::new(),
+        methods: methods.clone(),
+        span: method.span,
+    };
+    import_trait_method_into_class(
+        &mut pseudo_class,
+        trait_decl,
+        trait_use,
+        method,
+        &own_method_names,
+        &mut imported_method_names,
+    )?;
+    *methods = pseudo_class.methods;
+    Ok(())
+}
+
+fn import_trait_method_into_class(
+    class: &mut ClassDecl,
+    trait_decl: &TraitDecl,
+    trait_use: &TraitUseDecl,
+    method: &MethodDecl,
+    own_method_names: &HashSet<String>,
+    imported_method_names: &mut HashSet<String>,
+) -> Result<()> {
+    let original_excluded =
+        trait_method_excluded_by_precedence(&trait_use.adaptations, &trait_decl.name, &method.name);
+    let method_key = method.name.to_ascii_lowercase();
+    if !original_excluded && !own_method_names.contains(&method_key) {
+        let imported = adapted_original_trait_method(method, trait_decl, &trait_use.adaptations);
         if !imported_method_names.insert(method_key) {
             return Err(Diagnostic::new(
                 format!(
@@ -7980,11 +8173,100 @@ fn import_trait_members_into_class(
                 Some(class.span),
             ));
         }
-        class
-            .methods
-            .push(method_with_trait_origin(method, trait_decl));
+        class.methods.push(imported);
+    }
+
+    for alias in matching_trait_aliases(&trait_use.adaptations, &trait_decl.name, &method.name) {
+        let Some(alias_name) = alias.alias.as_ref() else {
+            continue;
+        };
+        let alias_key = alias_name.to_ascii_lowercase();
+        if own_method_names.contains(&alias_key) {
+            continue;
+        }
+        if !imported_method_names.insert(alias_key) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Trait method {}::{} has not been applied because of a collision",
+                    trait_decl.name, alias_name
+                ),
+                Some(alias.span),
+            ));
+        }
+        let mut imported = method_with_trait_origin(method, trait_decl);
+        imported.name = alias_name.clone();
+        if let Some(visibility) = alias.visibility {
+            imported.visibility = visibility;
+        }
+        class.methods.push(imported);
     }
     Ok(())
+}
+
+fn adapted_original_trait_method(
+    method: &MethodDecl,
+    trait_decl: &TraitDecl,
+    adaptations: &[TraitAdaptation],
+) -> MethodDecl {
+    let mut imported = method_with_trait_origin(method, trait_decl);
+    for alias in matching_trait_aliases(adaptations, &trait_decl.name, &method.name) {
+        if alias.alias.is_none() {
+            if let Some(visibility) = alias.visibility {
+                imported.visibility = visibility;
+            }
+        }
+    }
+    imported
+}
+
+fn matching_trait_aliases<'a>(
+    adaptations: &'a [TraitAdaptation],
+    trait_name: &str,
+    method_name: &str,
+) -> Vec<&'a TraitAliasAdaptation> {
+    adaptations
+        .iter()
+        .filter_map(|adaptation| match adaptation {
+            TraitAdaptation::Alias(alias)
+                if trait_method_reference_matches(&alias.method, trait_name, method_name) =>
+            {
+                Some(alias)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn trait_method_excluded_by_precedence(
+    adaptations: &[TraitAdaptation],
+    trait_name: &str,
+    method_name: &str,
+) -> bool {
+    adaptations.iter().any(|adaptation| {
+        let TraitAdaptation::Precedence(precedence) = adaptation else {
+            return false;
+        };
+        precedence
+            .method
+            .method_name
+            .eq_ignore_ascii_case(method_name)
+            && precedence
+                .instead_of
+                .iter()
+                .any(|excluded| excluded.eq_ignore_ascii_case(trait_name))
+    })
+}
+
+fn trait_method_reference_matches(
+    reference: &TraitMethodReference,
+    trait_name: &str,
+    method_name: &str,
+) -> bool {
+    reference.method_name.eq_ignore_ascii_case(method_name)
+        && reference
+            .trait_name
+            .as_deref()
+            .is_none_or(|reference_trait| reference_trait.eq_ignore_ascii_case(trait_name))
 }
 
 fn method_with_trait_origin(method: &MethodDecl, trait_decl: &TraitDecl) -> MethodDecl {

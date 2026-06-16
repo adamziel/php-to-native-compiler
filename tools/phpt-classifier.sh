@@ -1442,11 +1442,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])use[[:space:]]+[a-z_\\][a-z0-9_\\]*(.*[,][[:space:]]*[a-z_\\][a-z0-9_\\]*)?[[:space:]]*\{/) {
-                print "unsupported-trait-declaration\trequires trait adaptation aliases, precedence, and conflict diagnostics"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]*&[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\(/) {
                 ptn_by_ref_function_context = 1
             }
