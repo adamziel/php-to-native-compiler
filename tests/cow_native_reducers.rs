@@ -494,6 +494,59 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
 }
 
 #[test]
+fn compile_usort_callback_mutation_snapshots_to_native_binary() {
+    let root = temp_dir("ptn-native-usort-callback-mutation-snapshots");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("usort-callback-mutation-snapshots.php");
+    let output = root.join("usort-callback-mutation-snapshots-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function usercompare($a, $b) {\n\
+    unset($GLOBALS[\"my_var\"][2]);\n\
+    if ($a == $b) { return 0; }\n\
+    return $a < $b ? -1 : 1;\n\
+}\n\
+$my_var = [\n\
+    1 => \"entry_1\",\n\
+    2 => \"entry_2\",\n\
+    3 => \"entry_3\",\n\
+    4 => \"entry_4\",\n\
+    5 => \"entry_5\",\n\
+];\n\
+usort($my_var, \"usercompare\");\n\
+var_dump($my_var);\n\
+\n\
+$array = [\n\
+    1 => \"entry_1\",\n\
+    2 => \"entry_2\",\n\
+    3 => \"entry_3\",\n\
+    4 => \"entry_4\",\n\
+    5 => \"entry_5\",\n\
+];\n\
+usort($array, function($a, $b) use (&$array, &$ref) {\n\
+    unset($array[2]);\n\
+    $ref = $array;\n\
+    if ($a == $b) { return 0; }\n\
+    return $a < $b ? -1 : 1;\n\
+});\n\
+var_dump($array);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let expected_array = "array(5) {\n  [0]=>\n  string(7) \"entry_1\"\n  [1]=>\n  string(7) \"entry_2\"\n  [2]=>\n  string(7) \"entry_3\"\n  [3]=>\n  string(7) \"entry_4\"\n  [4]=>\n  string(7) \"entry_5\"\n}\n";
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("{expected_array}{expected_array}")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dynamic_temporary_cow_reducers_match_php_oracle() {
     let root = temp_dir("ptn-native-dynamic-temporary-cow-reducers");
     fs::create_dir_all(&root).unwrap();
