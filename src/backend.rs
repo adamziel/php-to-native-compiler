@@ -6356,6 +6356,9 @@ fn emit_instruction(
                 out.push_str(&slot);
                 out.push_str(" = ptn_reference_new_owned(ptn_null());\n");
             }
+            out.push_str("        ptn_runtime_register_static_local(&runtime, ");
+            out.push_str(&slot);
+            out.push_str(");\n");
             out.push_str("    }\n");
             out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
             out.push_str(&c_string(name));

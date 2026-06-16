@@ -39,6 +39,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->static_local_slots = NULL;
+    runtime->static_local_slots_len = 0;
+    runtime->static_local_slots_capacity = 0;
     runtime->next_object_id = 0;
     runtime->free_object_ids = NULL;
     runtime->free_object_ids_len = 0;
@@ -162,7 +165,10 @@ static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTrace
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
+        ptn_runtime_run_static_property_destructors(runtime);
+        ptn_runtime_run_static_local_destructors(runtime);
         ptn_runtime_run_object_destructors(runtime);
+        ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
     }
     ptn_symbols_free(&runtime->owned_static_property_set_visibility);
@@ -190,6 +196,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;
         runtime->live_objects_capacity = 0;
+        free(runtime->static_local_slots);
+        runtime->static_local_slots = NULL;
+        runtime->static_local_slots_len = 0;
+        runtime->static_local_slots_capacity = 0;
         free(runtime->free_object_ids);
         runtime->free_object_ids = NULL;
         runtime->free_object_ids_len = 0;

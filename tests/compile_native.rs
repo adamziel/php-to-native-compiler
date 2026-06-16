@@ -414,6 +414,9 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         "$right = <<<'TXT'\n",
         "$literal\\n\n",
         "TXT;\n",
+        "$spaced = <<<  SPACED\n",
+        "ok\n",
+        "SPACED;\n",
     );
     let program = parser::parse(source).unwrap();
     let Statement::Assign { value, .. } = &program.statements[0] else {
@@ -425,6 +428,11 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         panic!("expected assignment");
     };
     assert!(matches!(value, Expr::String(value, _) if value == "$literal\\n"));
+
+    let Statement::Assign { value, .. } = &program.statements[2] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "ok"));
 }
 
 #[test]
@@ -7373,6 +7381,7 @@ var_dump(substr_compare(\"abcde\", \"df\", -2) < 0);\n\
 var_dump(substr_compare(\"abcde\", \"bcg\", 1, 2));\n\
 var_dump(substr_compare(\"abcde\", \"BC\", 1, 2, true));\n\
 try { substr_compare(\"abcde\", \"abc\", 0, -1); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { substr_compare(\"abcde\", \"abc\", 99); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 $percent = 0;\n\
 var_dump(similar_text(\"abcdefgh\", \"efg\", $percent));\n\
 var_dump($percent);\n\
@@ -7398,6 +7407,7 @@ bool(true)\n\
 int(0)\n\
 int(0)\n\
 substr_compare(): Argument #4 ($length) must be greater than or equal to 0\n\
+substr_compare(): Argument #3 ($offset) must be contained in argument #1 ($haystack)\n\
 int(3)\n\
 float(54.54545454545455)\n\
 bool(true)\n\
@@ -9964,6 +9974,214 @@ try { count_chars('x', 5); } catch (ValueError $e) { echo $e->getMessage(), \"\\
 }
 
 #[test]
+fn compile_parse_url_constants_and_show_source_alias_to_native_binary() {
+    let root = temp_dir("ptn-native-parse-url-constants-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("parse-url-constants-alias.php");
+    let output = root.join("parse-url-constants-alias-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('parse_url'), defined('PHP_URL_HOST'));\n\
+var_dump(PHP_URL_SCHEME, PHP_URL_HOST, PHP_URL_PORT, PHP_URL_USER, PHP_URL_PASS, PHP_URL_PATH, PHP_URL_QUERY, PHP_URL_FRAGMENT);\n\
+$constants = get_defined_constants();\n\
+var_dump($constants['PHP_URL_FRAGMENT']);\n\
+foreach (['', '//user:pass@host', 'http://secret:hideout@www.php.net:80/index.php?test=1#frag', '127.0.0.1:9999?', 'scheme:', 'http:///example.com'] as $url) {\n\
+    var_dump(parse_url($url));\n\
+}\n\
+$url = 'http://secret:hideout@www.php.net:80/index.php?test=1#frag';\n\
+var_dump(parse_url($url, PHP_URL_HOST));\n\
+var_dump(parse_url($url, PHP_URL_PORT));\n\
+var_dump(parse_url($url, PHP_URL_FRAGMENT));\n\
+var_dump(parse_url('http://host', PHP_URL_PATH));\n\
+try { parse_url('http://host', 99); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(function_exists('show_source'), function_exists('SHOW_SOURCE'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(4)\n",
+            "int(5)\n",
+            "int(6)\n",
+            "int(7)\n",
+            "int(7)\n",
+            "array(1) {\n  [\"path\"]=>\n  string(0) \"\"\n}\n",
+            "array(3) {\n  [\"host\"]=>\n  string(4) \"host\"\n  [\"user\"]=>\n  string(4) \"user\"\n  [\"pass\"]=>\n  string(4) \"pass\"\n}\n",
+            "array(8) {\n  [\"scheme\"]=>\n  string(4) \"http\"\n  [\"host\"]=>\n  string(11) \"www.php.net\"\n  [\"port\"]=>\n  int(80)\n  [\"user\"]=>\n  string(6) \"secret\"\n  [\"pass\"]=>\n  string(7) \"hideout\"\n  [\"path\"]=>\n  string(10) \"/index.php\"\n  [\"query\"]=>\n  string(6) \"test=1\"\n  [\"fragment\"]=>\n  string(4) \"frag\"\n}\n",
+            "array(3) {\n  [\"scheme\"]=>\n  string(9) \"127.0.0.1\"\n  [\"path\"]=>\n  string(4) \"9999\"\n  [\"query\"]=>\n  string(0) \"\"\n}\n",
+            "array(1) {\n  [\"scheme\"]=>\n  string(6) \"scheme\"\n}\n",
+            "bool(false)\n",
+            "string(11) \"www.php.net\"\n",
+            "int(80)\n",
+            "string(4) \"frag\"\n",
+            "NULL\n",
+            "parse_url(): Argument #2 ($component) must be a valid URL component identifier, 99 given\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_non_utf8_source_string_bytes_to_native_binary() {
+    let root = temp_dir("ptn-native-non-utf8-source-string-bytes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-utf8-source-string-bytes.php");
+    let output = root.join("non-utf8-source-string-bytes-bin");
+    let mut source = b"<?php echo bin2hex(\"".to_vec();
+    source.push(0xff);
+    source.extend_from_slice(b"\"), \"\\n\";");
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ff\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_url_encode_decode_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-url-encode-decode-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("url-encode-decode-helpers.php");
+    let output = root.join("url-encode-decode-helpers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('urlencode'), function_exists('rawurlencode'), function_exists('urldecode'), function_exists('rawurldecode'));\n\
+var_dump(urlencode('A1_-.~ +'), rawurlencode('A1_-.~ +'));\n\
+var_dump(urldecode('a+b%20%ZZ'), rawurldecode('a+b%20%ZZ'));\n\
+var_dump(urlencode(\"\\xE6\"), bin2hex(urldecode('%E6')));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(12) \"A1_-.%7E+%2B\"\n",
+            "string(12) \"A1_-.~%20%2B\"\n",
+            "string(7) \"a b %ZZ\"\n",
+            "string(7) \"a+b %ZZ\"\n",
+            "string(3) \"%E6\"\n",
+            "string(2) \"e6\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_base64_decode_padding_policy_to_native_binary() {
+    let root = temp_dir("ptn-native-base64-decode-padding-policy");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base64-decode-padding-policy.php");
+    let output = root.join("base64-decode-padding-policy-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('base64_decode'), function_exists('BASE64_DECODE'));\n\
+foreach ([\"=\", \"V\", \"VV=\", \"VV==\", \"VVV=\", \"VVV==\", \"VV=\\n=\", \"*VV==\", \"VV==\\0\"] as $case) {\n\
+    echo bin2hex(base64_decode($case, false)), \"\\n\";\n\
+    var_dump(base64_decode($case, true));\n\
+}\n\
+if (base64_decode(\"dGVzdA==\") == base64_decode(\"dGVzdA==CRAP\")) {\n\
+    echo \"Same octet data - Signature Valid\\n\";\n\
+} else {\n\
+    echo \"Invalid Signature\\n\";\n\
+}\n\
+$in = base64_encode(\"foo\") . '==' . base64_encode(\"bar\");\n\
+var_dump($in, base64_decode($in));\n\
+$leading = '=VGhl=ICc9=JyBz=eW1i=b2xz=IGFy=ZW4n=dCBh=bGxv=d2Vk=IHdo=ZXJl=IGkg=cHV0=IHRo=ZW0g=by5P';\n\
+var_dump(base64_decode($leading, true));\n\
+echo base64_decode($leading), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "\n",
+            "bool(false)\n",
+            "\n",
+            "bool(false)\n",
+            "55\n",
+            "bool(false)\n",
+            "55\n",
+            "string(1) \"U\"\n",
+            "5555\n",
+            "string(2) \"UU\"\n",
+            "5555\n",
+            "bool(false)\n",
+            "55\n",
+            "string(1) \"U\"\n",
+            "55\n",
+            "bool(false)\n",
+            "55\n",
+            "bool(false)\n",
+            "Invalid Signature\n",
+            "string(10) \"Zm9v==YmFy\"\n",
+            "string(6) \"foobar\"\n",
+            "bool(false)\n",
+            "The '=' symbols aren't allowed where i put them o.O\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_html_double_encode_preserves_numeric_and_named_entities_to_native_binary() {
+    let root = temp_dir("ptn-native-html-double-encode-entities");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("html-double-encode-entities.php");
+    let output = root.join("html-double-encode-entities-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(htmlentities('A &#043; &copy; &bogus;', ENT_QUOTES, 'UTF-8', false));\n\
+var_dump(htmlspecialchars('A &#043; &copy; &bogus;', ENT_QUOTES, 'UTF-8', false));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(27) \"A &#043; &copy; &amp;bogus;\"\nstring(27) \"A &#043; &copy; &amp;bogus;\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_quoted_printable_encode_php_folding_to_native_binary() {
     let root = temp_dir("ptn-native-quoted-printable-encode-folding");
     fs::create_dir_all(&root).unwrap();
@@ -10056,6 +10274,37 @@ fn compile_strip_tags_registry_and_scalar_conversion_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(5) \"12345\"\nstring(1) \"1\"\nstring(2) \"xy\"\nstring(5) \"a < b\"\nstring(2) \"ab\"\nstring(3) \" ok\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_strip_tags_nested_and_php_state_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-strip-tags-state-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strip-tags-state-edges.php");
+    let output = root.join("strip-tags-state-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(strip_tags('<? ax'));\n\
+var_dump(strip_tags('<a/b>', '<a>'));\n\
+var_dump(strip_tags('<foo<>bar>'));\n\
+var_dump(strip_tags('<foo<!>bar>'));\n\
+var_dump(strip_tags('<foo<?>bar>'));\n\
+var_dump(strip_tags(\"<?= '<?= 1 ?>' ?>2\"));\n\
+var_dump(strip_tags(\"This text is shown <?XML:NAMESPACE PREFIX = ST1 /><b>This Text disappears</b>\"));\n\
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(0) \"\"\nstring(1) \"2\"\nstring(39) \"This text is shown This Text disappears\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -12223,6 +12472,61 @@ echo \"===DONE===\\n\";
 }
 
 #[test]
+fn compile_static_property_and_static_local_destructor_order_to_native_binary() {
+    let root = temp_dir("ptn-native-static-shutdown-destructor-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-shutdown-destructor-order.php");
+    let output = root.join("static-shutdown-destructor-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Probe {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+        echo \"new \", $name, \"\\n\";
+    }
+
+    public function __destruct() {
+        echo \"destruct \", $this->name, \"\\n\";
+    }
+}
+
+class Holder {
+    public static $stored;
+
+    public static function bind() {
+        static $local = null;
+        if ($local === null) {
+            $local = new Probe(\"local\");
+        }
+    }
+}
+
+Holder::$stored = new Probe(\"property\");
+Holder::bind();
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "new property\nnew local\ndone\ndestruct property\ndestruct local\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_run_static_property_destructors(runtime)"));
+    assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
+}
+
+#[test]
 fn compile_inherited_class_destructor_runs_on_unset_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-class-destructor-unset");
     fs::create_dir_all(&root).unwrap();
@@ -12296,6 +12600,71 @@ $p = null;
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("PtnValue old_value = symbols->items[index].value"));
+}
+
+#[test]
+fn compile_static_property_destructors_precede_function_static_destructors_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-function-static-destructor-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-function-static-destructor-order.php");
+    let output = root.join("static-property-function-static-destructor-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Marker {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function __destruct() {
+        echo $this->name, \":\", Box::hasStatic(), \"\\n\";
+    }
+}
+
+class Box {
+    private static $instance = null;
+
+    public static function getStatic() {
+        if (self::$instance === null) {
+            self::$instance = new Marker(\"static\");
+        }
+        return self::$instance;
+    }
+
+    public static function getLocal() {
+        static $local = null;
+        if ($local === null) {
+            $local = new Marker(\"local\");
+        }
+        return $local;
+    }
+
+    public static function hasStatic() {
+        return self::$instance instanceof Marker ? \"yes\" : \"no\";
+    }
+}
+
+Box::getStatic();
+Box::getLocal();
+echo \"end\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "end\nstatic:yes\nlocal:yes\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_run_static_property_destructors(runtime)"));
 }
 
 #[test]

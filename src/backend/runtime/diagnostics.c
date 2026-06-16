@@ -905,6 +905,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->live_objects = NULL;
     runtime->live_objects_len = 0;
     runtime->live_objects_capacity = 0;
+    runtime->static_local_slots = NULL;
+    runtime->static_local_slots_len = 0;
+    runtime->static_local_slots_capacity = 0;
     runtime->next_object_id = 1;
     runtime->free_object_ids = NULL;
     runtime->free_object_ids_len = 0;

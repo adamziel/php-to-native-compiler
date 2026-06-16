@@ -174,6 +174,14 @@ typedef struct {
 #define PTN_PATHINFO_EXTENSION 4
 #define PTN_PATHINFO_FILENAME 8
 #define PTN_PATHINFO_ALL 15
+#define PTN_PHP_URL_SCHEME 0
+#define PTN_PHP_URL_HOST 1
+#define PTN_PHP_URL_PORT 2
+#define PTN_PHP_URL_USER 3
+#define PTN_PHP_URL_PASS 4
+#define PTN_PHP_URL_PATH 5
+#define PTN_PHP_URL_QUERY 6
+#define PTN_PHP_URL_FRAGMENT 7
 #define PTN_FILE_USE_INCLUDE_PATH 1
 #define PTN_FILE_IGNORE_NEW_LINES 2
 #define PTN_FILE_SKIP_EMPTY_LINES 4
@@ -515,6 +523,10 @@ typedef struct {
 } PtnOutputBuffer;
 
 typedef struct {
+    PtnReference *reference;
+} PtnStaticLocalSlot;
+
+typedef struct {
     size_t object_id;
     char *property;
 } PtnMagicPropertyFrame;
@@ -735,6 +747,9 @@ struct PtnRuntime {
     PtnObject **live_objects;
     size_t live_objects_len;
     size_t live_objects_capacity;
+    PtnStaticLocalSlot *static_local_slots;
+    size_t static_local_slots_len;
+    size_t static_local_slots_capacity;
     size_t next_object_id;
     size_t *free_object_ids;
     size_t free_object_ids_len;

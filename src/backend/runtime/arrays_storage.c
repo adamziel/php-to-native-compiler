@@ -24,6 +24,7 @@ static PTN_UNUSED PtnValue ptn_value_deref(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone_deref(PtnValue value);
 static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *reference, PtnValue value);
+static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
@@ -502,6 +503,74 @@ static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
     ptn_value_destroy(&result);
 }
 
+static PTN_UNUSED void ptn_runtime_run_static_property_value_destructors(
+    PtnValue value,
+    size_t depth
+);
+
+static PTN_UNUSED void ptn_runtime_register_static_local(
+    PtnRuntime *runtime,
+    PtnReference *reference
+) {
+    if (runtime == NULL || reference == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    for (size_t i = 0; i < root->static_local_slots_len; i++) {
+        if (root->static_local_slots[i].reference == reference) {
+            return;
+        }
+    }
+    if (root->static_local_slots_len == root->static_local_slots_capacity) {
+        size_t new_capacity = root->static_local_slots_capacity == 0
+            ? 8
+            : root->static_local_slots_capacity * 2;
+        if (new_capacity < root->static_local_slots_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnStaticLocalSlot)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnStaticLocalSlot *new_slots = realloc(
+            root->static_local_slots,
+            new_capacity * sizeof(PtnStaticLocalSlot)
+        );
+        if (new_slots == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->static_local_slots = new_slots;
+        root->static_local_slots_capacity = new_capacity;
+    }
+    root->static_local_slots[root->static_local_slots_len++].reference = reference;
+}
+
+static PTN_UNUSED void ptn_runtime_run_static_local_destructors(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    for (size_t i = 0; i < root->static_local_slots_len; i++) {
+        PtnReference *reference = root->static_local_slots[i].reference;
+        if (reference == NULL) {
+            continue;
+        }
+        ptn_runtime_run_static_property_value_destructors(ptn_reference_value(reference), 0);
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_release_static_locals(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    for (size_t i = 0; i < root->static_local_slots_len; i++) {
+        ptn_reference_release(root->static_local_slots[i].reference);
+        root->static_local_slots[i].reference = NULL;
+    }
+    free(root->static_local_slots);
+    root->static_local_slots = NULL;
+    root->static_local_slots_len = 0;
+    root->static_local_slots_capacity = 0;
+}
+
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
     if (runtime == NULL) {
         return;
@@ -516,6 +585,40 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
         ptn_object_retain(object);
         ptn_object_run_destructor(object);
         ptn_object_release(object);
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_run_static_property_value_destructors(PtnValue value, size_t depth) {
+    if (depth > 1024) {
+        return;
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && value.as.object != NULL) {
+        ptn_object_retain(value.as.object);
+        ptn_object_run_destructor(value.as.object);
+        ptn_object_release(value.as.object);
+        return;
+    }
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return;
+    }
+    PtnArray *array = value.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_runtime_run_static_property_value_destructors(array->entries[i].value, depth + 1);
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_run_static_property_destructors(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    PtnSymbolTable *static_properties = root->static_properties == NULL
+        ? &root->owned_static_properties
+        : root->static_properties;
+    size_t len = static_properties->len;
+    for (size_t i = 0; i < len; i++) {
+        ptn_runtime_run_static_property_value_destructors(static_properties->items[i].value, 0);
     }
 }
 
