@@ -19233,6 +19233,75 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
 #endif
 }
 
+static int ptn_preg_quote_needs_escape(unsigned char byte) {
+    switch (byte) {
+        case '.':
+        case '\\':
+        case '+':
+        case '*':
+        case '?':
+        case '[':
+        case '^':
+        case ']':
+        case '$':
+        case '(':
+        case ')':
+        case '{':
+        case '}':
+        case '=':
+        case '!':
+        case '<':
+        case '>':
+        case '|':
+        case ':':
+        case '-':
+        case '#':
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int ptn_preg_quote_is_delimiter(unsigned char byte, PtnStringOperand delimiter) {
+    for (size_t i = 0; i < delimiter.len; i++) {
+        if ((unsigned char)delimiter.data[i] == byte) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_preg_quote(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand input =
+        ptn_internal_expect_string_arg(runtime, "preg_quote", 1, "str", args[0], line);
+    PtnStringOperand delimiter = { NULL, NULL, 0 };
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        delimiter =
+            ptn_internal_expect_string_arg(runtime, "preg_quote", 2, "delimiter", args[1], line);
+    }
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte == '\0') {
+            ptn_string_buffer_append(&output, "\\000");
+            continue;
+        }
+        if (
+            ptn_preg_quote_needs_escape(byte) ||
+            ptn_preg_quote_is_delimiter(byte, delimiter)
+        ) {
+            ptn_string_buffer_append_char(&output, '\\');
+        }
+        ptn_string_buffer_append_char(&output, (char)byte);
+    }
+
+    ptn_string_operand_free(input);
+    ptn_string_operand_free(delimiter);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
 static void ptn_preg_append_capture_replacement(
     PtnStringBuffer *output,
     const char *subject,
@@ -29498,6 +29567,21 @@ static PtnValue ptn_internal_ob_list_handlers(PtnRuntime *runtime, size_t argc, 
     return result;
 }
 
+static PtnValue ptn_internal_ob_clean(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnOutputBuffer *buffer = ptn_output_buffer_top(runtime);
+    if (buffer == NULL) {
+        return ptn_bool(0);
+    }
+    buffer->buffer.len = 0;
+    if (buffer->buffer.data != NULL) {
+        buffer->buffer.data[0] = '\0';
+    }
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_ob_end_clean(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -30748,6 +30832,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "nl2br", 1, 2, ptn_internal_nl2br },
         { "nl_langinfo", 1, 1, ptn_internal_nl_langinfo },
         { "number_format", 1, 4, ptn_internal_number_format },
+        { "ob_clean", 0, 0, ptn_internal_ob_clean },
         { "ob_end_clean", 0, 0, ptn_internal_ob_end_clean },
         { "ob_end_flush", 0, 0, ptn_internal_ob_end_flush },
         { "ob_get_clean", 0, 0, ptn_internal_ob_get_clean },
@@ -30773,6 +30858,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
         { "pow", 2, 2, ptn_internal_pow },
         { "preg_match", 2, 5, ptn_internal_preg_match },
+        { "preg_quote", 1, 2, ptn_internal_preg_quote },
         { "preg_replace", 3, 5, ptn_internal_preg_replace },
         { "preg_replace_callback", 3, 6, ptn_internal_preg_replace_callback },
         { "prev", 1, 1, ptn_internal_prev },

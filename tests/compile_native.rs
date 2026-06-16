@@ -6339,6 +6339,36 @@ echo str_replace(\"\\n\", \"\", $dump), \"\\n\";\n",
 }
 
 #[test]
+fn compile_ob_clean_clears_active_output_buffer_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-clean");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-clean.php");
+    let output = root.join("output-buffer-clean-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ob_clean());\n\
+ob_start();\n\
+echo \"discard\";\n\
+ob_clean();\n\
+echo \"kept\";\n\
+$contents = ob_get_clean();\n\
+var_dump($contents);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nstring(4) \"kept\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_ob_start_compact_handler_rejects_dynamic_compact_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-compact-handler");
     fs::create_dir_all(&root).unwrap();
@@ -10401,6 +10431,29 @@ fn compile_quotemeta_empty_registry_and_scalar_conversion_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(0) \"\"\nstring(6) \"123\\.5\"\nstring(1) \"1\"\nstring(0) \"\"\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_preg_quote_escapes_pcre_meta_and_delimiter_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-quote");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-quote.php");
+    let output = root.join("preg-quote-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(preg_quote('a.b#c/d', '/'), preg_quote('x{y}-z'), function_exists('preg_quote'));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(10) \"a\\.b\\#c\\/d\"\nstring(9) \"x\\{y\\}\\-z\"\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
