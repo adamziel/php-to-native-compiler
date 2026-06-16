@@ -8309,6 +8309,9 @@ var_dump(rtrim($alpha_right, \"A..Z\"));\n\
 var_dump(\"ABC\\x50\\xC1\" === trim(\"ABC\\x50\\xC1\\x60\\x90\", \"\\x51..\\xC0\"));\n\
 var_dump(\"ABC\" === trim(\"ABC\\x50\\xC1\\x60\\x90\", \"\\x50..\\xC1\"));\n\
 var_dump(\" \\0\\t\\nABC \\0\\t\\n\" === trim(\" \\0\\t\\nABC \\0\\t\\n\", \"\"));\n\
+var_dump(\"ABC\" === trim(\"\\fABC\\f\"));\n\
+var_dump(\"ABC\" === ltrim(\"\\fABC\"));\n\
+var_dump(\"ABC\" === rtrim(\"ABC\\f\"));\n\
 var_dump(function_exists(\"trim\"), function_exists(\"LTRIM\"), function_exists(\"rtrim\"));\n",
     )
     .unwrap();
@@ -8333,7 +8336,49 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
 bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_trim_family_invalid_range_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-trim-family-invalid-range-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trim-family-invalid-range-warnings.php");
+    let output = root.join("trim-family-invalid-range-warnings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$hello = \"  Hello World\\n\";\n\
+var_dump(trim($hello, \"..a\"));\n\
+var_dump(ltrim($hello, \"a..\"));\n\
+var_dump(rtrim($hello, \"z..a\"));\n\
+var_dump(chop($hello, \"a..b..c\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: trim(): Invalid '..'-range, no character to the left of '..' in ptn on line 3\n\
+string(14) \"  Hello World\n\
+\"\n\
+\nWarning: ltrim(): Invalid '..'-range, no character to the right of '..' in ptn on line 4\n\
+string(14) \"  Hello World\n\
+\"\n\
+\nWarning: rtrim(): Invalid '..'-range, '..'-range needs to be incrementing in ptn on line 5\n\
+string(14) \"  Hello World\n\
+\"\n\
+\nWarning: chop(): Invalid '..'-range in ptn on line 6\n\
+string(14) \"  Hello World\n\
+\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

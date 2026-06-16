@@ -19213,11 +19213,37 @@ static PtnValue ptn_internal_str_repeat(PtnRuntime *runtime, size_t argc, const 
 }
 
 static PtnStringOperand ptn_trim_default_charlist(void) {
-    static const char bytes[] = { ' ', '\t', '\n', '\r', '\0', '\v' };
+    static const char bytes[] = { ' ', '\t', '\n', '\r', '\0', '\v', '\f' };
     return ptn_string_operand_borrowed_len(bytes, sizeof(bytes));
 }
 
-static void ptn_trim_charlist_table(PtnStringOperand charlist, unsigned char table[256]) {
+static void ptn_trim_emit_invalid_range_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *reason,
+    size_t line
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Invalid '..'-range%s",
+        function_name,
+        reason
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_trim_charlist_table(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand charlist,
+    size_t line,
+    unsigned char table[256]
+) {
     memset(table, 0, 256);
     for (size_t i = 0; i < charlist.len; i++) {
         unsigned char start = (unsigned char)charlist.data[i];
@@ -19227,6 +19253,14 @@ static void ptn_trim_charlist_table(PtnStringOperand charlist, unsigned char tab
             charlist.data[i + 2] == '.'
         ) {
             unsigned char end = (unsigned char)charlist.data[i + 3];
+            if (i + 5 < charlist.len && charlist.data[i + 4] == '.' && charlist.data[i + 5] == '.') {
+                ptn_trim_emit_invalid_range_warning(runtime, function_name, "", line);
+                table[start] = 1;
+                table['.'] = 1;
+                table[end] = 1;
+                i += 5;
+                continue;
+            }
             if (start <= end) {
                 for (unsigned int byte = start; byte <= end; byte++) {
                     table[byte] = 1;
@@ -19234,19 +19268,39 @@ static void ptn_trim_charlist_table(PtnStringOperand charlist, unsigned char tab
                 i += 3;
                 continue;
             }
+            ptn_trim_emit_invalid_range_warning(
+                runtime,
+                function_name,
+                ", '..'-range needs to be incrementing",
+                line
+            );
+            table[start] = 1;
+            table['.'] = 1;
+            table[end] = 1;
+            i += 3;
+            continue;
+        }
+        if (start == '.' && i + 1 < charlist.len && charlist.data[i + 1] == '.') {
+            const char *reason = i == 0
+                ? ", no character to the left of '..'"
+                : (i + 2 >= charlist.len ? ", no character to the right of '..'" : "");
+            ptn_trim_emit_invalid_range_warning(runtime, function_name, reason, line);
         }
         table[start] = 1;
     }
 }
 
 static PtnValue ptn_trim_string_value(
+    PtnRuntime *runtime,
+    const char *function_name,
     PtnStringOperand input,
     PtnStringOperand charlist,
+    size_t line,
     int trim_left,
     int trim_right
 ) {
     unsigned char table[256];
-    ptn_trim_charlist_table(charlist, table);
+    ptn_trim_charlist_table(runtime, function_name, charlist, line, table);
 
     size_t start = 0;
     size_t end = input.len;
@@ -19279,7 +19333,7 @@ static PtnValue ptn_internal_trim_named(
     PtnStringOperand charlist = argc >= 2
         ? ptn_internal_expect_string_arg(runtime, function_name, 2, "characters", args[1], line)
         : ptn_trim_default_charlist();
-    PtnValue result = ptn_trim_string_value(input, charlist, trim_left, trim_right);
+    PtnValue result = ptn_trim_string_value(runtime, function_name, input, charlist, line, trim_left, trim_right);
     ptn_string_operand_free(input);
     ptn_string_operand_free(charlist);
     return result;
