@@ -3220,6 +3220,7 @@ fn emit_class_metadata_helpers(
         "ReflectionUnionType",
         "ReflectionIntersectionType",
         "ReflectionException",
+        "SensitiveParameterValue",
         "ArrayIterator",
         "RecursiveArrayIterator",
         "ArrayObject",

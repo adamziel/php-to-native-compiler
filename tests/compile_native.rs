@@ -30332,6 +30332,119 @@ var_dump($sameReflection->getNumberOfParameters());
 }
 
 #[test]
+fn compile_closure_from_callable_parameter_type_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-from-callable-parameter-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-from-callable-parameter-types.php");
+    let output = root.join("closure-from-callable-parameter-types-bin");
+    fs::write(
+        &input,
+        "<?php
+class Bar {
+    public static function staticMethod(Bar $bar, int $int, $none): ?string {}
+    public function instanceMethod(Bar $bar, int $int, $none): ?Bar {}
+}
+
+function foo(Bar $bar, int $int, $none): ?string {}
+
+$fn = function (Bar $bar, int $x, $none): ?Bar {};
+$bar = new Bar();
+
+foreach (['foo', $fn, 'Bar::staticMethod', [$bar, 'instanceMethod']] as $callable) {
+    $closure = Closure::fromCallable($callable);
+    $refl = new ReflectionFunction($closure);
+    foreach ($refl->getParameters() as $param) {
+        var_dump($param->getName(), $param->getPosition(), $param->hasType());
+        if ($param->hasType()) {
+            $type = $param->getType();
+            var_dump($type->getName(), (string) $type, $type->allowsNull(), $type->isBuiltin());
+        }
+    }
+    $return = $refl->getReturnType();
+    var_dump($return->getName(), (string) $return, $return->allowsNull());
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"bar\"\nint(0)\nbool(true)\nstring(3) \"Bar\"\nstring(3) \"Bar\"\nbool(false)\nbool(false)\n",
+            "string(3) \"int\"\nint(1)\nbool(true)\nstring(3) \"int\"\nstring(3) \"int\"\nbool(false)\nbool(true)\n",
+            "string(4) \"none\"\nint(2)\nbool(false)\nstring(6) \"string\"\nstring(7) \"?string\"\nbool(true)\n",
+            "string(3) \"bar\"\nint(0)\nbool(true)\nstring(3) \"Bar\"\nstring(3) \"Bar\"\nbool(false)\nbool(false)\n",
+            "string(1) \"x\"\nint(1)\nbool(true)\nstring(3) \"int\"\nstring(3) \"int\"\nbool(false)\nbool(true)\n",
+            "string(4) \"none\"\nint(2)\nbool(false)\nstring(3) \"Bar\"\nstring(4) \"?Bar\"\nbool(true)\n",
+            "string(3) \"bar\"\nint(0)\nbool(true)\nstring(3) \"Bar\"\nstring(3) \"Bar\"\nbool(false)\nbool(false)\n",
+            "string(3) \"int\"\nint(1)\nbool(true)\nstring(3) \"int\"\nstring(3) \"int\"\nbool(false)\nbool(true)\n",
+            "string(4) \"none\"\nint(2)\nbool(false)\nstring(6) \"string\"\nstring(7) \"?string\"\nbool(true)\n",
+            "string(3) \"bar\"\nint(0)\nbool(true)\nstring(3) \"Bar\"\nstring(3) \"Bar\"\nbool(false)\nbool(false)\n",
+            "string(3) \"int\"\nint(1)\nbool(true)\nstring(3) \"int\"\nstring(3) \"int\"\nbool(false)\nbool(true)\n",
+            "string(4) \"none\"\nint(2)\nbool(false)\nstring(3) \"Bar\"\nstring(4) \"?Bar\"\nbool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PtnParameterMetadata"));
+    assert!(c_source.contains("ptn_reflection_parameter_object_from_metadata"));
+    assert!(c_source.contains("ptn_reflection_named_type_object_from_metadata"));
+}
+
+#[test]
+fn compile_sensitive_parameter_value_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-sensitive-parameter-value-reflection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sensitive-parameter-value-reflection.php");
+    let output = root.join("sensitive-parameter-value-reflection-bin");
+    fs::write(
+        &input,
+        "<?php
+$v1 = new SensitiveParameterValue('secret');
+$v2 = clone $v1;
+
+var_dump(class_exists('SensitiveParameterValue'));
+var_dump($v1->getValue());
+var_dump($v2->getValue());
+
+$r = new ReflectionClass($v1);
+var_dump($r->hasProperty('value'));
+$p = $r->getProperty('value');
+var_dump($p->getName());
+var_dump($p->getValue($v1));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(6) \"secret\"\n",
+            "string(6) \"secret\"\n",
+            "bool(true)\n",
+            "string(5) \"value\"\n",
+            "string(6) \"secret\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_sensitive_parameter_value_new"));
+    assert!(c_source.contains("ptn_sensitive_parameter_value_clone"));
+    assert!(c_source.contains("ptn_internal_class_property_exists"));
+}
+
+#[test]
 fn compile_first_class_callable_syntax_and_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-first-class-callable-syntax");
     fs::create_dir_all(&root).unwrap();
