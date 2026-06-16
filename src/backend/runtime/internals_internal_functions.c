@@ -31112,6 +31112,94 @@ static PtnValue ptn_reflection_property_default_value(
     return ptn_declared_class_reflection_property_default(runtime, class_name, property_name);
 }
 
+static PtnValue ptn_reflection_exception_property_value(
+    PtnException *exception,
+    const char *property_name
+) {
+    if (exception == NULL) {
+        return ptn_null();
+    }
+    if (ptn_exception_name_equal(property_name, "message")) {
+        return ptn_owned_string_len(
+            ptn_duplicate_string_len(exception->message, exception->message_len),
+            exception->message_len
+        );
+    }
+    if (ptn_exception_name_equal(property_name, "code")) {
+        return ptn_int(exception->code);
+    }
+    if (ptn_exception_name_equal(property_name, "file")) {
+        return ptn_owned_string(
+            ptn_duplicate_string(exception->path != NULL ? exception->path : "")
+        );
+    }
+    if (ptn_exception_name_equal(property_name, "line")) {
+        return ptn_int(
+            exception->line > (size_t)INT64_MAX ? INT64_MAX : (int64_t)exception->line
+        );
+    }
+    if (ptn_exception_name_equal(property_name, "previous")) {
+        return ptn_value_clone_deref(exception->previous);
+    }
+    if (ptn_exception_name_equal(property_name, "trace")) {
+        return ptn_value_clone_deref(exception->trace);
+    }
+    if (ptn_exception_name_equal(property_name, "string")) {
+        return ptn_string("");
+    }
+    if (ptn_exception_name_equal(property_name, "severity")) {
+        return ptn_int(exception->severity);
+    }
+    return ptn_null();
+}
+
+static PtnValue ptn_reflection_exception_write_property(
+    PtnException *exception,
+    const char *property_name,
+    PtnValue value
+) {
+    if (exception == NULL) {
+        return ptn_null();
+    }
+    if (ptn_exception_name_equal(property_name, "message")) {
+        char *message = ptn_value_to_string(value);
+        free(exception->message);
+        exception->message = message;
+        exception->message_len = strlen(message);
+        return ptn_value_clone_deref(value);
+    }
+    if (ptn_exception_name_equal(property_name, "code")) {
+        exception->code = ptn_value_to_integer(value);
+        return ptn_value_clone_deref(value);
+    }
+    if (ptn_exception_name_equal(property_name, "file")) {
+        exception->path = ptn_value_to_string(value);
+        return ptn_value_clone_deref(value);
+    }
+    if (ptn_exception_name_equal(property_name, "line")) {
+        int64_t line = ptn_value_to_integer(value);
+        exception->line = line < 0 ? 0 : (size_t)line;
+        return ptn_value_clone_deref(value);
+    }
+    if (ptn_exception_name_equal(property_name, "previous")) {
+        PtnValue stored = ptn_value_clone_deref(value);
+        ptn_value_destroy(&exception->previous);
+        exception->previous = stored;
+        return ptn_value_clone_deref(value);
+    }
+    if (ptn_exception_name_equal(property_name, "trace")) {
+        PtnValue stored = ptn_value_clone_deref(value);
+        ptn_value_destroy(&exception->trace);
+        exception->trace = stored;
+        return ptn_value_clone_deref(value);
+    }
+    if (ptn_exception_name_equal(property_name, "severity")) {
+        exception->severity = ptn_value_to_integer(value);
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_value_clone_deref(value);
+}
+
 static int ptn_reflection_property_metadata(
     PtnReflectionPropertyData *data,
     const char **declaring_class,
@@ -31578,7 +31666,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             return ptn_null();
         }
         PtnValue target = ptn_value_deref(args[0]);
-        if (target.type != PTN_OBJECT) {
+        if (target.type != PTN_OBJECT && target.type != PTN_EXCEPTION) {
             char message[192];
             int written = snprintf(
                 message,
@@ -31591,6 +31679,9 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             }
             ptn_throw_exception(runtime, "TypeError", message);
             return ptn_null();
+        }
+        if (target.type == PTN_EXCEPTION) {
+            return ptn_reflection_exception_property_value(target.as.exception, data->name);
         }
         if (
             ptn_internal_class_name_is_sensitive_parameter_value(data->class_name) &&
@@ -31663,7 +31754,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             return ptn_null();
         }
         PtnValue target = ptn_value_deref(args[0]);
-        if (target.type != PTN_OBJECT) {
+        if (target.type != PTN_OBJECT && target.type != PTN_EXCEPTION) {
             char message[192];
             int written = snprintf(
                 message,
@@ -31676,6 +31767,13 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             }
             ptn_throw_exception(runtime, "TypeError", message);
             return ptn_null();
+        }
+        if (target.type == PTN_EXCEPTION) {
+            return ptn_reflection_exception_write_property(
+                target.as.exception,
+                data->name,
+                args[1]
+            );
         }
         return ptn_object_write_property(
             runtime,

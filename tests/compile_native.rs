@@ -27287,6 +27287,51 @@ try {\n\
 }
 
 #[test]
+fn compile_exception_reflection_trace_mutation_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-reflection-trace-mutation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-reflection-trace-mutation.php");
+    let output = root.join("exception-reflection-trace-mutation-bin");
+    fs::write(
+        &input,
+        "<?php
+$e = new Exception();
+$ref = new ReflectionProperty($e, 'trace');
+$ref->setValue($e, [NULL]);
+var_dump($e->getTraceAsString());
+$ref->setValue($e, [[]]);
+var_dump($e->getTraceAsString());
+$ref->setValue($e, [[
+    'file' => NULL,
+    'class' => NULL,
+    'type' => NULL,
+    'function' => NULL,
+    'args' => NULL,
+]]);
+var_dump($e->getTraceAsString());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Warning: Expected array for frame 0"));
+    assert!(stdout.contains("string(9) \"#0 {main}\""));
+    assert!(stdout.contains("string(36) \"#0 [internal function]: ()\n#1 {main}\""));
+    assert!(stdout.contains("Warning: File name is not a string"));
+    assert!(stdout.contains("Warning: Value for class is not a string"));
+    assert!(stdout.contains("Warning: Value for type is not a string"));
+    assert!(stdout.contains("Warning: Value for function is not a string"));
+    assert!(stdout.contains("Warning: args element is not an array"));
+    assert!(stdout
+        .contains("string(58) \"#0 [unknown file]: [unknown][unknown][unknown]()\n#1 {main}\""));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exception_method_dispatch_emits_callable_helpers_to_native_binary() {
     let root = temp_dir("ptn-native-exception-method-dispatch-helpers");
     fs::create_dir_all(&root).unwrap();
