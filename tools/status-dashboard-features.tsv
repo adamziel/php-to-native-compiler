@@ -1,11 +1,21 @@
-# refreshed_at_utc=2026-06-15T22:24:10Z
-# source_commit=52604f155feb
+# refreshed_at_utc=2026-06-16T23:05:13Z
+# source_commit=9f9f6497ed38
 # php_src_revision=8c63ec400ce8e07c57a8d9499317b96a8beafb8b
-# window_start_utc=2026-06-08T23:00Z
+# window_start_utc=2026-06-10T00:00Z
 # window_hours=168
 feature	ported_tests	passed_tests	upstream_tests	completed_hour_utc	newly_passed_tests	evidence
 ptn-cl81 ArrayObject flipped-green PHPT rows	31	31	31	2026-06-16T21:00Z	31	git:f220b355
 ptn-6rea html entity charset rows	5	5	5	2026-06-16T21:00Z	5	mail:hq-wisp-2o5aqg
+ptn-2ey0 sparse reference call rows	7	7	7	2026-06-16T21:00Z	2	.runtime/phpt-progress/run-20260616T213415Z-manifest.log
+ptn-je79 match diagnostics rows	2	2	2	2026-06-16T21:00Z	2	.runtime/phpt-progress/run-20260616T213717Z.log
+ptn-1yvd array memory-limit row	1	1	1	2026-06-16T21:00Z	1	.runtime/ptn-wisp-zcz-bug70258/run-20260616T214241Z-manifest.log
+ptn-ygnm deprecated class constant metadata rows	5	5	8	2026-06-16T21:00Z	5	.runtime/ptn-wisp-0wl-deprecated-class-constants/run-20260616T214639Z-manifest.log
+ptn-v8e5 self-extending interface diagnostic row	1	1	1	2026-06-16T22:00Z	1	.runtime/ptn-wisp-g6w-bug30922/run-20260616T221619Z-manifest.log
+ptn-pcso assertion runtime rows	3	3	3	2026-06-16T22:00Z	3	.runtime/ptn-wisp-zhf-assert-targets/run-20260616T222134Z-manifest.log
+ptn-gt9c internal by-ref warning row	1	1	1	2026-06-16T22:00Z	1	.runtime/ptn-wisp-4s2-bug79979/run-20260616T222516Z-manifest.log
+ptn-uqgj parser exit/control rows	15	15	26	2026-06-16T22:00Z	15	.runtime/phpt-progress/manifest-20260616T225415Z.txt
+ptn-xe1e shell/process helper rows	14	14	14	2026-06-16T22:00Z	14	.runtime/phpt-progress/manifest-20260616T225930Z.txt
+ptn-d06v builtin attribute diagnostic rows	7	7	8	2026-06-16T23:00Z	7	.runtime/ptn-wisp-yuk-attribute-type-validation/run-20260616T230333Z-manifest.log
 ptn-snt7 object/class metadata row pack	8	8	8	2026-06-15T20:00Z	8	.runtime/merge-ptn-snt7-object-class-metadata/summary-20260615T203520Z.txt
 ptn-456b ext-standard strings row pack	27	27	47	2026-06-15T20:00Z	27	.runtime/merge-ptn-456b-ext-standard-strings/summary-20260615T202910Z.txt
 ptn-y4f1 COW/reference sort/object walk row pack	72	59	72	2026-06-15T20:00Z	7	.runtime/merge-ptn-y4f1-array-internal/summary-20260615T201659Z.txt
