@@ -9771,7 +9771,25 @@ static void ptn_quoted_printable_encode_append_literal(
     ptn_string_buffer_append_char(output, (char)byte);
 }
 
-static char *ptn_url_decode_component(const char *input, size_t len, size_t *output_len_out) {
+static int ptn_url_hex_digit_value(unsigned char byte) {
+    if (byte >= '0' && byte <= '9') {
+        return byte - '0';
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return 10 + (byte - 'a');
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return 10 + (byte - 'A');
+    }
+    return -1;
+}
+
+static char *ptn_url_decode_bytes(
+    const char *input,
+    size_t len,
+    int plus_as_space,
+    size_t *output_len_out
+) {
     char *output = malloc(len + 1);
     if (output == NULL) {
         ptn_abort_out_of_memory();
@@ -9779,19 +9797,17 @@ static char *ptn_url_decode_component(const char *input, size_t len, size_t *out
     size_t out = 0;
     for (size_t i = 0; i < len; i++) {
         unsigned char byte = (unsigned char)input[i];
-        if (byte == '+') {
+        if (plus_as_space && byte == '+') {
             output[out++] = ' ';
             continue;
         }
-        if (byte == '%' && i + 2 < len &&
-            isxdigit((unsigned char)input[i + 1]) &&
-            isxdigit((unsigned char)input[i + 2])) {
-            int hi = isdigit((unsigned char)input[i + 1])
-                ? input[i + 1] - '0'
-                : 10 + (tolower((unsigned char)input[i + 1]) - 'a');
-            int lo = isdigit((unsigned char)input[i + 2])
-                ? input[i + 2] - '0'
-                : 10 + (tolower((unsigned char)input[i + 2]) - 'a');
+        if (byte == '%' && i + 2 < len) {
+            int hi = ptn_url_hex_digit_value((unsigned char)input[i + 1]);
+            int lo = ptn_url_hex_digit_value((unsigned char)input[i + 2]);
+            if (hi < 0 || lo < 0) {
+                output[out++] = (char)byte;
+                continue;
+            }
             output[out++] = (char)((hi << 4) | lo);
             i += 2;
             continue;
@@ -9801,6 +9817,447 @@ static char *ptn_url_decode_component(const char *input, size_t len, size_t *out
     output[out] = '\0';
     *output_len_out = out;
     return output;
+}
+
+static char *ptn_url_decode_component(const char *input, size_t len, size_t *output_len_out) {
+    return ptn_url_decode_bytes(input, len, 1, output_len_out);
+}
+
+static int ptn_url_encode_is_unreserved(unsigned char byte, int raw) {
+    return (byte >= 'A' && byte <= 'Z') ||
+        (byte >= 'a' && byte <= 'z') ||
+        (byte >= '0' && byte <= '9') ||
+        byte == '-' ||
+        byte == '_' ||
+        byte == '.' ||
+        (raw && byte == '~');
+}
+
+static PtnValue ptn_url_encode_value(PtnStringOperand string, int raw) {
+    static const char hex[] = "0123456789ABCDEF";
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < string.len; i++) {
+        unsigned char byte = (unsigned char)string.data[i];
+        if (ptn_url_encode_is_unreserved(byte, raw)) {
+            ptn_string_buffer_append_char(&output, (char)byte);
+        } else if (!raw && byte == ' ') {
+            ptn_string_buffer_append_char(&output, '+');
+        } else {
+            char encoded[3];
+            encoded[0] = '%';
+            encoded[1] = hex[(byte >> 4) & 0x0f];
+            encoded[2] = hex[byte & 0x0f];
+            ptn_string_buffer_append_len(&output, encoded, sizeof(encoded));
+        }
+    }
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_internal_urlencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "urlencode", 1, "string", args[0], line);
+    PtnValue result = ptn_url_encode_value(string, 0);
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static PtnValue ptn_internal_rawurlencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "rawurlencode", 1, "string", args[0], line);
+    PtnValue result = ptn_url_encode_value(string, 1);
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static PtnValue ptn_url_decode_value(PtnStringOperand string, int plus_as_space) {
+    size_t output_len = 0;
+    char *output = ptn_url_decode_bytes(string.data, string.len, plus_as_space, &output_len);
+    return ptn_owned_string_len(output, output_len);
+}
+
+static PtnValue ptn_internal_urldecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "urldecode", 1, "string", args[0], line);
+    PtnValue result = ptn_url_decode_value(string, 1);
+    ptn_string_operand_free(string);
+    return result;
+}
+
+static PtnValue ptn_internal_rawurldecode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "rawurldecode", 1, "string", args[0], line);
+    PtnValue result = ptn_url_decode_value(string, 0);
+    ptn_string_operand_free(string);
+    return result;
+}
+
+typedef struct {
+    const char *data;
+    size_t len;
+    int present;
+} PtnParseUrlPart;
+
+typedef struct {
+    PtnParseUrlPart scheme;
+    PtnParseUrlPart host;
+    PtnParseUrlPart user;
+    PtnParseUrlPart pass;
+    PtnParseUrlPart path;
+    PtnParseUrlPart query;
+    PtnParseUrlPart fragment;
+    int port_present;
+    int64_t port;
+} PtnParseUrlResult;
+
+static void ptn_parse_url_set_part(PtnParseUrlPart *part, const char *data, size_t len) {
+    part->data = data;
+    part->len = len;
+    part->present = 1;
+}
+
+static int ptn_parse_url_is_remainder_delimiter(char byte) {
+    return byte == '/' || byte == '?' || byte == '#';
+}
+
+static size_t ptn_parse_url_find_remainder_delimiter(const char *data, size_t len, size_t offset) {
+    while (offset < len && !ptn_parse_url_is_remainder_delimiter(data[offset])) {
+        offset++;
+    }
+    return offset;
+}
+
+static size_t ptn_parse_url_find_byte(const char *data, size_t len, size_t offset, char byte) {
+    while (offset < len && data[offset] != byte) {
+        offset++;
+    }
+    return offset;
+}
+
+static int ptn_parse_url_ascii_equal(PtnParseUrlPart part, const char *literal) {
+    size_t literal_len = strlen(literal);
+    return part.present &&
+        part.len == literal_len &&
+        memcmp(part.data, literal, literal_len) == 0;
+}
+
+static int ptn_parse_url_valid_scheme_start(char byte) {
+    return isalnum((unsigned char)byte);
+}
+
+static int ptn_parse_url_digits_port(
+    const char *data,
+    size_t len,
+    int allow_empty,
+    int64_t *port_out
+) {
+    if (len == 0) {
+        return allow_empty;
+    }
+    if (len > 5) {
+        return 0;
+    }
+    int64_t port = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (!isdigit(byte)) {
+            return 0;
+        }
+        port = port * 10 + (int64_t)(byte - '0');
+    }
+    if (port > 65535) {
+        return 0;
+    }
+    *port_out = port;
+    return 1;
+}
+
+static int ptn_parse_url_digits_until_delimiter(
+    const char *data,
+    size_t len,
+    size_t offset,
+    size_t *digit_len_out
+) {
+    size_t cursor = offset;
+    while (cursor < len && isdigit((unsigned char)data[cursor])) {
+        cursor++;
+    }
+    *digit_len_out = cursor - offset;
+    return cursor > offset && (cursor == len || ptn_parse_url_is_remainder_delimiter(data[cursor]));
+}
+
+static void ptn_parse_url_parse_remainder(
+    PtnParseUrlResult *result,
+    const char *data,
+    size_t len,
+    size_t offset
+) {
+    size_t fragment = ptn_parse_url_find_byte(data, len, offset, '#');
+    size_t query_limit = fragment < len ? fragment : len;
+    size_t query = ptn_parse_url_find_byte(data, query_limit, offset, '?');
+    size_t path_end = query < query_limit ? query : query_limit;
+    if (path_end > offset) {
+        ptn_parse_url_set_part(&result->path, data + offset, path_end - offset);
+    }
+    if (query < query_limit) {
+        ptn_parse_url_set_part(&result->query, data + query + 1, query_limit - query - 1);
+    }
+    if (fragment < len) {
+        ptn_parse_url_set_part(&result->fragment, data + fragment + 1, len - fragment - 1);
+    }
+}
+
+static int ptn_parse_url_parse_authority(
+    PtnParseUrlResult *result,
+    const char *authority,
+    size_t authority_len
+) {
+    if (authority_len == 0) {
+        return 0;
+    }
+
+    size_t host_start = 0;
+    for (size_t i = authority_len; i > 0; i--) {
+        if (authority[i - 1] == '@') {
+            size_t userinfo_len = i - 1;
+            size_t colon = ptn_parse_url_find_byte(authority, userinfo_len, 0, ':');
+            if (colon < userinfo_len) {
+                ptn_parse_url_set_part(&result->user, authority, colon);
+                ptn_parse_url_set_part(&result->pass, authority + colon + 1, userinfo_len - colon - 1);
+            } else {
+                ptn_parse_url_set_part(&result->user, authority, userinfo_len);
+            }
+            host_start = i;
+            break;
+        }
+    }
+
+    if (host_start >= authority_len) {
+        return 0;
+    }
+
+    const char *host = authority + host_start;
+    size_t host_len = authority_len - host_start;
+    size_t port_colon = host_len;
+    if (host_len > 0 && host[0] == '[') {
+        size_t close = ptn_parse_url_find_byte(host, host_len, 1, ']');
+        if (close >= host_len) {
+            return 0;
+        }
+        if (close + 1 < host_len) {
+            if (host[close + 1] != ':') {
+                return 0;
+            }
+            port_colon = close + 1;
+        }
+    } else {
+        for (size_t i = host_len; i > 0; i--) {
+            if (host[i - 1] == ':') {
+                port_colon = i - 1;
+                break;
+            }
+        }
+    }
+
+    size_t component_host_len = port_colon < host_len ? port_colon : host_len;
+    if (component_host_len == 0) {
+        return 0;
+    }
+    ptn_parse_url_set_part(&result->host, host, component_host_len);
+
+    if (port_colon < host_len) {
+        int64_t port = 0;
+        size_t port_len = host_len - port_colon - 1;
+        int has_prior_colon = memchr(host, ':', port_colon) != NULL;
+        size_t port_digits = 0;
+        while (port_digits < port_len && isdigit((unsigned char)host[port_colon + 1 + port_digits])) {
+            port_digits++;
+        }
+        size_t parsed_port_len = has_prior_colon && port_digits > 0 ? port_digits : port_len;
+        if (!ptn_parse_url_digits_port(host + port_colon + 1, parsed_port_len, 1, &port)) {
+            return 0;
+        }
+        if (parsed_port_len != 0) {
+            result->port_present = 1;
+            result->port = port;
+        }
+    }
+    return 1;
+}
+
+static int ptn_parse_url_components(PtnStringOperand input, PtnParseUrlResult *result) {
+    memset(result, 0, sizeof(*result));
+    const char *data = input.data;
+    size_t len = input.len;
+    if (len == 0) {
+        ptn_parse_url_set_part(&result->path, data, 0);
+        return 1;
+    }
+    if (len == 1 && data[0] == ':') {
+        return 0;
+    }
+
+    if (len >= 2 && data[0] == '/' && data[1] == '/') {
+        size_t authority_start = 2;
+        size_t authority_end = ptn_parse_url_find_remainder_delimiter(data, len, authority_start);
+        if (!ptn_parse_url_parse_authority(result, data + authority_start, authority_end - authority_start)) {
+            return 0;
+        }
+        ptn_parse_url_parse_remainder(result, data, len, authority_end);
+        return 1;
+    }
+
+    size_t first_delimiter = ptn_parse_url_find_remainder_delimiter(data, len, 0);
+    size_t colon = ptn_parse_url_find_byte(data, first_delimiter, 0, ':');
+    if (colon < first_delimiter) {
+        if (colon == 0) {
+            return 0;
+        }
+        if (colon + 2 < len && data[colon + 1] == '/' && data[colon + 2] == '/') {
+            ptn_parse_url_set_part(&result->scheme, data, colon);
+            size_t authority_start = colon + 3;
+            size_t authority_end = ptn_parse_url_find_remainder_delimiter(data, len, authority_start);
+            size_t authority_len = authority_end - authority_start;
+            if (authority_len == 0) {
+                if (!ptn_parse_url_ascii_equal(result->scheme, "file") ||
+                    authority_end >= len ||
+                    data[authority_end] != '/') {
+                    return 0;
+                }
+                if (authority_end + 2 < len && data[authority_end] == '/' && data[authority_end + 2] == ':') {
+                    authority_end++;
+                }
+            } else if (!ptn_parse_url_parse_authority(result, data + authority_start, authority_len)) {
+                return 0;
+            }
+            ptn_parse_url_parse_remainder(result, data, len, authority_end);
+            return 1;
+        }
+
+        size_t digit_len = 0;
+        int digits_to_delimiter =
+            ptn_parse_url_digits_until_delimiter(data, len, colon + 1, &digit_len);
+        size_t port_end = colon + 1 + digit_len;
+        char delimiter = port_end < len ? data[port_end] : '\0';
+        if (digits_to_delimiter &&
+            digit_len <= 5 &&
+            (delimiter == '\0' || delimiter == '/')) {
+            int64_t port = 0;
+            if (!ptn_parse_url_digits_port(data + colon + 1, digit_len, 0, &port)) {
+                return 0;
+            }
+            ptn_parse_url_set_part(&result->host, data, colon);
+            result->port_present = 1;
+            result->port = port;
+            ptn_parse_url_parse_remainder(result, data, len, port_end);
+            return 1;
+        }
+
+        if (!ptn_parse_url_valid_scheme_start(data[0])) {
+            ptn_parse_url_parse_remainder(result, data, len, 0);
+            return 1;
+        }
+
+        ptn_parse_url_set_part(&result->scheme, data, colon);
+        ptn_parse_url_parse_remainder(result, data, len, colon + 1);
+        return 1;
+    }
+
+    ptn_parse_url_parse_remainder(result, data, len, 0);
+    return 1;
+}
+
+static PtnValue ptn_parse_url_part_value(PtnParseUrlPart part) {
+    if (!part.present) {
+        return ptn_null();
+    }
+    return ptn_owned_string_len(ptn_duplicate_string_len(part.data, part.len), part.len);
+}
+
+static PtnValue ptn_parse_url_component_value(const PtnParseUrlResult *result, int64_t component) {
+    switch (component) {
+        case PTN_PHP_URL_SCHEME:
+            return ptn_parse_url_part_value(result->scheme);
+        case PTN_PHP_URL_HOST:
+            return ptn_parse_url_part_value(result->host);
+        case PTN_PHP_URL_PORT:
+            return result->port_present ? ptn_int(result->port) : ptn_null();
+        case PTN_PHP_URL_USER:
+            return ptn_parse_url_part_value(result->user);
+        case PTN_PHP_URL_PASS:
+            return ptn_parse_url_part_value(result->pass);
+        case PTN_PHP_URL_PATH:
+            return ptn_parse_url_part_value(result->path);
+        case PTN_PHP_URL_QUERY:
+            return ptn_parse_url_part_value(result->query);
+        case PTN_PHP_URL_FRAGMENT:
+            return ptn_parse_url_part_value(result->fragment);
+        default:
+            return ptn_null();
+    }
+}
+
+static void ptn_parse_url_array_set_part(PtnValue array, const char *name, PtnParseUrlPart part) {
+    if (part.present) {
+        ptn_array_set_entry(array.as.array, ptn_array_string_key(name), ptn_parse_url_part_value(part));
+    }
+}
+
+static PtnValue ptn_parse_url_array_value(const PtnParseUrlResult *result) {
+    PtnValue array = ptn_array_from_literal_entries(0, NULL);
+    ptn_parse_url_array_set_part(array, "scheme", result->scheme);
+    ptn_parse_url_array_set_part(array, "host", result->host);
+    if (result->port_present) {
+        ptn_array_set_entry(array.as.array, ptn_array_string_key("port"), ptn_int(result->port));
+    }
+    ptn_parse_url_array_set_part(array, "user", result->user);
+    ptn_parse_url_array_set_part(array, "pass", result->pass);
+    ptn_parse_url_array_set_part(array, "path", result->path);
+    ptn_parse_url_array_set_part(array, "query", result->query);
+    ptn_parse_url_array_set_part(array, "fragment", result->fragment);
+    return array;
+}
+
+static void ptn_parse_url_throw_invalid_component(PtnRuntime *runtime, int64_t component) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "parse_url(): Argument #2 ($component) must be a valid URL component identifier, %lld given",
+        (long long)component
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static PtnValue ptn_internal_parse_url(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand url = ptn_internal_expect_string_arg(runtime, "parse_url", 1, "url", args[0], line);
+    int64_t component = -1;
+    if (argc >= 2) {
+        component = ptn_internal_expect_integer_arg(runtime, "parse_url", 2, "component", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(url);
+            return ptn_null();
+        }
+        if (component < -1 || component > PTN_PHP_URL_FRAGMENT) {
+            ptn_string_operand_free(url);
+            ptn_parse_url_throw_invalid_component(runtime, component);
+            return ptn_null();
+        }
+    }
+
+    PtnParseUrlResult parsed;
+    int valid = ptn_parse_url_components(url, &parsed);
+    PtnValue result = ptn_bool(0);
+    if (valid) {
+        result = component == -1
+            ? ptn_parse_url_array_value(&parsed)
+            : ptn_parse_url_component_value(&parsed, component);
+    }
+    ptn_string_operand_free(url);
+    return result;
 }
 
 static char *ptn_parse_str_mangle_name(const char *input, size_t len, size_t *output_len_out) {
@@ -10697,6 +11154,35 @@ static size_t ptn_sprintf_normalize_exponent(char *formatted, char conversion) {
     return 0;
 }
 
+static size_t ptn_sprintf_ensure_zero_precision_g_decimal(char **formatted, char conversion) {
+    if (conversion != 'g' && conversion != 'G') {
+        return 0;
+    }
+    char *exponent = strchr(*formatted, conversion == 'G' ? 'E' : 'e');
+    if (exponent == NULL) {
+        exponent = strchr(*formatted, conversion == 'G' ? 'e' : 'E');
+    }
+    if (exponent == NULL) {
+        return 0;
+    }
+    for (char *cursor = *formatted; cursor < exponent; cursor++) {
+        if (*cursor == '.') {
+            return 0;
+        }
+    }
+    size_t len = strlen(*formatted);
+    size_t exponent_offset = (size_t)(exponent - *formatted);
+    char *resized = realloc(*formatted, len + 3);
+    if (resized == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memmove(resized + exponent_offset + 2, resized + exponent_offset, len - exponent_offset + 1);
+    resized[exponent_offset] = '.';
+    resized[exponent_offset + 1] = '0';
+    *formatted = resized;
+    return 2;
+}
+
 static void ptn_sprintf_append_manual_padding(
     PtnStringBuffer *buffer,
     const char *formatted,
@@ -10896,7 +11382,7 @@ static void ptn_sprintf_throw_argument_count(PtnRuntime *runtime, size_t require
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
-static void ptn_sprintf_cap_float_precision(PtnRuntime *runtime, PtnSprintfSpec *spec, size_t line) {
+static void ptn_sprintf_cap_float_precision(PtnRuntime *runtime, const char *function_name, PtnSprintfSpec *spec, size_t line) {
     const int max_precision = 53;
     if (!spec->has_precision || spec->precision <= max_precision) {
         return;
@@ -10905,7 +11391,8 @@ static void ptn_sprintf_cap_float_precision(PtnRuntime *runtime, PtnSprintfSpec 
     int written = snprintf(
         message,
         sizeof(message),
-        "sprintf(): Requested precision of %d digits was truncated to PHP maximum of %d digits",
+        "%s(): Requested precision of %d digits was truncated to PHP maximum of %d digits",
+        function_name,
         spec->precision,
         max_precision
     );
@@ -11218,7 +11705,7 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
             case 'H': {
                 int manual_padding = spec.pad_char != '\0' || (spec.left_adjust && spec.zero_pad && spec.has_width);
                 PtnSprintfSpec effective = spec;
-                ptn_sprintf_cap_float_precision(runtime, &effective, line);
+                ptn_sprintf_cap_float_precision(runtime, function_name, &effective, line);
                 char c_conversion = conversion == 'h' ? 'g' : (conversion == 'H' ? 'G' : conversion);
                 if (effective.has_precision && effective.precision == -1) {
                     effective.precision = 17;
@@ -11244,6 +11731,9 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                     ptn_sprintf_value_to_double(runtime, arg, line),
                     &formatted_len
                 );
+                if (spec.has_precision && spec.precision == 0) {
+                    formatted_len += ptn_sprintf_ensure_zero_precision_g_decimal(&formatted, conversion);
+                }
                 if (conversion == 'e' || conversion == 'E' || conversion == 'g' || conversion == 'G' || conversion == 'h' || conversion == 'H') {
                     size_t original_len = formatted_len;
                     size_t removed = ptn_sprintf_normalize_exponent(formatted, conversion);
@@ -12583,19 +13073,27 @@ static PtnValue ptn_internal_get_html_translation_table(PtnRuntime *runtime, siz
     return table;
 }
 
-static int ptn_html_special_entity_len_at(
+static int ptn_html_entity_len_at(
     const char *data,
     size_t len,
     size_t offset,
     size_t *matched_len
 ) {
-    char decoded = '\0';
-    return ptn_html_entity_decode_char(
+    unsigned int value = 0;
+    if (ptn_html_numeric_entity_value(data, len, offset, matched_len, &value) &&
+        ptn_html_codepoint_allowed(value, PTN_ENT_QUOTES | PTN_ENT_HTML5)) {
+        return 1;
+    }
+
+    const char *decoded = NULL;
+    size_t decoded_len = 0;
+    return ptn_html_decode_named_entity(
         data,
         len,
         offset,
         PTN_ENT_QUOTES | PTN_ENT_HTML5,
         &decoded,
+        &decoded_len,
         matched_len
     );
 }
@@ -12630,7 +13128,7 @@ static PtnValue ptn_internal_htmlspecialchars(PtnRuntime *runtime, size_t argc, 
         switch (byte) {
             case '&': {
                 size_t entity_len = 0;
-                if (!double_encode && ptn_html_special_entity_len_at(string.data, string.len, i, &entity_len)) {
+                if (!double_encode && ptn_html_entity_len_at(string.data, string.len, i, &entity_len)) {
                     ptn_string_buffer_append_len(&output, string.data + i, entity_len);
                     i += entity_len - 1;
                 } else {
@@ -12686,7 +13184,7 @@ static PtnValue ptn_internal_htmlentities(PtnRuntime *runtime, size_t argc, cons
         unsigned char byte = (unsigned char)string.data[i];
         if (!double_encode && byte == '&') {
             size_t entity_len = 0;
-            if (ptn_html_special_entity_len_at(string.data, string.len, i, &entity_len)) {
+            if (ptn_html_entity_len_at(string.data, string.len, i, &entity_len)) {
                 ptn_string_buffer_append_len(&output, string.data + i, entity_len);
                 i += entity_len - 1;
                 continue;
@@ -22222,15 +22720,17 @@ static int ptn_base64_is_space(unsigned char byte) {
 static PtnValue ptn_internal_base64_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "base64_decode", 1, "string", args[0], line);
     int strict = argc >= 2 && ptn_is_truthy(args[1]);
-    char *output = malloc(input.len + 1);
-    if (output == NULL) {
+
+    if (input.len > SIZE_MAX / sizeof(int)) {
+        ptn_abort_out_of_memory();
+    }
+    int *values = input.len == 0 ? NULL : malloc(input.len * sizeof(int));
+    if (input.len != 0 && values == NULL) {
         ptn_abort_out_of_memory();
     }
 
-    int quartet[4] = {0, 0, 0, 0};
-    size_t quartet_len = 0;
-    int quartet_padding = 0;
-    size_t out = 0;
+    size_t value_len = 0;
+    size_t padding_len = 0;
     int saw_padding = 0;
     int invalid = 0;
     for (size_t i = 0; i < input.len; i++) {
@@ -22238,58 +22738,74 @@ static PtnValue ptn_internal_base64_decode(PtnRuntime *runtime, size_t argc, con
         if (ptn_base64_is_space(byte)) {
             continue;
         }
-        int value = 0;
+
+        int value = ptn_base64_decode_value(byte);
+        if (value >= 0) {
+            if (strict && saw_padding) {
+                invalid = 1;
+                break;
+            }
+            values[value_len++] = value;
+            continue;
+        }
+
         if (byte == '=') {
-            saw_padding = 1;
-            quartet_padding++;
-            value = 0;
-        } else {
-            value = ptn_base64_decode_value(byte);
-            if (value < 0 || saw_padding) {
-                if (strict) {
-                    invalid = 1;
-                    break;
-                }
-                continue;
+            if (strict) {
+                saw_padding = 1;
+                padding_len++;
             }
+            continue;
         }
 
-        quartet[quartet_len++] = value;
-        if (quartet_len == 4) {
-            output[out++] = (char)((quartet[0] << 2) | (quartet[1] >> 4));
-            if (quartet_padding < 2) {
-                output[out++] = (char)(((quartet[1] & 0x0f) << 4) | (quartet[2] >> 2));
-            }
-            if (quartet_padding < 1) {
-                output[out++] = (char)(((quartet[2] & 0x03) << 6) | quartet[3]);
-            }
-            quartet_len = 0;
-            quartet_padding = 0;
-            if (saw_padding) {
-                saw_padding = 0;
-            }
-        }
-    }
-
-    if (!invalid && quartet_len != 0) {
-        if (strict && quartet_len == 1) {
+        if (strict) {
             invalid = 1;
-        } else {
-            if (quartet_len >= 2) {
-                output[out++] = (char)((quartet[0] << 2) | (quartet[1] >> 4));
-            }
-            if (quartet_len >= 3) {
-                output[out++] = (char)(((quartet[1] & 0x0f) << 4) | (quartet[2] >> 2));
-            }
+            break;
         }
     }
 
-    ptn_string_operand_free(input);
+    if (!invalid && strict) {
+        size_t significant_len = value_len + padding_len;
+        if (padding_len > 0) {
+            if (padding_len > 2 || significant_len % 4 != 0 ||
+                (padding_len == 1 && value_len % 4 != 3) ||
+                (padding_len == 2 && value_len % 4 != 2)) {
+                invalid = 1;
+            }
+        } else if (value_len % 4 == 1) {
+            invalid = 1;
+        }
+    }
+
     if (invalid) {
-        free(output);
+        free(values);
+        ptn_string_operand_free(input);
         return ptn_bool(0);
     }
+
+    char *output = malloc(input.len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    size_t i = 0;
+    while (i + 4 <= value_len) {
+        output[out++] = (char)((values[i] << 2) | (values[i + 1] >> 4));
+        output[out++] = (char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+        output[out++] = (char)(((values[i + 2] & 0x03) << 6) | values[i + 3]);
+        i += 4;
+    }
+    size_t remainder = value_len - i;
+    if (remainder >= 2) {
+        output[out++] = (char)((values[i] << 2) | (values[i + 1] >> 4));
+    }
+    if (remainder >= 3) {
+        output[out++] = (char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+    }
+
     output[out] = '\0';
+    free(values);
+    ptn_string_operand_free(input);
     return ptn_owned_string_len(output, out);
 }
 
@@ -24702,6 +25218,35 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     return result;
 }
 
+static void ptn_get_defined_constants_add_int(PtnValue table, const char *name, int64_t value) {
+    ptn_array_set_entry(table.as.array, ptn_array_string_key(name), ptn_int(value));
+}
+
+static PtnValue ptn_defined_constants_core_table(void) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_SCHEME", PTN_PHP_URL_SCHEME);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_HOST", PTN_PHP_URL_HOST);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_PORT", PTN_PHP_URL_PORT);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_USER", PTN_PHP_URL_USER);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_PASS", PTN_PHP_URL_PASS);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_PATH", PTN_PHP_URL_PATH);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_QUERY", PTN_PHP_URL_QUERY);
+    ptn_get_defined_constants_add_int(table, "PHP_URL_FRAGMENT", PTN_PHP_URL_FRAGMENT);
+    return table;
+}
+
+static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    PtnValue core = ptn_defined_constants_core_table();
+    if (argc >= 1 && ptn_is_truthy(args[0])) {
+        PtnValue categorized = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("Core"), core);
+        return categorized;
+    }
+    return core;
+}
+
 static PtnValue ptn_internal_extension_loaded(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -24744,20 +25289,24 @@ static int ptn_setlocale_category(int64_t category, int *out) {
     }
 }
 
-static char *ptn_setlocale_try_string(int category, const char *locale) {
+static char *ptn_setlocale_try_string(PtnRuntime *runtime, int category, const char *locale, size_t line) {
     const char *result = NULL;
     if (strcmp(locale, "0") == 0) {
         result = setlocale(category, NULL);
     } else {
+        if (strlen(locale) >= 255) {
+            ptn_emit_warning(&runtime->diagnostics, "setlocale(): Specified locale name is too long", line);
+            return NULL;
+        }
         result = setlocale(category, locale);
     }
     return result == NULL ? NULL : ptn_duplicate_string(result);
 }
 
-static char *ptn_setlocale_try_value(int category, PtnValue value) {
+static char *ptn_setlocale_try_value(PtnRuntime *runtime, int category, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_NULL) {
-        return ptn_setlocale_try_string(category, "0");
+        return ptn_setlocale_try_string(runtime, category, "0", line);
     }
     if (value.type == PTN_ARRAY) {
         PtnArray *array = value.as.array;
@@ -24765,10 +25314,10 @@ static char *ptn_setlocale_try_value(int category, PtnValue value) {
             PtnValue candidate = ptn_value_deref(array->entries[i].value);
             char *result = NULL;
             if (candidate.type == PTN_NULL) {
-                result = ptn_setlocale_try_string(category, "0");
+                result = ptn_setlocale_try_string(runtime, category, "0", line);
             } else {
                 char *locale = ptn_value_to_string(candidate);
-                result = ptn_setlocale_try_string(category, locale);
+                result = ptn_setlocale_try_string(runtime, category, locale, line);
                 free(locale);
             }
             if (result != NULL) {
@@ -24779,7 +25328,7 @@ static char *ptn_setlocale_try_value(int category, PtnValue value) {
     }
 
     char *locale = ptn_value_to_string(value);
-    char *result = ptn_setlocale_try_string(category, locale);
+    char *result = ptn_setlocale_try_string(runtime, category, locale, line);
     free(locale);
     return result;
 }
@@ -24796,7 +25345,7 @@ static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const P
     }
 
     for (size_t i = 1; i < argc; i++) {
-        char *result = ptn_setlocale_try_value(category, args[i]);
+        char *result = ptn_setlocale_try_value(runtime, category, args[i], line);
         if (result != NULL) {
             return ptn_owned_string(result);
         }
@@ -26616,6 +27165,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_declared_interfaces", 0, 0, ptn_internal_get_declared_interfaces },
         { "get_declared_traits", 0, 0, ptn_internal_get_declared_traits },
         { "get_defined_vars", 0, 0, ptn_internal_get_defined_vars },
+        { "get_defined_constants", 0, 1, ptn_internal_get_defined_constants },
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
@@ -26634,6 +27184,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "highlight_file", 1, 2, ptn_internal_highlight_file },
         { "highlight_string", 1, 2, ptn_internal_highlight_string },
+        { "show_source", 1, 2, ptn_internal_highlight_file },
         { "html_entity_decode", 1, 3, ptn_internal_html_entity_decode },
         { "htmlentities", 1, 4, ptn_internal_htmlentities },
         { "htmlspecialchars", 1, 4, ptn_internal_htmlspecialchars },
@@ -26720,6 +27271,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pathinfo", 1, 2, ptn_internal_pathinfo },
         { "parse_str", 2, 2, ptn_internal_parse_str },
         { "parse_ini_string", 1, 3, ptn_internal_parse_ini_string },
+        { "parse_url", 1, 2, ptn_internal_parse_url },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },
@@ -26741,6 +27293,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "rad2deg", 1, 1, ptn_internal_rad2deg },
         { "rand", 0, 2, ptn_internal_rand },
+        { "rawurldecode", 1, 1, ptn_internal_rawurldecode },
+        { "rawurlencode", 1, 1, ptn_internal_rawurlencode },
         { "range", 2, 3, ptn_internal_range },
         { "readdir", 1, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
@@ -26841,6 +27395,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "unlink", 1, 1, ptn_internal_unlink },
         { "unpack", 2, 3, ptn_internal_unpack },
         { "unserialize", 1, 1, ptn_internal_unserialize },
+        { "urldecode", 1, 1, ptn_internal_urldecode },
+        { "urlencode", 1, 1, ptn_internal_urlencode },
         { "usort", 2, 2, ptn_internal_usort },
         { "utf8_decode", 1, 1, ptn_internal_utf8_decode },
         { "utf8_encode", 1, 1, ptn_internal_utf8_encode },
