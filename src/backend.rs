@@ -130,6 +130,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_class_metadata_helpers(
         &mut out,
         &module.classes,
+        &module.functions,
         &module.traits,
         runtime_requirements.internal_function_dispatch,
     );
@@ -3049,6 +3050,7 @@ fn emit_method_visibility_prototypes(out: &mut String) {
 fn emit_class_metadata_helpers(
     out: &mut String,
     classes: &[ClassDecl],
+    functions: &[FunctionDecl],
     traits: &[TraitDecl],
     emit_reflection_helpers: bool,
 ) {
@@ -4274,6 +4276,25 @@ fn emit_class_metadata_helpers(
         out.push_str("            }\n");
         out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone_deref(args[ptn_magic_arg_i]));\n");
         out.push_str("        }\n");
+        let function = &functions[method.function_index];
+        emit_dynamic_method_deprecated_warning(
+            out,
+            "        ",
+            "&runtime->diagnostics",
+            &class.name,
+            "method_name",
+            function,
+            "line",
+        );
+        emit_dynamic_method_no_discard_warning(
+            out,
+            "        ",
+            "&runtime->diagnostics",
+            &class.name,
+            "method_name",
+            function,
+            "line",
+        );
         out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
         out.push_str("        runtime->called_class_name_override = \"");
         out.push_str(&c_string(&class.name));
@@ -5869,6 +5890,25 @@ fn emit_method_dispatch(
             out.push_str("            }\n");
             out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone_deref(args[ptn_magic_arg_i]));\n");
             out.push_str("        }\n");
+            let function = &functions[method.function_index];
+            emit_dynamic_method_deprecated_warning(
+                out,
+                "        ",
+                "&runtime->diagnostics",
+                &class.name,
+                "method_name",
+                function,
+                "line",
+            );
+            emit_dynamic_method_no_discard_warning(
+                out,
+                "        ",
+                "&runtime->diagnostics",
+                &class.name,
+                "method_name",
+                function,
+                "line",
+            );
             out.push_str("        PtnValue ptn_magic_result = ");
             out.push_str(&user_function_c_name(method.function_index));
             out.push_str("(runtime, resolved, 2, ptn_magic_args, line);\n");
@@ -6587,7 +6627,8 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
             no_discard_warning_message(function).map(|message| (function, message))
         })
         .collect();
-    if !string_targets.is_empty() {
+    let has_string_targets = !string_targets.is_empty();
+    if has_string_targets {
         out.push_str("    if (resolved.type == PTN_STRING) {\n");
         out.push_str("        char *name = ptn_value_to_string(resolved);\n");
         out.push_str(
@@ -6605,15 +6646,48 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
         out.push_str("            return;\n");
         out.push_str("        }\n");
     }
-    if !functions.iter().any(|function| {
-        !function.is_anonymous
-            && (function.class_name.is_none() || function.is_static)
-            && function.no_discard_message.is_some()
-    }) {
-        out.push_str("    (void)line;\n");
-    } else {
+    if has_string_targets {
         out.push_str("        free(name);\n");
         out.push_str("    }\n");
+    }
+    let object_targets: Vec<_> = functions
+        .iter()
+        .filter(|function| {
+            function
+                .method_name
+                .as_deref()
+                .is_some_and(|name| name.eq_ignore_ascii_case("__invoke"))
+        })
+        .filter_map(|function| {
+            no_discard_warning_message(function).map(|message| (function, message))
+        })
+        .collect();
+    let has_object_targets = !object_targets.is_empty();
+    if has_object_targets {
+        out.push_str("    if (resolved.type == PTN_OBJECT) {\n");
+        out.push_str("        const char *class_name = resolved.as.object->class_name;\n");
+    }
+    for (function, message) in object_targets {
+        let Some(class_name) = function.class_name.as_deref() else {
+            continue;
+        };
+        out.push_str("        if (ptn_declared_class_is_same_or_descendant(class_name, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\")) {\n");
+        out.push_str("            ptn_emit_warning(&runtime->diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", line);\n");
+        out.push_str("            return;\n");
+        out.push_str("        }\n");
+    }
+    if has_object_targets {
+        out.push_str("    }\n");
+    }
+    let has_anonymous_targets = functions
+        .iter()
+        .any(|function| function.is_anonymous && function.no_discard_message.is_some());
+    if !(has_anonymous_targets || has_string_targets || has_object_targets) {
+        out.push_str("    (void)line;\n");
     }
     out.push_str("}\n");
 }
@@ -11197,6 +11271,91 @@ fn emit_deprecated_function_warning(
     out.push_str(", \"");
     out.push_str(&c_string(&message));
     out.push_str("\", ");
+    out.push_str(line_expr);
+    out.push_str(");\n");
+}
+
+fn emit_dynamic_method_deprecated_warning(
+    out: &mut String,
+    indent: &str,
+    diagnostics_expr: &str,
+    class_name: &str,
+    method_name_expr: &str,
+    function: &FunctionDecl,
+    line_expr: &str,
+) {
+    if function.deprecated_message.is_none() && function.deprecated_since.is_none() {
+        return;
+    }
+    let since = function.deprecated_since.as_deref().unwrap_or("");
+    let message = function.deprecated_message.as_deref().unwrap_or("");
+    let since_prefix = if since.is_empty() { "" } else { " since " };
+    let message_prefix = if message.is_empty() { "" } else { ", " };
+    out.push_str(indent);
+    out.push_str("char ptn_magic_deprecated_warning[512];\n");
+    out.push_str(indent);
+    out.push_str("int ptn_magic_deprecated_written = snprintf(ptn_magic_deprecated_warning, sizeof(ptn_magic_deprecated_warning), \"Method %s::%s() is deprecated%s%s%s%s\", \"");
+    out.push_str(&c_string(class_name));
+    out.push_str("\", ");
+    out.push_str(method_name_expr);
+    out.push_str(", \"");
+    out.push_str(&c_string(since_prefix));
+    out.push_str("\", \"");
+    out.push_str(&c_string(since));
+    out.push_str("\", \"");
+    out.push_str(&c_string(message_prefix));
+    out.push_str("\", \"");
+    out.push_str(&c_string(message));
+    out.push_str("\");\n");
+    out.push_str(indent);
+    out.push_str("if (ptn_magic_deprecated_written < 0 || (size_t)ptn_magic_deprecated_written >= sizeof(ptn_magic_deprecated_warning)) {\n");
+    out.push_str(indent);
+    out.push_str("    ptn_abort_out_of_memory();\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    out.push_str(indent);
+    out.push_str("ptn_emit_deprecation(");
+    out.push_str(diagnostics_expr);
+    out.push_str(", ptn_magic_deprecated_warning, ");
+    out.push_str(line_expr);
+    out.push_str(");\n");
+}
+
+fn emit_dynamic_method_no_discard_warning(
+    out: &mut String,
+    indent: &str,
+    diagnostics_expr: &str,
+    class_name: &str,
+    method_name_expr: &str,
+    function: &FunctionDecl,
+    line_expr: &str,
+) {
+    let Some(message) = function.no_discard_message.as_deref() else {
+        return;
+    };
+    let message_prefix = if message.is_empty() { "" } else { ", " };
+    out.push_str(indent);
+    out.push_str("char ptn_magic_no_discard_warning[512];\n");
+    out.push_str(indent);
+    out.push_str("int ptn_magic_no_discard_written = snprintf(ptn_magic_no_discard_warning, sizeof(ptn_magic_no_discard_warning), \"The return value of method %s::%s() should either be used or intentionally ignored by casting it as (void)%s%s\", \"");
+    out.push_str(&c_string(class_name));
+    out.push_str("\", ");
+    out.push_str(method_name_expr);
+    out.push_str(", \"");
+    out.push_str(&c_string(message_prefix));
+    out.push_str("\", \"");
+    out.push_str(&c_string(message));
+    out.push_str("\");\n");
+    out.push_str(indent);
+    out.push_str("if (ptn_magic_no_discard_written < 0 || (size_t)ptn_magic_no_discard_written >= sizeof(ptn_magic_no_discard_warning)) {\n");
+    out.push_str(indent);
+    out.push_str("    ptn_abort_out_of_memory();\n");
+    out.push_str(indent);
+    out.push_str("}\n");
+    out.push_str(indent);
+    out.push_str("ptn_emit_warning(");
+    out.push_str(diagnostics_expr);
+    out.push_str(", ptn_magic_no_discard_warning, ");
     out.push_str(line_expr);
     out.push_str(");\n");
 }
@@ -19360,6 +19519,9 @@ impl ValueEmitter {
                 true,
                 None,
             );
+            if discarded {
+                self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
+            }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
@@ -19371,9 +19533,6 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
-            }
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -19381,6 +19540,9 @@ impl ValueEmitter {
             return result_temp;
         }
         if arguments.is_empty() {
+            if discarded {
+                self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
+            }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
@@ -19388,9 +19550,6 @@ impl ValueEmitter {
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
-            }
             emit_value_cleanup(out, "    ", &callee_temp);
             return result_temp;
         }
@@ -19424,6 +19583,9 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        if discarded {
+            self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
+        }
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_callable(&runtime, ");
@@ -19435,9 +19597,6 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        if discarded {
-            self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
-        }
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);
         }
