@@ -2541,6 +2541,80 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     return reference;
 }
 
+static PTN_UNUSED int ptn_runtime_validate_static_property_write(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    size_t line,
+    int indirect_write
+) {
+    (void)line;
+    const char *declaring_class = NULL;
+    char *key = ptn_runtime_resolve_static_property_key(
+        runtime,
+        class_name,
+        property,
+        &declaring_class
+    );
+    if (key == NULL) {
+        PtnValue missing = ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        ptn_value_destroy(&missing);
+        return 0;
+    }
+
+    PtnValue read_visibility_value;
+    PtnValue set_visibility_value;
+    PtnPropertyVisibility read_visibility = PTN_PROPERTY_PUBLIC;
+    PtnPropertyVisibility set_visibility = PTN_PROPERTY_PUBLIC;
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_read_visibility_table(runtime),
+            key,
+            &read_visibility_value
+        ) &&
+        ptn_value_deref(read_visibility_value).type == PTN_INT
+    ) {
+        read_visibility = (PtnPropertyVisibility)ptn_value_deref(read_visibility_value).as.integer;
+    }
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_set_visibility_table(runtime),
+            key,
+            &set_visibility_value
+        ) &&
+        ptn_value_deref(set_visibility_value).type == PTN_INT
+    ) {
+        set_visibility = (PtnPropertyVisibility)ptn_value_deref(set_visibility_value).as.integer;
+    }
+    free(key);
+    if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
+        if (set_visibility != read_visibility) {
+            if (indirect_write) {
+                ptn_throw_property_indirect_set_visibility_error(
+                    runtime,
+                    set_visibility,
+                    declaring_class,
+                    property,
+                    access_scope
+                );
+            } else {
+                ptn_throw_property_set_visibility_error(
+                    runtime,
+                    set_visibility,
+                    declaring_class,
+                    property,
+                    access_scope
+                );
+            }
+        } else {
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+        }
+        return 0;
+    }
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
     PtnRuntime *runtime,
     const char *class_name,

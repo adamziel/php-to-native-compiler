@@ -546,10 +546,10 @@ impl IncludeCollector {
                 }
             }
             AssignmentTarget::PropertyArrayDim { .. }
+            | AssignmentTarget::StaticPropertyArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
-            | AssignmentTarget::StaticProperty { .. }
-            | AssignmentTarget::StaticPropertyArrayDim { .. } => {}
+            | AssignmentTarget::StaticProperty { .. } => {}
         }
     }
 

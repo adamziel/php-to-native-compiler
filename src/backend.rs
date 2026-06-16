@@ -11881,7 +11881,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11907,12 +11907,12 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&current_temp);
         out.push_str(", ");
@@ -11945,6 +11945,19 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let resolved_class_name = self.static_property_class_name(class_name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_runtime_validate_static_property_write(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", 1)) {\n");
         let path = emit_array_path_segments(out, self, dimensions);
         let value_temp = self.emit_materialized_value(out, value);
 
@@ -11956,7 +11969,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11974,7 +11987,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        let result_temp =
+        let computed_temp =
             self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
         out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
@@ -11983,7 +11996,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
-        out.push_str(&result_temp);
+        out.push_str(&computed_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11991,18 +12004,23 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&current_value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        out.push_str("    ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&computed_temp);
+        out.push_str(";\n");
         emit_value_cleanup(out, "    ", &assigned_temp);
         emit_value_cleanup(out, "    ", &current_element_temp);
         emit_value_cleanup(out, "    ", &current_value_temp);
@@ -12010,6 +12028,7 @@ impl ValueEmitter {
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
+        out.push_str("    }\n");
         result_temp
     }
 
@@ -12464,32 +12483,10 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
-            AssignmentTarget::StaticPropertyArrayDim {
-                class_name,
-                name,
-                dimensions,
-                line,
-            } => {
-                let property_reference_temp =
-                    self.emit_static_property_reference(out, class_name, name, *line);
-                let path = emit_array_path_segments(out, self, dimensions);
-                out.push_str("    ptn_value_bind_array_path_reference(&runtime, &");
-                out.push_str(&property_reference_temp);
-                out.push_str(", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", ");
-                out.push_str(reference_temp);
-                out.push_str(", \"");
-                out.push_str(&c_string(&self.source_file));
-                out.push_str("\", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-                for segment_temp in path.value_temps {
-                    emit_value_cleanup(out, "    ", &segment_temp);
-                }
-                emit_value_cleanup(out, "    ", &property_reference_temp);
+            AssignmentTarget::StaticPropertyArrayDim { .. } => {
+                unreachable!(
+                    "parser rejects by-reference assignment to static property array targets"
+                );
             }
             AssignmentTarget::DynamicProperty { .. } => {
                 unreachable!("parser rejects by-reference assignment to dynamic property targets");
