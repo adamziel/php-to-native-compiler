@@ -357,6 +357,7 @@ typedef struct {
     size_t parameter_count;
     size_t required_parameter_count;
     int is_variadic;
+    int returns_reference;
     const PtnParameterMetadata *parameters;
     const char *return_type_name;
     const char *return_type_display_name;
@@ -899,6 +900,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.parameter_count = 0;
     metadata.required_parameter_count = 0;
     metadata.is_variadic = 0;
+    metadata.returns_reference = 0;
     metadata.parameters = NULL;
     metadata.return_type_name = NULL;
     metadata.return_type_display_name = NULL;
@@ -913,6 +915,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     size_t parameter_count,
     size_t required_parameter_count,
     int is_variadic,
+    int returns_reference,
     const PtnParameterMetadata *parameters,
     const char *return_type_name,
     const char *return_type_display_name,
@@ -926,6 +929,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.parameter_count = parameter_count;
     metadata.required_parameter_count = required_parameter_count;
     metadata.is_variadic = is_variadic;
+    metadata.returns_reference = returns_reference;
     metadata.parameters = parameters;
     metadata.return_type_name = return_type_name;
     metadata.return_type_display_name = return_type_display_name;
