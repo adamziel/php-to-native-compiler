@@ -523,6 +523,10 @@ typedef struct {
 } PtnOutputBuffer;
 
 typedef struct {
+    PtnReference *reference;
+} PtnStaticLocalSlot;
+
+typedef struct {
     size_t object_id;
     char *property;
 } PtnMagicPropertyFrame;
@@ -732,6 +736,9 @@ struct PtnRuntime {
     PtnObject **live_objects;
     size_t live_objects_len;
     size_t live_objects_capacity;
+    PtnStaticLocalSlot *static_local_slots;
+    size_t static_local_slots_len;
+    size_t static_local_slots_capacity;
     size_t next_object_id;
     size_t *free_object_ids;
     size_t free_object_ids_len;
