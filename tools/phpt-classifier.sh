@@ -1646,11 +1646,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[[:space:]])((private|protected)[[:space:]]+static|static[[:space:]]+(private|protected))[[:space:]]+\$[a-z_]/) {
-                print "unsupported-property-visibility-metadata\trequires non-public static property visibility metadata, outside PTN modeled property visibility"
-                found = 1
-                exit
-            }
             if (line ~ /function[[:space:]]+__tostring[[:space:]]*\(/) {
                 object_string_seen = 1
             }
@@ -1691,7 +1686,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(get_defined_functions|get_declared_classes)[[:space:]]*\(/ ||
+            if (line ~ /(^|[^[:alnum:]_$])get_defined_functions[[:space:]]*\(/ ||
                 line ~ /->[[:space:]]*newinstancewithoutconstructor[[:space:]]*\(/) {
                 print "unsupported-internal-reflection-metadata\trequires complete internal arginfo/class registry reflection, outside PTN modeled metadata"
                 found = 1

@@ -2332,6 +2332,15 @@ fn emit_user_function_dispatch(
     out.push_str("    if (found) {\n");
     out.push_str("        return result;\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
+    out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
+    out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
+    out.push_str(
+        "        return ptn_call_internal(runtime, namespace_separator + 1, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
     out.push_str("}\n");
 }
@@ -2490,6 +2499,129 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_names(PtnRuntime *runtime, int include_internal) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str("    int64_t index = 0;\n");
+    out.push_str("    if (include_internal) {\n");
+    for builtin in [
+        "stdClass",
+        "Generator",
+        "Reflection",
+        "ReflectionAttribute",
+        "ReflectionClass",
+        "ReflectionClassConstant",
+        "ReflectionExtension",
+        "ReflectionFunction",
+        "ReflectionMethod",
+        "ReflectionObject",
+        "ReflectionParameter",
+        "ReflectionProperty",
+        "ReflectionType",
+        "ReflectionNamedType",
+        "ReflectionUnionType",
+        "ReflectionIntersectionType",
+        "ReflectionException",
+        "ArrayIterator",
+        "RecursiveArrayIterator",
+        "ArrayObject",
+        "CallbackFilterIterator",
+        "FilterIterator",
+        "InfiniteIterator",
+        "IteratorIterator",
+        "SplObjectStorage",
+        "LimitIterator",
+        "Closure",
+        "DateTime",
+    ] {
+        out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+        out.push_str(builtin);
+        out.push_str("\"));\n");
+    }
+    for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
+        out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+        out.push_str(class_name);
+        out.push_str("\"));\n");
+    }
+    for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
+        out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+        out.push_str(class_name);
+        out.push_str("\"));\n");
+    }
+    out.push_str("    }\n");
+    for class in classes {
+        if class.is_interface {
+            continue;
+        }
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
+        out.push_str(&c_string(&class.name));
+        out.push_str("\"));\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_interface_names(PtnRuntime *runtime) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str("    int64_t index = 0;\n");
+    for builtin in [
+        "ArrayAccess",
+        "Iterator",
+        "IteratorAggregate",
+        "OuterIterator",
+        "RecursiveIterator",
+        "SeekableIterator",
+        "SplObserver",
+        "SplSubject",
+        "Traversable",
+        "Stringable",
+        "Throwable",
+        "DateTimeInterface",
+        "Countable",
+        "Serializable",
+    ] {
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
+        out.push_str(builtin);
+        out.push_str("\"));\n");
+    }
+    for class in classes {
+        if !class.is_interface {
+            continue;
+        }
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
+        out.push_str(&c_string(&class.name));
+        out.push_str("\"));\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_declared_trait_names(PtnRuntime *runtime) {\n");
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str("    int64_t index = 0;\n");
+    for trait_decl in traits {
+        out.push_str(
+            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+        );
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\"));\n");
+    }
+    if traits.is_empty() {
+        out.push_str("    (void)index;\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_readonly(const char *name) {\n");
     if classes.is_empty() {
         out.push_str("    (void)name;\n");
@@ -2607,6 +2739,7 @@ fn emit_class_metadata_helpers(
         ("InfiniteIterator", "IteratorIterator"),
         ("LimitIterator", "IteratorIterator"),
         ("RecursiveArrayIterator", "ArrayIterator"),
+        ("ReflectionObject", "ReflectionClass"),
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -2747,7 +2880,7 @@ fn emit_class_metadata_helpers(
         if !has_protected_static {
             continue;
         }
-        out.push_str("    if (ptn_declared_class_is_same_or_descendant(access_scope, \"");
+        out.push_str("    if (ptn_declared_class_scope_allows(access_scope, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\") && ptn_declared_class_is_same_or_descendant(target_class, \"");
         out.push_str(&c_string(&class.name));
@@ -2832,6 +2965,48 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_vars(PtnRuntime *runtime, const char *class_name, const char *access_scope) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes.iter().all(|class| {
+        class_property_vars_chain(class, classes, false).is_empty()
+            && class_property_vars_chain(class, classes, true).is_empty()
+    }) {
+        out.push_str("    (void)access_scope;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in class_property_vars_chain(class, classes, false)
+            .into_iter()
+            .chain(class_property_vars_chain(class, classes, true))
+        {
+            out.push_str("        if (ptn_declared_method_visibility_allows(access_scope, \"");
+            out.push_str(&c_string(property.declaring_class));
+            out.push_str("\", ");
+            out.push_str(c_property_visibility(property.visibility));
+            out.push_str(")) {\n");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"",
+            );
+            out.push_str(&c_string(property.name));
+            out.push_str("\"), ");
+            out.push_str(&c_property_default_value(property.value));
+            out.push_str(");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name) {\n",
     );
     if classes.is_empty() {
@@ -2888,6 +3063,79 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_method_exists_from_class_name(const char *class_name, const char *method_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            if method.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_method_names(PtnRuntime *runtime, const char *class_name, const char *access_scope) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str("    int64_t index = 0;\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)access_scope;\n");
+        out.push_str("    (void)index;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_declared_method_visibility_allows(access_scope, \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(")) {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\"));\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
     out.push_str("}\n");
 
     if emit_reflection_helpers {
@@ -3377,6 +3625,48 @@ fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+        out.push_str("    (void)is_static;\n");
+        out.push_str("    (void)visibility;\n");
+        out.push_str("    (void)is_abstract;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            *is_static = ");
+            out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            *visibility = ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            *is_abstract = ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
@@ -3738,6 +4028,13 @@ struct ClassPropertyExistsEntry<'a> {
     is_static: bool,
 }
 
+struct ClassPropertyVarsEntry<'a> {
+    declaring_class: &'a str,
+    name: &'a str,
+    visibility: PropertyVisibility,
+    value: Option<&'a ValueExpr>,
+}
+
 fn class_property_exists_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
@@ -3783,6 +4080,65 @@ fn class_property_exists_chain<'a>(
     let mut properties = Vec::new();
     let mut seen_classes = HashSet::new();
     collect(class, classes, &mut seen_classes, &mut properties);
+    properties
+}
+
+fn class_property_vars_chain<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+    static_properties: bool,
+) -> Vec<ClassPropertyVarsEntry<'a>> {
+    fn collect<'a>(
+        class: &'a ClassDecl,
+        classes: &'a [ClassDecl],
+        static_properties: bool,
+        seen_classes: &mut HashSet<String>,
+        properties: &mut Vec<ClassPropertyVarsEntry<'a>>,
+    ) {
+        let lookup_name = class.name.to_ascii_lowercase();
+        if !seen_classes.insert(lookup_name) {
+            return;
+        }
+        if static_properties {
+            properties.extend(class.static_properties.iter().map(|property| {
+                ClassPropertyVarsEntry {
+                    declaring_class: class.name.as_str(),
+                    name: property.name.as_str(),
+                    visibility: property.visibility,
+                    value: property.value.as_ref(),
+                }
+            }));
+        } else {
+            properties.extend(
+                class
+                    .properties
+                    .iter()
+                    .map(|property| ClassPropertyVarsEntry {
+                        declaring_class: class.name.as_str(),
+                        name: property.name.as_str(),
+                        visibility: property.visibility,
+                        value: property.value.as_ref(),
+                    }),
+            );
+        }
+
+        let Some(parent_name) = &class.parent_name else {
+            return;
+        };
+        if let Some(parent) = class_by_name(classes, parent_name) {
+            collect(parent, classes, static_properties, seen_classes, properties);
+        }
+    }
+
+    let mut properties = Vec::new();
+    let mut seen_classes = HashSet::new();
+    collect(
+        class,
+        classes,
+        static_properties,
+        &mut seen_classes,
+        &mut properties,
+    );
     properties
 }
 
@@ -17861,6 +18217,49 @@ fn c_optional_string(value: Option<&str>) -> String {
         Some(value) => format!("\"{}\"", c_string(value)),
         None => "NULL".to_string(),
     }
+}
+
+fn c_property_default_value(value: Option<&ValueExpr>) -> String {
+    match value {
+        Some(ValueExpr::String(value)) => format!("ptn_string(\"{}\")", c_string(value)),
+        Some(ValueExpr::Int(value)) => format!("ptn_int({})", c_i64_literal(*value)),
+        Some(ValueExpr::Float(value)) => format!("ptn_float({:?})", value),
+        Some(ValueExpr::Bool(value)) => format!("ptn_bool({})", if *value { "1" } else { "0" }),
+        Some(ValueExpr::Null) | None => "ptn_null()".to_string(),
+        Some(ValueExpr::Array(elements)) => {
+            c_property_default_array_value(elements).unwrap_or_else(|| "ptn_null()".to_string())
+        }
+        _ => "ptn_null()".to_string(),
+    }
+}
+
+fn c_property_default_array_value(elements: &[IrArrayElement]) -> Option<String> {
+    if elements.is_empty() {
+        return Some("ptn_array_from_literal_entries(0, NULL)".to_string());
+    }
+    let mut entries = Vec::with_capacity(elements.len());
+    for element in elements {
+        let (has_key, key) = match &element.key {
+            Some(ValueExpr::String(value)) => ("1", format!("ptn_string(\"{}\")", c_string(value))),
+            Some(ValueExpr::Int(value)) => ("1", format!("ptn_int({})", c_i64_literal(*value))),
+            Some(_) => return None,
+            None => ("0", "ptn_null()".to_string()),
+        };
+        let IrArrayElementValue::Value(value) = &element.value else {
+            return None;
+        };
+        entries.push(format!(
+            "{{ {}, {}, {} }}",
+            has_key,
+            key,
+            c_property_default_value(Some(value))
+        ));
+    }
+    Some(format!(
+        "ptn_array_from_literal_entries({}, (PtnArrayLiteralEntry[]){{ {} }})",
+        entries.len(),
+        entries.join(", ")
+    ))
 }
 
 fn c_property_visibility(visibility: PropertyVisibility) -> &'static str {
