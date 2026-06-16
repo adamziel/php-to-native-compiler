@@ -4688,6 +4688,37 @@ fn parser_rejects_invalid_asymmetric_property_visibility_metadata() {
 }
 
 #[test]
+fn parser_rejects_asymmetric_private_set_property_override_as_final() {
+    let error = parser::parse(
+        "<?php
+class A { public private(set) string $foo; }
+class B extends A { public string $foo; }
+",
+    )
+    .unwrap_err();
+    assert_eq!(error.message, "Cannot override final property A::$foo");
+}
+
+#[test]
+fn parser_rejects_asymmetric_set_visibility_when_parent_omits_it() {
+    let cases = [
+        (
+            "<?php class A { public string $foo; } class B extends A { public private(set) string $foo; }",
+            "Set access level of B::$foo must be omitted (as in class A)",
+        ),
+        (
+            "<?php class A { public string $foo; } class B extends A { public protected(set) string $foo; }",
+            "Set access level of B::$foo must be omitted (as in class A)",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+    }
+}
+
+#[test]
 fn parser_rejects_asymmetric_virtual_property_hooks() {
     let error = parser::parse("<?php class Foo { public private(set) int $bar { get => 42; } }")
         .unwrap_err();
@@ -12174,6 +12205,38 @@ echo \"Done\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_method_exists"));
     assert!(c_source.contains("base::__destruct"));
+}
+
+#[test]
+fn compile_assignment_replaces_global_before_destructor_to_native_binary() {
+    let root = temp_dir("ptn-native-global-replaced-before-destructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("global-replaced-before-destructor.php");
+    let output = root.join("global-replaced-before-destructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class Probe {
+    public function __destruct() {
+        var_dump($GLOBALS['p']);
+    }
+}
+
+$p = new Probe();
+$p = null;
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PtnValue old_value = symbols->items[index].value"));
 }
 
 #[test]
@@ -20635,6 +20698,50 @@ var_dump($test->i, $test->s);
 }
 
 #[test]
+fn compile_typed_property_reference_assignment_expression_coerces_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-property-reference-assignment-expression");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-property-reference-assignment-expression.php");
+    let output = root.join("typed-property-reference-assignment-expression-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public ?string $prop;
+}
+
+$obj = new Test();
+$ref =& $obj->prop;
+var_dump($ref = 0);
+$arr = [];
+$arr[0] =& $obj->prop;
+var_dump($arr[0] = 0);
+var_dump($obj->prop);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"0\"\nstring(1) \"0\"\nstring(1) \"0\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_write_variable_result"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_result"));
+}
+
+#[test]
 fn compile_array_callback_validation_to_native_binary() {
     let root = temp_dir("ptn-native-array-callback-validation");
     fs::create_dir_all(&root).unwrap();
@@ -29066,6 +29173,63 @@ var_dump(method_exists(\"Closure\", \"fromCallable\"));
 }
 
 #[test]
+fn compile_closure_bindto_scope_controls_asymmetric_property_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-bindto-asymmetric-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-bindto-asymmetric-scope.php");
+    let output = root.join("closure-bindto-asymmetric-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public private(set) int $bar = 0;
+}
+
+class Bar {}
+
+$foo = new Foo();
+$fn = function () use ($foo) {
+    $foo->bar++;
+    var_dump($foo->bar);
+};
+
+($fn->bindTo(null, Foo::class))();
+
+try {
+    $fn();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    ($fn->bindTo(null, Bar::class))();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "Cannot modify private(set) property Foo::$bar from global scope\n",
+            "Cannot modify private(set) property Foo::$bar from scope Bar\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_closure_clone_bound"));
+    assert!(c_source.contains("bound_scope_name"));
+}
+
+#[test]
 fn compile_closure_from_callable_invocation_and_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-closure-from-callable-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -30509,6 +30673,89 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
     assert!(c_source.contains("runtime.class_scope_allows = ptn_declared_class_scope_allows"));
+}
+
+#[test]
+fn compile_asymmetric_static_property_indirect_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-static-property-indirect");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-static-property-indirect.php");
+    let output = root.join("asymmetric-static-property-indirect-bin");
+    fs::write(
+        &input,
+        "<?php
+class Counter {
+    public private(set) static int $calls = 1;
+
+    public static function bump() {
+        ++self::$calls;
+        return self::$calls;
+    }
+}
+
+try {
+    ++Counter::$calls;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    Counter::$calls++;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    Counter::$calls += 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $ref =& Counter::$calls;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$ref = 10;
+try {
+    Counter::$calls =& $ref;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+var_dump(Counter::bump());
+var_dump(Counter::$calls);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot indirectly modify private(set) property Counter::$calls from global scope\n",
+            "Cannot indirectly modify private(set) property Counter::$calls from global scope\n",
+            "Cannot indirectly modify private(set) property Counter::$calls from global scope\n",
+            "Cannot indirectly modify private(set) property Counter::$calls from global scope\n",
+            "Cannot indirectly modify private(set) property Counter::$calls from global scope\n",
+            "int(2)\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_write_static_property_indirect"));
+    assert!(c_source.contains("ptn_runtime_bind_static_property_reference"));
 }
 
 #[test]
@@ -33205,6 +33452,82 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_is_readonly"));
     assert!(c_source.contains("Cannot create dynamic property"));
+}
+
+#[test]
+fn compile_reflection_new_instance_without_constructor_preserves_readonly_set_visibility_to_native_binary(
+) {
+    let root = temp_dir("ptn-native-reflection-readonly-set-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-readonly-set-visibility.php");
+    let output = root.join("reflection-readonly-set-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+class P {
+    public readonly int $pDefault;
+    public private(set) readonly int $pPrivate;
+    public protected(set) readonly int $pProtected;
+}
+
+class C extends P {
+    public function writePrivate() {
+        $this->pPrivate = 1;
+    }
+}
+
+$c = (new ReflectionClass(C::class))->newInstanceWithoutConstructor();
+try {
+    $c->writePrivate();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$p = (new ReflectionClass(P::class))->newInstanceWithoutConstructor();
+try {
+    $p->pDefault = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $p->pPrivate = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $p->pProtected = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot modify private(set) property P::$pPrivate from scope C\n",
+            "Cannot modify protected(set) readonly property P::$pDefault from global scope\n",
+            "Cannot modify private(set) property P::$pPrivate from global scope\n",
+            "Cannot modify protected(set) readonly property P::$pProtected from global scope\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_new_instance_without_constructor"));
+    assert!(c_source.contains("newInstanceWithoutConstructor"));
 }
 
 #[test]

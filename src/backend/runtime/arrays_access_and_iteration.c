@@ -1436,7 +1436,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         1
                     );
                 } else {
-                    if (scoped_private->is_readonly) {
+                    if (scoped_private->is_readonly &&
+                        scoped_private->set_visibility == PTN_PROPERTY_PROTECTED) {
                         ptn_throw_readonly_property_set_visibility_error(
                             runtime,
                             scoped_private->set_visibility,
@@ -1522,7 +1523,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                         1
                     );
                 } else {
-                    if (shared_property->is_readonly) {
+                    if (shared_property->is_readonly &&
+                        shared_property->set_visibility == PTN_PROPERTY_PROTECTED) {
                         ptn_throw_readonly_property_set_visibility_error(
                             runtime,
                             shared_property->set_visibility,

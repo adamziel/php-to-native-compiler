@@ -414,6 +414,7 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
     PtnValue *out
 );
 static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value);
+static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED int ptn_value_satisfies_class_type_hint(PtnRuntime *runtime, PtnValue value, const char *expected_class_name);
 
 typedef struct {
