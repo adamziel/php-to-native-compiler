@@ -7488,7 +7488,7 @@ var_dump(function_exists("print_r"), function_exists("PRINT_R"));"#,
             "\n",
             ")\n",
             "\"\n",
-            "string(0) \"\"\n",
+            "string(3) \"abc\"\n",
             "string(1) \"1\"\n",
             "string(0) \"\"\n",
             "string(2) \"42\"\n",
@@ -17438,6 +17438,88 @@ ValueError: php_uname(): Argument #1 ($mode) must be one of \"a\", \"m\", \"n\",
 }
 
 #[test]
+fn compile_exec_and_system_shell_command_output_to_native_binary() {
+    let root = temp_dir("ptn-native-exec-system-shell-command-output");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exec-system.php");
+    let output = root.join("exec-system-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$code = -1;\n\
+ob_start();\n\
+$last = system(\"printf 'one\\nlocaleprobe\\n'\", $code);\n\
+$captured = ob_get_contents();\n\
+ob_end_clean();\n\
+var_dump($captured, $last, $code);\n\
+$lines = [\"old\"];\n\
+$status = -1;\n\
+$returned = exec(\"printf 'alpha\\nbeta\\n'\", $lines, $status);\n\
+var_dump($returned, $lines, $status);\n\
+$trim_lines = [];\n\
+$trim_returned = exec(\"printf 'abc\\f\\n \\n'\", $trim_lines);\n\
+var_dump($trim_returned, $trim_lines);\n\
+$pass_status = -1;\n\
+ob_start();\n\
+$pass_return = passthru(\"printf 'raw\\nbytes'\", $pass_status);\n\
+$pass_captured = ob_get_contents();\n\
+ob_end_clean();\n\
+var_dump($pass_captured, $pass_return, $pass_status);\n\
+var_dump(shell_exec(\"printf 'shell\\nout\\n'\"));\n\
+var_dump(escapeshellarg(\"a'b\"), escapeshellarg(\"\"));\n\
+$id = uniqid('pfx_', true);\n\
+var_dump(str_starts_with($id, 'pfx_'), strlen($id) > strlen('pfx_'));\n\
+var_dump(function_exists('system'), function_exists('EXEC'), function_exists('passthru'), function_exists('SHELL_EXEC'), function_exists('escapeshellarg'), function_exists('UNIQID'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(16) \"one\nlocaleprobe\n\"\n",
+            "string(11) \"localeprobe\"\n",
+            "int(0)\n",
+            "string(4) \"beta\"\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"old\"\n",
+            "  [1]=>\n",
+            "  string(5) \"alpha\"\n",
+            "  [2]=>\n",
+            "  string(4) \"beta\"\n",
+            "}\n",
+            "int(0)\n",
+            "string(3) \"abc\"\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(3) \"abc\"\n",
+            "  [1]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "string(9) \"raw\nbytes\"\n",
+            "NULL\n",
+            "int(0)\n",
+            "string(10) \"shell\nout\n\"\n",
+            "string(8) \"'a'\\''b'\"\n",
+            "string(2) \"''\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_locale_constants_and_setlocale_to_native_binary() {
     let root = temp_dir("ptn-native-locale-constants-setlocale");
     fs::create_dir_all(&root).unwrap();
@@ -18092,6 +18174,7 @@ var_dump(function_exists(\"getenv\"), function_exists(\"putenv\"), function_exis
 var_dump(getenv(\"PTN_ENV_TEST\"));\n\
 $env = getenv();\n\
 var_dump($env[\"PTN_ENV_TEST\"]);\n\
+var_dump($_ENV[\"PTN_ENV_TEST\"], $_SERVER[\"PTN_ENV_TEST\"]);\n\
 $name = \"PTN_NATIVE_ENV_RUNTIME_TEST\";\n\
 var_dump(getenv($name));\n\
 var_dump(putenv($name . \"=value\"));\n\
@@ -18127,6 +18210,8 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
+string(3) \"bar\"\n\
+string(3) \"bar\"\n\
 string(3) \"bar\"\n\
 string(3) \"bar\"\n\
 bool(false)\n\

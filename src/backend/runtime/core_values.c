@@ -30,6 +30,7 @@
 #include <sys/time.h>
 #include <sys/statvfs.h>
 #include <sys/utsname.h>
+#include <sys/wait.h>
 #include <utime.h>
 #include <unistd.h>
 #endif

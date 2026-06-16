@@ -188,6 +188,14 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    out.push_str("    PtnValue ptn_env_superglobal = ptn_environment_snapshot();\n");
+    out.push_str(
+        "    ptn_runtime_write_global_variable(&runtime, \"_ENV\", ptn_env_superglobal);\n",
+    );
+    out.push_str(
+        "    ptn_runtime_write_global_variable(&runtime, \"_SERVER\", ptn_env_superglobal);\n",
+    );
+    out.push_str("    ptn_value_destroy(&ptn_env_superglobal);\n");
     if !module.functions.is_empty() {
         out.push_str("    static int ptn_declared_user_functions[");
         out.push_str(&module.functions.len().to_string());
@@ -1865,6 +1873,18 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     }
     if name.eq_ignore_ascii_case("parse_str") && argument_index == 1 {
         return Some("result");
+    }
+    if name.eq_ignore_ascii_case("exec") && argument_index == 1 {
+        return Some("output");
+    }
+    if name.eq_ignore_ascii_case("exec") && argument_index == 2 {
+        return Some("result_code");
+    }
+    if name.eq_ignore_ascii_case("system") && argument_index == 1 {
+        return Some("result_code");
+    }
+    if name.eq_ignore_ascii_case("passthru") && argument_index == 1 {
+        return Some("result_code");
     }
     if (name.eq_ignore_ascii_case("str_replace") || name.eq_ignore_ascii_case("str_ireplace"))
         && argument_index == 3
