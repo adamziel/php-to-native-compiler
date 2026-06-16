@@ -51,6 +51,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
+    runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
     runtime->class_scope_allows = caller_runtime->class_scope_allows;
     runtime->declared_class_is_readonly = caller_runtime->declared_class_is_readonly;
@@ -2205,6 +2206,24 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionClass")) {
+        if (strcmp(constant, "IS_IMPLICIT_ABSTRACT") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "IS_EXPLICIT_ABSTRACT") == 0) {
+            *out = ptn_int(64);
+            return 1;
+        }
+        if (strcmp(constant, "IS_FINAL") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "IS_READONLY") == 0) {
+            *out = ptn_int(65536);
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -2960,6 +2979,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_reflection_function_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_ascii_case_equal(receiver.as.object->class_name, "ReflectionClassConstant")
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_class_constant_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

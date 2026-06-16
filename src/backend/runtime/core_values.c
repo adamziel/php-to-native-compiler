@@ -651,6 +651,17 @@ typedef PtnValue (*PtnMethodDispatchHandler)(
     const PtnValue *args,
     size_t line
 );
+typedef int (*PtnReflectedMethodDispatchHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *target_class_name,
+    const char *method_name,
+    const char *called_class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    PtnValue *result_out
+);
 typedef int (*PtnDeclaredMethodExistsHandler)(const char *class_name, const char *method_name);
 typedef int (*PtnClassScopeAllowsHandler)(
     const char *access_scope,
@@ -748,6 +759,7 @@ struct PtnRuntime {
     size_t output_buffers_capacity;
     size_t output_buffer_callback_depth;
     PtnMethodDispatchHandler method_dispatch;
+    PtnReflectedMethodDispatchHandler reflected_method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
     PtnClassScopeAllowsHandler class_scope_allows;
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
@@ -992,6 +1004,14 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

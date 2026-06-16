@@ -13664,6 +13664,170 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
 }
 
 #[test]
+fn compile_reflection_method_invoke_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-method-invoke");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-method-invoke.php");
+    let output = root.join("reflection-method-invoke-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectInvokeBase {
+    protected function inherited($value) {
+        echo \"base:$value\\n\";
+        return \"base\";
+    }
+}
+
+class ReflectInvokeSubject extends ReflectInvokeBase {
+    public $prop = \"prop\";
+
+    public function read($value) {
+        echo $this->prop . \":$value\\n\";
+        return \"read\";
+    }
+
+    private function hidden($value) {
+        echo \"hidden:$value\\n\";
+    }
+
+    public static function stat($value) {
+        echo \"stat:$value\\n\";
+        return \"stat-ret\";
+    }
+}
+
+$subject = new ReflectInvokeSubject();
+
+$read = new ReflectionMethod(\"ReflectInvokeSubject\", \"read\");
+var_dump($read->invoke($subject, \"arg\"));
+
+$hidden = new ReflectionMethod(\"ReflectInvokeSubject\", \"hidden\");
+var_dump($hidden->invokeArgs($subject, array(\"secret\")));
+
+$inherited = new ReflectionMethod(\"ReflectInvokeBase\", \"inherited\");
+var_dump($inherited->invoke($subject, \"b\"));
+
+$static = ReflectionMethod::createFromMethodName(\"ReflectInvokeSubject::stat\");
+var_dump($static->invoke(null, \"s\"));
+
+try {
+    $read->invoke(new stdClass());
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $read->invoke(true);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+var_dump(method_exists(\"ReflectionMethod\", \"invokeArgs\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "prop:arg\n",
+            "string(4) \"read\"\n",
+            "hidden:secret\n",
+            "NULL\n",
+            "base:b\n",
+            "string(4) \"base\"\n",
+            "stat:s\n",
+            "string(8) \"stat-ret\"\n",
+            "Given object is not an instance of the class this method was declared in\n",
+            "ReflectionMethod::invoke(): Argument #1 ($object) must be of type ?object, true given\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.reflected_method_dispatch"));
+    assert!(c_source.contains("ptn_reflection_method_dispatch_invoke"));
+}
+
+#[test]
+fn compile_reflection_class_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-constants.php");
+    let output = root.join("reflection-class-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstBase {
+    const a = \"base\";
+    const b = 7;
+}
+
+class ConstChild extends ConstBase {
+    const a = \"child\";
+}
+
+$base = new ReflectionClass(\"ConstBase\");
+var_dump($base->getConstant(\"a\"));
+var_dump($base->getConstants());
+
+$child = new ReflectionClass(\"ConstChild\");
+var_dump($child->getConstant(\"a\"));
+var_dump($child->getConstant(\"b\"));
+var_dump($child->hasConstant(\"b\"));
+
+$constant = $child->getReflectionConstant(\"a\");
+var_dump(gettype($constant));
+var_dump($constant->getName());
+var_dump($constant->getDeclaringClass()->getName());
+var_dump($constant->getValue());
+
+$internal = new ReflectionClass(\"ReflectionClass\");
+var_dump($internal->hasConstant(\"IS_FINAL\"));
+var_dump(gettype($internal->getReflectionConstant(\"IS_IMPLICIT_ABSTRACT\")));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"base\"\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  string(4) \"base\"\n",
+            "  [\"b\"]=>\n",
+            "  int(7)\n",
+            "}\n",
+            "string(5) \"child\"\n",
+            "int(7)\n",
+            "bool(true)\n",
+            "string(6) \"object\"\n",
+            "string(1) \"a\"\n",
+            "string(10) \"ConstChild\"\n",
+            "string(5) \"child\"\n",
+            "bool(true)\n",
+            "string(6) \"object\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_constants"));
+    assert!(c_source.contains("ptn_reflection_class_constant_call_method"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();
@@ -34560,6 +34724,17 @@ class Sibling extends Base {
     }
 }
 
+class ParentAccess {
+    public static function probeChild() {
+        ChildAccess::prot();
+        print_r(get_class_methods(\"ChildAccess\"));
+    }
+}
+
+class ChildAccess extends ParentAccess {
+    protected static function prot() { echo \"child-protected-static\\n\"; }
+}
+
 class Magic {
     private function hidden() { echo \"hidden\\n\"; }
     public function __call($name, $args) { echo \"magic:$name\\n\"; }
@@ -34569,6 +34744,7 @@ $child = new Child();
 $child->inside();
 $child->insideChild();
 Sibling::probePeer();
+ChildAccess::probeChild();
 var_dump(method_exists($child, 'priv'));
 var_dump(is_callable([$child, 'priv']));
 var_dump(is_callable([Base::class, 'statProt']));
@@ -34601,6 +34777,12 @@ function side_effect() { echo \"side-effect\\n\"; return 1; }
             "Call to private method Base::statPriv() from scope Child\n",
             "bool(true)\n",
             "peer-static-protected\n",
+            "child-protected-static\n",
+            "Array\n",
+            "(\n",
+            "    [0] => prot\n",
+            "    [1] => probeChild\n",
+            ")\n",
             "bool(true)\n",
             "bool(false)\n",
             "bool(false)\n",
