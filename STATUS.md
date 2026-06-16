@@ -2,8 +2,8 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-16T21:05:00Z |
-| source commit | `03e6dd180809` |
+| last refresh | 2026-06-16T21:33:17Z |
+| source commit | `00fe79cf6160` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
 | evidence source | `tools/status-dashboard-features.tsv` |
@@ -13,22 +13,24 @@
 
 | metric | tests |
 | --- | ---: |
-| ported tests | 861 |
-| passed tests | 566 |
+| ported tests | 897 |
+| passed tests | 602 |
 | upstream tests | 21867 |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-16T21:00Z) | 0 |
-| last 24 hours (2026-06-15T22:00Z - 2026-06-16T21:00Z) | 0 |
-| last 7 days (2026-06-09T22:00Z - 2026-06-16T21:00Z) | 435 |
+| latest hour (2026-06-16T21:00Z) | 36 |
+| last 24 hours (2026-06-15T22:00Z - 2026-06-16T21:00Z) | 36 |
+| last 7 days (2026-06-09T22:00Z - 2026-06-16T21:00Z) | 471 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
+| ptn-cl81 ArrayObject flipped-green PHPT rows | 31 | 31 | 31 |
+| ptn-6rea html entity charset rows | 5 | 5 | 5 |
 | ptn-snt7 object/class metadata row pack | 8 | 8 | 8 |
 | ptn-456b ext-standard strings row pack | 27 | 27 | 47 |
 | ptn-y4f1 COW/reference sort/object walk row pack | 72 | 59 | 72 |
@@ -64,7 +66,7 @@
 | ptn-w17z.18 numeric/math/conversions row pack | 35 | 35 | 35 |
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 | 13 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 | 126 |
-| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18769 |
+| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18733 |
 
 ## Last 7 Days
 
@@ -237,4 +239,4 @@
 | 2026-06-16T18:00Z | 0 | 566 |
 | 2026-06-16T19:00Z | 0 | 566 |
 | 2026-06-16T20:00Z | 0 | 566 |
-| 2026-06-16T21:00Z | 0 | 566 |
+| 2026-06-16T21:00Z | 36 | 602 |
