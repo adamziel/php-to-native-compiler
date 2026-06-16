@@ -60,6 +60,19 @@ fn parser_accepts_direct_assignment_and_variable_reads() {
 }
 
 #[test]
+fn parser_reports_namespace_separator_whitespace_and_reserved_constant_redeclaration() {
+    let error = parser::parse("<?php\nFoo \\ Bar \\ Baz;\n").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.message, "syntax error, unexpected token \"\\\"");
+    assert_eq!(error.span.unwrap().line, 2);
+
+    let error = parser::parse("<?php\nnamespace foo;\nconst NULL = 1;\n").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Cannot redeclare constant 'NULL'");
+    assert_eq!(error.span.unwrap().line, 3);
+}
+
+#[test]
 fn compile_dynamic_variable_unset_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-variable-unset");
     fs::create_dir_all(&root).unwrap();
@@ -12327,6 +12340,71 @@ $p = null;
 }
 
 #[test]
+fn compile_static_property_destructors_precede_function_static_destructors_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-function-static-destructor-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-function-static-destructor-order.php");
+    let output = root.join("static-property-function-static-destructor-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Marker {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function __destruct() {
+        echo $this->name, \":\", Box::hasStatic(), \"\\n\";
+    }
+}
+
+class Box {
+    private static $instance = null;
+
+    public static function getStatic() {
+        if (self::$instance === null) {
+            self::$instance = new Marker(\"static\");
+        }
+        return self::$instance;
+    }
+
+    public static function getLocal() {
+        static $local = null;
+        if ($local === null) {
+            $local = new Marker(\"local\");
+        }
+        return $local;
+    }
+
+    public static function hasStatic() {
+        return self::$instance instanceof Marker ? \"yes\" : \"no\";
+    }
+}
+
+Box::getStatic();
+Box::getLocal();
+echo \"end\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "end\nstatic:yes\nlocal:yes\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_run_static_property_destructors(runtime)"));
+}
+
+#[test]
 fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
     fs::create_dir_all(&root).unwrap();
@@ -15581,6 +15659,33 @@ fn compile_ini_mode_constants_to_native_binary() {
         String::from_utf8(execution.stdout).unwrap(),
         "int(1)\nint(2)\nint(4)\nint(7)\nbool(true)\nint(7)\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_namespaced_constants_shadow_modeled_globals_to_native_binary() {
+    let root = temp_dir("ptn-native-namespaced-constant-shadows-global");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespaced-constant-shadows-global.php");
+    let output = root.join("namespaced-constant-shadows-global-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace Local;
+const INI_ALL = 1;
+function default_value($value = INI_ALL) { echo $value, \"\\n\"; }
+echo INI_ALL, \"\\n\";
+default_value();
+echo \\INI_ALL, \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n1\n7\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -34318,6 +34423,41 @@ ns1\Foo::baz();
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("test\\\\ns1\\\\Foo"));
+}
+
+#[test]
+fn compile_namespace_alias_with_reserved_segment_to_native_binary() {
+    let root = temp_dir("ptn-native-namespace-reserved-segment-alias");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("namespace-reserved-segment-alias.php");
+    let output = root.join("namespace-reserved-segment-alias-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace string;
+
+use string as StringAlias;
+
+class C {}
+
+function test(StringAlias\C $o) {
+    var_dump($o::class);
+}
+
+test(new C());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"string\\C\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

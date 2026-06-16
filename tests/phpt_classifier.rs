@@ -575,18 +575,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires top-level static variable diagnostics",
         ),
         (
-            "foreach append read",
-            "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
-            "unsupported-expression-diagnostics\t",
-            "requires array-append read diagnostics",
-        ),
-        (
-            "foreach assigns this",
-            "--TEST--\nthis target\n--FILE--\n<?php\nforeach ($items as list($this)) {}\n--EXPECTF--\n",
-            "unsupported-expression-diagnostics\t",
-            "requires foreach assignment diagnostics for `$this`",
-        ),
-        (
             "eval dynamic code",
             "--TEST--\neval\n--FILE--\n<?php\n$code = 'echo \"x\\n\";';\neval($code);\n--EXPECT--\nx\n",
             "unsupported-dynamic-eval\t",
@@ -641,6 +629,33 @@ fn phpt_classifier_keeps_nullable_never_and_function_static_rows_runnable() {
         "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
         "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => throw new Exception('done');\n--EXPECT--\n",
         "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
+    ];
+
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
+        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
+    }
+}
+
+#[test]
+fn phpt_classifier_tracks_nested_function_blocks_for_static_locals() {
+    let phpt = "--TEST--\nstatic after nested block\n--FILE--\n<?php\nfunction f($flag) {\n    if ($flag) {\n        echo \"flag\\n\";\n    }\n    static $value = 1;\n    echo $value, \"\\n\";\n}\nf(false);\n--EXPECT--\n1\n";
+
+    assert_eq!(
+        classify(phpt).trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+    assert_eq!(classify(phpt), classify_with_section_cache(phpt));
+}
+
+#[test]
+fn phpt_classifier_keeps_supported_foreach_diagnostics_runnable() {
+    let cases = [
+        "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
+        "--TEST--\nthis target\n--FILE--\n<?php\nforeach ($items as list($this)) {}\n--EXPECTF--\n",
     ];
 
     for phpt in cases {
@@ -1295,26 +1310,29 @@ fn phpt_classifier_keeps_supported_public_tostring_rows_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_unsupported_foreach_internal_surfaces() {
+fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
     let cases = [
-        (
-            "by-ref foreach positional mutation",
-            "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_unshift($items, 0); }\n--EXPECT--\n",
-            "requires by-reference foreach iterator-pointer preservation",
-        ),
+        "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_shift($items); }\n--EXPECT--\n",
+        "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_unshift($items, 0); }\n--EXPECT--\n",
     ];
 
-    for (name, phpt, reason) in cases {
-        let classification = classify(phpt);
-        assert!(
-            classification.starts_with("unsupported-internal\t"),
-            "{name}: {classification:?}"
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
         );
-        assert!(
-            classification.contains(reason),
-            "{name}: {classification:?}"
-        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
     }
+}
+
+#[test]
+fn phpt_classifier_excludes_unsupported_date_format_parser_rows() {
+    let classification = classify(
+        "--TEST--\ndate parser\n--FILE--\n<?php\nvar_dump(date_parse_from_format('Y-m-d H:i:s.u', '2009-03-01 18:00:00.7777777'));\n--EXPECT--\n",
+    );
+
+    assert!(classification.starts_with("unsupported-internal\t"));
+    assert!(classification.contains("date format parser diagnostics"));
 }
 
 #[test]

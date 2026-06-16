@@ -161,6 +161,7 @@ static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTrace
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
+        ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_object_destructors(runtime);
         ptn_output_buffer_flush_all(runtime);
     }
@@ -2348,7 +2349,6 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
     PtnValue receiver,
     size_t line
 ) {
-    (void)line;
     receiver = ptn_value_deref(receiver);
     const char *class_name = NULL;
     if (receiver.type == PTN_OBJECT) {
@@ -2357,15 +2357,19 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
         class_name = receiver.as.exception->class_name;
     } else if (receiver.type == PTN_CLOSURE) {
         class_name = "Closure";
-    } else if (receiver.type == PTN_STRING) {
-        return ptn_value_clone_deref(receiver);
     }
     if (class_name != NULL) {
         return ptn_owned_string(ptn_duplicate_string(class_name));
     }
 
     if (receiver.type == PTN_NULL) {
-        ptn_throw_exception(runtime, "TypeError", "Cannot use \"::class\" on null");
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "Cannot use \"::class\" on null",
+            runtime != NULL ? runtime->source_path : NULL,
+            line
+        );
         return ptn_null();
     }
 
@@ -2379,7 +2383,13 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Cannot use \"::class\" on value of type %s", type_name);
-    ptn_throw_exception_owned_message(runtime, "TypeError", message);
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "TypeError",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
     return ptn_null();
 }
 
