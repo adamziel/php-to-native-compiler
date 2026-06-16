@@ -4,6 +4,8 @@ ext/reflection/tests/ReflectionMethod_basic3.phpt
 ext/reflection/tests/ReflectionMethod_constructor_basic.phpt
 ext/reflection/tests/ReflectionMethod_getDeclaringClass_basic.phpt
 ext/reflection/tests/ReflectionMethod_invokeArgs_basic.phpt
+ext/reflection/tests/ReflectionMethod_constructor_error2.phpt
+ext/reflection/tests/ReflectionMethod_returnsReference_basic.phpt
 ext/reflection/tests/ReflectionMethod_setAccessible.phpt
 ext/reflection/tests/ReflectionProperty_basic1.phpt
 ext/reflection/tests/ReflectionProperty_constructor_error.phpt
