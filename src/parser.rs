@@ -613,23 +613,6 @@ impl Parser<'_> {
         kind: UseDeclarationKind,
         target: ParsedName,
     ) -> Result<()> {
-        if kind == UseDeclarationKind::Class
-            && self.current_namespace.is_none()
-            && !target.name.contains('\\')
-            && matches!(
-                target.resolution,
-                NameResolution::Unqualified | NameResolution::FullyQualified
-            )
-        {
-            self.compile_warnings.push(CompileWarning {
-                message: format!(
-                    "The use statement with non-compound name '{}' has no effect",
-                    target.name
-                ),
-                span: target.span,
-            });
-            return Ok(());
-        }
         let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
             self.advance();
             let token = self.advance().clone();
@@ -648,6 +631,24 @@ impl Parser<'_> {
                 target.span,
             )
         };
+        if kind == UseDeclarationKind::Class
+            && self.current_namespace.is_none()
+            && !target.name.contains('\\')
+            && alias.eq_ignore_ascii_case(&target.name)
+            && matches!(
+                target.resolution,
+                NameResolution::Unqualified | NameResolution::FullyQualified
+            )
+        {
+            self.compile_warnings.push(CompileWarning {
+                message: format!(
+                    "The use statement with non-compound name '{}' has no effect",
+                    target.name
+                ),
+                span: target.span,
+            });
+            return Ok(());
+        }
         self.register_use_import(kind, target, alias, alias_span)?;
         Ok(())
     }
@@ -1060,7 +1061,7 @@ impl Parser<'_> {
                 }
             }
             NameResolution::Qualified => {
-                self.resolve_aliasable_name(&parsed.name, &self.constant_aliases)
+                self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
             }
         }
     }

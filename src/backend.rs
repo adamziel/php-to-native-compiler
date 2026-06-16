@@ -263,8 +263,12 @@ pub fn emit_c(module: &Module) -> String {
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
-    emit_early_constant_declarations(&mut out, &mut values, &module.instructions);
-    emit_static_property_initializers(&mut out, &mut values, &module.classes);
+    let early_constant_indexes = emit_static_property_initializers_with_constants(
+        &mut out,
+        &mut values,
+        &module.classes,
+        &module.instructions,
+    );
     for warning in collect_module_control_warnings(module) {
         emit_control_warning(
             &mut out,
@@ -277,8 +281,8 @@ pub fn emit_c(module: &Module) -> String {
     let mut finally_stack = Vec::new();
     let return_label = values.next_label("ptn_main_return");
     out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
-    for instruction in &module.instructions {
-        if matches!(instruction, Instruction::DefineConstant { .. }) {
+    for (instruction_index, instruction) in module.instructions.iter().enumerate() {
+        if early_constant_indexes.contains(&instruction_index) {
             continue;
         }
         emit_instruction(
@@ -1919,33 +1923,45 @@ fn emit_include_helpers(
     }
 }
 
-fn emit_early_constant_declarations(
+fn emit_early_constant_declaration(
     out: &mut String,
     values: &mut ValueEmitter,
-    instructions: &[Instruction],
+    name: &str,
+    value: &ValueExpr,
+    line: usize,
 ) {
-    for instruction in instructions {
-        let Instruction::DefineConstant { name, value, line } = instruction else {
-            continue;
-        };
-        let emitted_value = values.emit_const_materialized_value(out, value);
-        out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
-        out.push_str(&c_string(name));
-        out.push_str("\", ");
-        out.push_str(&emitted_value);
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
-        emit_value_cleanup(out, "    ", &emitted_value);
-    }
+    let emitted_value = values.emit_const_materialized_value(out, value);
+    out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
+    out.push_str(&c_string(name));
+    out.push_str("\", ");
+    out.push_str(&emitted_value);
+    out.push_str(", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    emit_value_cleanup(out, "    ", &emitted_value);
 }
 
-fn emit_static_property_initializers(
+fn emit_static_property_initializers_with_constants(
     out: &mut String,
     values: &mut ValueEmitter,
     classes: &[ClassDecl],
-) {
+    instructions: &[Instruction],
+) -> HashSet<usize> {
+    let mut emitted_constant_indexes = HashSet::new();
     for class in classes {
+        for (instruction_index, instruction) in instructions.iter().enumerate() {
+            if emitted_constant_indexes.contains(&instruction_index) {
+                continue;
+            }
+            let Instruction::DefineConstant { name, value, line } = instruction else {
+                continue;
+            };
+            if *line >= class.line {
+                continue;
+            }
+            emit_early_constant_declaration(out, values, name, value, *line);
+            emitted_constant_indexes.insert(instruction_index);
+        }
         let previous_class_name = values.current_class_name.replace(class.name.clone());
         for property in &class.static_properties {
             let value_temp = match &property.value {
@@ -1973,6 +1989,7 @@ fn emit_static_property_initializers(
         }
         values.current_class_name = previous_class_name;
     }
+    emitted_constant_indexes
 }
 
 fn emit_class_constant_initializer_helper(
