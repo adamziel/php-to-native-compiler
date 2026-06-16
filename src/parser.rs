@@ -2050,6 +2050,12 @@ impl Parser<'_> {
                 })
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
+                if allows_null {
+                    return Err(Diagnostic::new(
+                        "Type mixed cannot be marked as nullable since mixed already includes null",
+                        Some(self.peek().span),
+                    ));
+                }
                 self.advance();
                 Ok(PropertyTypeHint {
                     text: format!("{nullable_prefix}mixed"),
@@ -6343,7 +6349,7 @@ fn nullable_type_hint(type_hint: TypeHint, span: SourceSpan) -> Result<TypeHint>
             Some(span),
         )),
         TypeHint::Mixed => Err(Diagnostic::new(
-            "mixed cannot be marked as nullable",
+            "Type mixed cannot be marked as nullable since mixed already includes null",
             Some(span),
         )),
         TypeHint::Void => Err(Diagnostic::new(
@@ -6454,13 +6460,21 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
     for type_hint in types {
         let key = type_hint_key(type_hint);
         if seen.iter().any(|seen_key| seen_key == &key) {
-            return Err(Diagnostic::new(
-                format!(
-                    "Duplicate type {} is redundant",
-                    type_hint_duplicate_display(type_hint)
-                ),
-                Some(span),
-            ));
+            if matches!(type_hint, TypeHint::Intersection(_)) {
+                let display = type_hint_display(type_hint);
+                return Err(Diagnostic::new(
+                    format!("Type {display} is redundant with type {display}"),
+                    Some(span),
+                ));
+            } else {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Duplicate type {} is redundant",
+                        type_hint_duplicate_display(type_hint)
+                    ),
+                    Some(span),
+                ));
+            }
         }
         seen.push(key);
     }
@@ -6468,6 +6482,7 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
 }
 
 fn validate_intersection_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> {
+    let mut seen = Vec::new();
     for type_hint in types {
         match type_hint {
             TypeHint::Class(_) => {}
@@ -6487,6 +6502,17 @@ fn validate_intersection_type_hint(types: &[TypeHint], span: SourceSpan) -> Resu
                 ));
             }
         }
+        let key = type_hint_key(type_hint);
+        if seen.iter().any(|seen_key| seen_key == &key) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Duplicate type {} is redundant",
+                    type_hint_duplicate_display(type_hint)
+                ),
+                Some(span),
+            ));
+        }
+        seen.push(key);
     }
     Ok(())
 }
@@ -6500,13 +6526,17 @@ fn type_hint_is_class_named(type_hint: &TypeHint, name: &str) -> bool {
 }
 
 fn type_hint_is_explicit_class_like(type_hint: &TypeHint) -> bool {
-    matches!(type_hint, TypeHint::Class(_) | TypeHint::Static)
+    matches!(
+        type_hint,
+        TypeHint::Class(_) | TypeHint::Static | TypeHint::Intersection(_)
+    )
 }
 
 fn type_hint_duplicate_display(type_hint: &TypeHint) -> String {
     match type_hint {
         TypeHint::Class(name) => name.clone(),
         TypeHint::Static => "static".to_string(),
+        TypeHint::Intersection(_) => type_hint_display(type_hint),
         other => type_hint_key(other),
     }
 }
@@ -6521,6 +6551,9 @@ fn union_type_redundancy_display(types: &[TypeHint]) -> String {
         match type_hint {
             TypeHint::Class(name) => class_like.push(name.clone()),
             TypeHint::Static => class_like.push("static".to_string()),
+            TypeHint::Intersection(_) => {
+                class_like.push(format!("({})", type_hint_display(type_hint)));
+            }
             TypeHint::Iterable => {
                 class_like.push("Traversable".to_string());
                 array_like.push("array".to_string());
