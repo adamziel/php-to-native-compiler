@@ -1499,6 +1499,17 @@ fn phpt_classifier_keeps_reflection_object_metadata_rows() {
 }
 
 #[test]
+fn phpt_classifier_excludes_reflection_object_dynamic_property_rows() {
+    let classification = classify(
+        "--TEST--\nreflection object dynamic properties\n--FILE--\n<?php\n$ref = new ReflectionObject(new stdClass());\n$obj = (object) array('x' => 1);\nprint_r((new ReflectionObject($obj))->getProperties());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("unsupported-internal-reflection-metadata\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_reflection_property_modifier_constants() {
     let classification = classify(
         "--TEST--\nreflection property constants\n--FILE--\n<?php\nvar_dump(ReflectionProperty::IS_PUBLIC, ReflectionProperty::IS_STATIC);\n--EXPECT--\n",
@@ -1524,6 +1535,28 @@ fn phpt_classifier_keeps_builtin_exception_reflection_property_metadata_rows() {
 fn phpt_classifier_excludes_advanced_reflection_property_rows() {
     let classification = classify(
         "--TEST--\nreflection property string\n--FILE--\n<?php\nclass C { public $value = 1; }\n$ref = new ReflectionProperty(C::class, 'value');\nvar_dump($ref->__toString());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("unsupported-internal-reflection-metadata\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_reflection_property_implicit_string_rows() {
+    let classification = classify(
+        "--TEST--\nreflection property echo\n--FILE--\n<?php\nclass C { public $value = 1; }\n$ref = new ReflectionProperty(C::class, 'value');\necho $ref;\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("unsupported-internal-reflection-metadata\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_reflection_modifier_names_static_api() {
+    let classification = classify(
+        "--TEST--\nreflection modifier names\n--FILE--\n<?php\nvar_dump(Reflection::getModifierNames(ReflectionProperty::IS_PUBLIC));\n--EXPECT--\n",
     );
     assert!(
         classification.starts_with("unsupported-internal-reflection-metadata\t"),
