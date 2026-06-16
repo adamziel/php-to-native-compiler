@@ -1079,6 +1079,12 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires property hook accessors",
         ),
         (
+            "multiline property hook",
+            "--TEST--\nproperty hook\n--FILE--\n<?php\nclass Bag {\n    public mixed $value {\n        get => 42;\n    }\n}\n--EXPECT--\n",
+            "unsupported-property-hook-metadata\t",
+            "requires property hook accessors",
+        ),
+        (
             "typed class constant metadata",
             "--TEST--\ntyped class constant\n--FILE--\n<?php\nclass Bag { const string NAME = 'bag'; }\n--EXPECT--\n",
             "unsupported-class-constant-metadata\t",
