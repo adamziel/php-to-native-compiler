@@ -11400,7 +11400,7 @@ static int64_t ptn_sprintf_value_to_integer(PtnRuntime *runtime, PtnValue value,
 
 static void ptn_sprintf_warn_float_int_cast(PtnRuntime *runtime, double floating, size_t line) {
     char value_text[64];
-    int value_written = snprintf(value_text, sizeof(value_text), "%.1E", floating);
+    int value_written = snprintf(value_text, sizeof(value_text), "%.17G", floating);
     if (value_written < 0 || (size_t)value_written >= sizeof(value_text)) {
         ptn_abort_out_of_memory();
     }
@@ -12117,80 +12117,570 @@ static PtnValue ptn_internal_vfprintf(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_internal_write_formatted_stream(runtime, "vfprintf", args[0], formatted, line);
 }
 
-static size_t ptn_sscanf_conversion_count(PtnStringOperand format) {
-    size_t count = 0;
-    for (size_t i = 0; i < format.len; i++) {
-        if (format.data[i] != '%') {
-            continue;
-        }
-        i++;
-        if (i < format.len && format.data[i] == '%') {
-            continue;
-        }
-        while (i < format.len && strchr("0123456789*hlLjzt", format.data[i]) != NULL) {
-            i++;
-        }
-        if (i < format.len) {
-            count++;
-        }
+typedef struct {
+    char conversion;
+    int suppress_assignment;
+    int positional;
+    size_t target_index;
+    int has_width;
+    size_t width;
+    int scanset_negated;
+    unsigned char scanset[256];
+} PtnScanfSpec;
+
+typedef struct {
+    size_t result_slots;
+    size_t assigned_slots;
+    int has_first_conversion;
+    char first_conversion;
+} PtnScanfFormatInfo;
+
+static void ptn_scanf_throw_bad_conversion(PtnRuntime *runtime, char conversion) {
+    if (conversion == '\0') {
+        ptn_throw_exception(runtime, "ValueError", "Bad scan conversion character \"");
+        return;
     }
-    return count;
+    char message[64];
+    int written = snprintf(message, sizeof(message), "Bad scan conversion character \"%c\"", conversion);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
 }
 
-static int ptn_sscanf_append_value(PtnValue **values, size_t *len, size_t *capacity, PtnValue value) {
-    if (*len == *capacity) {
-        size_t new_capacity = *capacity == 0 ? 8 : *capacity * 2;
-        if (new_capacity < *capacity) {
-            ptn_abort_out_of_memory();
+static int ptn_scanf_parse_unsigned_decimal(
+    PtnStringOperand format,
+    size_t *offset,
+    size_t *value,
+    int *overflow
+) {
+    size_t parsed = 0;
+    int saw_digit = 0;
+    *overflow = 0;
+    while (*offset < format.len && isdigit((unsigned char)format.data[*offset])) {
+        saw_digit = 1;
+        size_t digit = (size_t)(format.data[*offset] - '0');
+        if (parsed > (SIZE_MAX - digit) / 10) {
+            *overflow = 1;
+        } else if (!*overflow) {
+            parsed = parsed * 10 + digit;
         }
-        PtnValue *new_values = realloc(*values, new_capacity * sizeof(PtnValue));
-        if (new_values == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        *values = new_values;
-        *capacity = new_capacity;
+        (*offset)++;
     }
-    (*values)[(*len)++] = value;
+    *value = parsed;
+    return saw_digit;
+}
+
+static int ptn_scanf_set_contains(const unsigned char set[256], unsigned char byte) {
+    return set[byte] != 0;
+}
+
+static int ptn_scanf_parse_scanset(PtnStringOperand format, size_t *offset, PtnScanfSpec *spec, char *bad_conversion) {
+    memset(spec->scanset, 0, sizeof(spec->scanset));
+    spec->conversion = '[';
+    spec->scanset_negated = 0;
+    (*offset)++;
+    if (*offset < format.len && format.data[*offset] == '^') {
+        spec->scanset_negated = 1;
+        (*offset)++;
+    }
+    int saw_member = 0;
+    unsigned char previous = 0;
+    int has_previous = 0;
+    if (*offset < format.len && format.data[*offset] == ']') {
+        spec->scanset[(unsigned char)']'] = 1;
+        previous = (unsigned char)']';
+        has_previous = 1;
+        saw_member = 1;
+        (*offset)++;
+    }
+    while (*offset < format.len && format.data[*offset] != ']') {
+        unsigned char current = (unsigned char)format.data[*offset];
+        if (
+            current == '-'
+            && has_previous
+            && *offset + 1 < format.len
+            && format.data[*offset + 1] != ']'
+        ) {
+            unsigned char end = (unsigned char)format.data[*offset + 1];
+            if (previous <= end) {
+                for (unsigned int byte = previous; byte <= end; byte++) {
+                    spec->scanset[byte] = 1;
+                }
+            } else {
+                for (unsigned int byte = end; byte <= previous; byte++) {
+                    spec->scanset[byte] = 1;
+                }
+            }
+            previous = end;
+            has_previous = 1;
+            saw_member = 1;
+            *offset += 2;
+            continue;
+        }
+        spec->scanset[current] = 1;
+        previous = current;
+        has_previous = 1;
+        saw_member = 1;
+        (*offset)++;
+    }
+    if (*offset >= format.len || !saw_member) {
+        *bad_conversion = '[';
+        return 0;
+    }
     return 1;
 }
 
-static void ptn_sscanf_append_nulls(PtnValue **values, size_t *len, size_t *capacity, size_t target_len) {
-    while (*len < target_len) {
-        ptn_sscanf_append_value(values, len, capacity, ptn_null());
+static int ptn_scanf_parse_spec(
+    PtnStringOperand format,
+    size_t *offset,
+    size_t *next_target,
+    PtnScanfSpec *spec,
+    char *bad_conversion,
+    int *argument_index_out_of_range
+) {
+    memset(spec, 0, sizeof(*spec));
+    *bad_conversion = '\0';
+    *argument_index_out_of_range = 0;
+    if (*offset >= format.len) {
+        return 0;
+    }
+
+    if (format.data[*offset] == '*') {
+        spec->suppress_assignment = 1;
+        (*offset)++;
+    }
+
+    size_t digits_start = *offset;
+    size_t number = 0;
+    int overflow = 0;
+    int has_digits = ptn_scanf_parse_unsigned_decimal(format, offset, &number, &overflow);
+    if (has_digits && *offset < format.len && format.data[*offset] == '$') {
+        if (number == 0 || overflow || number > INT_MAX) {
+            *argument_index_out_of_range = 1;
+            return 0;
+        }
+        spec->positional = 1;
+        spec->target_index = number - 1;
+        (*offset)++;
+    } else if (has_digits) {
+        spec->has_width = 1;
+        spec->width = overflow ? SIZE_MAX : number;
+        if (spec->width == 0) {
+            spec->width = SIZE_MAX;
+        }
+    }
+
+    while (*offset < format.len && strchr("hlLjzt", format.data[*offset]) != NULL) {
+        (*offset)++;
+    }
+    if (*offset >= format.len) {
+        return 0;
+    }
+
+    if (format.data[*offset] == '[') {
+        if (!ptn_scanf_parse_scanset(format, offset, spec, bad_conversion)) {
+            return 0;
+        }
+    } else {
+        spec->conversion = format.data[*offset];
+        if (strchr("scduxXiofFeEgGn", spec->conversion) == NULL) {
+            *bad_conversion = spec->conversion;
+            return 0;
+        }
+    }
+
+    if (!spec->suppress_assignment) {
+        if (!spec->positional) {
+            spec->target_index = (*next_target)++;
+        }
+    } else {
+        spec->target_index = SIZE_MAX;
+    }
+    (void)digits_start;
+    return 1;
+}
+
+static void ptn_scanf_format_info_destroy_seen(unsigned char *seen) {
+    if (seen != NULL) {
+        free(seen);
     }
 }
 
-static PtnValue ptn_internal_sscanf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "sscanf", 1, "string", args[0], line);
-    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "sscanf", 2, "format", args[1], line);
-    size_t conversion_count = ptn_sscanf_conversion_count(format);
-    size_t output_count = argc > 2 ? argc - 2 : 0;
-    if (output_count > conversion_count) {
-        ptn_string_operand_free(input);
-        ptn_string_operand_free(format);
-        ptn_throw_exception(runtime, "ValueError", "Variable is not assigned by any conversion specifiers");
+static int ptn_scanf_format_info(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand format,
+    size_t output_count,
+    int exact_output_count,
+    size_t line,
+    PtnScanfFormatInfo *info
+) {
+    info->result_slots = 0;
+    info->assigned_slots = 0;
+    info->has_first_conversion = 0;
+    info->first_conversion = '\0';
+    size_t next_target = 0;
+    unsigned char *seen = NULL;
+    size_t seen_capacity = 0;
+
+    for (size_t fi = 0; fi < format.len; fi++) {
+        if (format.data[fi] != '%') {
+            continue;
+        }
+        fi++;
+        if (fi < format.len && format.data[fi] == '%') {
+            continue;
+        }
+
+        PtnScanfSpec spec;
+        char bad_conversion = '\0';
+        int argument_index_out_of_range = 0;
+        if (!ptn_scanf_parse_spec(format, &fi, &next_target, &spec, &bad_conversion, &argument_index_out_of_range)) {
+            ptn_scanf_format_info_destroy_seen(seen);
+            if (argument_index_out_of_range) {
+                ptn_throw_exception(runtime, "ValueError", "\"%n$\" argument index out of range");
+            } else {
+                ptn_scanf_throw_bad_conversion(runtime, bad_conversion);
+            }
+            (void)line;
+            return 0;
+        }
+        if (!info->has_first_conversion) {
+            info->has_first_conversion = 1;
+            info->first_conversion = spec.conversion;
+        }
+        if (spec.suppress_assignment) {
+            continue;
+        }
+        if (output_count != 0 && spec.positional && spec.target_index >= output_count) {
+            ptn_scanf_format_info_destroy_seen(seen);
+            ptn_throw_exception(runtime, "ValueError", "\"%n$\" argument index out of range");
+            return 0;
+        }
+        if (spec.target_index >= seen_capacity) {
+            size_t new_capacity = seen_capacity == 0 ? 8 : seen_capacity;
+            while (new_capacity <= spec.target_index) {
+                if (new_capacity > SIZE_MAX / 2) {
+                    ptn_abort_out_of_memory();
+                }
+                new_capacity *= 2;
+            }
+            unsigned char *new_seen = realloc(seen, new_capacity);
+            if (new_seen == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            memset(new_seen + seen_capacity, 0, new_capacity - seen_capacity);
+            seen = new_seen;
+            seen_capacity = new_capacity;
+        }
+        if (seen[spec.target_index]) {
+            ptn_scanf_format_info_destroy_seen(seen);
+            ptn_throw_exception(runtime, "ValueError", "Variable is assigned by multiple \"%n$\" conversion specifiers");
+            return 0;
+        }
+        seen[spec.target_index] = 1;
+        info->assigned_slots++;
+        if (spec.target_index + 1 > info->result_slots) {
+            info->result_slots = spec.target_index + 1;
+        }
+    }
+
+    if (output_count != 0) {
+        if (output_count > info->assigned_slots) {
+            ptn_scanf_format_info_destroy_seen(seen);
+            ptn_throw_exception(runtime, "ValueError", "Variable is not assigned by any conversion specifiers");
+            return 0;
+        }
+        if (exact_output_count && output_count < info->assigned_slots) {
+            ptn_scanf_format_info_destroy_seen(seen);
+            ptn_throw_exception(runtime, "ValueError", "Different numbers of variable names and field specifiers");
+            return 0;
+        }
+        for (size_t i = 0; i < output_count; i++) {
+            if (i >= seen_capacity || !seen[i]) {
+                ptn_scanf_format_info_destroy_seen(seen);
+                ptn_throw_exception(runtime, "ValueError", "Variable is not assigned by any conversion specifiers");
+                return 0;
+            }
+        }
+    }
+
+    ptn_scanf_format_info_destroy_seen(seen);
+    (void)function_name;
+    return 1;
+}
+
+static size_t ptn_scanf_conversion_limit(PtnScanfSpec spec, size_t available) {
+    if (!spec.has_width || spec.width > available) {
+        return available;
+    }
+    return spec.width;
+}
+
+static int ptn_scanf_match_integer(
+    const char *input,
+    size_t input_len,
+    size_t *offset,
+    int base,
+    PtnValue *parsed
+) {
+    size_t available = input_len - *offset;
+    char *copy = ptn_duplicate_string_len(input + *offset, available);
+    char *end = copy;
+    errno = 0;
+    long long integer = strtoll(copy, &end, base);
+    if (end == copy) {
+        free(copy);
+        return 0;
+    }
+    *parsed = ptn_int((int64_t)integer);
+    *offset += (size_t)(end - copy);
+    free(copy);
+    return 1;
+}
+
+static int ptn_scanf_match_unsigned(
+    const char *input,
+    size_t input_len,
+    size_t *offset,
+    PtnValue *parsed
+) {
+    size_t available = input_len - *offset;
+    char *copy = ptn_duplicate_string_len(input + *offset, available);
+    char *end = copy;
+    errno = 0;
+    unsigned long long integer = strtoull(copy, &end, 10);
+    if (end == copy) {
+        free(copy);
+        return 0;
+    }
+    if (integer <= (unsigned long long)INT64_MAX) {
+        *parsed = ptn_int((int64_t)integer);
+    } else {
+        char buffer[32];
+        int written = snprintf(buffer, sizeof(buffer), "%llu", integer);
+        if (written < 0 || (size_t)written >= sizeof(buffer)) {
+            ptn_abort_out_of_memory();
+        }
+        *parsed = ptn_owned_string_len(ptn_duplicate_string_len(buffer, (size_t)written), (size_t)written);
+    }
+    *offset += (size_t)(end - copy);
+    free(copy);
+    return 1;
+}
+
+static int ptn_scanf_match_float(
+    const char *input,
+    size_t input_len,
+    size_t *offset,
+    PtnValue *parsed
+) {
+    size_t available = input_len - *offset;
+    char *copy = ptn_duplicate_string_len(input + *offset, available);
+    char *end = copy;
+    errno = 0;
+    double floating = strtod(copy, &end);
+    if (end == copy) {
+        free(copy);
+        return 0;
+    }
+    *parsed = ptn_float(floating);
+    *offset += (size_t)(end - copy);
+    free(copy);
+    return 1;
+}
+
+static int ptn_scanf_match_value(
+    PtnScanfSpec spec,
+    const char *input,
+    size_t input_len,
+    size_t *offset,
+    PtnValue *parsed
+) {
+    *parsed = ptn_null();
+    size_t available = input_len - *offset;
+    if (spec.conversion == 'n') {
+        if (*offset > (size_t)INT64_MAX) {
+            *parsed = ptn_int(INT64_MAX);
+        } else {
+            *parsed = ptn_int((int64_t)*offset);
+        }
+        return 1;
+    }
+    if (spec.conversion != 'c' && spec.conversion != '[') {
+        while (*offset < input_len && isspace((unsigned char)input[*offset])) {
+            (*offset)++;
+        }
+        available = input_len - *offset;
+    }
+    if (available == 0) {
+        return 0;
+    }
+    size_t limit = ptn_scanf_conversion_limit(spec, available);
+    if (limit == 0) {
+        limit = available;
+    }
+
+    if (spec.conversion == 's') {
+        size_t start = *offset;
+        size_t consumed = 0;
+        while (
+            *offset < input_len
+            && consumed < limit
+            && input[*offset] != '\0'
+            && !isspace((unsigned char)input[*offset])
+        ) {
+            (*offset)++;
+            consumed++;
+        }
+        if (*offset == start) {
+            return 0;
+        }
+        *parsed = ptn_owned_string_len(ptn_duplicate_string_len(input + start, *offset - start), *offset - start);
+        return 1;
+    }
+    if (spec.conversion == 'c') {
+        if (input[*offset] == '\0') {
+            return 0;
+        }
+        size_t width = spec.has_width ? spec.width : 1;
+        if (width == 0) {
+            width = 1;
+        }
+        size_t line_available = 0;
+        while (
+            line_available < available
+            && input[*offset + line_available] != '\n'
+            && input[*offset + line_available] != '\r'
+        ) {
+            line_available++;
+        }
+        if (line_available == 0) {
+            *parsed = ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0);
+            return 1;
+        }
+        if (width > line_available) {
+            width = line_available;
+        }
+        *parsed = ptn_owned_string_len(ptn_duplicate_string_len(input + *offset, width), width);
+        *offset += width;
+        return width != 0;
+    }
+    if (spec.conversion == '[') {
+        size_t start = *offset;
+        size_t consumed = 0;
+        while (*offset < input_len && consumed < limit) {
+            unsigned char byte = (unsigned char)input[*offset];
+            if (byte == '\0') {
+                break;
+            }
+            int in_set = ptn_scanf_set_contains(spec.scanset, byte);
+            if ((in_set && spec.scanset_negated) || (!in_set && !spec.scanset_negated)) {
+                break;
+            }
+            (*offset)++;
+            consumed++;
+        }
+        if (*offset == start) {
+            return 0;
+        }
+        *parsed = ptn_owned_string_len(ptn_duplicate_string_len(input + start, *offset - start), *offset - start);
+        return 1;
+    }
+
+    size_t original_len = input_len;
+    if (spec.has_width && spec.width < available) {
+        input_len = *offset + spec.width;
+    }
+    int matched = 0;
+    if (spec.conversion == 'd') {
+        matched = ptn_scanf_match_integer(input, input_len, offset, 10, parsed);
+    } else if (spec.conversion == 'i') {
+        matched = ptn_scanf_match_integer(input, input_len, offset, 0, parsed);
+    } else if (spec.conversion == 'o') {
+        matched = ptn_scanf_match_integer(input, input_len, offset, 8, parsed);
+    } else if (spec.conversion == 'x' || spec.conversion == 'X') {
+        matched = ptn_scanf_match_integer(input, input_len, offset, 16, parsed);
+    } else if (spec.conversion == 'u') {
+        matched = ptn_scanf_match_unsigned(input, input_len, offset, parsed);
+    } else if (
+        spec.conversion == 'f'
+        || spec.conversion == 'F'
+        || spec.conversion == 'e'
+        || spec.conversion == 'E'
+        || spec.conversion == 'g'
+        || spec.conversion == 'G'
+    ) {
+        matched = ptn_scanf_match_float(input, input_len, offset, parsed);
+    }
+    (void)original_len;
+    return matched;
+}
+
+static int ptn_scanf_input_is_blank(const char *input_data, size_t input_len) {
+    for (size_t i = 0; i < input_len; i++) {
+        if (!isspace((unsigned char)input_data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_scanf_conversion_skips_whitespace(char conversion) {
+    return conversion != '\0' && conversion != '[' && conversion != 'c' && conversion != 'n';
+}
+
+static int ptn_scanf_input_at_nul(const char *input_data, size_t input_len, size_t offset) {
+    return offset < input_len && input_data[offset] == '\0';
+}
+
+static PtnValue ptn_scanf_execute(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *input_data,
+    size_t input_len,
+    PtnStringOperand format,
+    size_t output_count,
+    const PtnValue *output_args,
+    int exact_output_count,
+    int null_on_zero_array_assignments,
+    size_t line
+) {
+    PtnScanfFormatInfo info;
+    if (!ptn_scanf_format_info(runtime, function_name, format, output_count, exact_output_count, line, &info)) {
         return ptn_null();
     }
 
     PtnValue *values = NULL;
-    size_t values_len = 0;
-    size_t values_capacity = 0;
+    unsigned char *filled = NULL;
+    if (info.result_slots != 0) {
+        values = calloc(info.result_slots, sizeof(PtnValue));
+        filled = calloc(info.result_slots, sizeof(unsigned char));
+        if (values == NULL || filled == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < info.result_slots; i++) {
+            values[i] = ptn_null();
+        }
+    }
+
+    size_t next_target = 0;
     size_t assigned = 0;
     size_t in = 0;
-
     for (size_t fi = 0; fi < format.len; fi++) {
         unsigned char fbyte = (unsigned char)format.data[fi];
         if (isspace(fbyte)) {
             while (fi + 1 < format.len && isspace((unsigned char)format.data[fi + 1])) {
                 fi++;
             }
-            while (in < input.len && isspace((unsigned char)input.data[in])) {
+            while (in < input_len && isspace((unsigned char)input_data[in])) {
                 in++;
             }
             continue;
         }
         if (format.data[fi] != '%') {
-            if (in >= input.len || input.data[in] != format.data[fi]) {
+            if (in >= input_len || input_data[in] != format.data[fi]) {
                 break;
             }
             in++;
@@ -12199,101 +12689,99 @@ static PtnValue ptn_internal_sscanf(PtnRuntime *runtime, size_t argc, const PtnV
 
         fi++;
         if (fi < format.len && format.data[fi] == '%') {
-            if (in >= input.len || input.data[in] != '%') {
+            if (in >= input_len || input_data[in] != '%') {
                 break;
             }
             in++;
             continue;
         }
-        while (fi < format.len && strchr("0123456789*hlLjzt", format.data[fi]) != NULL) {
-            fi++;
-        }
-        if (fi >= format.len) {
-            break;
-        }
 
-        char conversion = format.data[fi];
-        if (conversion != 'c') {
-            while (in < input.len && isspace((unsigned char)input.data[in])) {
-                in++;
-            }
+        PtnScanfSpec spec;
+        char bad_conversion = '\0';
+        int argument_index_out_of_range = 0;
+        if (!ptn_scanf_parse_spec(format, &fi, &next_target, &spec, &bad_conversion, &argument_index_out_of_range)) {
+            break;
         }
 
         PtnValue parsed = ptn_null();
-        int matched = 0;
-        if (conversion == 's') {
-            size_t start = in;
-            while (in < input.len && !isspace((unsigned char)input.data[in])) {
-                in++;
-            }
-            if (in > start) {
-                parsed = ptn_owned_string_len(ptn_duplicate_string_len(input.data + start, in - start), in - start);
-                matched = 1;
-            }
-        } else if (conversion == 'c') {
-            if (in < input.len) {
-                parsed = ptn_owned_string_len(ptn_duplicate_string_len(input.data + in, 1), 1);
-                in++;
-                matched = 1;
-            }
-        } else if (conversion == 'd' || conversion == 'i' || conversion == 'o' || conversion == 'x' || conversion == 'X') {
-            char *copy = ptn_duplicate_string_len(input.data + in, input.len - in);
-            char *end = copy;
-            errno = 0;
-            int base = 10;
-            if (conversion == 'o') {
-                base = 8;
-            } else if (conversion == 'x' || conversion == 'X') {
-                base = 16;
-            }
-            long long integer = strtoll(copy, &end, base);
-            if (end != copy) {
-                parsed = ptn_int((int64_t)integer);
-                in += (size_t)(end - copy);
-                matched = 1;
-            }
-            free(copy);
-        } else if (conversion == 'f' || conversion == 'F' || conversion == 'e' || conversion == 'E' || conversion == 'g' || conversion == 'G') {
-            char *copy = ptn_duplicate_string_len(input.data + in, input.len - in);
-            char *end = copy;
-            errno = 0;
-            double floating = strtod(copy, &end);
-            if (end != copy) {
-                parsed = ptn_float(floating);
-                in += (size_t)(end - copy);
-                matched = 1;
-            }
-            free(copy);
-        }
-
+        size_t before = in;
+        int matched = ptn_scanf_match_value(spec, input_data, input_len, &in, &parsed);
         if (!matched) {
-            ptn_sscanf_append_nulls(&values, &values_len, &values_capacity, conversion_count);
+            in = before;
             break;
         }
-        ptn_sscanf_append_value(&values, &values_len, &values_capacity, parsed);
-        assigned++;
+        if (spec.suppress_assignment) {
+            ptn_value_destroy(&parsed);
+            continue;
+        }
+        if (spec.target_index < info.result_slots) {
+            ptn_value_destroy(&values[spec.target_index]);
+            values[spec.target_index] = parsed;
+            filled[spec.target_index] = 1;
+            assigned++;
+        } else {
+            ptn_value_destroy(&parsed);
+        }
     }
-    ptn_sscanf_append_nulls(&values, &values_len, &values_capacity, conversion_count);
 
     PtnValue result;
     if (output_count == 0) {
-        result = ptn_array_from_literal_entries(0, NULL);
-        for (size_t i = 0; i < values_len; i++) {
-            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), values[i]);
+        int input_is_blank = ptn_scanf_input_is_blank(input_data, input_len);
+        if (
+            null_on_zero_array_assignments
+            && assigned == 0
+            && (
+                ptn_scanf_input_at_nul(input_data, input_len, in)
+                || (
+                    input_is_blank
+                    && (
+                        ptn_scanf_conversion_skips_whitespace(info.first_conversion)
+                        || in >= input_len
+                    )
+                )
+            )
+        ) {
+            for (size_t i = 0; i < info.result_slots; i++) {
+                ptn_value_destroy(&values[i]);
+            }
+            result = ptn_null();
+        } else {
+            result = ptn_array_from_literal_entries(0, NULL);
+            for (size_t i = 0; i < info.result_slots; i++) {
+                ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), values[i]);
+            }
         }
     } else {
         for (size_t i = 0; i < output_count; i++) {
-            if (args[i + 2].type == PTN_REFERENCE) {
-                ptn_reference_assign(runtime, args[i + 2].as.reference, values[i]);
+            if (i < info.result_slots && filled[i] && output_args[i].type == PTN_REFERENCE) {
+                ptn_reference_assign(runtime, output_args[i].as.reference, values[i]);
             }
-            ptn_value_destroy(&values[i]);
         }
-        for (size_t i = output_count; i < values_len; i++) {
+        for (size_t i = 0; i < info.result_slots; i++) {
             ptn_value_destroy(&values[i]);
         }
         result = ptn_int((int64_t)assigned);
     }
     free(values);
+    free(filled);
+    return result;
+}
+
+static PtnValue ptn_internal_sscanf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "sscanf", 1, "string", args[0], line);
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "sscanf", 2, "format", args[1], line);
+    PtnValue result = ptn_scanf_execute(
+        runtime,
+        "sscanf",
+        input.data,
+        input.len,
+        format,
+        argc > 2 ? argc - 2 : 0,
+        argc > 2 ? args + 2 : NULL,
+        0,
+        0,
+        line
+    );
     ptn_string_operand_free(input);
     ptn_string_operand_free(format);
     return result;
@@ -16126,6 +16614,17 @@ static PtnValue ptn_substr_replace_apply(
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static PtnStringOperand ptn_substr_replace_value_to_string(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    if (ptn_value_deref(value).type == PTN_ARRAY) {
+        ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
 static PtnStringOperand ptn_substr_replace_array_string_at(
     PtnRuntime *runtime,
     PtnValue value,
@@ -16139,7 +16638,7 @@ static PtnStringOperand ptn_substr_replace_array_string_at(
     if (index >= value.as.array->len) {
         return ptn_string_operand_borrowed("");
     }
-    return ptn_value_to_string_operand_with_runtime(runtime, value.as.array->entries[index].value, line);
+    return ptn_substr_replace_value_to_string(runtime, value.as.array->entries[index].value, line);
 }
 
 static int64_t ptn_substr_replace_array_integer_at(
@@ -16188,7 +16687,7 @@ static PtnValue ptn_internal_substr_replace(PtnRuntime *runtime, size_t argc, co
         if (replacement_value.type == PTN_ARRAY) {
             replacement = replacement_value.as.array->len == 0
                 ? ptn_string_operand_borrowed("")
-                : ptn_value_to_string_operand_with_runtime(runtime, replacement_value.as.array->entries[0].value, line);
+                : ptn_substr_replace_value_to_string(runtime, replacement_value.as.array->entries[0].value, line);
         } else {
             replacement =
                 ptn_internal_expect_string_arg(runtime, "substr_replace", 2, "replace", replacement_value, line);
@@ -16207,7 +16706,7 @@ static PtnValue ptn_internal_substr_replace(PtnRuntime *runtime, size_t argc, co
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < string_value.as.array->len; i++) {
         PtnArrayEntry *entry = &string_value.as.array->entries[i];
-        PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
+        PtnStringOperand subject = ptn_substr_replace_value_to_string(runtime, entry->value, line);
         PtnStringOperand replacement = ptn_substr_replace_array_string_at(runtime, args[1], i, line);
         int64_t offset = ptn_substr_replace_array_integer_at(args[2], i, 0);
         int entry_has_length = has_length;
@@ -18446,6 +18945,7 @@ static void ptn_emit_stream_write_notice(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
+    fputc('\n', stdout);
     ptn_emit_notice(&runtime->diagnostics, message, line);
 }
 
@@ -18535,6 +19035,7 @@ static void ptn_emit_stream_read_notice(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
+    fputc('\n', stdout);
     ptn_emit_notice(&runtime->diagnostics, message, line);
 }
 
@@ -18803,6 +19304,64 @@ static PtnValue ptn_internal_fgets(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
+static PtnResource *ptn_internal_expect_fscanf_stream_arg(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "fscanf(): Argument #1 ($stream) must be of type resource, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    if (!ptn_stream_resource_is_open(value.as.resource)) {
+        ptn_throw_exception(runtime, "TypeError", "fscanf(): supplied resource is not a valid File-Handle resource");
+        return NULL;
+    }
+    (void)line;
+    return value.as.resource;
+}
+
+static PtnValue ptn_internal_fscanf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnResource *resource = ptn_internal_expect_fscanf_stream_arg(runtime, args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "fscanf", 2, "format", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnStringBuffer buffer;
+    int status = ptn_stream_read_line(runtime, "fscanf", resource, 0, 0, &buffer, line);
+    if (status <= 0) {
+        ptn_string_operand_free(format);
+        return ptn_bool(0);
+    }
+
+    PtnValue result = ptn_scanf_execute(
+        runtime,
+        "fscanf",
+        buffer.data,
+        buffer.len,
+        format,
+        argc > 2 ? argc - 2 : 0,
+        argc > 2 ? args + 2 : NULL,
+        1,
+        1,
+        line
+    );
+    free(buffer.data);
+    ptn_string_operand_free(format);
+    return result;
+}
+
 static int ptn_csv_char_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -18997,10 +19556,15 @@ static int ptn_csv_field_padding_before_enclosure(
     const char *data,
     size_t len,
     size_t offset,
+    char delimiter,
     char enclosure
 ) {
     size_t cursor = offset;
-    while (cursor < len && (data[cursor] == ' ' || data[cursor] == '\t')) {
+    while (
+        cursor < len
+        && data[cursor] != delimiter
+        && (data[cursor] == ' ' || data[cursor] == '\t')
+    ) {
         cursor++;
     }
     return cursor < len && data[cursor] == enclosure;
@@ -19038,7 +19602,7 @@ static PtnValue ptn_parse_csv_record(
         if (at_field_start &&
             byte != (unsigned char)delimiter &&
             (byte == ' ' || byte == '\t') &&
-            ptn_csv_field_padding_before_enclosure(data, len, i, enclosure)) {
+            ptn_csv_field_padding_before_enclosure(data, len, i, delimiter, enclosure)) {
             continue;
         }
         if (in_enclosure) {
@@ -19087,6 +19651,9 @@ static PtnValue ptn_parse_csv_record(
         }
         ptn_string_buffer_append_char(&field, (char)byte);
         at_field_start = 0;
+    }
+    if (in_enclosure && escape_enabled && escape == '\0') {
+        ptn_string_buffer_append_char(&field, '\0');
     }
     ptn_csv_append_field(result, &field, &field_index);
     free(field.data);
@@ -27785,6 +28352,7 @@ static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgets(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_fscanf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fpassthru(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -27947,6 +28515,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fgetc", 1, 1, ptn_internal_fgetc },
         { "fgetcsv", 1, 5, ptn_internal_fgetcsv },
         { "fgets", 1, 2, ptn_internal_fgets },
+        { "fscanf", 2, PTN_VARIADIC_ARGS, ptn_internal_fscanf },
         { "file", 1, 3, ptn_internal_file },
         { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_get_contents", 1, 5, ptn_internal_file_get_contents },
