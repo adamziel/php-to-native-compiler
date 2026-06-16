@@ -7035,9 +7035,13 @@ fn emit_instruction(
                         out.push_str(";\n");
                         emit_value_cleanup(out, "    ", &return_temp);
                     }
-                    out.push_str("    goto ");
-                    out.push_str(target);
-                    out.push_str(";\n");
+                    let context_indices = return_cleanup_context_indices(finally_stack);
+                    emit_jump_through_finally_contexts(
+                        out,
+                        finally_stack,
+                        &context_indices,
+                        target,
+                    );
                     return;
                 }
                 if values.current_function_return_by_ref {
@@ -7060,9 +7064,8 @@ fn emit_instruction(
                         emit_value_cleanup(out, "    ", &result_value);
                     }
                 }
-                out.push_str("    goto ");
-                out.push_str(target);
-                out.push_str(";\n");
+                let context_indices = return_cleanup_context_indices(finally_stack);
+                emit_jump_through_finally_contexts(out, finally_stack, &context_indices, target);
             }
             None => {
                 if let Some(value) = value {
@@ -7308,8 +7311,26 @@ fn emit_instruction(
             let cleanup_label = values.next_label("ptn_foreach_cleanup");
             let continue_label = values.next_label("ptn_foreach_continue");
             let iterator_temp = values.next_temp();
+            let cleanup_target_temp = values.next_temp();
+            let cleanup_frame_temp = values.next_temp();
+            let cleanup_frame_active_temp = values.next_temp();
             out.push_str("    PtnArrayIterator ");
             out.push_str(&iterator_temp);
+            out.push_str(";\n");
+            out.push_str("    int ");
+            out.push_str(&cleanup_target_temp);
+            out.push_str(" = 0;\n");
+            out.push_str("    (void)");
+            out.push_str(&cleanup_target_temp);
+            out.push_str(";\n");
+            out.push_str("    PtnTryFrame ");
+            out.push_str(&cleanup_frame_temp);
+            out.push_str(";\n");
+            out.push_str("    int ");
+            out.push_str(&cleanup_frame_active_temp);
+            out.push_str(" = 0;\n");
+            out.push_str("    (void)");
+            out.push_str(&cleanup_frame_active_temp);
             out.push_str(";\n");
             let value_list_has_reference = matches!(value, AssignmentTarget::List(target) if list_assignment_has_reference(target));
             let iterator_needs_reference = *value_by_ref || value_list_has_reference;
@@ -7379,6 +7400,21 @@ fn emit_instruction(
             };
             emit_label_reference(out, &cleanup_label);
             emit_label_reference(out, &end_label);
+            finally_stack.push(FinallyContext::new_cleanup(
+                control_targets.len(),
+                cleanup_label.clone(),
+                cleanup_target_temp.clone(),
+                instruction_labels(body),
+            ));
+            out.push_str("    ptn_try_frame_push(&runtime, &");
+            out.push_str(&cleanup_frame_temp);
+            out.push_str(");\n");
+            out.push_str("    ");
+            out.push_str(&cleanup_frame_active_temp);
+            out.push_str(" = 1;\n");
+            out.push_str("    if (setjmp(");
+            out.push_str(&cleanup_frame_temp);
+            out.push_str(".jump) == 0) {\n");
             out.push_str("    while (");
             out.push_str(&iterator_temp);
             out.push_str(".valid) {\n");
@@ -7442,6 +7478,9 @@ fn emit_instruction(
                 );
             }
             control_targets.pop();
+            let cleanup_context = finally_stack
+                .pop()
+                .expect("foreach cleanup context is active");
             emit_label_reference(out, &continue_label);
             out.push_str("    ");
             out.push_str(&continue_label);
@@ -7451,15 +7490,51 @@ fn emit_instruction(
             out.push_str(&iterator_temp);
             out.push_str(");\n");
             out.push_str("    }\n");
+            out.push_str("    } else {\n");
+            out.push_str("        ");
+            out.push_str(&cleanup_target_temp);
+            out.push_str(" = -1;\n");
+            out.push_str("        goto ");
+            out.push_str(&cleanup_label);
+            out.push_str(";\n");
+            out.push_str("    }\n");
             out.push_str("    ");
             out.push_str(&cleanup_label);
             out.push_str(":\n");
             out.push_str("    ;\n");
+            out.push_str("    if (");
+            out.push_str(&cleanup_frame_active_temp);
+            out.push_str(") {\n");
+            out.push_str("        ptn_try_frame_pop(&runtime, &");
+            out.push_str(&cleanup_frame_temp);
+            out.push_str(");\n");
+            out.push_str("        ");
+            out.push_str(&cleanup_frame_active_temp);
+            out.push_str(" = 0;\n");
+            out.push_str("    }\n");
             out.push_str("    ptn_array_iterator_destroy(&");
             out.push_str(&iterator_temp);
             out.push_str(");\n");
             if let Some(iterable_temp) = iterable_temp {
                 emit_value_cleanup(out, "    ", &iterable_temp);
+            }
+            out.push_str("    if (");
+            out.push_str(&cleanup_target_temp);
+            out.push_str(" == -1) {\n");
+            out.push_str("        ptn_rethrow_exception(&runtime);\n");
+            out.push_str("    }\n");
+            if !cleanup_context.targets.is_empty() {
+                out.push_str("    switch (");
+                out.push_str(&cleanup_context.target_temp);
+                out.push_str(") {\n");
+                for (index, target) in cleanup_context.targets.iter().enumerate() {
+                    out.push_str("        case ");
+                    out.push_str(&(index + 1).to_string());
+                    out.push_str(": goto ");
+                    out.push_str(target);
+                    out.push_str(";\n");
+                }
+                out.push_str("    }\n");
             }
             out.push_str("    ");
             out.push_str(&end_label);
@@ -7487,7 +7562,11 @@ fn emit_instruction(
         }
         Instruction::Goto { label } => {
             let target = c_label_with_scope(label, label_scope);
-            let context_indices: Vec<usize> = (0..finally_stack.len()).collect();
+            let context_indices: Vec<usize> = finally_stack
+                .iter()
+                .enumerate()
+                .filter_map(|(index, context)| (!context.contains_label(label)).then_some(index))
+                .collect();
             emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
         }
         Instruction::Break { level, line } => {
@@ -7623,10 +7702,11 @@ fn emit_try(
     if let (Some(dispatch_label), Some(target_temp)) =
         (&control_dispatch_label, &control_target_temp)
     {
-        finally_stack.push(FinallyContext::new(
+        finally_stack.push(FinallyContext::new_finally(
             control_targets.len(),
             dispatch_label.clone(),
             target_temp.clone(),
+            try_context_labels(body, catches, finally_body),
         ));
     }
     out.push_str("        if (setjmp(");
@@ -7868,9 +7948,8 @@ fn emit_try(
             source_path,
             Some(return_target),
         );
-        out.push_str("        goto ");
-        out.push_str(return_target);
-        out.push_str(";\n");
+        let context_indices = return_cleanup_context_indices(finally_stack);
+        emit_jump_through_finally_contexts(out, finally_stack, &context_indices, return_target);
     }
     out.push_str("    }\n");
     out.push_str("    ");
@@ -8074,21 +8153,71 @@ impl ControlTarget {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FinallyContextKind {
+    Finally,
+    Cleanup,
+}
+
 struct FinallyContext {
+    kind: FinallyContextKind,
     control_depth: usize,
     dispatch_label: String,
     target_temp: String,
+    labels: HashSet<String>,
     targets: Vec<String>,
 }
 
 impl FinallyContext {
-    fn new(control_depth: usize, dispatch_label: String, target_temp: String) -> Self {
-        Self {
+    fn new_finally(
+        control_depth: usize,
+        dispatch_label: String,
+        target_temp: String,
+        labels: HashSet<String>,
+    ) -> Self {
+        Self::new(
+            FinallyContextKind::Finally,
             control_depth,
             dispatch_label,
             target_temp,
+            labels,
+        )
+    }
+
+    fn new_cleanup(
+        control_depth: usize,
+        dispatch_label: String,
+        target_temp: String,
+        labels: HashSet<String>,
+    ) -> Self {
+        Self::new(
+            FinallyContextKind::Cleanup,
+            control_depth,
+            dispatch_label,
+            target_temp,
+            labels,
+        )
+    }
+
+    fn new(
+        kind: FinallyContextKind,
+        control_depth: usize,
+        dispatch_label: String,
+        target_temp: String,
+        labels: HashSet<String>,
+    ) -> Self {
+        Self {
+            kind,
+            control_depth,
+            dispatch_label,
+            target_temp,
+            labels,
             targets: Vec::new(),
         }
+    }
+
+    fn contains_label(&self, label: &str) -> bool {
+        self.labels.contains(label)
     }
 
     fn register_target(&mut self, label: &str) -> usize {
@@ -8098,6 +8227,88 @@ impl FinallyContext {
         self.targets.push(label.to_string());
         self.targets.len()
     }
+}
+
+fn try_context_labels(
+    body: &[Instruction],
+    catches: &[IrCatchClause],
+    finally_body: &[Instruction],
+) -> HashSet<String> {
+    let mut labels = instruction_labels(body);
+    for catch in catches {
+        collect_instruction_labels(&catch.body, &mut labels);
+    }
+    collect_instruction_labels(finally_body, &mut labels);
+    labels
+}
+
+fn instruction_labels(instructions: &[Instruction]) -> HashSet<String> {
+    let mut labels = HashSet::new();
+    collect_instruction_labels(instructions, &mut labels);
+    labels
+}
+
+fn collect_instruction_labels(instructions: &[Instruction], labels: &mut HashSet<String>) {
+    for instruction in instructions {
+        match instruction {
+            Instruction::Label { name } => {
+                labels.insert(name.clone());
+            }
+            Instruction::Try {
+                body,
+                catches,
+                finally_body,
+            } => {
+                collect_instruction_labels(body, labels);
+                for catch in catches {
+                    collect_instruction_labels(&catch.body, labels);
+                }
+                collect_instruction_labels(finally_body, labels);
+            }
+            Instruction::Branch {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_instruction_labels(then_body, labels);
+                collect_instruction_labels(else_body, labels);
+            }
+            Instruction::While { body, .. }
+            | Instruction::DoWhile { body, .. }
+            | Instruction::Foreach { body, .. } => collect_instruction_labels(body, labels),
+            Instruction::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_instruction_labels(initializers, labels);
+                collect_instruction_labels(updates, labels);
+                collect_instruction_labels(body, labels);
+            }
+            Instruction::Switch { cases, .. } => {
+                for case in cases {
+                    collect_instruction_labels(&case.body, labels);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn return_cleanup_context_indices(finally_stack: &[FinallyContext]) -> Vec<usize> {
+    let start = finally_stack
+        .iter()
+        .rposition(|context| context.kind == FinallyContextKind::Finally)
+        .map_or(0, |index| index + 1);
+    finally_stack
+        .iter()
+        .enumerate()
+        .skip(start)
+        .filter_map(|(index, context)| {
+            (context.kind == FinallyContextKind::Cleanup).then_some(index)
+        })
+        .collect()
 }
 
 fn emit_jump_through_finally_contexts(
