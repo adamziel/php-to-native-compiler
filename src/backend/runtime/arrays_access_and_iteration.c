@@ -1424,7 +1424,7 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
 #define PTN_PROPERTY_ACCESS_INDIRECT_WRITE 2
 #define PTN_PROPERTY_ACCESS_UNSET 3
 
-static PTN_UNUSED int ptn_object_static_property_inaccessible(
+static PTN_UNUSED int ptn_object_static_property_visibility(
     PtnRuntime *runtime,
     PtnObject *object,
     const char *property,
@@ -1433,6 +1433,7 @@ static PTN_UNUSED int ptn_object_static_property_inaccessible(
     PtnPropertyVisibility *visibility_out,
     const char **declaring_class_out
 ) {
+    (void)access_scope;
     if (runtime == NULL || object == NULL || property == NULL) {
         return 0;
     }
@@ -1473,9 +1474,6 @@ static PTN_UNUSED int ptn_object_static_property_inaccessible(
     PtnPropertyVisibility visibility = access_mode == PTN_PROPERTY_ACCESS_READ
         ? read_visibility
         : set_visibility;
-    if (ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)) {
-        return 0;
-    }
     if (visibility_out != NULL) {
         *visibility_out = visibility;
     }
@@ -1483,6 +1481,118 @@ static PTN_UNUSED int ptn_object_static_property_inaccessible(
         *declaring_class_out = declaring_class == NULL ? object->class_name : declaring_class;
     }
     return 1;
+}
+
+static PTN_UNUSED int ptn_object_static_property_inaccessible(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    const char *access_scope,
+    int access_mode,
+    PtnPropertyVisibility *visibility_out,
+    const char **declaring_class_out
+) {
+    PtnPropertyVisibility visibility = PTN_PROPERTY_PUBLIC;
+    const char *declaring_class = NULL;
+    if (!ptn_object_static_property_visibility(
+        runtime,
+        object,
+        property,
+        access_scope,
+        access_mode,
+        &visibility,
+        &declaring_class
+    )) {
+        return 0;
+    }
+    if (ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)) {
+        return 0;
+    }
+    if (visibility_out != NULL) {
+        *visibility_out = visibility;
+    }
+    if (declaring_class_out != NULL) {
+        *declaring_class_out = declaring_class;
+    }
+    return 1;
+}
+
+static PTN_UNUSED int ptn_object_static_property_accessible(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    const char *access_scope,
+    int access_mode,
+    const char **declaring_class_out
+) {
+    PtnPropertyVisibility visibility = PTN_PROPERTY_PUBLIC;
+    const char *declaring_class = NULL;
+    if (!ptn_object_static_property_visibility(
+        runtime,
+        object,
+        property,
+        access_scope,
+        access_mode,
+        &visibility,
+        &declaring_class
+    )) {
+        return 0;
+    }
+    if (!ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)) {
+        return 0;
+    }
+    if (declaring_class_out != NULL) {
+        *declaring_class_out = declaring_class;
+    }
+    return 1;
+}
+
+static PTN_UNUSED void ptn_emit_static_property_non_static_notice(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    if (runtime == NULL ||
+        !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    fputc('\n', stdout);
+    fputs("Notice: Accessing static property ", stdout);
+    fputs(declaring_class, stdout);
+    fputs("::$", stdout);
+    fputs(property, stdout);
+    fputs(" as non static in ", stdout);
+    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
+static PTN_UNUSED void ptn_emit_static_property_non_static_notice_if_accessible(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    const char *access_scope,
+    int access_mode,
+    size_t line
+) {
+    const char *declaring_class = NULL;
+    if (ptn_object_static_property_accessible(
+        runtime,
+        object,
+        property,
+        access_scope,
+        access_mode,
+        &declaring_class
+    )) {
+        ptn_emit_static_property_non_static_notice(
+            runtime,
+            declaring_class,
+            property,
+            line
+        );
+    }
 }
 
 static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
@@ -1788,6 +1898,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    const char *static_declaring_class = NULL;
+    int static_property_as_instance = ptn_object_static_property_accessible(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        &static_declaring_class
+    );
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
@@ -1807,8 +1926,24 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ) {
             return magic_value;
         }
+        if (static_property_as_instance) {
+            ptn_emit_static_property_non_static_notice(
+                runtime,
+                static_declaring_class,
+                property,
+                line
+            );
+        }
         ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
         return ptn_null();
+    }
+    if (static_property_as_instance) {
+        ptn_emit_static_property_non_static_notice(
+            runtime,
+            static_declaring_class,
+            property,
+            line
+        );
     }
     return ptn_value_clone_deref(entry->value);
 }
@@ -1986,6 +2121,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    const char *static_declaring_class = NULL;
+    int static_property_as_instance = ptn_object_static_property_accessible(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        &static_declaring_class
+    );
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
@@ -2003,8 +2147,24 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
                 return magic_value;
             }
         }
+        if (static_property_as_instance) {
+            ptn_emit_static_property_non_static_notice(
+                runtime,
+                static_declaring_class,
+                property,
+                line
+            );
+        }
         ptn_emit_undefined_property_warning(runtime, receiver.as.object, property, line);
         return ptn_null();
+    }
+    if (static_property_as_instance) {
+        ptn_emit_static_property_non_static_notice(
+            runtime,
+            static_declaring_class,
+            property,
+            line
+        );
     }
     return ptn_value_clone_deref(entry->value);
 }
@@ -2179,6 +2339,14 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         ptn_magic_property_set(runtime, receiver, property, value, line)) {
         return ptn_value_clone_deref(value);
     }
+    ptn_emit_static_property_non_static_notice_if_accessible(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        indirect_write ? PTN_PROPERTY_ACCESS_INDIRECT_WRITE : PTN_PROPERTY_ACCESS_WRITE,
+        line
+    );
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -2306,6 +2474,14 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         ptn_throw_overloaded_property_reference_error(runtime, line);
         return;
     }
+    ptn_emit_static_property_non_static_notice_if_accessible(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_WRITE,
+        line
+    );
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -2383,6 +2559,14 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         ptn_throw_overloaded_property_reference_error(runtime, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
+    ptn_emit_static_property_non_static_notice_if_accessible(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
+        line
+    );
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -2518,6 +2702,14 @@ static PTN_UNUSED void ptn_object_unset_property(
         ptn_magic_property_unset(runtime, receiver, property, line)) {
         return;
     }
+    ptn_emit_static_property_non_static_notice_if_accessible(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_UNSET,
+        line
+    );
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
