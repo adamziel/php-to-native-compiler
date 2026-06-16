@@ -34637,7 +34637,8 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
         return result;
     }
 
-    int needed = snprintf(NULL, 0, "Call to undefined function %s()", name);
+    const char *undefined_kind = strstr(name, "::") == NULL ? "function" : "method";
+    int needed = snprintf(NULL, 0, "Call to undefined %s %s()", undefined_kind, name);
     if (needed < 0) {
         ptn_abort_out_of_memory();
     }
@@ -34645,7 +34646,7 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
     if (message == NULL) {
         ptn_abort_out_of_memory();
     }
-    snprintf(message, (size_t)needed + 1, "Call to undefined function %s()", name);
+    snprintf(message, (size_t)needed + 1, "Call to undefined %s %s()", undefined_kind, name);
     ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
     return ptn_null();
 }

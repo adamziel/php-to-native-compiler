@@ -9,11 +9,11 @@ use crate::ast::{AssignmentOp, IncludeKind};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
-    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, FunctionDecl,
-    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget,
-    Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
-    MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind,
-    PropertyVisibility, ReferenceTarget, TraitDecl, TypeHint, UnaryOp, ValueExpr,
+    BinaryOp, CastKind, CatchClause as IrCatchClause, ClassDecl, ClosureCapture, CompileWarning,
+    FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile,
+    InstanceOfTarget, Instruction, ListAssignmentElement, ListAssignmentElementTarget,
+    ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint,
+    PropertyTypeKind, PropertyVisibility, ReferenceTarget, TraitDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -253,6 +253,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.classes,
         &module.includes,
     );
+    emit_compile_warnings(&mut out, &module.compile_warnings, &module.source_file);
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
     emit_parameter_default_diagnostics(
         &mut out,
@@ -262,6 +263,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
+    emit_early_constant_declarations(&mut out, &mut values, &module.instructions);
     emit_static_property_initializers(&mut out, &mut values, &module.classes);
     for warning in collect_module_control_warnings(module) {
         emit_control_warning(
@@ -276,6 +278,9 @@ pub fn emit_c(module: &Module) -> String {
     let return_label = values.next_label("ptn_main_return");
     out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
     for instruction in &module.instructions {
+        if matches!(instruction, Instruction::DefineConstant { .. }) {
+            continue;
+        }
         emit_instruction(
             &mut out,
             &mut values,
@@ -1878,6 +1883,7 @@ fn emit_include_helpers(
         out.push_str("    (void)include_runtime;\n");
         out.push_str("#define runtime (*include_runtime)\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
+        emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
         let legacy_dollar_brace_deprecations =
             collect_include_legacy_dollar_brace_deprecations(include);
         emit_legacy_dollar_brace_deprecations(out, &legacy_dollar_brace_deprecations);
@@ -1910,6 +1916,27 @@ fn emit_include_helpers(
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
+    }
+}
+
+fn emit_early_constant_declarations(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    instructions: &[Instruction],
+) {
+    for instruction in instructions {
+        let Instruction::DefineConstant { name, value, line } = instruction else {
+            continue;
+        };
+        let emitted_value = values.emit_const_materialized_value(out, value);
+        out.push_str("    (void)ptn_runtime_define_constant_if_absent(&runtime, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&emitted_value);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &emitted_value);
     }
 }
 
@@ -2115,6 +2142,18 @@ fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityW
         out.push_str("::");
         out.push_str(&c_string(&warning.method_name));
         out.push_str("() must have public visibility\", ");
+        out.push_str(&warning.line.to_string());
+        out.push_str(");\n");
+    }
+}
+
+fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_file: &str) {
+    for warning in warnings {
+        out.push_str("    ptn_emit_compile_warning(&runtime, \"");
+        out.push_str(&c_string(&warning.message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_file));
+        out.push_str("\", ");
         out.push_str(&warning.line.to_string());
         out.push_str(");\n");
     }

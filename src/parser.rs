@@ -3,14 +3,15 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
     AssignmentTarget, AttributeMetadata, BinaryOp, CastKind, CatchClause, ClassConstantDecl,
-    ClassDecl, ClosureUseCapture, ConstDeclaration, Expr, FunctionDecl, FunctionParameter,
-    IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
-    ListAssignmentElementTarget, ListAssignmentTarget, ListExpr, ListExprElement,
-    ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program, PromotedProperty,
-    PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
-    Statement, StaticLocalDeclaration, StaticPropertyDecl, StringInterpolationIndex, StringPart,
-    SwitchCase, TraitAdaptation, TraitAliasAdaptation, TraitDecl, TraitMethodReference,
-    TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp, UnsetTarget,
+    ClassDecl, ClosureUseCapture, CompileWarning, ConstDeclaration, Expr, FunctionDecl,
+    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget,
+    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, ListExpr,
+    ListExprElement, ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program,
+    PromotedProperty, PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility,
+    ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
+    StringInterpolationIndex, StringPart, SwitchCase, TraitAdaptation, TraitAliasAdaptation,
+    TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -73,6 +74,7 @@ pub(crate) fn parse_with_runtime_class_aliases(
         return_by_ref_stack: Vec::new(),
         strict_types: false,
         compiler_halt_offset,
+        compile_warnings: Vec::new(),
     }
     .parse_program()
 }
@@ -102,6 +104,7 @@ struct Parser<'a> {
     return_by_ref_stack: Vec<bool>,
     strict_types: bool,
     compiler_halt_offset: Option<i64>,
+    compile_warnings: Vec<CompileWarning>,
 }
 
 #[derive(Debug, Clone)]
@@ -325,6 +328,7 @@ impl Parser<'_> {
             traits,
             functions,
             statements,
+            compile_warnings: self.compile_warnings.clone(),
             strict_types: self.strict_types,
         })
     }
@@ -609,6 +613,22 @@ impl Parser<'_> {
         kind: UseDeclarationKind,
         target: ParsedName,
     ) -> Result<()> {
+        if kind == UseDeclarationKind::Class
+            && !target.name.contains('\\')
+            && matches!(
+                target.resolution,
+                NameResolution::Unqualified | NameResolution::FullyQualified
+            )
+        {
+            self.compile_warnings.push(CompileWarning {
+                message: format!(
+                    "The use statement with non-compound name '{}' has no effect",
+                    target.name
+                ),
+                span: target.span,
+            });
+            return Ok(());
+        }
         let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
             self.advance();
             let token = self.advance().clone();
@@ -1039,7 +1059,7 @@ impl Parser<'_> {
                 }
             }
             NameResolution::Qualified => {
-                self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
+                self.resolve_aliasable_name(&parsed.name, &self.constant_aliases)
             }
         }
     }

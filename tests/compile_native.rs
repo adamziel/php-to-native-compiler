@@ -16903,6 +16903,87 @@ Stack trace:\n\
 }
 
 #[test]
+fn compile_non_compound_use_imports_emit_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-non-compound-use-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-compound-use.php");
+    let output = root.join("non-compound-use-bin");
+    fs::write(&input, "<?php\nuse A;\nuse \\B;\n").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: The use statement with non-compound name 'A' has no effect in {} on line 2\n\n\
+Warning: The use statement with non-compound name 'B' has no effect in {} on line 3\n",
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_uncaught_undefined_static_method_reports_method_error_to_native_binary() {
+    let root = temp_dir("ptn-native-undefined-static-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("undefined-static-method.php");
+    let output = root.join("undefined-static-method-bin");
+    fs::write(
+        &input,
+        "<?php\nnamespace Exception;\nfunction foo() { echo \"ok\\n\"; }\n\\Exception\\foo();\n\\Exception::bar();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Call to undefined method Exception::bar() in {}:5\n\
+Stack trace:\n\
+#0 {{main}}\n  thrown in {} on line 5\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn compile_qualified_namespace_constants_in_static_array_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-qualified-constant-static-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("qualified-constant-static-array.php");
+    let output = root.join("qualified-constant-static-array-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+namespace foo\\bar;\n\
+const I = 12;\n\
+namespace foo;\n\
+class Box { public static $values = array(bar\\I => bar\\I); }\n\
+print_r(Box::$values);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Array\n(\n    [12] => 12\n)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_runtime_define_and_constant_to_native_binary() {
     let root = temp_dir("ptn-native-runtime-define-constant");
     fs::create_dir_all(&root).unwrap();
