@@ -12286,6 +12286,71 @@ $p = null;
 }
 
 #[test]
+fn compile_static_property_destructors_precede_function_static_destructors_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-function-static-destructor-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-function-static-destructor-order.php");
+    let output = root.join("static-property-function-static-destructor-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Marker {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function __destruct() {
+        echo $this->name, \":\", Box::hasStatic(), \"\\n\";
+    }
+}
+
+class Box {
+    private static $instance = null;
+
+    public static function getStatic() {
+        if (self::$instance === null) {
+            self::$instance = new Marker(\"static\");
+        }
+        return self::$instance;
+    }
+
+    public static function getLocal() {
+        static $local = null;
+        if ($local === null) {
+            $local = new Marker(\"local\");
+        }
+        return $local;
+    }
+
+    public static function hasStatic() {
+        return self::$instance instanceof Marker ? \"yes\" : \"no\";
+    }
+}
+
+Box::getStatic();
+Box::getLocal();
+echo \"end\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "end\nstatic:yes\nlocal:yes\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_run_static_property_destructors(runtime)"));
+}
+
+#[test]
 fn compile_declared_class_metadata_intrinsics_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-metadata-intrinsics");
     fs::create_dir_all(&root).unwrap();
