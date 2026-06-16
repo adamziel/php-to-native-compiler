@@ -2018,12 +2018,8 @@ impl Parser<'_> {
             false
         };
         let name_token = self.advance().clone();
-        let TokenKind::Identifier(name) = name_token.kind else {
-            return Err(Diagnostic::new(
-                "expected method name",
-                Some(name_token.span),
-            ));
-        };
+        let name = method_name_from_token(&name_token.kind)
+            .ok_or_else(|| Diagnostic::new("expected method name", Some(name_token.span)))?;
         let allow_promoted_properties = name.eq_ignore_ascii_case("__construct");
         let parameters = self.parse_function_parameters_with_promotions(
             if allow_promoted_properties {
@@ -6348,6 +6344,13 @@ fn object_member_name_from_token(kind: &TokenKind) -> Option<String> {
         _ => return None,
     };
     Some(name.to_string())
+}
+
+fn method_name_from_token(kind: &TokenKind) -> Option<String> {
+    match kind {
+        TokenKind::Identifier(name) => Some(name.clone()),
+        _ => object_member_name_from_token(kind),
+    }
 }
 
 fn token_text(kind: &TokenKind) -> &'static str {

@@ -12,10 +12,13 @@ Zend/tests/get_class_vars/get_class_vars_005.phpt
 Zend/tests/get_class_vars/get_class_vars_006.phpt
 Zend/tests/get_class_vars/get_class_vars_007.phpt
 Zend/tests/instantiate_all_classes.phpt
+Zend/tests/method_exists.phpt
+Zend/tests/method_exists_002.phpt
 Zend/tests/traits/get_declared_traits_001.phpt
 Zend/tests/traits/get_declared_traits_002.phpt
 Zend/tests/traits/get_declared_traits_003.phpt
 ext/reflection/tests/ReflectionMethod_006.phpt
+ext/reflection/tests/ReflectionMethod_basic3.phpt
 ext/reflection/tests/ReflectionMethod_constructor_basic.phpt
 ext/reflection/tests/ReflectionMethod_getDeclaringClass_basic.phpt
 ext/reflection/tests/ReflectionObject_constructor_basic.phpt
@@ -37,4 +40,5 @@ ext/standard/tests/class_object/is_a_variation_001.phpt
 ext/standard/tests/class_object/is_a_variation_003.phpt
 ext/standard/tests/class_object/method_exists_basic_001.phpt
 ext/standard/tests/class_object/method_exists_basic_002.phpt
+ext/standard/tests/class_object/method_exists_variation_003.phpt
 tests/lang/bug19566.phpt

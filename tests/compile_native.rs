@@ -4075,6 +4075,27 @@ class Box {
 }
 
 #[test]
+fn parser_accepts_keyword_class_method_names() {
+    let program = parser::parse(
+        "<?php
+class Box {
+    public function int() {}
+    public function if() {}
+}
+interface Contract {
+    public function string();
+}
+",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes[0].methods[0].name, "int");
+    assert_eq!(program.classes[0].methods[1].name, "if");
+    assert!(program.classes[1].is_interface);
+    assert_eq!(program.classes[1].methods[0].name, "string");
+}
+
+#[test]
 fn parser_accepts_private_instance_properties() {
     let program = parser::parse(
         "<?php
