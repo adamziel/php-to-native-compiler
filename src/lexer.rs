@@ -2,6 +2,14 @@ use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 
+pub(crate) fn decode_php_source_bytes(bytes: &[u8]) -> String {
+    let mut source = String::with_capacity(bytes.len());
+    for &byte in bytes {
+        push_php_string_byte(&mut source, byte);
+    }
+    source
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     OpenTag,

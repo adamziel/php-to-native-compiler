@@ -10,6 +10,7 @@ use crate::ast::{
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSource};
+use crate::lexer::decode_php_source_bytes;
 use crate::parser::parse;
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
@@ -28,9 +29,10 @@ pub struct CompileOutput {
 }
 
 pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Result<CompileOutput> {
-    let source = fs::read_to_string(input).map_err(|error| {
+    let source_bytes = fs::read(input).map_err(|error| {
         Diagnostic::new(format!("failed to read {}: {error}", input.display()), None)
     })?;
+    let source = decode_php_source_bytes(&source_bytes);
     let program = parse(&source)?;
     let source_file = input.to_string_lossy().into_owned();
     let source_dir = input
@@ -925,7 +927,7 @@ impl IncludeCollector {
             return Ok(index);
         }
 
-        let source = fs::read_to_string(&canonical_path).map_err(|error| {
+        let source_bytes = fs::read(&canonical_path).map_err(|error| {
             Diagnostic::new(
                 format!(
                     "failed to read included file {}: {error}",
@@ -934,6 +936,7 @@ impl IncludeCollector {
                 Some(span),
             )
         })?;
+        let source = decode_php_source_bytes(&source_bytes);
         let program = parse(&source)?;
 
         let index = self.sources.len();

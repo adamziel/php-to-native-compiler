@@ -1031,6 +1031,38 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_HTML_ENTITIES);
         return 1;
     }
+    if (strcmp(name, "PHP_URL_SCHEME") == 0) {
+        *out = ptn_int(PTN_PHP_URL_SCHEME);
+        return 1;
+    }
+    if (strcmp(name, "PHP_URL_HOST") == 0) {
+        *out = ptn_int(PTN_PHP_URL_HOST);
+        return 1;
+    }
+    if (strcmp(name, "PHP_URL_PORT") == 0) {
+        *out = ptn_int(PTN_PHP_URL_PORT);
+        return 1;
+    }
+    if (strcmp(name, "PHP_URL_USER") == 0) {
+        *out = ptn_int(PTN_PHP_URL_USER);
+        return 1;
+    }
+    if (strcmp(name, "PHP_URL_PASS") == 0) {
+        *out = ptn_int(PTN_PHP_URL_PASS);
+        return 1;
+    }
+    if (strcmp(name, "PHP_URL_PATH") == 0) {
+        *out = ptn_int(PTN_PHP_URL_PATH);
+        return 1;
+    }
+    if (strcmp(name, "PHP_URL_QUERY") == 0) {
+        *out = ptn_int(PTN_PHP_URL_QUERY);
+        return 1;
+    }
+    if (strcmp(name, "PHP_URL_FRAGMENT") == 0) {
+        *out = ptn_int(PTN_PHP_URL_FRAGMENT);
+        return 1;
+    }
     if (strcmp(name, "ENT_NOQUOTES") == 0) {
         *out = ptn_int(PTN_ENT_NOQUOTES);
         return 1;
