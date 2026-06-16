@@ -2748,6 +2748,13 @@ static PTN_UNUSED PtnNumber ptn_string_to_number(const char *string) {
     while (isspace((unsigned char)*start)) {
         start++;
     }
+    const char *numeric_start = start;
+    if (*numeric_start == '+' || *numeric_start == '-') {
+        numeric_start++;
+    }
+    if (numeric_start[0] == '0' && (numeric_start[1] == 'x' || numeric_start[1] == 'X')) {
+        return ptn_number_int(0);
+    }
     if (*start == '\0') {
         return ptn_number_int(0);
     }
