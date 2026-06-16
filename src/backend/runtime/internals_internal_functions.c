@@ -27057,6 +27057,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isIterable")
         || ptn_ascii_case_equal(method_name, "isIterateable")
         || ptn_ascii_case_equal(method_name, "isReadOnly")
+        || ptn_ascii_case_equal(method_name, "newInstanceWithoutConstructor")
         || ptn_ascii_case_equal(method_name, "isSubclassOf")
         || ptn_ascii_case_equal(method_name, "isUserDefined");
 }
@@ -28486,6 +28487,34 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     if (ptn_ascii_case_equal(name, "isInstantiable")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_reflection_class_is_instantiable(class_name));
+    }
+    if (ptn_ascii_case_equal(name, "newInstanceWithoutConstructor")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (ptn_reflection_class_is_interface_name(class_name) || ptn_declared_class_is_abstract(class_name)) {
+            char message[256];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Class %s is not instantiable",
+                class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
+            return ptn_null();
+        }
+        if (ptn_declared_class_exists(class_name) && runtime->new_instance_without_constructor != NULL) {
+            return runtime->new_instance_without_constructor(runtime, class_name, line);
+        }
+        if (ptn_internal_class_name_is_stdclass_name(class_name)) {
+            return ptn_object_new_shell(runtime, "stdClass");
+        }
+        ptn_throw_exception(runtime, "ReflectionException", "Cannot instantiate internal class without constructor");
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "isReadOnly")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);

@@ -421,6 +421,12 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
+    StaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
@@ -434,12 +440,6 @@ pub enum AssignmentTarget {
     StaticProperty {
         class_name: String,
         name: String,
-        span: SourceSpan,
-    },
-    StaticPropertyArrayDim {
-        class_name: String,
-        name: String,
-        dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
     List(ListAssignmentTarget),

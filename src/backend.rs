@@ -160,6 +160,16 @@ pub fn emit_c(module: &Module) -> String {
         emit_dynamic_function_dispatch(&mut out);
         emit_callable_dispatch(&mut out, &module.functions, needs_method_dispatch);
     }
+    if !module.classes.is_empty() {
+        emit_declared_class_new_instance_without_constructor(
+            &mut out,
+            &module.source_file,
+            &module.source_dir,
+            &module.functions,
+            &module.classes,
+            &module.includes,
+        );
+    }
     out.push_str("\nint main(void) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
@@ -215,6 +225,11 @@ pub fn emit_c(module: &Module) -> String {
     }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
+    if !module.classes.is_empty() {
+        out.push_str(
+            "    runtime.new_instance_without_constructor = ptn_declared_class_new_instance_without_constructor;\n",
+        );
+    }
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
@@ -778,6 +793,62 @@ fn emit_user_function_prototypes(
     }
 }
 
+fn emit_declared_class_new_instance_without_constructor(
+    out: &mut String,
+    source_file: &str,
+    source_dir: &str,
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+    includes: &[IncludeFile],
+) {
+    let mut values = ValueEmitter::new(source_file, source_dir, functions, classes, includes);
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_new_instance_without_constructor(PtnRuntime *caller_runtime, const char *class_name, size_t line) {\n",
+    );
+    out.push_str("    PtnRuntime runtime;\n");
+    out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+    let mut emitted_branch = false;
+    for declared_class in classes {
+        out.push_str("    ");
+        if emitted_branch {
+            out.push_str("} else ");
+        }
+        out.push_str("if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&declared_class.name));
+        out.push_str("\")) {\n");
+        if declared_class.is_interface || declared_class.is_abstract {
+            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
+            out.push_str(if declared_class.is_interface {
+                "interface "
+            } else {
+                "abstract class "
+            });
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\");\n");
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    return ptn_null();\n");
+        } else {
+            values.emit_declared_object_shell_with_properties(
+                out,
+                "result",
+                declared_class,
+                declared_class.line,
+                true,
+            );
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    return result;\n");
+        }
+        emitted_branch = true;
+    }
+    if emitted_branch {
+        out.push_str("    }\n");
+    }
+    out.push_str("    (void)line;\n");
+    out.push_str("    ptn_runtime_free(&runtime);\n");
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+}
+
 fn emit_user_functions(
     out: &mut String,
     classes: &[ClassDecl],
@@ -837,6 +908,18 @@ fn emit_user_functions(
         out.push_str("    runtime.current_called_class_name = caller_runtime->called_class_name_override != NULL ? caller_runtime->called_class_name_override : ");
         out.push_str(&c_optional_string(function.class_name.as_deref()));
         out.push_str(";\n");
+        if function.is_anonymous {
+            out.push_str(
+                "    if (receiver.type == PTN_CLOSURE && receiver.as.closure->bound_scope_name != NULL) {\n",
+            );
+            out.push_str(
+                "        runtime.current_class_name = receiver.as.closure->bound_scope_name;\n",
+            );
+            out.push_str(
+                "        runtime.current_called_class_name = receiver.as.closure->bound_scope_name;\n",
+            );
+            out.push_str("    }\n");
+        }
         out.push_str("    runtime.call_site_line = line;\n");
         if call_frame_parameter_count == 0 {
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL);\n");
@@ -5093,10 +5176,8 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        if (ptn_ascii_case_equal(method_name, \"bindTo\")) {\n");
-    out.push_str("            (void)argc;\n");
-    out.push_str("            (void)args;\n");
     out.push_str("            (void)line;\n");
-    out.push_str("            return ptn_closure_clone(runtime, resolved);\n");
+    out.push_str("            return ptn_closure_clone_bound(runtime, resolved, argc, args);\n");
     out.push_str("        }\n");
     if needs_closure_invoke_dispatch {
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
@@ -5807,6 +5888,12 @@ fn emit_callable_dispatch(
     out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
     out.push_str("            return ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line);\n");
     out.push_str("        }\n");
+    out.push_str("        const char *previous_class_name = runtime->current_class_name;\n");
+    out.push_str("        if (resolved.as.closure->bound_scope_name != NULL) {\n");
+    out.push_str(
+        "            runtime->current_class_name = resolved.as.closure->bound_scope_name;\n",
+    );
+    out.push_str("        }\n");
     out.push_str("        switch (resolved.as.closure->function_index) {\n");
     for (index, function) in functions.iter().enumerate() {
         if !function.is_anonymous {
@@ -5814,7 +5901,7 @@ fn emit_callable_dispatch(
         }
         out.push_str("            case ");
         out.push_str(&index.to_string());
-        out.push_str(":\n");
+        out.push_str(": {\n");
         emit_deprecated_function_warning(
             out,
             "                ",
@@ -5822,11 +5909,15 @@ fn emit_callable_dispatch(
             function,
             "line",
         );
-        out.push_str("                return ");
+        out.push_str("                PtnValue result = ");
         out.push_str(&user_function_c_name(index));
         out.push_str("(runtime, resolved, argc, args, line);\n");
+        out.push_str("                runtime->current_class_name = previous_class_name;\n");
+        out.push_str("                return result;\n");
+        out.push_str("            }\n");
     }
     out.push_str("            default:\n");
+    out.push_str("                runtime->current_class_name = previous_class_name;\n");
     out.push_str("                fputs(\"Fatal error: invalid closure\\n\", stderr);\n");
     out.push_str("                exit(255);\n");
     out.push_str("        }\n");
@@ -9892,6 +9983,7 @@ struct ValueEmitter {
     current_function_name: Option<String>,
     current_method_name: Option<String>,
     current_class_name: Option<String>,
+    use_runtime_class_scope: bool,
     current_trait_name: Option<String>,
     current_function_return_by_ref: bool,
     current_function_is_generator: bool,
@@ -10501,6 +10593,7 @@ impl ValueEmitter {
             None,
             false,
             false,
+            false,
         )
     }
 
@@ -10528,6 +10621,7 @@ impl ValueEmitter {
             function.trait_name.as_deref(),
             function.return_by_ref,
             function.is_generator,
+            function.is_anonymous,
         )
     }
 
@@ -10543,6 +10637,7 @@ impl ValueEmitter {
         current_trait_name: Option<&str>,
         current_function_return_by_ref: bool,
         current_function_is_generator: bool,
+        use_runtime_class_scope: bool,
     ) -> Self {
         Self {
             next_temp: 0,
@@ -10555,12 +10650,21 @@ impl ValueEmitter {
             current_function_name: current_function_name.map(str::to_string),
             current_method_name: current_method_name.map(str::to_string),
             current_class_name: current_class_name.map(str::to_string),
+            use_runtime_class_scope,
             current_trait_name: current_trait_name.map(str::to_string),
             current_function_return_by_ref,
             current_function_is_generator,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),
+        }
+    }
+
+    fn emit_access_scope(&self, out: &mut String) {
+        if self.use_runtime_class_scope {
+            out.push_str("runtime.current_class_name");
+        } else {
+            out.push_str(&c_optional_string(self.current_class_name.as_deref()));
         }
     }
 
@@ -11294,13 +11398,14 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 snapshot_temp
             };
-            out.push_str("    ");
-            out.push_str(if assignment_compound_binary_op(op).is_some() {
-                "ptn_runtime_array_path_set_from_assign_op"
+            let result_temp = self.next_temp();
+            if assignment_compound_binary_op(op).is_some() {
+                out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, ");
             } else {
-                "ptn_runtime_array_path_set"
-            });
-            out.push_str("(&runtime, ");
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_array_path_set_result(&runtime, ");
+            }
             out.push_str(&name_temp);
             out.push_str(", ");
             out.push_str(&path.name);
@@ -11311,12 +11416,13 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            let result_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_value_clone(");
-            out.push_str(&stored_temp);
-            out.push_str(");\n");
+            if assignment_compound_binary_op(op).is_some() {
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone(");
+                out.push_str(&stored_temp);
+                out.push_str(");\n");
+            }
             out.push_str("    free(");
             out.push_str(&name_temp);
             out.push_str(");\n");
@@ -11355,7 +11461,10 @@ impl ValueEmitter {
             out.push_str(" = ptn_value_snapshot_for_array_path_write(");
             out.push_str(&value_temp);
             out.push_str(");\n");
-            out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
             out.push_str(&c_string(array));
             out.push_str("\", ");
             out.push_str(&path.name);
@@ -11365,12 +11474,6 @@ impl ValueEmitter {
             out.push_str(&snapshot_temp);
             out.push_str(", ");
             out.push_str(&line.to_string());
-            out.push_str(");\n");
-            let result_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_value_clone(");
-            out.push_str(&snapshot_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &snapshot_temp);
             emit_value_cleanup(out, "    ", &value_temp);
@@ -11445,17 +11548,14 @@ impl ValueEmitter {
         if let AssignmentTarget::DynamicVariable { name, line } = target {
             let name_temp = self.emit_dynamic_property_name(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
-            out.push_str("    ptn_runtime_write_variable(&runtime, ");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_write_variable_result(&runtime, ");
             out.push_str(&name_temp);
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(");\n");
-            let result_temp = self.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&result_temp);
-            out.push_str(" = ptn_value_clone(ptn_value_deref(");
-            out.push_str(&value_temp);
-            out.push_str("));\n");
             out.push_str("    free(");
             out.push_str(&name_temp);
             out.push_str(");\n");
@@ -11489,7 +11589,7 @@ impl ValueEmitter {
             out.push_str(", \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
-            out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+            self.emit_access_scope(out);
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", ");
@@ -11518,7 +11618,7 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -11548,7 +11648,7 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&name_temp);
             out.push_str(", ");
-            out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+            self.emit_access_scope(out);
             out.push_str(", ");
             out.push_str(&result_temp);
             out.push_str(", ");
@@ -11708,7 +11808,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11739,7 +11839,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&current_temp);
         out.push_str(", ");
@@ -11781,7 +11881,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11807,12 +11907,12 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&current_temp);
         out.push_str(", ");
@@ -11845,6 +11945,19 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let resolved_class_name = self.static_property_class_name(class_name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_runtime_validate_static_property_write(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", 1)) {\n");
         let path = emit_array_path_segments(out, self, dimensions);
         let value_temp = self.emit_materialized_value(out, value);
 
@@ -11856,7 +11969,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11874,7 +11987,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        let result_temp =
+        let computed_temp =
             self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
         out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
         out.push_str(&current_value_temp);
@@ -11883,7 +11996,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&path.len.to_string());
         out.push_str(", ");
-        out.push_str(&result_temp);
+        out.push_str(&computed_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11891,18 +12004,23 @@ impl ValueEmitter {
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&current_value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        out.push_str("    ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&computed_temp);
+        out.push_str(";\n");
         emit_value_cleanup(out, "    ", &assigned_temp);
         emit_value_cleanup(out, "    ", &current_element_temp);
         emit_value_cleanup(out, "    ", &current_value_temp);
@@ -11910,6 +12028,7 @@ impl ValueEmitter {
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
+        out.push_str("    }\n");
         result_temp
     }
 
@@ -11935,7 +12054,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -11975,7 +12094,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&current_value_temp);
         out.push_str(", ");
@@ -12020,7 +12139,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -12035,7 +12154,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&result_temp);
         out.push_str(", ");
@@ -12059,6 +12178,19 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let resolved_class_name = self.static_property_class_name(class_name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_runtime_validate_static_property_write(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", 1)) {\n");
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_temp = self.next_temp();
@@ -12069,31 +12201,37 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        let result_temp =
+        let computed_temp =
             self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&assigned_temp);
-        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
         out.push_str(&c_string(&resolved_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
-        out.push_str(&result_temp);
+        out.push_str(&computed_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        out.push_str("    ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&computed_temp);
+        out.push_str(";\n");
         emit_value_cleanup(out, "    ", &assigned_temp);
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        out.push_str("    }\n");
         result_temp
     }
 
@@ -12103,6 +12241,23 @@ impl ValueEmitter {
         target: &AssignmentTarget,
         source: &ValueExpr,
     ) -> String {
+        if let ValueExpr::StaticPropertyFetch {
+            class_name,
+            name,
+            line,
+        } = source
+        {
+            let source_temp = self.emit_static_property_reference(out, class_name, name, *line);
+            self.emit_bind_assignment_target_reference(out, target, &source_temp);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_value_clone(");
+            out.push_str(&source_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &source_temp);
+            return result_temp;
+        }
         if let Some(source_target) = reference_target_from_value(source) {
             let source_temp = self.emit_reference_target(out, &source_target);
             self.emit_bind_assignment_target_reference(out, target, &source_temp);
@@ -12158,6 +12313,22 @@ impl ValueEmitter {
             out.push_str("\", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+        }
+        if let ValueExpr::StaticPropertyFetch {
+            class_name,
+            name: property_name,
+            line: property_line,
+        } = source
+        {
+            let reference_temp =
+                self.emit_static_property_reference(out, class_name, property_name, *property_line);
+            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&reference_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &reference_temp);
+            return;
         }
         if let Some(target) = reference_target_from_value(source) {
             let reference_temp = self.emit_reference_target(out, &target);
@@ -12331,32 +12502,10 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
-            AssignmentTarget::StaticPropertyArrayDim {
-                class_name,
-                name,
-                dimensions,
-                line,
-            } => {
-                let property_reference_temp =
-                    self.emit_static_property_reference(out, class_name, name, *line);
-                let path = emit_array_path_segments(out, self, dimensions);
-                out.push_str("    ptn_value_bind_array_path_reference(&runtime, &");
-                out.push_str(&property_reference_temp);
-                out.push_str(", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", ");
-                out.push_str(reference_temp);
-                out.push_str(", \"");
-                out.push_str(&c_string(&self.source_file));
-                out.push_str("\", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-                for segment_temp in path.value_temps {
-                    emit_value_cleanup(out, "    ", &segment_temp);
-                }
-                emit_value_cleanup(out, "    ", &property_reference_temp);
+            AssignmentTarget::StaticPropertyArrayDim { .. } => {
+                unreachable!(
+                    "parser rejects by-reference assignment to static property array targets"
+                );
             }
             AssignmentTarget::DynamicProperty { .. } => {
                 unreachable!("parser rejects by-reference assignment to dynamic property targets");
@@ -12372,7 +12521,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(reference_temp);
                 out.push_str(", ");
@@ -12380,8 +12529,23 @@ impl ValueEmitter {
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
             }
-            AssignmentTarget::StaticProperty { .. } => {
-                unreachable!("parser rejects by-reference assignment to static property targets");
+            AssignmentTarget::StaticProperty {
+                class_name,
+                name,
+                line,
+            } => {
+                let resolved_class_name = self.static_property_class_name(class_name);
+                out.push_str("    ptn_runtime_bind_static_property_reference(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
             }
             AssignmentTarget::List(_) => {
                 unreachable!("parser rejects by-reference assignment to list targets");
@@ -12397,32 +12561,26 @@ impl ValueEmitter {
     ) -> String {
         match target {
             AssignmentTarget::Variable { name, .. } => {
-                out.push_str("    ptn_runtime_write_variable(&runtime, \"");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_write_variable_result(&runtime, \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
                 out.push_str(value_temp);
                 out.push_str(");\n");
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_value_clone(ptn_value_deref(");
-                out.push_str(value_temp);
-                out.push_str("));\n");
                 result_temp
             }
             AssignmentTarget::DynamicVariable { name, line } => {
                 let name_temp = self.emit_dynamic_variable_name(out, name, *line);
-                out.push_str("    ptn_runtime_write_variable(&runtime, ");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_write_variable_result(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
                 out.push_str(value_temp);
                 out.push_str(");\n");
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_value_clone(ptn_value_deref(");
-                out.push_str(value_temp);
-                out.push_str("));\n");
                 out.push_str("    free(");
                 out.push_str(&name_temp);
                 out.push_str(");\n");
@@ -12441,7 +12599,10 @@ impl ValueEmitter {
                 out.push_str(" = ptn_value_snapshot_for_array_path_write(");
                 out.push_str(value_temp);
                 out.push_str(");\n");
-                out.push_str("    ptn_runtime_array_path_set(&runtime, ");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_array_path_set_result(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
                 out.push_str(&path.name);
@@ -12451,12 +12612,6 @@ impl ValueEmitter {
                 out.push_str(&snapshot_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(");\n");
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_value_clone(");
-                out.push_str(&snapshot_temp);
                 out.push_str(");\n");
                 out.push_str("    free(");
                 out.push_str(&name_temp);
@@ -12479,7 +12634,10 @@ impl ValueEmitter {
                 out.push_str(" = ptn_value_snapshot_for_array_path_write(");
                 out.push_str(value_temp);
                 out.push_str(");\n");
-                out.push_str("    ptn_runtime_array_path_set(&runtime, \"");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
                 out.push_str(&c_string(array));
                 out.push_str("\", ");
                 out.push_str(&path.name);
@@ -12489,12 +12647,6 @@ impl ValueEmitter {
                 out.push_str(&snapshot_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(");\n");
-                let result_temp = self.next_temp();
-                out.push_str("    PtnValue ");
-                out.push_str(&result_temp);
-                out.push_str(" = ptn_value_clone(");
-                out.push_str(&snapshot_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &snapshot_temp);
                 for segment_temp in path.value_temps {
@@ -12532,7 +12684,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(value_temp);
                 out.push_str(", ");
@@ -12556,7 +12708,7 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(value_temp);
                 out.push_str(", ");
@@ -12582,7 +12734,7 @@ impl ValueEmitter {
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(value_temp);
                 out.push_str(", ");
@@ -12941,7 +13093,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -12976,7 +13128,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(reference_temp);
                 out.push_str(", ");
@@ -12996,7 +13148,7 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(reference_temp);
                 out.push_str(", ");
@@ -13883,7 +14035,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -13943,7 +14095,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&current_value_temp);
                 out.push_str(", ");
@@ -13974,7 +14126,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -14009,7 +14161,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&result_temp);
                 out.push_str(", ");
@@ -14038,7 +14190,7 @@ impl ValueEmitter {
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -14068,12 +14220,12 @@ impl ValueEmitter {
                 let assigned_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&assigned_temp);
-                out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+                out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
                 out.push_str(&c_string(&resolved_class_name));
                 out.push_str("\", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&result_temp);
                 out.push_str(", ");
@@ -14381,33 +14533,14 @@ impl ValueEmitter {
         result_temp
     }
 
-    fn emit_declared_new_object(
+    fn emit_declared_object_shell_with_properties(
         &mut self,
         out: &mut String,
         result_temp: &str,
         declared_class: &ClassDecl,
-        arguments: &[ValueExpr],
-        argument_unpacks: &[bool],
-        line: usize,
+        _line: usize,
         declare_result: bool,
     ) {
-        if declared_class.is_interface || declared_class.is_abstract {
-            out.push_str("    ");
-            if declare_result {
-                out.push_str("PtnValue ");
-            }
-            out.push_str(result_temp);
-            out.push_str(" = ptn_null();\n");
-            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
-            out.push_str(if declared_class.is_interface {
-                "interface "
-            } else {
-                "abstract class "
-            });
-            out.push_str(&c_string(&declared_class.name));
-            out.push_str("\");\n");
-            return;
-        }
         out.push_str("    ");
         if declare_result {
             out.push_str("PtnValue ");
@@ -14468,6 +14601,42 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &assigned_temp);
             emit_value_cleanup(out, "    ", &value_temp);
         }
+    }
+
+    fn emit_declared_new_object(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        declared_class: &ClassDecl,
+        arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
+        line: usize,
+        declare_result: bool,
+    ) {
+        if declared_class.is_interface || declared_class.is_abstract {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
+            out.push_str(if declared_class.is_interface {
+                "interface "
+            } else {
+                "abstract class "
+            });
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\");\n");
+            return;
+        }
+        self.emit_declared_object_shell_with_properties(
+            out,
+            result_temp,
+            declared_class,
+            line,
+            declare_result,
+        );
         if let Some((
             constructor_declaring_class,
             constructor_name,
@@ -15059,7 +15228,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -15089,7 +15258,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -15115,7 +15284,7 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&name_temp);
         out.push_str(", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -15142,7 +15311,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -15165,7 +15334,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -15279,7 +15448,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -15987,7 +16156,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -16018,7 +16187,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&value_temp);
         out.push_str(", ");
@@ -16047,7 +16216,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -16076,7 +16245,7 @@ impl ValueEmitter {
         out.push_str("\", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&value_temp);
         out.push_str(", ");
@@ -16109,7 +16278,7 @@ impl ValueEmitter {
         out.push_str(".value, \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
-        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        self.emit_access_scope(out);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -16306,7 +16475,7 @@ impl ValueEmitter {
                 out.push_str(".value, \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -16335,7 +16504,7 @@ impl ValueEmitter {
                 out.push_str(".value, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -17172,7 +17341,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -17213,7 +17382,7 @@ impl ValueEmitter {
                 out.push_str(", \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -17235,7 +17404,7 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
-                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -18538,7 +18707,7 @@ impl ValueEmitter {
                     out.push_str(", \"");
                     out.push_str(&c_string(property_name));
                     out.push_str("\", ");
-                    out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                    self.emit_access_scope(out);
                     out.push_str(", ");
                     out.push_str(&property_line.to_string());
                     out.push_str(");\n");

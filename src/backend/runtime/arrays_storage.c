@@ -324,6 +324,26 @@ static PTN_UNUSED void ptn_array_write_entry(PtnRuntime *runtime, PtnArray *arra
     ptn_array_set_entry(array, key, value);
 }
 
+static PTN_UNUSED PtnValue ptn_array_write_entry_result(PtnRuntime *runtime, PtnArray *array, PtnArrayKey key, PtnValue value) {
+    PtnValue stored = ptn_value_clone(ptn_value_deref(value));
+    size_t index = ptn_array_find_key(array, key);
+    if (index < array->len && array->entries[index].value.type == PTN_REFERENCE) {
+        ptn_array_update_next_auto_key(array, key);
+        if (ptn_reference_assign(runtime, array->entries[index].value.as.reference, stored)) {
+            PtnValue result = ptn_value_clone(array->entries[index].value.as.reference->value);
+            ptn_value_destroy(&stored);
+            ptn_array_key_free(key);
+            return result;
+        }
+        ptn_value_destroy(&stored);
+        ptn_array_key_free(key);
+        return ptn_value_clone_deref(value);
+    }
+    PtnValue result = ptn_value_clone(stored);
+    ptn_array_set_entry(array, key, stored);
+    return result;
+}
+
 static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
     size_t index = ptn_array_find_key(array, key);
     if (index >= array->len) {

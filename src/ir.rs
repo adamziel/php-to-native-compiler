@@ -610,6 +610,12 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    StaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     Property {
         receiver: Box<ValueExpr>,
         name: String,
@@ -623,12 +629,6 @@ pub enum AssignmentTarget {
     StaticProperty {
         class_name: String,
         name: String,
-        line: usize,
-    },
-    StaticPropertyArrayDim {
-        class_name: String,
-        name: String,
-        dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
     List(ListAssignmentTarget),
@@ -1819,6 +1819,24 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: span.line,
             },
+            AstAssignmentTarget::StaticPropertyArrayDim {
+                class_name,
+                name,
+                dimensions,
+                span,
+            } => AssignmentTarget::StaticPropertyArrayDim {
+                class_name: class_name.clone(),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstAssignmentTarget::Property {
                 receiver,
                 name,
@@ -1844,24 +1862,6 @@ impl<'a> LoweringContext<'a> {
             } => AssignmentTarget::StaticProperty {
                 class_name: class_name.clone(),
                 name: name.clone(),
-                line: span.line,
-            },
-            AstAssignmentTarget::StaticPropertyArrayDim {
-                class_name,
-                name,
-                dimensions,
-                span,
-            } => AssignmentTarget::StaticPropertyArrayDim {
-                class_name: class_name.clone(),
-                name: name.clone(),
-                dimensions: dimensions
-                    .iter()
-                    .map(|dimension| {
-                        dimension
-                            .as_ref()
-                            .map(|dimension| self.lower_expr(dimension))
-                    })
-                    .collect(),
                 line: span.line,
             },
             AstAssignmentTarget::List(target) => {
@@ -3152,19 +3152,6 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
             }
             text
         }
-        AstAssignmentTarget::Property { receiver, name, .. } => {
-            format!("{}->{name}", assertion_expr_text(receiver))
-        }
-        AstAssignmentTarget::DynamicProperty { receiver, name, .. } => {
-            format!(
-                "{}->{{{}}}",
-                assertion_expr_text(receiver),
-                assertion_expr_text(name)
-            )
-        }
-        AstAssignmentTarget::StaticProperty {
-            class_name, name, ..
-        } => format!("{class_name}::${name}"),
         AstAssignmentTarget::StaticPropertyArrayDim {
             class_name,
             name,
@@ -3183,6 +3170,19 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
             }
             text
         }
+        AstAssignmentTarget::Property { receiver, name, .. } => {
+            format!("{}->{name}", assertion_expr_text(receiver))
+        }
+        AstAssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            format!(
+                "{}->{{{}}}",
+                assertion_expr_text(receiver),
+                assertion_expr_text(name)
+            )
+        }
+        AstAssignmentTarget::StaticProperty {
+            class_name, name, ..
+        } => format!("{class_name}::${name}"),
         AstAssignmentTarget::List(_) => "list(...)".to_string(),
     }
 }

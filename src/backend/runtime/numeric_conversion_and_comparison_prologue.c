@@ -60,6 +60,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->magic_property_unset = caller_runtime->magic_property_unset;
     runtime->magic_debug_info = caller_runtime->magic_debug_info;
     runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
+    runtime->new_instance_without_constructor = caller_runtime->new_instance_without_constructor;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
     runtime->magic_property_frames = NULL;
     runtime->magic_property_frame_len = caller_runtime->magic_property_frame_len;
@@ -257,23 +258,41 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_snapshot(PtnRuntime *runtime) {
     return snapshot;
 }
 
-static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_write_variable_result(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnValue current;
     if (ptn_symbols_get(&runtime->symbols, name, &current) && current.type == PTN_REFERENCE) {
-        ptn_reference_assign(runtime, current.as.reference, value);
-        return;
+        if (ptn_reference_assign(runtime, current.as.reference, value)) {
+            return ptn_value_clone(current.as.reference->value);
+        }
+        return ptn_value_clone_deref(value);
     }
-    ptn_symbols_set(&runtime->symbols, name, ptn_value_deref(value));
+    PtnValue result = ptn_value_clone_deref(value);
+    ptn_symbols_set(&runtime->symbols, name, result);
+    return result;
 }
 
-static PTN_UNUSED void ptn_runtime_write_global_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED void ptn_runtime_write_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnValue result = ptn_runtime_write_variable_result(runtime, name, value);
+    ptn_value_destroy(&result);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_write_global_variable_result(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnSymbolTable *globals = ptn_runtime_global_symbol_table(runtime);
     PtnValue current;
     if (ptn_symbols_get(globals, name, &current) && current.type == PTN_REFERENCE) {
-        ptn_reference_assign(runtime, current.as.reference, value);
-        return;
+        if (ptn_reference_assign(runtime, current.as.reference, value)) {
+            return ptn_value_clone(current.as.reference->value);
+        }
+        return ptn_value_clone_deref(value);
     }
-    ptn_symbols_set(globals, name, ptn_value_deref(value));
+    PtnValue result = ptn_value_clone_deref(value);
+    ptn_symbols_set(globals, name, result);
+    return result;
+}
+
+static PTN_UNUSED void ptn_runtime_write_global_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnValue result = ptn_runtime_write_global_variable_result(runtime, name, value);
+    ptn_value_destroy(&result);
 }
 
 static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, const char *name, PtnValue reference) {
@@ -1869,22 +1888,25 @@ static PTN_UNUSED void ptn_throw_property_visibility_error(
     ptn_throw_exception(runtime, "Error", message);
 }
 
-static PTN_UNUSED void ptn_throw_property_set_visibility_error(
+static PTN_UNUSED void ptn_throw_property_set_visibility_error_ex(
     PtnRuntime *runtime,
     PtnPropertyVisibility visibility,
     const char *declaring_class,
     const char *property,
-    const char *access_scope
+    const char *access_scope,
+    int is_readonly
 ) {
     char message[320];
     const char *scope = access_scope == NULL ? "global scope" : access_scope;
+    const char *readonly = is_readonly ? " readonly" : "";
     int written;
     if (access_scope == NULL) {
         written = snprintf(
             message,
             sizeof(message),
-            "Cannot modify %s(set) property %s::$%s from %s",
+            "Cannot modify %s(set)%s property %s::$%s from %s",
             ptn_property_visibility_name(visibility),
+            readonly,
             declaring_class,
             property,
             scope
@@ -1893,8 +1915,9 @@ static PTN_UNUSED void ptn_throw_property_set_visibility_error(
         written = snprintf(
             message,
             sizeof(message),
-            "Cannot modify %s(set) property %s::$%s from scope %s",
+            "Cannot modify %s(set)%s property %s::$%s from scope %s",
             ptn_property_visibility_name(visibility),
+            readonly,
             declaring_class,
             property,
             scope
@@ -1904,6 +1927,40 @@ static PTN_UNUSED void ptn_throw_property_set_visibility_error(
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "Error", message);
+}
+
+static PTN_UNUSED void ptn_throw_property_set_visibility_error(
+    PtnRuntime *runtime,
+    PtnPropertyVisibility visibility,
+    const char *declaring_class,
+    const char *property,
+    const char *access_scope
+) {
+    ptn_throw_property_set_visibility_error_ex(
+        runtime,
+        visibility,
+        declaring_class,
+        property,
+        access_scope,
+        0
+    );
+}
+
+static PTN_UNUSED void ptn_throw_readonly_property_set_visibility_error(
+    PtnRuntime *runtime,
+    PtnPropertyVisibility visibility,
+    const char *declaring_class,
+    const char *property,
+    const char *access_scope
+) {
+    ptn_throw_property_set_visibility_error_ex(
+        runtime,
+        visibility,
+        declaring_class,
+        property,
+        access_scope,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_throw_property_indirect_set_visibility_error(
@@ -2457,7 +2514,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
         free(key);
         if (set_visibility != read_visibility) {
-            ptn_throw_property_set_visibility_error(
+            ptn_throw_property_indirect_set_visibility_error(
                 runtime,
                 set_visibility,
                 declaring_class,
@@ -2484,13 +2541,88 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     return reference;
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
+static PTN_UNUSED int ptn_runtime_validate_static_property_write(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    size_t line,
+    int indirect_write
+) {
+    (void)line;
+    const char *declaring_class = NULL;
+    char *key = ptn_runtime_resolve_static_property_key(
+        runtime,
+        class_name,
+        property,
+        &declaring_class
+    );
+    if (key == NULL) {
+        PtnValue missing = ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        ptn_value_destroy(&missing);
+        return 0;
+    }
+
+    PtnValue read_visibility_value;
+    PtnValue set_visibility_value;
+    PtnPropertyVisibility read_visibility = PTN_PROPERTY_PUBLIC;
+    PtnPropertyVisibility set_visibility = PTN_PROPERTY_PUBLIC;
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_read_visibility_table(runtime),
+            key,
+            &read_visibility_value
+        ) &&
+        ptn_value_deref(read_visibility_value).type == PTN_INT
+    ) {
+        read_visibility = (PtnPropertyVisibility)ptn_value_deref(read_visibility_value).as.integer;
+    }
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_set_visibility_table(runtime),
+            key,
+            &set_visibility_value
+        ) &&
+        ptn_value_deref(set_visibility_value).type == PTN_INT
+    ) {
+        set_visibility = (PtnPropertyVisibility)ptn_value_deref(set_visibility_value).as.integer;
+    }
+    free(key);
+    if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
+        if (set_visibility != read_visibility) {
+            if (indirect_write) {
+                ptn_throw_property_indirect_set_visibility_error(
+                    runtime,
+                    set_visibility,
+                    declaring_class,
+                    property,
+                    access_scope
+                );
+            } else {
+                ptn_throw_property_set_visibility_error(
+                    runtime,
+                    set_visibility,
+                    declaring_class,
+                    property,
+                    access_scope
+                );
+            }
+        } else {
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
     PtnRuntime *runtime,
     const char *class_name,
     const char *property,
     const char *access_scope,
     PtnValue value,
-    size_t line
+    size_t line,
+    int indirect_write
 ) {
     (void)line;
     const char *declaring_class = NULL;
@@ -2530,13 +2662,23 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
     if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
         free(key);
         if (set_visibility != read_visibility) {
-            ptn_throw_property_set_visibility_error(
-                runtime,
-                set_visibility,
-                declaring_class,
-                property,
-                access_scope
-            );
+            if (indirect_write) {
+                ptn_throw_property_indirect_set_visibility_error(
+                    runtime,
+                    set_visibility,
+                    declaring_class,
+                    property,
+                    access_scope
+                );
+            } else {
+                ptn_throw_property_set_visibility_error(
+                    runtime,
+                    set_visibility,
+                    declaring_class,
+                    property,
+                    access_scope
+                );
+            }
         } else {
             ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
         }
@@ -2546,6 +2688,116 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
     ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, result);
     free(key);
     return result;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_write_static_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_runtime_write_static_property_impl(
+        runtime,
+        class_name,
+        property,
+        access_scope,
+        value,
+        line,
+        0
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_write_static_property_indirect(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_runtime_write_static_property_impl(
+        runtime,
+        class_name,
+        property,
+        access_scope,
+        value,
+        line,
+        1
+    );
+}
+
+static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    PtnValue reference,
+    size_t line
+) {
+    (void)line;
+    if (reference.type != PTN_REFERENCE) {
+        ptn_abort_out_of_memory();
+    }
+    const char *declaring_class = NULL;
+    char *key = ptn_runtime_resolve_static_property_key(
+        runtime,
+        class_name,
+        property,
+        &declaring_class
+    );
+    if (key == NULL) {
+        PtnValue missing = ptn_runtime_undeclared_static_property(runtime, class_name, property);
+        ptn_value_destroy(&missing);
+        return;
+    }
+    PtnValue read_visibility_value;
+    PtnValue set_visibility_value;
+    PtnPropertyVisibility read_visibility = PTN_PROPERTY_PUBLIC;
+    PtnPropertyVisibility set_visibility = PTN_PROPERTY_PUBLIC;
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_read_visibility_table(runtime),
+            key,
+            &read_visibility_value
+        ) &&
+        ptn_value_deref(read_visibility_value).type == PTN_INT
+    ) {
+        read_visibility = (PtnPropertyVisibility)ptn_value_deref(read_visibility_value).as.integer;
+    }
+    if (
+        ptn_symbols_get(
+            ptn_runtime_static_property_set_visibility_table(runtime),
+            key,
+            &set_visibility_value
+        ) &&
+        ptn_value_deref(set_visibility_value).type == PTN_INT
+    ) {
+        set_visibility = (PtnPropertyVisibility)ptn_value_deref(set_visibility_value).as.integer;
+    }
+    if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
+        free(key);
+        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property);
+        return;
+    }
+    if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
+        free(key);
+        if (set_visibility != read_visibility) {
+            ptn_throw_property_indirect_set_visibility_error(
+                runtime,
+                set_visibility,
+                declaring_class,
+                property,
+                access_scope
+            );
+        } else {
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+        }
+        return;
+    }
+    ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, reference);
+    free(key);
 }
 
 static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *type_name) {
