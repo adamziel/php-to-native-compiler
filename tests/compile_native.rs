@@ -33989,7 +33989,7 @@ Box::bumpStatic();
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
-    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property_indirect(&runtime"));
     assert!(c_source.contains("ptn_increment_value(&runtime"));
     assert!(c_source.contains("ptn_decrement_value(&runtime"));
 }
@@ -34073,7 +34073,7 @@ Box::bumpStatic();
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
-    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property_indirect(&runtime"));
     assert!(c_source.contains("ptn_add(&runtime"));
     assert!(c_source.contains("ptn_multiply(&runtime"));
     assert!(c_source.contains("ptn_concat(&runtime"));
@@ -34269,7 +34269,7 @@ var_dump(Store::$items);
     assert!(c_source.contains("ptn_value_array_path_set(&runtime"));
     assert!(c_source.contains("ptn_value_array_path_set_from_assign_op(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_static_property(&runtime"));
-    assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property_indirect(&runtime"));
 }
 
 #[test]
