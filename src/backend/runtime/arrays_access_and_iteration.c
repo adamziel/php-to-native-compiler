@@ -1397,7 +1397,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     const char *property,
     const char *access_scope,
     int access_mode,
-    int quiet
+    int quiet,
+    size_t line
 ) {
     int for_write = access_mode != PTN_PROPERTY_ACCESS_READ;
     int indirect_write = access_mode == PTN_PROPERTY_ACCESS_INDIRECT_WRITE;
@@ -1476,7 +1477,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                     runtime,
                     visibility,
                     scoped_private->declaring_class,
-                    property
+                    property,
+                    line
                 );
             }
             return NULL;
@@ -1563,7 +1565,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                     runtime,
                     visibility,
                     shared_property->declaring_class,
-                    property
+                    property,
+                    line
                 );
             }
             return NULL;
@@ -1610,7 +1613,7 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
     return NULL;
 }
 
@@ -1640,7 +1643,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
-        1
+        1,
+        line
     );
     if (storage_key == NULL) {
         PtnValue magic_value;
@@ -1657,7 +1661,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             property,
             access_scope,
             PTN_PROPERTY_ACCESS_READ,
-            0
+            0,
+            line
         );
     }
     if (storage_key == NULL) {
@@ -1710,7 +1715,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
-        0
+        0,
+        line
     );
     if (storage_key == NULL) {
         return ptn_null();
@@ -1756,7 +1762,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
-        0
+        0,
+        line
     );
     if (storage_key == NULL) {
         return ptn_null();
@@ -1805,7 +1812,8 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
-        1
+        1,
+        line
     );
     if (storage_key == NULL) {
         PtnValue magic_value;
@@ -1853,7 +1861,8 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
-        1
+        1,
+        line
     );
     if (storage_key == NULL) {
         PtnValue magic_value;
@@ -1901,7 +1910,8 @@ static PTN_UNUSED int ptn_object_property_is_set(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
-        1
+        1,
+        line
     );
     if (storage_key == NULL) {
         int magic_isset = 0;
@@ -1961,7 +1971,8 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         property,
         access_scope,
         indirect_write ? PTN_PROPERTY_ACCESS_INDIRECT_WRITE : PTN_PROPERTY_ACCESS_WRITE,
-        0
+        0,
+        line
     );
     if (storage_key == NULL) {
         return ptn_null();
@@ -2080,7 +2091,8 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_WRITE,
-        0
+        0,
+        line
     );
     if (storage_key == NULL) {
         return;
@@ -2156,7 +2168,8 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
-        1
+        1,
+        line
     );
     if (storage_key == NULL) {
         char *read_storage_key = ptn_object_resolve_property_storage_key(
@@ -2165,7 +2178,8 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             property,
             access_scope,
             PTN_PROPERTY_ACCESS_READ,
-            1
+            1,
+            line
         );
         if (read_storage_key != NULL) {
             PtnArrayKey read_key = ptn_array_string_key(read_storage_key);
@@ -2188,7 +2202,8 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             property,
             access_scope,
             PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
-            0
+            0,
+            line
         );
         if (storage_key == NULL) {
             return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
@@ -2288,7 +2303,8 @@ static PTN_UNUSED void ptn_object_unset_property(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_UNSET,
-        0
+        0,
+        line
     );
     if (storage_key == NULL) {
         return;
@@ -6190,7 +6206,8 @@ static PTN_UNUSED void ptn_object_array_path_unset(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_READ,
-        1
+        1,
+        line
     );
     if (read_storage_key == NULL) {
         return;
@@ -6208,7 +6225,8 @@ static PTN_UNUSED void ptn_object_array_path_unset(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
-        0
+        0,
+        line
     );
     if (write_storage_key == NULL) {
         return;

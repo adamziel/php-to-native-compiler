@@ -348,6 +348,10 @@ struct PtnClosure {
     size_t function_index;
     const char *display_name;
     PtnFunctionMetadata metadata;
+    char *scope_class_name;
+    char *called_class_name;
+    int is_static;
+    int uses_this;
     PtnSymbolTable captures;
     int has_wrapped_callable;
     PtnValue wrapped_callable;
@@ -801,6 +805,11 @@ static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
 static PTN_UNUSED int ptn_object_is_generator(PtnObject *object);
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
+static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
+static PTN_UNUSED int ptn_declared_class_exists(const char *name);
+static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);
+static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);
+static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message);
 static void ptn_symbols_free(PtnSymbolTable *symbols);
 static PTN_UNUSED void ptn_cow_debug_note_string_alloc(void);
 static PTN_UNUSED void ptn_cow_debug_note_string_free(void);
@@ -1360,7 +1369,9 @@ static PTN_UNUSED PtnValue ptn_closure(
     PtnRuntime *runtime,
     size_t function_index,
     const char *display_name,
-    PtnFunctionMetadata metadata
+    PtnFunctionMetadata metadata,
+    int is_static,
+    int uses_this
 ) {
     PtnClosure *closure = malloc(sizeof(PtnClosure));
     if (closure == NULL) {
@@ -1372,6 +1383,10 @@ static PTN_UNUSED PtnValue ptn_closure(
     closure->function_index = function_index;
     closure->display_name = display_name;
     closure->metadata = metadata;
+    closure->scope_class_name = NULL;
+    closure->called_class_name = NULL;
+    closure->is_static = is_static;
+    closure->uses_this = uses_this;
     closure->captures.items = NULL;
     closure->captures.len = 0;
     closure->captures.capacity = 0;

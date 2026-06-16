@@ -1871,7 +1871,8 @@ static PTN_UNUSED void ptn_throw_property_visibility_error(
     PtnRuntime *runtime,
     PtnPropertyVisibility visibility,
     const char *declaring_class,
-    const char *property
+    const char *property,
+    size_t line
 ) {
     char message[256];
     int written = snprintf(
@@ -1885,7 +1886,7 @@ static PTN_UNUSED void ptn_throw_property_visibility_error(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED void ptn_throw_property_set_visibility_error_ex(
@@ -2413,7 +2414,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
         }
         if (!ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)) {
             free(key);
-            ptn_throw_property_visibility_error(runtime, visibility, declaring_class, property);
+            ptn_throw_property_visibility_error(runtime, visibility, declaring_class, property, line);
             return ptn_null();
         }
         free(key);
@@ -2508,7 +2509,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
     }
     if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
         free(key);
-        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property);
+        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
     if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
@@ -2522,7 +2523,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(
                 access_scope
             );
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
         }
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
@@ -2608,7 +2609,7 @@ static PTN_UNUSED int ptn_runtime_validate_static_property_write(
                 );
             }
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
         }
         return 0;
     }
@@ -2680,7 +2681,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
                 );
             }
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
         }
         return ptn_null();
     }
@@ -2778,7 +2779,7 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
     }
     if (!ptn_property_visibility_allows(runtime, read_visibility, declaring_class, access_scope)) {
         free(key);
-        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property);
+        ptn_throw_property_visibility_error(runtime, read_visibility, declaring_class, property, line);
         return;
     }
     if (!ptn_property_visibility_allows(runtime, set_visibility, declaring_class, access_scope)) {
@@ -2792,7 +2793,7 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
                 access_scope
             );
         } else {
-            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property);
+            ptn_throw_property_visibility_error(runtime, set_visibility, declaring_class, property, line);
         }
         return;
     }
