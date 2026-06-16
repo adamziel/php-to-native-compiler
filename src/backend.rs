@@ -16508,7 +16508,7 @@ impl ValueEmitter {
             let message_temp = self.next_temp();
             out.push_str("        char *");
             out.push_str(&message_temp);
-            out.push_str(" = ptn_unhandled_match_message(");
+            out.push_str(" = ptn_unhandled_match_message(&runtime, ");
             out.push_str(&subject_temp);
             out.push_str(");\n");
             out.push_str(

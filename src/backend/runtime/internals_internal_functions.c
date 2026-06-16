@@ -1054,27 +1054,44 @@ static void ptn_var_dump_object_property_metadata_key(const PtnObjectPropertyMet
     );
 }
 
-static size_t ptn_object_unset_property_dump_count(PtnObject *object) {
+static int ptn_object_property_metadata_dumps_uninitialized(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (object == NULL || metadata == NULL) {
+        return 0;
+    }
+    if (ptn_object_property_storage_initialized(object, metadata->storage_name)) {
+        return 0;
+    }
+    return (metadata->is_unset && metadata->last_type_name != NULL) ||
+        (ptn_property_type_is_declared(metadata->type_kind) && metadata->type_text != NULL);
+}
+
+static size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
     size_t count = 0;
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
-        if (metadata->is_unset && metadata->last_type_name != NULL) {
+        if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
             count++;
         }
     }
     return count;
 }
 
-static void ptn_var_dump_object_unset_properties(PtnObject *object, size_t indent) {
+static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size_t indent) {
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
-        if (!metadata->is_unset || metadata->last_type_name == NULL) {
+        if (!ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
             continue;
         }
         ptn_var_dump_indent(indent + 1);
         ptn_var_dump_object_property_metadata_key(metadata);
         ptn_var_dump_indent(indent + 1);
-        printf("uninitialized(%s)\n", metadata->last_type_name);
+        printf(
+            "uninitialized(%s)\n",
+            metadata->last_type_name == NULL ? metadata->type_text : metadata->last_type_name
+        );
     }
 }
 
@@ -1377,7 +1394,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 ptn_var_dump_object_property_key(object, key);
                 ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
-            ptn_var_dump_object_unset_properties(object, indent);
+            ptn_var_dump_object_uninitialized_properties(object, indent);
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
@@ -1548,8 +1565,8 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 ptn_var_dump_object_property_key(object, key);
                 ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
             }
-            if (ptn_object_unset_property_dump_count(object) != 0) {
-                ptn_var_dump_object_unset_properties(object, indent);
+            if (ptn_object_uninitialized_property_dump_count(object) != 0) {
+                ptn_var_dump_object_uninitialized_properties(object, indent);
             }
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);

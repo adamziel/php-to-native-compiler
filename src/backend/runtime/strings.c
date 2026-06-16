@@ -182,8 +182,12 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     return ptn_duplicate_string(buffer);
 }
 
-static PTN_UNUSED void ptn_match_append_quoted_string(PtnStringBuffer *buffer, PtnString string) {
-    size_t limit = string.len < 15 ? string.len : 15;
+static PTN_UNUSED void ptn_match_append_quoted_string(
+    PtnStringBuffer *buffer,
+    PtnString string,
+    size_t max_string_len
+) {
+    size_t limit = string.len < max_string_len ? string.len : max_string_len;
     ptn_string_buffer_append_char(buffer, '\'');
     for (size_t i = 0; i < limit; i++) {
         unsigned char byte = string.data[i];
@@ -204,7 +208,11 @@ static PTN_UNUSED void ptn_match_append_quoted_string(PtnStringBuffer *buffer, P
                 ptn_string_buffer_append(buffer, "\\\\");
                 break;
             default:
-                ptn_string_buffer_append_char(buffer, (char)byte);
+                if (byte < 0x20 || byte >= 0x7f) {
+                    ptn_string_buffer_append_format(buffer, "\\x%02X", (unsigned int)byte);
+                } else {
+                    ptn_string_buffer_append_char(buffer, (char)byte);
+                }
                 break;
         }
     }
@@ -214,11 +222,12 @@ static PTN_UNUSED void ptn_match_append_quoted_string(PtnStringBuffer *buffer, P
     ptn_string_buffer_append_char(buffer, '\'');
 }
 
-static PTN_UNUSED char *ptn_unhandled_match_message(PtnValue value) {
+static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValue value) {
     value = ptn_value_deref(value);
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     ptn_string_buffer_append(&buffer, "Unhandled match case ");
+    size_t max_string_len = ptn_runtime_exception_string_param_max_len(runtime);
 
     char scalar[128];
     switch (value.type) {
@@ -245,7 +254,11 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnValue value) {
             }
             break;
         case PTN_STRING:
-            ptn_match_append_quoted_string(&buffer, value.as.string);
+            if (max_string_len == 0) {
+                ptn_string_buffer_append(&buffer, "of type string");
+            } else {
+                ptn_match_append_quoted_string(&buffer, value.as.string, max_string_len);
+            }
             break;
         case PTN_ARRAY:
             ptn_string_buffer_append(&buffer, "of type array");
