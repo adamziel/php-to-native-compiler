@@ -436,6 +436,12 @@ pub enum AssignmentTarget {
         name: String,
         span: SourceSpan,
     },
+    StaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     List(ListAssignmentTarget),
 }
 

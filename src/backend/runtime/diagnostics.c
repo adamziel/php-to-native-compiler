@@ -396,6 +396,27 @@ static PTN_UNUSED void ptn_emit_type_error(PtnDiagnosticSink *diagnostics, const
     fputc('\n', stream);
 }
 
+static PTN_UNUSED void ptn_emit_fatal_error_at(
+    PtnRuntime *runtime,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    fflush(stdout);
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (diagnostics->display_errors) {
+        FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+        fputs("Fatal error: ", stream);
+        fputs(message, stream);
+        fputs(" in ", stream);
+        fputs(path != NULL ? path : (runtime->source_path != NULL ? runtime->source_path : "ptn"), stream);
+        fputs(" on line ", stream);
+        fprintf(stream, "%zu", line);
+        fputc('\n', stream);
+    }
+    exit(255);
+}
+
 static PTN_UNUSED void ptn_emit_memory_allocation_overflow_error(
     PtnRuntime *runtime,
     size_t count,

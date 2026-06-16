@@ -548,7 +548,8 @@ impl IncludeCollector {
             AssignmentTarget::PropertyArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
-            | AssignmentTarget::StaticProperty { .. } => {}
+            | AssignmentTarget::StaticProperty { .. }
+            | AssignmentTarget::StaticPropertyArrayDim { .. } => {}
         }
     }
 
@@ -772,6 +773,14 @@ impl IncludeCollector {
                 ..
             } => {
                 self.collect_expr(receiver, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
+            AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
                 for dimension in dimensions {
                     if let Some(dimension) = dimension {
                         self.collect_expr(dimension, source_file, source_dir)?;

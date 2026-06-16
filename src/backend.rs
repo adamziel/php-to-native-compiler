@@ -4495,11 +4495,10 @@ fn class_constant_lookup_chain<'a>(
 fn class_constructor_method<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
-) -> Option<&'a crate::ir::MethodDecl> {
-    class_public_method_lookup_chain(class, classes)
+) -> Option<ClassMethodLookupEntry<'a>> {
+    class_method_lookup_chain(class, classes)
         .into_iter()
         .find(|method| !method.is_static && method.name.eq_ignore_ascii_case("__construct"))
-        .map(|method| method.method)
 }
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
@@ -8045,6 +8044,13 @@ fn collect_assignment_target_legacy_dollar_brace_deprecations(
                 }
             }
         }
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
         AssignmentTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -8561,6 +8567,13 @@ fn collect_assignment_target_runtime_requirements(
             ..
         } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -9875,6 +9888,7 @@ struct ValueEmitter {
     source_file: String,
     source_dir: String,
     in_const_declaration: bool,
+    top_level_scope: bool,
     current_function_name: Option<String>,
     current_method_name: Option<String>,
     current_class_name: Option<String>,
@@ -9928,6 +9942,7 @@ impl AssignmentTargetLine for AssignmentTarget {
             | AssignmentTarget::DynamicArrayDim { line, .. }
             | AssignmentTarget::ArrayDim { line, .. }
             | AssignmentTarget::PropertyArrayDim { line, .. }
+            | AssignmentTarget::StaticPropertyArrayDim { line, .. }
             | AssignmentTarget::DynamicProperty { line, .. } => *line,
             AssignmentTarget::Property { line, .. }
             | AssignmentTarget::StaticProperty { line, .. } => *line,
@@ -9958,6 +9973,7 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             | AssignmentTarget::DynamicArrayDim { .. }
             | AssignmentTarget::ArrayDim { .. }
             | AssignmentTarget::PropertyArrayDim { .. }
+            | AssignmentTarget::StaticPropertyArrayDim { .. }
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
             | AssignmentTarget::StaticProperty { .. } => false,
@@ -10030,6 +10046,10 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
                     .flatten()
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => dimensions
+            .iter()
+            .flatten()
+            .any(|dimension| value_mentions_variable(dimension, name)),
         AssignmentTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
         AssignmentTarget::DynamicProperty {
             receiver,
@@ -10531,6 +10551,7 @@ impl ValueEmitter {
             source_file: source_file.to_string(),
             source_dir: source_dir.to_string(),
             in_const_declaration: false,
+            top_level_scope: current_function_name.is_none(),
             current_function_name: current_function_name.map(str::to_string),
             current_method_name: current_method_name.map(str::to_string),
             current_class_name: current_class_name.map(str::to_string),
@@ -11165,6 +11186,11 @@ impl ValueEmitter {
                         "parser rejects null coalescing assignment for property array offsets"
                     );
                 }
+                AssignmentTarget::StaticPropertyArrayDim { .. } => {
+                    unreachable!(
+                        "parser rejects null coalescing assignment for static property array offsets"
+                    );
+                }
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects null coalescing assignment for list targets");
                 }
@@ -11376,6 +11402,37 @@ impl ValueEmitter {
             let result_temp = self.emit_property_array_dim_assignment_from_temp(
                 out,
                 receiver,
+                name,
+                dimensions,
+                *line,
+                &value_temp,
+            );
+            emit_value_cleanup(out, "    ", &value_temp);
+            return result_temp;
+        }
+
+        if let AssignmentTarget::StaticPropertyArrayDim {
+            class_name,
+            name,
+            dimensions,
+            line,
+        } = target
+        {
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                return self.emit_static_property_array_dim_compound_assignment(
+                    out,
+                    class_name,
+                    name,
+                    dimensions,
+                    *line,
+                    compound_op,
+                    value,
+                );
+            }
+            let value_temp = self.emit_materialized_value(out, value);
+            let result_temp = self.emit_static_property_array_dim_assignment_from_temp(
+                out,
+                class_name,
                 name,
                 dimensions,
                 *line,
@@ -11699,6 +11756,157 @@ impl ValueEmitter {
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &snapshot_temp);
         emit_value_cleanup(out, "    ", &receiver_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
+    fn emit_static_property_array_dim_assignment_from_temp(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        value_temp: &str,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let snapshot_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&snapshot_temp);
+        out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+        out.push_str(value_temp);
+        out.push_str(");\n");
+        out.push_str("    ptn_value_array_path_set(&runtime, &");
+        out.push_str(&current_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&snapshot_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&current_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone(");
+        out.push_str(&snapshot_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_temp);
+        emit_value_cleanup(out, "    ", &snapshot_temp);
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
+    fn emit_static_property_array_dim_compound_assignment(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &str,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        op: BinaryOp,
+        value: &ValueExpr,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let value_temp = self.emit_materialized_value(out, value);
+
+        let current_value_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_value_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let current_element_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_element_temp);
+        out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp =
+            self.emit_compound_binary_value(out, &current_element_temp, &value_temp, line, op);
+        out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let assigned_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&assigned_temp);
+        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&current_value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        emit_value_cleanup(out, "    ", &current_element_temp);
+        emit_value_cleanup(out, "    ", &current_value_temp);
+        emit_value_cleanup(out, "    ", &value_temp);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
@@ -12123,6 +12331,33 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
+            AssignmentTarget::StaticPropertyArrayDim {
+                class_name,
+                name,
+                dimensions,
+                line,
+            } => {
+                let property_reference_temp =
+                    self.emit_static_property_reference(out, class_name, name, *line);
+                let path = emit_array_path_segments(out, self, dimensions);
+                out.push_str("    ptn_value_bind_array_path_reference(&runtime, &");
+                out.push_str(&property_reference_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                emit_value_cleanup(out, "    ", &property_reference_temp);
+            }
             AssignmentTarget::DynamicProperty { .. } => {
                 unreachable!("parser rejects by-reference assignment to dynamic property targets");
             }
@@ -12274,6 +12509,14 @@ impl ValueEmitter {
                 line,
             } => self.emit_property_array_dim_assignment_from_temp(
                 out, receiver, name, dimensions, *line, value_temp,
+            ),
+            AssignmentTarget::StaticPropertyArrayDim {
+                class_name,
+                name,
+                dimensions,
+                line,
+            } => self.emit_static_property_array_dim_assignment_from_temp(
+                out, class_name, name, dimensions, *line, value_temp,
             ),
             AssignmentTarget::Property {
                 receiver,
@@ -12968,11 +13211,21 @@ impl ValueEmitter {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_null();\n");
-                out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use [] for reading\", \"");
-                out.push_str(&c_string(&self.source_file));
-                out.push_str("\", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
+                if self.top_level_scope {
+                    out.push_str(
+                        "    ptn_emit_fatal_error_at(&runtime, \"Cannot use [] for reading\", \"",
+                    );
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                } else {
+                    out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use [] for reading\", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
                 result_temp
             }
             ValueExpr::NewObject {
@@ -14215,15 +14468,36 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &assigned_temp);
             emit_value_cleanup(out, "    ", &value_temp);
         }
-        if let Some(constructor_parameters) =
-            class_constructor_method(declared_class, &self.classes).map(|constructor| {
+        if let Some((
+            constructor_declaring_class,
+            constructor_name,
+            constructor_visibility,
+            constructor_parameters,
+        )) = class_constructor_method(declared_class, &self.classes).map(|constructor| {
+            (
+                constructor.declaring_class.to_string(),
+                constructor.name.clone(),
+                constructor.visibility,
                 self.user_functions[constructor.function_index]
                     .parameters
-                    .clone()
-            })
-        {
+                    .clone(),
+            )
+        }) {
             let constructor_result = self.next_temp();
-            if argument_unpacks.iter().any(|unpack| *unpack) {
+            if !self.method_visibility_allows(constructor_visibility, &constructor_declaring_class)
+            {
+                out.push_str("    PtnValue ");
+                out.push_str(&constructor_result);
+                out.push_str(" = ptn_throw_method_visibility_error(&runtime, \"");
+                out.push_str(&c_string(&constructor_declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constructor_name));
+                out.push_str("\", ");
+                out.push_str(c_property_visibility(constructor_visibility));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else if argument_unpacks.iter().any(|unpack| *unpack) {
                 let args_temp = self.emit_call_arguments_builder(
                     out,
                     "__construct",

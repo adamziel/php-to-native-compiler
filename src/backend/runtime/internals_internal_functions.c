@@ -3734,6 +3734,8 @@ static void ptn_array_destroy_entry_buffer(PtnArrayEntry *entries, size_t len) {
     free(entries);
 }
 
+static void ptn_array_adopt_storage(PtnArray *target, PtnArray *source);
+
 static void ptn_array_user_sort_entries(
     PtnRuntime *runtime,
     const char *function_name,
@@ -3801,6 +3803,36 @@ static void ptn_array_user_sort_entries(
     ptn_array_rebuild_index(array);
 }
 
+static PtnArray *ptn_array_user_sorted_snapshot(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue callback,
+    size_t line,
+    void (*sorter)(PtnRuntime *, PtnArray *, PtnValue, size_t)
+) {
+    PtnArray *sorted = ptn_array_clone(array);
+    sorter(runtime, sorted, callback, line);
+    ptn_array_free(sorted);
+    return sorted;
+}
+
+static void ptn_array_commit_sorted_snapshot_to_slot(PtnValue *slot, PtnArray *sorted) {
+    PtnValue *target = slot;
+    if (target->type == PTN_REFERENCE) {
+        target = &target->as.reference->value;
+    }
+    if (target->type == PTN_ARRAY) {
+        PtnArray *target_array = ptn_array_detach_value(target);
+        if (target_array != NULL) {
+            ptn_array_adopt_storage(target_array, sorted);
+            free(sorted);
+            return;
+        }
+    }
+    ptn_value_destroy(target);
+    *target = ptn_array(sorted);
+}
+
 static void ptn_array_usort_values(PtnRuntime *runtime, PtnArray *array, PtnValue callback, size_t line) {
     ptn_array_user_sort_entries(runtime, "usort", array, callback, 0, 1, line);
 }
@@ -3830,6 +3862,9 @@ static PtnValue ptn_runtime_user_comparator_sort_variable(
         name,
         value
     );
+    if (array == NULL) {
+        return ptn_bool(0);
+    }
     PtnValue checked_callback = ptn_internal_expect_callback_arg(
         runtime,
         function_name,
@@ -3837,10 +3872,13 @@ static PtnValue ptn_runtime_user_comparator_sort_variable(
         "callback",
         callback
     );
-    sorter(runtime, array, checked_callback, line);
-    PtnValue sorted = ptn_value_borrow(ptn_array(array));
-    ptn_runtime_write_variable(runtime, name, sorted);
-    ptn_array_free(array);
+    PtnArray *sorted = ptn_array_user_sorted_snapshot(runtime, array, checked_callback, line, sorter);
+    if (runtime->exceptions->active_exception == NULL) {
+        PtnSymbol *symbol = ptn_symbols_slot_for_write(&runtime->symbols, name);
+        ptn_array_commit_sorted_snapshot_to_slot(&symbol->value, sorted);
+    } else {
+        ptn_array_free(sorted);
+    }
     ptn_value_destroy(&checked_callback);
     return ptn_bool(1);
 }
@@ -5474,8 +5512,8 @@ static PtnValue ptn_internal_user_comparator_sort(
     void (*sorter)(PtnRuntime *, PtnArray *, PtnValue, size_t)
 ) {
     PtnArray *array = ptn_internal_expect_array_arg(runtime, function_name, 1, "array", args[0]);
-    if (args[0].type == PTN_REFERENCE && args[0].as.reference->value.type == PTN_ARRAY) {
-        array = ptn_array_detach_value(&args[0].as.reference->value);
+    if (array == NULL) {
+        return ptn_bool(0);
     }
     PtnValue callback = ptn_internal_expect_callback_arg(
         runtime,
@@ -5484,8 +5522,17 @@ static PtnValue ptn_internal_user_comparator_sort(
         "callback",
         args[1]
     );
-    sorter(runtime, array, callback, line);
-    ptn_array_free(array);
+    PtnArray *sorted = ptn_array_user_sorted_snapshot(runtime, array, callback, line, sorter);
+    if (runtime->exceptions->active_exception == NULL) {
+        if (args[0].type == PTN_REFERENCE) {
+            ptn_array_commit_sorted_snapshot_to_slot(&args[0].as.reference->value, sorted);
+        } else {
+            ptn_array_adopt_storage(array, sorted);
+            free(sorted);
+        }
+    } else {
+        ptn_array_free(sorted);
+    }
     ptn_value_destroy(&callback);
     return ptn_bool(1);
 }
