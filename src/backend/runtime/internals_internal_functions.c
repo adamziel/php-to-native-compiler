@@ -2657,6 +2657,16 @@ static void ptn_unserialize_invalidate_id(PtnUnserializeState *state, size_t id)
     ptn_unserialize_id_entry_clear(&state->ids[id - 1]);
 }
 
+static void ptn_unserialize_truncate_ids(PtnUnserializeState *state, size_t len) {
+    if (len >= state->id_len) {
+        return;
+    }
+    for (size_t i = len; i < state->id_len; i++) {
+        ptn_unserialize_id_entry_clear(&state->ids[i]);
+    }
+    state->id_len = len;
+}
+
 static void ptn_unserialize_invalidate_slot(PtnUnserializeState *state, PtnValue *slot) {
     if (slot == NULL) {
         return;
@@ -2812,15 +2822,15 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     }
     PtnUnserializeIdEntry *entry = &state->ids[id - 1];
     if (entry->reference != NULL) {
-        PtnValue referenced = ptn_value_deref(entry->reference->value);
-        if (referenced.type == PTN_OBJECT) {
-            return ptn_value_clone(referenced);
-        }
         entry->reference->refcount++;
         return ptn_reference_value(entry->reference);
     }
     if (entry->retained_object != NULL) {
-        return ptn_value_clone(ptn_object(entry->retained_object));
+        PtnReference *reference = ptn_reference_new_owned(
+            ptn_value_clone(ptn_object(entry->retained_object))
+        );
+        entry->reference = reference;
+        return ptn_reference_value(reference);
     }
     if (entry->slot == NULL) {
         ptn_unserialize_fail(state);
@@ -2828,7 +2838,9 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     }
     PtnValue value = ptn_value_deref(*entry->slot);
     if (value.type == PTN_OBJECT) {
-        return ptn_value_clone(value);
+        PtnReference *reference = ptn_reference_new_owned(ptn_value_clone(value));
+        entry->reference = reference;
+        return ptn_reference_value(reference);
     }
     if (entry->slot->type == PTN_REFERENCE) {
         entry->reference = entry->slot->as.reference;
@@ -3390,6 +3402,7 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         saved.pos = active_state->pos;
         saved.error_pos = active_state->error_pos;
         saved.line = active_state->line;
+        size_t saved_id_len = active_state->id_len;
         saved.failed = active_state->failed;
         saved.unexpected_end = active_state->unexpected_end;
         saved.insufficient_data = active_state->insufficient_data;
@@ -3440,6 +3453,7 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
             }
             ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
             ptn_value_destroy(&parsed.value);
+            ptn_unserialize_truncate_ids(active_state, saved_id_len);
             ptn_string_operand_free(input);
             return ptn_bool(0);
         }
