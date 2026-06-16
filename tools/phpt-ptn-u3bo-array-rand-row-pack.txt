@@ -1,0 +1,9 @@
+# ptn-u3bo focused array_rand row pack.
+# Rows are relative to PHP_SRC_PHPT.
+ext/standard/tests/array/array_rand.phpt
+ext/standard/tests/array/array_rand_basic1.phpt
+ext/standard/tests/array/array_rand_basic2.phpt
+ext/standard/tests/array/array_rand_variation3.phpt
+ext/standard/tests/array/array_rand_variation4.phpt
+ext/standard/tests/array/array_rand_variation5.phpt
+ext/standard/tests/array/array_rand_variation6.phpt

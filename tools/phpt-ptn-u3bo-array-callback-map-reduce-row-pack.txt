@@ -1,0 +1,11 @@
+# ptn-u3bo focused array callback/map/reduce row pack.
+# Rows are relative to PHP_SRC_PHPT.
+ext/standard/tests/array/array_filter_variation10.phpt
+ext/standard/tests/array/array_map_error.phpt
+ext/standard/tests/array/array_map_object2.phpt
+ext/standard/tests/array/array_map_variation10.phpt
+ext/standard/tests/array/array_map_variation12.phpt
+ext/standard/tests/array/array_map_variation2.phpt
+ext/standard/tests/array/array_map_variation7.phpt
+ext/standard/tests/array/array_map_variation9.phpt
+ext/standard/tests/array/array_reduce_variation1.phpt
