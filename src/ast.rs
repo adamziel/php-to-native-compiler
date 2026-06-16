@@ -406,6 +406,10 @@ pub enum Statement {
         value: Option<Expr>,
         span: SourceSpan,
     },
+    Exit {
+        value: Option<Expr>,
+        span: SourceSpan,
+    },
     Throw {
         value: Expr,
         span: SourceSpan,

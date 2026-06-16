@@ -320,6 +320,10 @@ pub enum Instruction {
         value: Option<ValueExpr>,
         line: usize,
     },
+    Exit {
+        value: Option<ValueExpr>,
+        line: usize,
+    },
     Throw {
         value: ValueExpr,
         line: usize,
@@ -1636,6 +1640,12 @@ impl<'a> LoweringContext<'a> {
                         line: span.line,
                     });
                 }
+                Statement::Exit { value, span } => {
+                    instructions.push(Instruction::Exit {
+                        value: value.as_ref().map(|value| self.lower_expr(value)),
+                        line: span.line,
+                    });
+                }
                 Statement::Throw { value, span } => {
                     instructions.push(Instruction::Throw {
                         value: self.lower_expr(value),
@@ -2010,6 +2020,9 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         | Statement::Return {
             value: Some(value), ..
         }
+        | Statement::Exit {
+            value: Some(value), ..
+        }
         | Statement::Throw { value, .. } => expr_contains_yield(value),
         Statement::Call { arguments, .. }
         | Statement::Echo {
@@ -2080,6 +2093,7 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         | Statement::ClassDeclaration { .. }
         | Statement::FunctionDeclaration { .. }
         | Statement::Return { value: None, .. }
+        | Statement::Exit { value: None, .. }
         | Statement::Increment { .. }
         | Statement::Unset { .. }
         | Statement::Global { .. }

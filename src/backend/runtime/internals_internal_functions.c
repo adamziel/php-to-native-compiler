@@ -33968,6 +33968,23 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
     if (function == NULL) {
         return ptn_function_metadata_not_found();
     }
+    static const PtnParameterMetadata PTN_INTERNAL_EXIT_PARAMETERS[] = {
+        { "status", NULL, NULL, 0, 0, 0, 0, 1 },
+    };
+    if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
+        return ptn_function_metadata_found(
+            "exit",
+            1,
+            sizeof(PTN_INTERNAL_EXIT_PARAMETERS) / sizeof(PTN_INTERNAL_EXIT_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_EXIT_PARAMETERS,
+            NULL,
+            NULL,
+            0,
+            0
+        );
+    }
     if (ptn_ascii_case_equal(function->name, "htmlspecialchars")) {
         return ptn_function_metadata_found(
             function->name,

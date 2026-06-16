@@ -175,6 +175,9 @@ impl IncludeCollector {
             Statement::Print {
                 expression: value, ..
             } => self.collect_expr(value, source_file, source_dir),
+            Statement::Exit {
+                value: Some(value), ..
+            } => self.collect_expr(value, source_file, source_dir),
             Statement::AssignRef { name, source, .. } => {
                 self.collect_expr(source, source_file, source_dir)?;
                 self.path_env.remove(name);
@@ -375,6 +378,7 @@ impl IncludeCollector {
             Statement::Empty { .. }
             | Statement::ClassDeclaration { .. }
             | Statement::FunctionDeclaration { .. }
+            | Statement::Exit { value: None, .. }
             | Statement::Break { .. }
             | Statement::Continue { .. }
             | Statement::Label { .. }

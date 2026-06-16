@@ -7990,6 +7990,9 @@ fn emit_instruction(
                 out.push_str("    return 0;\n");
             }
         },
+        Instruction::Exit { value, line } => {
+            emit_exit_instruction(out, values, value.as_ref(), *line);
+        }
         Instruction::Throw { value, line } => {
             let value_temp = values.emit_materialized_value(out, value);
             out.push_str("    ptn_throw_value(&runtime, ");
@@ -8466,8 +8469,10 @@ fn emit_instruction(
             );
         }
         Instruction::Label { name } => {
+            let label = c_label_with_scope(name, label_scope);
+            emit_label_reference(out, &label);
             out.push_str("    ");
-            out.push_str(&c_label_with_scope(name, label_scope));
+            out.push_str(&label);
             out.push_str(":\n");
             out.push_str("    ;\n");
         }
@@ -8531,6 +8536,90 @@ fn emit_instruction(
             }
         }
     }
+}
+
+fn emit_exit_instruction(
+    out: &mut String,
+    values: &mut ValueEmitter,
+    value: Option<&ValueExpr>,
+    _line: usize,
+) {
+    let Some(value) = value else {
+        out.push_str("    ptn_runtime_free(&runtime);\n");
+        out.push_str("    exit(0);\n");
+        return;
+    };
+
+    let value_temp = values.emit_materialized_value(out, value);
+    let resolved_temp = values.next_temp();
+    let status_temp = values.next_temp();
+    let should_exit_temp = values.next_temp();
+    out.push_str("    PtnValue ");
+    out.push_str(&resolved_temp);
+    out.push_str(" = ptn_value_deref(");
+    out.push_str(&value_temp);
+    out.push_str(");\n");
+    out.push_str("    int ");
+    out.push_str(&status_temp);
+    out.push_str(" = 0;\n");
+    out.push_str("    int ");
+    out.push_str(&should_exit_temp);
+    out.push_str(" = 1;\n");
+    out.push_str("    switch (");
+    out.push_str(&resolved_temp);
+    out.push_str(".type) {\n");
+    out.push_str("        case PTN_NULL:\n");
+    out.push_str("            ");
+    out.push_str(&status_temp);
+    out.push_str(" = 0;\n");
+    out.push_str("            break;\n");
+    out.push_str("        case PTN_BOOL:\n");
+    out.push_str("            ");
+    out.push_str(&status_temp);
+    out.push_str(" = ");
+    out.push_str(&resolved_temp);
+    out.push_str(".as.boolean ? 1 : 0;\n");
+    out.push_str("            break;\n");
+    out.push_str("        case PTN_INT:\n");
+    out.push_str("            ");
+    out.push_str(&status_temp);
+    out.push_str(" = (int)");
+    out.push_str(&resolved_temp);
+    out.push_str(".as.integer;\n");
+    out.push_str("            break;\n");
+    out.push_str("        case PTN_FLOAT:\n");
+    out.push_str("            ");
+    out.push_str(&status_temp);
+    out.push_str(" = (int)");
+    out.push_str(&resolved_temp);
+    out.push_str(".as.floating;\n");
+    out.push_str("            break;\n");
+    out.push_str("        case PTN_STRING:\n");
+    out.push_str("            ptn_echo(&runtime, ");
+    out.push_str(&value_temp);
+    out.push_str(", 0);\n");
+    out.push_str("            ");
+    out.push_str(&status_temp);
+    out.push_str(" = 0;\n");
+    out.push_str("            break;\n");
+    out.push_str("        default:\n");
+    out.push_str("            ");
+    out.push_str(&should_exit_temp);
+    out.push_str(" = 0;\n");
+    out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"exit\", 1, \"status\", \"string|int\", ");
+    out.push_str(&resolved_temp);
+    out.push_str(", 0);\n");
+    out.push_str("            break;\n");
+    out.push_str("    }\n");
+    emit_value_cleanup(out, "    ", &value_temp);
+    out.push_str("    if (");
+    out.push_str(&should_exit_temp);
+    out.push_str(") {\n");
+    out.push_str("        ptn_runtime_free(&runtime);\n");
+    out.push_str("        exit(");
+    out.push_str(&status_temp);
+    out.push_str(");\n");
+    out.push_str("    }\n");
 }
 
 fn emit_try(
@@ -9835,7 +9924,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
         }
-        Instruction::Return { value, .. } => {
+        Instruction::Return { value, .. } | Instruction::Exit { value, .. } => {
             if let Some(value) = value {
                 collect_value_legacy_dollar_brace_deprecations(value, deprecations);
             }
@@ -10451,7 +10540,7 @@ fn collect_instruction_runtime_requirements(
                 requirements,
             );
         }
-        Instruction::Return { value, .. } => {
+        Instruction::Return { value, .. } | Instruction::Exit { value, .. } => {
             if let Some(value) = value {
                 collect_value_runtime_requirements(value, functions, requirements);
             }
@@ -12449,6 +12538,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::DefineConstant { line, .. }
         | Instruction::InternalCall { line, .. }
         | Instruction::Return { line, .. }
+        | Instruction::Exit { line, .. }
         | Instruction::Throw { line, .. }
         | Instruction::Foreach { line, .. }
         | Instruction::Break { line, .. }
@@ -12893,7 +12983,9 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
             value: receiver, ..
         } => value_expr_uses_this(receiver),
         Instruction::InternalCall { arguments, .. } => arguments.iter().any(value_expr_uses_this),
-        Instruction::Return { value, .. } => value.as_ref().is_some_and(value_expr_uses_this),
+        Instruction::Return { value, .. } | Instruction::Exit { value, .. } => {
+            value.as_ref().is_some_and(value_expr_uses_this)
+        }
         Instruction::Try {
             body,
             catches,
@@ -22066,6 +22158,9 @@ impl ValueEmitter {
     }
 
     fn first_class_callable_static_name(&self, name: &str) -> String {
+        if name.eq_ignore_ascii_case("die") || name.eq_ignore_ascii_case("exit") {
+            return "exit".to_string();
+        }
         let Some((class_name, method_name)) = name.split_once("::") else {
             return name.to_string();
         };

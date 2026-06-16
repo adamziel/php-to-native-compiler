@@ -2754,6 +2754,12 @@ impl Parser<'_> {
             {
                 self.parse_declare_statement()
             }
+            TokenKind::Identifier(ref name)
+                if is_exit_construct_name(name)
+                    && !matches!(self.peek_next().kind, TokenKind::Colon) =>
+            {
+                self.parse_exit()
+            }
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
             _ if self.peek_starts_class_decl() => self.parse_local_class_decl_statement(attributes),
@@ -2850,6 +2856,11 @@ impl Parser<'_> {
         } else {
             false
         };
+        if let TokenKind::Identifier(name) = &self.peek().kind {
+            if is_exit_construct_name(name) {
+                return Err(exit_reserved_name_syntax_error(self.peek(), "\"(\""));
+            }
+        }
         let (name, _) = self.parse_declaration_name("expected function name")?;
         self.declared_functions.insert(name.to_ascii_lowercase());
         let parameters = self.parse_function_parameters()?;
@@ -3853,6 +3864,11 @@ impl Parser<'_> {
         &mut self,
         attributes: ParsedAttributes,
     ) -> Result<ConstDeclaration> {
+        if let TokenKind::Identifier(name) = &self.peek().kind {
+            if is_exit_construct_name(name) {
+                return Err(exit_reserved_name_syntax_error(self.peek(), "identifier"));
+            }
+        }
         let (name, token_span) = self.parse_declaration_name("expected constant name")?;
         if is_reserved_compile_time_constant_declaration_name(&name) {
             let source_name = self
@@ -4300,6 +4316,47 @@ impl Parser<'_> {
         Ok(Statement::Return { value, span })
     }
 
+    fn parse_exit(&mut self) -> Result<Statement> {
+        let start_span = self.expect_exit()?;
+        let mut span = start_span;
+        let value = if matches!(
+            self.peek().kind,
+            TokenKind::Semicolon | TokenKind::CloseTag | TokenKind::Eof
+        ) {
+            None
+        } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+            self.expect_left_paren()?;
+            if matches!(self.peek().kind, TokenKind::RightParen) {
+                let right_span = self.expect_right_paren()?;
+                span = combine_spans(start_span, right_span);
+                None
+            } else {
+                if token_is_identifier_named(self.peek(), "status")
+                    && matches!(self.peek_next().kind, TokenKind::Colon)
+                {
+                    self.advance();
+                    self.expect_colon()?;
+                }
+                let value = self.parse_expr()?;
+                if matches!(self.peek().kind, TokenKind::Comma) {
+                    return Err(Diagnostic::new(
+                        "exit() expects at most 1 argument",
+                        Some(self.peek().span),
+                    ));
+                }
+                let right_span = self.expect_right_paren()?;
+                span = combine_spans(start_span, right_span);
+                Some(value)
+            }
+        } else {
+            let value = self.parse_expr()?;
+            span = combine_spans(start_span, value.span());
+            Some(value)
+        };
+        self.expect_statement_terminator()?;
+        Ok(Statement::Exit { value, span })
+    }
+
     fn parse_throw_statement(&mut self) -> Result<Statement> {
         let token = self.advance().clone();
         let value = self.parse_expr()?;
@@ -4384,9 +4441,13 @@ impl Parser<'_> {
         let token = self.advance().clone();
         let span = token.span;
         let label = self.advance().clone();
-        let TokenKind::Identifier(label) = label.kind else {
+        let TokenKind::Identifier(label_name) = &label.kind else {
             return Err(Diagnostic::new("expected goto label", Some(label.span)));
         };
+        if is_exit_construct_name(label_name) {
+            return Err(exit_reserved_name_syntax_error(&label, "identifier"));
+        }
+        let label = label_name.clone();
         self.expect_statement_terminator()?;
         Ok(Statement::Goto { label, span })
     }
@@ -4396,6 +4457,9 @@ impl Parser<'_> {
         let TokenKind::Identifier(name) = token.kind else {
             return Err(Diagnostic::new("expected label", Some(token.span)));
         };
+        if is_exit_construct_name(&name) {
+            return Err(syntax_error_unexpected(self.peek(), None));
+        }
         self.expect_colon()?;
         Ok(Statement::Label {
             name,
@@ -6910,6 +6974,15 @@ impl Parser<'_> {
         }
     }
 
+    fn expect_exit(&mut self) -> Result<SourceSpan> {
+        let token = self.advance();
+        if matches!(&token.kind, TokenKind::Identifier(name) if is_exit_construct_name(name)) {
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new("expected exit", Some(token.span)))
+        }
+    }
+
     fn expect_try(&mut self) -> Result<SourceSpan> {
         let token = self.advance();
         if matches!(token.kind, TokenKind::Try) {
@@ -8691,6 +8764,17 @@ fn default_set_visibility(
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+}
+
+fn is_exit_construct_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("exit") || name.eq_ignore_ascii_case("die")
+}
+
+fn exit_reserved_name_syntax_error(token: &Token, expecting: &str) -> Diagnostic {
+    Diagnostic::parse_error(
+        format!("syntax error, unexpected token \"exit\", expecting {expecting}"),
+        Some(token.span),
+    )
 }
 
 fn token_starts_type_hint_atom(token: &Token) -> bool {
@@ -11062,6 +11146,9 @@ fn validate_control_transfers_in_statements_inner(
             | Statement::Return {
                 value: Some(value), ..
             }
+            | Statement::Exit {
+                value: Some(value), ..
+            }
             | Statement::Throw { value, .. } => {
                 validate_control_transfers_in_expr(value)?;
             }
@@ -11246,6 +11333,7 @@ fn validate_control_transfers_in_statements_inner(
                 }
             }
             Statement::Return { value: None, .. }
+            | Statement::Exit { value: None, .. }
             | Statement::Empty { .. }
             | Statement::ClassDeclaration { .. }
             | Statement::FunctionDeclaration { .. }
@@ -12033,6 +12121,9 @@ fn validate_anonymous_functions_in_statements(
             | Statement::Return {
                 value: Some(value), ..
             }
+            | Statement::Exit {
+                value: Some(value), ..
+            }
             | Statement::Throw { value, .. } => {
                 validate_anonymous_functions_in_expr(value, functions)?;
             }
@@ -12121,6 +12212,7 @@ fn validate_anonymous_functions_in_statements(
                 validate_anonymous_functions_in_statements(finally_body, functions)?;
             }
             Statement::Return { value: None, .. }
+            | Statement::Exit { value: None, .. }
             | Statement::Empty { .. }
             | Statement::ClassDeclaration { .. }
             | Statement::FunctionDeclaration { .. }

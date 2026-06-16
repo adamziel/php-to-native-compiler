@@ -5698,6 +5698,39 @@ fn parser_rejects_duplicate_labels() {
 }
 
 #[test]
+fn parser_rejects_exit_and_die_global_declarations_and_labels() {
+    let cases = [
+        (
+            "<?php\nfunction exit() {}\n",
+            "syntax error, unexpected token \"exit\", expecting \"(\"",
+            2,
+        ),
+        (
+            "<?php\nconst die = 1;\n",
+            "syntax error, unexpected token \"exit\", expecting identifier",
+            2,
+        ),
+        (
+            "<?php\necho \"before\\n\";\nexit:\necho \"after\\n\";\n",
+            "syntax error, unexpected token \":\"",
+            3,
+        ),
+        (
+            "<?php\ngoto die;\ndie:\necho \"after\\n\";\n",
+            "syntax error, unexpected token \"exit\", expecting identifier",
+            2,
+        ),
+    ];
+
+    for (source, message, line) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::ParseError);
+        assert_eq!(error.message, message);
+        assert_eq!(error.span.unwrap().line, line);
+    }
+}
+
+#[test]
 fn parser_rejects_goto_into_loop_or_switch() {
     for (source, line) in [
         ("<?php\nwhile (0) {\n    L1: echo \"bug\\n\";\n}\ngoto L1;\n", 5),
@@ -29917,6 +29950,25 @@ L2:
 }
 
 #[test]
+fn compile_unused_php_label_references_generated_c_label_to_native_binary() {
+    let root = temp_dir("ptn-native-unused-php-label");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unused-label.php");
+    let output = root.join("unused-label-bin");
+    fs::write(&input, "<?php a: echo \"ok\\n\";").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+
+    assert!(c_source.contains("if (0) { goto ptn_user_label_a; }"));
+    assert!(c_source.contains("ptn_user_label_a:"));
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_goto_from_loop_to_outer_label_to_native_binary() {
     let root = temp_dir("ptn-native-goto-jump04-loop-exit");
     fs::create_dir_all(&root).unwrap();
@@ -30156,6 +30208,117 @@ fn compile_return_statement_exits_script_to_native_binary() {
         String::from_utf8(execution.stdout).unwrap(),
         "before\nstring(5) \"value\"\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_exit_construct_forms_to_native_binary() {
+    let root = temp_dir("ptn-native-exit-construct-forms");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        (
+            "exit-string.php",
+            "<?php echo \"before\\n\"; exit \"bye\\n\"; echo \"after\\n\";",
+            Some(0),
+            "before\nbye\n",
+        ),
+        (
+            "exit-named-status.php",
+            "<?php exit(status: \"named\\n\"); echo \"after\\n\";",
+            Some(0),
+            "named\n",
+        ),
+        (
+            "die-without-status.php",
+            "<?php echo \"before\\n\"; die; echo \"after\\n\";",
+            Some(0),
+            "before\n",
+        ),
+        (
+            "exit-int.php",
+            "<?php echo \"before\\n\"; exit(7); echo \"after\\n\";",
+            Some(7),
+            "before\n",
+        ),
+    ];
+
+    for (name, source, expected_status, expected_stdout) in cases {
+        let input = root.join(name);
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert_eq!(execution.status.code(), expected_status, "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stdout).unwrap(),
+            expected_stdout,
+            "{name}"
+        );
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "", "{name}");
+    }
+}
+
+#[test]
+fn compile_exit_and_die_soft_identifier_contexts_to_native_binary() {
+    let root = temp_dir("ptn-native-exit-die-soft-identifiers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exit-die-soft-identifiers.php");
+    let output = root.join("exit-die-soft-identifiers-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $exit;
+    public $die;
+    const die = 5;
+    const exit = 10;
+    public function exit() { return 20; }
+    public function die() { return 15; }
+}
+var_dump(Foo::die);
+var_dump(Foo::exit);
+$o = new Foo();
+var_dump($o->exit);
+var_dump($o->die);
+var_dump($o->exit());
+var_dump($o->die());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(5)\nint(10)\nNULL\nNULL\nint(20)\nint(15)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_exit_and_die_first_class_callable_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-exit-die-first-class-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exit-die-first-class-callable.php");
+    let output = root.join("exit-die-first-class-callable-bin");
+    fs::write(&input, "<?php var_dump(exit(...)); var_dump(die(...));").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("[\"function\"]=>\n  string(4) \"exit\"")
+            .count(),
+        2
+    );
+    assert_eq!(stdout.matches("[\"$status\"]=>").count(), 2);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
