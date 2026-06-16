@@ -12472,6 +12472,61 @@ echo \"===DONE===\\n\";
 }
 
 #[test]
+fn compile_static_property_and_static_local_destructor_order_to_native_binary() {
+    let root = temp_dir("ptn-native-static-shutdown-destructor-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-shutdown-destructor-order.php");
+    let output = root.join("static-shutdown-destructor-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Probe {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+        echo \"new \", $name, \"\\n\";
+    }
+
+    public function __destruct() {
+        echo \"destruct \", $this->name, \"\\n\";
+    }
+}
+
+class Holder {
+    public static $stored;
+
+    public static function bind() {
+        static $local = null;
+        if ($local === null) {
+            $local = new Probe(\"local\");
+        }
+    }
+}
+
+Holder::$stored = new Probe(\"property\");
+Holder::bind();
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "new property\nnew local\ndone\ndestruct property\ndestruct local\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_run_static_property_destructors(runtime)"));
+    assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
+}
+
+#[test]
 fn compile_inherited_class_destructor_runs_on_unset_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-class-destructor-unset");
     fs::create_dir_all(&root).unwrap();
