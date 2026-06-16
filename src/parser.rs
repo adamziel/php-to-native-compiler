@@ -47,6 +47,7 @@ pub(crate) fn parse_with_runtime_class_aliases(
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
     let tokens = lex(source)?;
+    let compiler_halt_offset = find_compiler_halt_offset(&tokens);
     Parser {
         source,
         tokens,
@@ -71,6 +72,7 @@ pub(crate) fn parse_with_runtime_class_aliases(
         allow_unscoped_relative_types: 0,
         return_by_ref_stack: Vec::new(),
         strict_types: false,
+        compiler_halt_offset,
     }
     .parse_program()
 }
@@ -99,6 +101,7 @@ struct Parser<'a> {
     allow_unscoped_relative_types: usize,
     return_by_ref_stack: Vec<bool>,
     strict_types: bool,
+    compiler_halt_offset: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +143,23 @@ enum UseDeclarationKind {
     Class,
     Function,
     Constant,
+}
+
+fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
+    tokens.windows(4).find_map(|window| {
+        let [name, left, right, semicolon] = window else {
+            return None;
+        };
+        if token_is_identifier_named(name, "__halt_compiler")
+            && matches!(left.kind, TokenKind::LeftParen)
+            && matches!(right.kind, TokenKind::RightParen)
+            && matches!(semicolon.kind, TokenKind::Semicolon)
+        {
+            Some(semicolon.span.byte_end as i64)
+        } else {
+            None
+        }
+    })
 }
 
 struct ForeachVariable {
@@ -325,6 +345,10 @@ impl Parser<'_> {
             {
                 break;
             }
+            if token_is_identifier_named(self.peek(), "__halt_compiler") {
+                self.parse_halt_compiler_statement(scope)?;
+                break;
+            }
             let attributes = self.parse_attribute_groups()?;
             if token_is_identifier_named(self.peek(), "declare") {
                 let statement = self.parse_declare_statement()?;
@@ -358,11 +382,6 @@ impl Parser<'_> {
                     ));
                 }
                 self.parse_namespace_declaration(classes, traits, functions, statements)?;
-            } else if scope == TopLevelScope::Program
-                && token_is_identifier_named(self.peek(), "__halt_compiler")
-            {
-                self.parse_halt_compiler_directive()?;
-                break;
             } else if token_is_identifier_named(self.peek(), "use") {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 self.parse_use_declarations()?;
@@ -398,11 +417,20 @@ impl Parser<'_> {
         false
     }
 
-    fn parse_halt_compiler_directive(&mut self) -> Result<()> {
-        self.advance();
+    fn parse_halt_compiler_statement(&mut self, scope: TopLevelScope) -> Result<()> {
+        let name_span = self.advance().span;
+        if scope != TopLevelScope::Program || self.block_depth != 0 || self.function_depth != 0 {
+            return Err(Diagnostic::new(
+                "__HALT_COMPILER() can only be used from the outermost scope",
+                Some(name_span),
+            ));
+        }
         self.expect_left_paren()?;
         self.expect_right_paren()?;
         self.expect_semicolon()?;
+        if !self.tokens.is_empty() {
+            self.index = self.tokens.len() - 1;
+        }
         Ok(())
     }
 
@@ -639,6 +667,16 @@ impl Parser<'_> {
             {
                 self.advance();
                 UseDeclarationKind::Constant
+            } else if outer_kind != UseDeclarationKind::Class
+                && matches!(self.peek().kind, TokenKind::Function | TokenKind::Const)
+            {
+                return Err(Diagnostic::parse_error(
+                    format!(
+                        "syntax error, unexpected token \"{}\", expecting \"}}\"",
+                        token_text(&self.peek().kind)
+                    ),
+                    Some(self.peek().span),
+                ));
             } else {
                 outer_kind
             };
@@ -694,6 +732,12 @@ impl Parser<'_> {
                 break;
             }
             self.advance();
+        }
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return Err(Diagnostic::parse_error(
+                "syntax error, unexpected token \"{\", expecting \"}\"",
+                Some(self.peek().span),
+            ));
         }
         self.expect_right_brace()?;
         Ok(())
@@ -2466,6 +2510,15 @@ impl Parser<'_> {
             }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::DoubleColon) => {
                 self.parse_expression_statement()
+            }
+            TokenKind::Identifier(ref name)
+                if name.eq_ignore_ascii_case("__halt_compiler")
+                    && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
+            {
+                Err(Diagnostic::new(
+                    "__HALT_COMPILER() can only be used from the outermost scope",
+                    Some(self.peek().span),
+                ))
             }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::LeftParen) => {
                 self.parse_call_statement()
@@ -4955,6 +5008,12 @@ impl Parser<'_> {
                     let class_name = self.resolve_runtime_class_alias_name(&class_name);
                     self.parse_static_member_expr(class_name, parsed_name.span)
                 } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    if unqualified && lowercase == "__halt_compiler" {
+                        return Err(Diagnostic::new(
+                            "__HALT_COMPILER() can only be used from the outermost scope",
+                            Some(parsed_name.span),
+                        ));
+                    }
                     if self.peek_is_first_class_callable_arguments() {
                         let right_span = self.parse_first_class_callable_arguments()?;
                         let resolved_name = self.resolve_function_name(&parsed_name);
@@ -4995,7 +5054,16 @@ impl Parser<'_> {
                         parsed_name.span,
                     ))
                 } else if unqualified {
-                    if let Some(kind) = magic_constant_kind(&parsed_name.name) {
+                    if lowercase == "__compiler_halt_offset__" {
+                        if let Some(offset) = self.compiler_halt_offset {
+                            Ok(Expr::Int(offset, parsed_name.span))
+                        } else {
+                            Ok(Expr::Constant(
+                                self.resolve_constant_name(&parsed_name),
+                                parsed_name.span,
+                            ))
+                        }
+                    } else if let Some(kind) = magic_constant_kind(&parsed_name.name) {
                         Ok(Expr::MagicConstant(kind, parsed_name.span))
                     } else {
                         Ok(Expr::Constant(

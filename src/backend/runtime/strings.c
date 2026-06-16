@@ -1696,12 +1696,20 @@ static PTN_UNUSED int ptn_runtime_constant_is_defined(PtnRuntime *runtime, const
     return ptn_runtime_constant_value(runtime, name, &value);
 }
 
+static PTN_UNUSED int ptn_reserved_constant_name(const char *name) {
+    return strcmp(name, "__COMPILER_HALT_OFFSET__") == 0;
+}
+
 static PTN_UNUSED int ptn_runtime_define_constant_if_absent(
     PtnRuntime *runtime,
     const char *name,
     PtnValue value,
     size_t line
 ) {
+    if (ptn_reserved_constant_name(name)) {
+        ptn_emit_constant_already_defined_warning(&runtime->diagnostics, name, line);
+        return 0;
+    }
     if (ptn_runtime_constant_is_defined(runtime, name)) {
         ptn_emit_constant_already_defined_warning(&runtime->diagnostics, name, line);
         return 0;

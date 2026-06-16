@@ -2053,6 +2053,26 @@ fn parser_rejects_static_catch_type_as_fatal() {
 }
 
 #[test]
+fn parser_stops_at_top_level_halt_compiler_statement() {
+    let program =
+        parser::parse("<?php echo \"before\\n\"; __HALT_COMPILER(); echo \"after\\n\";").unwrap();
+
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
+fn parser_rejects_halt_compiler_inside_block() {
+    let error = parser::parse("<?php\nif (true) {\n    __HALT_COMPILER();\n}\n").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "__HALT_COMPILER() can only be used from the outermost scope"
+    );
+    assert_eq!(error.span.unwrap().line, 3);
+}
+
+#[test]
 fn parser_accepts_global_variable_statements() {
     let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
 
@@ -16853,6 +16873,56 @@ var_dump(defined(\"USER_CONST\"), constant(\"USER_CONST\"), constant(1), constan
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(true)\nstring(5) \"value\"\nint(2)\nint(3)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
+    let root = temp_dir("ptn-native-halt-compiler-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("halt-compiler-offset.php");
+    let output = root.join("halt-compiler-offset-bin");
+    let source = "<?php echo \"before\\n\"; var_dump(__COMPILER_HALT_OFFSET__); __HALT_COMPILER();\necho \"after\\n\";\n";
+    let expected_offset = source.find("__HALT_COMPILER();").unwrap() + "__HALT_COMPILER();".len();
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("before\nint({expected_offset})\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_define_reserved_halt_offset_warns_without_defining_constant() {
+    let root = temp_dir("ptn-native-define-halt-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("define-halt-offset.php");
+    let output = root.join("define-halt-offset-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(defined(\"__COMPILER_HALT_OFFSET__\"));\n\
+var_dump(define(\"__COMPILER_HALT_OFFSET__\", 1));\n\
+var_dump(defined(\"__COMPILER_HALT_OFFSET__\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\n\
+Warning: Constant __COMPILER_HALT_OFFSET__ already defined, this will be an error in PHP 9 in ptn on line 3\n\
+bool(false)\n\
+bool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
