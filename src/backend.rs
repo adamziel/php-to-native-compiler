@@ -13,8 +13,8 @@ use crate::ir::{
     FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile,
     InstanceOfTarget, Instruction, ListAssignmentElement, ListAssignmentElementTarget,
     ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint,
-    PropertyTypeKind, PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl, TypeHint,
-    UnaryOp, ValueExpr,
+    PropertyTypeKind, PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl,
+    TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -49,6 +49,7 @@ pub fn emit_c(module: &Module) -> String {
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let serializable_deprecations = collect_module_serializable_deprecations(module);
+    let trait_use_deprecations = collect_module_trait_use_deprecations(module);
     let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let needs_direct_callable_dispatch = runtime_requirements.internal_function_dispatch
@@ -264,6 +265,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_file,
     );
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
+    emit_trait_use_deprecations(&mut out, &trait_use_deprecations);
     emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
@@ -2064,6 +2066,15 @@ struct SerializableDeprecation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct TraitUseDeprecation {
+    trait_name: String,
+    used_by: String,
+    message: Option<String>,
+    since: Option<String>,
+    line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct MagicVisibilityWarning {
     class_name: String,
     method_name: String,
@@ -2158,6 +2169,27 @@ fn emit_serializable_deprecations(out: &mut String, deprecations: &[Serializable
             "{}{}",
             deprecation.class_name, SERIALIZABLE_DEPRECATION_SUFFIX
         );
+        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", ");
+        out.push_str(&deprecation.line.to_string());
+        out.push_str(");\n");
+    }
+}
+
+fn emit_trait_use_deprecations(out: &mut String, deprecations: &[TraitUseDeprecation]) {
+    for deprecation in deprecations {
+        let subject = format!(
+            "Trait {} used by {}",
+            deprecation.trait_name, deprecation.used_by
+        );
+        let Some(message) = deprecated_warning_message_for_parts(
+            &subject,
+            deprecation.message.as_deref(),
+            deprecation.since.as_deref(),
+        ) else {
+            continue;
+        };
         out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", ");
@@ -8877,6 +8909,53 @@ fn collect_module_serializable_deprecations(module: &Module) -> Vec<Serializable
             line: class.line,
         })
         .collect()
+}
+
+fn collect_module_trait_use_deprecations(module: &Module) -> Vec<TraitUseDeprecation> {
+    let mut deprecations = Vec::new();
+    for class in &module.classes {
+        collect_trait_use_deprecations_for_user(
+            &class.name,
+            &class.trait_uses,
+            &module.traits,
+            &mut deprecations,
+        );
+    }
+    for trait_decl in &module.traits {
+        collect_trait_use_deprecations_for_user(
+            &trait_decl.name,
+            &trait_decl.trait_uses,
+            &module.traits,
+            &mut deprecations,
+        );
+    }
+    deprecations
+}
+
+fn collect_trait_use_deprecations_for_user(
+    used_by: &str,
+    trait_uses: &[TraitUseDecl],
+    traits: &[TraitDecl],
+    deprecations: &mut Vec<TraitUseDeprecation>,
+) {
+    for trait_use in trait_uses {
+        let Some(trait_decl) = traits
+            .iter()
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(&trait_use.name))
+        else {
+            continue;
+        };
+        if trait_decl.deprecated_message.is_none() && trait_decl.deprecated_since.is_none() {
+            continue;
+        }
+        deprecations.push(TraitUseDeprecation {
+            trait_name: trait_decl.name.clone(),
+            used_by: used_by.to_string(),
+            message: trait_decl.deprecated_message.clone(),
+            since: trait_decl.deprecated_since.clone(),
+            line: trait_use.line,
+        });
+    }
 }
 
 fn collect_module_magic_visibility_warnings(module: &Module) -> Vec<MagicVisibilityWarning> {
