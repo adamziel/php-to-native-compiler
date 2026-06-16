@@ -12178,6 +12178,19 @@ impl ValueEmitter {
         value: &ValueExpr,
     ) -> String {
         let resolved_class_name = self.static_property_class_name(class_name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_runtime_validate_static_property_write(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", 1)) {\n");
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_temp = self.next_temp();
@@ -12193,7 +12206,7 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
-        let result_temp =
+        let computed_temp =
             self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
         let assigned_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -12205,14 +12218,20 @@ impl ValueEmitter {
         out.push_str("\", ");
         self.emit_access_scope(out);
         out.push_str(", ");
-        out.push_str(&result_temp);
+        out.push_str(&computed_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
 
+        out.push_str("    ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&computed_temp);
+        out.push_str(";\n");
         emit_value_cleanup(out, "    ", &assigned_temp);
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        out.push_str("    }\n");
         result_temp
     }
 

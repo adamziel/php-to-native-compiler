@@ -30706,7 +30706,7 @@ try {
 }
 
 try {
-    Counter::$calls += 1;
+    Counter::$calls += str_repeat('a', 10);
 } catch (Error $e) {
     echo $e->getMessage(), \"\\n\";
 }
@@ -30755,6 +30755,7 @@ var_dump(Counter::$calls);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_write_static_property_indirect"));
+    assert!(c_source.contains("ptn_runtime_validate_static_property_write"));
     assert!(c_source.contains("ptn_runtime_bind_static_property_reference"));
 }
 
