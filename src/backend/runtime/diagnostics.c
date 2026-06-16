@@ -145,8 +145,9 @@ static PTN_UNUSED void ptn_runtime_unwrap_reference_slots_if_unaliased(
 
 static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const char *name, PtnValue reference) {
     PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
-    ptn_value_destroy(&symbol->value);
+    PtnValue old_value = symbol->value;
     symbol->value = ptn_value_clone(reference);
+    ptn_value_destroy(&old_value);
 }
 
 static PTN_UNUSED PtnClosure *ptn_closure_from_value(PtnValue closure) {

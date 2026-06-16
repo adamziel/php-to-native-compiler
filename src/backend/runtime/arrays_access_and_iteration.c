@@ -2033,7 +2033,14 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         mutable_metadata->is_unset = 0;
         ptn_object_metadata_remember_value_type(mutable_metadata, stored);
     }
-    ptn_array_write_entry(runtime, receiver.as.object->properties, key, stored);
+    if (entry != NULL && entry->value.type == PTN_REFERENCE) {
+        ptn_array_update_next_auto_key(receiver.as.object->properties, key);
+        ptn_reference_assign_publish_first(runtime, entry->value.as.reference, stored);
+        ptn_value_destroy(&stored);
+        ptn_array_key_free(key);
+    } else {
+        ptn_array_set_entry_publish_first(receiver.as.object->properties, key, stored);
+    }
     free(storage_key);
     return result;
 }
@@ -2147,7 +2154,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         reference.as.reference->value = coerced;
         ptn_reference_adopt_property_type(reference.as.reference, metadata);
     }
-    ptn_array_set_entry(receiver.as.object->properties, key, ptn_value_clone(reference));
+    ptn_array_set_entry_publish_first(receiver.as.object->properties, key, ptn_value_clone(reference));
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
     if (mutable_metadata != NULL) {

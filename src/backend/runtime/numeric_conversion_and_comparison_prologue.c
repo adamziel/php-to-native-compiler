@@ -2792,8 +2792,19 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
         }
         return ptn_null();
     }
+    PtnSymbolTable *static_properties = ptn_runtime_static_property_table(runtime);
+    PtnValue current;
+    if (ptn_symbols_get(static_properties, key, &current) && current.type == PTN_REFERENCE) {
+        if (ptn_reference_assign(runtime, current.as.reference, value)) {
+            PtnValue result = ptn_value_clone(current.as.reference->value);
+            free(key);
+            return result;
+        }
+        free(key);
+        return ptn_value_clone_deref(value);
+    }
     PtnValue result = ptn_value_clone_deref(value);
-    ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, result);
+    ptn_symbols_set(static_properties, key, result);
     free(key);
     return result;
 }

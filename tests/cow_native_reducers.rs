@@ -547,6 +547,114 @@ var_dump($array);",
 }
 
 #[test]
+fn compile_destructor_mutated_assignment_reducers_to_native_binary() {
+    let root = temp_dir("ptn-native-destructor-mutated-assignment-reducers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("destructor-mutated-assignment-reducers.php");
+    let output = root.join("destructor-mutated-assignment-reducers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class PlainBox { public ?PlainT $value; }\n\
+class PlainT { public function __destruct() { global $plainBox; $plainBox->value = null; } }\n\
+function plain_test($box) {\n\
+    $result = ($box->value = new PlainT);\n\
+    echo is_object($result) ? \"object\" : \"not-object\";\n\
+    echo \":\", $box->value === null ? \"null\" : \"set\", \"\\n\";\n\
+}\n\
+$plainBox = new PlainBox();\n\
+$plainBox->value = new PlainT;\n\
+plain_test($plainBox);\n\
+plain_test($plainBox);\n\
+\n\
+class PropAliasAssignBox { public ?PropAliasAssignT $value; }\n\
+class PropAliasAssignT {\n\
+    static ?PropAliasAssignT $keep;\n\
+    public function __destruct() { global $propAliasAssignBox; $propAliasAssignBox->value = null; }\n\
+}\n\
+function prop_alias_assign_test($box) { return spl_object_id($box->value = new PropAliasAssignT); }\n\
+$propAliasAssignBox = new PropAliasAssignBox();\n\
+$propAliasAssignBox->value = new PropAliasAssignT;\n\
+PropAliasAssignT::$keep =& $propAliasAssignBox->value;\n\
+$propAliasAssignFirst = prop_alias_assign_test($propAliasAssignBox);\n\
+$propAliasAssignSecond = prop_alias_assign_test($propAliasAssignBox);\n\
+echo $propAliasAssignFirst === $propAliasAssignSecond ? \"prop-alias-assign:same\\n\" : \"prop-alias-assign:different\\n\";\n\
+\n\
+class VarRefT { public function __destruct() { $GLOBALS[\"varRefA\"] = null; } }\n\
+$varRefA = new VarRefT;\n\
+$varRefTmp = new VarRefT;\n\
+$varRefResult = ($varRefA =& $varRefTmp);\n\
+echo is_null($varRefResult) ? \"var-ref:null\\n\" : \"var-ref:object\\n\";\n\
+echo is_null($varRefTmp) ? \"var-ref-tmp:null\\n\" : \"var-ref-tmp:object\\n\";\n\
+\n\
+class RefBox { public ?RefT $value; }\n\
+class RefT { public function __destruct() { global $refBox; $refBox->value = null; } }\n\
+function ref_test($box) {\n\
+    $tmp = new RefT;\n\
+    $result = ($box->value =& $tmp);\n\
+    echo is_null($result) ? \"prop-ref:null\" : \"prop-ref:object\";\n\
+    echo is_null($tmp) ? \":tmp-null\" : \":tmp-object\";\n\
+    echo $box->value === null ? \":slot-null\\n\" : \":slot-set\\n\";\n\
+}\n\
+$refBox = new RefBox();\n\
+$refBox->value = new RefT;\n\
+ref_test($refBox);\n\
+ref_test($refBox);\n\
+\n\
+class AliasBox { public ?AliasT $value; }\n\
+class AliasT {\n\
+    static ?AliasT $keep;\n\
+    public function __destruct() { global $aliasBox; $aliasBox->value = null; }\n\
+}\n\
+function alias_ref_test($box) {\n\
+    $tmp = new AliasT;\n\
+    $result = ($box->value =& $tmp);\n\
+    echo is_null($result) ? \"alias-prop-ref:null\" : \"alias-prop-ref:object\";\n\
+    echo is_null($tmp) ? \":tmp-null\" : \":tmp-object\";\n\
+    echo $box->value === null ? \":slot-null\\n\" : \":slot-set\\n\";\n\
+}\n\
+$aliasBox = new AliasBox();\n\
+$aliasBox->value = new AliasT;\n\
+AliasT::$keep =& $aliasBox->value;\n\
+alias_ref_test($aliasBox);\n\
+alias_ref_test($aliasBox);\n\
+\n\
+class StaticRefT {\n\
+    static ?StaticRefT $test;\n\
+    public function __destruct() { StaticRefT::$test = null; }\n\
+}\n\
+StaticRefT::$test = new StaticRefT;\n\
+$staticRefTmp = new StaticRefT;\n\
+$staticRefResult = (StaticRefT::$test =& $staticRefTmp);\n\
+echo is_null($staticRefResult) ? \"static-ref:null\\n\" : \"static-ref:object\\n\";\n\
+echo is_null($staticRefTmp) ? \"static-ref-tmp:null\\n\" : \"static-ref-tmp:object\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object:null\n",
+            "object:set\n",
+            "prop-alias-assign:same\n",
+            "var-ref:null\n",
+            "var-ref-tmp:null\n",
+            "prop-ref:null:tmp-null:slot-null\n",
+            "prop-ref:object:tmp-object:slot-set\n",
+            "alias-prop-ref:object:tmp-object:slot-set\n",
+            "alias-prop-ref:null:tmp-null:slot-null\n",
+            "static-ref:null\n",
+            "static-ref-tmp:null\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dynamic_temporary_cow_reducers_match_php_oracle() {
     let root = temp_dir("ptn-native-dynamic-temporary-cow-reducers");
     fs::create_dir_all(&root).unwrap();

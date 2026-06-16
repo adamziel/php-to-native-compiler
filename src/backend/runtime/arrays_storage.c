@@ -313,6 +313,19 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     ptn_array_index_insert(array, key, entry_index);
 }
 
+static PTN_UNUSED void ptn_array_set_entry_publish_first(PtnArray *array, PtnArrayKey key, PtnValue value) {
+    size_t index = ptn_array_find_key(array, key);
+    ptn_array_update_next_auto_key(array, key);
+    if (index < array->len) {
+        PtnValue old_value = array->entries[index].value;
+        array->entries[index].value = value;
+        ptn_array_key_free(key);
+        ptn_value_destroy(&old_value);
+        return;
+    }
+    ptn_array_set_entry(array, key, value);
+}
+
 static PTN_UNUSED void ptn_array_write_entry(PtnRuntime *runtime, PtnArray *array, PtnArrayKey key, PtnValue value) {
     size_t index = ptn_array_find_key(array, key);
     if (index < array->len && array->entries[index].value.type == PTN_REFERENCE) {

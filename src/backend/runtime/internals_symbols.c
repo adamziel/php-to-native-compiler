@@ -40,6 +40,17 @@ static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *re
     return 1;
 }
 
+static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, PtnReference *reference, PtnValue value) {
+    PtnValue stored_value = ptn_null();
+    if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, &stored_value)) {
+        return 0;
+    }
+    PtnValue old_value = reference->value;
+    reference->value = stored_value;
+    ptn_value_destroy(&old_value);
+    return 1;
+}
+
 static PTN_UNUSED size_t ptn_array_count_reference(PtnArray *array, PtnReference *reference, size_t depth) {
     if (array == NULL || reference == NULL || depth > 1024) {
         return 0;
