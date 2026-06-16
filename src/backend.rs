@@ -4428,7 +4428,18 @@ fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl
             out.push_str(&c_string(entry.declaring_class));
             out.push_str("\", \"");
             out.push_str(&c_string(&method.name));
+<<<<<<< HEAD
             out.push_str("\");\n");
+=======
+            out.push_str("\", ");
+            out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(", ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(", 0");
+            out.push_str(");\n");
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
             out.push_str("        }\n");
         }
         out.push_str("        return ptn_null();\n");
@@ -4516,7 +4527,18 @@ fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl
             out.push_str(&c_string(entry.declaring_class));
             out.push_str("\", \"");
             out.push_str(&c_string(&method.name));
+<<<<<<< HEAD
             out.push_str("\"));\n");
+=======
+            out.push_str("\", ");
+            out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(", ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(", 0");
+            out.push_str("));\n");
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
             out.push_str("        }\n");
         }
         out.push_str("        return result;\n");

@@ -29318,6 +29318,7 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isPublic")
         || ptn_ascii_case_equal(method_name, "setAccessible")
         || ptn_ascii_case_equal(method_name, "isStatic")
+<<<<<<< HEAD
         || ptn_ascii_case_equal(method_name, "isUserDefined");
 }
 
@@ -29336,6 +29337,11 @@ static int ptn_reflection_named_type_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "allowsNull")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "isBuiltin");
+=======
+        || ptn_ascii_case_equal(method_name, "isUserDefined")
+        || ptn_ascii_case_equal(method_name, "returnsReference")
+        || ptn_ascii_case_equal(method_name, "setAccessible");
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
 }
 
 static int ptn_reflection_property_method_exists(const char *method_name) {
@@ -30260,6 +30266,13 @@ static char *ptn_reflection_class_required_class_arg_name(
 typedef struct {
     char *class_name;
     char *name;
+<<<<<<< HEAD
+=======
+    int is_static;
+    int visibility;
+    int is_abstract;
+    int is_internal;
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
 } PtnReflectionMethodData;
 
 typedef struct PtnSensitiveParameterValueData {
@@ -30308,8 +30321,17 @@ static PtnReflectionMethodData *ptn_reflection_method_data(PtnRuntime *runtime, 
 
 static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name(
     PtnRuntime *runtime,
+<<<<<<< HEAD
     const char *class_name,
     const char *method_name
+=======
+    const char *declaring_class,
+    const char *method_name,
+    int is_static,
+    int visibility,
+    int is_abstract,
+    int is_internal
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
 ) {
     PtnReflectionMethodData *data = malloc(sizeof(PtnReflectionMethodData));
     if (data == NULL) {
@@ -30317,6 +30339,13 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name(
     }
     data->class_name = ptn_duplicate_string(class_name);
     data->name = ptn_duplicate_string(method_name);
+<<<<<<< HEAD
+=======
+    data->is_static = is_static;
+    data->visibility = visibility;
+    data->is_abstract = is_abstract;
+    data->is_internal = is_internal;
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
 
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionMethod");
     object.as.object->native_data = data;
@@ -30339,9 +30368,35 @@ static PtnValue ptn_reflection_method_throw_missing(PtnRuntime *runtime, const c
     if (needed < 0) {
         ptn_abort_out_of_memory();
     }
+<<<<<<< HEAD
     char *message = malloc((size_t)needed + 1);
     if (message == NULL) {
         ptn_abort_out_of_memory();
+=======
+    PtnValue method = ptn_declared_class_reflection_method(runtime, class_name, method_name);
+    if (
+        ptn_value_deref(method).type == PTN_NULL
+        && ptn_internal_reflection_metadata_class_exists(class_name)
+        && ptn_internal_class_method_exists(class_name, method_name)
+    ) {
+        method = ptn_reflection_method_object_from_name(
+            runtime,
+            class_name,
+            method_name,
+            ptn_ascii_case_equal(class_name, "Reflection") ||
+                (
+                    ptn_ascii_case_equal(class_name, "ReflectionMethod") &&
+                    ptn_ascii_case_equal(method_name, "createFromMethodName")
+                ),
+            PTN_PROPERTY_PUBLIC,
+            0,
+            1
+        );
+    }
+    if (ptn_value_deref(method).type == PTN_NULL) {
+        ptn_reflection_class_throw_missing_method(runtime, class_name, method_name);
+        return ptn_null();
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
     }
     snprintf(message, (size_t)needed + 1, "Method %s::%s() does not exist", class_name, method_name);
     ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
@@ -30879,7 +30934,20 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         return ptn_int(modifiers);
     }
     if (ptn_ascii_case_equal(name, "isAbstract")) {
+<<<<<<< HEAD
         return ptn_bool(is_abstract);
+=======
+        return ptn_bool(data->is_abstract);
+    }
+    if (ptn_ascii_case_equal(name, "isInternal")) {
+        return ptn_bool(data->is_internal);
+    }
+    if (ptn_ascii_case_equal(name, "isUserDefined")) {
+        return ptn_bool(!data->is_internal);
+    }
+    if (ptn_ascii_case_equal(name, "isFinal")) {
+        return ptn_bool(0);
+>>>>>>> c8411da6a (WIP: checkpoint (auto))
     }
     if (ptn_ascii_case_equal(name, "isConstructor")) {
         return ptn_bool(ptn_ascii_case_equal(data->name, "__construct"));
