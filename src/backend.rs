@@ -2341,6 +2341,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str(
         "static const char *ptn_declared_private_property_class(const char *class_name, const char *property_name);\n",
     );
+    out.push_str("static const char *ptn_declared_class_canonical_name(const char *name);\n");
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str(
         "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
@@ -2476,6 +2477,24 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_class_canonical_name(const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return NULL;\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_trait_exists(const char *name) {\n");

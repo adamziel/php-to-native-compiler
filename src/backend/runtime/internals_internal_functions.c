@@ -350,6 +350,7 @@ static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *na
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
+static const char *ptn_declared_class_canonical_name(const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
@@ -24654,6 +24655,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getParentClass")
+        || ptn_ascii_case_equal(method_name, "getProperty")
         || ptn_ascii_case_equal(method_name, "getProperties")
         || ptn_ascii_case_equal(method_name, "getShortName")
         || ptn_ascii_case_equal(method_name, "hasConstant")
@@ -25473,6 +25475,11 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         if (argc > 1) {
             ptn_reflection_method_check_exact_arguments(runtime, name, argc, 1);
         }
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Method ReflectionMethod::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1",
+            line
+        );
         return ptn_null();
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
@@ -25564,6 +25571,87 @@ static void ptn_reflection_class_throw_missing_property(
     }
     snprintf(message, (size_t)needed + 1, "Property %s::$%s does not exist", class_name, property_name);
     ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static char *ptn_reflection_lowercase_name(const char *name) {
+    size_t len = strlen(name);
+    char *lower = ptn_duplicate_string_len(name, len);
+    for (size_t i = 0; i < len; i++) {
+        lower[i] = (char)tolower((unsigned char)lower[i]);
+    }
+    return lower;
+}
+
+static PtnValue ptn_reflection_class_property_from_name(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property_name
+) {
+    const char *separator = strstr(property_name, "::");
+    if (separator != NULL) {
+        char *qualified_class_name = ptn_duplicate_string_len(property_name, (size_t)(separator - property_name));
+        const char *qualified_property_name = separator + 2;
+        if (!ptn_reflection_class_symbol_exists(qualified_class_name)) {
+            char *missing_class_name = ptn_reflection_lowercase_name(qualified_class_name);
+            ptn_reflection_class_throw_missing_class(runtime, missing_class_name);
+            free(missing_class_name);
+            free(qualified_class_name);
+            return ptn_null();
+        }
+        const char *canonical_qualified_class_name = ptn_declared_class_canonical_name(qualified_class_name);
+        const char *diagnostic_class_name = canonical_qualified_class_name == NULL
+            ? qualified_class_name
+            : canonical_qualified_class_name;
+        if (!ptn_declared_class_is_same_or_descendant(class_name, diagnostic_class_name)) {
+            int needed = snprintf(
+                NULL,
+                0,
+                "Fully qualified property name %s::$%s does not specify a base class of %s",
+                diagnostic_class_name,
+                qualified_property_name,
+                class_name
+            );
+            if (needed < 0) {
+                free(qualified_class_name);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(qualified_class_name);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(
+                message,
+                (size_t)needed + 1,
+                "Fully qualified property name %s::$%s does not specify a base class of %s",
+                diagnostic_class_name,
+                qualified_property_name,
+                class_name
+            );
+            ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+            free(qualified_class_name);
+            return ptn_null();
+        }
+        if (!ptn_declared_class_reflection_property_metadata(
+            diagnostic_class_name,
+            qualified_property_name,
+            NULL,
+            NULL,
+            NULL
+        )) {
+            ptn_reflection_class_throw_missing_property(runtime, diagnostic_class_name, qualified_property_name);
+            free(qualified_class_name);
+            return ptn_null();
+        }
+        PtnValue result = ptn_reflection_property_object_from_name(runtime, diagnostic_class_name, qualified_property_name);
+        free(qualified_class_name);
+        return result;
+    }
+    if (!ptn_declared_class_reflection_property_metadata(class_name, property_name, NULL, NULL, NULL)) {
+        ptn_reflection_class_throw_missing_property(runtime, class_name, property_name);
+        return ptn_null();
+    }
+    return ptn_reflection_property_object_from_name(runtime, class_name, property_name);
 }
 
 static void ptn_reflection_property_check_exact_arguments(
@@ -25700,6 +25788,11 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         if (argc > 1) {
             ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
         }
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Method ReflectionProperty::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1",
+            line
+        );
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getValue")) {
@@ -25721,6 +25814,13 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             if (argc != 1 && argc != 2) {
                 ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
                 return ptn_null();
+            }
+            if (argc == 1) {
+                ptn_emit_deprecation(
+                    &runtime->diagnostics,
+                    "Calling ReflectionProperty::setValue() with a single argument is deprecated",
+                    line
+                );
             }
             PtnValue value = argc == 1 ? args[0] : args[1];
             return ptn_runtime_write_static_property(runtime, data->class_name, data->name, data->class_name, value, line);
@@ -25898,6 +25998,29 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         int filter_present = filter.type != PTN_NULL;
         int filter_value = filter_present ? (int)ptn_value_to_integer(filter) : 0;
         return ptn_declared_class_reflection_properties(runtime, class_name, filter_present, filter_value);
+    }
+    if (ptn_ascii_case_equal(name, "getProperty")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnStringOperand property_operand = ptn_internal_expect_string_arg(
+            runtime,
+            "ReflectionClass::getProperty",
+            1,
+            "name",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(property_operand);
+            return ptn_null();
+        }
+        char *property_name = ptn_duplicate_string_len(property_operand.data, property_operand.len);
+        ptn_string_operand_free(property_operand);
+        PtnValue property = ptn_reflection_class_property_from_name(runtime, class_name, property_name);
+        free(property_name);
+        return property;
     }
     if (ptn_ascii_case_equal(name, "getConstructor")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
