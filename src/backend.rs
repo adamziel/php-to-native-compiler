@@ -3575,6 +3575,45 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_constant_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)runtime;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for constant in class_constant_lookup_chain(class, classes) {
+            out.push_str("        PtnValue ptn_constant_");
+            out.push_str(&c_identifier(&constant.name));
+            out.push_str(" = ptn_runtime_read_class_constant(runtime, class_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\", 0);\n");
+            out.push_str("        if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
+            out.push_str("            ptn_value_destroy(&result);\n");
+            out.push_str("            return ptn_null();\n");
+            out.push_str("        }\n");
+            out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\"), ptn_constant_");
+            out.push_str(&c_identifier(&constant.name));
+            out.push_str(");\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_method_exists(const char *class_name, const char *method_name) {\n",
     );
     if classes.is_empty() {

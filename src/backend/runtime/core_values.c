@@ -994,6 +994,14 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,

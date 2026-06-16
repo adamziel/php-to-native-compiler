@@ -13211,6 +13211,78 @@ var_dump(method_exists(\"ReflectionMethod\", \"invokeArgs\"));
 }
 
 #[test]
+fn compile_reflection_class_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-constants.php");
+    let output = root.join("reflection-class-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstBase {
+    const a = \"base\";
+    const b = 7;
+}
+
+class ConstChild extends ConstBase {
+    const a = \"child\";
+}
+
+$base = new ReflectionClass(\"ConstBase\");
+var_dump($base->getConstant(\"a\"));
+var_dump($base->getConstants());
+
+$child = new ReflectionClass(\"ConstChild\");
+var_dump($child->getConstant(\"a\"));
+var_dump($child->getConstant(\"b\"));
+var_dump($child->hasConstant(\"b\"));
+
+$constant = $child->getReflectionConstant(\"a\");
+var_dump(gettype($constant));
+var_dump($constant->getName());
+var_dump($constant->getDeclaringClass()->getName());
+var_dump($constant->getValue());
+
+$internal = new ReflectionClass(\"ReflectionClass\");
+var_dump($internal->hasConstant(\"IS_FINAL\"));
+var_dump(gettype($internal->getReflectionConstant(\"IS_IMPLICIT_ABSTRACT\")));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"base\"\n",
+            "array(2) {\n",
+            "  [\"a\"]=>\n",
+            "  string(4) \"base\"\n",
+            "  [\"b\"]=>\n",
+            "  int(7)\n",
+            "}\n",
+            "string(5) \"child\"\n",
+            "int(7)\n",
+            "bool(true)\n",
+            "string(6) \"object\"\n",
+            "string(1) \"a\"\n",
+            "string(10) \"ConstChild\"\n",
+            "string(5) \"child\"\n",
+            "bool(true)\n",
+            "string(6) \"object\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_constants"));
+    assert!(c_source.contains("ptn_reflection_class_constant_call_method"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();
