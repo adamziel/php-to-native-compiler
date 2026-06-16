@@ -347,6 +347,7 @@ typedef struct {
     size_t required_parameter_count;
     int is_variadic;
     const char *const *parameter_names;
+    const char *const *parameter_type_names;
 } PtnFunctionMetadata;
 
 struct PtnClosure {
@@ -884,6 +885,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.required_parameter_count = 0;
     metadata.is_variadic = 0;
     metadata.parameter_names = NULL;
+    metadata.parameter_type_names = NULL;
     return metadata;
 }
 
@@ -893,7 +895,8 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     size_t parameter_count,
     size_t required_parameter_count,
     int is_variadic,
-    const char *const *parameter_names
+    const char *const *parameter_names,
+    const char *const *parameter_type_names
 ) {
     PtnFunctionMetadata metadata;
     metadata.found = 1;
@@ -903,6 +906,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.required_parameter_count = required_parameter_count;
     metadata.is_variadic = is_variadic;
     metadata.parameter_names = parameter_names;
+    metadata.parameter_type_names = parameter_type_names;
     return metadata;
 }
 
@@ -958,7 +962,9 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *cl
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_named_type(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name);
@@ -967,6 +973,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_infinite_iterator(const char *c
 static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -998,6 +1006,18 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_method_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_sensitive_parameter_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -1036,6 +1056,22 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_named_type_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

@@ -13562,6 +13562,103 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
 }
 
 #[test]
+fn compile_reflection_parameter_type_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-parameter-type-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-parameter-type-metadata.php");
+    let output = root.join("reflection-parameter-type-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class BarReflectParam {
+    public static function staticMethod(BarReflectParam $bar, int $int, $none) {}
+    public function instanceMethod(BarReflectParam $bar, int $int, $none) {}
+}
+
+function reflected_param_types(BarReflectParam $bar, int $int, $none) {}
+
+$fn = function (BarReflectParam $bar, int $x, $none) {};
+$bar = new BarReflectParam();
+$callables = [
+    'reflected_param_types',
+    $fn,
+    'BarReflectParam::staticMethod',
+    [$bar, 'instanceMethod'],
+];
+
+foreach ($callables as $callable) {
+    $closure = Closure::fromCallable($callable);
+    $refl = new ReflectionFunction($closure);
+    foreach ($refl->getParameters() as $param) {
+        if ($param->hasType()) {
+            echo $param->getType()->getName(), \"\\n\";
+        }
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "BarReflectParam\n",
+            "int\n",
+            "BarReflectParam\n",
+            "int\n",
+            "BarReflectParam\n",
+            "int\n",
+            "BarReflectParam\n",
+            "int\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_parameter_call_method"));
+    assert!(c_source.contains("ptn_reflection_named_type_call_method"));
+}
+
+#[test]
+fn compile_sensitive_parameter_value_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-sensitive-parameter-value-reflection");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sensitive-parameter-value-reflection.php");
+    let output = root.join("sensitive-parameter-value-reflection-bin");
+    fs::write(
+        &input,
+        "<?php
+$v = new SensitiveParameterValue('secret');
+$r = new ReflectionClass($v);
+var_dump($r->hasProperty('value'));
+$p = $r->getProperty('value');
+var_dump($p->getName());
+var_dump($p->getValue($v));
+var_dump(class_exists('SensitiveParameterValue'));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nstring(5) \"value\"\nstring(6) \"secret\"\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_sensitive_parameter_value_new"));
+    assert!(c_source.contains("ptn_reflection_property_call_method"));
+}
+
+#[test]
 fn compile_reflection_object_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-object-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -20992,6 +21089,41 @@ var_dump($referenced);",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_call_user_func_namespaced_sort_literal_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-namespaced-sort-literal-warns");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-namespaced-sort-literal-warns.php");
+    let output = root.join("call-user-func-namespaced-sort-literal-warns-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+namespace Foo;\n\
+var_dump(call_user_func('sort', []));\n\
+var_dump(\\call_user_func('sort', []));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 3\n",
+            "bool(true)\n",
+            "\nWarning: sort(): Argument #1 ($array) must be passed by reference, value given in ptn on line 4\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_call_effective_internal_name"));
+    assert!(c_source.contains("ptn_dynamic_call_warn_first_reference_argument_mismatch"));
 }
 
 #[test]
