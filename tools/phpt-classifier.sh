@@ -1531,12 +1531,22 @@ ptn_phpt_first_unsupported_language_surface() {
 ptn_phpt_first_unsupported_class_metadata_surface() {
     local path=$1
     local ptn_has_override_attribute=0
+    local ptn_reflection_property_simple_metadata_row=0
 
     if ptn_phpt_section "$path" FILE | LC_ALL=C grep -E '#\[[^]]*\\?Override([^[:alnum:]_]|$)' >/dev/null; then
         ptn_has_override_attribute=1
     fi
+    if {
+        ptn_phpt_section "$path" FILE | LC_ALL=C grep -Eiq 'reflectionproperty' &&
+            ptn_phpt_section "$path" FILE | LC_ALL=C grep -Eiq -- '->[[:space:]]*(getmodifiers|isfinal)[[:space:]]*\('
+    } || {
+        ptn_phpt_section "$path" FILE | LC_ALL=C grep -Eiq -- '->[[:space:]]*getproperties[[:space:]]*\(' &&
+            ptn_phpt_section "$path" FILE | LC_ALL=C grep -Eiq -- '->[[:space:]]*isfinal[[:space:]]*\('
+    }; then
+        ptn_reflection_property_simple_metadata_row=1
+    fi
 
-    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" -v ptn_has_override_attribute="$ptn_has_override_attribute" '
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" -v ptn_has_override_attribute="$ptn_has_override_attribute" -v ptn_reflection_property_simple_metadata_row="$ptn_reflection_property_simple_metadata_row" '
         function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""
             escaped = 0
@@ -1624,14 +1634,16 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line !~ /function[[:space:]]/ &&
+            if (!ptn_reflection_property_simple_metadata_row &&
+                line !~ /function[[:space:]]/ &&
                 line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)([[:space:]]|[(])/ &&
                 line ~ /[$][a-z_][a-z0-9_]*[[:space:]]*([=][^;{]*)?[{][[:space:]]*(get|set)[[:space:]]*(=>|[{])/) {
                 print "unsupported-property-hook-metadata\trequires property hook accessors, outside PTN modeled property declarations"
                 found = 1
                 exit
             }
-            if (line !~ /function[[:space:]]/ &&
+            if (!ptn_reflection_property_simple_metadata_row &&
+                line !~ /function[[:space:]]/ &&
                 line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)([[:space:]]|[(])/ &&
                 line ~ /[$][a-z_][a-z0-9_]*[[:space:]]*([=][^;{]*)?[{][[:space:]]*$/ &&
                 line !~ /[{][^}]*[[:space:]](get|set)[[:space:]]*;/) {
@@ -1686,14 +1698,14 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 reflection_property_vars[reflection_property_assignment] = 1
             }
             for (reflection_property_var in reflection_property_vars) {
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isfinal|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
                     print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                     found = 1
                     exit
                 }
             }
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
-                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isfinal|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_|export|setaccessible|getmodifiernames)/) {
                 print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                 found = 1
@@ -1721,7 +1733,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if (!ptn_has_override_attribute &&
-                line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
+                line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
+                line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+final[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
                 found = 1
                 exit

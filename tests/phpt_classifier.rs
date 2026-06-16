@@ -1520,6 +1520,39 @@ fn phpt_classifier_excludes_reflection_property_type_rows() {
 }
 
 #[test]
+fn phpt_classifier_keeps_final_static_property_modifier_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nreflection property modifiers\n--FILE--\n<?php\nclass Bag { public static final $value; }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getModifiers());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_property_hook_modifier_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nreflection property hook modifiers\n--FILE--\n<?php\nclass Bag { public $value { get { return 42; } } }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getModifiers());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_property_hook_is_final_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nreflection property final metadata\n--FILE--\n<?php\nclass Bag { public final $value { get => 42; } }\nforeach ((new ReflectionClass(Bag::class))->getProperties() as $ref) { var_dump($ref->isFinal()); }\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_reflection_parameter_named_type_rows_runnable() {
     let classification = classify(
         "--TEST--\nreflection parameter type\n--FILE--\n<?php\nfunction takesString(string $value): int { return strlen($value); }\n$function = new ReflectionFunction('takesString');\n$type = $function->getParameters()[0]->getType();\n$return = $function->getReturnType();\nvar_dump($type->getName(), $type->isBuiltin(), $return->getName());\n--EXPECT--\n",

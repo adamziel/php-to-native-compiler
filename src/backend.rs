@@ -4618,21 +4618,13 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_reflection_property_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
+        "\nstatic PTN_UNUSED int ptn_reflection_property_matches_filter(int modifiers, int filter_present, int filter) {\n",
     );
     out.push_str("    if (!filter_present) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (filter == 0) {\n");
     out.push_str("        return 0;\n");
-    out.push_str("    }\n");
-    out.push_str("    int modifiers = is_static ? 16 : 0;\n");
-    out.push_str("    if (visibility == PTN_PROPERTY_PUBLIC) {\n");
-    out.push_str("        modifiers |= 1;\n");
-    out.push_str("    } else if (visibility == PTN_PROPERTY_PROTECTED) {\n");
-    out.push_str("        modifiers |= 2;\n");
-    out.push_str("    } else if (visibility == PTN_PROPERTY_PRIVATE) {\n");
-    out.push_str("        modifiers |= 4;\n");
     out.push_str("    }\n");
     out.push_str("    return (modifiers & filter) != 0;\n");
     out.push_str("}\n");
@@ -4665,9 +4657,7 @@ fn emit_class_reflection_metadata_helpers(
                 continue;
             }
             out.push_str("        if (ptn_reflection_property_matches_filter(");
-            out.push_str(if entry.is_static { "1" } else { "0" });
-            out.push_str(", ");
-            out.push_str(c_property_visibility(entry.visibility));
+            out.push_str(&entry.reflection_modifiers().to_string());
             out.push_str(", filter_present, filter)) {\n");
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_property_object_from_name(runtime, \"");
             out.push_str(&c_string(entry.declaring_class));
@@ -4761,7 +4751,7 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers) {\n",
     );
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
@@ -4775,6 +4765,7 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    (void)is_static;\n");
         out.push_str("    (void)visibility;\n");
         out.push_str("    (void)has_default;\n");
+        out.push_str("    (void)modifiers;\n");
     }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
@@ -4800,6 +4791,9 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(";\n");
             out.push_str("            *has_default = ");
             out.push_str(if entry.has_default { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            *modifiers = ");
+            out.push_str(&entry.reflection_modifiers().to_string());
             out.push_str(";\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
@@ -4968,7 +4962,10 @@ fn reflection_class_constants_to_string(out: &mut String, class: &ClassDecl) {
 trait ReflectionPropertySummary {
     fn reflection_name(&self) -> &str;
     fn reflection_visibility(&self) -> PropertyVisibility;
+    fn reflection_set_visibility(&self) -> PropertyVisibility;
     fn reflection_is_static(&self) -> bool;
+    fn reflection_is_final(&self) -> bool;
+    fn reflection_is_virtual(&self) -> bool;
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint>;
     fn reflection_value(&self) -> Option<&ValueExpr>;
 }
@@ -4982,8 +4979,20 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
         self.visibility
     }
 
+    fn reflection_set_visibility(&self) -> PropertyVisibility {
+        self.set_visibility
+    }
+
     fn reflection_is_static(&self) -> bool {
         self.is_static
+    }
+
+    fn reflection_is_final(&self) -> bool {
+        self.is_final
+    }
+
+    fn reflection_is_virtual(&self) -> bool {
+        self.is_virtual
     }
 
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
@@ -5004,8 +5013,20 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
         self.visibility
     }
 
+    fn reflection_set_visibility(&self) -> PropertyVisibility {
+        self.set_visibility
+    }
+
     fn reflection_is_static(&self) -> bool {
         true
+    }
+
+    fn reflection_is_final(&self) -> bool {
+        self.is_final
+    }
+
+    fn reflection_is_virtual(&self) -> bool {
+        false
     }
 
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
@@ -5030,8 +5051,19 @@ fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
     for property in properties {
         out.push_str("    Property [ ");
         out.push_str(method_visibility_name(property.reflection_visibility()));
+        if property.reflection_set_visibility() != property.reflection_visibility() {
+            out.push(' ');
+            out.push_str(method_visibility_name(property.reflection_set_visibility()));
+            out.push_str("(set)");
+        }
         if property.reflection_is_static() {
             out.push_str(" static");
+        }
+        if property.reflection_is_final() {
+            out.push_str(" final");
+        }
+        if property.reflection_is_virtual() {
+            out.push_str(" virtual");
         }
         if let Some(type_hint) = property.reflection_type_hint() {
             out.push(' ');
@@ -5368,10 +5400,56 @@ struct ClassPropertyExistsEntry<'a> {
     declaring_class: &'a str,
     name: &'a str,
     visibility: PropertyVisibility,
+    set_visibility: PropertyVisibility,
     is_static: bool,
+    is_final: bool,
+    is_virtual: bool,
     type_hint: Option<&'a PropertyTypeHint>,
     value: Option<&'a ValueExpr>,
     has_default: bool,
+}
+
+impl ClassPropertyExistsEntry<'_> {
+    fn reflection_modifiers(&self) -> i32 {
+        property_reflection_modifiers(
+            self.visibility,
+            self.set_visibility,
+            self.is_static,
+            self.is_final,
+            self.is_virtual,
+        )
+    }
+}
+
+fn property_reflection_modifiers(
+    visibility: PropertyVisibility,
+    set_visibility: PropertyVisibility,
+    is_static: bool,
+    is_final: bool,
+    is_virtual: bool,
+) -> i32 {
+    let mut modifiers = match visibility {
+        PropertyVisibility::Public => 1,
+        PropertyVisibility::Protected => 2,
+        PropertyVisibility::Private => 4,
+    };
+    if is_static {
+        modifiers |= 16;
+    }
+    if is_final || (set_visibility != visibility && set_visibility == PropertyVisibility::Private) {
+        modifiers |= 32;
+    }
+    if set_visibility != visibility {
+        modifiers |= match set_visibility {
+            PropertyVisibility::Public => 1024,
+            PropertyVisibility::Protected => 2048,
+            PropertyVisibility::Private => 4096,
+        };
+    }
+    if is_virtual {
+        modifiers |= 512;
+    }
+    modifiers
 }
 
 struct ClassPropertyVarsEntry<'a> {
@@ -5449,7 +5527,10 @@ fn class_property_exists_chain<'a>(
                     declaring_class: class.name.as_str(),
                     name: property.name.as_str(),
                     visibility: property.visibility,
+                    set_visibility: property.set_visibility,
                     is_static: false,
+                    is_final: property.is_final,
+                    is_virtual: property.is_virtual,
                     type_hint: property.type_hint.as_ref(),
                     value: property.value.as_ref(),
                     has_default: property.value.is_some() || property.type_hint.is_none(),
@@ -5460,7 +5541,10 @@ fn class_property_exists_chain<'a>(
                 declaring_class: class.name.as_str(),
                 name: property.name.as_str(),
                 visibility: property.visibility,
+                set_visibility: property.set_visibility,
                 is_static: true,
+                is_final: property.is_final,
+                is_virtual: false,
                 type_hint: property.type_hint.as_ref(),
                 value: property.value.as_ref(),
                 has_default: property.value.is_some() || property.type_hint.is_none(),

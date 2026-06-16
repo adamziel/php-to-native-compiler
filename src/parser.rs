@@ -1652,6 +1652,7 @@ impl Parser<'_> {
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        modifiers.is_final,
                         attributes,
                         class_name,
                     )?,
@@ -1663,6 +1664,7 @@ impl Parser<'_> {
                     set_visibility,
                     modifiers.set_visibility_span,
                     member_is_readonly,
+                    modifiers.is_final,
                     attributes,
                     true,
                     class_name,
@@ -1682,6 +1684,7 @@ impl Parser<'_> {
                         modifiers.visibility,
                         set_visibility,
                         modifiers.set_visibility_span,
+                        modifiers.is_final,
                         attributes,
                         class_name,
                     )?,
@@ -1693,6 +1696,7 @@ impl Parser<'_> {
                     set_visibility,
                     modifiers.set_visibility_span,
                     member_is_readonly,
+                    modifiers.is_final,
                     attributes,
                     true,
                     class_name,
@@ -1875,6 +1879,7 @@ impl Parser<'_> {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         set_visibility_span: Option<SourceSpan>,
+        is_final: bool,
         attributes: ParsedAttributes,
         class_name: &str,
     ) -> Result<Vec<StaticPropertyDecl>> {
@@ -1895,6 +1900,7 @@ impl Parser<'_> {
         let mut properties = vec![self.parse_static_property_declaration(
             visibility,
             set_visibility,
+            is_final,
             type_hint.clone(),
             attributes.clone(),
             class_name,
@@ -1904,6 +1910,7 @@ impl Parser<'_> {
             properties.push(self.parse_static_property_declaration(
                 visibility,
                 set_visibility,
+                is_final,
                 type_hint.clone(),
                 attributes.clone(),
                 class_name,
@@ -1989,6 +1996,7 @@ impl Parser<'_> {
         set_visibility: PropertyVisibility,
         set_visibility_span: Option<SourceSpan>,
         is_readonly: bool,
+        is_final: bool,
         attributes: ParsedAttributes,
         allow_property_hooks: bool,
         class_name: &str,
@@ -2020,6 +2028,7 @@ impl Parser<'_> {
         let (first_property, first_had_hooks) = self.parse_property_declaration(
             visibility,
             set_visibility,
+            is_final,
             is_readonly,
             type_hint.clone(),
             attributes.clone(),
@@ -2040,6 +2049,7 @@ impl Parser<'_> {
             let (property, had_hooks) = self.parse_property_declaration(
                 visibility,
                 set_visibility,
+                is_final,
                 is_readonly,
                 type_hint.clone(),
                 attributes.clone(),
@@ -2126,6 +2136,7 @@ impl Parser<'_> {
         &mut self,
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
+        is_final: bool,
         is_readonly: bool,
         type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
@@ -2175,14 +2186,16 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            let hook_get_value = self.parse_property_hook_block()?;
+            let (is_virtual, hook_get_value) = self.parse_property_hook_block(&name)?;
             return Ok((
                 PropertyDecl {
                     name,
                     visibility,
                     set_visibility,
+                    is_final,
                     is_readonly,
                     has_hooks: true,
+                    is_virtual,
                     hook_get_value,
                     type_hint,
                     has_override_attribute: attributes.has_override,
@@ -2216,8 +2229,10 @@ impl Parser<'_> {
                 name,
                 visibility,
                 set_visibility,
+                is_final,
                 is_readonly,
                 has_hooks: false,
+                is_virtual: false,
                 hook_get_value: None,
                 type_hint,
                 has_override_attribute: attributes.has_override,
@@ -2232,6 +2247,7 @@ impl Parser<'_> {
         &mut self,
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
+        is_final: bool,
         type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
         class_name: &str,
@@ -2267,6 +2283,7 @@ impl Parser<'_> {
             name,
             visibility,
             set_visibility,
+            is_final,
             type_hint,
             has_override_attribute: attributes.has_override,
             value,
@@ -2274,8 +2291,9 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_property_hook_block(&mut self) -> Result<Option<Expr>> {
+    fn parse_property_hook_block(&mut self, property_name: &str) -> Result<(bool, Option<Expr>)> {
         self.expect_left_brace()?;
+        let mut is_virtual = true;
         let mut get_value = None;
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             let token = self.advance().clone();
@@ -2292,15 +2310,19 @@ impl Parser<'_> {
                         }
                         self.expect_semicolon()?;
                         get_value = Some(value);
-                    } else {
-                        self.skip_property_hook_body()?;
+                    } else if self.skip_property_hook_body("get", property_name)? {
+                        is_virtual = false;
                     }
                 }
-                TokenKind::Identifier(_) => {
-                    self.skip_property_hook_body()?;
+                TokenKind::Identifier(name) => {
+                    if self.skip_property_hook_body(&name, property_name)? {
+                        is_virtual = false;
+                    }
                 }
                 TokenKind::LeftBrace => {
-                    self.skip_braced_property_hook_body()?;
+                    if self.skip_braced_property_hook_body(property_name)? {
+                        is_virtual = false;
+                    }
                 }
                 TokenKind::Eof => {
                     return Err(Diagnostic::new(
@@ -2312,33 +2334,49 @@ impl Parser<'_> {
             }
         }
         self.expect_right_brace()?;
-        Ok(get_value)
+        Ok((is_virtual, get_value))
     }
 
-    fn skip_property_hook_body(&mut self) -> Result<()> {
+    fn skip_property_hook_body(&mut self, hook_name: &str, property_name: &str) -> Result<bool> {
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
             let _ = self.parse_expr()?;
             self.expect_semicolon()?;
-            return Ok(());
+            return Ok(hook_name.eq_ignore_ascii_case("set"));
         }
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
-            return self.skip_braced_property_hook_body();
+            return self.skip_braced_property_hook_body(property_name);
         }
         if matches!(self.peek().kind, TokenKind::Semicolon) {
             self.advance();
         }
-        Ok(())
+        Ok(false)
     }
 
-    fn skip_braced_property_hook_body(&mut self) -> Result<()> {
+    fn skip_braced_property_hook_body(&mut self, property_name: &str) -> Result<bool> {
         self.expect_left_brace()?;
         let mut depth = 1usize;
+        let mut uses_property = false;
         while depth > 0 {
             let token = self.advance().clone();
             match token.kind {
                 TokenKind::LeftBrace => depth += 1,
                 TokenKind::RightBrace => depth -= 1,
+                TokenKind::Variable(variable)
+                    if variable.eq_ignore_ascii_case("this")
+                        && matches!(self.peek().kind, TokenKind::ObjectOperator)
+                        && matches!(
+                            &self.peek_n(1).kind,
+                            TokenKind::Identifier(name) if name == property_name
+                        ) =>
+                {
+                    uses_property = true;
+                }
+                TokenKind::InterpolatedString(parts)
+                    if token_string_parts_use_this_property(&parts, property_name) =>
+                {
+                    uses_property = true;
+                }
                 TokenKind::Eof => {
                     return Err(Diagnostic::new(
                         "unterminated property hook block",
@@ -2348,7 +2386,7 @@ impl Parser<'_> {
                 _ => {}
             }
         }
-        Ok(())
+        Ok(uses_property)
     }
 
     fn parse_optional_property_type_hint(&mut self) -> Result<Option<PropertyTypeHint>> {
@@ -2962,6 +3000,7 @@ impl Parser<'_> {
             Some(PromotedProperty {
                 visibility: modifiers.visibility,
                 set_visibility,
+                is_final: modifiers.is_final,
                 is_readonly,
                 has_override_attribute: attributes.has_override,
                 span: modifiers.visibility_span.unwrap_or(token.span),
@@ -8336,8 +8375,10 @@ fn promoted_properties_from_constructor(
                 name: parameter.name.clone(),
                 visibility: promoted.visibility,
                 set_visibility: promoted.set_visibility,
+                is_final: promoted.is_final,
                 is_readonly: class_is_readonly || promoted.is_readonly,
                 has_hooks: false,
+                is_virtual: false,
                 hook_get_value: None,
                 type_hint: parameter
                     .type_hint
@@ -14570,6 +14611,24 @@ fn is_supported_property_default_expr(expr: &Expr) -> bool {
         Expr::Grouped { expr, .. } => is_supported_property_default_expr(expr),
         _ => is_supported_global_const_expr(expr),
     }
+}
+
+fn token_string_parts_use_this_property(parts: &[TokenStringPart], property_name: &str) -> bool {
+    parts.iter().any(|part| match part {
+        TokenStringPart::PropertyFetch { variable, property } => {
+            variable.eq_ignore_ascii_case("this") && property == property_name
+        }
+        TokenStringPart::PropertyChain {
+            variable,
+            properties,
+        } => {
+            variable.eq_ignore_ascii_case("this")
+                && properties
+                    .first()
+                    .is_some_and(|property| property == property_name)
+        }
+        _ => false,
+    })
 }
 
 fn is_supported_first_class_callable_const_target(callable: &Expr) -> bool {

@@ -34071,6 +34071,16 @@ class ReflectPropChild extends ReflectPropBase {
     private static $count = 3;
 }
 
+class ReflectPropModifiers {
+    public final $finalInstance;
+    public static final $finalStatic;
+    public $getHook { get { return 42; } }
+    public $backedGetHook { get { return $this->backedGetHook; } }
+    public $shortSetHook { set => strtoupper($value); }
+    public protected(set) mixed $protectedSet;
+    public private(set) mixed $privateSet;
+}
+
 $rc = new ReflectionClass(\"ReflectPropChild\");
 $base = $rc->getProperty(\"base\");
 var_dump($base->getName());
@@ -34098,6 +34108,28 @@ var_dump($static->getModifiers());
 var_dump($static->getValue());
 $static->setValue(9);
 var_dump($static->getValue());
+
+$finalInstance = new ReflectionProperty(\"ReflectPropModifiers\", \"finalInstance\");
+var_dump($finalInstance->getModifiers());
+var_dump($finalInstance->isFinal());
+$finalStatic = new ReflectionProperty(\"ReflectPropModifiers\", \"finalStatic\");
+var_dump($finalStatic->getModifiers());
+var_dump($finalStatic->isFinal());
+$getHook = new ReflectionProperty(\"ReflectPropModifiers\", \"getHook\");
+var_dump($getHook->getModifiers());
+var_dump($getHook->isVirtual());
+$backedGetHook = new ReflectionProperty(\"ReflectPropModifiers\", \"backedGetHook\");
+var_dump($backedGetHook->getModifiers());
+var_dump($backedGetHook->isVirtual());
+$shortSetHook = new ReflectionProperty(\"ReflectPropModifiers\", \"shortSetHook\");
+var_dump($shortSetHook->getModifiers());
+var_dump($shortSetHook->isVirtual());
+$protectedSet = new ReflectionProperty(\"ReflectPropModifiers\", \"protectedSet\");
+var_dump($protectedSet->getModifiers());
+var_dump($protectedSet->isFinal());
+$privateSet = new ReflectionProperty(\"ReflectPropModifiers\", \"privateSet\");
+var_dump($privateSet->getModifiers());
+var_dump($privateSet->isFinal());
 
 $internal = new ReflectionProperty(Exception::class, \"message\");
 var_dump($internal->getDeclaringClass()->getName());
@@ -34151,6 +34183,20 @@ try {
             "int(20)\n",
             "int(3)\n",
             "int(9)\n",
+            "int(33)\n",
+            "bool(true)\n",
+            "int(49)\n",
+            "bool(true)\n",
+            "int(513)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "int(2049)\n",
+            "bool(false)\n",
+            "int(4129)\n",
+            "bool(true)\n",
             "string(9) \"Exception\"\n",
             "bool(true)\n",
             "bool(true)\n",

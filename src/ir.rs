@@ -94,8 +94,10 @@ pub struct PropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
+    pub is_final: bool,
     pub is_readonly: bool,
     pub has_hooks: bool,
+    pub is_virtual: bool,
     pub hook_get_value: Option<ValueExpr>,
     pub type_hint: Option<PropertyTypeHint>,
     pub value: Option<ValueExpr>,
@@ -114,6 +116,7 @@ pub struct StaticPropertyDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
+    pub is_final: bool,
     pub type_hint: Option<PropertyTypeHint>,
     pub value: Option<ValueExpr>,
 }
@@ -1076,8 +1079,10 @@ impl<'a> LoweringContext<'a> {
                 name: property.name.clone(),
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
+                is_final: property.is_final,
                 is_readonly: property.is_readonly,
                 has_hooks: property.has_hooks,
+                is_virtual: property.is_virtual,
                 hook_get_value: property
                     .hook_get_value
                     .as_ref()
@@ -1094,6 +1099,7 @@ impl<'a> LoweringContext<'a> {
                 name: property.name.clone(),
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
+                is_final: property.is_final,
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })

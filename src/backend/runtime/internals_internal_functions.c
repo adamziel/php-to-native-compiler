@@ -32362,7 +32362,7 @@ static PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const
 static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_default_properties(PtnRuntime *runtime, const char *class_name);
 static PtnValue ptn_declared_class_reflection_static_properties(PtnRuntime *runtime, const char *class_name, size_t line);
-static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default);
+static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects);
 static const char *ptn_declared_class_parent_name(const char *name);
@@ -33505,11 +33505,13 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "hasDefaultValue")
         || ptn_ascii_case_equal(method_name, "isDefault")
         || ptn_ascii_case_equal(method_name, "isDynamic")
+        || ptn_ascii_case_equal(method_name, "isFinal")
         || ptn_ascii_case_equal(method_name, "isPrivate")
         || ptn_ascii_case_equal(method_name, "isProtected")
         || ptn_ascii_case_equal(method_name, "isPublic")
         || ptn_ascii_case_equal(method_name, "isReadable")
         || ptn_ascii_case_equal(method_name, "isStatic")
+        || ptn_ascii_case_equal(method_name, "isVirtual")
         || ptn_ascii_case_equal(method_name, "isWritable")
         || ptn_ascii_case_equal(method_name, "setValue");
 }
@@ -33819,11 +33821,13 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "hasDefaultValue",
             "isDefault",
             "isDynamic",
+            "isFinal",
             "isPrivate",
             "isProtected",
             "isPublic",
             "isReadable",
             "isStatic",
+            "isVirtual",
             "isWritable",
             "setValue",
         };
@@ -35277,7 +35281,8 @@ static int ptn_builtin_exception_reflection_property_metadata(
     const char **declaring_class,
     int *is_static,
     int *visibility,
-    int *has_default
+    int *has_default,
+    int *modifiers
 ) {
     const char *canonical_class = ptn_builtin_exception_class_name(class_name);
     if (canonical_class == NULL) {
@@ -35298,6 +35303,7 @@ static int ptn_builtin_exception_reflection_property_metadata(
         *visibility = PTN_PROPERTY_PROTECTED;
         *has_default = !(ptn_exception_name_equal(base_class, "Error") &&
             ptn_exception_name_equal(property_name, "line"));
+        *modifiers = 2;
         return 1;
     }
     if (
@@ -35309,6 +35315,7 @@ static int ptn_builtin_exception_reflection_property_metadata(
         *is_static = 0;
         *visibility = PTN_PROPERTY_PRIVATE;
         *has_default = 1;
+        *modifiers = 4;
         return 1;
     }
     if (
@@ -35319,6 +35326,7 @@ static int ptn_builtin_exception_reflection_property_metadata(
         *is_static = 0;
         *visibility = PTN_PROPERTY_PROTECTED;
         *has_default = 1;
+        *modifiers = 2;
         return 1;
     }
     return 0;
@@ -35363,7 +35371,8 @@ static int ptn_reflection_property_class_metadata(
     const char **declaring_class,
     int *is_static,
     int *visibility,
-    int *has_default
+    int *has_default,
+    int *modifiers
 ) {
     if (ptn_declared_class_reflection_property_metadata(
         class_name,
@@ -35371,7 +35380,8 @@ static int ptn_reflection_property_class_metadata(
         declaring_class,
         is_static,
         visibility,
-        has_default
+        has_default,
+        modifiers
     )) {
         return 1;
     }
@@ -35381,7 +35391,8 @@ static int ptn_reflection_property_class_metadata(
         declaring_class,
         is_static,
         visibility,
-        has_default
+        has_default,
+        modifiers
     );
 }
 
@@ -35493,13 +35504,15 @@ static int ptn_reflection_property_metadata(
     const char **declaring_class,
     int *is_static,
     int *visibility,
-    int *has_default
+    int *has_default,
+    int *modifiers
 ) {
     if (data->is_dynamic) {
         *declaring_class = data->class_name;
         *is_static = 0;
         *visibility = PTN_PROPERTY_PUBLIC;
         *has_default = 0;
+        *modifiers = 1;
         return 0;
     }
     return ptn_reflection_property_class_metadata(
@@ -35508,7 +35521,8 @@ static int ptn_reflection_property_metadata(
         declaring_class,
         is_static,
         visibility,
-        has_default
+        has_default,
+        modifiers
     );
 }
 
@@ -35573,12 +35587,14 @@ static PtnValue ptn_reflection_property_to_string(
     int is_static = 0;
     int visibility = PTN_PROPERTY_PUBLIC;
     int has_default = 0;
+    int modifiers = 0;
     if (!ptn_reflection_property_metadata(
         data,
         &declaring_class,
         &is_static,
         &visibility,
-        &has_default
+        &has_default,
+        &modifiers
     )) {
         return ptn_string("Property [ ]\n");
     }
@@ -35686,13 +35702,15 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
     int is_static = 0;
     int visibility = 0;
     int has_default = 0;
+    int modifiers = 0;
     int exists = ptn_reflection_property_class_metadata(
         lookup.lookup_class_name,
         lookup.property_name,
         &declaring_class,
         &is_static,
         &visibility,
-        &has_default
+        &has_default,
+        &modifiers
     );
     (void)is_static;
     (void)visibility;
@@ -35815,12 +35833,14 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     int is_static = 0;
     int visibility = PTN_PROPERTY_PUBLIC;
     int has_default = 0;
+    int modifiers = 0;
     int has_metadata = ptn_reflection_property_metadata(
         data,
         &declaring_class,
         &is_static,
         &visibility,
-        &has_default
+        &has_default,
+        &modifiers
     );
     if (ptn_ascii_case_equal(name, "__construct")) {
         PtnValue replacement = ptn_reflection_property_new(runtime, argc, args, line);
@@ -35879,14 +35899,6 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        int modifiers = is_static ? 16 : 0;
-        if (visibility == PTN_PROPERTY_PRIVATE) {
-            modifiers |= 4;
-        } else if (visibility == PTN_PROPERTY_PROTECTED) {
-            modifiers |= 2;
-        } else {
-            modifiers |= 1;
-        }
         return ptn_int(modifiers);
     }
     if (ptn_ascii_case_equal(name, "isPublic")) {
@@ -35918,6 +35930,18 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     if (ptn_ascii_case_equal(name, "isDynamic")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(!has_metadata);
+    }
+    if (ptn_ascii_case_equal(name, "isFinal")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool((modifiers & 32) != 0);
+    }
+    if (ptn_ascii_case_equal(name, "isVirtual")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool((modifiers & 512) != 0);
     }
     if (ptn_ascii_case_equal(name, "hasDefaultValue")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
@@ -36384,13 +36408,15 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         int is_static = 0;
         int visibility = 0;
         int has_default = 0;
+        int modifiers = 0;
         int exists = ptn_reflection_property_class_metadata(
             lookup.lookup_class_name,
             lookup.property_name,
             &declaring_class,
             &is_static,
             &visibility,
-            &has_default
+            &has_default,
+            &modifiers
         );
         (void)is_static;
         (void)visibility;
@@ -36477,13 +36503,15 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         int is_static = 0;
         int visibility = 0;
         int has_default = 0;
+        int modifiers = 0;
         int exists = ptn_reflection_property_class_metadata(
             class_name,
             property_name,
             &declaring_class,
             &is_static,
             &visibility,
-            &has_default
+            &has_default,
+            &modifiers
         );
         (void)visibility;
         (void)has_default;
@@ -36534,13 +36562,15 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         int is_static = 0;
         int visibility = 0;
         int has_default = 0;
+        int modifiers = 0;
         int exists = ptn_reflection_property_class_metadata(
             class_name,
             property_name,
             &declaring_class,
             &is_static,
             &visibility,
-            &has_default
+            &has_default,
+            &modifiers
         );
         (void)declaring_class;
         (void)visibility;
