@@ -7144,7 +7144,7 @@ bool(true)\nbool(true)\nbool(true)\n"
         "ptn_compare_string_prefix_bytes(",
         "ptn_string_buffer_append_repeated_pattern(&output, pad_string, left_len)",
         "ptn_quotemeta_string(input.data, input.len, &output_len)",
-        "ptn_strip_tags_string(input.data, input.len, &output_len)",
+        "ptn_strip_tags_string(input.data, input.len, &allowed, &output_len)",
         "ptn_crc32_bytes((const unsigned char *)input.data, input.len)",
         "ptn_dirname_string(path.data, path.len, &parts.dirname_len)",
         "ptn_dirname_string_levels(path.data, path.len, levels, &dirname_len)",
@@ -7190,8 +7190,10 @@ bool(true)\nbool(true)\nbool(true)\n"
     let strip_tags_body =
         generated_c_static_function_body(&c_source, "static char *ptn_strip_tags_string(");
     assert!(
-        strip_tags_body.contains("size_t len, size_t *output_len_out"),
-        "strip_tags helper should report explicit output length"
+        strip_tags_body.contains(
+            "size_t len,\n    PtnStripTagsAllowedSet *allowed,\n    size_t *output_len_out"
+        ),
+        "strip_tags helper should receive allowed tags and report explicit output length"
     );
 
     let soundex_body =

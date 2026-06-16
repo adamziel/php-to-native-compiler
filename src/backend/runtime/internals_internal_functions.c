@@ -15394,14 +15394,264 @@ static PtnValue ptn_internal_chunk_split(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(output, output_len);
 }
 
-static char *ptn_strip_tags_string(const char *input, size_t len, size_t *output_len_out) {
-    char *output = malloc(len + 1);
-    if (output == NULL) {
+typedef struct {
+    char **items;
+    size_t len;
+    size_t capacity;
+} PtnStripTagsAllowedSet;
+
+static void ptn_strip_tags_allowed_set_init(PtnStripTagsAllowedSet *set) {
+    set->items = NULL;
+    set->len = 0;
+    set->capacity = 0;
+}
+
+static void ptn_strip_tags_allowed_set_free(PtnStripTagsAllowedSet *set) {
+    for (size_t i = 0; i < set->len; i++) {
+        free(set->items[i]);
+    }
+    free(set->items);
+    set->items = NULL;
+    set->len = 0;
+    set->capacity = 0;
+}
+
+static int ptn_strip_tags_allowed_set_contains(PtnStripTagsAllowedSet *set, const char *name, size_t name_len) {
+    for (size_t i = 0; i < set->len; i++) {
+        if (strlen(set->items[i]) == name_len && ptn_ascii_case_equal(set->items[i], name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_strip_tags_allowed_set_push(PtnStripTagsAllowedSet *set, const char *name, size_t name_len) {
+    if (name_len == 0 || ptn_strip_tags_allowed_set_contains(set, name, name_len)) {
+        return;
+    }
+    if (set->len == set->capacity) {
+        size_t new_capacity = set->capacity == 0 ? 8 : set->capacity * 2;
+        if (new_capacity < set->capacity || new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_items = realloc(set->items, new_capacity * sizeof(char *));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        set->items = new_items;
+        set->capacity = new_capacity;
+    }
+    char *copy = malloc(name_len + 1);
+    if (copy == NULL) {
         ptn_abort_out_of_memory();
     }
+    for (size_t i = 0; i < name_len; i++) {
+        unsigned char c = (unsigned char)name[i];
+        copy[i] = (char)tolower(c);
+    }
+    copy[name_len] = '\0';
+    set->items[set->len++] = copy;
+}
+
+static int ptn_strip_tags_name_byte(unsigned char byte) {
+    return (byte >= 'a' && byte <= 'z') ||
+        (byte >= 'A' && byte <= 'Z') ||
+        (byte >= '0' && byte <= '9');
+}
+
+static void ptn_strip_tags_collect_allowed_name(
+    PtnStripTagsAllowedSet *set,
+    const char *data,
+    size_t len,
+    size_t *offset
+) {
+    size_t i = *offset;
+    while (i < len && data[i] != '<') {
+        i++;
+    }
+    if (i >= len) {
+        size_t name_start = *offset;
+        while (name_start < len && !ptn_strip_tags_name_byte((unsigned char)data[name_start])) {
+            name_start++;
+        }
+        size_t name_end = name_start;
+        while (name_end < len && ptn_strip_tags_name_byte((unsigned char)data[name_end])) {
+            name_end++;
+        }
+        if (name_end > name_start) {
+            ptn_strip_tags_allowed_set_push(set, data + name_start, name_end - name_start);
+        }
+        *offset = i;
+        return;
+    }
+    size_t tag_start = i;
+    i++;
+    while (i < len && data[i] == '<') {
+        i++;
+    }
+    if (i < len && data[i] == '/') {
+        i++;
+    }
+    while (i < len && !ptn_strip_tags_name_byte((unsigned char)data[i]) && data[i] != '>') {
+        i++;
+    }
+    size_t name_start = i;
+    while (i < len && ptn_strip_tags_name_byte((unsigned char)data[i])) {
+        i++;
+    }
+    ptn_strip_tags_allowed_set_push(set, data + name_start, i - name_start);
+    while (i < len && data[i] != '>') {
+        i++;
+    }
+    *offset = tag_start + 1;
+}
+
+static int ptn_strip_tags_build_allowed_set_from_value(
+    PtnRuntime *runtime,
+    PtnStripTagsAllowedSet *set,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type == PTN_ARRAY) {
+        for (size_t i = 0; i < value.as.array->len; i++) {
+            PtnValue entry_value = ptn_value_deref(value.as.array->entries[i].value);
+            if (entry_value.type != PTN_STRING) {
+                continue;
+            }
+            size_t offset = 0;
+            PtnString string = entry_value.as.string;
+            while (offset < string.len) {
+                ptn_strip_tags_collect_allowed_name(set, (const char *)string.data, string.len, &offset);
+            }
+        }
+        return 1;
+    }
+    if (
+        value.type == PTN_RESOURCE ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION
+    ) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "strip_tags(): Argument #2 ($allowed_tags) must be of type array|string|null, %s given",
+            ptn_internal_string_arg_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    PtnStringOperand allowed = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    size_t offset = 0;
+    while (offset < allowed.len) {
+        ptn_strip_tags_collect_allowed_name(set, allowed.data, allowed.len, &offset);
+    }
+    ptn_string_operand_free(allowed);
+    return 1;
+}
+
+static size_t ptn_strip_tags_find_tag_end(const char *input, size_t len, size_t start) {
+    unsigned char quote = 0;
+    for (size_t i = start; i < len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (quote != 0) {
+            if (byte == quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        if (byte == '"' || byte == '\'') {
+            quote = byte;
+            continue;
+        }
+        if (byte == '>') {
+            return i;
+        }
+    }
+    return len;
+}
+
+static int ptn_strip_tags_extract_tag_name(
+    const char *input,
+    size_t len,
+    size_t tag_start,
+    char *name,
+    size_t name_capacity,
+    size_t *name_len_out
+) {
+    size_t i = tag_start + 1;
+    while (i < len && input[i] == '<') {
+        i++;
+    }
+    if (i < len && input[i] == '/') {
+        i++;
+    }
+    if (i >= len || !ptn_strip_tags_name_byte((unsigned char)input[i])) {
+        return 0;
+    }
+    size_t name_len = 0;
+    while (i < len && ptn_strip_tags_name_byte((unsigned char)input[i])) {
+        if (name_len + 1 >= name_capacity) {
+            return 0;
+        }
+        name[name_len++] = (char)tolower((unsigned char)input[i]);
+        i++;
+    }
+    if (
+        i < len &&
+        input[i] != '>' &&
+        input[i] != '/' &&
+        !isspace((unsigned char)input[i])
+    ) {
+        return 0;
+    }
+    name[name_len] = '\0';
+    *name_len_out = name_len;
+    return name_len != 0;
+}
+
+static int ptn_strip_tags_probable_tag_start(const char *input, size_t len, size_t tag_start) {
+    size_t i = tag_start + 1;
+    while (i < len && input[i] == '<') {
+        i++;
+    }
+    if (i < len && input[i] == '/') {
+        i++;
+    }
+    if (i >= len) {
+        return 0;
+    }
+    if (isspace((unsigned char)input[i])) {
+        return 0;
+    }
+    return 1;
+}
+
+static size_t ptn_strip_tags_preserved_tag_start(const char *input, size_t tag_start) {
+    size_t start = tag_start;
+    while (input[start + 1] == '<') {
+        start++;
+    }
+    return start;
+}
+
+static char *ptn_strip_tags_string(
+    const char *input,
+    size_t len,
+    PtnStripTagsAllowedSet *allowed,
+    size_t *output_len_out
+) {
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
 
     size_t input_offset = 0;
-    size_t output_offset = 0;
     while (input_offset < len) {
         if (input[input_offset] == '<') {
             if (input_offset + 1 < len && input[input_offset + 1] == '?') {
@@ -15432,11 +15682,29 @@ static char *ptn_strip_tags_string(const char *input, size_t len, size_t *output
                     continue;
                 }
             } else {
-                size_t tag_end = input_offset + 1;
-                while (tag_end < len && input[tag_end] != '>') {
-                    tag_end++;
-                }
+                size_t tag_end = ptn_strip_tags_find_tag_end(input, len, input_offset + 1);
                 if (tag_end < len) {
+                    if (!ptn_strip_tags_probable_tag_start(input, len, input_offset)) {
+                        ptn_string_buffer_append_char(&output, input[input_offset++]);
+                        continue;
+                    }
+                    char name[128];
+                    size_t name_len = 0;
+                    int allowed_tag = ptn_strip_tags_extract_tag_name(
+                        input,
+                        len,
+                        input_offset,
+                        name,
+                        sizeof(name),
+                        &name_len
+                    ) && ptn_strip_tags_allowed_set_contains(allowed, name, name_len);
+                    if (allowed_tag) {
+                        size_t preserved_start = ptn_strip_tags_preserved_tag_start(input, input_offset);
+                        ptn_string_buffer_append_len(&output, input + preserved_start, tag_end - preserved_start + 1);
+                        if (tag_end + 1 < len && input[tag_end + 1] == '>' && preserved_start != input_offset) {
+                            tag_end++;
+                        }
+                    }
                     input_offset = tag_end + 1;
                     continue;
                 }
@@ -15446,18 +15714,24 @@ static char *ptn_strip_tags_string(const char *input, size_t len, size_t *output
             input_offset++;
             continue;
         }
-        output[output_offset++] = input[input_offset++];
+        ptn_string_buffer_append_char(&output, input[input_offset++]);
     }
-    output[output_offset] = '\0';
-    *output_len_out = output_offset;
-    return output;
+    *output_len_out = output.len;
+    return output.data == NULL ? ptn_duplicate_string("") : output.data;
 }
 
 static PtnValue ptn_internal_strip_tags(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "strip_tags", 1, "string", args[0], line);
+    PtnStripTagsAllowedSet allowed;
+    ptn_strip_tags_allowed_set_init(&allowed);
+    if (argc >= 2 && !ptn_strip_tags_build_allowed_set_from_value(runtime, &allowed, args[1], line)) {
+        ptn_strip_tags_allowed_set_free(&allowed);
+        ptn_string_operand_free(input);
+        return ptn_null();
+    }
     size_t output_len = 0;
-    char *output = ptn_strip_tags_string(input.data, input.len, &output_len);
+    char *output = ptn_strip_tags_string(input.data, input.len, &allowed, &output_len);
+    ptn_strip_tags_allowed_set_free(&allowed);
     ptn_string_operand_free(input);
     return ptn_owned_string_len(output, output_len);
 }
@@ -20622,6 +20896,809 @@ static PtnValue ptn_internal_hex2bin(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string_len(binary, output_len);
 }
 
+#define PTN_PACK_ENDIAN_MACHINE 0
+#define PTN_PACK_ENDIAN_LITTLE 1
+#define PTN_PACK_ENDIAN_BIG 2
+
+static int ptn_pack_machine_is_little_endian(void) {
+    const uint16_t value = 1;
+    return *((const unsigned char *)&value) == 1;
+}
+
+static int ptn_pack_effective_endian(int endian) {
+    if (endian == PTN_PACK_ENDIAN_MACHINE) {
+        return ptn_pack_machine_is_little_endian()
+            ? PTN_PACK_ENDIAN_LITTLE
+            : PTN_PACK_ENDIAN_BIG;
+    }
+    return endian;
+}
+
+static int ptn_pack_integer_spec(
+    unsigned char code,
+    size_t *width_out,
+    int *signed_out,
+    int *endian_out
+) {
+    switch (code) {
+        case 'c':
+            *width_out = 1;
+            *signed_out = 1;
+            *endian_out = PTN_PACK_ENDIAN_LITTLE;
+            return 1;
+        case 'C':
+            *width_out = 1;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_LITTLE;
+            return 1;
+        case 's':
+            *width_out = 2;
+            *signed_out = 1;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
+        case 'S':
+            *width_out = 2;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
+        case 'n':
+            *width_out = 2;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_BIG;
+            return 1;
+        case 'v':
+            *width_out = 2;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_LITTLE;
+            return 1;
+        case 'i':
+        case 'l':
+            *width_out = 4;
+            *signed_out = 1;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
+        case 'I':
+        case 'L':
+            *width_out = 4;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
+        case 'N':
+            *width_out = 4;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_BIG;
+            return 1;
+        case 'V':
+            *width_out = 4;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_LITTLE;
+            return 1;
+        case 'q':
+            *width_out = 8;
+            *signed_out = 1;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
+        case 'Q':
+            *width_out = 8;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_MACHINE;
+            return 1;
+        case 'J':
+            *width_out = 8;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_BIG;
+            return 1;
+        case 'P':
+            *width_out = 8;
+            *signed_out = 0;
+            *endian_out = PTN_PACK_ENDIAN_LITTLE;
+            return 1;
+    }
+    return 0;
+}
+
+static int ptn_pack_float_spec(unsigned char code, size_t *width_out, int *endian_out) {
+    switch (code) {
+        case 'e':
+            *width_out = 8;
+            *endian_out = PTN_PACK_ENDIAN_LITTLE;
+            return 1;
+        case 'E':
+            *width_out = 8;
+            *endian_out = PTN_PACK_ENDIAN_BIG;
+            return 1;
+        case 'g':
+            *width_out = 4;
+            *endian_out = PTN_PACK_ENDIAN_LITTLE;
+            return 1;
+        case 'G':
+            *width_out = 4;
+            *endian_out = PTN_PACK_ENDIAN_BIG;
+            return 1;
+    }
+    return 0;
+}
+
+static int ptn_pack_string_spec(unsigned char code) {
+    return code == 'a' || code == 'A' || code == 'Z' || code == 'h' || code == 'H';
+}
+
+static int ptn_pack_control_spec(unsigned char code) {
+    return code == 'x' || code == 'X' || code == '@';
+}
+
+static int ptn_pack_supported_spec(unsigned char code) {
+    size_t width = 0;
+    int signed_value = 0;
+    int endian = 0;
+    return ptn_pack_integer_spec(code, &width, &signed_value, &endian) ||
+        ptn_pack_float_spec(code, &width, &endian) ||
+        ptn_pack_string_spec(code) ||
+        ptn_pack_control_spec(code);
+}
+
+static int ptn_pack_parse_repeater(
+    PtnStringOperand format,
+    size_t *offset,
+    int *has_repeater_out,
+    int *star_out,
+    size_t *repeat_out
+) {
+    *has_repeater_out = 0;
+    *star_out = 0;
+    *repeat_out = 1;
+    if (*offset >= format.len) {
+        return 1;
+    }
+    unsigned char byte = (unsigned char)format.data[*offset];
+    if (byte == '*') {
+        *has_repeater_out = 1;
+        *star_out = 1;
+        (*offset)++;
+        return 1;
+    }
+    if (!isdigit(byte)) {
+        return 1;
+    }
+    *has_repeater_out = 1;
+    size_t value = 0;
+    while (*offset < format.len && isdigit((unsigned char)format.data[*offset])) {
+        unsigned int digit = (unsigned int)(format.data[*offset] - '0');
+        if (value > (SIZE_MAX - digit) / 10) {
+            return 0;
+        }
+        value = value * 10 + digit;
+        (*offset)++;
+    }
+    *repeat_out = value;
+    return 1;
+}
+
+static void ptn_pack_append_uint(PtnStringBuffer *buffer, uint64_t value, size_t width, int endian) {
+    endian = ptn_pack_effective_endian(endian);
+    if (endian == PTN_PACK_ENDIAN_LITTLE) {
+        for (size_t i = 0; i < width; i++) {
+            ptn_string_buffer_append_char(buffer, (char)((value >> (8 * i)) & 0xff));
+        }
+        return;
+    }
+    for (size_t i = 0; i < width; i++) {
+        size_t shift = 8 * (width - 1 - i);
+        ptn_string_buffer_append_char(buffer, (char)((value >> shift) & 0xff));
+    }
+}
+
+static uint64_t ptn_unpack_read_uint(const unsigned char *data, size_t width, int endian) {
+    uint64_t value = 0;
+    endian = ptn_pack_effective_endian(endian);
+    if (endian == PTN_PACK_ENDIAN_LITTLE) {
+        for (size_t i = 0; i < width; i++) {
+            value |= ((uint64_t)data[i]) << (8 * i);
+        }
+        return value;
+    }
+    for (size_t i = 0; i < width; i++) {
+        value = (value << 8) | (uint64_t)data[i];
+    }
+    return value;
+}
+
+static int64_t ptn_unpack_signed_value(uint64_t value, size_t width) {
+    switch (width) {
+        case 1:
+            return (int64_t)(int8_t)value;
+        case 2:
+            return (int64_t)(int16_t)value;
+        case 4:
+            return (int64_t)(int32_t)value;
+        case 8:
+            return (int64_t)value;
+    }
+    return (int64_t)value;
+}
+
+static void ptn_pack_warn_float_int_cast(PtnRuntime *runtime, double floating, size_t line) {
+    char value_text[64];
+    int value_written = snprintf(value_text, sizeof(value_text), "%.16G", floating);
+    if (value_written < 0 || (size_t)value_written >= sizeof(value_text)) {
+        ptn_abort_out_of_memory();
+    }
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The float %s is not representable as an int, cast occurred",
+        value_text
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+}
+
+static int64_t ptn_pack_value_to_integer(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    int64_t integer = 0;
+    if (ptn_fast_integer_value(value, &integer)) {
+        return integer;
+    }
+    if (value.type == PTN_FLOAT) {
+        if (ptn_float_to_int_out_of_range(value.as.floating)) {
+            ptn_pack_warn_float_int_cast(runtime, value.as.floating, line);
+            return INT64_MIN;
+        }
+        return (int64_t)value.as.floating;
+    }
+    return ptn_value_to_integer(value);
+}
+
+static double ptn_pack_value_to_double(PtnValue value) {
+    return ptn_value_to_double(value);
+}
+
+static void ptn_pack_append_float(PtnStringBuffer *buffer, PtnValue value, size_t width, int endian) {
+    uint64_t bits = 0;
+    double floating = ptn_pack_value_to_double(value);
+    if (width == 8) {
+        memcpy(&bits, &floating, sizeof(bits));
+    } else {
+        float narrowed = (float)floating;
+        uint32_t narrow_bits = 0;
+        memcpy(&narrow_bits, &narrowed, sizeof(narrow_bits));
+        bits = narrow_bits;
+    }
+    ptn_pack_append_uint(buffer, bits, width, endian);
+}
+
+static int ptn_pack_repeater_for_string(
+    unsigned char code,
+    int has_repeater,
+    int star,
+    size_t repeat,
+    size_t input_len,
+    size_t *count_out
+) {
+    if (star) {
+        *count_out = code == 'Z' ? input_len + 1 : input_len;
+        if (*count_out < input_len) {
+            return 0;
+        }
+        return 1;
+    }
+    *count_out = has_repeater ? repeat : 1;
+    return 1;
+}
+
+static void ptn_pack_append_padded_string(
+    PtnStringBuffer *buffer,
+    PtnStringOperand string,
+    size_t count,
+    char pad
+) {
+    size_t copy_len = string.len < count ? string.len : count;
+    ptn_string_buffer_append_len(buffer, string.data, copy_len);
+    for (size_t i = copy_len; i < count; i++) {
+        ptn_string_buffer_append_char(buffer, pad);
+    }
+}
+
+static void ptn_pack_append_z_string(PtnStringBuffer *buffer, PtnStringOperand string, size_t count) {
+    if (count == 0) {
+        return;
+    }
+    size_t copy_limit = count - 1;
+    size_t copy_len = string.len < copy_limit ? string.len : copy_limit;
+    ptn_string_buffer_append_len(buffer, string.data, copy_len);
+    for (size_t i = copy_len; i < count; i++) {
+        ptn_string_buffer_append_char(buffer, '\0');
+    }
+}
+
+static int ptn_pack_string_hex_nibble(PtnStringOperand string, size_t index) {
+    if (index >= string.len) {
+        return 0;
+    }
+    int nibble = ptn_hex_nibble((unsigned char)string.data[index]);
+    return nibble < 0 ? 0 : nibble;
+}
+
+static void ptn_pack_append_hex_string(
+    PtnStringBuffer *buffer,
+    PtnStringOperand string,
+    size_t nibble_count,
+    int high_nibble_first
+) {
+    size_t byte_count = (nibble_count + 1) / 2;
+    for (size_t byte_index = 0; byte_index < byte_count; byte_index++) {
+        size_t first_index = byte_index * 2;
+        int first = ptn_pack_string_hex_nibble(string, first_index);
+        int second = first_index + 1 < nibble_count
+            ? ptn_pack_string_hex_nibble(string, first_index + 1)
+            : 0;
+        unsigned char byte = high_nibble_first
+            ? (unsigned char)((first << 4) | second)
+            : (unsigned char)(first | (second << 4));
+        ptn_string_buffer_append_char(buffer, (char)byte);
+    }
+}
+
+static void ptn_pack_emit_format_error(PtnRuntime *runtime, const char *function_name, unsigned char code) {
+    char message[96];
+    int written = snprintf(message, sizeof(message), "Invalid format type %c", code);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    (void)function_name;
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_pack_require_arguments(
+    PtnRuntime *runtime,
+    unsigned char code,
+    size_t needed,
+    size_t available
+) {
+    if (needed <= available) {
+        return 1;
+    }
+    char message[96];
+    int written = snprintf(message, sizeof(message), "Type %c: too few arguments", code);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 0;
+}
+
+static PtnValue ptn_internal_pack(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "pack", 1, "format", args[0], line);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    size_t arg_index = 1;
+
+    for (size_t format_offset = 0; format_offset < format.len;) {
+        unsigned char code = (unsigned char)format.data[format_offset++];
+        if (code == '/') {
+            continue;
+        }
+        if (!ptn_pack_supported_spec(code)) {
+            ptn_pack_emit_format_error(runtime, "pack", code);
+            ptn_string_operand_free(format);
+            free(output.data);
+            return ptn_null();
+        }
+
+        int has_repeater = 0;
+        int star = 0;
+        size_t repeat = 1;
+        if (!ptn_pack_parse_repeater(format, &format_offset, &has_repeater, &star, &repeat)) {
+            ptn_string_operand_free(format);
+            free(output.data);
+            ptn_throw_exception(runtime, "ValueError", "pack(): Type repeater must be less than or equal to SIZE_MAX");
+            return ptn_null();
+        }
+
+        size_t width = 0;
+        int signed_value = 0;
+        int endian = 0;
+        if (ptn_pack_integer_spec(code, &width, &signed_value, &endian)) {
+            (void)signed_value;
+            size_t count = star ? (argc - arg_index) : repeat;
+            if (!ptn_pack_require_arguments(runtime, code, count, argc - arg_index)) {
+                ptn_string_operand_free(format);
+                free(output.data);
+                return ptn_null();
+            }
+            for (size_t i = 0; i < count; i++) {
+                PtnValue value = arg_index < argc ? args[arg_index] : ptn_null();
+                arg_index++;
+                uint64_t bits = (uint64_t)ptn_pack_value_to_integer(runtime, value, line);
+                ptn_pack_append_uint(&output, bits, width, endian);
+            }
+            continue;
+        }
+
+        if (ptn_pack_float_spec(code, &width, &endian)) {
+            size_t count = star ? (argc - arg_index) : repeat;
+            if (!ptn_pack_require_arguments(runtime, code, count, argc - arg_index)) {
+                ptn_string_operand_free(format);
+                free(output.data);
+                return ptn_null();
+            }
+            for (size_t i = 0; i < count; i++) {
+                PtnValue value = arg_index < argc ? args[arg_index] : ptn_null();
+                arg_index++;
+                ptn_pack_append_float(&output, value, width, endian);
+            }
+            continue;
+        }
+
+        if (ptn_pack_string_spec(code)) {
+            if (!ptn_pack_require_arguments(runtime, code, 1, argc - arg_index)) {
+                ptn_string_operand_free(format);
+                free(output.data);
+                return ptn_null();
+            }
+            PtnValue value = arg_index < argc ? args[arg_index] : ptn_null();
+            arg_index++;
+            PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "pack", arg_index, "value", value, line);
+            size_t count = 0;
+            if (!ptn_pack_repeater_for_string(code, has_repeater, star, repeat, string.len, &count)) {
+                ptn_string_operand_free(string);
+                ptn_string_operand_free(format);
+                free(output.data);
+                ptn_abort_out_of_memory();
+            }
+            if (code == 'a') {
+                ptn_pack_append_padded_string(&output, string, count, '\0');
+            } else if (code == 'A') {
+                ptn_pack_append_padded_string(&output, string, count, ' ');
+            } else if (code == 'Z') {
+                ptn_pack_append_z_string(&output, string, count);
+            } else {
+                ptn_pack_append_hex_string(&output, string, count, code == 'H');
+            }
+            ptn_string_operand_free(string);
+            continue;
+        }
+
+        size_t count = star ? 0 : repeat;
+        if (code == 'x') {
+            for (size_t i = 0; i < count; i++) {
+                ptn_string_buffer_append_char(&output, '\0');
+            }
+        } else if (code == 'X') {
+            output.len = count > output.len ? 0 : output.len - count;
+            output.data[output.len] = '\0';
+        } else if (code == '@') {
+            if (count < output.len) {
+                output.len = count;
+                output.data[output.len] = '\0';
+            } else {
+                while (output.len < count) {
+                    ptn_string_buffer_append_char(&output, '\0');
+                }
+            }
+        }
+    }
+
+    ptn_string_operand_free(format);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static void ptn_unpack_emit_not_enough(
+    PtnRuntime *runtime,
+    unsigned char code,
+    size_t needed,
+    size_t available,
+    size_t line
+) {
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "unpack(): Type %c: not enough input values, need %zu values but only %zu %s provided",
+        code,
+        needed,
+        available,
+        available == 1 ? "was" : "were"
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_unpack_emit_integer_overflow(PtnRuntime *runtime, unsigned char code, size_t line) {
+    char message[96];
+    int written = snprintf(message, sizeof(message), "unpack(): Type %c: integer overflow", code);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+}
+
+static int ptn_unpack_require_input(
+    PtnRuntime *runtime,
+    unsigned char code,
+    size_t cursor,
+    size_t data_len,
+    size_t needed,
+    size_t line
+) {
+    size_t available = cursor <= data_len ? data_len - cursor : 0;
+    if (available >= needed) {
+        return 1;
+    }
+    ptn_unpack_emit_not_enough(runtime, code, needed, available, line);
+    return 0;
+}
+
+static void ptn_unpack_set_result(
+    PtnArray *array,
+    const char *name,
+    size_t name_len,
+    int suffix_named_key,
+    size_t item_index,
+    size_t *next_auto_key,
+    PtnValue value
+) {
+    if (name_len == 0) {
+        ptn_array_set_entry(array, ptn_array_int_key((int64_t)(*next_auto_key)), value);
+        (*next_auto_key)++;
+        return;
+    }
+    if (!suffix_named_key) {
+        ptn_array_set_entry(array, ptn_array_string_key_len(name, name_len), value);
+        return;
+    }
+
+    int digits = snprintf(NULL, 0, "%zu", item_index + 1);
+    if (digits < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *key = malloc(name_len + (size_t)digits + 1);
+    if (key == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(key, name, name_len);
+    snprintf(key + name_len, (size_t)digits + 1, "%zu", item_index + 1);
+    ptn_array_set_entry(array, ptn_array_string_key_len(key, name_len + (size_t)digits), value);
+    free(key);
+}
+
+static size_t ptn_unpack_trim_a_len(const unsigned char *data, size_t len) {
+    while (len > 0) {
+        unsigned char byte = data[len - 1];
+        if (byte != '\0' && byte > ' ') {
+            break;
+        }
+        len--;
+    }
+    return len;
+}
+
+static PtnValue ptn_unpack_string_value(unsigned char code, const unsigned char *data, size_t len) {
+    if (code == 'A') {
+        len = ptn_unpack_trim_a_len(data, len);
+    } else if (code == 'Z') {
+        size_t nul_offset = 0;
+        while (nul_offset < len && data[nul_offset] != '\0') {
+            nul_offset++;
+        }
+        len = nul_offset;
+    }
+    return ptn_owned_string_len(ptn_duplicate_string_len((const char *)data, len), len);
+}
+
+static char ptn_unpack_hex_char(unsigned int nibble) {
+    static const char digits[] = "0123456789abcdef";
+    return digits[nibble & 0xf];
+}
+
+static PtnValue ptn_unpack_hex_value(
+    unsigned char code,
+    const unsigned char *data,
+    size_t nibble_count
+) {
+    char *output = malloc(nibble_count + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < nibble_count; i++) {
+        unsigned char byte = data[i / 2];
+        unsigned int nibble;
+        if (code == 'H') {
+            nibble = (i % 2) == 0 ? (byte >> 4) : (byte & 0xf);
+        } else {
+            nibble = (i % 2) == 0 ? (byte & 0xf) : (byte >> 4);
+        }
+        output[i] = ptn_unpack_hex_char(nibble);
+    }
+    output[nibble_count] = '\0';
+    return ptn_owned_string_len(output, nibble_count);
+}
+
+static PtnValue ptn_unpack_float_value(const unsigned char *data, size_t width, int endian) {
+    uint64_t bits = ptn_unpack_read_uint(data, width, endian);
+    if (width == 8) {
+        double floating = 0.0;
+        memcpy(&floating, &bits, sizeof(floating));
+        return ptn_float(floating);
+    }
+    uint32_t narrow_bits = (uint32_t)bits;
+    float narrowed = 0.0f;
+    memcpy(&narrowed, &narrow_bits, sizeof(narrowed));
+    return ptn_float((double)narrowed);
+}
+
+static PtnValue ptn_unpack_integer_value(
+    const unsigned char *data,
+    size_t width,
+    int signed_value,
+    int endian
+) {
+    uint64_t raw = ptn_unpack_read_uint(data, width, endian);
+    if (signed_value) {
+        return ptn_int(ptn_unpack_signed_value(raw, width));
+    }
+    if (width == 8) {
+        return ptn_int((int64_t)raw);
+    }
+    return ptn_int((int64_t)raw);
+}
+
+static PtnValue ptn_internal_unpack(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "unpack", 1, "format", args[0], line);
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "unpack", 2, "data", args[1], line);
+    int64_t raw_offset = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "unpack", 3, "offset", args[2], line)
+        : 0;
+    if (raw_offset < 0 || (uint64_t)raw_offset > (uint64_t)data.len) {
+        ptn_string_operand_free(format);
+        ptn_string_operand_free(data);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "unpack(): Argument #3 ($offset) must be contained in argument #2 ($data)"
+        );
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *array = result.as.array;
+    const unsigned char *bytes = (const unsigned char *)data.data;
+    size_t base_offset = (size_t)raw_offset;
+    size_t cursor = base_offset;
+    size_t next_auto_key = 1;
+
+    for (size_t format_offset = 0; format_offset < format.len;) {
+        if (format.data[format_offset] == '/') {
+            format_offset++;
+            continue;
+        }
+        unsigned char code = (unsigned char)format.data[format_offset++];
+        if (!ptn_pack_supported_spec(code) || code == 'x') {
+            ptn_pack_emit_format_error(runtime, "unpack", code);
+            ptn_string_operand_free(format);
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+
+        int has_repeater = 0;
+        int star = 0;
+        size_t repeat = 1;
+        if (!ptn_pack_parse_repeater(format, &format_offset, &has_repeater, &star, &repeat)) {
+            ptn_string_operand_free(format);
+            ptn_string_operand_free(data);
+            ptn_throw_exception(runtime, "ValueError", "unpack(): Type repeater must be less than or equal to SIZE_MAX");
+            return ptn_null();
+        }
+        size_t name_start = format_offset;
+        while (format_offset < format.len && format.data[format_offset] != '/') {
+            format_offset++;
+        }
+        const char *name = format.data + name_start;
+        size_t name_len = format_offset - name_start;
+
+        if (code == 'X') {
+            if (star) {
+                ptn_emit_runtime_warning(runtime, "unpack(): Type X: '*' ignored", line);
+                repeat = 1;
+            }
+            size_t count = has_repeater ? repeat : 1;
+            cursor = count > cursor - base_offset ? base_offset : cursor - count;
+            continue;
+        }
+        if (code == '@') {
+            size_t target = star ? 0 : (has_repeater ? repeat : 1);
+            cursor = target > SIZE_MAX - base_offset ? data.len + 1 : base_offset + target;
+            continue;
+        }
+
+        size_t width = 0;
+        int signed_value = 0;
+        int endian = 0;
+        if (ptn_pack_integer_spec(code, &width, &signed_value, &endian)) {
+            size_t available = cursor <= data.len ? data.len - cursor : 0;
+            size_t count = star ? available / width : repeat;
+            int suffix_named_key = name_len != 0 && count != 1;
+            for (size_t i = 0; i < count; i++) {
+                if (!ptn_unpack_require_input(runtime, code, cursor, data.len, width, line)) {
+                    ptn_string_operand_free(format);
+                    ptn_string_operand_free(data);
+                    ptn_value_destroy(&result);
+                    return ptn_bool(0);
+                }
+                PtnValue value = ptn_unpack_integer_value(bytes + cursor, width, signed_value, endian);
+                ptn_unpack_set_result(array, name, name_len, suffix_named_key, i, &next_auto_key, value);
+                cursor += width;
+            }
+            continue;
+        }
+
+        if (ptn_pack_float_spec(code, &width, &endian)) {
+            size_t available = cursor <= data.len ? data.len - cursor : 0;
+            size_t count = star ? available / width : repeat;
+            int suffix_named_key = name_len != 0 && count != 1;
+            for (size_t i = 0; i < count; i++) {
+                if (!ptn_unpack_require_input(runtime, code, cursor, data.len, width, line)) {
+                    ptn_string_operand_free(format);
+                    ptn_string_operand_free(data);
+                    ptn_value_destroy(&result);
+                    return ptn_bool(0);
+                }
+                PtnValue value = ptn_unpack_float_value(bytes + cursor, width, endian);
+                ptn_unpack_set_result(array, name, name_len, suffix_named_key, i, &next_auto_key, value);
+                cursor += width;
+            }
+            continue;
+        }
+
+        if (code == 'a' || code == 'A' || code == 'Z') {
+            size_t available = cursor <= data.len ? data.len - cursor : 0;
+            size_t count = star ? available : (has_repeater ? repeat : 1);
+            if (!ptn_unpack_require_input(runtime, code, cursor, data.len, count, line)) {
+                ptn_string_operand_free(format);
+                ptn_string_operand_free(data);
+                ptn_value_destroy(&result);
+                return ptn_bool(0);
+            }
+            PtnValue value = ptn_unpack_string_value(code, bytes + cursor, count);
+            ptn_unpack_set_result(array, name, name_len, 0, 0, &next_auto_key, value);
+            cursor += count;
+            continue;
+        }
+
+        if (code == 'h' || code == 'H') {
+            size_t available = cursor <= data.len ? data.len - cursor : 0;
+            size_t nibble_count = star ? available * 2 : (has_repeater ? repeat : 1);
+            if (!star && nibble_count > (size_t)INT32_MAX) {
+                ptn_unpack_emit_integer_overflow(runtime, code, line);
+                ptn_string_operand_free(format);
+                ptn_string_operand_free(data);
+                ptn_value_destroy(&result);
+                return ptn_bool(0);
+            }
+            size_t byte_count = (nibble_count + 1) / 2;
+            if (!ptn_unpack_require_input(runtime, code, cursor, data.len, byte_count, line)) {
+                ptn_string_operand_free(format);
+                ptn_string_operand_free(data);
+                ptn_value_destroy(&result);
+                return ptn_bool(0);
+            }
+            PtnValue value = ptn_unpack_hex_value(code, bytes + cursor, nibble_count);
+            ptn_unpack_set_result(array, name, name_len, 0, 0, &next_auto_key, value);
+            cursor += byte_count;
+            continue;
+        }
+    }
+
+    ptn_string_operand_free(format);
+    ptn_string_operand_free(data);
+    return result;
+}
+
 static PtnValue ptn_internal_base64_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -20890,6 +21967,527 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
 
     ptn_string_operand_free(string);
     return ptn_owned_string_len(result, 4);
+}
+
+static int ptn_metaphone_is_alpha(unsigned char byte) {
+    byte = ptn_ascii_upper(byte);
+    return byte >= 'A' && byte <= 'Z';
+}
+
+static int ptn_metaphone_is_vowel(unsigned char byte) {
+    byte = ptn_ascii_upper(byte);
+    return byte == 'A' || byte == 'E' || byte == 'I' || byte == 'O' || byte == 'U';
+}
+
+static unsigned char ptn_metaphone_at(const char *data, size_t len, size_t index) {
+    if (index >= len) {
+        return '\0';
+    }
+    return ptn_ascii_upper((unsigned char)data[index]);
+}
+
+static int ptn_metaphone_match(const char *data, size_t len, size_t index, const char *pattern) {
+    for (size_t i = 0; pattern[i] != '\0'; i++) {
+        if (index + i >= len || ptn_metaphone_at(data, len, index + i) != (unsigned char)pattern[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_metaphone_append(PtnStringBuffer *buffer, char code, size_t max_phonemes) {
+    if (max_phonemes != 0 && buffer->len >= max_phonemes) {
+        return 0;
+    }
+    ptn_string_buffer_append_char(buffer, code);
+    return 1;
+}
+
+static PtnValue ptn_internal_metaphone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "metaphone", 1, "string", args[0], line);
+    int64_t requested_max = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "metaphone", 2, "max_phonemes", args[1], line)
+        : 0;
+    if (requested_max < 0) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "metaphone(): Argument #2 ($max_phonemes) must be greater than or equal to 0"
+        );
+        return ptn_null();
+    }
+
+    size_t max_phonemes = (size_t)requested_max;
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    const char *data = string.data;
+    size_t len = string.len;
+    size_t i = 0;
+    while (i < len && !ptn_metaphone_is_alpha((unsigned char)data[i])) {
+        i++;
+    }
+    if (i >= len) {
+        ptn_string_operand_free(string);
+        return ptn_owned_string_len(output.data, output.len);
+    }
+
+    if (
+        ptn_metaphone_match(data, len, i, "AE") ||
+        ptn_metaphone_match(data, len, i, "GN") ||
+        ptn_metaphone_match(data, len, i, "KN") ||
+        ptn_metaphone_match(data, len, i, "PN") ||
+        ptn_metaphone_match(data, len, i, "WR")
+    ) {
+        i++;
+    } else if (ptn_metaphone_match(data, len, i, "WH")) {
+        if (!ptn_metaphone_append(&output, 'W', max_phonemes)) {
+            goto metaphone_done;
+        }
+        i += 2;
+    } else if (ptn_metaphone_at(data, len, i) == 'X') {
+        if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
+            goto metaphone_done;
+        }
+        i++;
+    }
+
+    for (; i < len;) {
+        unsigned char current = ptn_metaphone_at(data, len, i);
+        if (!ptn_metaphone_is_alpha(current)) {
+            i++;
+            continue;
+        }
+
+        unsigned char previous = i == 0 ? '\0' : ptn_metaphone_at(data, len, i - 1);
+        unsigned char next = ptn_metaphone_at(data, len, i + 1);
+        unsigned char next2 = ptn_metaphone_at(data, len, i + 2);
+        if (current == previous && current != 'C') {
+            i++;
+            continue;
+        }
+
+        switch (current) {
+            case 'A':
+            case 'E':
+            case 'I':
+            case 'O':
+            case 'U':
+                if (output.len == 0 && !ptn_metaphone_append(&output, (char)current, max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'B':
+                if (!(previous == 'M' && i + 1 >= len) &&
+                    !ptn_metaphone_append(&output, 'B', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'C':
+                if (previous == 'S' && (next == 'I' || next == 'E' || next == 'Y')) {
+                    break;
+                }
+                if (ptn_metaphone_match(data, len, i, "CIA")) {
+                    if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                } else if (next == 'H') {
+                    if (previous == 'S') {
+                        if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
+                            goto metaphone_done;
+                        }
+                    } else if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                    i++;
+                } else if (next == 'I' || next == 'E' || next == 'Y') {
+                    if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                } else if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'D':
+                if (next == 'G' && (next2 == 'E' || next2 == 'I' || next2 == 'Y')) {
+                    if (!ptn_metaphone_append(&output, 'J', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                    i += 2;
+                } else if (!ptn_metaphone_append(&output, 'T', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'G':
+                if (next == 'H') {
+                    if ((i == 0 || !ptn_metaphone_is_alpha((unsigned char)data[i - 1])) ||
+                        (i > 0 && ptn_metaphone_is_vowel(previous))) {
+                        if (!ptn_metaphone_append(&output, 'F', max_phonemes)) {
+                            goto metaphone_done;
+                        }
+                    }
+                    i++;
+                } else if (next == 'N') {
+                    if (!(i + 2 >= len || (i + 3 >= len && next2 == 'E' && ptn_metaphone_at(data, len, i + 3) == 'D')) &&
+                        !ptn_metaphone_append(&output, 'K', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                } else if ((next == 'E' || next == 'I' || next == 'Y') && previous != 'G') {
+                    if (!ptn_metaphone_append(&output, 'J', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                } else if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'H':
+                if (ptn_metaphone_is_vowel(next) &&
+                    previous != 'C' &&
+                    previous != 'G' &&
+                    previous != 'P' &&
+                    previous != 'S' &&
+                    previous != 'T' &&
+                    !ptn_metaphone_append(&output, 'H', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'F':
+            case 'J':
+            case 'L':
+            case 'M':
+            case 'N':
+            case 'R':
+                if (!ptn_metaphone_append(&output, (char)current, max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'K':
+                if (previous != 'C' && !ptn_metaphone_append(&output, 'K', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'P':
+                if (!ptn_metaphone_append(&output, next == 'H' ? 'F' : 'P', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                if (next == 'H') {
+                    i++;
+                }
+                break;
+            case 'Q':
+                if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'S':
+                if (next == 'H' || (next == 'I' && (next2 == 'O' || next2 == 'A'))) {
+                    if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                    if (next == 'H') {
+                        i++;
+                    }
+                } else if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'T':
+                if (next == 'I' && (next2 == 'O' || next2 == 'A')) {
+                    if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                } else if (next == 'H') {
+                    if (!ptn_metaphone_append(&output, '0', max_phonemes)) {
+                        goto metaphone_done;
+                    }
+                    i++;
+                } else if (!(next == 'C' && next2 == 'H') &&
+                    !ptn_metaphone_append(&output, 'T', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'V':
+                if (!ptn_metaphone_append(&output, 'F', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'W':
+            case 'Y':
+                if (ptn_metaphone_is_vowel(next) &&
+                    !ptn_metaphone_append(&output, (char)current, max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'X':
+                if (!ptn_metaphone_append(&output, 'K', max_phonemes) ||
+                    !ptn_metaphone_append(&output, 'S', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+            case 'Z':
+                if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
+                    goto metaphone_done;
+                }
+                break;
+        }
+        i++;
+    }
+
+metaphone_done:
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static void ptn_utf8_emit_deprecation(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Function %s() is deprecated since 8.2, visit the php.net documentation for various alternatives",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
+
+static PtnValue ptn_internal_utf8_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    ptn_utf8_emit_deprecation(runtime, "utf8_encode", line);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "utf8_encode", 1, "string", args[0], line);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte < 0x80) {
+            ptn_string_buffer_append_char(&output, (char)byte);
+        } else {
+            ptn_string_buffer_append_char(&output, (char)(0xc0 | (byte >> 6)));
+            ptn_string_buffer_append_char(&output, (char)(0x80 | (byte & 0x3f)));
+        }
+    }
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static int ptn_utf8_decode_continuation(unsigned char byte) {
+    return (byte & 0xc0) == 0x80;
+}
+
+static PtnValue ptn_internal_utf8_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    ptn_utf8_emit_deprecation(runtime, "utf8_decode", line);
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "utf8_decode", 1, "string", args[0], line);
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    for (size_t i = 0; i < input.len;) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte < 0x80) {
+            ptn_string_buffer_append_char(&output, (char)byte);
+            i++;
+            continue;
+        }
+
+        size_t needed = 0;
+        uint32_t codepoint = 0;
+        uint32_t minimum = 0;
+        if (byte >= 0xc2 && byte <= 0xdf) {
+            needed = 1;
+            codepoint = (uint32_t)(byte & 0x1f);
+            minimum = 0x80;
+        } else if (byte >= 0xe0 && byte <= 0xef) {
+            needed = 2;
+            codepoint = (uint32_t)(byte & 0x0f);
+            minimum = 0x800;
+        } else if (byte >= 0xf0 && byte <= 0xf4) {
+            needed = 3;
+            codepoint = (uint32_t)(byte & 0x07);
+            minimum = 0x10000;
+        } else {
+            ptn_string_buffer_append_char(&output, '?');
+            i++;
+            continue;
+        }
+
+        size_t j = 0;
+        int valid = 1;
+        for (; j < needed; j++) {
+            if (i + 1 + j >= input.len || !ptn_utf8_decode_continuation((unsigned char)input.data[i + 1 + j])) {
+                valid = 0;
+                break;
+            }
+            codepoint = (codepoint << 6) | (uint32_t)(input.data[i + 1 + j] & 0x3f);
+        }
+        if (!valid) {
+            ptn_string_buffer_append_char(&output, '?');
+            i += 1 + j;
+            continue;
+        }
+        if (
+            codepoint < minimum ||
+            codepoint > 0x10ffff ||
+            (codepoint >= 0xd800 && codepoint <= 0xdfff) ||
+            codepoint > 0xff
+        ) {
+            ptn_string_buffer_append_char(&output, '?');
+        } else {
+            ptn_string_buffer_append_char(&output, (char)(unsigned char)codepoint);
+        }
+        i += needed + 1;
+    }
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output.data, output.len);
+}
+
+static int ptn_str_increment_is_alnum(unsigned char byte) {
+    return (byte >= '0' && byte <= '9') ||
+        (byte >= 'A' && byte <= 'Z') ||
+        (byte >= 'a' && byte <= 'z');
+}
+
+static PtnValue ptn_internal_str_increment(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "str_increment", 1, "string", args[0], line);
+    if (input.len == 0) {
+        ptn_string_operand_free(input);
+        ptn_throw_exception(runtime, "ValueError", "str_increment(): Argument #1 ($string) must not be empty");
+        return ptn_null();
+    }
+    for (size_t i = 0; i < input.len; i++) {
+        if (!ptn_str_increment_is_alnum((unsigned char)input.data[i])) {
+            ptn_string_operand_free(input);
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "str_increment(): Argument #1 ($string) must be composed only of alphanumeric ASCII characters"
+            );
+            return ptn_null();
+        }
+    }
+
+    char *output = ptn_duplicate_string_len(input.data, input.len);
+    ptn_string_operand_free(input);
+    char carry_prefix = '\0';
+    int carry = 1;
+    for (size_t offset = strlen(output); offset > 0 && carry; offset--) {
+        size_t index = offset - 1;
+        unsigned char byte = (unsigned char)output[index];
+        if (byte >= '0' && byte <= '8') {
+            output[index] = (char)(byte + 1);
+            carry = 0;
+        } else if (byte == '9') {
+            output[index] = '0';
+            carry_prefix = '1';
+        } else if (byte >= 'a' && byte <= 'y') {
+            output[index] = (char)(byte + 1);
+            carry = 0;
+        } else if (byte == 'z') {
+            output[index] = 'a';
+            carry_prefix = 'a';
+        } else if (byte >= 'A' && byte <= 'Y') {
+            output[index] = (char)(byte + 1);
+            carry = 0;
+        } else if (byte == 'Z') {
+            output[index] = 'A';
+            carry_prefix = 'A';
+        }
+    }
+    if (!carry) {
+        return ptn_owned_string_len(output, strlen(output));
+    }
+
+    size_t len = strlen(output);
+    char *expanded = malloc(len + 2);
+    if (expanded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    expanded[0] = carry_prefix == '\0' ? '1' : carry_prefix;
+    memcpy(expanded + 1, output, len + 1);
+    free(output);
+    return ptn_owned_string_len(expanded, len + 1);
+}
+
+static PtnValue ptn_internal_set_time_limit(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    (void)ptn_value_to_integer(args[0]);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(0);
+}
+
+static int ptn_parse_ini_key_byte(unsigned char byte) {
+    return byte != '\0' && byte != '=' && byte != '\n' && byte != '\r';
+}
+
+static PtnValue ptn_internal_parse_ini_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "parse_ini_string", 1, "ini_string", args[0], line);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *array = result.as.array;
+    size_t offset = 0;
+    while (offset < input.len) {
+        while (offset < input.len && (input.data[offset] == '\n' || input.data[offset] == '\r')) {
+            offset++;
+        }
+        while (offset < input.len && isspace((unsigned char)input.data[offset]) && input.data[offset] != '\n' && input.data[offset] != '\r') {
+            offset++;
+        }
+        size_t key_start = offset;
+        while (offset < input.len && ptn_parse_ini_key_byte((unsigned char)input.data[offset])) {
+            offset++;
+        }
+        size_t key_end = offset;
+        while (key_end > key_start && isspace((unsigned char)input.data[key_end - 1])) {
+            key_end--;
+        }
+        if (offset >= input.len || input.data[offset] != '=') {
+            while (offset < input.len && input.data[offset] != '\n') {
+                offset++;
+            }
+            continue;
+        }
+        offset++;
+        size_t value_start = offset;
+        while (offset < input.len && input.data[offset] != '\n' && input.data[offset] != '\r' && input.data[offset] != '\0') {
+            offset++;
+        }
+        size_t value_end = offset;
+        int only_space = 1;
+        for (size_t i = value_start; i < value_end; i++) {
+            if (!isspace((unsigned char)input.data[i])) {
+                only_space = 0;
+                break;
+            }
+        }
+        if (only_space) {
+            value_end = value_start;
+        }
+        if (key_end > key_start) {
+            ptn_array_set_entry(
+                array,
+                ptn_array_string_key_len(input.data + key_start, key_end - key_start),
+                ptn_owned_string_len(
+                    ptn_duplicate_string_len(input.data + value_start, value_end - value_start),
+                    value_end - value_start
+                )
+            );
+        }
+        while (offset < input.len && input.data[offset] != '\n') {
+            offset++;
+        }
+    }
+    ptn_string_operand_free(input);
+    return result;
 }
 
 static double ptn_value_to_double(PtnValue value) {
@@ -24217,6 +25815,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "func_num_args", 0, 0, ptn_internal_func_num_args },
         { "function_exists", 1, 1, ptn_internal_function_exists },
         { "fwrite", 2, 3, ptn_internal_fwrite },
+        { "gc_collect_cycles", 0, 0, ptn_internal_gc_collect_cycles },
         { "get_called_class", 0, 0, ptn_internal_get_called_class },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 0, 1, ptn_internal_get_class },
@@ -24303,6 +25902,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "max", 1, PTN_VARIADIC_ARGS, ptn_internal_max },
         { "md5", 1, 2, ptn_internal_md5 },
         { "md5_file", 1, 2, ptn_internal_md5_file },
+        { "metaphone", 1, 2, ptn_internal_metaphone },
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
@@ -24327,12 +25927,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ord", 1, 1, ptn_internal_ord },
         { "pathinfo", 1, 2, ptn_internal_pathinfo },
         { "parse_str", 2, 2, ptn_internal_parse_str },
+        { "parse_ini_string", 1, 3, ptn_internal_parse_ini_string },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },
         { "php_uname", 0, 1, ptn_internal_php_uname },
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "pi", 0, 0, ptn_internal_pi },
+        { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
         { "pow", 2, 2, ptn_internal_pow },
         { "preg_match", 2, 5, ptn_internal_preg_match },
         { "preg_replace", 3, 5, ptn_internal_preg_replace },
@@ -24362,6 +25964,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "scandir", 1, 3, ptn_internal_scandir },
         { "serialize", 1, 1, ptn_internal_serialize },
         { "set_include_path", 1, 1, ptn_internal_set_include_path },
+        { "set_time_limit", 1, 1, ptn_internal_set_time_limit },
         { "settype", 2, 2, ptn_internal_settype },
         { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
         { "sha1", 1, 2, ptn_internal_sha1 },
@@ -24382,6 +25985,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_contains", 2, 2, ptn_internal_str_contains },
         { "str_getcsv", 1, 4, ptn_internal_str_getcsv },
         { "str_ireplace", 3, 4, ptn_internal_str_ireplace },
+        { "str_increment", 1, 1, ptn_internal_str_increment },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
         { "str_pad", 2, 4, ptn_internal_str_pad },
         { "str_repeat", 2, 2, ptn_internal_str_repeat },
@@ -24402,7 +26006,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "stream_get_contents", 1, 3, ptn_internal_stream_get_contents },
         { "stream_get_line", 1, 3, ptn_internal_stream_get_line },
         { "stream_get_meta_data", 1, 1, ptn_internal_stream_get_meta_data },
-        { "strip_tags", 1, 1, ptn_internal_strip_tags },
+        { "strip_tags", 1, 2, ptn_internal_strip_tags },
         { "stripcslashes", 1, 1, ptn_internal_stripcslashes },
         { "stripos", 2, 3, ptn_internal_stripos },
         { "stripslashes", 1, 1, ptn_internal_stripslashes },
@@ -24441,8 +26045,11 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ucwords", 1, 2, ptn_internal_ucwords },
         { "uksort", 2, 2, ptn_internal_uksort },
         { "unlink", 1, 1, ptn_internal_unlink },
+        { "unpack", 2, 3, ptn_internal_unpack },
         { "unserialize", 1, 1, ptn_internal_unserialize },
         { "usort", 2, 2, ptn_internal_usort },
+        { "utf8_decode", 1, 1, ptn_internal_utf8_decode },
+        { "utf8_encode", 1, 1, ptn_internal_utf8_encode },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "var_export", 1, 2, ptn_internal_var_export },
         { "vfprintf", 3, 3, ptn_internal_vfprintf },
