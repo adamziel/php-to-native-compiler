@@ -1031,6 +1031,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *clas
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);

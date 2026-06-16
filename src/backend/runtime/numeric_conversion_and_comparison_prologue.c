@@ -3027,6 +3027,90 @@ static PTN_UNUSED int ptn_object_is_internal_or_descendant(PtnValue receiver, co
         ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, class_name);
 }
 
+static PTN_UNUSED const char *ptn_internal_no_discard_method_warning(PtnValue receiver, const char *method_name) {
+    receiver = ptn_value_deref(receiver);
+    const char *class_name = NULL;
+    if (receiver.type == PTN_OBJECT) {
+        class_name = receiver.as.object->class_name;
+    } else if (receiver.type == PTN_EXCEPTION) {
+        class_name = receiver.as.exception->class_name;
+    } else if (receiver.type == PTN_CLOSURE) {
+        class_name = "Closure";
+    }
+    if (
+        class_name != NULL &&
+        ptn_ascii_case_equal(class_name, "DateTimeImmutable") &&
+        ptn_ascii_case_equal(method_name, "setTimestamp")
+    ) {
+        return "The return value of method DateTimeImmutable::setTimestamp() should either be used or intentionally ignored by casting it as (void), as DateTimeImmutable::setTimestamp() does not modify the object itself";
+    }
+    return NULL;
+}
+
+static PTN_UNUSED void ptn_emit_no_discard_for_internal_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name,
+    size_t line
+) {
+    const char *message = ptn_internal_no_discard_method_warning(receiver, method_name);
+    if (message != NULL) {
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+    }
+}
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static int64_t ptn_internal_expect_integer_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+);
+
+static PTN_UNUSED PtnValue ptn_datetime_immutable_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)receiver;
+    if (ptn_ascii_case_equal(name, "setTimestamp")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "DateTimeImmutable::setTimestamp() expects exactly 1 argument, %zu given",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        (void)ptn_internal_expect_integer_arg(
+            runtime,
+            "DateTimeImmutable::setTimestamp",
+            1,
+            "timestamp",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_object_new_shell(runtime, "DateTimeImmutable");
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+#endif
+
 static PTN_UNUSED PtnValue ptn_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3217,6 +3301,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("IteratorIterator", name)
     ) {
         return ptn_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_datetime_immutable(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_datetime_immutable_call_method(runtime, receiver, name, argc, args, line);
     }
 #endif
     ptn_throw_exception(runtime, "Error", "Call to undefined method");

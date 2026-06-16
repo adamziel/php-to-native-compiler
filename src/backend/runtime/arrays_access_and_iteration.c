@@ -270,6 +270,18 @@ static PTN_UNUSED int ptn_class_name_is_datetime(const char *class_name) {
     return *class_name == '\0' && *datetime == '\0';
 }
 
+static PTN_UNUSED int ptn_class_name_is_datetime_immutable(const char *class_name) {
+    const char *datetime = "DateTimeImmutable";
+    while (*class_name != '\0' && *datetime != '\0') {
+        if (tolower((unsigned char)*class_name) != tolower((unsigned char)*datetime)) {
+            return 0;
+        }
+        class_name++;
+        datetime++;
+    }
+    return *class_name == '\0' && *datetime == '\0';
+}
+
 static PTN_UNUSED int ptn_class_name_is_generator(const char *class_name) {
     const char *generator = "Generator";
     while (*class_name != '\0' && *generator != '\0') {
@@ -457,6 +469,13 @@ static PTN_UNUSED PtnValue ptn_new_object(
             return ptn_null();
         }
         return ptn_object_new_shell(runtime, "DateTime");
+    }
+    if (ptn_class_name_is_datetime_immutable(lookup_class_name)) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "DateTimeImmutable constructor expects at most 1 argument");
+            return ptn_null();
+        }
+        return ptn_object_new_shell(runtime, "DateTimeImmutable");
     }
     if (ptn_class_name_is_generator(lookup_class_name)) {
         ptn_throw_exception_at(

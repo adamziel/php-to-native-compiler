@@ -4750,6 +4750,55 @@ class Bag {}
 }
 
 #[test]
+fn parser_validates_attribute_argument_surface() {
+    let variable_name = parser::parse("<?php #[$x] class A {}").unwrap_err();
+    assert_eq!(variable_name.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        variable_name.message,
+        "syntax error, unexpected variable \"$x\""
+    );
+
+    let call_argument = parser::parse("<?php #[A(foo())] class C {}").unwrap_err();
+    assert_eq!(call_argument.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        call_argument.message,
+        "Constant expression contains invalid operations"
+    );
+
+    let unpack_argument = parser::parse("<?php #[A(...[1])] class C {}").unwrap_err();
+    assert_eq!(unpack_argument.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        unpack_argument.message,
+        "Cannot use unpacking in attribute argument list"
+    );
+
+    let program = parser::parse(
+        "<?php
+#[\\Deprecated(message: 1234)]
+function old_fn() {}
+
+#[\\NoDiscard(1234)]
+function important(): int { return 1; }
+",
+    )
+    .unwrap();
+    assert_eq!(
+        program.functions[0]
+            .attributes
+            .deprecated_message
+            .as_deref(),
+        Some("1234")
+    );
+    assert_eq!(
+        program.functions[1]
+            .attributes
+            .no_discard_message
+            .as_deref(),
+        Some("1234")
+    );
+}
+
+#[test]
 fn parser_rejects_unmatched_override_attributes() {
     let cases = [
         (
@@ -9357,6 +9406,40 @@ bool(true)\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static PtnValue ptn_internal_date_default_timezone_set("));
     assert!(c_source.contains("static PtnValue ptn_internal_gmdate("));
+}
+
+#[test]
+fn compile_datetimeimmutable_nodiscard_method_to_native_binary() {
+    let root = temp_dir("ptn-native-datetimeimmutable-nodiscard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetimeimmutable-nodiscard.php");
+    let output = root.join("datetimeimmutable-nodiscard-bin");
+    fs::write(
+        &input,
+        "<?php
+$date = new DateTimeImmutable('now');
+$date->setTimestamp(0);
+$next = $date->setTimestamp(1);
+var_dump($next instanceof DateTimeImmutable, $next instanceof DateTimeInterface);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: The return value of method DateTimeImmutable::setTimestamp() should either be used or intentionally ignored by casting it as (void), as DateTimeImmutable::setTimestamp() does not modify the object itself in ptn on line 3\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_emit_no_discard_for_internal_method(&runtime"));
+    assert!(c_source.contains("ptn_datetime_immutable_call_method"));
 }
 
 #[test]

@@ -4305,17 +4305,38 @@ impl Parser<'_> {
         let mut attributes = ParsedAttributes::default();
         while bracket_depth > 0 {
             let token = self.advance().clone();
+            let span = token.span;
             match token.kind {
                 TokenKind::Identifier(name)
                     if bracket_depth == 1 && paren_depth == 0 && collecting_name =>
                 {
                     name_segments.push(name);
                 }
+                TokenKind::Variable(name)
+                    if bracket_depth == 1 && paren_depth == 0 && collecting_name =>
+                {
+                    return Err(Diagnostic::parse_error(
+                        format!("syntax error, unexpected variable \"${name}\""),
+                        Some(span),
+                    ));
+                }
                 TokenKind::Backslash
                     if bracket_depth == 1 && paren_depth == 0 && collecting_name => {}
                 TokenKind::LeftParen if bracket_depth == 1 => {
                     collecting_name = false;
                     paren_depth += 1;
+                }
+                TokenKind::Ellipsis if bracket_depth == 1 && paren_depth > 0 => {
+                    return Err(Diagnostic::new(
+                        "Cannot use unpacking in attribute argument list",
+                        Some(span),
+                    ));
+                }
+                TokenKind::Variable(_) if bracket_depth == 1 && paren_depth > 0 => {
+                    return Err(Diagnostic::new(
+                        "Constant expression contains invalid operations",
+                        Some(span),
+                    ));
                 }
                 TokenKind::Identifier(name)
                     if bracket_depth == 1
@@ -4324,8 +4345,30 @@ impl Parser<'_> {
                 {
                     pending_argument_name = Some(name);
                 }
+                TokenKind::Identifier(_)
+                    if bracket_depth == 1
+                        && paren_depth == 1
+                        && matches!(self.peek().kind, TokenKind::LeftParen) =>
+                {
+                    return Err(Diagnostic::new(
+                        "Constant expression contains invalid operations",
+                        Some(span),
+                    ));
+                }
                 TokenKind::String(value) if bracket_depth == 1 && paren_depth == 1 => {
                     arguments.record(pending_argument_name.take(), value);
+                }
+                TokenKind::Int(value) if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record(pending_argument_name.take(), value.to_string());
+                }
+                TokenKind::Float(value) if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record(pending_argument_name.take(), value.to_string());
+                }
+                TokenKind::True if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record(pending_argument_name.take(), "1".to_string());
+                }
+                TokenKind::False | TokenKind::Null if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record(pending_argument_name.take(), String::new());
                 }
                 TokenKind::RightParen if bracket_depth == 1 && paren_depth > 0 => {
                     paren_depth -= 1;
