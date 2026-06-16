@@ -1299,25 +1299,18 @@ fn phpt_classifier_keeps_supported_public_tostring_rows_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_unsupported_foreach_internal_surfaces() {
+fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
     let cases = [
-        (
-            "by-ref foreach positional mutation",
-            "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_unshift($items, 0); }\n--EXPECT--\n",
-            "requires by-reference foreach iterator-pointer preservation",
-        ),
+        "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_shift($items); }\n--EXPECT--\n",
+        "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_unshift($items, 0); }\n--EXPECT--\n",
     ];
 
-    for (name, phpt, reason) in cases {
-        let classification = classify(phpt);
-        assert!(
-            classification.starts_with("unsupported-internal\t"),
-            "{name}: {classification:?}"
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
         );
-        assert!(
-            classification.contains(reason),
-            "{name}: {classification:?}"
-        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
     }
 }
 
@@ -1391,6 +1384,7 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         exception_string_param_max_len.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
+
 }
 
 #[test]

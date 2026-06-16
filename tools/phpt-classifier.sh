@@ -1942,20 +1942,10 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&/) {
-                byref_foreach = 1
-            }
-            if (line ~ /(^|[^[:alnum:]_$])(array_shift|array_unshift)[[:space:]]*\(/) {
-                positional_mutator = 1
-            }
         }
         END {
             if (!found && array_splice_seen && destructor_seen && global_state_seen) {
                 print "unsupported-internal\trequires array_splice() destructor reentrancy detection when element destruction mutates global array state, outside PTN modeled array_splice helper"
-                found = 1
-            }
-            if (!found && byref_foreach && positional_mutator) {
-                print "unsupported-internal\trequires by-reference foreach iterator-pointer preservation under positional array mutation, outside PTN foreach iterator model"
                 found = 1
             }
             exit found ? 0 : 1
