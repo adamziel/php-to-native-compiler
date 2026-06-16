@@ -689,6 +689,22 @@ static void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, const char *mes
     fputc('\n', stdout);
 }
 
+static PTN_UNUSED void ptn_emit_runtime_deprecation(PtnRuntime *runtime, const char *message, size_t line) {
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
+    fputc('\n', stdout);
+    diagnostics->emitted_deprecation = 1;
+    fputs("Deprecated: ", stdout);
+    fputs(message, stdout);
+    fputs(" in ", stdout);
+    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
+    fputs(" on line ", stdout);
+    fprintf(stdout, "%zu", line);
+    fputc('\n', stdout);
+}
+
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;

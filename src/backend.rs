@@ -3041,10 +3041,53 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str("\n#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("static int ptn_internal_class_exists_name(const char *class_name);\n");
+    out.push_str("static int ptn_internal_interface_exists_name(const char *name);\n");
+    out.push_str("#endif\n");
+    out.push_str(
+        "static PTN_UNUSED void ptn_append_declared_alias_names(PtnRuntime *runtime, PtnValue result, int64_t *index, int kind, int include_internal) {\n",
+    );
+    out.push_str("    PtnSymbolTable *aliases = ptn_runtime_class_alias_table(runtime);\n");
+    out.push_str("    if (aliases == NULL) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    for (size_t i = 0; i < aliases->len; i++) {\n");
+    out.push_str("        PtnSymbol *symbol = &aliases->items[i];\n");
+    out.push_str("        PtnValue target_value = ptn_value_deref(symbol->value);\n");
+    out.push_str("        if (target_value.type != PTN_STRING) {\n");
+    out.push_str("            continue;\n");
+    out.push_str("        }\n");
+    out.push_str("        const char *target_name = ptn_runtime_resolve_class_alias(runtime, (const char *)target_value.as.string.data);\n");
+    out.push_str("        int include = 0;\n");
+    out.push_str("        if (kind == 0) {\n");
+    out.push_str("            include = ptn_declared_class_exists(target_name);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            if (!include && include_internal) {\n");
+    out.push_str("                include = ptn_internal_class_exists_name(target_name);\n");
+    out.push_str("            }\n");
+    out.push_str("#else\n");
+    out.push_str("            (void)include_internal;\n");
+    out.push_str("#endif\n");
+    out.push_str("        } else if (kind == 1) {\n");
+    out.push_str("            include = ptn_declared_interface_exists(target_name);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            if (!include) {\n");
+    out.push_str("                include = ptn_internal_interface_exists_name(target_name);\n");
+    out.push_str("            }\n");
+    out.push_str("#endif\n");
+    out.push_str("        } else if (kind == 2) {\n");
+    out.push_str("            include = ptn_declared_trait_exists(target_name);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (include) {\n");
+    out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), ptn_string(symbol->name));\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_names(PtnRuntime *runtime, int include_internal) {\n",
     );
-    out.push_str("    (void)runtime;\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
     out.push_str("    if (include_internal) {\n");
@@ -3103,13 +3146,15 @@ fn emit_class_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\"));\n");
     }
+    out.push_str(
+        "    ptn_append_declared_alias_names(runtime, result, &index, 0, include_internal);\n",
+    );
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_interface_names(PtnRuntime *runtime) {\n",
     );
-    out.push_str("    (void)runtime;\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
     for builtin in [
@@ -3144,11 +3189,11 @@ fn emit_class_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\"));\n");
     }
+    out.push_str("    ptn_append_declared_alias_names(runtime, result, &index, 1, 1);\n");
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED PtnValue ptn_declared_trait_names(PtnRuntime *runtime) {\n");
-    out.push_str("    (void)runtime;\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
     for trait_decl in traits {
@@ -3161,6 +3206,7 @@ fn emit_class_metadata_helpers(
     if traits.is_empty() {
         out.push_str("    (void)index;\n");
     }
+    out.push_str("    ptn_append_declared_alias_names(runtime, result, &index, 2, 1);\n");
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
@@ -15273,14 +15319,16 @@ impl ValueEmitter {
             }
             out.push_str(result_temp);
             out.push_str(" = ptn_null();\n");
-            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
+            out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"Cannot instantiate ");
             out.push_str(if declared_class.is_interface {
                 "interface "
             } else {
                 "abstract class "
             });
             out.push_str(&c_string(&declared_class.name));
-            out.push_str("\");\n");
+            out.push_str("\", runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
             return;
         }
         self.emit_declared_object_shell_with_properties(

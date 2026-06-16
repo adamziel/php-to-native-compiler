@@ -850,6 +850,7 @@ static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
     PtnRuntime *runtime,
     const char *class_name
 );
+static PtnSymbolTable *ptn_runtime_class_alias_table(PtnRuntime *runtime);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
@@ -955,6 +956,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *c
 static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
+static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name);
 static PTN_UNUSED int ptn_runtime_interface_exists(
