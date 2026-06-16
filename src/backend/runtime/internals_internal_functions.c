@@ -3659,7 +3659,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_path(
 
 static PTN_UNUSED PtnValue ptn_runtime_array_shift_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
     ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
-    PtnValue temporary = ptn_value_clone_deref(value);
+    PtnValue temporary = ptn_value_deep_clone(ptn_value_deref(value));
     (void)ptn_internal_expect_array_arg(runtime, "array_shift", 1, "array", temporary);
     PtnArray *array = ptn_array_detach_value(&temporary);
     PtnValue result = ptn_array_shift_value(array);

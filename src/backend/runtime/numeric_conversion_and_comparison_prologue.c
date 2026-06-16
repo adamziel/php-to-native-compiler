@@ -457,7 +457,7 @@ static PTN_UNUSED PtnValue ptn_by_ref_argument_source_or_temporary(PtnRuntime *r
         return ptn_value_clone(value);
     }
     ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
-    return ptn_reference_value(ptn_reference_new_owned(ptn_value_clone(ptn_value_deref(value))));
+    return ptn_reference_value(ptn_reference_new_owned(ptn_value_deep_clone(ptn_value_deref(value))));
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_read_variable(
