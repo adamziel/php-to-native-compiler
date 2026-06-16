@@ -1245,6 +1245,11 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_array_iterator_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_recursive_array_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1263,6 +1268,11 @@ static PTN_UNUSED PtnValue ptn_array_object_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_array_object_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_array_object_call_method(

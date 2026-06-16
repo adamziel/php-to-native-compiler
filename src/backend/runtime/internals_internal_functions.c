@@ -1007,12 +1007,16 @@ static void ptn_dump_seen_objects_pop(PtnDumpSeenArrays *seen) {
 }
 
 typedef struct {
-    PtnArray *array;
+    PtnValue storage;
     size_t index;
+    int64_t flags;
 } PtnArrayIteratorData;
 
 typedef struct {
-    PtnArray *array;
+    PtnValue storage;
+    int64_t flags;
+    char *iterator_class;
+    int sorting;
 } PtnArrayObjectData;
 
 static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key) {
@@ -2310,12 +2314,12 @@ static PtnValue ptn_serialize_spl_storage_value(PtnObject *object) {
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
         object->native_data != NULL) {
         PtnArrayIteratorData *data = (PtnArrayIteratorData *)object->native_data;
-        return ptn_array(data->array);
+        return ptn_value_clone_deref(data->storage);
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject") &&
         object->native_data != NULL) {
         PtnArrayObjectData *data = (PtnArrayObjectData *)object->native_data;
-        return ptn_array(data->array);
+        return ptn_value_clone_deref(data->storage);
     }
     return ptn_array_from_literal_entries(0, NULL);
 }
@@ -2334,11 +2338,7 @@ static void ptn_serialize_append_spl_array_backed_object(
     ptn_string_buffer_append(buffer, "i:0;i:0;i:1;");
     PtnValue storage = ptn_serialize_spl_storage_value(object);
     ptn_serialize_append_value_with_id(buffer, storage, state, 0);
-    if (storage.type == PTN_ARRAY &&
-        storage.as.array != NULL &&
-        object->native_data == NULL) {
-        ptn_value_destroy(&storage);
-    }
+    ptn_value_destroy(&storage);
     ptn_string_buffer_append(buffer, "i:2;");
     PtnValue properties = ptn_array(object->properties);
     ptn_serialize_append_value_with_id(buffer, properties, state, 0);
@@ -33797,12 +33797,16 @@ static int ptn_reflection_reference_method_exists(const char *method_name) {
 }
 
 static int ptn_array_iterator_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "count")
+    return ptn_ascii_case_equal(method_name, "asort")
+        || ptn_ascii_case_equal(method_name, "count")
         || ptn_ascii_case_equal(method_name, "current")
         || ptn_ascii_case_equal(method_name, "getArrayCopy")
         || ptn_ascii_case_equal(method_name, "getChildren")
         || ptn_ascii_case_equal(method_name, "hasChildren")
         || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "ksort")
+        || ptn_ascii_case_equal(method_name, "natcasesort")
+        || ptn_ascii_case_equal(method_name, "natsort")
         || ptn_ascii_case_equal(method_name, "next")
         || ptn_ascii_case_equal(method_name, "offsetExists")
         || ptn_ascii_case_equal(method_name, "offsetGet")
@@ -33814,12 +33818,24 @@ static int ptn_array_iterator_method_exists(const char *method_name) {
 }
 
 static int ptn_array_object_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "count")
+    return ptn_ascii_case_equal(method_name, "asort")
+        || ptn_ascii_case_equal(method_name, "count")
+        || ptn_ascii_case_equal(method_name, "exchangeArray")
+        || ptn_ascii_case_equal(method_name, "getArrayCopy")
+        || ptn_ascii_case_equal(method_name, "getFlags")
         || ptn_ascii_case_equal(method_name, "getIterator")
+        || ptn_ascii_case_equal(method_name, "getIteratorClass")
+        || ptn_ascii_case_equal(method_name, "ksort")
+        || ptn_ascii_case_equal(method_name, "natcasesort")
+        || ptn_ascii_case_equal(method_name, "natsort")
         || ptn_ascii_case_equal(method_name, "offsetExists")
         || ptn_ascii_case_equal(method_name, "offsetGet")
         || ptn_ascii_case_equal(method_name, "offsetSet")
-        || ptn_ascii_case_equal(method_name, "offsetUnset");
+        || ptn_ascii_case_equal(method_name, "offsetUnset")
+        || ptn_ascii_case_equal(method_name, "setFlags")
+        || ptn_ascii_case_equal(method_name, "setIteratorClass")
+        || ptn_ascii_case_equal(method_name, "uasort")
+        || ptn_ascii_case_equal(method_name, "uksort");
 }
 
 static int ptn_iterator_iterator_method_exists(const char *method_name) {
@@ -34122,12 +34138,16 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_array_iterator(class_name) ||
         ptn_internal_class_name_is_recursive_array_iterator(class_name)) {
         static const char *const names[] = {
+            "asort",
             "count",
             "current",
             "getArrayCopy",
             "getChildren",
             "hasChildren",
             "key",
+            "ksort",
+            "natcasesort",
+            "natsort",
             "next",
             "offsetExists",
             "offsetGet",
@@ -34142,12 +34162,24 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_array_object(class_name)) {
         static const char *const names[] = {
+            "asort",
             "count",
+            "exchangeArray",
+            "getArrayCopy",
+            "getFlags",
             "getIterator",
+            "getIteratorClass",
+            "ksort",
+            "natcasesort",
+            "natsort",
             "offsetExists",
             "offsetGet",
             "offsetSet",
             "offsetUnset",
+            "setFlags",
+            "setIteratorClass",
+            "uasort",
+            "uksort",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -37274,7 +37306,7 @@ static void ptn_array_iterator_data_free(void *data) {
     if (iterator_data == NULL) {
         return;
     }
-    ptn_array_free(iterator_data->array);
+    ptn_value_destroy(&iterator_data->storage);
     free(iterator_data);
 }
 
@@ -37283,7 +37315,8 @@ static void ptn_array_object_data_free(void *data) {
     if (object_data == NULL) {
         return;
     }
-    ptn_array_free(object_data->array);
+    ptn_value_destroy(&object_data->storage);
+    free(object_data->iterator_class);
     free(object_data);
 }
 
@@ -37368,16 +37401,35 @@ static PtnSensitiveParameterValueData *ptn_sensitive_parameter_value_data(PtnRun
     return (PtnSensitiveParameterValueData *)receiver.as.object->native_data;
 }
 
+static void ptn_spl_declare_storage_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    PtnValue storage,
+    size_t line
+);
+
 static PtnArrayIteratorData *ptn_array_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type != PTN_OBJECT
         || !(ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "ArrayIterator") ||
              ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "RecursiveArrayIterator"))
-        || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid ArrayIterator object");
         return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        PtnArrayIteratorData *data = malloc(sizeof(PtnArrayIteratorData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->storage = ptn_array_from_literal_entries(0, NULL);
+        data->index = 0;
+        data->flags = 0;
+        receiver.as.object->native_data = data;
+        receiver.as.object->native_data_free = ptn_array_iterator_data_free;
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayIterator", data->storage, 0);
     }
     return (PtnArrayIteratorData *)receiver.as.object->native_data;
 }
@@ -37387,10 +37439,22 @@ static PtnArrayObjectData *ptn_array_object_data(PtnRuntime *runtime, PtnValue r
     if (
         receiver.type != PTN_OBJECT
         || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "ArrayObject")
-        || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid ArrayObject object");
         return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        PtnArrayObjectData *data = malloc(sizeof(PtnArrayObjectData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->storage = ptn_array_from_literal_entries(0, NULL);
+        data->flags = 0;
+        data->iterator_class = ptn_duplicate_string("ArrayIterator");
+        data->sorting = 0;
+        receiver.as.object->native_data = data;
+        receiver.as.object->native_data_free = ptn_array_object_data_free;
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, 0);
     }
     return (PtnArrayObjectData *)receiver.as.object->native_data;
 }
@@ -37723,73 +37787,270 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_clone(
     return clone;
 }
 
-static PTN_UNUSED PtnValue ptn_array_iterator_new_for_class(
+static void ptn_spl_array_backing_deprecation(
     PtnRuntime *runtime,
     const char *class_name,
-    size_t argc,
-    const PtnValue *args,
+    const char *method_name,
     size_t line
 ) {
-    if (argc > 1) {
-        char message[160];
-        int written = snprintf(
-            message,
-            sizeof(message),
-            "%s::__construct() expects at most 1 argument, %zu given",
-            class_name,
-            argc
-        );
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception(runtime, "ArgumentCountError", message);
-        return ptn_null();
-    }
-
-    PtnArray *array = NULL;
-    PtnValue empty_array = ptn_null();
-    if (argc == 0) {
-        empty_array = ptn_array_from_literal_entries(0, NULL);
-        array = empty_array.as.array;
-    } else {
-        PtnValue source = ptn_value_deref(args[0]);
-        if (source.type != PTN_ARRAY) {
-            char message[160];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "%s::__construct(): Argument #1 ($array) must be of type array",
-                class_name
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
-            return ptn_null();
-        }
-        array = source.as.array;
-    }
-    ptn_array_retain(array);
-    ptn_value_drop(&empty_array);
-
-    PtnArrayIteratorData *data = malloc(sizeof(PtnArrayIteratorData));
-    if (data == NULL) {
-        ptn_array_free(array);
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s::%s(): Using an object as a backing array for %s is deprecated, as it allows violating class constraints and invariants",
+        class_name,
+        method_name,
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    data->array = array;
-    data->index = 0;
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
 
-    PtnValue object = ptn_object_new_shell(runtime, class_name);
-    object.as.object->native_data = data;
-    object.as.object->native_data_free = ptn_array_iterator_data_free;
-    ptn_array_retain(array);
-    PtnValue storage_value = ptn_array(array);
+static int ptn_spl_iterator_class_is_array_iterator_descendant(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    const char *resolved = ptn_runtime_resolve_class_alias(
+        runtime,
+        ptn_symbol_name_without_leading_slash(class_name)
+    );
+    return ptn_internal_class_name_is_array_iterator(resolved) ||
+        ptn_internal_class_name_is_recursive_array_iterator(resolved) ||
+        ptn_declared_class_is_same_or_descendant(resolved, "ArrayIterator");
+}
+
+static char *ptn_spl_array_object_iterator_class_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    char *class_name = ptn_value_to_string(value);
+    if (ptn_spl_iterator_class_is_array_iterator_descendant(runtime, class_name)) {
+        return class_name;
+    }
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be a class name derived from ArrayIterator, %s given",
+        function_name,
+        position,
+        argument_name,
+        class_name
+    );
+    free(class_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return NULL;
+}
+
+static PtnValue ptn_spl_prepare_backing_storage(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    int emit_object_deprecation
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        return ptn_array(ptn_array_clone(value.as.array));
+    }
+    if (value.type == PTN_OBJECT) {
+        if (emit_object_deprecation) {
+            ptn_spl_array_backing_deprecation(runtime, class_name, method_name, line);
+        }
+        return ptn_value_clone(value);
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s::%s(): Argument #1 ($%s) must be of type array|object",
+        class_name,
+        method_name,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+    return ptn_null();
+}
+
+static PtnArrayObjectData *ptn_spl_array_object_data_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "ArrayObject") ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnArrayObjectData *)value.as.object->native_data;
+}
+
+static PtnValue ptn_spl_effective_storage(PtnValue storage) {
+    PtnArrayObjectData *array_object = ptn_spl_array_object_data_from_value(storage);
+    if (array_object != NULL) {
+        return ptn_value_deref(array_object->storage);
+    }
+    return ptn_value_deref(storage);
+}
+
+static PtnArray *ptn_spl_storage_array(PtnValue storage) {
+    storage = ptn_spl_effective_storage(storage);
+    if (storage.type == PTN_ARRAY) {
+        return storage.as.array;
+    }
+    if (storage.type == PTN_OBJECT) {
+        return storage.as.object->properties;
+    }
+    return NULL;
+}
+
+static PtnObject *ptn_spl_storage_object(PtnValue storage) {
+    storage = ptn_spl_effective_storage(storage);
+    return storage.type == PTN_OBJECT ? storage.as.object : NULL;
+}
+
+static int ptn_spl_storage_entry_visible(
+    PtnRuntime *runtime,
+    PtnValue storage,
+    PtnArrayKey key,
+    const char *access_scope
+) {
+    PtnObject *object = ptn_spl_storage_object(storage);
+    return object == NULL ||
+        ptn_object_property_visible_for_foreach(runtime, object, key, access_scope);
+}
+
+static size_t ptn_spl_storage_count(PtnRuntime *runtime, PtnValue storage, const char *access_scope) {
+    PtnArray *array = ptn_spl_storage_array(storage);
+    if (array == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        if (ptn_spl_storage_entry_visible(runtime, storage, array->entries[i].key, access_scope)) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static PtnArrayEntry *ptn_spl_storage_visible_entry(
+    PtnRuntime *runtime,
+    PtnValue storage,
+    size_t index,
+    const char *access_scope
+) {
+    PtnArray *array = ptn_spl_storage_array(storage);
+    if (array == NULL) {
+        return NULL;
+    }
+    size_t visible_index = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        if (!ptn_spl_storage_entry_visible(runtime, storage, array->entries[i].key, access_scope)) {
+            continue;
+        }
+        if (visible_index == index) {
+            return &array->entries[i];
+        }
+        visible_index++;
+    }
+    return NULL;
+}
+
+static PtnArrayKey ptn_spl_object_property_key_from_array_key(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        return ptn_array_key_clone(key);
+    }
+    char buffer[64];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)key.as.integer);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    return ptn_array_string_key(buffer);
+}
+
+static PtnArrayEntry *ptn_spl_storage_entry_for_key(
+    PtnRuntime *runtime,
+    PtnValue storage,
+    PtnArrayKey key
+) {
+    (void)runtime;
+    PtnArray *array = ptn_spl_storage_array(storage);
+    if (array == NULL) {
+        return NULL;
+    }
+    PtnObject *object = ptn_spl_storage_object(storage);
+    if (object == NULL) {
+        return ptn_array_entry_for_key(array, key);
+    }
+    PtnArrayKey property_key = ptn_spl_object_property_key_from_array_key(key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, property_key);
+    ptn_array_key_free(property_key);
+    return entry;
+}
+
+static PtnArray *ptn_spl_storage_mutable_array(PtnValue *storage) {
+    PtnArrayObjectData *array_object = ptn_spl_array_object_data_from_value(*storage);
+    if (array_object != NULL) {
+        return ptn_spl_storage_mutable_array(&array_object->storage);
+    }
+    PtnValue resolved = ptn_value_deref(*storage);
+    if (resolved.type == PTN_ARRAY) {
+        return ptn_array_detach_value(storage);
+    }
+    if (resolved.type == PTN_OBJECT) {
+        return resolved.as.object->properties;
+    }
+    return NULL;
+}
+
+static PtnValue ptn_spl_storage_array_copy(
+    PtnRuntime *runtime,
+    PtnValue storage,
+    const char *access_scope
+) {
+    PtnArray *source = ptn_spl_storage_array(storage);
+    if (source == NULL) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < source->len; i++) {
+        PtnArrayEntry *entry = &source->entries[i];
+        if (!ptn_spl_storage_entry_visible(runtime, storage, entry->key, access_scope)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
+    }
+    return result;
+}
+
+static void ptn_spl_declare_storage_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    PtnValue storage,
+    size_t line
+) {
+    PtnValue storage_value = ptn_value_clone_deref(storage);
     PtnValue assigned = ptn_object_declare_property(
         runtime,
         object,
         "storage",
-        "ArrayIterator",
+        declaring_class,
         PTN_PROPERTY_PRIVATE,
         PTN_PROPERTY_PRIVATE,
         0,
@@ -37803,6 +38064,106 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new_for_class(
     );
     ptn_value_destroy(&assigned);
     ptn_value_destroy(&storage_value);
+}
+
+static void ptn_spl_array_object_set_storage(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnArrayObjectData *data,
+    PtnValue storage,
+    size_t line
+) {
+    PtnValue new_storage = ptn_value_clone_deref(storage);
+    ptn_value_destroy(&data->storage);
+    data->storage = new_storage;
+    ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
+}
+
+static PtnValue ptn_array_iterator_new_from_storage(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue storage,
+    int64_t flags,
+    size_t line
+) {
+    PtnArrayIteratorData *data = malloc(sizeof(PtnArrayIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->storage = ptn_value_clone_deref(storage);
+    data->index = 0;
+    data->flags = flags;
+
+    PtnValue object;
+    if (!ptn_internal_class_name_is_array_iterator(class_name) &&
+        !ptn_internal_class_name_is_recursive_array_iterator(class_name) &&
+        runtime->new_instance_without_constructor != NULL &&
+        ptn_declared_class_is_same_or_descendant(class_name, "ArrayIterator")) {
+        object = runtime->new_instance_without_constructor(runtime, class_name, line);
+        if (runtime->exceptions->active_exception != NULL || object.type != PTN_OBJECT) {
+            ptn_value_destroy(&data->storage);
+            free(data);
+            return ptn_null();
+        }
+    } else {
+        object = ptn_object_new_shell(runtime, class_name);
+    }
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_array_iterator_data_free;
+    ptn_spl_declare_storage_property(runtime, object, "ArrayIterator", data->storage, line);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_array_iterator_new_for_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects at most 2 arguments, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnValue storage = ptn_null();
+    if (argc == 0) {
+        storage = ptn_array_from_literal_entries(0, NULL);
+    } else {
+        storage = ptn_spl_prepare_backing_storage(
+            runtime,
+            class_name,
+            "__construct",
+            "array",
+            args[0],
+            line,
+            1
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&storage);
+            return ptn_null();
+        }
+    }
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, class_name, 2, "flags", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&storage);
+        return ptn_null();
+    }
+    PtnValue object = ptn_array_iterator_new_from_storage(runtime, class_name, storage, flags, line);
+    ptn_value_destroy(&storage);
     return object;
 }
 
@@ -37830,12 +38191,12 @@ static PTN_UNUSED PtnValue ptn_array_object_new(
     const PtnValue *args,
     size_t line
 ) {
-    if (argc > 1) {
+    if (argc > 3) {
         char message[160];
         int written = snprintf(
             message,
             sizeof(message),
-            "ArrayObject::__construct() expects at most 1 argument, %zu given",
+            "ArrayObject::__construct() expects at most 3 arguments, %zu given",
             argc
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -37845,39 +38206,103 @@ static PTN_UNUSED PtnValue ptn_array_object_new(
         return ptn_null();
     }
 
-    PtnArray *array = NULL;
-    PtnValue empty_array = ptn_null();
+    PtnValue storage = ptn_null();
     if (argc == 0) {
-        empty_array = ptn_array_from_literal_entries(0, NULL);
-        array = empty_array.as.array;
+        storage = ptn_array_from_literal_entries(0, NULL);
     } else {
-        PtnValue source = ptn_value_deref(args[0]);
-        if (source.type != PTN_ARRAY) {
-            ptn_throw_exception_at(
-                runtime,
-                "TypeError",
-                "ArrayObject::__construct(): Argument #1 ($array) must be of type array",
-                runtime->source_path,
-                line
-            );
+        storage = ptn_spl_prepare_backing_storage(
+            runtime,
+            "ArrayObject",
+            "__construct",
+            "array",
+            args[0],
+            line,
+            1
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&storage);
             return ptn_null();
         }
-        array = source.as.array;
     }
-    ptn_array_retain(array);
-    ptn_value_drop(&empty_array);
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "ArrayObject::__construct", 2, "flags", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&storage);
+        return ptn_null();
+    }
+    char *iterator_class = argc >= 3
+        ? ptn_spl_array_object_iterator_class_arg(
+            runtime,
+            "ArrayObject::__construct",
+            3,
+            "iteratorClass",
+            args[2]
+        )
+        : ptn_duplicate_string("ArrayIterator");
+    if (runtime->exceptions->active_exception != NULL || iterator_class == NULL) {
+        ptn_value_destroy(&storage);
+        return ptn_null();
+    }
 
     PtnArrayObjectData *data = malloc(sizeof(PtnArrayObjectData));
     if (data == NULL) {
-        ptn_array_free(array);
+        ptn_value_destroy(&storage);
+        free(iterator_class);
         ptn_abort_out_of_memory();
     }
-    data->array = array;
+    data->storage = ptn_value_clone_deref(storage);
+    data->flags = flags;
+    data->iterator_class = iterator_class;
+    data->sorting = 0;
 
     PtnValue object = ptn_object_new_shell(runtime, "ArrayObject");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_array_object_data_free;
+    ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
+    ptn_value_destroy(&storage);
     return object;
+}
+
+static PTN_UNUSED PtnValue ptn_array_iterator_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnArrayIteratorData *source_data = ptn_array_iterator_data(runtime, source);
+    if (source_data == NULL) {
+        return ptn_null();
+    }
+    PtnValue storage_copy = ptn_spl_storage_array_copy(runtime, source_data->storage, NULL);
+    PtnValue clone = ptn_array_iterator_new_from_storage(
+        runtime,
+        ptn_value_deref(source).as.object->class_name,
+        storage_copy,
+        source_data->flags,
+        line
+    );
+    ptn_value_destroy(&storage_copy);
+    return clone;
+}
+
+static PTN_UNUSED PtnValue ptn_array_object_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnArrayObjectData *source_data = ptn_array_object_data(runtime, source);
+    if (source_data == NULL) {
+        return ptn_null();
+    }
+    PtnValue storage_copy = ptn_spl_storage_array_copy(runtime, source_data->storage, NULL);
+    PtnValue args[3] = {
+        storage_copy,
+        ptn_int(source_data->flags),
+        ptn_string(source_data->iterator_class == NULL ? "ArrayIterator" : source_data->iterator_class)
+    };
+    PtnValue clone = ptn_array_object_new(runtime, 3, args, line);
+    ptn_value_destroy(&storage_copy);
+    return clone;
 }
 
 static int ptn_value_object_implements_interface(PtnValue value, const char *interface_name) {
@@ -38355,7 +38780,6 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
     const PtnValue *args,
     size_t line
 ) {
-    (void)line;
     PtnArrayIteratorData *data = ptn_array_iterator_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
@@ -38365,25 +38789,83 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        if (data->array->len > (size_t)INT64_MAX) {
+        size_t count = ptn_spl_storage_count(runtime, data->storage, NULL);
+        if (count > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
-        return ptn_int((int64_t)data->array->len);
+        return ptn_int((int64_t)count);
     }
     if (ptn_ascii_case_equal(name, "getArrayCopy")) {
         ptn_reflection_check_no_arguments(runtime, "ArrayIterator", name, argc);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        return ptn_array(ptn_array_clone(data->array));
+        return ptn_spl_storage_array_copy(runtime, data->storage, NULL);
+    }
+    if (ptn_ascii_case_equal(name, "asort") ||
+        ptn_ascii_case_equal(name, "ksort") ||
+        ptn_ascii_case_equal(name, "natsort") ||
+        ptn_ascii_case_equal(name, "natcasesort")) {
+        if ((ptn_ascii_case_equal(name, "natsort") || ptn_ascii_case_equal(name, "natcasesort")) && argc != 0) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "ArrayIterator::%s() expects exactly 0 arguments", name);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (!(ptn_ascii_case_equal(name, "natsort") || ptn_ascii_case_equal(name, "natcasesort")) && argc > 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "ArrayIterator::%s() expects at most 1 argument, %zu given", name, argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        if (array == NULL) {
+            return ptn_bool(0);
+        }
+        if (ptn_ascii_case_equal(name, "asort")) {
+            int64_t flags = argc == 1
+                ? ptn_internal_expect_integer_arg(runtime, "ArrayIterator::asort", 1, "flags", args[0], line)
+                : PTN_SORT_REGULAR;
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            ptn_array_asort_values_with_flags_context(runtime, array, flags, line);
+        } else if (ptn_ascii_case_equal(name, "ksort")) {
+            int64_t flags = argc == 1
+                ? ptn_internal_expect_integer_arg(runtime, "ArrayIterator::ksort", 1, "flags", args[0], line)
+                : PTN_SORT_REGULAR;
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            ptn_array_ksort_entries_with_flags(array, flags);
+        } else if (ptn_ascii_case_equal(name, "natsort")) {
+            ptn_array_natsort_values(array);
+        } else {
+            ptn_array_natcasesort_values(array);
+        }
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayIterator", data->storage, line);
+        data->index = 0;
+        return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "offsetGet")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetGet() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
-        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        PtnArrayKey key;
+        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 0, &key)) {
+            return ptn_null();
+        }
+        PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+        if (entry == NULL) {
+            ptn_emit_undefined_array_key_warning(runtime, key, line);
+        }
         ptn_array_key_free(key);
         if (entry == NULL) {
             return ptn_null();
@@ -38395,11 +38877,24 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetSet() expects exactly 2 arguments");
             return ptn_null();
         }
+        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        if (array == NULL) {
+            return ptn_null();
+        }
+        PtnObject *object = ptn_spl_storage_object(data->storage);
         PtnValue offset = ptn_value_deref(args[0]);
-        PtnArrayKey key = offset.type == PTN_NULL
-            ? ptn_array_int_key(data->array->next_auto_key)
-            : ptn_array_key_from_value(offset);
-        ptn_array_set_entry(data->array, key, ptn_value_clone_deref(args[1]));
+        PtnArrayKey key;
+        if (offset.type == PTN_NULL) {
+            key = ptn_array_int_key(array->next_auto_key);
+        } else if (!ptn_array_offset_key_from_value(runtime, offset, line, 0, &key)) {
+            return ptn_null();
+        }
+        PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
+        ptn_array_set_entry(array, storage_key, ptn_value_clone_deref(args[1]));
+        if (object != NULL) {
+            ptn_array_key_free(key);
+        }
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayIterator", data->storage, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "offsetExists")) {
@@ -38407,18 +38902,34 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetExists() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
-        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        PtnArrayKey key;
+        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+            return ptn_bool(0);
+        }
+        PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
         ptn_array_key_free(key);
-        return ptn_bool(entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL);
+        return ptn_bool(entry != NULL);
     }
     if (ptn_ascii_case_equal(name, "offsetUnset")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayIterator::offsetUnset() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
-        (void)ptn_array_unset_entry(data->array, key);
+        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        if (array == NULL) {
+            return ptn_null();
+        }
+        PtnArrayKey key;
+        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+            return ptn_null();
+        }
+        PtnObject *object = ptn_spl_storage_object(data->storage);
+        PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
+        (void)ptn_array_unset_entry(array, storage_key);
+        if (object != NULL) {
+            ptn_array_key_free(key);
+        }
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayIterator", data->storage, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "seek")) {
@@ -38427,7 +38938,8 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_null();
         }
         int64_t position = ptn_value_to_integer(args[0]);
-        if (position < 0 || data->array == NULL || (size_t)position >= data->array->len) {
+        size_t count = ptn_spl_storage_count(runtime, data->storage, NULL);
+        if (position < 0 || (size_t)position >= count) {
             char message[128];
             int written = snprintf(
                 message,
@@ -38453,43 +38965,49 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "valid")) {
-        return ptn_bool(data->array != NULL && data->index < data->array->len);
+        return ptn_bool(data->index < ptn_spl_storage_count(runtime, data->storage, NULL));
     }
     if (ptn_ascii_case_equal(name, "current")) {
-        if (data->array == NULL || data->index >= data->array->len) {
+        PtnArrayEntry *entry = ptn_spl_storage_visible_entry(runtime, data->storage, data->index, NULL);
+        if (entry == NULL) {
             return ptn_null();
         }
-        return ptn_value_clone_deref(data->array->entries[data->index].value);
+        return ptn_value_clone_deref(entry->value);
     }
     if (ptn_ascii_case_equal(name, "key")) {
-        if (data->array == NULL || data->index >= data->array->len) {
+        PtnArrayEntry *entry = ptn_spl_storage_visible_entry(runtime, data->storage, data->index, NULL);
+        if (entry == NULL) {
             return ptn_null();
         }
-        return ptn_array_key_value(data->array->entries[data->index].key);
+        PtnObject *object = ptn_spl_storage_object(data->storage);
+        return object == NULL
+            ? ptn_array_key_value(entry->key)
+            : ptn_object_foreach_key_value(object, entry->key);
     }
     if (ptn_ascii_case_equal(name, "next")) {
-        if (data->array != NULL && data->index < data->array->len) {
+        if (data->index < ptn_spl_storage_count(runtime, data->storage, NULL)) {
             data->index++;
         }
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "hasChildren")) {
-        if (data->array == NULL || data->index >= data->array->len) {
+        PtnArrayEntry *entry = ptn_spl_storage_visible_entry(runtime, data->storage, data->index, NULL);
+        if (entry == NULL) {
             return ptn_bool(0);
         }
-        PtnValue current = ptn_value_deref(data->array->entries[data->index].value);
+        PtnValue current = ptn_value_deref(entry->value);
         return ptn_bool(current.type == PTN_ARRAY);
     }
     if (ptn_ascii_case_equal(name, "getChildren")) {
-        if (data->array == NULL || data->index >= data->array->len) {
+        PtnArrayEntry *entry = ptn_spl_storage_visible_entry(runtime, data->storage, data->index, NULL);
+        if (entry == NULL) {
             return ptn_null();
         }
-        PtnValue current = ptn_value_deref(data->array->entries[data->index].value);
+        PtnValue current = ptn_value_deref(entry->value);
         if (current.type != PTN_ARRAY) {
             return ptn_null();
         }
-        PtnValue child_arg = ptn_array(current.as.array);
-        ptn_array_retain(current.as.array);
+        PtnValue child_arg = ptn_array(ptn_array_clone(current.as.array));
         PtnValue child = ptn_recursive_array_iterator_new(runtime, 1, &child_arg, line);
         ptn_value_drop(&child_arg);
         return child;
@@ -38515,29 +39033,205 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::count() expects exactly 0 arguments");
             return ptn_null();
         }
-        if (data->array->len > (size_t)INT64_MAX) {
+        size_t count = ptn_spl_storage_count(runtime, data->storage, NULL);
+        if (count > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
-        return ptn_int((int64_t)data->array->len);
+        return ptn_int((int64_t)count);
+    }
+    if (ptn_ascii_case_equal(name, "getArrayCopy")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::getArrayCopy() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        return ptn_spl_storage_array_copy(runtime, data->storage, NULL);
+    }
+    if (ptn_ascii_case_equal(name, "getFlags")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::getFlags() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        return ptn_int(data->flags);
+    }
+    if (ptn_ascii_case_equal(name, "setFlags")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::setFlags() expects exactly 1 argument");
+            return ptn_null();
+        }
+        data->flags = ptn_internal_expect_integer_arg(runtime, "ArrayObject::setFlags", 1, "flags", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getIteratorClass")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::getIteratorClass() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        return ptn_string(data->iterator_class == NULL ? "ArrayIterator" : data->iterator_class);
+    }
+    if (ptn_ascii_case_equal(name, "setIteratorClass")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::setIteratorClass() expects exactly 1 argument");
+            return ptn_null();
+        }
+        char *iterator_class = ptn_spl_array_object_iterator_class_arg(
+            runtime,
+            "ArrayObject::setIteratorClass",
+            1,
+            "iteratorClass",
+            args[0]
+        );
+        if (runtime->exceptions->active_exception != NULL || iterator_class == NULL) {
+            return ptn_null();
+        }
+        free(data->iterator_class);
+        data->iterator_class = iterator_class;
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getIterator")) {
         if (argc != 0) {
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::getIterator() expects exactly 0 arguments");
             return ptn_null();
         }
-        PtnValue array_arg = ptn_array(data->array);
-        ptn_array_retain(data->array);
-        PtnValue iterator = ptn_array_iterator_new(runtime, 1, &array_arg, line);
-        ptn_value_drop(&array_arg);
+        PtnValue iterator = ptn_array_iterator_new_from_storage(
+            runtime,
+            data->iterator_class == NULL ? "ArrayIterator" : data->iterator_class,
+            receiver,
+            data->flags,
+            line
+        );
         return iterator;
+    }
+    if (ptn_ascii_case_equal(name, "exchangeArray")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "ArrayObject::exchangeArray() expects exactly 1 argument, %zu given", argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (data->sorting) {
+            ptn_throw_exception(runtime, "Error", "Modification of ArrayObject during sorting is prohibited");
+            return ptn_null();
+        }
+        PtnValue old_copy = ptn_spl_storage_array_copy(runtime, data->storage, NULL);
+        PtnValue new_storage = ptn_spl_prepare_backing_storage(
+            runtime,
+            "ArrayObject",
+            "exchangeArray",
+            "array",
+            args[0],
+            line,
+            1
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&old_copy);
+            ptn_value_destroy(&new_storage);
+            return ptn_null();
+        }
+        ptn_spl_array_object_set_storage(runtime, receiver, data, new_storage, line);
+        ptn_value_destroy(&new_storage);
+        return old_copy;
+    }
+    if (ptn_ascii_case_equal(name, "asort") ||
+        ptn_ascii_case_equal(name, "ksort") ||
+        ptn_ascii_case_equal(name, "natsort") ||
+        ptn_ascii_case_equal(name, "natcasesort") ||
+        ptn_ascii_case_equal(name, "uasort") ||
+        ptn_ascii_case_equal(name, "uksort")) {
+        int takes_callback = ptn_ascii_case_equal(name, "uasort") || ptn_ascii_case_equal(name, "uksort");
+        int takes_flags = ptn_ascii_case_equal(name, "asort") || ptn_ascii_case_equal(name, "ksort");
+        if ((ptn_ascii_case_equal(name, "natsort") || ptn_ascii_case_equal(name, "natcasesort")) && argc != 0) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "ArrayObject::%s() expects exactly 0 arguments", name);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (takes_flags && argc > 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "ArrayObject::%s() expects at most 1 argument, %zu given", name, argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        if (takes_callback && argc != 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "ArrayObject::%s() expects exactly 1 argument, %zu given", name, argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        if (array == NULL) {
+            return ptn_bool(0);
+        }
+        data->sorting = 1;
+        if (ptn_ascii_case_equal(name, "asort")) {
+            int64_t flags = argc == 1
+                ? ptn_internal_expect_integer_arg(runtime, "ArrayObject::asort", 1, "flags", args[0], line)
+                : PTN_SORT_REGULAR;
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_array_asort_values_with_flags_context(runtime, array, flags, line);
+            }
+        } else if (ptn_ascii_case_equal(name, "ksort")) {
+            int64_t flags = argc == 1
+                ? ptn_internal_expect_integer_arg(runtime, "ArrayObject::ksort", 1, "flags", args[0], line)
+                : PTN_SORT_REGULAR;
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_array_ksort_entries_with_flags(array, flags);
+            }
+        } else if (ptn_ascii_case_equal(name, "natsort")) {
+            ptn_array_natsort_values(array);
+        } else if (ptn_ascii_case_equal(name, "natcasesort")) {
+            ptn_array_natcasesort_values(array);
+        } else {
+            PtnValue callback = ptn_internal_expect_callback_arg(
+                runtime,
+                ptn_ascii_case_equal(name, "uasort") ? "ArrayObject::uasort" : "ArrayObject::uksort",
+                1,
+                "callback",
+                args[0]
+            );
+            if (runtime->exceptions->active_exception == NULL) {
+                if (ptn_ascii_case_equal(name, "uasort")) {
+                    ptn_array_uasort_values(runtime, array, callback, line);
+                } else {
+                    ptn_array_uksort_entries(runtime, array, callback, line);
+                }
+            }
+            ptn_value_destroy(&callback);
+        }
+        data->sorting = 0;
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
+        return ptn_bool(1);
     }
     if (ptn_ascii_case_equal(name, "offsetGet")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetGet() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
-        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        PtnArrayKey key;
+        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 0, &key)) {
+            return ptn_null();
+        }
+        PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
+        if (entry == NULL) {
+            ptn_emit_undefined_array_key_warning(runtime, key, line);
+        }
         ptn_array_key_free(key);
         if (entry == NULL) {
             return ptn_null();
@@ -38549,11 +39243,24 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetSet() expects exactly 2 arguments");
             return ptn_null();
         }
+        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        if (array == NULL) {
+            return ptn_null();
+        }
+        PtnObject *object = ptn_spl_storage_object(data->storage);
         PtnValue offset = ptn_value_deref(args[0]);
-        PtnArrayKey key = offset.type == PTN_NULL
-            ? ptn_array_int_key(data->array->next_auto_key)
-            : ptn_array_key_from_value(offset);
-        ptn_array_set_entry(data->array, key, ptn_value_clone_deref(args[1]));
+        PtnArrayKey key;
+        if (offset.type == PTN_NULL) {
+            key = ptn_array_int_key(array->next_auto_key);
+        } else if (!ptn_array_offset_key_from_value(runtime, offset, line, 0, &key)) {
+            return ptn_null();
+        }
+        PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
+        ptn_array_set_entry(array, storage_key, ptn_value_clone_deref(args[1]));
+        if (object != NULL) {
+            ptn_array_key_free(key);
+        }
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "offsetExists")) {
@@ -38561,18 +39268,34 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetExists() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
-        PtnArrayEntry *entry = ptn_array_entry_for_key(data->array, key);
+        PtnArrayKey key;
+        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+            return ptn_bool(0);
+        }
+        PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
         ptn_array_key_free(key);
-        return ptn_bool(entry != NULL && ptn_value_deref(entry->value).type != PTN_NULL);
+        return ptn_bool(entry != NULL);
     }
     if (ptn_ascii_case_equal(name, "offsetUnset")) {
         if (argc != 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "ArrayObject::offsetUnset() expects exactly 1 argument");
             return ptn_null();
         }
-        PtnArrayKey key = ptn_array_key_from_value(ptn_value_deref(args[0]));
-        (void)ptn_array_unset_entry(data->array, key);
+        PtnArray *array = ptn_spl_storage_mutable_array(&data->storage);
+        if (array == NULL) {
+            return ptn_null();
+        }
+        PtnArrayKey key;
+        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+            return ptn_null();
+        }
+        PtnObject *object = ptn_spl_storage_object(data->storage);
+        PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
+        (void)ptn_array_unset_entry(array, storage_key);
+        if (object != NULL) {
+            ptn_array_key_free(key);
+        }
+        ptn_spl_declare_storage_property(runtime, receiver, "ArrayObject", data->storage, line);
         return ptn_null();
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");

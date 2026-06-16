@@ -596,6 +596,13 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     if (ptn_internal_class_name_is_sensitive_parameter_value(source->class_name)) {
         return ptn_sensitive_parameter_value_clone(runtime, resolved, line);
     }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "ArrayObject")) {
+        return ptn_array_object_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "ArrayIterator") ||
+        ptn_declared_class_is_same_or_descendant(source->class_name, "RecursiveArrayIterator")) {
+        return ptn_array_iterator_clone(runtime, resolved, line);
+    }
 #endif
     if (source->native_data != NULL) {
         char message[192];
@@ -5214,6 +5221,19 @@ static PTN_UNUSED int ptn_arrayaccess_can_dispatch(
     if (
         ptn_internal_class_exists_name(container.as.object->class_name) &&
         ptn_internal_class_method_exists(container.as.object->class_name, method_name)
+    ) {
+        return 1;
+    }
+    if (
+        ptn_object_is_internal_or_descendant(container, "ArrayObject") &&
+        ptn_internal_class_method_exists("ArrayObject", method_name)
+    ) {
+        return 1;
+    }
+    if (
+        (ptn_object_is_internal_or_descendant(container, "ArrayIterator") ||
+         ptn_object_is_internal_or_descendant(container, "RecursiveArrayIterator")) &&
+        ptn_internal_class_method_exists("ArrayIterator", method_name)
     ) {
         return 1;
     }
