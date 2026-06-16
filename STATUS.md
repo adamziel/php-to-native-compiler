@@ -2,8 +2,8 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-16T09:05:08Z |
-| source commit | `41307de94a37` |
+| last refresh | 2026-06-16T09:35:09Z |
+| source commit | `3c3e47c7f5d3` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
 | evidence source | `tools/status-dashboard-features.tsv` |
