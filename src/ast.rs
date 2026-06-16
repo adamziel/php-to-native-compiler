@@ -475,6 +475,11 @@ pub enum ReferenceTarget {
         name: String,
         span: SourceSpan,
     },
+    DynamicProperty {
+        receiver: Box<Expr>,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -493,6 +498,12 @@ pub enum IncDecTarget {
         span: SourceSpan,
     },
     ArrayDim(ArrayDimTarget),
+    PropertyArrayDim {
+        receiver: Box<Expr>,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
@@ -686,6 +697,11 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    NullsafePropertyFetch {
+        receiver: Box<Expr>,
+        name: String,
+        span: SourceSpan,
+    },
     DynamicPropertyFetch {
         receiver: Box<Expr>,
         name: Box<Expr>,
@@ -774,6 +790,10 @@ pub enum Expr {
         span: SourceSpan,
     },
     Grouped {
+        expr: Box<Expr>,
+        span: SourceSpan,
+    },
+    PipeValue {
         expr: Box<Expr>,
         span: SourceSpan,
     },
@@ -918,6 +938,7 @@ impl Expr {
             | Expr::DynamicNewObject { span, .. }
             | Expr::Clone { span, .. }
             | Expr::PropertyFetch { span, .. }
+            | Expr::NullsafePropertyFetch { span, .. }
             | Expr::DynamicPropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
@@ -934,9 +955,10 @@ impl Expr {
             Expr::Throw { span, .. } => *span,
             Expr::Yield { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
-            Expr::Binary { span, .. } | Expr::Ternary { span, .. } | Expr::Grouped { span, .. } => {
-                *span
-            }
+            Expr::Binary { span, .. }
+            | Expr::Ternary { span, .. }
+            | Expr::Grouped { span, .. }
+            | Expr::PipeValue { span, .. } => *span,
         }
     }
 }

@@ -506,6 +506,11 @@ typedef struct {
     PtnValue callback;
 } PtnOutputBuffer;
 
+typedef struct {
+    size_t object_id;
+    char *property;
+} PtnMagicPropertyFrame;
+
 typedef enum {
     PTN_STREAM_BACKEND_FILE,
     PTN_STREAM_BACKEND_MEMORY,
@@ -728,6 +733,9 @@ struct PtnRuntime {
     PtnMagicDebugInfoHandler magic_debug_info;
     PtnClassConstantInitializerHandler class_constant_initializer;
     int in_magic_property_dispatch;
+    PtnMagicPropertyFrame *magic_property_frames;
+    size_t magic_property_frame_len;
+    size_t magic_property_frame_capacity;
     const char *source_path;
     const char *current_function_name;
     const char *current_class_name;
@@ -903,6 +911,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *cl
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name);
@@ -955,6 +964,14 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

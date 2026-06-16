@@ -638,6 +638,9 @@ fn emit_user_function_prototypes(
         out.push_str(
             "static PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index);\n",
         );
+        out.push_str(
+            "static PTN_UNUSED const char *ptn_callable_argument_parameter_name(PtnRuntime *runtime, PtnValue callable, size_t argument_index, char *fallback, size_t fallback_len);\n",
+        );
     }
     if needs_dynamic_function_dispatch {
         out.push_str("static PTN_UNUSED char *ptn_dynamic_function_name(PtnValue callable);\n");
@@ -1473,7 +1476,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("array_walk_recursive") && argument_index == 0 {
         return Some("array");
     }
-    if name.eq_ignore_ascii_case("preg_match") && argument_index == 2 {
+    if (name.eq_ignore_ascii_case("preg_match") || name.eq_ignore_ascii_case("preg_match_all"))
+        && argument_index == 2
+    {
         return Some("matches");
     }
     if (name.eq_ignore_ascii_case("preg_replace")
@@ -1516,7 +1521,7 @@ fn internal_by_ref_temporary_argument_allowed(name: &str, argument_index: usize)
     argument_index == 0
         && matches!(
             name.to_ascii_lowercase().as_str(),
-            "array_pop" | "array_shift" | "end" | "next" | "prev" | "reset"
+            "array_pop" | "array_shift" | "array_splice" | "end" | "next" | "prev" | "reset"
         )
 }
 
@@ -4449,6 +4454,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4461,6 +4472,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        *isset_out = ptn_is_truthy(ptn_value_deref(ptn_isset_result));\n");
         out.push_str("        ptn_value_destroy(&ptn_isset_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_isset_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4493,6 +4505,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4511,6 +4529,9 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str("            ptn_value_destroy(&ptn_isset_args[0]);\n");
             out.push_str("            if (!ptn_isset_truthy) {\n");
             out.push_str(
+                "                ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+            );
+            out.push_str(
                 "                runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
             out.push_str("                return 0;\n");
@@ -4518,6 +4539,9 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
             out.push_str("        }\n");
         } else {
             out.push_str("        if (require_isset) {\n");
+            out.push_str(
+                "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+            );
             out.push_str(
                 "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
@@ -4534,12 +4558,16 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         } else {
             out.push_str("        if (!require_isset) {\n");
             out.push_str(
+                "            ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n",
+            );
+            out.push_str(
                 "            runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
             );
             out.push_str("            return 0;\n");
             out.push_str("        }\n");
             out.push_str("        *value_out = ptn_null();\n");
         }
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4592,6 +4620,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4602,6 +4636,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str(&user_function_c_name(get_method.function_index));
         out.push_str("(runtime, resolved, 1, ptn_get_args, line);\n");
         out.push_str("        ptn_value_destroy(&ptn_get_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4631,6 +4666,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4644,6 +4685,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("        ptn_value_destroy(&ptn_set_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_set_args[1]);\n");
         out.push_str("        ptn_value_destroy(&ptn_set_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -4672,6 +4714,12 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        out.push_str("        if (ptn_magic_property_is_active(runtime, resolved, property)) {\n");
+        out.push_str("            return 0;\n");
+        out.push_str("        }\n");
+        out.push_str(
+            "        size_t ptn_magic_property_frame_mark = ptn_magic_property_push(runtime, resolved, property);\n",
+        );
         out.push_str(
             "        int ptn_previous_magic_dispatch = runtime->in_magic_property_dispatch;\n",
         );
@@ -4683,6 +4731,7 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("(runtime, resolved, 1, ptn_unset_args, line);\n");
         out.push_str("        ptn_value_destroy(&ptn_unset_result);\n");
         out.push_str("        ptn_value_destroy(&ptn_unset_args[0]);\n");
+        out.push_str("        ptn_magic_property_pop(runtime, ptn_magic_property_frame_mark);\n");
         out.push_str(
             "        runtime->in_magic_property_dispatch = ptn_previous_magic_dispatch;\n",
         );
@@ -5426,6 +5475,38 @@ fn emit_callable_dispatch(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_callable_argument_parameter_name(PtnRuntime *runtime, PtnValue callable, size_t argument_index, char *fallback, size_t fallback_len) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
+    out.push_str("            return ptn_callable_argument_parameter_name(runtime, resolved.as.closure->wrapped_callable, argument_index, fallback, fallback_len);\n");
+    out.push_str("        }\n");
+    out.push_str("        return ptn_function_metadata_parameter_name(resolved.as.closure->metadata, argument_index, fallback, fallback_len);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_STRING) {\n");
+    out.push_str("        char *callable_name = ptn_value_to_string(resolved);\n");
+    out.push_str(
+        "        const char *lookup_name = ptn_symbol_name_without_leading_slash(callable_name);\n",
+    );
+    out.push_str(
+        "        PtnFunctionMetadata metadata = ptn_find_function_metadata(lookup_name);\n",
+    );
+    out.push_str("        const char *parameter_name = ptn_function_metadata_parameter_name(metadata, argument_index, fallback, fallback_len);\n");
+    out.push_str("        free(callable_name);\n");
+    out.push_str("        return parameter_name;\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    int written = snprintf(fallback, fallback_len, \"param%zu\", argument_index + 1);\n",
+    );
+    out.push_str("    if (written < 0 || (size_t)written >= fallback_len) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    return fallback;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
@@ -5901,20 +5982,12 @@ fn emit_instruction(
         } => {
             let receiver_temp = values.emit_materialized_value(out, receiver);
             let path = emit_array_unset_path_segments(out, values, dimensions);
-            let current_temp = values.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&current_temp);
-            out.push_str(" = ptn_object_read_property(&runtime, ");
+            out.push_str("    ptn_object_array_path_unset(&runtime, ");
             out.push_str(&receiver_temp);
             out.push_str(", \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
             out.push_str(&c_optional_string(values.current_class_name.as_deref()));
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            out.push_str("    ptn_value_array_path_unset(&runtime, &");
-            out.push_str(&current_temp);
             out.push_str(", ");
             out.push_str(&path.name);
             out.push_str(", ");
@@ -5922,22 +5995,6 @@ fn emit_instruction(
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            let assigned_temp = values.next_temp();
-            out.push_str("    PtnValue ");
-            out.push_str(&assigned_temp);
-            out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
-            out.push_str(&receiver_temp);
-            out.push_str(", \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", ");
-            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
-            out.push_str(", ");
-            out.push_str(&current_temp);
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &assigned_temp);
-            emit_value_cleanup(out, "    ", &current_temp);
             emit_value_cleanup(out, "    ", &receiver_temp);
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
@@ -7364,6 +7421,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::DynamicNewObject { .. }
         | ValueExpr::Clone { .. }
         | ValueExpr::PropertyFetch { .. }
+        | ValueExpr::NullsafePropertyFetch { .. }
         | ValueExpr::DynamicPropertyFetch { .. }
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. }
@@ -7373,6 +7431,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::Cast { .. }
         | ValueExpr::Binary { .. }
         | ValueExpr::Ternary { .. }
+        | ValueExpr::PipeValue { .. }
         | ValueExpr::Match { .. } => None,
     }
 }
@@ -7719,6 +7778,18 @@ fn collect_inc_dec_target_legacy_dollar_brace_deprecations(
                 }
             }
         }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
         IncDecTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
@@ -7747,6 +7818,10 @@ fn collect_reference_target_legacy_dollar_brace_deprecations(
         }
         ReferenceTarget::Property { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
     }
 }
@@ -7934,14 +8009,17 @@ fn collect_value_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
         }
-        ValueExpr::PropertyFetch { receiver, .. } => {
+        ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
-        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+        ValueExpr::Unary { expr, .. }
+        | ValueExpr::Cast { expr, .. }
+        | ValueExpr::PipeValue { expr, .. } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
         }
         ValueExpr::Binary { left, right, .. } => {
@@ -8262,6 +8340,10 @@ fn collect_reference_target_runtime_requirements(
         ReferenceTarget::Property { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
     }
 }
 
@@ -8359,6 +8441,18 @@ fn collect_inc_dec_target_runtime_requirements(
             }
         }
         IncDecTarget::ArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_value_runtime_requirements(receiver, functions, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -8556,7 +8650,8 @@ fn collect_value_runtime_requirements(
             collect_value_runtime_requirements(expr, functions, requirements);
             requirements.method_dispatch = true;
         }
-        ValueExpr::PropertyFetch { receiver, .. } => {
+        ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
@@ -8573,7 +8668,9 @@ fn collect_value_runtime_requirements(
             }
         }
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => {}
-        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
+        ValueExpr::Unary { expr, .. }
+        | ValueExpr::Cast { expr, .. }
+        | ValueExpr::PipeValue { expr, .. } => {
             collect_value_runtime_requirements(expr, functions, requirements);
         }
         ValueExpr::Binary { left, right, .. } => {
@@ -9057,6 +9154,15 @@ fn reference_target_from_value(value: &ValueExpr) -> Option<ReferenceTarget> {
             name: name.clone(),
             line: *line,
         }),
+        ValueExpr::DynamicPropertyFetch {
+            receiver,
+            name,
+            line,
+        } => Some(ReferenceTarget::DynamicProperty {
+            receiver: receiver.clone(),
+            name: name.clone(),
+            line: *line,
+        }),
         _ => None,
     }
 }
@@ -9187,6 +9293,14 @@ fn value_is_temporary_write_context(value: &ValueExpr) -> bool {
         }
         _ => false,
     }
+}
+
+fn value_needs_runtime_by_ref_argument_check(value: &ValueExpr) -> bool {
+    value_is_temporary_write_context(value)
+        || matches!(
+            value,
+            ValueExpr::NullsafePropertyFetch { .. } | ValueExpr::PipeValue { .. }
+        )
 }
 
 fn emit_switch(
@@ -9375,7 +9489,9 @@ fn emit_increment_statement(
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
         }
-        IncDecTarget::Property { .. } | IncDecTarget::StaticProperty { .. } => {
+        IncDecTarget::PropertyArrayDim { .. }
+        | IncDecTarget::Property { .. }
+        | IncDecTarget::StaticProperty { .. } => {
             let result_temp =
                 values.emit_inc_dec_expression(out, target, op, IncDecResult::Pre, line);
             emit_value_cleanup(out, "    ", &result_temp);
@@ -9646,6 +9762,7 @@ impl AssignmentTargetLine for ReferenceTarget {
             ReferenceTarget::ArrayDim(target) => target.line,
             ReferenceTarget::PropertyArrayDim { line, .. } => *line,
             ReferenceTarget::Property { line, .. } => *line,
+            ReferenceTarget::DynamicProperty { line, .. } => *line,
         }
     }
 }
@@ -9746,6 +9863,13 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
                     .any(|dimension| value_mentions_variable(dimension, name))
         }
         ReferenceTarget::Property { receiver, .. } => value_mentions_variable(receiver, name),
+        ReferenceTarget::DynamicProperty {
+            receiver,
+            name: property_name,
+            ..
+        } => {
+            value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
+        }
     }
 }
 
@@ -9769,6 +9893,18 @@ fn inc_dec_target_mentions_variable(target: &IncDecTarget, name: &str) -> bool {
             array, dimensions, ..
         } => {
             array == name
+                || dimensions.iter().any(|dimension| {
+                    dimension
+                        .as_ref()
+                        .is_some_and(|dimension| value_mentions_variable(dimension, name))
+                })
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
                 || dimensions.iter().any(|dimension| {
                     dimension
                         .as_ref()
@@ -9870,6 +10006,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .any(|argument| value_mentions_variable(argument, name))
         }
         ValueExpr::PropertyFetch { receiver, .. }
+        | ValueExpr::NullsafePropertyFetch { receiver, .. }
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
         }
@@ -9885,9 +10022,9 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                 || matches!(target, InstanceOfTarget::Expr(target) if value_mentions_variable(target, name))
         }
         ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => false,
-        ValueExpr::Unary { expr, .. } | ValueExpr::Cast { expr, .. } => {
-            value_mentions_variable(expr, name)
-        }
+        ValueExpr::Unary { expr, .. }
+        | ValueExpr::Cast { expr, .. }
+        | ValueExpr::PipeValue { expr, .. } => value_mentions_variable(expr, name),
         ValueExpr::Binary { left, right, .. } => {
             value_mentions_variable(left, name) || value_mentions_variable(right, name)
         }
@@ -9984,6 +10121,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::DynamicNewObject { line, .. }
         | ValueExpr::Clone { line, .. }
         | ValueExpr::PropertyFetch { line, .. }
+        | ValueExpr::NullsafePropertyFetch { line, .. }
         | ValueExpr::DynamicPropertyFetch { line, .. }
         | ValueExpr::StaticPropertyFetch { line, .. }
         | ValueExpr::ClassConstantFetch { line, .. }
@@ -9993,6 +10131,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::Cast { line, .. }
         | ValueExpr::Binary { line, .. }
         | ValueExpr::Ternary { line, .. }
+        | ValueExpr::PipeValue { line, .. }
         | ValueExpr::Match { line, .. } => *line,
         ValueExpr::Assign { target, .. } | ValueExpr::AssignRef { target, .. } => target.line(),
         ValueExpr::Array(elements) => elements
@@ -11302,9 +11441,16 @@ impl ValueEmitter {
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let path = emit_array_path_segments(out, self, dimensions);
         let current_temp = self.next_temp();
+        out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
-        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -11380,7 +11526,7 @@ impl ValueEmitter {
         let current_value_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&current_value_temp);
-        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
         out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
@@ -11456,6 +11602,13 @@ impl ValueEmitter {
         let value_temp = self.emit_materialized_value(out, value);
 
         let current_temp = self.next_temp();
+        out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         out.push_str("    PtnValue ");
         out.push_str(&current_temp);
         out.push_str(" = ptn_object_read_property(&runtime, ");
@@ -12036,6 +12189,18 @@ impl ValueEmitter {
             }
         }
 
+        if list_assignment_has_reference(target)
+            && !list_reference_source_warns_non_referenceable(value)
+        {
+            out.push_str(
+                "    ptn_abort_type_error_at(\"Cannot assign reference to non referenceable value\", \"",
+            );
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+        }
+
         let value_temp = self.emit_materialized_value(out, value);
         let result_temp = self.emit_list_assignment_from_temp(
             out,
@@ -12117,6 +12282,7 @@ impl ValueEmitter {
         let self_referential = list_assignment_references_variable(target, source_name);
         let mut entries = Vec::with_capacity(target.elements.len());
         let mut cleanup_temps = Vec::new();
+        let mut pending_reference_binds: Vec<(ReferenceTarget, String)> = Vec::new();
 
         for (index, element) in target.elements.iter().enumerate() {
             let key_temp = self.emit_list_key(out, element, index);
@@ -12172,29 +12338,32 @@ impl ValueEmitter {
                     }
                 }
                 ListAssignmentElementTarget::Reference(target) => {
-                    let source_temp = if self_referential {
-                        self.emit_reference_target(out, target)
+                    let source_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&source_temp);
+                    out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
+                    out.push_str(&c_string(source_name));
+                    out.push_str("\", &");
+                    out.push_str(&key_temp);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    if self_referential {
+                        pending_reference_binds.push((target.clone(), source_temp.clone()));
                     } else {
-                        let temp = self.next_temp();
-                        out.push_str("    PtnValue ");
-                        out.push_str(&temp);
-                        out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
-                        out.push_str(&c_string(source_name));
-                        out.push_str("\", &");
-                        out.push_str(&key_temp);
-                        out.push_str(", \"");
-                        out.push_str(&c_string(&self.source_file));
-                        out.push_str("\", ");
-                        out.push_str(&target.line().to_string());
-                        out.push_str(");\n");
-                        temp
-                    };
-                    self.emit_bind_reference_target(out, target, &source_temp);
+                        self.emit_bind_reference_target(out, target, &source_temp);
+                    }
                     cleanup_temps.push(source_temp.clone());
                     source_temp
                 }
             };
             entries.push(format!("{{ 0, {key_temp}, {value_temp} }}"));
+        }
+
+        for (target, source_temp) in &pending_reference_binds {
+            self.emit_bind_reference_target(out, target, source_temp);
         }
 
         let result_temp = self.next_temp();
@@ -12344,6 +12513,29 @@ impl ValueEmitter {
                 out.push_str(reference_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+            }
+            ReferenceTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                out.push_str("    ptn_object_bind_property_reference(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
             }
@@ -12604,6 +12796,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_property_fetch(out, receiver, name, *line),
+            ValueExpr::NullsafePropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_nullsafe_property_fetch(out, receiver, name, *line),
             ValueExpr::DynamicPropertyFetch {
                 receiver,
                 name,
@@ -12777,6 +12974,7 @@ impl ValueEmitter {
             ValueExpr::Yield { key, value, line } => {
                 self.emit_yield(out, key.as_deref(), value.as_deref(), *line)
             }
+            ValueExpr::PipeValue { expr, .. } => self.emit_materialized_value(out, expr),
         }
     }
 
@@ -13183,6 +13381,111 @@ impl ValueEmitter {
                     result_temp
                 }
             }
+            IncDecTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                ..
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let path = emit_array_path_segments(out, self, dimensions);
+                out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let current_value_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_value_temp);
+                out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let current_element_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_element_temp);
+                out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(&current_value_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_element_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push_str("(&runtime, ");
+                out.push_str(&current_element_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    ptn_value_array_path_set_from_assign_op(&runtime, &");
+                out.push_str(&current_value_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_object_write_property_indirect(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&current_value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &assigned_temp);
+                emit_value_cleanup(out, "    ", &current_element_temp);
+                emit_value_cleanup(out, "    ", &current_value_temp);
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
             IncDecTarget::Property { receiver, name, .. } => {
                 let receiver_temp = self.emit_materialized_value(out, receiver);
                 let current_temp = self.next_temp();
@@ -13527,9 +13830,9 @@ impl ValueEmitter {
         let class_name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&class_name_temp);
-        out.push_str(" = ptn_value_to_string(ptn_value_deref(");
+        out.push_str(" = ptn_dynamic_new_class_name_from_value(");
         out.push_str(&class_value_temp);
-        out.push_str("));\n");
+        out.push_str(");\n");
         emit_value_cleanup(out, "    ", &class_value_temp);
         let class_lookup_temp = self.next_temp();
         out.push_str("    const char *");
@@ -14261,6 +14564,37 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_nullsafe_property_fetch(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_value_deref(");
+        out.push_str(&receiver_temp);
+        out.push_str(").type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_object_read_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
@@ -16122,7 +16456,7 @@ impl ValueEmitter {
         argument: &ValueExpr,
         line: usize,
     ) -> String {
-        if !value_is_temporary_write_context(argument) {
+        if !value_needs_runtime_by_ref_argument_check(argument) {
             return self.emit_dynamic_call_argument(out, argument);
         }
 
@@ -16143,21 +16477,64 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&mode_temp);
         out.push_str(" == 1) {\n");
-        let by_ref_temp = self.emit_by_ref_call_argument(
-            out,
+        if matches!(
             argument,
-            "{closure}",
-            argument_index,
-            "",
-            line,
-            true,
-            true,
-        );
-        out.push_str("        ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
-        out.push_str(&by_ref_temp);
-        out.push_str(";\n");
+            ValueExpr::NullsafePropertyFetch { .. } | ValueExpr::PipeValue { .. }
+        ) {
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            let callable_name_temp = self.next_temp();
+            out.push_str("        char *");
+            out.push_str(&callable_name_temp);
+            out.push_str(" = ptn_callable_output_name(");
+            out.push_str(callee_temp);
+            out.push_str(");\n");
+            let parameter_fallback_temp = self.next_temp();
+            out.push_str("        char ");
+            out.push_str(&parameter_fallback_temp);
+            out.push_str("[64];\n");
+            let parameter_name_temp = self.next_temp();
+            out.push_str("        const char *");
+            out.push_str(&parameter_name_temp);
+            out.push_str(" = ptn_callable_argument_parameter_name(&runtime, ");
+            out.push_str(callee_temp);
+            out.push_str(", ");
+            out.push_str(&argument_index.to_string());
+            out.push_str(", ");
+            out.push_str(&parameter_fallback_temp);
+            out.push_str(", sizeof(");
+            out.push_str(&parameter_fallback_temp);
+            out.push_str("));\n");
+            out.push_str("        ptn_throw_by_reference_argument_error(&runtime, ");
+            out.push_str(&callable_name_temp);
+            out.push_str(", ");
+            out.push_str(&(argument_index + 1).to_string());
+            out.push_str(", ");
+            out.push_str(&parameter_name_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        free(");
+            out.push_str(&callable_name_temp);
+            out.push_str(");\n");
+        } else {
+            let by_ref_temp = self.emit_by_ref_call_argument(
+                out,
+                argument,
+                "{closure}",
+                argument_index,
+                "",
+                line,
+                true,
+                true,
+            );
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&by_ref_temp);
+            out.push_str(";\n");
+        }
 
         out.push_str("    } else if (");
         out.push_str(&mode_temp);
@@ -16340,6 +16717,31 @@ impl ValueEmitter {
                 out.push_str(&c_optional_string(self.current_class_name.as_deref()));
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                temp
+            }
+            ReferenceTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_object_reference_for_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&c_optional_string(self.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
                 temp
@@ -17647,7 +18049,9 @@ impl ValueEmitter {
             }
 
             if by_ref_temporary_argument_allowed(first_argument) {
-                let temporary_helper = if name.eq_ignore_ascii_case("array_shift") {
+                let temporary_helper = if name.eq_ignore_ascii_case("array_pop") {
+                    Some("ptn_runtime_array_pop_temporary")
+                } else if name.eq_ignore_ascii_case("array_shift") {
                     Some("ptn_runtime_array_shift_temporary")
                 } else {
                     cursor_temporary_helper_name(name)

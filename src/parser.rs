@@ -22,6 +22,7 @@ const KEYWORD_XOR_PRECEDENCE: u8 = 2;
 const KEYWORD_AND_PRECEDENCE: u8 = 3;
 const SYMBOL_OR_PRECEDENCE: u8 = 4;
 const COALESCE_PRECEDENCE: u8 = 4;
+const PIPE_PRECEDENCE: u8 = 4;
 const SYMBOL_AND_PRECEDENCE: u8 = 5;
 const BITWISE_OR_PRECEDENCE: u8 = 6;
 const BITWISE_XOR_PRECEDENCE: u8 = 7;
@@ -3974,6 +3975,21 @@ impl Parser<'_> {
             return Ok(left);
         }
 
+        if let Expr::Unary {
+            op: UnaryOp::ErrorSuppress,
+            expr,
+            span: suppress_span,
+        } = left
+        {
+            let assignment = self.parse_assignment_expr_from_left(*expr)?;
+            let span = combine_spans(suppress_span, assignment.span());
+            return Ok(Expr::Unary {
+                op: UnaryOp::ErrorSuppress,
+                expr: Box::new(assignment),
+                span,
+            });
+        }
+
         let operator = self.peek().clone();
         let op = self.expect_assignment_op()?;
         let left_span = left.span();
@@ -4136,6 +4152,28 @@ impl Parser<'_> {
                 left = Expr::InstanceOf {
                     expr: Box::new(left),
                     target,
+                    span,
+                };
+                continue;
+            }
+
+            if matches!(self.peek().kind, TokenKind::PipeGreater) {
+                if PIPE_PRECEDENCE < min_precedence {
+                    break;
+                }
+                self.advance();
+                let input_span = left.span();
+                let next_min_precedence = PIPE_PRECEDENCE + 1;
+                let callee = self.parse_binary_expr(next_min_precedence)?;
+                let span = combine_spans(input_span, callee.span());
+                left = Expr::DynamicCall {
+                    callee: Box::new(callee),
+                    arguments: vec![Expr::PipeValue {
+                        expr: Box::new(left),
+                        span: input_span,
+                    }],
+                    argument_names: vec![None],
+                    argument_unpacks: vec![false],
                     span,
                 };
                 continue;
@@ -4347,7 +4385,8 @@ impl Parser<'_> {
                         index,
                     };
                 }
-                TokenKind::ObjectOperator => {
+                TokenKind::ObjectOperator | TokenKind::NullsafeObjectOperator => {
+                    let nullsafe = matches!(self.peek().kind, TokenKind::NullsafeObjectOperator);
                     let start_span = expr.span();
                     self.advance();
                     let member = self.advance().clone();
@@ -4378,12 +4417,26 @@ impl Parser<'_> {
                     if !matches!(self.peek().kind, TokenKind::LeftParen) {
                         let span = combine_spans(start_span, member_span);
                         expr = if let Some(name) = literal_name {
-                            Expr::PropertyFetch {
-                                receiver: Box::new(expr),
-                                name,
-                                span,
+                            if nullsafe {
+                                Expr::NullsafePropertyFetch {
+                                    receiver: Box::new(expr),
+                                    name,
+                                    span,
+                                }
+                            } else {
+                                Expr::PropertyFetch {
+                                    receiver: Box::new(expr),
+                                    name,
+                                    span,
+                                }
                             }
                         } else {
+                            if nullsafe {
+                                return Err(Diagnostic::new(
+                                    "dynamic nullsafe property fetches are unsupported",
+                                    Some(member_span),
+                                ));
+                            }
                             Expr::DynamicPropertyFetch {
                                 receiver: Box::new(expr),
                                 name: Box::new(dynamic_name.expect("dynamic member name")),
@@ -4391,6 +4444,12 @@ impl Parser<'_> {
                             }
                         };
                         continue;
+                    }
+                    if nullsafe {
+                        return Err(Diagnostic::new(
+                            "nullsafe method calls are unsupported",
+                            Some(member_span),
+                        ));
                     }
                     if self.peek_is_first_class_callable_arguments() {
                         let right_span = self.parse_first_class_callable_arguments()?;
@@ -4583,7 +4642,10 @@ impl Parser<'_> {
             TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
                 if name.eq_ignore_ascii_case("fn")
-                    && matches!(self.peek().kind, TokenKind::LeftParen)
+                    && matches!(
+                        self.peek().kind,
+                        TokenKind::LeftParen | TokenKind::Ampersand
+                    )
                 {
                     return self.parse_arrow_function_expr(token.span, false, attributes);
                 }
@@ -5055,7 +5117,7 @@ impl Parser<'_> {
             self.peek().kind,
             TokenKind::Variable(_) | TokenKind::Dollar | TokenKind::LeftParen
         ) {
-            let class_name = self.parse_primary_expr()?;
+            let class_name = self.parse_postfix_expr()?;
             let mut span = combine_spans(start_span, class_name.span());
             let (arguments, argument_names, argument_unpacks) =
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
@@ -6774,6 +6836,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::PlusPlus => "++",
         TokenKind::MinusMinus => "--",
         TokenKind::ObjectOperator => "->",
+        TokenKind::NullsafeObjectOperator => "?->",
         TokenKind::AsteriskEqual => "*=",
         TokenKind::AsteriskAsteriskEqual => "**=",
         TokenKind::SlashEqual => "/=",
@@ -6787,6 +6850,7 @@ fn token_text(kind: &TokenKind) -> &'static str {
         TokenKind::Percent => "%",
         TokenKind::Ampersand => "&",
         TokenKind::Pipe => "|",
+        TokenKind::PipeGreater => "|>",
         TokenKind::Caret => "^",
         TokenKind::Tilde => "~",
         TokenKind::Bang => "!",
@@ -6923,7 +6987,7 @@ fn collect_arrow_captures_from_expr(
                 collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
             }
         }
-        Expr::PropertyFetch { receiver, .. } => {
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
@@ -6988,7 +7052,8 @@ fn collect_arrow_captures_from_expr(
         | Expr::Throw { value: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
-        | Expr::Grouped { expr: target, .. } => {
+        | Expr::Grouped { expr: target, .. }
+        | Expr::PipeValue { expr: target, .. } => {
             collect_arrow_captures_from_expr(target, exclusions, seen, captures);
         }
         Expr::Yield { key, value, .. } => {
@@ -7152,6 +7217,10 @@ fn collect_arrow_captures_from_reference_target(
         ReferenceTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
     }
 }
 
@@ -7181,6 +7250,18 @@ fn collect_arrow_captures_from_inc_dec_target(
         IncDecTarget::ArrayDim(target) => {
             add_arrow_capture(&target.array, target.span, exclusions, seen, captures);
             collect_arrow_captures_from_array_dim_target(target, exclusions, seen, captures);
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
         }
         IncDecTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
@@ -9607,6 +9688,7 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         }
         Expr::Clone { expr, .. }
         | Expr::PropertyFetch { receiver: expr, .. }
+        | Expr::NullsafePropertyFetch { receiver: expr, .. }
         | Expr::DynamicClassNameFetch { receiver: expr, .. }
         | Expr::Empty { target: expr, .. }
         | Expr::Print {
@@ -9616,7 +9698,8 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         | Expr::Throw { value: expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
-        | Expr::Grouped { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        | Expr::Grouped { expr, .. }
+        | Expr::PipeValue { expr, .. } => validate_control_transfers_in_expr(expr)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 validate_control_transfers_in_expr(key)?;
@@ -9783,6 +9866,10 @@ fn validate_control_transfers_in_reference_target(target: &ReferenceTarget) -> R
         ReferenceTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_expr(name)?;
+        }
     }
     Ok(())
 }
@@ -9805,6 +9892,14 @@ fn validate_control_transfers_in_inc_dec_target(target: &IncDecTarget) -> Result
         }
         IncDecTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
         }
         IncDecTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
@@ -9960,7 +10055,8 @@ fn expr_array_literal_reference_to_variable(
         | Expr::FirstClassCallable {
             callable: value, ..
         }
-        | Expr::Grouped { expr: value, .. } => {
+        | Expr::Grouped { expr: value, .. }
+        | Expr::PipeValue { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
         Expr::Yield { key, value, .. } => key
@@ -9993,6 +10089,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
@@ -10050,6 +10147,10 @@ fn reference_target_reference_to_variable(
                 .flatten()
                 .find_map(|dimension| expr_array_literal_reference_to_variable(dimension, variable))
         }),
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            expr_array_literal_reference_to_variable(receiver, variable)
+                .or_else(|| expr_array_literal_reference_to_variable(name, variable))
+        }
         _ => None,
     }
 }
@@ -10080,7 +10181,8 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
-        | Expr::PropertyFetch { .. } => Ok(()),
+        | Expr::PropertyFetch { .. }
+        | Expr::DynamicPropertyFetch { .. } => Ok(()),
         Expr::Grouped { expr, .. } => validate_reference_source_expr(expr),
         Expr::ArrayAccess { .. } => validate_array_reference_lvalue_expr(
             source,
@@ -10352,6 +10454,19 @@ fn validate_anonymous_functions_in_inc_dec_target(
             }
             Ok(())
         }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_anonymous_functions_in_expr(receiver, functions)?;
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    validate_anonymous_functions_in_expr(dimension, functions)?;
+                }
+            }
+            Ok(())
+        }
         IncDecTarget::Property { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)
         }
@@ -10413,7 +10528,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         Expr::FirstClassCallable { callable, .. } => {
             validate_anonymous_functions_in_expr(callable, functions)?;
         }
-        Expr::PropertyFetch { receiver, .. } => {
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
         }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
@@ -10479,7 +10594,8 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::Throw { value: expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
-        | Expr::Grouped { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
+        | Expr::Grouped { expr, .. }
+        | Expr::PipeValue { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 validate_anonymous_functions_in_expr(key, functions)?;
@@ -11345,9 +11461,10 @@ fn validate_mutating_array_internal_call(
     if is_array_path_mutation_name(name) && is_variable_array_access_argument(&arguments[0]) {
         return Ok(());
     }
-    if name.eq_ignore_ascii_case("array_shift")
-        && arguments.len() == 1
-        && is_by_ref_temporary_array_mutation_argument(&arguments[0])
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array_pop" | "array_shift" | "array_splice"
+    ) && is_by_ref_temporary_array_mutation_argument(&arguments[0])
     {
         return Ok(());
     }
@@ -11642,10 +11759,17 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             dimensions,
             span,
         }),
-        AssignmentTarget::PropertyArrayDim { span, .. } => Err(Diagnostic::new(
-            "increment/decrement expression target must be a variable, array offset, or property",
-            Some(span),
-        )),
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            span,
+        } => Ok(IncDecTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            span,
+        }),
         AssignmentTarget::Property {
             receiver,
             name,
@@ -11677,6 +11801,7 @@ fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
         IncDecTarget::DynamicVariable { span, .. } => *span,
         IncDecTarget::DynamicArrayDim { span, .. } => *span,
         IncDecTarget::ArrayDim(target) => target.span,
+        IncDecTarget::PropertyArrayDim { span, .. } => *span,
         IncDecTarget::Property { span, .. } => *span,
         IncDecTarget::StaticProperty { span, .. } => *span,
     }
@@ -11695,6 +11820,15 @@ fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
             name,
             span,
         } => Ok(ReferenceTarget::Property {
+            receiver,
+            name,
+            span,
+        }),
+        Expr::DynamicPropertyFetch {
+            receiver,
+            name,
+            span,
+        } => Ok(ReferenceTarget::DynamicProperty {
             receiver,
             name,
             span,
@@ -11908,6 +12042,7 @@ fn reference_target_span(target: &ReferenceTarget) -> SourceSpan {
         ReferenceTarget::ArrayDim(target) => target.span,
         ReferenceTarget::PropertyArrayDim { span, .. } => *span,
         ReferenceTarget::Property { span, .. } => *span,
+        ReferenceTarget::DynamicProperty { span, .. } => *span,
     }
 }
 
@@ -12158,7 +12293,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::NewObject { .. } => {}
         Expr::DynamicNewObject { class_name, .. } => reject_append_array_read(class_name)?,
-        Expr::PropertyFetch { receiver, .. } => {
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
@@ -12216,7 +12351,8 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Throw { value: target, .. }
         | Expr::Unary { expr: target, .. }
         | Expr::Cast { expr: target, .. }
-        | Expr::Grouped { expr: target, .. } => reject_append_array_read(target)?,
+        | Expr::Grouped { expr: target, .. }
+        | Expr::PipeValue { expr: target, .. } => reject_append_array_read(target)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 reject_append_array_read(key)?;
@@ -12351,6 +12487,24 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
         IncDecTarget::DynamicArrayDim {
             dimensions, span, ..
         } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_append_array_read(dimension)?;
+                } else {
+                    return Err(Diagnostic::new(
+                        "increment/decrement cannot use append array access",
+                        Some(*span),
+                    ));
+                }
+            }
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            span,
+            ..
+        } => {
+            reject_append_array_read(receiver)?;
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     reject_append_array_read(dimension)?;
@@ -12500,13 +12654,15 @@ fn is_supported_global_const_expr_with_options(
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
         | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
-        | Expr::Empty { .. } => false,
+        | Expr::Empty { .. }
+        | Expr::PipeValue { .. } => false,
     }
 }
 
@@ -12596,13 +12752,15 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
         | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
         | Expr::Isset { .. }
-        | Expr::Empty { .. } => false,
+        | Expr::Empty { .. }
+        | Expr::PipeValue { .. } => false,
     }
 }
 
@@ -12671,9 +12829,10 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
             }
             Ok(())
         }
-        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Grouped { expr, .. } => {
-            validate_class_scoped_constant_expr(expr, parent_name)
-        }
+        Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Grouped { expr, .. }
+        | Expr::PipeValue { expr, .. } => validate_class_scoped_constant_expr(expr, parent_name),
         Expr::Binary { left, right, .. } => {
             validate_class_scoped_constant_expr(left, parent_name)?;
             validate_class_scoped_constant_expr(right, parent_name)
@@ -12733,6 +12892,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::PropertyFetch { .. }
+        | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }

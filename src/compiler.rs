@@ -502,6 +502,19 @@ impl IncludeCollector {
                 self.path_env.remove(&target.array);
                 Ok(())
             }
+            IncDecTarget::PropertyArrayDim {
+                receiver,
+                dimensions,
+                ..
+            } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             IncDecTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
@@ -547,7 +560,9 @@ impl IncludeCollector {
             ReferenceTarget::ArrayDim(target) => {
                 self.path_env.remove(&target.array);
             }
-            ReferenceTarget::PropertyArrayDim { .. } | ReferenceTarget::Property { .. } => {}
+            ReferenceTarget::PropertyArrayDim { .. }
+            | ReferenceTarget::Property { .. }
+            | ReferenceTarget::DynamicProperty { .. } => {}
         }
     }
 
@@ -621,7 +636,7 @@ impl IncludeCollector {
                 self.collect_expr(name, source_file, source_dir)?;
                 self.collect_exprs(arguments, source_file, source_dir)
             }
-            Expr::PropertyFetch { receiver, .. } => {
+            Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
             Expr::DynamicPropertyFetch { receiver, name, .. } => {
@@ -689,7 +704,8 @@ impl IncludeCollector {
             | Expr::Throw { value: target, .. }
             | Expr::Unary { expr: target, .. }
             | Expr::Cast { expr: target, .. }
-            | Expr::Grouped { expr: target, .. } => {
+            | Expr::Grouped { expr: target, .. }
+            | Expr::PipeValue { expr: target, .. } => {
                 self.collect_expr(target, source_file, source_dir)
             }
             Expr::Yield { key, value, .. } => {
@@ -816,6 +832,10 @@ impl IncludeCollector {
             }
             ReferenceTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
+            }
+            ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+                self.collect_expr(receiver, source_file, source_dir)?;
+                self.collect_expr(name, source_file, source_dir)
             }
             ReferenceTarget::PropertyArrayDim {
                 receiver,
