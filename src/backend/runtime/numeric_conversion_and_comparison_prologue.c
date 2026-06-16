@@ -1312,6 +1312,39 @@ static PTN_UNUSED void ptn_throw_exception_at(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_throw_exception_at_without_current_trace_frame(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    if (saved_trace_frame != NULL) {
+        runtime->trace_frame = saved_trace_frame->previous;
+    }
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        ptn_duplicate_string(message),
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
+    runtime->trace_frame = saved_trace_frame;
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
 static PTN_UNUSED void ptn_throw_exception(PtnRuntime *runtime, const char *class_name, const char *message) {
     ptn_throw_exception_at(runtime, class_name, message, NULL, 0);
 }
@@ -1361,6 +1394,42 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
         path,
         line
     );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
+static PTN_UNUSED void ptn_throw_exception_owned_message_at_with_trace_frame(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    const char *path,
+    size_t line,
+    const char *function_name,
+    const char *frame_file,
+    size_t frame_line,
+    size_t argc,
+    const PtnValue *args
+) {
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(runtime, &trace_frame, function_name, frame_file, frame_line, argc, args);
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
     ptn_exception_free(runtime->exceptions->active_exception);
     runtime->exceptions->active_exception = exception;
     if (runtime->exceptions->try_frame != NULL) {

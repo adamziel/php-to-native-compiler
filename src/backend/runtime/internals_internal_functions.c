@@ -11439,13 +11439,13 @@ static void ptn_sprintf_throw_unknown_specifier(PtnRuntime *runtime, char specif
     ptn_throw_exception(runtime, "ValueError", message);
 }
 
-static void ptn_sprintf_throw_argument_count(PtnRuntime *runtime, size_t required, size_t given) {
+static void ptn_sprintf_throw_argument_count(PtnRuntime *runtime, size_t required, size_t given, size_t line) {
     char message[96];
     int written = snprintf(message, sizeof(message), "%zu arguments are required, %zu given", required, given);
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "ArgumentCountError", message);
+    ptn_throw_exception_at(runtime, "ArgumentCountError", message, runtime->source_path, line);
 }
 
 static void ptn_sprintf_cap_float_precision(PtnRuntime *runtime, const char *function_name, PtnSprintfSpec *spec, size_t line) {
@@ -11574,7 +11574,7 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 ptn_string_operand_free(format);
                 free(output.data);
                 size_t required = required_arg_count > width_arg_index + 1 ? required_arg_count : width_arg_index + 1;
-                ptn_sprintf_throw_argument_count(runtime, required, argc);
+                ptn_sprintf_throw_argument_count(runtime, required, argc, line);
                 return ptn_null();
             }
             int64_t width = 0;
@@ -11595,7 +11595,7 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                     ptn_string_operand_free(format);
                     free(output.data);
                     size_t required = required_arg_count > precision_arg_index + 1 ? required_arg_count : precision_arg_index + 1;
-                    ptn_sprintf_throw_argument_count(runtime, required, argc);
+                    ptn_sprintf_throw_argument_count(runtime, required, argc, line);
                     return ptn_null();
                 }
                 int64_t precision = 0;
@@ -11648,7 +11648,7 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
             ptn_string_operand_free(format);
             free(output.data);
             size_t required = required_arg_count > selected_arg_index + 1 ? required_arg_count : selected_arg_index + 1;
-            ptn_sprintf_throw_argument_count(runtime, required, argc);
+            ptn_sprintf_throw_argument_count(runtime, required, argc, line);
             return ptn_null();
         }
         PtnValue arg = args[selected_arg_index];
@@ -11664,7 +11664,8 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 if (value.type == PTN_ARRAY) {
                     ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
                 }
-                PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+                PtnStringOperand string =
+                    ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame(runtime, value, line);
                 ptn_sprintf_append_string(&output, string, &spec);
                 ptn_string_operand_free(string);
                 break;
@@ -14621,13 +14622,7 @@ static PtnValue ptn_internal_substr_compare(PtnRuntime *runtime, size_t argc, co
         );
         return ptn_null();
     }
-    if (
-        (raw_offset >= 0 && (uint64_t)raw_offset > (uint64_t)haystack.len) ||
-        (raw_offset < 0 &&
-            (raw_offset == INT64_MIN
-                ? ((uint64_t)INT64_MAX + 1)
-                : (uint64_t)(-raw_offset)) > (uint64_t)haystack.len)
-    ) {
+    if (raw_offset >= 0 && (uint64_t)raw_offset > (uint64_t)haystack.len) {
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
         ptn_throw_exception(
@@ -28165,7 +28160,7 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         return ptn_function_metadata_not_found();
     }
     int is_variadic = function->max_args == PTN_VARIADIC_ARGS;
-    size_t parameter_count = is_variadic ? function->min_args : function->max_args;
+    size_t parameter_count = is_variadic ? function->min_args + 1 : function->max_args;
     return ptn_function_metadata_found(
         function->name,
         1,
@@ -32613,7 +32608,9 @@ static void ptn_throw_internal_argument_count_error(
     const char *name,
     const char *limit,
     size_t expected,
-    size_t argc
+    size_t argc,
+    size_t line,
+    const PtnValue *args
 ) {
     int needed = snprintf(
         NULL,
@@ -32642,7 +32639,18 @@ static void ptn_throw_internal_argument_count_error(
         expected == 1 ? "" : "s",
         argc
     );
-    ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "ArgumentCountError",
+        message,
+        runtime->source_path,
+        line,
+        name,
+        runtime->source_path,
+        line,
+        argc,
+        args
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
@@ -32654,7 +32662,9 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
                 name,
                 function->max_args == function->min_args ? "exactly" : "at least",
                 function->min_args,
-                argc
+                argc,
+                line,
+                args
             );
             return ptn_null();
         }
@@ -32664,7 +32674,9 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
                 name,
                 function->max_args == function->min_args ? "exactly" : "at most",
                 function->max_args,
-                argc
+                argc,
+                line,
+                args
             );
             return ptn_null();
         }
