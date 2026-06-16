@@ -60,6 +60,40 @@ impl std::fmt::Display for PhpcError {
                     } else {
                         script.display().to_string()
                     };
+                    if let Some(uncaught) = &diagnostic.uncaught {
+                        if let Some(call_frame) = &uncaught.call_frame {
+                            return write!(
+                                f,
+                                "Fatal error: Uncaught {}: {} in {}:{}\nStack trace:\n#0 {}({}): {}\n#1 {{main}}\n  thrown in {} on line {}",
+                                uncaught.throwable,
+                                diagnostic.message,
+                                source,
+                                span.line,
+                                source,
+                                span.line,
+                                call_frame,
+                                source,
+                                span.line
+                            );
+                        }
+                        return write!(
+                            f,
+                            "Fatal error: Uncaught {}: {} in {}:{}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {}",
+                            uncaught.throwable,
+                            diagnostic.message,
+                            source,
+                            span.line,
+                            source,
+                            span.line
+                        );
+                    }
+                    if source_fatal_is_uncaught_error(diagnostic) {
+                        return write!(
+                            f,
+                            "Fatal error: Uncaught Error: {} in {}:{}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {}",
+                            diagnostic.message, source, span.line, source, span.line
+                        );
+                    }
                     write!(
                         f,
                         "{}: {} in {} on line {}",
@@ -76,6 +110,15 @@ impl std::fmt::Display for PhpcError {
             },
         }
     }
+}
+
+fn source_fatal_is_uncaught_error(diagnostic: &Diagnostic) -> bool {
+    if diagnostic.kind != DiagnosticKind::Fatal {
+        return false;
+    }
+    let message = diagnostic.message.as_str();
+    (message.starts_with("Class \"") || message.starts_with("Interface \""))
+        && message.ends_with("\" not found")
 }
 
 impl From<String> for PhpcError {

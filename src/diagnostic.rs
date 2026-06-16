@@ -24,6 +24,13 @@ pub struct Diagnostic {
     pub message: String,
     pub span: Option<SourceSpan>,
     pub kind: DiagnosticKind,
+    pub uncaught: Option<UncaughtFatal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UncaughtFatal {
+    pub throwable: String,
+    pub call_frame: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +45,7 @@ impl Diagnostic {
             message: message.into(),
             span,
             kind: DiagnosticKind::Fatal,
+            uncaught: None,
         }
     }
 
@@ -46,6 +54,24 @@ impl Diagnostic {
             message: message.into(),
             span,
             kind: DiagnosticKind::ParseError,
+            uncaught: None,
+        }
+    }
+
+    pub fn uncaught_fatal(
+        throwable: impl Into<String>,
+        message: impl Into<String>,
+        span: Option<SourceSpan>,
+        call_frame: Option<String>,
+    ) -> Self {
+        Self {
+            message: message.into(),
+            span,
+            kind: DiagnosticKind::Fatal,
+            uncaught: Some(UncaughtFatal {
+                throwable: throwable.into(),
+                call_frame,
+            }),
         }
     }
 }

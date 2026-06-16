@@ -4765,6 +4765,9 @@ function old_fn() {}
 #[\\Deprecated(since: \"1.0\", message: \"use newest\") ]
 function older_fn() {}
 
+#[\\Deprecated(\"use oldest\", \"0.9\") ]
+function oldest_fn() {}
+
 #[\\NoDiscard(\"check it\") ]
 function important(): int { return 1; }
 
@@ -4793,6 +4796,17 @@ class Bag {}
     );
     assert_eq!(
         program.functions[2]
+            .attributes
+            .deprecated_message
+            .as_deref(),
+        Some("use oldest")
+    );
+    assert_eq!(
+        program.functions[2].attributes.deprecated_since.as_deref(),
+        Some("0.9")
+    );
+    assert_eq!(
+        program.functions[3]
             .attributes
             .no_discard_message
             .as_deref(),
@@ -4854,6 +4868,59 @@ function important(): int { return 1; }
             .no_discard_message
             .as_deref(),
         Some("1234")
+    );
+
+    let strict_deprecated = parser::parse(
+        "<?php declare(strict_types=1);
+#[\\Deprecated(1234)]
+function old_fn() {}
+",
+    )
+    .unwrap_err();
+    assert_eq!(strict_deprecated.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        strict_deprecated.message,
+        "Deprecated::__construct(): Argument #1 ($message) must be of type ?string, int given"
+    );
+    let strict_deprecated_uncaught = strict_deprecated.uncaught.unwrap();
+    assert_eq!(strict_deprecated_uncaught.throwable, "TypeError");
+    assert_eq!(
+        strict_deprecated_uncaught.call_frame.as_deref(),
+        Some("Deprecated->__construct(1234)")
+    );
+
+    let array_no_discard = parser::parse(
+        "<?php
+#[\\NoDiscard([])]
+function important(): int { return 1; }
+",
+    )
+    .unwrap_err();
+    assert_eq!(array_no_discard.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        array_no_discard.message,
+        "NoDiscard::__construct(): Argument #1 ($message) must be of type ?string, array given"
+    );
+    assert_eq!(
+        array_no_discard.uncaught.unwrap().call_frame.as_deref(),
+        Some("NoDiscard->__construct(Array)")
+    );
+
+    let enum_deprecated = parser::parse(
+        "<?php
+#[\\Deprecated(\\Random\\IntervalBoundary::ClosedOpen)]
+function old_fn() {}
+",
+    )
+    .unwrap_err();
+    assert_eq!(enum_deprecated.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        enum_deprecated.message,
+        "Deprecated::__construct(): Argument #1 ($message) must be of type ?string, Random\\IntervalBoundary given"
+    );
+    assert_eq!(
+        enum_deprecated.uncaught.unwrap().call_frame.as_deref(),
+        Some("Deprecated->__construct(Random\\IntervalBoundary::ClosedOpen)")
     );
 
     let repeated_attribute =
@@ -6171,6 +6238,72 @@ fn phpc_renders_spanned_compile_diagnostics_as_php_fatals() {
         String::from_utf8(execution.stderr).unwrap(),
         format!(
             "Fatal error: Switch statements may only contain one default clause in {} on line 6\n",
+            input.display()
+        )
+    );
+}
+
+#[test]
+fn phpc_renders_missing_class_and_interface_declarations_as_uncaught_errors() {
+    let cases = [
+        (
+            "missing-parent.php",
+            "<?php\nclass Child extends MissingParent {}\n",
+            "Class \"MissingParent\" not found",
+            2,
+        ),
+        (
+            "missing-interface.php",
+            "<?php\nclass A implements MissingInterface {}\n",
+            "Interface \"MissingInterface\" not found",
+            2,
+        ),
+    ];
+
+    for (name, source, message, line) in cases {
+        let root_name = format!("ptn-phpc-missing-declaration-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(name);
+        fs::write(&input, source).unwrap();
+
+        let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: Uncaught Error: {message} in {}:{line}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {line}\n",
+                input.display(),
+                input.display()
+            ),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn phpc_renders_builtin_attribute_constructor_type_errors() {
+    let root = temp_dir("ptn-phpc-attribute-constructor-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strict-deprecated.php");
+    fs::write(
+        &input,
+        "<?php\ndeclare(strict_types=1);\n#[\\Deprecated(1234)]\nfunction old_fn() {}\nold_fn();\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Uncaught TypeError: Deprecated::__construct(): Argument #1 ($message) must be of type ?string, int given in {}:3\nStack trace:\n#0 {}(3): Deprecated->__construct(1234)\n#1 {{main}}\n  thrown in {} on line 3\n",
+            input.display(),
+            input.display(),
             input.display()
         )
     );

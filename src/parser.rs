@@ -4681,10 +4681,13 @@ impl Parser<'_> {
                         let class_name = self.resolve_class_name(&parsed_name);
                         let class_name = self.resolve_runtime_class_alias_name(&class_name);
                         let text = format!("{class_name}::{member_name}");
+                        let kind = parsed_attribute_class_constant_kind(&class_name, &member_name);
                         arguments.record_value(
                             pending_argument_name.take(),
                             ParsedAttributeArgumentValue {
                                 text,
+                                kind,
+                                span: parsed_name.span,
                                 constant_reference: Some(
                                     AttributeConstantReference::ClassConstant {
                                         class_name,
@@ -4699,6 +4702,8 @@ impl Parser<'_> {
                             pending_argument_name.take(),
                             ParsedAttributeArgumentValue {
                                 text: name.clone(),
+                                kind: ParsedAttributeArgumentKind::Constant,
+                                span: parsed_name.span,
                                 constant_reference: Some(AttributeConstantReference::Constant(
                                     name,
                                 )),
@@ -4737,10 +4742,13 @@ impl Parser<'_> {
                         let class_name = self.resolve_class_name(&parsed_name);
                         let class_name = self.resolve_runtime_class_alias_name(&class_name);
                         let text = format!("{class_name}::{member_name}");
+                        let kind = parsed_attribute_class_constant_kind(&class_name, &member_name);
                         arguments.record_value(
                             pending_argument_name.take(),
                             ParsedAttributeArgumentValue {
                                 text,
+                                kind,
+                                span: parsed_name.span,
                                 constant_reference: Some(
                                     AttributeConstantReference::ClassConstant {
                                         class_name,
@@ -4755,6 +4763,8 @@ impl Parser<'_> {
                             pending_argument_name.take(),
                             ParsedAttributeArgumentValue {
                                 text: name.clone(),
+                                kind: ParsedAttributeArgumentKind::Constant,
+                                span: parsed_name.span,
                                 constant_reference: Some(AttributeConstantReference::Constant(
                                     name,
                                 )),
@@ -4763,19 +4773,61 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::String(value) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record_text(pending_argument_name.take(), value);
+                    arguments.record_typed_text(
+                        pending_argument_name.take(),
+                        value,
+                        ParsedAttributeArgumentKind::String,
+                        span,
+                    );
                 }
                 TokenKind::Int(value) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record_text(pending_argument_name.take(), value.to_string());
+                    arguments.record_typed_text(
+                        pending_argument_name.take(),
+                        value.to_string(),
+                        ParsedAttributeArgumentKind::Int,
+                        span,
+                    );
                 }
                 TokenKind::Float(value) if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record_text(pending_argument_name.take(), value.to_string());
+                    arguments.record_typed_text(
+                        pending_argument_name.take(),
+                        value.to_string(),
+                        ParsedAttributeArgumentKind::Float,
+                        span,
+                    );
                 }
                 TokenKind::True if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record_text(pending_argument_name.take(), "1".to_string());
+                    arguments.record_typed_text(
+                        pending_argument_name.take(),
+                        "1".to_string(),
+                        ParsedAttributeArgumentKind::Bool,
+                        span,
+                    );
                 }
-                TokenKind::False | TokenKind::Null if bracket_depth == 1 && paren_depth == 1 => {
-                    arguments.record_text(pending_argument_name.take(), String::new());
+                TokenKind::False if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record_typed_text(
+                        pending_argument_name.take(),
+                        String::new(),
+                        ParsedAttributeArgumentKind::Bool,
+                        span,
+                    );
+                }
+                TokenKind::Null if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record_typed_text(
+                        pending_argument_name.take(),
+                        String::new(),
+                        ParsedAttributeArgumentKind::Null,
+                        span,
+                    );
+                }
+                TokenKind::LeftBracket if bracket_depth == 1 && paren_depth == 1 => {
+                    arguments.record_typed_text(
+                        pending_argument_name.take(),
+                        "Array".to_string(),
+                        ParsedAttributeArgumentKind::Array,
+                        span,
+                    );
+                    bracket_depth += 1;
                 }
                 TokenKind::RightParen if bracket_depth == 1 && paren_depth > 0 => {
                     paren_depth -= 1;
@@ -4787,7 +4839,12 @@ impl Parser<'_> {
                     pending_argument_name = None;
                 }
                 TokenKind::Comma if bracket_depth == 1 && paren_depth == 0 => {
-                    apply_parsed_attribute(&mut attributes, &name_segments, &arguments);
+                    apply_parsed_attribute(
+                        &mut attributes,
+                        &name_segments,
+                        &arguments,
+                        self.strict_types,
+                    )?;
                     name_segments.clear();
                     arguments = ParsedAttributeArguments::default();
                     pending_argument_name = None;
@@ -4796,7 +4853,12 @@ impl Parser<'_> {
                 TokenKind::LeftBracket => bracket_depth += 1,
                 TokenKind::RightBracket => {
                     if bracket_depth == 1 && paren_depth == 0 {
-                        apply_parsed_attribute(&mut attributes, &name_segments, &arguments);
+                        apply_parsed_attribute(
+                            &mut attributes,
+                            &name_segments,
+                            &arguments,
+                            self.strict_types,
+                        )?;
                     }
                     bracket_depth -= 1;
                 }
@@ -8445,24 +8507,51 @@ fn escape_token_text(value: &str) -> String {
         .collect()
 }
 
+#[derive(Clone)]
 struct ParsedAttributeArgumentValue {
     text: String,
+    kind: ParsedAttributeArgumentKind,
+    span: SourceSpan,
     constant_reference: Option<AttributeConstantReference>,
+}
+
+#[derive(Clone)]
+enum ParsedAttributeArgumentKind {
+    String,
+    Int,
+    Float,
+    Bool,
+    Null,
+    Array,
+    Constant,
+    ClassConstant,
+    NativeEnumCase {
+        class_name: String,
+        case_name: String,
+    },
 }
 
 #[derive(Default)]
 struct ParsedAttributeArguments {
     positional: Vec<ParsedAttributeArgumentValue>,
     message: Option<ParsedAttributeArgumentValue>,
-    since: Option<String>,
+    since: Option<ParsedAttributeArgumentValue>,
 }
 
 impl ParsedAttributeArguments {
-    fn record_text(&mut self, name: Option<String>, value: String) {
+    fn record_typed_text(
+        &mut self,
+        name: Option<String>,
+        value: String,
+        kind: ParsedAttributeArgumentKind,
+        span: SourceSpan,
+    ) {
         self.record_value(
             name,
             ParsedAttributeArgumentValue {
                 text: value,
+                kind,
+                span,
                 constant_reference: None,
             },
         );
@@ -8474,25 +8563,112 @@ impl ParsedAttributeArguments {
                 self.message = Some(value);
             }
             Some(name) if name.eq_ignore_ascii_case("since") => {
-                self.since = Some(value.text);
+                self.since = Some(value);
             }
             Some(_) => {}
             None => self.positional.push(value),
         }
     }
 
+    fn message_value(&self) -> Option<&ParsedAttributeArgumentValue> {
+        self.message.as_ref().or_else(|| self.positional.first())
+    }
+
     fn message(&self) -> Option<String> {
-        self.message
-            .as_ref()
-            .or_else(|| self.positional.first())
-            .map(|value| value.text.clone())
+        self.message_value().map(|value| value.text.clone())
     }
 
     fn message_constant_reference(&self) -> Option<AttributeConstantReference> {
-        self.message
-            .as_ref()
-            .or_else(|| self.positional.first())
+        self.message_value()
             .and_then(|value| value.constant_reference.clone())
+    }
+
+    fn since_value(&self) -> Option<&ParsedAttributeArgumentValue> {
+        self.since.as_ref().or_else(|| self.positional.get(1))
+    }
+
+    fn since(&self) -> Option<String> {
+        self.since_value().map(|value| value.text.clone())
+    }
+}
+
+fn parsed_attribute_class_constant_kind(
+    class_name: &str,
+    member_name: &str,
+) -> ParsedAttributeArgumentKind {
+    if member_name.eq_ignore_ascii_case("class") {
+        ParsedAttributeArgumentKind::String
+    } else if is_known_internal_enum_class(class_name) {
+        ParsedAttributeArgumentKind::NativeEnumCase {
+            class_name: class_name.trim_start_matches('\\').to_string(),
+            case_name: member_name.to_string(),
+        }
+    } else {
+        ParsedAttributeArgumentKind::ClassConstant
+    }
+}
+
+fn is_known_internal_enum_class(class_name: &str) -> bool {
+    matches!(
+        class_name
+            .trim_start_matches('\\')
+            .to_ascii_lowercase()
+            .as_str(),
+        "random\\intervalboundary" | "roundingmode"
+    )
+}
+
+fn validate_builtin_attribute_nullable_string_argument(
+    attribute_name: &str,
+    position: usize,
+    parameter_name: &str,
+    value: Option<&ParsedAttributeArgumentValue>,
+    strict_types: bool,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let Some(given_type) = attribute_argument_type_error_given(value, strict_types) else {
+        return Ok(());
+    };
+    Err(Diagnostic::uncaught_fatal(
+        "TypeError",
+        format!(
+            "{attribute_name}::__construct(): Argument #{position} (${parameter_name}) must be of type ?string, {given_type} given"
+        ),
+        Some(value.span),
+        Some(format!(
+            "{attribute_name}->__construct({})",
+            attribute_argument_stack_display(value)
+        )),
+    ))
+}
+
+fn attribute_argument_type_error_given(
+    value: &ParsedAttributeArgumentValue,
+    strict_types: bool,
+) -> Option<String> {
+    match &value.kind {
+        ParsedAttributeArgumentKind::Array => Some("array".to_string()),
+        ParsedAttributeArgumentKind::NativeEnumCase { class_name, .. } => Some(class_name.clone()),
+        ParsedAttributeArgumentKind::Int if strict_types => Some("int".to_string()),
+        ParsedAttributeArgumentKind::Float if strict_types => Some("float".to_string()),
+        ParsedAttributeArgumentKind::Bool if strict_types => Some("bool".to_string()),
+        _ => None,
+    }
+}
+
+fn attribute_argument_stack_display(value: &ParsedAttributeArgumentValue) -> String {
+    match &value.kind {
+        ParsedAttributeArgumentKind::Array => "Array".to_string(),
+        ParsedAttributeArgumentKind::NativeEnumCase {
+            class_name,
+            case_name,
+        } => format!("{class_name}::{case_name}"),
+        ParsedAttributeArgumentKind::Bool if value.text.is_empty() => "false".to_string(),
+        ParsedAttributeArgumentKind::Bool => "true".to_string(),
+        ParsedAttributeArgumentKind::Null => "NULL".to_string(),
+        _ => value.text.clone(),
     }
 }
 
@@ -8500,10 +8676,11 @@ fn apply_parsed_attribute(
     attributes: &mut AttributeMetadata,
     name_segments: &[String],
     arguments: &ParsedAttributeArguments,
-) {
+    strict_types: bool,
+) -> Result<()> {
     if name_segments.len() != 1 {
         attributes.total_count = attributes.total_count.saturating_add(1);
-        return;
+        return Ok(());
     }
     attributes.total_count = attributes.total_count.saturating_add(1);
     let name = &name_segments[0];
@@ -8522,13 +8699,35 @@ fn apply_parsed_attribute(
             attributes.delayed_target_validation_count.saturating_add(1);
     } else if name.eq_ignore_ascii_case("Deprecated") {
         attributes.deprecated_count = attributes.deprecated_count.saturating_add(1);
+        validate_builtin_attribute_nullable_string_argument(
+            "Deprecated",
+            1,
+            "message",
+            arguments.message_value(),
+            strict_types,
+        )?;
+        validate_builtin_attribute_nullable_string_argument(
+            "Deprecated",
+            2,
+            "since",
+            arguments.since_value(),
+            strict_types,
+        )?;
         attributes.deprecated_message = Some(arguments.message().unwrap_or_default());
         attributes.deprecated_message_constant = arguments.message_constant_reference();
-        attributes.deprecated_since = arguments.since.clone();
+        attributes.deprecated_since = arguments.since();
     } else if name.eq_ignore_ascii_case("NoDiscard") {
         attributes.no_discard_count = attributes.no_discard_count.saturating_add(1);
+        validate_builtin_attribute_nullable_string_argument(
+            "NoDiscard",
+            1,
+            "message",
+            arguments.message_value(),
+            strict_types,
+        )?;
         attributes.no_discard_message = Some(arguments.message().unwrap_or_default());
     }
+    Ok(())
 }
 
 fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeMetadata) {
