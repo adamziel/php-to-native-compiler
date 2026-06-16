@@ -1624,6 +1624,13 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
+            if (line !~ /function[[:space:]]/ &&
+                line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)([[:space:]]|[(])/ &&
+                line ~ /[$][a-z_][a-z0-9_]*[[:space:]]*([=][^;{]*)?[{][[:space:]]*(get|set)[[:space:]]*(=>|[{])/) {
+                print "unsupported-property-hook-metadata\trequires property hook accessors, outside PTN modeled property declarations"
+                found = 1
+                exit
+            }
             if (line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+static([^[:alnum:]_]|$)/ ||
                 line ~ /(^|[^[:alnum:]_$])static[[:space:]]+readonly([^[:alnum:]_]|$)/ ||
                 line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+class[^{;]*\{[^}]*static[[:space:]][^;}]*\$/) {

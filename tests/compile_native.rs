@@ -35518,6 +35518,84 @@ var_dump($bag->secret ?? 'unset');
 }
 
 #[test]
+fn compile_nested_asymmetric_uninitialized_property_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-asymmetric-uninitialized-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-asymmetric-uninitialized-property.php");
+    let output = root.join("nested-asymmetric-uninitialized-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class Inner {
+    public int $prop = 1;
+    public array $array = [];
+}
+
+class Test {
+    public private(set) Inner $prop;
+
+    public function init() {
+        $this->prop = new Inner();
+    }
+}
+
+function r($test) { echo $test->prop->prop; }
+function w($test) { $test->prop->prop = 0; echo 'done'; }
+function rw($test) { $test->prop->prop += 1; echo 'done'; }
+function im($test) { $test->prop->array[] = 1; echo 'done'; }
+function is($test) { echo (int) isset($test->prop->prop); }
+function us($test) { unset($test->prop->prop); echo 'done'; }
+function us_dim($test) { unset($test->prop->array[0]); echo 'done'; }
+
+foreach ([true, false] as $init) {
+    foreach (['r', 'w', 'rw', 'im', 'is', 'us', 'us_dim'] as $op) {
+        $test = new Test();
+        if ($init) {
+            $test->init();
+        }
+        echo 'Init: ' . ((int) $init) . ', op: ' . $op . ': ';
+        try {
+            $op($test);
+        } catch (Error $e) {
+            echo $e->getMessage();
+        }
+        echo \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Init: 1, op: r: 1\n",
+            "Init: 1, op: w: done\n",
+            "Init: 1, op: rw: done\n",
+            "Init: 1, op: im: done\n",
+            "Init: 1, op: is: 1\n",
+            "Init: 1, op: us: done\n",
+            "Init: 1, op: us_dim: done\n",
+            "Init: 0, op: r: Typed property Test::$prop must not be accessed before initialization\n",
+            "Init: 0, op: w: Cannot indirectly modify private(set) property Test::$prop from global scope\n",
+            "Init: 0, op: rw: Typed property Test::$prop must not be accessed before initialization\n",
+            "Init: 0, op: im: Cannot indirectly modify private(set) property Test::$prop from global scope\n",
+            "Init: 0, op: is: 0\n",
+            "Init: 0, op: us: done\n",
+            "Init: 0, op: us_dim: done\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property_for_nested_write_receiver"));
+}
+
+#[test]
 fn compile_asymmetric_object_property_reference_returns_copy_to_native_binary() {
     let root = temp_dir("ptn-native-asymmetric-object-property-reference");
     fs::create_dir_all(&root).unwrap();

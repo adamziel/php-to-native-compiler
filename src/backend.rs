@@ -6920,22 +6920,44 @@ fn emit_instruction(
             dimensions,
             line,
         } => {
-            let receiver_temp = values.emit_materialized_value(out, receiver);
             let path = emit_array_unset_path_segments(out, values, dimensions);
-            out.push_str("    ptn_object_array_path_unset(&runtime, ");
-            out.push_str(&receiver_temp);
-            out.push_str(", \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", ");
-            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
-            out.push_str(", ");
-            out.push_str(&path.name);
-            out.push_str(", ");
-            out.push_str(&path.len.to_string());
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &receiver_temp);
+            if property_receiver_uses_quiet_unset(receiver) {
+                let receiver_lookup_temp = values.emit_quiet_lookup(out, receiver);
+                out.push_str("    if (");
+                out.push_str(&receiver_lookup_temp);
+                out.push_str(".exists) {\n");
+                out.push_str("        ptn_object_array_path_unset(&runtime, ");
+                out.push_str(&receiver_lookup_temp);
+                out.push_str(".value, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+                emit_value_cleanup(out, "    ", &format!("{receiver_lookup_temp}.value"));
+            } else {
+                let receiver_temp = values.emit_materialized_value(out, receiver);
+                out.push_str("    ptn_object_array_path_unset(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+            }
             for segment_temp in path.value_temps {
                 emit_value_cleanup(out, "    ", &segment_temp);
             }
@@ -6945,17 +6967,35 @@ fn emit_instruction(
             name,
             line,
         } => {
-            let receiver_temp = values.emit_materialized_value(out, receiver);
-            out.push_str("    ptn_object_unset_property(&runtime, ");
-            out.push_str(&receiver_temp);
-            out.push_str(", \"");
-            out.push_str(&c_string(name));
-            out.push_str("\", ");
-            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
-            out.push_str(", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &receiver_temp);
+            if property_receiver_uses_quiet_unset(receiver) {
+                let receiver_lookup_temp = values.emit_quiet_lookup(out, receiver);
+                out.push_str("    if (");
+                out.push_str(&receiver_lookup_temp);
+                out.push_str(".exists) {\n");
+                out.push_str("        ptn_object_unset_property(&runtime, ");
+                out.push_str(&receiver_lookup_temp);
+                out.push_str(".value, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+                emit_value_cleanup(out, "    ", &format!("{receiver_lookup_temp}.value"));
+            } else {
+                let receiver_temp = values.emit_materialized_value(out, receiver);
+                out.push_str("    ptn_object_unset_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+            }
         }
         Instruction::InternalCall {
             name,
@@ -10267,6 +10307,15 @@ fn property_receiver_is_temporary_write_context(value: &ValueExpr) -> bool {
     )
 }
 
+fn property_receiver_uses_quiet_unset(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::PropertyFetch { .. }
+            | ValueExpr::DynamicPropertyFetch { .. }
+            | ValueExpr::ArrayAccess { .. }
+    )
+}
+
 fn value_is_temporary_write_context(value: &ValueExpr) -> bool {
     match value {
         ValueExpr::ArrayAccess { .. } | ValueExpr::ArrayAppendAccess { .. } => {
@@ -12591,7 +12640,11 @@ impl ValueEmitter {
                     value,
                 );
             }
-            let receiver_temp = self.emit_materialized_value(out, receiver);
+            let receiver_temp = if assignment_compound_binary_op(op).is_some() {
+                self.emit_materialized_value(out, receiver)
+            } else {
+                self.emit_nested_write_receiver(out, receiver)
+            };
             let value_temp = self.emit_materialized_value(out, value);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -12618,7 +12671,7 @@ impl ValueEmitter {
             line,
         } = target
         {
-            let receiver_temp = self.emit_materialized_value(out, receiver);
+            let receiver_temp = self.emit_nested_write_receiver(out, receiver);
             let name_temp = self.emit_dynamic_property_name(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
             let result_temp = if let Some(compound_op) = assignment_compound_binary_op(op) {
@@ -12803,7 +12856,7 @@ impl ValueEmitter {
         line: usize,
         value_temp: &str,
     ) -> String {
-        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_nested_write_receiver(out, receiver);
         let path = emit_array_path_segments(out, self, dimensions);
         let current_temp = self.next_temp();
         out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
@@ -13527,7 +13580,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
                 out.push_str("    ptn_object_bind_property_reference(&runtime, ");
                 out.push_str(&receiver_temp);
                 out.push_str(", \"");
@@ -13687,7 +13740,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -13710,7 +13763,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
                 let name_temp = self.emit_dynamic_property_name(out, name, *line);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -16318,6 +16371,58 @@ impl ValueEmitter {
         out.push_str(");\n");
         emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
+    }
+
+    fn emit_nested_write_receiver(&mut self, out: &mut String, receiver: &ValueExpr) -> String {
+        match receiver {
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_read_property_for_nested_write_receiver(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                result_temp
+            }
+            ValueExpr::DynamicPropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_read_property_for_nested_write_receiver(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                result_temp
+            }
+            _ => self.emit_materialized_value(out, receiver),
+        }
     }
 
     fn emit_nullsafe_property_fetch(
