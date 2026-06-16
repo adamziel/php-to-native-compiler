@@ -7460,6 +7460,7 @@ function ptn_next_token($token) { return strtok($token); }\n\
 var_dump(strtok(\"a,b,c\", \",\"));\n\
 var_dump(ptn_next_token(\",\"));\n\
 var_dump(substr_compare(\"abcde\", \"df\", -2) < 0);\n\
+var_dump(substr_compare(\"abcde\", \"abcdef\", -10, 10) < 0);\n\
 var_dump(substr_compare(\"abcde\", \"bcg\", 1, 2));\n\
 var_dump(substr_compare(\"abcde\", \"BC\", 1, 2, true));\n\
 try { substr_compare(\"abcde\", \"abc\", 0, -1); } catch (\\ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
@@ -7485,6 +7486,7 @@ string(8) \"function\"\n\
 bool(false)\n\
 string(1) \"a\"\n\
 string(1) \"b\"\n\
+bool(true)\n\
 bool(true)\n\
 int(0)\n\
 int(0)\n\

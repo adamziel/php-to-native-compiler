@@ -14621,13 +14621,7 @@ static PtnValue ptn_internal_substr_compare(PtnRuntime *runtime, size_t argc, co
         );
         return ptn_null();
     }
-    if (
-        (raw_offset >= 0 && (uint64_t)raw_offset > (uint64_t)haystack.len) ||
-        (raw_offset < 0 &&
-            (raw_offset == INT64_MIN
-                ? ((uint64_t)INT64_MAX + 1)
-                : (uint64_t)(-raw_offset)) > (uint64_t)haystack.len)
-    ) {
+    if (raw_offset >= 0 && (uint64_t)raw_offset > (uint64_t)haystack.len) {
         ptn_string_operand_free(haystack);
         ptn_string_operand_free(needle);
         ptn_throw_exception(
