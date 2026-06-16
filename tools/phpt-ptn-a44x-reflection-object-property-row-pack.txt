@@ -30,6 +30,10 @@ ext/reflection/tests/ReflectionProperty_isWritable_unrelated_object.phpt
 ext/reflection/tests/ReflectionProperty_setValue_error.phpt
 ext/reflection/tests/ReflectionObject_isInternal_basic.phpt
 ext/reflection/tests/ReflectionObject_isUserDefined_basic.phpt
+ext/reflection/tests/ReflectionClass_getModifiers_basic.phpt
+ext/reflection/tests/ReflectionClass_isAbstract_basic.phpt
+ext/reflection/tests/ReflectionClass_isFinal_basic.phpt
+ext/reflection/tests/ReflectionClass_modifiers_001.phpt
 ext/reflection/tests/Reflection_getModifierNames_001.phpt
 ext/reflection/tests/asymmetric_visibility_write.phpt
 ext/reflection/tests/bug30146.phpt
