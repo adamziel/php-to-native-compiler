@@ -2745,6 +2745,12 @@ static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *ke
         return 0;
     }
     char type = state->data[state->pos++];
+    if (type == 'N') {
+        if (ptn_unserialize_consume(state, ';')) {
+            ptn_unserialize_fail_at(state, state->pos);
+        }
+        return 0;
+    }
     if (!ptn_unserialize_has(state, 1) || state->data[state->pos] != ':') {
         ptn_unserialize_fail_at(state, key_start);
         return 0;
@@ -2776,6 +2782,25 @@ static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *ke
         *key = ptn_array_string_key_len(string, len);
         return 1;
     }
+    if (type == 'a') {
+        size_t count = 0;
+        if (ptn_unserialize_parse_unsigned(state, &count) &&
+            ptn_unserialize_consume(state, ':') &&
+            ptn_unserialize_consume(state, '{')) {
+            ptn_unserialize_fail_at(state, state->pos);
+        }
+        return 0;
+    }
+    if (type == 'b') {
+        if (!ptn_unserialize_require(state, 1)) {
+            return 0;
+        }
+        state->pos++;
+        if (ptn_unserialize_consume(state, ';')) {
+            ptn_unserialize_fail_at(state, state->pos);
+        }
+        return 0;
+    }
     ptn_unserialize_fail_at(state, key_start);
     return 0;
 }
@@ -2787,12 +2812,23 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     }
     PtnUnserializeIdEntry *entry = &state->ids[id - 1];
     if (entry->reference != NULL) {
+        PtnValue referenced = ptn_value_deref(entry->reference->value);
+        if (referenced.type == PTN_OBJECT) {
+            return ptn_value_clone(referenced);
+        }
         entry->reference->refcount++;
         return ptn_reference_value(entry->reference);
+    }
+    if (entry->retained_object != NULL) {
+        return ptn_value_clone(ptn_object(entry->retained_object));
     }
     if (entry->slot == NULL) {
         ptn_unserialize_fail(state);
         return ptn_null();
+    }
+    PtnValue value = ptn_value_deref(*entry->slot);
+    if (value.type == PTN_OBJECT) {
+        return ptn_value_clone(value);
     }
     if (entry->slot->type == PTN_REFERENCE) {
         entry->reference = entry->slot->as.reference;
@@ -3067,69 +3103,6 @@ static int ptn_unserialize_store_entry(
     return 1;
 }
 
-static int ptn_unserialize_store_object_property_entry(
-    PtnRuntime *runtime,
-    PtnUnserializeState *state,
-    PtnObject *object,
-    PtnArrayKey key,
-    PtnUnserializeValue parsed
-) {
-    PtnArray *properties = object->properties;
-    const PtnObjectPropertyMetadata *metadata = key.type == PTN_ARRAY_KEY_STRING
-        ? ptn_object_property_metadata(object, key.as.string)
-        : NULL;
-    if (metadata == NULL ||
-        metadata->type_kind == PTN_PROPERTY_TYPE_NONE ||
-        metadata->type_kind == PTN_PROPERTY_TYPE_MIXED) {
-        return ptn_unserialize_store_entry(runtime, state, properties, key, parsed);
-    }
-
-    PtnValue stored = ptn_null();
-    if (!ptn_unserialize_prepare_object_property_value(runtime, metadata, parsed.value, &stored)) {
-        ptn_array_key_free(key);
-        ptn_value_destroy(&parsed.value);
-        return 0;
-    }
-
-    size_t existing_index = ptn_array_find_key(properties, key);
-    if (existing_index < properties->len) {
-        PtnArrayEntry *entry = &properties->entries[existing_index];
-        if (entry->value.type == PTN_REFERENCE) {
-            ptn_array_update_next_auto_key(properties, key);
-            if (stored.type == PTN_REFERENCE) {
-                PtnValue dereferenced = ptn_value_clone_deref(stored);
-                ptn_value_destroy(&stored);
-                stored = dereferenced;
-            }
-            PtnValue old_value = entry->value.as.reference->value;
-            ptn_array_note_value_replacement(old_value, stored);
-            entry->value.as.reference->value = stored;
-            ptn_value_destroy(&old_value);
-            ptn_value_destroy(&parsed.value);
-            ptn_array_key_free(key);
-            ptn_unserialize_update_slot_with_metadata(state, parsed.id, &entry->value, metadata);
-            return 1;
-        }
-        ptn_unserialize_invalidate_slot(state, &entry->value);
-        ptn_value_destroy(&parsed.value);
-        ptn_array_set_entry(properties, key, stored);
-        ptn_unserialize_invalidate_id(state, parsed.id);
-        return 1;
-    }
-
-    PtnArrayKey lookup = ptn_array_key_clone(key);
-    ptn_value_destroy(&parsed.value);
-    ptn_array_set_entry(properties, key, stored);
-    size_t index = ptn_array_find_key(properties, lookup);
-    ptn_array_key_free(lookup);
-    if (index >= properties->len) {
-        ptn_unserialize_fail(state);
-        return 0;
-    }
-    ptn_unserialize_update_slot_with_metadata(state, parsed.id, &properties->entries[index].value, metadata);
-    return 1;
-}
-
 static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *state, PtnRuntime *runtime) {
     PtnUnserializeValue result;
     result.value = ptn_null();
@@ -3279,6 +3252,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             result.value = ptn_unserialize_new_object_shell(runtime, class_name, state->line);
             free(class_name);
             result.id = ptn_unserialize_add_slot(state, &result.value);
+            PtnArray *properties = result.value.as.object->properties;
             for (size_t i = 0; i < property_count; i++) {
                 PtnArrayKey key;
                 if (!ptn_unserialize_parse_key(state, &key)) {
@@ -3287,13 +3261,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 PtnUnserializeValue parsed = ptn_unserialize_parse_value(state, runtime);
                 PtnArrayKey property_key = ptn_unserialize_object_property_key(key);
                 if (state->failed ||
-                    !ptn_unserialize_store_object_property_entry(
-                        runtime,
-                        state,
-                        result.value.as.object,
-                        property_key,
-                        parsed
-                    )) {
+                    !ptn_unserialize_store_entry(runtime, state, properties, property_key, parsed)) {
                     return result;
                 }
             }
