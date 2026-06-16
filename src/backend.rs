@@ -10,11 +10,12 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassConstantDecl, ClassDecl, ClosureCapture,
-    CompileWarning, DeprecatedMessageDependency, FunctionDecl, FunctionParameter, IncDecOp,
-    IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget, Instruction, ListAssignmentElement,
-    ListAssignmentElementTarget, ListAssignmentTarget, MagicConstantKind, MatchArm as IrMatchArm,
-    Module, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
-    StaticPropertyDecl, TraitDecl, TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
+    CompileWarning, CompileWarningKind, DeprecatedMessageDependency, FunctionDecl,
+    FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget,
+    Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
+    MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind,
+    PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl, TraitUseDecl, TypeHint,
+    UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -2266,13 +2267,26 @@ fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityW
 
 fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_file: &str) {
     for warning in warnings {
-        out.push_str("    ptn_emit_compile_warning(&runtime, \"");
-        out.push_str(&c_string(&warning.message));
-        out.push_str("\", \"");
-        out.push_str(&c_string(source_file));
-        out.push_str("\", ");
-        out.push_str(&warning.line.to_string());
-        out.push_str(");\n");
+        match warning.kind {
+            CompileWarningKind::Warning => {
+                out.push_str("    ptn_emit_compile_warning(&runtime, \"");
+                out.push_str(&c_string(&warning.message));
+                out.push_str("\", \"");
+                out.push_str(&c_string(source_file));
+                out.push_str("\", ");
+                out.push_str(&warning.line.to_string());
+                out.push_str(");\n");
+            }
+            CompileWarningKind::UncaughtError => {
+                out.push_str("    ptn_throw_exception_at(&runtime, \"Error\", \"");
+                out.push_str(&c_string(&warning.message));
+                out.push_str("\", \"");
+                out.push_str(&c_string(source_file));
+                out.push_str("\", ");
+                out.push_str(&warning.line.to_string());
+                out.push_str(");\n");
+            }
+        }
     }
 }
 

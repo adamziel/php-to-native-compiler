@@ -14,6 +14,13 @@ pub struct Program {
 pub struct CompileWarning {
     pub message: String,
     pub span: SourceSpan,
+    pub kind: CompileWarningKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompileWarningKind {
+    Warning,
+    UncaughtError,
 }
 
 #[derive(Debug, Clone, PartialEq)]

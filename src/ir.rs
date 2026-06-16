@@ -6,9 +6,9 @@ use crate::ast::{
     AssignmentTarget as AstAssignmentTarget, AttributeConstantReference, AttributeMetadata,
     BinaryOp as AstBinaryOp, CastKind as AstCastKind, CatchClause as AstCatchClause,
     ClassDecl as AstClassDecl, ClosureUseCapture as AstClosureUseCapture,
-    CompileWarning as AstCompileWarning, Expr, FunctionDecl as AstFunctionDecl,
-    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
-    IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
+    CompileWarning as AstCompileWarning, CompileWarningKind as AstCompileWarningKind, Expr,
+    FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter,
+    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     IncludeKind as AstIncludeKind, InstanceOfTarget as AstInstanceOfTarget,
     ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
@@ -37,6 +37,13 @@ pub struct Module {
 pub struct CompileWarning {
     pub message: String,
     pub line: usize,
+    pub kind: CompileWarningKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompileWarningKind {
+    Warning,
+    UncaughtError,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1902,6 +1909,10 @@ fn lower_compile_warnings(warnings: &[AstCompileWarning]) -> Vec<CompileWarning>
         .map(|warning| CompileWarning {
             message: warning.message.clone(),
             line: warning.span.line,
+            kind: match warning.kind {
+                AstCompileWarningKind::Warning => CompileWarningKind::Warning,
+                AstCompileWarningKind::UncaughtError => CompileWarningKind::UncaughtError,
+            },
         })
         .collect()
 }

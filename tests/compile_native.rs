@@ -39058,6 +39058,35 @@ interface Duplicate extends Original, Alias {}
 }
 
 #[test]
+fn compile_self_extending_interface_reports_uncaught_error_to_native_binary() {
+    let root = temp_dir("ptn-native-self-extending-interface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("self-extending-interface.php");
+    let output = root.join("self-extending-interface-bin");
+    fs::write(
+        &input,
+        "<?php\ninterface RecursiveFooFar extends RecursiveFooFar {}\nclass A implements RecursiveFooFar {}\n\n$a = new A();\nvar_dump($a instanceOf A);\necho \"ok\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: Interface \"RecursiveFooFar\" not found in {}:2\n\
+Stack trace:\n\
+#0 {{main}}\n  thrown in {} on line 2\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_namespaced_class_alias_metadata_queries_to_native_binary() {
     let root = temp_dir("ptn-native-namespace-class-alias-metadata");
     fs::create_dir_all(&root).unwrap();

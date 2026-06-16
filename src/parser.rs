@@ -3,15 +3,15 @@ use std::collections::{HashMap, HashSet};
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
     AssignmentTarget, AttributeConstantReference, AttributeMetadata, BinaryOp, CastKind,
-    CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning, ConstDeclaration,
-    Expr, FunctionDecl, FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeKind,
-    InstanceOfTarget, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
-    ListExpr, ListExprElement, ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl,
-    Program, PromotedProperty, PropertyDecl, PropertyTypeHint, PropertyTypeKind,
-    PropertyVisibility, ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
-    StringInterpolationIndex, StringPart, SwitchCase, TraitAdaptation, TraitAliasAdaptation,
-    TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
-    UnsetTarget,
+    CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning,
+    CompileWarningKind, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
+    IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
+    ListAssignmentElementTarget, ListAssignmentTarget, ListExpr, ListExprElement,
+    ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program, PromotedProperty,
+    PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
+    Statement, StaticLocalDeclaration, StaticPropertyDecl, StringInterpolationIndex, StringPart,
+    SwitchCase, TraitAdaptation, TraitAliasAdaptation, TraitDecl, TraitMethodReference,
+    TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp, UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{
@@ -283,7 +283,7 @@ impl Parser<'_> {
         validate_trait_names(&traits)?;
         validate_builtin_attribute_targets(&classes, &traits, &functions)?;
         validate_parent_class_names(&classes)?;
-        validate_interface_references(&classes)?;
+        validate_interface_references(&classes, &mut self.compile_warnings)?;
         validate_interface_method_conflicts(&classes)?;
         validate_override_attributes(&classes, &traits)?;
         validate_traversable_implementations(&classes)?;
@@ -654,6 +654,7 @@ impl Parser<'_> {
                     target.name
                 ),
                 span: target.span,
+                kind: CompileWarningKind::Warning,
             });
             return Ok(());
         }
@@ -9122,7 +9123,10 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
     Ok(())
 }
 
-fn validate_interface_references(classes: &[ClassDecl]) -> Result<()> {
+fn validate_interface_references(
+    classes: &[ClassDecl],
+    compile_warnings: &mut Vec<CompileWarning>,
+) -> Result<()> {
     let interface_names = classes
         .iter()
         .filter(|class| class.is_interface)
@@ -9146,10 +9150,12 @@ fn validate_interface_references(classes: &[ClassDecl]) -> Result<()> {
                 ));
             }
             if class.is_interface && class.name.eq_ignore_ascii_case(interface_name) {
-                return Err(Diagnostic::new(
-                    format!("Interface \"{interface_name}\" not found"),
-                    Some(class.span),
-                ));
+                compile_warnings.push(CompileWarning {
+                    message: format!("Interface \"{interface_name}\" not found"),
+                    span: class.span,
+                    kind: CompileWarningKind::UncaughtError,
+                });
+                return Ok(());
             }
             if interface_names.contains(&interface_name.to_ascii_lowercase())
                 || is_modeled_builtin_interface_name(interface_name)
