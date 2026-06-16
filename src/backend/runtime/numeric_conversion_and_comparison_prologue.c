@@ -96,6 +96,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->by_ref_argument_notice_emitted = caller_runtime->by_ref_argument_notice_emitted;
     runtime->by_ref_argument_notice_line = caller_runtime->by_ref_argument_notice_line;
     runtime->include_path = NULL;
+    runtime->included_files = NULL;
+    runtime->included_files_len = 0;
+    runtime->included_files_capacity = 0;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
     runtime->exception_string_param_max_len = caller_runtime->exception_string_param_max_len;
@@ -188,6 +191,13 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
         free(runtime->include_path);
         runtime->include_path = NULL;
+        for (size_t i = 0; i < runtime->included_files_len; i++) {
+            free(runtime->included_files[i]);
+        }
+        free(runtime->included_files);
+        runtime->included_files = NULL;
+        runtime->included_files_len = 0;
+        runtime->included_files_capacity = 0;
         free(runtime->memory_limit);
         runtime->memory_limit = NULL;
         free(runtime->max_memory_limit);

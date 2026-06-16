@@ -29066,6 +29066,95 @@ var_dump($value);\n",
 }
 
 #[test]
+fn compile_file_get_contents_uses_include_path_to_native_binary() {
+    let root = temp_dir("ptn-native-file-get-contents-include-path");
+    let cwd = root.join("cwd");
+    let include_dir = root.join("includes");
+    fs::create_dir_all(&cwd).unwrap();
+    fs::create_dir_all(&include_dir).unwrap();
+    let input = root.join("main.php");
+    let source_file = root.join("source.txt");
+    let include_file = include_dir.join("include.txt");
+    let output = root.join("file-get-contents-include-path-bin");
+    fs::write(&source_file, "source-dir").unwrap();
+    fs::write(&include_file, "include-path").unwrap();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+chdir({:?});\n\
+echo file_get_contents('source.txt', true), \"\\n\";\n\
+set_include_path({:?});\n\
+echo file_get_contents('include.txt', true), \"\\n\";\n",
+            cwd.to_string_lossy(),
+            include_dir.to_string_lossy()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "source-dir\ninclude-path\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_read_file_bytes_with_search"));
+}
+
+#[test]
+fn compile_get_included_files_and_include_source_path_to_native_binary() {
+    let root = temp_dir("ptn-native-get-included-files");
+    let include_dir = root.join("sub");
+    fs::create_dir_all(&include_dir).unwrap();
+    let input = root.join("main.php");
+    let included = include_dir.join("a.php");
+    let sibling = include_dir.join("sibling.txt");
+    let output = root.join("get-included-files-bin");
+    fs::write(&sibling, "from-include").unwrap();
+    fs::write(
+        &included,
+        "<?php echo file_get_contents('sibling.txt', true), \"\\n\";",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_files($files) {\n\
+    foreach ($files as $file) {\n\
+        echo basename($file), \"\\n\";\n\
+    }\n\
+    echo \"--\\n\";\n\
+}\n\
+var_dump(function_exists('get_included_files'));\n\
+dump_files(get_included_files());\n\
+include __DIR__ . '/sub/a.php';\n\
+dump_files(get_included_files());\n\
+include_once __DIR__ . '/sub/a.php';\n\
+dump_files(get_included_files());\n\
+include __DIR__ . '/sub/a.php';\n\
+dump_files(get_included_files());\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nmain.php\n--\nfrom-include\nmain.php\na.php\n--\nmain.php\na.php\n--\nfrom-include\nmain.php\na.php\n--\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_note_included_file(&runtime, runtime.source_path);"));
+    assert!(c_source.contains("ptn_internal_get_included_files"));
+}
+
+#[test]
 fn compile_expression_statements_evaluate_and_discard_to_native_binary() {
     let root = temp_dir("ptn-native-expression-statements");
     fs::create_dir_all(&root).unwrap();

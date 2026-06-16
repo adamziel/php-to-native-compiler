@@ -985,6 +985,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->by_ref_argument_notice_emitted = 0;
     runtime->by_ref_argument_notice_line = 0;
     runtime->include_path = ptn_duplicate_string(".");
+    runtime->included_files = NULL;
+    runtime->included_files_len = 0;
+    runtime->included_files_capacity = 0;
     const char *configured_max_memory_limit = getenv("PTN_MAX_MEMORY_LIMIT");
     const char *configured_memory_limit = getenv("PTN_MEMORY_LIMIT");
     runtime->max_memory_limit = ptn_duplicate_string(

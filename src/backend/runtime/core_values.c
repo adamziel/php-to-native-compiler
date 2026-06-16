@@ -807,6 +807,9 @@ struct PtnRuntime {
     int by_ref_argument_notice_emitted;
     size_t by_ref_argument_notice_line;
     char *include_path;
+    char **included_files;
+    size_t included_files_len;
+    size_t included_files_capacity;
     char *memory_limit;
     char *max_memory_limit;
     size_t exception_string_param_max_len;
@@ -940,6 +943,34 @@ static PTN_UNUSED PtnRuntime *ptn_runtime_root(PtnRuntime *runtime) {
         return NULL;
     }
     return runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+}
+
+static PTN_UNUSED void ptn_runtime_note_included_file(PtnRuntime *runtime, const char *path) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || path == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < root->included_files_len; i++) {
+        if (strcmp(root->included_files[i], path) == 0) {
+            return;
+        }
+    }
+    if (root->included_files_len == root->included_files_capacity) {
+        size_t new_capacity = root->included_files_capacity == 0
+            ? 8
+            : root->included_files_capacity * 2;
+        if (new_capacity < root->included_files_capacity ||
+            new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_files = realloc(root->included_files, new_capacity * sizeof(char *));
+        if (new_files == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->included_files = new_files;
+        root->included_files_capacity = new_capacity;
+    }
+    root->included_files[root->included_files_len++] = ptn_duplicate_string(path);
 }
 
 static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {

@@ -248,6 +248,7 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
+    out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
     let mut values = ValueEmitter::new(
         &module.source_file,
         &module.source_dir,
@@ -1888,6 +1889,11 @@ fn emit_include_helpers(
         out.push_str("(PtnRuntime *include_runtime) {\n");
         out.push_str("    (void)include_runtime;\n");
         out.push_str("#define runtime (*include_runtime)\n");
+        out.push_str("    const char *ptn_previous_source_path = runtime.source_path;\n");
+        out.push_str("    runtime.source_path = \"");
+        out.push_str(&c_string(&include.source_file));
+        out.push_str("\";\n");
+        out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
         emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
         let legacy_dollar_brace_deprecations =
@@ -1919,6 +1925,7 @@ fn emit_include_helpers(
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
+        out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");

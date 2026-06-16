@@ -22791,6 +22791,7 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         return ptn_bool(0);
     }
 
+    int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
     int64_t offset = argc >= 4
         ? ptn_internal_expect_integer_arg(runtime, "file_get_contents", 4, "offset", args[3], line)
         : 0;
@@ -22812,7 +22813,8 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
 
     unsigned char *data = NULL;
     size_t data_len = 0;
-    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    char *opened_path = NULL;
+    int read_result = ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
     if (read_result <= 0) {
         char detail[192];
         int needed = snprintf(
@@ -22826,10 +22828,12 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
             ptn_abort_out_of_memory();
         }
         ptn_emit_file_warning(runtime, "file_get_contents", path, detail, line);
+        free(opened_path);
         free(path);
         free(data);
         return ptn_bool(0);
     }
+    free(opened_path);
     free(path);
 
     int64_t start_offset = offset;
@@ -22856,6 +22860,25 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     char *copy = ptn_duplicate_string_len((const char *)data + start, result_len);
     free(data);
     return ptn_owned_string_len(copy, result_len);
+}
+
+static PtnValue ptn_internal_get_included_files(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < root->included_files_len; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_owned_string(ptn_duplicate_string(root->included_files[i]))
+        );
+    }
+    return result;
 }
 
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
@@ -30774,6 +30797,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_defined_vars", 0, 0, ptn_internal_get_defined_vars },
         { "get_defined_constants", 0, 1, ptn_internal_get_defined_constants },
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
+        { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
