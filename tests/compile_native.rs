@@ -9951,6 +9951,52 @@ try { count_chars('x', 5); } catch (ValueError $e) { echo $e->getMessage(), \"\\
 }
 
 #[test]
+fn compile_quoted_printable_encode_php_folding_to_native_binary() {
+    let root = temp_dir("ptn-native-quoted-printable-encode-folding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("quoted-printable-encode-folding.php");
+    let output = root.join("quoted-printable-encode-folding-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function dump_shape($encoded) {\n\
+    echo strlen($encoded), \":\";\n\
+    $separator = \"\";\n\
+    foreach (explode(\"\\r\\n\", $encoded) as $line) {\n\
+        echo $separator, strlen($line);\n\
+        $separator = \",\";\n\
+    }\n\
+    echo \"\\n\";\n\
+}\n\
+dump_shape(quoted_printable_encode(str_repeat(\"\\0\", 26)));\n\
+dump_shape(quoted_printable_encode(str_repeat(chr(195) . chr(169), 25)));\n\
+foreach ([\"a\\nb\", \"a\\r\\nb\", \"\\t =\", \" \\r\\n\", \" \", \" \\n\"] as $case) {\n\
+    echo bin2hex(quoted_printable_encode($case)), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "81:76,3\n",
+            "156:73,73,6\n",
+            "613d304162\n",
+            "610d0a62\n",
+            "3d3039203d3344\n",
+            "3d32300d0a\n",
+            "20\n",
+            "203d3041\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strip_tags_bug70720_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-strip-tags-bug70720-phpt-shape");
     fs::create_dir_all(&root).unwrap();
