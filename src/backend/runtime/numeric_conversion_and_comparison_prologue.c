@@ -2919,8 +2919,7 @@ static PTN_UNUSED int ptn_exception_matches(PtnRuntime *runtime, const char *typ
     if (type_name[0] == '\\') {
         type_name++;
     }
-    return runtime->class_scope_allows != NULL &&
-        runtime->class_scope_allows(class_name, type_name);
+    return ptn_declared_class_is_same_or_descendant(class_name, type_name);
 }
 
 static PTN_UNUSED PtnValue ptn_current_exception_value(PtnRuntime *runtime) {

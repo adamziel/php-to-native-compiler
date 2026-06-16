@@ -273,6 +273,8 @@ pub fn emit_c(module: &Module) -> String {
     }
     let mut control_targets = Vec::new();
     let mut finally_stack = Vec::new();
+    let return_label = values.next_label("ptn_main_return");
+    out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
     for instruction in &module.instructions {
         emit_instruction(
             &mut out,
@@ -281,9 +283,15 @@ pub fn emit_c(module: &Module) -> String {
             &mut control_targets,
             &mut finally_stack,
             &module.source_file,
+            Some(&return_label),
             None,
         );
     }
+    emit_label_reference(&mut out, &return_label);
+    out.push_str("    ");
+    out.push_str(&return_label);
+    out.push_str(":\n");
+    out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
@@ -1362,6 +1370,7 @@ fn emit_user_functions(
                 &mut finally_stack,
                 source_file,
                 Some(&return_label),
+                None,
             );
         }
         emit_label_reference(out, &return_label);
@@ -1927,6 +1936,7 @@ fn emit_include_helpers(
                 &mut finally_stack,
                 &include.source_file,
                 Some(&return_label),
+                None,
             );
         }
         emit_label_reference(out, &return_label);
@@ -6581,6 +6591,7 @@ fn emit_instruction(
     finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
+    label_scope: Option<&str>,
 ) {
     match instruction {
         Instruction::Store { name, value } => {
@@ -6965,6 +6976,7 @@ fn emit_instruction(
                 finally_stack,
                 source_path,
                 return_target,
+                label_scope,
             );
         }
         Instruction::Branch {
@@ -6985,6 +6997,7 @@ fn emit_instruction(
                     finally_stack,
                     source_path,
                     return_target,
+                    label_scope,
                 );
             }
             if !else_body.is_empty() {
@@ -6998,6 +7011,7 @@ fn emit_instruction(
                         finally_stack,
                         source_path,
                         return_target,
+                        label_scope,
                     );
                 }
             }
@@ -7034,6 +7048,7 @@ fn emit_instruction(
                     finally_stack,
                     source_path,
                     return_target,
+                    label_scope,
                 );
             }
             control_targets.pop();
@@ -7061,6 +7076,7 @@ fn emit_instruction(
                     finally_stack,
                     source_path,
                     return_target,
+                    label_scope,
                 );
             }
             control_targets.pop();
@@ -7098,6 +7114,7 @@ fn emit_instruction(
                     finally_stack,
                     source_path,
                     return_target,
+                    label_scope,
                 );
             }
             let end_label = values.next_label("ptn_loop_end");
@@ -7127,6 +7144,7 @@ fn emit_instruction(
                     finally_stack,
                     source_path,
                     return_target,
+                    label_scope,
                 );
             }
             control_targets.pop();
@@ -7144,6 +7162,7 @@ fn emit_instruction(
                     finally_stack,
                     source_path,
                     return_target,
+                    label_scope,
                 );
             }
             out.push_str("    }\n");
@@ -7294,6 +7313,7 @@ fn emit_instruction(
                     finally_stack,
                     source_path,
                     return_target,
+                    label_scope,
                 );
             }
             control_targets.pop();
@@ -7331,16 +7351,17 @@ fn emit_instruction(
                 finally_stack,
                 source_path,
                 return_target,
+                label_scope,
             );
         }
         Instruction::Label { name } => {
             out.push_str("    ");
-            out.push_str(&c_label(name));
+            out.push_str(&c_label_with_scope(name, label_scope));
             out.push_str(":\n");
             out.push_str("    ;\n");
         }
         Instruction::Goto { label } => {
-            let target = c_label(label);
+            let target = c_label_with_scope(label, label_scope);
             let context_indices: Vec<usize> = (0..finally_stack.len()).collect();
             emit_jump_through_finally_contexts(out, finally_stack, &context_indices, &target);
         }
@@ -7407,6 +7428,7 @@ fn emit_try(
     finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
+    label_scope: Option<&str>,
 ) {
     let frame_temp = values.next_temp();
     let caught_temp = values.next_temp();
@@ -7494,6 +7516,7 @@ fn emit_try(
             finally_stack,
             source_path,
             body_return_target,
+            label_scope,
         );
     }
     out.push_str("            ptn_try_frame_pop(&runtime, &");
@@ -7595,6 +7618,7 @@ fn emit_try(
                 finally_stack,
                 source_path,
                 body_return_target,
+                label_scope,
             );
         }
         if let Some(catch_active_temp) = &catch_active_temp {
@@ -7821,6 +7845,7 @@ fn emit_finally_instructions(
     source_path: &str,
     return_target: Option<&str>,
 ) {
+    let label_scope = values.next_label("ptn_finally_labels");
     for finally_instruction in finally_body {
         emit_instruction(
             out,
@@ -7830,6 +7855,7 @@ fn emit_finally_instructions(
             finally_stack,
             source_path,
             return_target,
+            Some(&label_scope),
         );
     }
 }
@@ -10186,6 +10212,7 @@ fn emit_switch(
     finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
+    label_scope: Option<&str>,
 ) {
     let end_label = values.next_label("ptn_switch_end");
     emit_label_reference(out, &end_label);
@@ -10248,6 +10275,7 @@ fn emit_switch(
                 finally_stack,
                 source_path,
                 return_target,
+                label_scope,
             );
         }
         control_targets.pop();
@@ -15616,6 +15644,13 @@ impl ValueEmitter {
                     .clone(),
             )
         }) {
+            out.push_str("    if (");
+            out.push_str(result_temp);
+            out.push_str(".type == PTN_OBJECT) {\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(".as.object->destructor_enabled = 0;\n");
+            out.push_str("    }\n");
             let constructor_result = self.next_temp();
             if !self.method_visibility_allows(constructor_visibility, &constructor_declaring_class)
             {
@@ -15731,6 +15766,13 @@ impl ValueEmitter {
                     emit_value_cleanup(out, "    ", &temp);
                 }
             }
+            out.push_str("    if (runtime.exceptions->active_exception == NULL && ");
+            out.push_str(result_temp);
+            out.push_str(".type == PTN_OBJECT) {\n");
+            out.push_str("        ");
+            out.push_str(result_temp);
+            out.push_str(".as.object->destructor_enabled = 1;\n");
+            out.push_str("    }\n");
             emit_value_cleanup(out, "    ", &constructor_result);
         } else {
             if let Some(parent_class_name) =
@@ -20621,6 +20663,15 @@ fn c_label(value: &str) -> String {
         }
     }
     out
+}
+
+fn c_label_with_scope(value: &str, scope: Option<&str>) -> String {
+    let mut label = c_label(value);
+    if let Some(scope) = scope {
+        label.push_str("__");
+        label.push_str(scope);
+    }
+    label
 }
 
 fn display_os(value: &OsStr) -> String {

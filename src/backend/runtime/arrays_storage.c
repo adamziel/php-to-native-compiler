@@ -483,7 +483,7 @@ static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObj
 }
 
 static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
-    if (object == NULL || object->destructor_called) {
+    if (object == NULL || !object->destructor_enabled || object->destructor_called) {
         return;
     }
     PtnRuntime *runtime = object->lifecycle_runtime;
@@ -641,6 +641,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->native_data = NULL;
     object->native_data_free = NULL;
     object->lifecycle_runtime = root;
+    object->destructor_enabled = 1;
     object->destructor_called = 0;
     ptn_runtime_register_object(root, object);
     return ptn_object(object);
