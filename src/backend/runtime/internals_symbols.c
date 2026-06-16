@@ -35,6 +35,7 @@ static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *re
     if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, &stored_value)) {
         return 0;
     }
+    ptn_array_note_value_replacement(reference->value, stored_value);
     ptn_value_destroy(&reference->value);
     reference->value = stored_value;
     return 1;
@@ -46,6 +47,7 @@ static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, Pt
         return 0;
     }
     PtnValue old_value = reference->value;
+    ptn_array_note_value_replacement(old_value, stored_value);
     reference->value = stored_value;
     ptn_value_destroy(&old_value);
     return 1;

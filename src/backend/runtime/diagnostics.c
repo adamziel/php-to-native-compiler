@@ -22,6 +22,7 @@ static PTN_UNUSED void ptn_symbols_set(PtnSymbolTable *symbols, const char *name
     size_t index = ptn_symbols_find(symbols, name);
     if (index < symbols->len) {
         PtnValue old_value = symbols->items[index].value;
+        ptn_array_note_value_replacement(old_value, stored_value);
         symbols->items[index].value = stored_value;
         ptn_value_destroy(&old_value);
         return;
@@ -146,6 +147,7 @@ static PTN_UNUSED void ptn_runtime_unwrap_reference_slots_if_unaliased(
 static PTN_UNUSED void ptn_symbols_bind_reference(PtnSymbolTable *symbols, const char *name, PtnValue reference) {
     PtnSymbol *symbol = ptn_symbols_slot_for_write(symbols, name);
     PtnValue old_value = symbol->value;
+    ptn_array_note_value_replacement(old_value, reference);
     symbol->value = ptn_value_clone(reference);
     ptn_value_destroy(&old_value);
 }

@@ -591,6 +591,7 @@ static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t
     snapshot.as.array->iterator_current_index = 0;
     snapshot.as.array->iterator_mutation_resume_index = 0;
     snapshot.as.array->iterator_mutation_epoch = 0;
+    snapshot.as.array->mutation_epoch = 0;
     return snapshot;
 }
 

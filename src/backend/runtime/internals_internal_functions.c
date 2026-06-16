@@ -9083,6 +9083,7 @@ static void ptn_array_splice_append_replacement_value(PtnArray *target, PtnValue
 }
 
 static void ptn_array_adopt_storage(PtnArray *target, PtnArray *source) {
+    ptn_array_note_mutation(target);
     for (size_t i = 0; i < target->len; i++) {
         ptn_array_key_free(target->entries[i].key);
         ptn_value_destroy(&target->entries[i].value);
@@ -9105,6 +9106,7 @@ static void ptn_array_adopt_storage(PtnArray *target, PtnArray *source) {
     source->index_capacity = 0;
     source->next_auto_key = 0;
     source->current_index = 0;
+    source->mutation_epoch = 0;
 }
 
 static void ptn_array_splice_note_iterator_mutation(
@@ -9180,6 +9182,45 @@ static PtnValue ptn_array_splice_values(
     ptn_array_splice_note_iterator_mutation(array, start, count, replacement_count);
     free(rebuilt.as.array);
     return removed;
+}
+
+static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
+    PtnRuntime *runtime,
+    PtnValue target,
+    PtnValue *removed,
+    size_t line
+) {
+    PtnValue resolved_target = ptn_value_deref(target);
+    PtnArray *array = resolved_target.type == PTN_ARRAY ? resolved_target.as.array : NULL;
+    uint64_t mutation_epoch = 0;
+    if (array != NULL) {
+        ptn_array_retain(array);
+        mutation_epoch = array->mutation_epoch;
+    }
+
+    ptn_value_drop(removed);
+
+    if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        if (array != NULL) {
+            ptn_array_free(array);
+        }
+        ptn_rethrow_exception(runtime);
+        return;
+    }
+    if (array != NULL && array->mutation_epoch != mutation_epoch) {
+        ptn_array_free(array);
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Array was modified during array_splice operation",
+            runtime->source_path,
+            line
+        );
+        return;
+    }
+    if (array != NULL) {
+        ptn_array_free(array);
+    }
 }
 
 static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

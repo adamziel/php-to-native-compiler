@@ -1942,9 +1942,6 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])array_splice[[:space:]]*\(/) {
-                array_splice_seen = 1
-            }
             if (line ~ /(^|[^[:alnum:]_$])function[[:space:]]+__destruct[[:space:]]*\(/) {
                 destructor_seen = 1
             }
@@ -1967,10 +1964,6 @@ ptn_phpt_first_unsupported_internal_surface() {
             }
         }
         END {
-            if (!found && array_splice_seen && destructor_seen && global_state_seen) {
-                print "unsupported-internal\trequires array_splice() destructor reentrancy detection when element destruction mutates global array state, outside PTN modeled array_splice helper"
-                found = 1
-            }
             if (!found && destructor_seen && magic_call_seen && destructor_method_call_seen && stores_this_in_object_property) {
                 print "unsupported-internal\trequires destructor-driven __call object resurrection/lifetime semantics, outside PTN modeled object lifetime runtime"
                 found = 1

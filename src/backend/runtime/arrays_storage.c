@@ -261,6 +261,25 @@ static PTN_UNUSED void ptn_array_recompute_next_auto_key(PtnArray *array) {
     }
 }
 
+static PTN_UNUSED void ptn_array_note_mutation(PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    array->mutation_epoch++;
+}
+
+static PTN_UNUSED void ptn_array_note_value_replacement(PtnValue old_value, PtnValue new_value) {
+    PtnValue old_resolved = ptn_value_deref(old_value);
+    if (old_resolved.type != PTN_ARRAY || old_resolved.as.array == NULL) {
+        return;
+    }
+    PtnValue new_resolved = ptn_value_deref(new_value);
+    if (new_resolved.type == PTN_ARRAY && new_resolved.as.array == old_resolved.as.array) {
+        return;
+    }
+    ptn_array_note_mutation(old_resolved.as.array);
+}
+
 static PTN_UNUSED size_t ptn_array_find_key(PtnArray *array, PtnArrayKey key) {
     if (array->index_capacity != 0) {
         uint64_t hash = ptn_array_key_hash(key);
@@ -288,6 +307,7 @@ static PTN_UNUSED void ptn_array_index_insert(PtnArray *array, PtnArrayKey key, 
 static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
     size_t index = ptn_array_find_key(array, key);
     ptn_array_update_next_auto_key(array, key);
+    ptn_array_note_mutation(array);
     if (index < array->len) {
         ptn_value_destroy(&array->entries[index].value);
         array->entries[index].value = value;
@@ -316,6 +336,7 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
 static PTN_UNUSED void ptn_array_set_entry_publish_first(PtnArray *array, PtnArrayKey key, PtnValue value) {
     size_t index = ptn_array_find_key(array, key);
     ptn_array_update_next_auto_key(array, key);
+    ptn_array_note_mutation(array);
     if (index < array->len) {
         PtnValue old_value = array->entries[index].value;
         array->entries[index].value = value;
@@ -365,6 +386,7 @@ static PTN_UNUSED int ptn_array_unset_entry(PtnArray *array, PtnArrayKey key) {
         return 0;
     }
 
+    ptn_array_note_mutation(array);
     ptn_array_key_free(array->entries[index].key);
     ptn_value_destroy(&array->entries[index].value);
     for (size_t i = index + 1; i < array->len; i++) {
@@ -408,6 +430,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     array->iterator_current_index = 0;
     array->iterator_mutation_resume_index = 0;
     array->iterator_mutation_epoch = 0;
+    array->mutation_epoch = 0;
     if (entry_count != 0) {
         array->entries = malloc(entry_count * sizeof(PtnArrayEntry));
         if (array->entries == NULL) {
@@ -816,6 +839,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     array->iterator_current_index = 0;
     array->iterator_mutation_resume_index = 0;
     array->iterator_mutation_epoch = 0;
+    array->mutation_epoch = 0;
     if (source->len != 0) {
         array->entries = malloc(source->len * sizeof(PtnArrayEntry));
         if (array->entries == NULL) {
@@ -955,6 +979,7 @@ static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
 
     ptn_cow_debug_note_array_detach();
     PtnArray *detached = ptn_array_clone(array);
+    ptn_array_note_mutation(array);
     ptn_value_destroy(value);
     *value = ptn_array(detached);
     return detached;

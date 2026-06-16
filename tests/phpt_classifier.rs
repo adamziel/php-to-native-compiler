@@ -1576,11 +1576,6 @@ fn phpt_classifier_keeps_variadic_parameter_rows_runnable() {
 fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
     let cases = [
         (
-            "array_splice destructor reentrancy",
-            "--TEST--\nsplice destructor\n--FILE--\n<?php\nclass C { function __destruct() { global $items; $items[] = 0; } }\n$items = [1, new C, 2];\narray_splice($items, 1, 1);\n--EXPECT--\n",
-            "requires array_splice() destructor reentrancy detection",
-        ),
-        (
             "destructor __call object resurrection",
             "--TEST--\ndestructor call resurrection\n--FILE--\n<?php\nclass Driver { public $obj; function close() { echo $this->obj->i; } }\nclass A { function __call($m, $a) { $d = new Driver; $d->obj = $this; } function __destruct() { $this->close(); } }\nnew A;\n--EXPECT--\n",
             "requires destructor-driven __call object resurrection/lifetime semantics",
@@ -1598,6 +1593,18 @@ fn phpt_classifier_excludes_unsupported_mutating_array_internals() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_array_splice_destructor_reentrancy_runnable() {
+    let classification = classify(
+        "--TEST--\nsplice destructor\n--FILE--\n<?php\nclass C { function __destruct() { global $items; $items[] = 0; } }\n$items = [1, new C, 2];\narray_splice($items, 1, 1);\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
 }
 
 #[test]

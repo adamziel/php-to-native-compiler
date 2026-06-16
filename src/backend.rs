@@ -7307,14 +7307,22 @@ fn emit_instruction(
             argument_unpacks,
             line,
         } => {
-            let result_temp = values.emit_internal_call(
-                out,
-                name,
-                arguments,
-                argument_names,
-                argument_unpacks,
-                *line,
-            );
+            let result_temp = if name.eq_ignore_ascii_case("array_splice")
+                && (2..=4).contains(&arguments.len())
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack)
+            {
+                values.emit_discarded_array_splice_call(out, arguments, *line)
+            } else {
+                values.emit_internal_call(
+                    out,
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    *line,
+                )
+            };
             let value = ValueExpr::InternalCall {
                 name: name.clone(),
                 arguments: arguments.clone(),
@@ -12240,6 +12248,22 @@ impl ValueEmitter {
     }
 
     fn emit_discarded_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        if let ValueExpr::InternalCall {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            line,
+        } = value
+        {
+            if name.eq_ignore_ascii_case("array_splice")
+                && (2..=4).contains(&arguments.len())
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack)
+            {
+                return self.emit_discarded_array_splice_call(out, arguments, *line);
+            }
+        }
         if let ValueExpr::DynamicCall {
             callee,
             arguments,
@@ -19326,6 +19350,70 @@ impl ValueEmitter {
             }
         }
         args_temp
+    }
+
+    fn emit_discarded_array_splice_call(
+        &mut self,
+        out: &mut String,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            if argument_index == 0 {
+                temps.push(self.emit_by_ref_call_argument(
+                    out,
+                    argument,
+                    "array_splice",
+                    argument_index,
+                    "array",
+                    line,
+                    true,
+                    true,
+                ));
+            } else {
+                temps.push(self.emit_call_argument(out, "array_splice", argument_index, argument));
+            }
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_function(&runtime, \"array_splice\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    ptn_runtime_array_splice_discard_result(&runtime, ");
+        out.push_str(&args_temp);
+        out.push_str("[0], &");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
     }
 
     fn emit_internal_call(

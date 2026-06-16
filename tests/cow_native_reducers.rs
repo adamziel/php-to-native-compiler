@@ -197,6 +197,20 @@ echo count($a), \":\", count($b), \":\", $b[\"w\"], \"\\n\";",
             expected_stdout: "3:4:4\n",
         },
         CowReducerCase {
+            name: "array_splice_discarded_result_destructor_mutation",
+            oracle: "ext/standard/tests/array/gh16649/array_splice_uaf_add_elements.phpt",
+            source: "<?php\n\
+class C { function __destruct() { global $arr; $arr[] = 0; } }\n\
+$arr = [\"1\", new C, \"2\"];\n\
+try {\n\
+    array_splice($arr, 1, 2);\n\
+    echo \"not thrown\\n\";\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}",
+            expected_stdout: "Array was modified during array_splice operation\n",
+        },
+        CowReducerCase {
             name: "array_walk_callback_global_swap",
             oracle: "ext/standard/tests/array/array_walk/bug69068_2.phpt",
             source: "<?php\n\
@@ -288,7 +302,7 @@ function make_array() { return [\"v\" => 1]; }\n\
 $value =& make_array();\n\
 $value[\"v\"] = 2;\n\
 echo $value[\"v\"], \"\\n\";",
-            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 3\n2\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 3\n2\n",
         },
         CowReducerCase {
             name: "by_ref_assignment_from_function_result_keeps_result_alive",
@@ -297,7 +311,7 @@ echo $value[\"v\"], \"\\n\";",
 function make_array() { return [0]; }\n\
 $x = $y =& make_array();\n\
 var_dump($x, $y);",
-            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 3\narray(1) {\n  [0]=>\n  int(0)\n}\narray(1) {\n  [0]=>\n  int(0)\n}\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 3\narray(1) {\n  [0]=>\n  int(0)\n}\narray(1) {\n  [0]=>\n  int(0)\n}\n",
         },
         CowReducerCase {
             name: "array_slot_by_ref_assignment_from_call_result_assigns_value",
@@ -308,7 +322,7 @@ $items = [[\"v\" => 0]];\n\
 $items[0] =& make_array();\n\
 $items[0][\"v\"] = 2;\n\
 echo $items[0][\"v\"], \"\\n\";",
-            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\n2\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 4\n2\n",
         },
         CowReducerCase {
             name: "array_slot_by_ref_assignment_from_null_call_result",
@@ -318,7 +332,7 @@ function returnsVal() {}\n\
 $items = [\"slot\" => \"before\"];\n\
 var_dump($items[\"slot\"] =& returnsVal());\n\
 var_dump($items[\"slot\"]);",
-            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 4\nNULL\nNULL\n",
         },
         CowReducerCase {
             name: "recursive_array_literal_slot_replaced_by_call_result",
@@ -328,7 +342,7 @@ function returnsVal() {}\n\
 $array = [&$array];\n\
 var_dump($array[0] =& returnsVal());\n\
 var_dump($array);",
-            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 4\nNULL\nNULL\n",
         },
         CowReducerCase {
             name: "keyed_recursive_array_literal_slot_replaced_by_call_result",
@@ -338,7 +352,7 @@ function returnsVal() {}\n\
 $array = [\"self\" => &$array];\n\
 var_dump($array[\"self\"] =& returnsVal());\n\
 var_dump($array);",
-            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 4\nNULL\nNULL\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 4\nNULL\nNULL\n",
         },
         CowReducerCase {
             name: "nested_recursive_array_literal_value_write_replaces_self",
@@ -359,7 +373,7 @@ $alias = $base;\n\
 $slot =& make_copy($base);\n\
 $slot[\"v\"] = 9;\n\
 echo $base[\"v\"], \":\", $alias[\"v\"], \":\", $slot[\"v\"], \"\\n\";",
-            expected_stdout: "\nNotice: Only variables should be assigned by reference in ptn on line 5\n1:1:9\n",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 5\n1:1:9\n",
         },
         CowReducerCase {
             name: "cursor_mutation_shared_alias",
@@ -449,6 +463,9 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         let input = root.join(format!("{}.php", case.name));
         let output = root.join(format!("{}-bin", case.name));
         fs::write(&input, case.source).unwrap();
+        let expected_stdout = case
+            .expected_stdout
+            .replace("{source_path}", &input.display().to_string());
 
         compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap_or_else(|error| {
             panic!("{} ({}) compile failed: {error}", case.name, case.oracle)
@@ -458,7 +475,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
             .unwrap_or_else(|error| panic!("{} ({}) run failed: {error}", case.name, case.oracle));
 
         if execution.status.success()
-            && execution.stdout == case.expected_stdout.as_bytes()
+            && execution.stdout == expected_stdout.as_bytes()
             && execution.stderr.is_empty()
         {
             passed += 1;
@@ -475,7 +492,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
         assert_eq!(
             String::from_utf8(execution.stdout).unwrap(),
-            case.expected_stdout,
+            expected_stdout,
             "{} ({}) stdout mismatch",
             case.name,
             case.oracle
@@ -489,7 +506,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 33, "COW reducer pass count changed");
+    assert_eq!(passed, 34, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

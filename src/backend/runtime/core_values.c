@@ -503,6 +503,7 @@ struct PtnArray {
     size_t iterator_current_index;
     size_t iterator_mutation_resume_index;
     uint64_t iterator_mutation_epoch;
+    uint64_t mutation_epoch;
 };
 
 struct PtnObject {
