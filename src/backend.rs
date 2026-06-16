@@ -1521,7 +1521,7 @@ fn internal_by_ref_temporary_argument_allowed(name: &str, argument_index: usize)
     argument_index == 0
         && matches!(
             name.to_ascii_lowercase().as_str(),
-            "array_pop" | "array_shift" | "end" | "next" | "prev" | "reset"
+            "array_pop" | "array_shift" | "array_splice" | "end" | "next" | "prev" | "reset"
         )
 }
 
@@ -18049,7 +18049,9 @@ impl ValueEmitter {
             }
 
             if by_ref_temporary_argument_allowed(first_argument) {
-                let temporary_helper = if name.eq_ignore_ascii_case("array_shift") {
+                let temporary_helper = if name.eq_ignore_ascii_case("array_pop") {
+                    Some("ptn_runtime_array_pop_temporary")
+                } else if name.eq_ignore_ascii_case("array_shift") {
                     Some("ptn_runtime_array_shift_temporary")
                 } else {
                     cursor_temporary_helper_name(name)

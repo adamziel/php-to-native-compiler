@@ -11458,9 +11458,10 @@ fn validate_mutating_array_internal_call(
     if is_array_path_mutation_name(name) && is_variable_array_access_argument(&arguments[0]) {
         return Ok(());
     }
-    if name.eq_ignore_ascii_case("array_shift")
-        && arguments.len() == 1
-        && is_by_ref_temporary_array_mutation_argument(&arguments[0])
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array_pop" | "array_shift" | "array_splice"
+    ) && is_by_ref_temporary_array_mutation_argument(&arguments[0])
     {
         return Ok(());
     }

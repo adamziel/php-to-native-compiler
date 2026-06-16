@@ -409,7 +409,7 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         size_t notice_line = runtime->by_ref_argument_notice_line == 0
             ? line
             : runtime->by_ref_argument_notice_line;
-        ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, notice_line);
+        ptn_emit_only_variables_passed_by_reference_notice_at(runtime, notice_line);
         runtime->by_ref_argument_notice_emitted = 1;
     }
     int needed = snprintf(
@@ -456,7 +456,7 @@ static PTN_UNUSED PtnValue ptn_by_ref_argument_source_or_temporary(PtnRuntime *r
     if (value.type == PTN_REFERENCE) {
         return ptn_value_clone(value);
     }
-    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
     return ptn_reference_value(ptn_reference_new_owned(ptn_value_clone(ptn_value_deref(value))));
 }
 

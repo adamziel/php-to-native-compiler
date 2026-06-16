@@ -3575,6 +3575,16 @@ static PTN_UNUSED PtnValue ptn_runtime_array_pop_path(
     return ptn_array_pop_value(array);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_array_pop_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
+    PtnValue temporary = ptn_value_clone_deref(value);
+    (void)ptn_internal_expect_array_arg(runtime, "array_pop", 1, "array", temporary);
+    PtnArray *array = ptn_array_detach_value(&temporary);
+    PtnValue result = ptn_array_pop_value(array);
+    ptn_value_destroy(&temporary);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_push_variable(
     PtnRuntime *runtime,
     const char *name,
@@ -3648,7 +3658,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_shift_path(
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_shift_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
-    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
     PtnValue temporary = ptn_value_clone_deref(value);
     (void)ptn_internal_expect_array_arg(runtime, "array_shift", 1, "array", temporary);
     PtnArray *array = ptn_array_detach_value(&temporary);
@@ -4418,7 +4428,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_next_path(
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_next_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
-    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
     PtnValue temporary = ptn_value_clone_deref(value);
     (void)ptn_internal_expect_array_arg(runtime, "next", 1, "array", temporary);
     PtnArray *array = ptn_array_detach_value(&temporary);
@@ -4460,7 +4470,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_end_path(
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_end_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
-    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
     PtnValue temporary = ptn_value_clone_deref(value);
     (void)ptn_internal_expect_array_arg(runtime, "end", 1, "array", temporary);
     PtnArray *array = ptn_array_detach_value(&temporary);
@@ -4502,7 +4512,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_prev_path(
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_prev_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
-    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
     PtnValue temporary = ptn_value_clone_deref(value);
     (void)ptn_internal_expect_array_arg(runtime, "prev", 1, "array", temporary);
     PtnArray *array = ptn_array_detach_value(&temporary);
@@ -4524,7 +4534,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime,
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_array_reset_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
-    ptn_emit_only_variables_passed_by_reference_notice(&runtime->diagnostics, line);
+    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
     PtnValue temporary = ptn_value_clone_deref(value);
     (void)ptn_internal_expect_array_arg(runtime, "reset", 1, "array", temporary);
     PtnArray *array = ptn_array_detach_value(&temporary);
