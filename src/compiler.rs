@@ -783,6 +783,7 @@ impl IncludeCollector {
             | Expr::PipeValue { expr: target, .. } => {
                 self.collect_expr(target, source_file, source_dir)
             }
+            Expr::YieldFrom { expr, .. } => self.collect_expr(expr, source_file, source_dir),
             Expr::Yield { key, value, .. } => {
                 if let Some(key) = key {
                     self.collect_expr(key, source_file, source_dir)?;

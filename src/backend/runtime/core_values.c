@@ -529,7 +529,10 @@ typedef struct {
 struct PtnGenerator {
     PtnArray *values;
     PtnArray *keys;
+    PtnValue return_value;
+    size_t position;
     int64_t next_auto_key;
+    int completed;
     int yields_by_ref;
 };
 
@@ -914,6 +917,12 @@ static void ptn_abort_out_of_memory(void);
 static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
 static PTN_UNUSED int ptn_object_is_generator(PtnObject *object);
 static PTN_UNUSED PtnValue ptn_generator_current(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED PtnValue ptn_generator_get_return(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED PtnValue ptn_generator_key(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED PtnValue ptn_generator_next(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue receiver, size_t line);
+static PTN_UNUSED void ptn_generator_set_return_value(PtnGenerator *generator, PtnValue value);
+static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);

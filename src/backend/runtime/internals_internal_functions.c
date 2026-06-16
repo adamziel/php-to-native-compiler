@@ -35027,7 +35027,12 @@ static int ptn_exception_method_exists(const char *method_name) {
 }
 
 static int ptn_generator_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "current");
+    return ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "getReturn")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "valid");
 }
 
 static int ptn_sensitive_parameter_value_method_exists(const char *method_name) {
@@ -35389,7 +35394,15 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_ascii_case_equal(class_name, "Generator")) {
-        ptn_append_method_name(result, &index, "current");
+        static const char *const names[] = {
+            "current",
+            "getReturn",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
     if (ptn_internal_class_name_is_datetime_immutable(class_name)) {

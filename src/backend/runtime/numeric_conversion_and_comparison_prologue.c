@@ -3303,6 +3303,61 @@ static PTN_UNUSED PtnValue ptn_call_method(
             }
             return ptn_generator_current(runtime, receiver, line);
         }
+        if (ptn_ascii_case_equal(name, "getReturn")) {
+            if (argc != 0) {
+                ptn_throw_exception(
+                    runtime,
+                    "ArgumentCountError",
+                    "Generator::getReturn() expects exactly 0 arguments"
+                );
+                return ptn_null();
+            }
+            return ptn_generator_get_return(runtime, receiver, line);
+        }
+        if (ptn_ascii_case_equal(name, "key")) {
+            if (argc != 0) {
+                ptn_throw_exception(
+                    runtime,
+                    "ArgumentCountError",
+                    "Generator::key() expects exactly 0 arguments"
+                );
+                return ptn_null();
+            }
+            return ptn_generator_key(runtime, receiver, line);
+        }
+        if (ptn_ascii_case_equal(name, "next")) {
+            if (argc != 0) {
+                ptn_throw_exception(
+                    runtime,
+                    "ArgumentCountError",
+                    "Generator::next() expects exactly 0 arguments"
+                );
+                return ptn_null();
+            }
+            return ptn_generator_next(runtime, receiver, line);
+        }
+        if (ptn_ascii_case_equal(name, "rewind")) {
+            if (argc != 0) {
+                ptn_throw_exception(
+                    runtime,
+                    "ArgumentCountError",
+                    "Generator::rewind() expects exactly 0 arguments"
+                );
+                return ptn_null();
+            }
+            return ptn_generator_rewind(runtime, receiver, line);
+        }
+        if (ptn_ascii_case_equal(name, "valid")) {
+            if (argc != 0) {
+                ptn_throw_exception(
+                    runtime,
+                    "ArgumentCountError",
+                    "Generator::valid() expects exactly 0 arguments"
+                );
+                return ptn_null();
+            }
+            return ptn_generator_valid(runtime, receiver, line);
+        }
     }
     int is_throwable_receiver = receiver.type == PTN_EXCEPTION ||
         (receiver.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, receiver.as.object));

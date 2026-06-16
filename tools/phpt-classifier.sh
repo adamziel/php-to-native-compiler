@@ -1458,9 +1458,13 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_generator_foreach_context = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])yield[[:space:]]+from([^[:alnum:]_]|$)/) {
-                print "unsupported-generator-runtime\trequires generator yield-from delegation diagnostics, return-value propagation, and by-reference rejection, outside PTN generator runtime"
-                found = 1
-                exit
+                if (ptn_by_ref_function_context) {
+                    ptn_defer_generator_reason("requires generator yield-from by-reference rejection, outside PTN collected generator runtime")
+                }
+                if (ptn_generator_foreach_context) {
+                    ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
+                }
+                next
             }
             if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
                 if (ptn_by_ref_function_context && line ~ /yield[^;]*[^=!<>]=([^=>]|$)/) {

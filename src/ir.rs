@@ -477,6 +477,10 @@ pub enum ValueExpr {
         value: Option<Box<ValueExpr>>,
         line: usize,
     },
+    YieldFrom {
+        expr: Box<ValueExpr>,
+        line: usize,
+    },
     InternalCall {
         name: String,
         arguments: Vec<ValueExpr>,
@@ -2107,7 +2111,7 @@ fn statement_contains_yield(statement: &Statement) -> bool {
 
 fn expr_contains_yield(expr: &Expr) -> bool {
     match expr {
-        Expr::Yield { .. } => true,
+        Expr::Yield { .. } | Expr::YieldFrom { .. } => true,
         Expr::AnonymousFunction(_) => false,
         Expr::DynamicVariable { name, .. }
         | Expr::Print {
@@ -2911,6 +2915,10 @@ impl<'a> LoweringContext<'a> {
                 value: value.as_ref().map(|value| Box::new(self.lower_expr(value))),
                 line: span.line,
             },
+            Expr::YieldFrom { expr, span } => ValueExpr::YieldFrom {
+                expr: Box::new(self.lower_expr(expr)),
+                line: span.line,
+            },
             Expr::Call {
                 name,
                 arguments,
@@ -3455,6 +3463,7 @@ fn assertion_expr_text(expr: &Expr) -> String {
             (None, None) => "yield".to_string(),
             (Some(key), None) => format!("yield {} => null", assertion_expr_text(key)),
         },
+        Expr::YieldFrom { expr, .. } => format!("yield from {}", assertion_expr_text(expr)),
         Expr::Unary { op, expr, .. } => {
             format!(
                 "{}{}",

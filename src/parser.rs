@@ -5164,6 +5164,11 @@ impl Parser<'_> {
                 precedence + 1
             };
             let right = self.parse_binary_expr(next_min_precedence)?;
+            let right = if self.peek_is_expression_assignment_op() {
+                self.parse_assignment_expr_from_left(right)?
+            } else {
+                right
+            };
             let span = combine_spans(left.span(), right.span());
             left = Expr::Binary {
                 op,
@@ -5920,10 +5925,13 @@ impl Parser<'_> {
             });
         }
         if self.peek_is_identifier("from") {
-            return Err(Diagnostic::new(
-                "yield from is unsupported",
-                Some(self.peek().span),
-            ));
+            self.advance();
+            let expr = self.parse_expr()?;
+            let span = combine_spans(start_span, expr.span());
+            return Ok(Expr::YieldFrom {
+                expr: Box::new(expr),
+                span,
+            });
         }
 
         let first = self.parse_expr()?;
@@ -8188,6 +8196,9 @@ fn collect_arrow_captures_from_expr(
         | Expr::Grouped { expr: target, .. }
         | Expr::PipeValue { expr: target, .. } => {
             collect_arrow_captures_from_expr(target, exclusions, seen, captures);
+        }
+        Expr::YieldFrom { expr, .. } => {
+            collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
         }
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
@@ -11715,6 +11726,7 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. }
         | Expr::PipeValue { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        Expr::YieldFrom { expr, .. } => validate_control_transfers_in_expr(expr)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 validate_control_transfers_in_expr(key)?;
@@ -12101,6 +12113,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::PipeValue { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
+        Expr::YieldFrom { expr, .. } => expr_array_literal_reference_to_variable(expr, variable),
         Expr::Yield { key, value, .. } => key
             .as_deref()
             .and_then(|key| expr_array_literal_reference_to_variable(key, variable))
@@ -12658,6 +12671,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. }
         | Expr::PipeValue { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
+        Expr::YieldFrom { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 validate_anonymous_functions_in_expr(key, functions)?;
@@ -14669,6 +14683,7 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. }
         | Expr::PipeValue { expr: target, .. } => reject_append_array_read(target)?,
+        Expr::YieldFrom { expr, .. } => reject_append_array_read(expr)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 reject_append_array_read(key)?;
@@ -15185,6 +15200,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::Include { .. }
         | Expr::Throw { .. }
         | Expr::Yield { .. }
+        | Expr::YieldFrom { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
@@ -15375,6 +15391,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::Include { .. }
         | Expr::Throw { .. }
         | Expr::Yield { .. }
+        | Expr::YieldFrom { .. }
         | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
@@ -15538,7 +15555,8 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::Print { .. }
         | Expr::Include { .. }
         | Expr::Throw { .. }
-        | Expr::Yield { .. } => Ok(()),
+        | Expr::Yield { .. }
+        | Expr::YieldFrom { .. } => Ok(()),
     }
 }
 

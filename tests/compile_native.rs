@@ -7940,6 +7940,77 @@ var_dump($g->current());
 }
 
 #[test]
+fn compile_generator_yield_from_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-yield-from");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-yield-from.php");
+    let output = root.join("generator-yield-from-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function leaf() {
+    yield "x" => 1;
+    yield 2;
+    return "leaf-return";
+}
+function root_gen() {
+    yield "start" => 0;
+    yield from ["a" => 10, 20];
+    $delegated = yield from leaf();
+    yield "delegated" => $delegated;
+    yield 99;
+    return "root-return";
+}
+function typed_return_gen(): Generator {
+    1 + $a = 1;
+    return true;
+    yield;
+}
+foreach (root_gen() as $key => $value) {
+    var_dump($key, $value);
+}
+var_dump(root_gen()->current());
+var_dump(root_gen()->getReturn());
+$typed = typed_return_gen();
+var_dump($typed->valid());
+var_dump($typed->getReturn());
+$gen = root_gen();
+while ($gen->valid()) {
+    var_dump($gen->key(), $gen->current());
+    $gen->next();
+}
+var_dump($gen->valid());
+$gen->rewind();
+var_dump($gen->key(), $gen->current());
+var_dump(method_exists($gen, "getReturn"));
+var_dump(method_exists($gen, "key"));
+var_dump(method_exists($gen, "next"));
+var_dump(method_exists($gen, "rewind"));
+var_dump(method_exists($gen, "valid"));
+	"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nint(0)\nstring(11) \"root-return\"\nbool(false)\nbool(true)\nstring(5) \"start\"\nint(0)\nstring(1) \"a\"\nint(10)\nint(0)\nint(20)\nstring(1) \"x\"\nint(1)\nint(0)\nint(2)\nstring(9) \"delegated\"\nstring(11) \"leaf-return\"\nint(0)\nint(99)\nbool(false)\nstring(5) \"start\"\nint(0)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_generator_yield_from"));
+    assert!(c_source.contains("ptn_generator_get_return"));
+    assert!(c_source.contains("ptn_generator_key"));
+    assert!(c_source.contains("ptn_generator_next"));
+    assert!(c_source.contains("ptn_generator_rewind"));
+    assert!(c_source.contains("ptn_generator_valid"));
+}
+
+#[test]
 fn compile_by_reference_generator_foreach_to_native_binary() {
     let root = temp_dir("ptn-native-generator-by-ref-foreach");
     fs::create_dir_all(&root).unwrap();

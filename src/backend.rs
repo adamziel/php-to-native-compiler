@@ -1425,6 +1425,7 @@ fn emit_user_functions(
         out.push_str(&return_label);
         out.push_str(":\n");
         if function.is_generator {
+            out.push_str("    ptn_generator_set_return_value(runtime.current_generator, ptn_return_value);\n");
             out.push_str("    runtime.current_generator = NULL;\n");
             out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
@@ -6701,6 +6702,46 @@ fn emit_method_dispatch(
     out.push_str("            (void)args;\n");
     out.push_str("            return ptn_generator_current(runtime, resolved, line);\n");
     out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getReturn\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::getReturn() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            (void)args;\n");
+    out.push_str("            return ptn_generator_get_return(runtime, resolved, line);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"key\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::key() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            (void)args;\n");
+    out.push_str("            return ptn_generator_key(runtime, resolved, line);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"next\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::next() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            (void)args;\n");
+    out.push_str("            return ptn_generator_next(runtime, resolved, line);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"rewind\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::rewind() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            (void)args;\n");
+    out.push_str("            return ptn_generator_rewind(runtime, resolved, line);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"valid\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Generator::valid() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            (void)args;\n");
+    out.push_str("            return ptn_generator_valid(runtime, resolved, line);\n");
+    out.push_str("        }\n");
     out.push_str("        fputs(\"Fatal error: Call to undefined method Generator::\", stderr);\n");
     out.push_str("        fputs(method_name, stderr);\n");
     out.push_str("        fputc('\\n', stderr);\n");
@@ -7961,9 +8002,10 @@ fn emit_instruction(
                 if values.current_function_is_generator {
                     if let Some(value) = value {
                         let return_temp = values.emit_materialized_value(out, value);
-                        out.push_str("    (void)");
+                        out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
+                        out.push_str("    ptn_return_value = ptn_value_clone(ptn_value_deref(");
                         out.push_str(&return_temp);
-                        out.push_str(";\n");
+                        out.push_str("));\n");
                         emit_value_cleanup(out, "    ", &return_temp);
                     }
                     let context_indices = return_cleanup_context_indices(finally_stack);
@@ -9695,6 +9737,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::Include { .. }
         | ValueExpr::Throw { .. }
         | ValueExpr::Yield { .. }
+        | ValueExpr::YieldFrom { .. }
         | ValueExpr::InternalCall { .. }
         | ValueExpr::FirstClassCallable { .. }
         | ValueExpr::DynamicCall { .. }
@@ -10400,6 +10443,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
                 collect_value_legacy_dollar_brace_deprecations(value, deprecations);
             }
         }
+        ValueExpr::YieldFrom { expr, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
+        }
     }
 }
 
@@ -10846,6 +10892,9 @@ fn collect_value_runtime_requirements(
             if let Some(value) = value {
                 collect_value_runtime_requirements(value, functions, requirements);
             }
+        }
+        ValueExpr::YieldFrom { expr, .. } => {
+            collect_value_runtime_requirements(expr, functions, requirements);
         }
         ValueExpr::IncDec { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
@@ -12504,6 +12553,7 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .as_ref()
                     .is_some_and(|value| value_mentions_variable(value, name))
         }
+        ValueExpr::YieldFrom { expr, .. } => value_mentions_variable(expr, name),
     }
 }
 
@@ -12610,6 +12660,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::Include { line, .. }
         | ValueExpr::Throw { line, .. }
         | ValueExpr::Yield { line, .. }
+        | ValueExpr::YieldFrom { line, .. }
         | ValueExpr::InternalCall { line, .. }
         | ValueExpr::FirstClassCallable { line, .. }
         | ValueExpr::DynamicCall { line, .. }
@@ -13114,6 +13165,7 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
                     .as_ref()
                     .is_some_and(|value| value_expr_uses_this(value))
         }
+        ValueExpr::YieldFrom { expr, .. } => value_expr_uses_this(expr),
         ValueExpr::InternalCall { arguments, .. }
         | ValueExpr::DynamicCall { arguments, .. }
         | ValueExpr::MethodCall { arguments, .. }
@@ -17022,6 +17074,7 @@ impl ValueEmitter {
             ValueExpr::Yield { key, value, line } => {
                 self.emit_yield(out, key.as_deref(), value.as_deref(), *line)
             }
+            ValueExpr::YieldFrom { expr, line } => self.emit_yield_from(out, expr, *line),
             ValueExpr::PipeValue { expr, .. } => self.emit_materialized_value(out, expr),
         }
     }
@@ -20773,6 +20826,7 @@ impl ValueEmitter {
                 | ValueExpr::Include { .. }
                 | ValueExpr::Throw { .. }
                 | ValueExpr::Yield { .. }
+                | ValueExpr::YieldFrom { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -21060,6 +21114,20 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &key_temp);
         }
         emit_value_cleanup(out, "    ", &value_temp);
+        result_temp
+    }
+
+    fn emit_yield_from(&mut self, out: &mut String, expr: &ValueExpr, line: usize) -> String {
+        let source_temp = self.emit_materialized_value(out, expr);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_generator_yield_from(&runtime, ");
+        out.push_str(&source_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &source_temp);
         result_temp
     }
 

@@ -871,6 +871,10 @@ pub enum Expr {
         value: Option<Box<Expr>>,
         span: SourceSpan,
     },
+    YieldFrom {
+        expr: Box<Expr>,
+        span: SourceSpan,
+    },
     Unary {
         op: UnaryOp,
         expr: Box<Expr>,
@@ -1070,7 +1074,7 @@ impl Expr {
             Expr::Print { span, .. } => *span,
             Expr::Include { span, .. } => *span,
             Expr::Throw { span, .. } => *span,
-            Expr::Yield { span, .. } => *span,
+            Expr::Yield { span, .. } | Expr::YieldFrom { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,
             Expr::Binary { span, .. }
             | Expr::Ternary { span, .. }

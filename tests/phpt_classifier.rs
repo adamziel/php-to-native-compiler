@@ -557,12 +557,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires PHP hidden-suffix anonymous class generated names",
         ),
         (
-            "generator yield from",
-            "--TEST--\nyield from\n--FILE--\n<?php\nfunction gen() { yield from []; }\n--EXPECT--\n",
-            "unsupported-generator-runtime\t",
-            "requires generator yield-from delegation diagnostics",
-        ),
-        (
             "top-level static binding",
             "--TEST--\nstatic binding\n--FILE--\n<?php\ntry { static $value; } catch (Throwable $e) {}\n--EXPECT--\n",
             "unsupported-function-state\t",
@@ -898,7 +892,7 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
         (
             "by-ref generator yield from",
             "--TEST--\nyield from by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield from [];\n}\n--EXPECTF--\n",
-            "requires generator yield-from delegation diagnostics",
+            "requires generator yield-from by-reference rejection",
         ),
         (
             "generator foreach cleanup",
@@ -931,6 +925,10 @@ fn phpt_classifier_allows_collected_generator_runtime_subset() {
         (
             "simple generator yield",
             "--TEST--\nyield\n--FILE--\n<?php\nfunction gen() { yield 123; }\nforeach (gen() as $value) { var_dump($value); }\n--EXPECT--\n",
+        ),
+        (
+            "simple generator yield from",
+            "--TEST--\nyield from\n--FILE--\n<?php\nfunction gen() { yield from [123]; }\nforeach (gen() as $value) { var_dump($value); }\n--EXPECT--\n",
         ),
         (
             "non-ref generator iterated by-ref",
