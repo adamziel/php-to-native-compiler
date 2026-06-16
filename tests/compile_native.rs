@@ -11432,6 +11432,108 @@ var_dump(htmlspecialchars('A &#043; &copy; &bogus;', ENT_QUOTES, 'UTF-8', false)
 }
 
 #[test]
+fn compile_html5_entity_aliases_use_php_canonical_names_to_native_binary() {
+    let root = temp_dir("ptn-native-html5-entity-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("html5-entity-aliases.php");
+    let output = root.join("html5-entity-aliases-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$samples = [\"*\", \"[\", \"{\", hex2bin(\"c2a9\"), hex2bin(\"e28585\"), hex2bin(\"e280a1\"), hex2bin(\"c2b7\"), hex2bin(\"c385\"), hex2bin(\"c2b1\"), hex2bin(\"c2a8\"), hex2bin(\"e28098\"), hex2bin(\"e28099\")];\n\
+$table = get_html_translation_table(HTML_ENTITIES, ENT_QUOTES | ENT_HTML5, \"UTF-8\");\n\
+foreach ($samples as $sample) { echo $table[$sample], \"\\n\"; }\n\
+echo htmlentities(implode(\"\", $samples), ENT_QUOTES | ENT_HTML5, \"UTF-8\"), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "&ast;\n",
+            "&lbrack;\n",
+            "&lbrace;\n",
+            "&copy;\n",
+            "&CapitalDifferentialD;\n",
+            "&Dagger;\n",
+            "&CenterDot;\n",
+            "&Aring;\n",
+            "&plusmn;\n",
+            "&DoubleDot;\n",
+            "&OpenCurlyQuote;\n",
+            "&rsquo;\n",
+            "&ast;&lbrack;&lbrace;&copy;&CapitalDifferentialD;&Dagger;&CenterDot;&Aring;&plusmn;&DoubleDot;&OpenCurlyQuote;&rsquo;\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_htmlentities_charset_entity_rows_to_native_binary() {
+    let root = temp_dir("ptn-native-htmlentities-charset-entities");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("htmlentities-charset-entities.php");
+    let output = root.join("htmlentities-charset-entities-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(0);\n\
+foreach ([0x09, 0x0A, 0x80, 0x9F, 0xA0] as $byte) {\n\
+    $encoded = htmlentities(chr($byte), ENT_HTML5 | ENT_DISALLOWED, \"Windows-1251\");\n\
+    echo sprintf(\"%02X:%s\\n\", $byte, bin2hex($encoded));\n\
+}\n\
+foreach ([\"8fa1ff\", \"8fa1\", \"8f\", \"8fa0\", \"8fa121\", \"8f21\", \"8eae\", \"8e\", \"8e21\", \"b2ff\", \"b2\", \"b221\", \"a0\"] as $hex) {\n\
+    $encoded = htmlentities(hex2bin($hex), ENT_QUOTES | ENT_SUBSTITUTE, \"EUC-JP\");\n\
+    echo $hex, \":\", bin2hex($encoded), \"\\n\";\n\
+}\n\
+foreach ([\"815bff\", \"80\", \"9f\", \"a0\"] as $hex) {\n\
+    $encoded = htmlentities(hex2bin($hex), ENT_QUOTES | ENT_SUBSTITUTE, \"SJIS\");\n\
+    echo $hex, \":\", bin2hex($encoded), \"\\n\";\n\
+}\n\
+var_dump(htmlentities(hex2bin(\"80\"), ENT_HTML5 | ENT_DISALLOWED, \"SJIS\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "09:265461623b\n",
+            "0A:264e65774c696e653b\n",
+            "80:26444a63793b\n",
+            "9F:26647a63793b\n",
+            "A0:266e6273703b\n",
+            "8fa1ff:262378464646443b262378464646443b\n",
+            "8fa1:262378464646443b262378464646443b\n",
+            "8f:262378464646443b\n",
+            "8fa0:262378464646443b\n",
+            "8fa121:262378464646443b262378464646443b21\n",
+            "8f21:262378464646443b21\n",
+            "8eae:8eae\n",
+            "8e:262378464646443b\n",
+            "8e21:262378464646443b21\n",
+            "b2ff:262378464646443b\n",
+            "b2:262378464646443b\n",
+            "b221:262378464646443b21\n",
+            "a0:262378464646443b\n",
+            "815bff:815b262378464646443b\n",
+            "80:262378464646443b\n",
+            "9f:262378464646443b\n",
+            "a0:262378464646443b\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_quoted_printable_encode_php_folding_to_native_binary() {
     let root = temp_dir("ptn-native-quoted-printable-encode-folding");
     fs::create_dir_all(&root).unwrap();

@@ -14588,6 +14588,8 @@ typedef enum {
     PTN_HTML_ENCODING_KOI8_R,
     PTN_HTML_ENCODING_MACROMAN,
     PTN_HTML_ENCODING_WINDOWS_1251,
+    PTN_HTML_ENCODING_SJIS,
+    PTN_HTML_ENCODING_EUC_JP,
     PTN_HTML_ENCODING_LEGACY_BYTE,
     PTN_HTML_ENCODING_LEGACY_MULTIBYTE,
 } PtnHtmlEncoding;
@@ -16751,6 +16753,10 @@ static int ptn_html_named_entity_allowed_for_doc(const PtnHtmlNamedEntity *entit
     return (entity->docs & ptn_html_entity_doc_mask_for_flags(flags)) != 0;
 }
 
+static int ptn_html_named_entity_decodes_to_char(const PtnHtmlNamedEntity *entity, char expected) {
+    return entity->decoded[0] == expected && entity->decoded[1] == '\0';
+}
+
 static int ptn_html_decode_named_entity(
     const char *data,
     size_t len,
@@ -16766,7 +16772,7 @@ static int ptn_html_decode_named_entity(
         if (!ptn_html_named_entity_allowed_for_doc(&entities[i], flags)) {
             continue;
         }
-        if ((flags & PTN_ENT_COMPAT) == 0 && strcmp(entities[i].entity, "&quot;") == 0) {
+        if ((flags & PTN_ENT_COMPAT) == 0 && ptn_html_named_entity_decodes_to_char(&entities[i], '"')) {
             continue;
         }
         if ((flags & PTN_ENT_SINGLE_QUOTE) == 0 && strcmp(entities[i].decoded, "'") == 0) {
@@ -16845,13 +16851,45 @@ static int ptn_html_encoding_from_operand(PtnStringOperand encoding, PtnHtmlEnco
     }
     if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SJIS") ||
         ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SHIFT_JIS") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SHIFT-JIS") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "EUC-JP") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "BIG5")) {
+        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SHIFT-JIS")) {
+        *out = PTN_HTML_ENCODING_SJIS;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "EUC-JP")) {
+        *out = PTN_HTML_ENCODING_EUC_JP;
+        return 1;
+    }
+    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "BIG5")) {
         *out = PTN_HTML_ENCODING_LEGACY_MULTIBYTE;
         return 1;
     }
     return 0;
+}
+
+static int ptn_html_encoding_is_legacy_multibyte(PtnHtmlEncoding encoding) {
+    return encoding == PTN_HTML_ENCODING_SJIS ||
+        encoding == PTN_HTML_ENCODING_EUC_JP ||
+        encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE;
+}
+
+static int ptn_html_should_replace_disallowed(
+    PtnHtmlEscapeMode mode,
+    unsigned int codepoint,
+    int64_t flags,
+    PtnHtmlEncoding encoding
+) {
+    if ((flags & PTN_ENT_DISALLOWED) == 0 || ptn_html_codepoint_allowed(codepoint, flags)) {
+        return 0;
+    }
+    int64_t doc_type = flags & PTN_ENT_DOC_TYPE_MASK;
+    if (mode == PTN_HTML_ESCAPE_SPECIALCHARS &&
+        encoding != PTN_HTML_ENCODING_UTF8 &&
+        doc_type != PTN_ENT_XML1 &&
+        doc_type != PTN_ENT_XHTML &&
+        codepoint >= 0x7f && codepoint <= 0x9f) {
+        return 0;
+    }
+    return 1;
 }
 
 static void ptn_html_emit_unsupported_encoding_warning(
@@ -17226,7 +17264,7 @@ static int ptn_html_encoding_append_codepoint(
 ) {
     if (encoding == PTN_HTML_ENCODING_UTF8 ||
         encoding == PTN_HTML_ENCODING_LEGACY_BYTE ||
-        encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
+        ptn_html_encoding_is_legacy_multibyte(encoding)) {
         ptn_html_append_utf8_codepoint(output, codepoint);
         return 1;
     }
@@ -17256,31 +17294,44 @@ static int ptn_html_encoding_append_codepoint(
     return 0;
 }
 
-static int ptn_html_codepoint_representable(unsigned int codepoint, PtnHtmlEncoding encoding) {
-    PtnStringBuffer scratch;
-    ptn_string_buffer_init(&scratch);
-    int represented = ptn_html_encoding_append_codepoint(&scratch, codepoint, encoding);
-    free(scratch.data);
-    return represented;
-}
-
 static int ptn_html_decoded_entity_codepoint(const char *decoded, size_t decoded_len, unsigned int *codepoint) {
     size_t sequence_len = 0;
     return ptn_html_read_utf8(decoded, decoded_len, 0, codepoint, &sequence_len) &&
            sequence_len == decoded_len;
 }
 
-static int ptn_html_decoded_entity_representable(const char *decoded, size_t decoded_len, PtnHtmlEncoding encoding) {
+static int ptn_html_append_decoded_entity_encoded(
+    PtnStringBuffer *output,
+    const char *decoded,
+    size_t decoded_len,
+    PtnHtmlEncoding encoding
+) {
     if (encoding == PTN_HTML_ENCODING_UTF8 ||
         encoding == PTN_HTML_ENCODING_LEGACY_BYTE ||
-        encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
+        ptn_html_encoding_is_legacy_multibyte(encoding)) {
+        ptn_string_buffer_append_len(output, decoded, decoded_len);
         return 1;
     }
-    unsigned int codepoint = 0;
-    if (!ptn_html_decoded_entity_codepoint(decoded, decoded_len, &codepoint)) {
-        return 0;
+    for (size_t offset = 0; offset < decoded_len;) {
+        unsigned int codepoint = 0;
+        size_t sequence_len = 0;
+        if (!ptn_html_read_utf8(decoded, decoded_len, offset, &codepoint, &sequence_len)) {
+            return 0;
+        }
+        if (!ptn_html_encoding_append_codepoint(output, codepoint, encoding)) {
+            return 0;
+        }
+        offset += sequence_len;
     }
-    return ptn_html_codepoint_representable(codepoint, encoding);
+    return 1;
+}
+
+static int ptn_html_decoded_entity_representable(const char *decoded, size_t decoded_len, PtnHtmlEncoding encoding) {
+    PtnStringBuffer scratch;
+    ptn_string_buffer_init(&scratch);
+    int represented = ptn_html_append_decoded_entity_encoded(&scratch, decoded, decoded_len, encoding);
+    free(scratch.data);
+    return represented;
 }
 
 static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -17320,16 +17371,7 @@ static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc
                     &entity_len
                 ) &&
                 ptn_html_decoded_entity_representable(decoded, decoded_len, encoding)) {
-                if (encoding == PTN_HTML_ENCODING_UTF8 ||
-                    encoding == PTN_HTML_ENCODING_LEGACY_BYTE ||
-                    encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
-                    ptn_string_buffer_append_len(&output, decoded, decoded_len);
-                    i += entity_len - 1;
-                    continue;
-                }
-                unsigned int codepoint = 0;
-                if (ptn_html_decoded_entity_codepoint(decoded, decoded_len, &codepoint) &&
-                    ptn_html_encoding_append_codepoint(&output, codepoint, encoding)) {
+                if (ptn_html_append_decoded_entity_encoded(&output, decoded, decoded_len, encoding)) {
                     i += entity_len - 1;
                     continue;
                 }
@@ -17344,21 +17386,392 @@ static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc
 
 static int ptn_html_entity_allowed_for_doc(const PtnHtmlNamedEntity *entity, int64_t flags);
 
+static int ptn_html_entity_uppercase_alias(const char *entity) {
+    int has_alpha = 0;
+    for (const unsigned char *cursor = (const unsigned char *)entity; *cursor != '\0'; cursor++) {
+        if (*cursor == '&' || *cursor == ';') {
+            continue;
+        }
+        if (isalpha(*cursor)) {
+            has_alpha = 1;
+            if (islower(*cursor)) {
+                return 0;
+            }
+        }
+    }
+    return has_alpha;
+}
+
+static int ptn_html_entity_is_html5_canonical_alias(const char *entity);
+
+static int ptn_html_entity_should_replace_alias(const char *current, const char *candidate) {
+    int current_canonical = ptn_html_entity_is_html5_canonical_alias(current);
+    int candidate_canonical = ptn_html_entity_is_html5_canonical_alias(candidate);
+    if (current_canonical != candidate_canonical) {
+        return candidate_canonical;
+    }
+    return ptn_html_entity_uppercase_alias(current) && !ptn_html_entity_uppercase_alias(candidate);
+}
+
+typedef struct {
+    const char *decoded;
+    size_t decoded_len;
+    const char *entity;
+} PtnHtmlCanonicalEntity;
+
+static const PtnHtmlCanonicalEntity *ptn_html_html5_canonical_entities(size_t *count) {
+    static const PtnHtmlCanonicalEntity entities[] = {
+        { "\342\201\237\342\200\212", 6, "&ThickSpace;" },
+        { "\342\211\241\342\203\245", 6, "&bnequiv;" },
+        { "\342\210\251\357\270\200", 6, "&caps;" },
+        { "\342\210\252\357\270\200", 6, "&cups;" },
+        { "\342\213\233\357\270\200", 6, "&gesl;" },
+        { "\342\211\251\357\270\200", 6, "&gvertneqq;" },
+        { "\342\252\255\357\270\200", 6, "&lates;" },
+        { "\342\213\232\357\270\200", 6, "&lesg;" },
+        { "\342\211\250\357\270\200", 6, "&lvertneqq;" },
+        { "\342\211\253\342\203\222", 6, "&nGt;" },
+        { "\342\211\252\342\203\222", 6, "&nLt;" },
+        { "\342\210\240\342\203\222", 6, "&nang;" },
+        { "\342\253\275\342\203\245", 6, "&nparsl;" },
+        { "\342\212\203\342\203\222", 6, "&nsupset;" },
+        { "\342\211\215\342\203\222", 6, "&nvap;" },
+        { "\342\211\245\342\203\222", 6, "&nvge;" },
+        { "\342\211\244\342\203\222", 6, "&nvle;" },
+        { "\342\212\264\342\203\222", 6, "&nvltrie;" },
+        { "\342\212\265\342\203\222", 6, "&nvrtrie;" },
+        { "\342\210\274\342\203\222", 6, "&nvsim;" },
+        { "\342\252\254\357\270\200", 6, "&smtes;" },
+        { "\342\212\223\357\270\200", 6, "&sqcaps;" },
+        { "\342\212\224\357\270\200", 6, "&sqcups;" },
+        { "\342\253\214\357\270\200", 6, "&varsupsetneqq;" },
+        { "\342\212\202\342\203\222", 6, "&vnsub;" },
+        { "\342\253\213\357\270\200", 6, "&vsubnE;" },
+        { "\342\212\212\357\270\200", 6, "&vsubne;" },
+        { "\342\212\213\357\270\200", 6, "&vsupne;" },
+        { "\342\211\247\314\270", 5, "&NotGreaterFullEqual;" },
+        { "\342\211\253\314\270", 5, "&NotGreaterGreater;" },
+        { "\342\247\217\314\270", 5, "&NotLeftTriangleBar;" },
+        { "\342\252\242\314\270", 5, "&NotNestedGreaterGreater;" },
+        { "\342\252\241\314\270", 5, "&NotNestedLessLess;" },
+        { "\342\252\257\314\270", 5, "&NotPrecedesEqual;" },
+        { "\342\247\220\314\270", 5, "&NotRightTriangleBar;" },
+        { "\342\212\217\314\270", 5, "&NotSquareSubset;" },
+        { "\342\212\220\314\270", 5, "&NotSquareSuperset;" },
+        { "\342\252\260\314\270", 5, "&NotSucceedsEqual;" },
+        { "\342\211\277\314\270", 5, "&NotSucceedsTilde;" },
+        { "\342\210\276\314\263", 5, "&acE;" },
+        { "\342\213\231\314\270", 5, "&nGg;" },
+        { "\342\213\230\314\270", 5, "&nLl;" },
+        { "\342\211\252\314\270", 5, "&nLtv;" },
+        { "\342\251\260\314\270", 5, "&napE;" },
+        { "\342\211\213\314\270", 5, "&napid;" },
+        { "\342\211\216\314\270", 5, "&nbump;" },
+        { "\342\211\217\314\270", 5, "&nbumpe;" },
+        { "\342\251\255\314\270", 5, "&ncongdot;" },
+        { "\342\211\220\314\270", 5, "&nedot;" },
+        { "\342\211\202\314\270", 5, "&nesim;" },
+        { "\342\251\276\314\270", 5, "&nges;" },
+        { "\342\211\246\314\270", 5, "&nlE;" },
+        { "\342\251\275\314\270", 5, "&nles;" },
+        { "\342\213\271\314\270", 5, "&notinE;" },
+        { "\342\213\265\314\270", 5, "&notindot;" },
+        { "\342\210\202\314\270", 5, "&npart;" },
+        { "\342\244\263\314\270", 5, "&nrarrc;" },
+        { "\342\206\235\314\270", 5, "&nrarrw;" },
+        { "\342\253\205\314\270", 5, "&nsubE;" },
+        { "\342\253\206\314\270", 5, "&nsupseteqq;" },
+        { "\342\210\275\314\261", 5, "&race;" },
+        { "\075\342\203\245", 4, "&bne;" },
+        { "\076\342\203\222", 4, "&nvgt;" },
+        { "\074\342\203\222", 4, "&nvlt;" },
+        { "\342\204\254", 3, "&Bscr;" },
+        { "\342\204\255", 3, "&Cfr;" },
+        { "\342\210\257", 3, "&DoubleContourIntegral;" },
+        { "\342\207\223", 3, "&Downarrow;" },
+        { "\342\207\222", 3, "&Implies;" },
+        { "\342\204\234", 3, "&Rfr;" },
+        { "\342\213\221", 3, "&Supset;" },
+        { "\342\207\225", 3, "&Updownarrow;" },
+        { "\342\200\213", 3, "&ZeroWidthSpace;" },
+        { "\342\201\241", 3, "&af;" },
+        { "\342\204\265", 3, "&aleph;" },
+        { "\342\210\240", 3, "&angle;" },
+        { "\342\211\210", 3, "&approx;" },
+        { "\342\210\263", 3, "&awconint;" },
+        { "\342\216\265", 3, "&bbrk;" },
+        { "\342\211\214", 3, "&bcong;" },
+        { "\342\213\202", 3, "&bigcap;" },
+        { "\342\213\203", 3, "&bigcup;" },
+        { "\342\210\275", 3, "&bsim;" },
+        { "\342\211\216", 3, "&bump;" },
+        { "\342\211\224", 3, "&coloneq;" },
+        { "\342\210\230", 3, "&compfn;" },
+        { "\342\204\202", 3, "&complexes;" },
+        { "\342\213\236", 3, "&curlyeqprec;" },
+        { "\342\206\266", 3, "&curvearrowleft;" },
+        { "\342\210\262", 3, "&cwconint;" },
+        { "\342\206\223", 3, "&darr;" },
+        { "\342\212\243", 3, "&dashv;" },
+        { "\342\207\203", 3, "&dharl;" },
+        { "\342\213\204", 3, "&diamond;" },
+        { "\342\213\207", 3, "&divonx;" },
+        { "\342\214\206", 3, "&doublebarwedge;" },
+        { "\342\207\212", 3, "&downdownarrows;" },
+        { "\342\244\220", 3, "&drbkarow;" },
+        { "\342\211\225", 3, "&eqcolon;" },
+        { "\342\211\220", 3, "&esdot;" },
+        { "\342\211\202", 3, "&esim;" },
+        { "\342\204\260", 3, "&expectation;" },
+        { "\342\205\207", 3, "&exponentiale;" },
+        { "\342\211\222", 3, "&fallingdotseq;" },
+        { "\342\210\200", 3, "&forall;" },
+        { "\342\211\245", 3, "&ge;" },
+        { "\342\211\247", 3, "&geqq;" },
+        { "\342\251\276", 3, "&ges;" },
+        { "\342\211\253", 3, "&gg;" },
+        { "\342\211\267", 3, "&gl;" },
+        { "\342\211\251", 3, "&gneqq;" },
+        { "\342\213\227", 3, "&gtrdot;" },
+        { "\342\213\233", 3, "&gtreqless;" },
+        { "\342\207\224", 3, "&hArr;" },
+        { "\342\200\212", 3, "&hairsp;" },
+        { "\342\206\224", 3, "&harr;" },
+        { "\342\200\220", 3, "&hyphen;" },
+        { "\342\201\243", 3, "&ic;" },
+        { "\342\204\220", 3, "&imagline;" },
+        { "\342\250\274", 3, "&iprod;" },
+        { "\342\210\210", 3, "&isinv;" },
+        { "\342\207\232", 3, "&lAarr;" },
+        { "\342\211\246", 3, "&lE;" },
+        { "\342\204\222", 3, "&lagran;" },
+        { "\342\237\250", 3, "&langle;" },
+        { "\342\206\220", 3, "&larr;" },
+        { "\342\206\251", 3, "&larrhk;" },
+        { "\342\214\210", 3, "&lceil;" },
+        { "\342\206\275", 3, "&leftharpoondown;" },
+        { "\342\206\274", 3, "&leftharpoonup;" },
+        { "\342\207\213", 3, "&leftrightharpoons;" },
+        { "\342\211\244", 3, "&leq;" },
+        { "\342\251\275", 3, "&les;" },
+        { "\342\213\232", 3, "&lesseqgtr;" },
+        { "\342\252\213", 3, "&lesseqqgtr;" },
+        { "\342\211\266", 3, "&lessgtr;" },
+        { "\342\211\252", 3, "&ll;" },
+        { "\342\207\207", 3, "&llarr;" },
+        { "\342\214\236", 3, "&llcorner;" },
+        { "\342\211\250", 3, "&lneqq;" },
+        { "\342\237\265", 3, "&longleftarrow;" },
+        { "\342\227\212", 3, "&lozenge;" },
+        { "\342\247\253", 3, "&lozf;" },
+        { "\342\207\206", 3, "&lrarr;" },
+        { "\342\213\213", 3, "&lthree;" },
+        { "\342\234\240", 3, "&maltese;" },
+        { "\342\206\246", 3, "&map;" },
+        { "\342\210\243", 3, "&mid;" },
+        { "\342\210\270", 3, "&minusd;" },
+        { "\342\212\270", 3, "&mumap;" },
+        { "\342\210\207", 3, "&nabla;" },
+        { "\342\211\211", 3, "&napprox;" },
+        { "\342\204\225", 3, "&naturals;" },
+        { "\342\211\207", 3, "&ncong;" },
+        { "\342\210\204", 3, "&nexist;" },
+        { "\342\211\261", 3, "&ngeq;" },
+        { "\342\211\265", 3, "&ngsim;" },
+        { "\342\211\257", 3, "&ngtr;" },
+        { "\342\207\216", 3, "&nhArr;" },
+        { "\342\206\232", 3, "&nleftarrow;" },
+        { "\342\206\256", 3, "&nleftrightarrow;" },
+        { "\342\211\264", 3, "&nlsim;" },
+        { "\342\213\252", 3, "&nltri;" },
+        { "\342\213\254", 3, "&nltrie;" },
+        { "\342\210\211", 3, "&notin;" },
+        { "\342\210\214", 3, "&notniva;" },
+        { "\342\210\246", 3, "&nparallel;" },
+        { "\342\212\200", 3, "&npr;" },
+        { "\342\207\217", 3, "&nrArr;" },
+        { "\342\210\244", 3, "&nshortmid;" },
+        { "\342\211\204", 3, "&nsime;" },
+        { "\342\211\270", 3, "&ntlg;" },
+        { "\342\213\253", 3, "&ntriangleright;" },
+        { "\342\206\226", 3, "&nwarrow;" },
+        { "\342\223\210", 3, "&oS;" },
+        { "\342\212\233", 3, "&oast;" },
+        { "\342\212\232", 3, "&ocir;" },
+        { "\342\212\235", 3, "&odash;" },
+        { "\342\206\272", 3, "&olarr;" },
+        { "\342\200\276", 3, "&oline;" },
+        { "\342\212\226", 3, "&ominus;" },
+        { "\342\206\273", 3, "&orarr;" },
+        { "\342\204\264", 3, "&orderof;" },
+        { "\342\210\202", 3, "&part;" },
+        { "\342\212\245", 3, "&perp;" },
+        { "\342\213\224", 3, "&pitchfork;" },
+        { "\342\204\217", 3, "&planck;" },
+        { "\342\210\224", 3, "&plusdo;" },
+        { "\342\211\272", 3, "&prec;" },
+        { "\342\252\267", 3, "&precapprox;" },
+        { "\342\252\257", 3, "&preceq;" },
+        { "\342\211\276", 3, "&precsim;" },
+        { "\342\204\231", 3, "&primes;" },
+        { "\342\210\217", 3, "&prod;" },
+        { "\342\210\235", 3, "&prop;" },
+        { "\342\207\233", 3, "&rAarr;" },
+        { "\342\206\252", 3, "&rarrhk;" },
+        { "\342\204\232", 3, "&rationals;" },
+        { "\342\200\235", 3, "&rdquo;" },
+        { "\342\204\233", 3, "&realine;" },
+        { "\342\207\201", 3, "&rhard;" },
+        { "\342\207\200", 3, "&rharu;" },
+        { "\342\207\204", 3, "&rightleftarrows;" },
+        { "\342\207\214", 3, "&rightleftharpoons;" },
+        { "\342\211\223", 3, "&risingdotseq;" },
+        { "\342\207\211", 3, "&rrarr;" },
+        { "\342\206\261", 3, "&rsh;" },
+        { "\342\200\231", 3, "&rsquo;" },
+        { "\342\213\214", 3, "&rthree;" },
+        { "\342\200\232", 3, "&sbquo;" },
+        { "\342\212\241", 3, "&sdotb;" },
+        { "\342\244\245", 3, "&searhk;" },
+        { "\342\210\245", 3, "&shortparallel;" },
+        { "\342\210\274", 3, "&sim;" },
+        { "\342\211\203", 3, "&simeq;" },
+        { "\342\231\240", 3, "&spadesuit;" },
+        { "\342\212\223", 3, "&sqcap;" },
+        { "\342\212\224", 3, "&sqcup;" },
+        { "\342\212\217", 3, "&sqsub;" },
+        { "\342\212\220", 3, "&sqsupset;" },
+        { "\342\226\252", 3, "&squarf;" },
+        { "\342\206\222", 3, "&srarr;" },
+        { "\342\210\226", 3, "&ssetmn;" },
+        { "\342\230\205", 3, "&starf;" },
+        { "\342\212\212", 3, "&subsetneq;" },
+        { "\342\253\213", 3, "&subsetneqq;" },
+        { "\342\211\273", 3, "&succ;" },
+        { "\342\252\270", 3, "&succapprox;" },
+        { "\342\211\275", 3, "&succcurlyeq;" },
+        { "\342\252\272", 3, "&succnapprox;" },
+        { "\342\210\221", 3, "&sum;" },
+        { "\342\212\203", 3, "&sup;" },
+        { "\342\212\207", 3, "&supe;" },
+        { "\342\253\206", 3, "&supseteqq;" },
+        { "\342\212\213", 3, "&supsetneq;" },
+        { "\342\244\246", 3, "&swarhk;" },
+        { "\342\206\231", 3, "&swarr;" },
+        { "\342\210\264", 3, "&there4;" },
+        { "\342\212\240", 3, "&timesb;" },
+        { "\342\210\255", 3, "&tint;" },
+        { "\342\244\250", 3, "&toea;" },
+        { "\342\226\277", 3, "&triangledown;" },
+        { "\342\206\240", 3, "&twoheadrightarrow;" },
+        { "\342\206\221", 3, "&uarr;" },
+        { "\342\207\205", 3, "&udarr;" },
+        { "\342\245\256", 3, "&udhar;" },
+        { "\342\206\277", 3, "&uharl;" },
+        { "\342\214\234", 3, "&ulcorner;" },
+        { "\342\214\235", 3, "&urcorner;" },
+        { "\342\212\262", 3, "&vartriangleleft;" },
+        { "\342\212\242", 3, "&vdash;" },
+        { "\342\212\263", 3, "&vrtri;" },
+        { "\342\204\230", 3, "&wp;" },
+        { "\342\211\200", 3, "&wr;" },
+        { "\342\237\272", 3, "&xhArr;" },
+        { "\342\237\270", 3, "&xlArr;" },
+        { "\342\237\274", 3, "&xmap;" },
+        { "\342\250\200", 3, "&xodot;" },
+        { "\342\213\201", 3, "&xvee;" },
+        { "\342\213\200", 3, "&xwedge;" },
+        { "\302\250", 2, "&DoubleDot;" },
+        { "\303\267", 2, "&divide;" },
+        { "\313\231", 2, "&dot;" },
+        { "\146\152", 2, "&fjlig;" },
+        { "\317\235", 2, "&gammad;" },
+        { "\302\275", 2, "&half;" },
+        { "\304\261", 2, "&inodot;" },
+        { "\302\240", 2, "&nbsp;" },
+        { "\302\261", 2, "&plusmn;" },
+        { "\302\256", 2, "&reg;" },
+        { "\317\202", 2, "&sigmav;" },
+        { "\317\265", 2, "&straightepsilon;" },
+        { "\317\225", 2, "&straightphi;" },
+        { "\317\222", 2, "&upsih;" },
+        { "\317\260", 2, "&varkappa;" },
+        { "\140", 1, "&grave;" },
+        { "\137", 1, "&lowbar;" },
+        { "\175", 1, "&rcub;" },
+        { "\135", 1, "&rsqb;" },
+        { "\174", 1, "&vert;" },
+    };
+    *count = sizeof(entities) / sizeof(entities[0]);
+    return entities;
+}
+
+static const char *ptn_html_html5_canonical_entity_for_decoded(const char *decoded, size_t decoded_len) {
+    size_t count = 0;
+    const PtnHtmlCanonicalEntity *entities = ptn_html_html5_canonical_entities(&count);
+    for (size_t i = 0; i < count; i++) {
+        if (entities[i].decoded_len == decoded_len &&
+            memcmp(entities[i].decoded, decoded, decoded_len) == 0) {
+            return entities[i].entity;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_html_entity_is_html5_canonical_alias(const char *entity) {
+    size_t count = 0;
+    const PtnHtmlCanonicalEntity *entities = ptn_html_html5_canonical_entities(&count);
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(entities[i].entity, entity) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_html_html5_canonical_entity_at(
+    const char *data,
+    size_t len,
+    size_t offset,
+    const char **entity,
+    size_t *matched_len
+) {
+    size_t count = 0;
+    const PtnHtmlCanonicalEntity *entities = ptn_html_html5_canonical_entities(&count);
+    for (size_t i = 0; i < count; i++) {
+        if (entities[i].decoded_len <= len - offset &&
+            entities[i].decoded[0] == data[offset] &&
+            memcmp(data + offset, entities[i].decoded, entities[i].decoded_len) == 0) {
+            *entity = entities[i].entity;
+            *matched_len = entities[i].decoded_len;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int ptn_html_encoded_key_for_decoded(
     const char *decoded,
     size_t decoded_len,
     PtnHtmlEncoding encoding,
     PtnStringBuffer *key
 ) {
-    if (encoding == PTN_HTML_ENCODING_UTF8 || encoding == PTN_HTML_ENCODING_LEGACY_BYTE) {
-        ptn_string_buffer_append_len(key, decoded, decoded_len);
-        return 1;
+    return ptn_html_append_decoded_entity_encoded(key, decoded, decoded_len, encoding);
+}
+
+static void ptn_html_translation_table_set_entity(PtnValue table, PtnArrayKey key, const char *entity) {
+    PtnArrayEntry *entry = ptn_array_entry_for_key(table.as.array, key);
+    if (entry != NULL) {
+        PtnValue current = ptn_value_deref(entry->value);
+        if (current.type == PTN_STRING &&
+            ptn_html_entity_should_replace_alias((const char *)current.as.string.data, entity)) {
+            ptn_value_destroy(&entry->value);
+            entry->value = ptn_string(entity);
+        }
+        ptn_array_key_free(key);
+        return;
     }
-    unsigned int codepoint = 0;
-    if (!ptn_html_decoded_entity_codepoint(decoded, decoded_len, &codepoint)) {
-        return 0;
-    }
-    return ptn_html_encoding_append_codepoint(key, codepoint, encoding);
+    ptn_array_set_entry(table.as.array, key, ptn_string(entity));
 }
 
 static void ptn_html_translation_table_add_encoded(
@@ -17373,15 +17786,15 @@ static void ptn_html_translation_table_add_encoded(
         free(key.data);
         return;
     }
-    ptn_array_set_entry(table.as.array, ptn_array_string_key_len(key.data, key.len), ptn_string(entity));
+    ptn_html_translation_table_set_entity(table, ptn_array_string_key_len(key.data, key.len), entity);
     free(key.data);
 }
 
 static void ptn_html_translation_table_add_special(PtnValue table, int64_t flags, PtnHtmlEncoding encoding) {
     int64_t doc_type = flags & PTN_ENT_DOC_TYPE_MASK;
     ptn_html_translation_table_add_encoded(table, "&", "&amp;", encoding);
-    ptn_html_translation_table_add_encoded(table, ">", "&gt;", encoding);
     ptn_html_translation_table_add_encoded(table, "<", "&lt;", encoding);
+    ptn_html_translation_table_add_encoded(table, ">", "&gt;", encoding);
     if ((flags & PTN_ENT_COMPAT) != 0) {
         ptn_html_translation_table_add_encoded(table, "\"", "&quot;", encoding);
     }
@@ -17415,11 +17828,11 @@ static PtnValue ptn_internal_get_html_translation_table(PtnRuntime *runtime, siz
     PtnValue table = ptn_array_from_literal_entries(0, NULL);
     if (table_kind == PTN_HTML_ENTITIES &&
         (flags & PTN_ENT_DOC_TYPE_MASK) != PTN_ENT_XML1 &&
-        encoding != PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
+        !ptn_html_encoding_is_legacy_multibyte(encoding)) {
         size_t count = 0;
         const PtnHtmlNamedEntity *entities = ptn_html_named_entities(&count);
         for (size_t i = 0; i < count; i++) {
-            if ((flags & PTN_ENT_COMPAT) == 0 && strcmp(entities[i].entity, "&quot;") == 0) {
+            if ((flags & PTN_ENT_COMPAT) == 0 && ptn_html_named_entity_decodes_to_char(&entities[i], '"')) {
                 continue;
             }
             if ((flags & PTN_ENT_SINGLE_QUOTE) == 0 && strcmp(entities[i].decoded, "'") == 0) {
@@ -17516,6 +17929,15 @@ static const char *ptn_html_entity_for_codepoint(unsigned int codepoint, int64_t
         if (codepoint == 0x0a) {
             return "&NewLine;";
         }
+        PtnStringBuffer decoded;
+        ptn_string_buffer_init(&decoded);
+        ptn_html_append_utf8_codepoint(&decoded, codepoint);
+        const char *canonical =
+            ptn_html_html5_canonical_entity_for_decoded(decoded.data, decoded.len);
+        free(decoded.data);
+        if (canonical != NULL) {
+            return canonical;
+        }
     }
     const char *match = NULL;
     size_t count = 0;
@@ -17535,14 +17957,16 @@ static const char *ptn_html_entity_for_codepoint(unsigned int codepoint, int64_t
         if (!ptn_html_entity_allowed_for_doc(&entities[i], flags)) {
             continue;
         }
-        if ((flags & PTN_ENT_COMPAT) == 0 && strcmp(entities[i].entity, "&quot;") == 0) {
+        if ((flags & PTN_ENT_COMPAT) == 0 && ptn_html_named_entity_decodes_to_char(&entities[i], '"')) {
             continue;
         }
         if ((flags & PTN_ENT_SINGLE_QUOTE) == 0 &&
             (strcmp(entities[i].entity, "&#039;") == 0 || strcmp(entities[i].decoded, "'") == 0)) {
             continue;
         }
-        match = entities[i].entity;
+        if (match == NULL || ptn_html_entity_should_replace_alias(match, entities[i].entity)) {
+            match = entities[i].entity;
+        }
     }
     return match;
 }
@@ -17644,10 +18068,27 @@ static int ptn_html_escape_utf8_string(
             return 0;
         }
 
-        if ((flags & PTN_ENT_DISALLOWED) != 0 && !ptn_html_codepoint_allowed(codepoint, flags)) {
+        if (ptn_html_should_replace_disallowed(mode, codepoint, flags, PTN_HTML_ENCODING_UTF8)) {
             ptn_html_append_replacement_character(output);
             i += sequence_len;
             continue;
+        }
+
+        if (mode == PTN_HTML_ESCAPE_ENTITIES &&
+            (flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_HTML5) {
+            const char *canonical = NULL;
+            size_t canonical_len = 0;
+            if (ptn_html_html5_canonical_entity_at(
+                    string.data,
+                    string.len,
+                    i,
+                    &canonical,
+                    &canonical_len
+                )) {
+                ptn_string_buffer_append(output, canonical);
+                i += canonical_len;
+                continue;
+            }
         }
 
         ptn_html_append_escaped_codepoint(
@@ -17697,6 +18138,90 @@ static unsigned int ptn_html_windows_1252_codepoint_for_byte(unsigned char byte)
     }
 }
 
+static int ptn_html_sjis_trail_byte(unsigned char byte) {
+    return (byte >= 0x40 && byte <= 0x7e) || (byte >= 0x80 && byte <= 0xfc);
+}
+
+static int ptn_html_legacy_multibyte_sequence(
+    PtnHtmlEncoding encoding,
+    const char *data,
+    size_t len,
+    size_t offset,
+    size_t *sequence_len,
+    int *valid
+) {
+    unsigned char byte = (unsigned char)data[offset];
+    *sequence_len = 1;
+    *valid = 1;
+    if (byte <= 0x7f) {
+        return 1;
+    }
+    if (encoding == PTN_HTML_ENCODING_SJIS) {
+        if (byte >= 0xa1 && byte <= 0xdf) {
+            return 1;
+        }
+        if ((byte >= 0x81 && byte <= 0x9f) || (byte >= 0xe0 && byte <= 0xfc)) {
+            if (offset + 1 < len && ptn_html_sjis_trail_byte((unsigned char)data[offset + 1])) {
+                *sequence_len = 2;
+                return 1;
+            }
+            *valid = 0;
+            return 1;
+        }
+        *valid = 0;
+        return 1;
+    }
+    if (encoding == PTN_HTML_ENCODING_EUC_JP) {
+        if (byte == 0x8e) {
+            if (offset + 1 < len && (unsigned char)data[offset + 1] >= 0xa1 &&
+                (unsigned char)data[offset + 1] <= 0xdf) {
+                *sequence_len = 2;
+                return 1;
+            }
+            *valid = 0;
+            return 1;
+        }
+        if (byte == 0x8f) {
+            if (offset + 1 >= len) {
+                *valid = 0;
+                return 1;
+            }
+            unsigned char second = (unsigned char)data[offset + 1];
+            if (second < 0x80) {
+                *valid = 0;
+                return 1;
+            }
+            if (second < 0xa1 || second > 0xfe) {
+                *sequence_len = 2;
+                *valid = 0;
+                return 1;
+            }
+            if (offset + 2 < len && (unsigned char)data[offset + 2] >= 0xa1 &&
+                (unsigned char)data[offset + 2] <= 0xfe) {
+                *sequence_len = 3;
+                return 1;
+            }
+            *valid = 0;
+            return 1;
+        }
+        if (byte >= 0xa1 && byte <= 0xfe) {
+            if (offset + 1 < len && (unsigned char)data[offset + 1] >= 0xa1 &&
+                (unsigned char)data[offset + 1] <= 0xfe) {
+                *sequence_len = 2;
+                return 1;
+            }
+            if (offset + 1 < len && (unsigned char)data[offset + 1] >= 0x80) {
+                *sequence_len = 2;
+            }
+            *valid = 0;
+            return 1;
+        }
+        *valid = 0;
+        return 1;
+    }
+    return 0;
+}
+
 static int ptn_html_escape_byte_string(
     PtnStringBuffer *output,
     PtnStringOperand string,
@@ -17706,6 +18231,36 @@ static int ptn_html_escape_byte_string(
     PtnHtmlEncoding encoding
 ) {
     for (size_t i = 0; i < string.len; i++) {
+        if (ptn_html_encoding_is_legacy_multibyte(encoding)) {
+            size_t sequence_len = 1;
+            int valid_sequence = 1;
+            if (ptn_html_legacy_multibyte_sequence(
+                    encoding,
+                    string.data,
+                    string.len,
+                    i,
+                    &sequence_len,
+                    &valid_sequence
+                )) {
+                if (!valid_sequence) {
+                    if ((flags & PTN_ENT_IGNORE) != 0) {
+                        i += sequence_len - 1;
+                        continue;
+                    }
+                    if ((flags & PTN_ENT_SUBSTITUTE) != 0) {
+                        ptn_html_append_replacement_character_for_encoding(output, encoding);
+                        i += sequence_len - 1;
+                        continue;
+                    }
+                    return 0;
+                }
+                if (sequence_len > 1) {
+                    ptn_string_buffer_append_len(output, string.data + i, sequence_len);
+                    i += sequence_len - 1;
+                    continue;
+                }
+            }
+        }
         if (!double_encode && string.data[i] == '&') {
             size_t entity_len = 0;
             if (ptn_html_any_entity_len_at(string.data, string.len, i, flags, &entity_len)) {
@@ -17719,7 +18274,7 @@ static int ptn_html_escape_byte_string(
             ? ptn_html_windows_1252_codepoint_for_byte(byte)
             : ptn_html_single_byte_codepoint_for_byte(encoding, byte);
         char original[1] = { (char)byte };
-        if ((flags & PTN_ENT_DISALLOWED) != 0 && !ptn_html_codepoint_allowed(codepoint, flags)) {
+        if (ptn_html_should_replace_disallowed(mode, codepoint, flags, encoding)) {
             ptn_html_append_replacement_character_for_encoding(output, encoding);
             continue;
         }
@@ -17787,7 +18342,7 @@ static PtnValue ptn_internal_htmlentities(PtnRuntime *runtime, size_t argc, cons
         ptn_string_operand_free(string);
         return ptn_null();
     }
-    if (encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
+    if (ptn_html_encoding_is_legacy_multibyte(encoding)) {
         if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_NOTICE)) {
             fputc('\n', stdout);
         }
@@ -17798,7 +18353,7 @@ static PtnValue ptn_internal_htmlentities(PtnRuntime *runtime, size_t argc, cons
         );
     }
     int double_encode = argc < 4 || ptn_is_truthy(args[3]);
-    PtnHtmlEscapeMode mode = encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE
+    PtnHtmlEscapeMode mode = ptn_html_encoding_is_legacy_multibyte(encoding)
         ? PTN_HTML_ESCAPE_SPECIALCHARS
         : PTN_HTML_ESCAPE_ENTITIES;
     PtnValue result = ptn_html_escape_value(
