@@ -1414,12 +1414,6 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
 fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
     let cases = [
         (
-            "backtrace",
-            "--TEST--\nbacktrace\n--FILE--\n<?php\nprint_r(debug_backtrace(0, 1));\ndebug_print_backtrace();\n--EXPECT--\n",
-            "unsupported-diagnostics-runtime\t",
-            "stack-frame snapshots",
-        ),
-        (
             "user error handler",
             "--TEST--\nhandler\n--FILE--\n<?php\nset_error_handler('handler');\nrestore_error_handler();\n--EXPECT--\n",
             "unsupported-diagnostics-runtime\t",
@@ -1462,6 +1456,32 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
             "{name}: {classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_debug_backtrace_runnable() {
+    let classification = classify(
+        "--TEST--\nbacktrace\n--FILE--\n<?php\nprint_r(debug_backtrace(0, 1));\ndebug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1);\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_function_call_array_lvalue_assignment() {
+    let classification = classify(
+        "--TEST--\nfunction call lvalue\n--FILE--\n<?php\ndebug_backtrace()[1]['args'][0] = 'Modified';\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("unsupported-lvalue-runtime\t"),
+        "{classification:?}"
+    );
+    assert!(
+        classification.contains("function-call array-dimension"),
+        "{classification:?}"
+    );
 }
 
 #[test]

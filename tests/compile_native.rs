@@ -16648,6 +16648,52 @@ MixedCase::StaticRun();
 }
 
 #[test]
+fn compile_trait_alias_method_magic_constant_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-alias-method-magic-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-alias-method-magic-constant.php");
+    let output = root.join("trait-alias-method-magic-constant-bin");
+    fs::write(
+        &input,
+        "<?php
+trait MagicTrait {
+    public function original() {
+        var_dump(__FUNCTION__, __METHOD__, __CLASS__, __TRAIT__);
+    }
+}
+
+class MagicClass {
+    use MagicTrait {
+        MagicTrait::original as private alias;
+    }
+
+    public function run() {
+        $this->alias();
+    }
+}
+
+(new MagicClass())->run();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(8) \"original\"\n",
+            "string(20) \"MagicTrait::original\"\n",
+            "string(10) \"MagicClass\"\n",
+            "string(10) \"MagicTrait\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_sqrt_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-sqrt-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
@@ -28466,6 +28512,88 @@ c1::go();
             input.display(),
             input.display()
         )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_debug_backtrace_metadata_options_to_native_binary() {
+    let root = temp_dir("ptn-native-debug-backtrace-metadata-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("debug-backtrace-metadata-options.php");
+    let output = root.join("debug-backtrace-metadata-options-bin");
+    fs::write(
+        &input,
+        "<?php
+class Probe
+{
+    public function call($cb)
+    {
+        return $cb('x', 'y');
+    }
+
+    public static function stat($cb)
+    {
+        return (new self())->call($cb);
+    }
+}
+
+function target($a, $b)
+{
+    $full = debug_backtrace();
+    var_dump($full[0]['function'] === 'target');
+    var_dump($full[0]['args'][0] === 'x');
+    var_dump($full[0]['args'][1] === 'y');
+    var_dump($full[1]['function'] === 'call');
+    var_dump($full[1]['class'] === 'Probe');
+    var_dump($full[1]['type'] === '->');
+    var_dump(isset($full[1]['object']));
+    var_dump($full[2]['function'] === 'stat');
+    var_dump($full[2]['class'] === 'Probe');
+    var_dump($full[2]['type'] === '::');
+
+    $noArgs = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1);
+    var_dump(!isset($noArgs[0]['args']));
+
+    $noObject = debug_backtrace(0, 2);
+    var_dump(!isset($noObject[1]['object']));
+
+    ob_start();
+    debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 1);
+    $printed = ob_get_clean();
+    var_dump(str_contains($printed, 'target()'));
+    var_dump(!str_contains($printed, \"'x'\"));
+}
+
+function traceUnset($left, &$middle, $right)
+{
+    unset($right);
+    $trace = debug_backtrace();
+    var_dump($trace[0]['args'][0] === 'left');
+    var_dump($trace[0]['args'][1] === 'middle');
+    var_dump($trace[0]['args'][2] === null);
+    unset($left);
+    unset($middle);
+    $trace = debug_backtrace();
+    var_dump($trace[0]['args'][0] === null);
+    var_dump($trace[0]['args'][1] === null);
+    var_dump($trace[0]['args'][2] === null);
+}
+
+Probe::stat('target');
+$middle = 'middle';
+traceUnset('left', $middle, 'right');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n".repeat(20)
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -1844,13 +1844,13 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
         {
             raw = tolower($0)
             line = ptn_php_code_line($0)
-            if (line ~ /(^|[^[:alnum:]_$])(debug_backtrace|debug_print_backtrace)[[:space:]]*\(/) {
-                print "unsupported-diagnostics-runtime\trequires debug_backtrace()/debug_print_backtrace() stack-frame snapshots, outside PTN modeled call-frame diagnostics"
+            if (line ~ /(^|[^[:alnum:]_$])(set_error_handler|restore_error_handler|set_exception_handler|restore_exception_handler)[[:space:]]*\(/) {
+                print "unsupported-diagnostics-runtime\trequires user error/exception handler state and fallback dispatch, outside PTN modeled diagnostic channel"
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(set_exception_handler|restore_exception_handler)[[:space:]]*\(/) {
-                print "unsupported-diagnostics-runtime\trequires user exception handler state and fallback dispatch, outside PTN modeled diagnostic channel"
+            if (line ~ /\)[[:space:]]*\[[^]]*\]([[:space:]]*\[[^]]*\])*[[:space:]]*([+*\/%.&|^-]?=|<<=|>>=)/) {
+                print "unsupported-lvalue-runtime\trequires writable function-call array-dimension temporaries, outside PTN modeled assignment target set"
                 found = 1
                 exit
             }

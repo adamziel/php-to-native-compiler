@@ -27,11 +27,16 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_call_frame.parameter_count = 0;
     runtime->owned_call_frame.parameter_names = NULL;
     runtime->call_frame = NULL;
+    runtime->owned_trace_frame.runtime = NULL;
     runtime->owned_trace_frame.function_name = NULL;
     runtime->owned_trace_frame.file = NULL;
     runtime->owned_trace_frame.line = 0;
     runtime->owned_trace_frame.argc = 0;
     runtime->owned_trace_frame.args = NULL;
+    runtime->owned_trace_frame.parameter_count = 0;
+    runtime->owned_trace_frame.parameter_names = NULL;
+    runtime->owned_trace_frame.has_receiver = 0;
+    runtime->owned_trace_frame.receiver = ptn_null();
     runtime->owned_trace_frame.previous = NULL;
     runtime->trace_frame = caller_runtime->trace_frame;
     runtime->lifecycle_root = caller_runtime->lifecycle_root == NULL
@@ -134,6 +139,7 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->owned_call_frame.parameter_count = parameter_count;
     runtime->owned_call_frame.parameter_names = parameter_names;
     runtime->call_frame = &runtime->owned_call_frame;
+    runtime->owned_trace_frame.runtime = runtime;
     runtime->owned_trace_frame.function_name = runtime->current_function_name;
     runtime->owned_trace_frame.file =
         runtime->suppress_user_call_frame_location ? NULL : runtime->source_path;
@@ -141,6 +147,10 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
         runtime->suppress_user_call_frame_location ? 0 : runtime->call_site_line;
     runtime->owned_trace_frame.argc = argc;
     runtime->owned_trace_frame.args = args;
+    runtime->owned_trace_frame.parameter_count = parameter_count;
+    runtime->owned_trace_frame.parameter_names = parameter_names;
+    runtime->owned_trace_frame.has_receiver = runtime->has_current_receiver;
+    runtime->owned_trace_frame.receiver = runtime->current_receiver;
     runtime->owned_trace_frame.previous = runtime->trace_frame;
     runtime->trace_frame = &runtime->owned_trace_frame;
     runtime->suppress_user_call_frame_location = 0;
@@ -155,11 +165,16 @@ static PTN_UNUSED void ptn_runtime_push_trace_frame(
     size_t argc,
     const PtnValue *args
 ) {
+    frame->runtime = runtime;
     frame->function_name = function_name;
     frame->file = file;
     frame->line = line;
     frame->argc = argc;
     frame->args = args;
+    frame->parameter_count = 0;
+    frame->parameter_names = NULL;
+    frame->has_receiver = 0;
+    frame->receiver = ptn_null();
     frame->previous = runtime->trace_frame;
     runtime->trace_frame = frame;
 }
@@ -616,6 +631,21 @@ static PTN_UNUSED PtnValue ptn_trace_value_snapshot(PtnValue value) {
     return ptn_trace_value_snapshot_depth(value, 0);
 }
 
+static PTN_UNUSED PtnValue ptn_trace_frame_arg_value(PtnTraceFrame *frame, size_t position) {
+    if (
+        frame->runtime != NULL &&
+        frame->parameter_names != NULL &&
+        position < frame->parameter_count
+    ) {
+        PtnValue value;
+        if (ptn_symbols_get(&frame->runtime->symbols, frame->parameter_names[position], &value)) {
+            return ptn_trace_value_snapshot(value);
+        }
+        return ptn_null();
+    }
+    return ptn_trace_value_snapshot(frame->args[position]);
+}
+
 static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
     PtnValue args = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < frame->argc; i++) {
@@ -625,7 +655,7 @@ static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
         ptn_array_set_entry(
             args.as.array,
             ptn_array_int_key((int64_t)i),
-            ptn_trace_value_snapshot(frame->args[i])
+            ptn_trace_frame_arg_value(frame, i)
         );
     }
     return args;
@@ -660,6 +690,82 @@ static PTN_UNUSED PtnValue ptn_trace_frame_array(PtnTraceFrame *frame) {
         ptn_array_string_key("args"),
         ptn_trace_frame_args_array(frame)
     );
+    return result;
+}
+
+static const char *ptn_trace_frame_method_separator(const char *function_name) {
+    const char *object_separator = strstr(function_name, "->");
+    if (object_separator != NULL) {
+        return object_separator;
+    }
+    return strstr(function_name, "::");
+}
+
+static PTN_UNUSED PtnValue ptn_debug_backtrace_frame_array(PtnTraceFrame *frame, int64_t options) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (frame->file != NULL && frame->line != 0) {
+        if (frame->line > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key("file"),
+            ptn_owned_string(ptn_duplicate_string(frame->file))
+        );
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key("line"),
+            ptn_int((int64_t)frame->line)
+        );
+    }
+    if (frame->function_name != NULL) {
+        const char *separator = ptn_trace_frame_method_separator(frame->function_name);
+        if (separator != NULL && separator != frame->function_name && separator[2] != '\0') {
+            size_t class_len = (size_t)(separator - frame->function_name);
+            const char *method_name = separator + 2;
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("function"),
+                ptn_owned_string(ptn_duplicate_string(method_name))
+            );
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("class"),
+                ptn_owned_string_len(ptn_duplicate_string_len(frame->function_name, class_len), class_len)
+            );
+            if (
+                (options & PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT) != 0 &&
+                frame->has_receiver
+            ) {
+                PtnValue receiver = ptn_value_deref(frame->receiver);
+                if (receiver.type == PTN_OBJECT) {
+                    ptn_array_set_entry(
+                        result.as.array,
+                        ptn_array_string_key("object"),
+                        ptn_trace_value_snapshot(receiver)
+                    );
+                }
+            }
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("type"),
+                ptn_string(separator[0] == '-' ? "->" : "::")
+            );
+        } else {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("function"),
+                ptn_owned_string(ptn_duplicate_string(frame->function_name))
+            );
+        }
+    }
+    if ((options & PTN_DEBUG_BACKTRACE_IGNORE_ARGS) == 0) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key("args"),
+            ptn_trace_frame_args_array(frame)
+        );
+    }
     return result;
 }
 

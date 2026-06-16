@@ -987,6 +987,10 @@ fn emit_user_functions(
         if function.is_anonymous {
             out.push_str("    char *ptn_closure_trace_name = NULL;\n");
         }
+        if function.method_name.is_some() && !function.is_static {
+            out.push_str("    runtime.has_current_receiver = 1;\n");
+            out.push_str("    runtime.current_receiver = receiver;\n");
+        }
         if call_frame_parameter_count == 0 {
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL);\n");
         } else {
@@ -1040,8 +1044,6 @@ fn emit_user_functions(
             out.push_str("\";\n");
         }
         if function.method_name.is_some() && !function.is_static {
-            out.push_str("    runtime.has_current_receiver = 1;\n");
-            out.push_str("    runtime.current_receiver = receiver;\n");
             out.push_str("    ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
         }
         if function.is_anonymous {
@@ -12850,9 +12852,18 @@ impl ValueEmitter {
         function: &FunctionDecl,
     ) -> Self {
         let function_magic_name = function
-            .method_name
+            .trait_method_name
             .as_deref()
+            .or(function.method_name.as_deref())
             .unwrap_or(function.name.as_str());
+        let method_magic_name = if let (Some(trait_name), Some(trait_method_name)) = (
+            function.trait_name.as_deref(),
+            function.trait_method_name.as_deref(),
+        ) {
+            format!("{trait_name}::{trait_method_name}")
+        } else {
+            function.name.clone()
+        };
         Self::new_with_scope(
             source_file,
             source_dir,
@@ -12860,7 +12871,7 @@ impl ValueEmitter {
             classes,
             includes,
             Some(function_magic_name),
-            Some(function.name.as_str()),
+            Some(method_magic_name.as_str()),
             function.class_name.as_deref(),
             function.trait_name.as_deref(),
             function.return_by_ref,

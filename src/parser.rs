@@ -1373,6 +1373,7 @@ impl Parser<'_> {
             match self.parse_class_member(false, false, &trait_name)? {
                 ParsedClassMember::Method(mut method) => {
                     method.trait_name = Some(trait_name.clone());
+                    method.trait_method_name = Some(method.name.clone());
                     methods.push(method);
                 }
                 ParsedClassMember::Properties(parsed_properties) => {
@@ -2592,6 +2593,7 @@ impl Parser<'_> {
             name,
             visibility: modifiers.visibility,
             trait_name: None,
+            trait_method_name: None,
             attributes: attributes.clone(),
             has_override_attribute: attributes.has_override,
             parameters,
@@ -8842,6 +8844,9 @@ fn method_with_trait_origin(method: &MethodDecl, trait_decl: &TraitDecl) -> Meth
     let mut imported = method.clone();
     if imported.trait_name.is_none() {
         imported.trait_name = Some(trait_decl.name.clone());
+    }
+    if imported.trait_method_name.is_none() {
+        imported.trait_method_name = Some(method.name.clone());
     }
     imported
 }

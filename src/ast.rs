@@ -157,6 +157,7 @@ pub struct MethodDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
     pub trait_name: Option<String>,
+    pub trait_method_name: Option<String>,
     pub attributes: AttributeMetadata,
     pub has_override_attribute: bool,
     pub parameters: Vec<FunctionParameter>,

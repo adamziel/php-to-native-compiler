@@ -969,6 +969,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_E_ALL);
         return 1;
     }
+    if (strcmp(name, "DEBUG_BACKTRACE_PROVIDE_OBJECT") == 0) {
+        *out = ptn_int(PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT);
+        return 1;
+    }
+    if (strcmp(name, "DEBUG_BACKTRACE_IGNORE_ARGS") == 0) {
+        *out = ptn_int(PTN_DEBUG_BACKTRACE_IGNORE_ARGS);
+        return 1;
+    }
     if (strcmp(name, "INI_USER") == 0) {
         *out = ptn_int(1);
         return 1;

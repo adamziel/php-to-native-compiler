@@ -206,6 +206,8 @@ typedef struct {
 #define PTN_STREAM_FILTER_READ 1
 #define PTN_STREAM_FILTER_WRITE 2
 #define PTN_STREAM_FILTER_ALL 3
+#define PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT 1
+#define PTN_DEBUG_BACKTRACE_IGNORE_ARGS 2
 #define PTN_LC_CTYPE 0
 #define PTN_LC_NUMERIC 1
 #define PTN_LC_TIME 2
@@ -680,11 +682,16 @@ typedef struct {
 } PtnCallFrame;
 
 struct PtnTraceFrame {
+    PtnRuntime *runtime;
     const char *function_name;
     const char *file;
     size_t line;
     size_t argc;
     const PtnValue *args;
+    size_t parameter_count;
+    const char *const *parameter_names;
+    int has_receiver;
+    PtnValue receiver;
     PtnTraceFrame *previous;
 };
 
