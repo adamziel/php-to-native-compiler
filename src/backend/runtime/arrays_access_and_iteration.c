@@ -1176,8 +1176,7 @@ static PTN_UNUSED int ptn_magic_property_isset(
     int *isset_out
 ) {
     if (runtime == NULL ||
-        runtime->magic_property_isset == NULL ||
-        runtime->in_magic_property_dispatch) {
+        runtime->magic_property_isset == NULL) {
         return 0;
     }
     return runtime->magic_property_isset(runtime, receiver, property, line, isset_out);

@@ -3154,7 +3154,11 @@ fn assertion_reference_target_text(target: &AstReferenceTarget) -> String {
             format!("{}->{name}", assertion_expr_text(receiver))
         }
         AstReferenceTarget::DynamicProperty { receiver, name, .. } => {
-            format!("{}->{{{}}}", assertion_expr_text(receiver), assertion_expr_text(name))
+            format!(
+                "{}->{{{}}}",
+                assertion_expr_text(receiver),
+                assertion_expr_text(name)
+            )
         }
     }
 }

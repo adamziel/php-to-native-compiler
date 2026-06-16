@@ -9794,7 +9794,9 @@ fn reference_target_mentions_variable(target: &ReferenceTarget, name: &str) -> b
             receiver,
             name: property_name,
             ..
-        } => value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name),
+        } => {
+            value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
+        }
     }
 }
 
