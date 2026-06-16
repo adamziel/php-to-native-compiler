@@ -28981,6 +28981,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const
     return ptn_ascii_case_equal(class_name, "SensitiveParameterValue");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "DateTimeImmutable");
+}
+
 static int ptn_internal_interface_exists_name(const char *name) {
     return ptn_ascii_case_equal(name, "ArrayAccess")
         || ptn_ascii_case_equal(name, "Iterator")
@@ -29010,6 +29014,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_internal_class_name_is_sensitive_parameter(class_name)
         || ptn_internal_class_name_is_sensitive_parameter_value(class_name)
+        || ptn_internal_class_name_is_datetime_immutable(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
@@ -29487,6 +29492,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_ascii_case_equal(class_name, "Generator")) {
         return ptn_generator_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_datetime_immutable(class_name)) {
+        return ptn_ascii_case_equal(method_name, "setTimestamp");
+    }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
         return ptn_exception_method_exists(method_name);
     }
@@ -29745,6 +29753,10 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_ascii_case_equal(class_name, "Generator")) {
         ptn_append_method_name(result, &index, "current");
+        return result;
+    }
+    if (ptn_internal_class_name_is_datetime_immutable(class_name)) {
+        ptn_append_method_name(result, &index, "setTimestamp");
         return result;
     }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
@@ -31757,7 +31769,7 @@ static PtnValue ptn_reflection_class_extension_name(const char *class_name) {
     if (ptn_internal_reflection_metadata_class_exists(class_name)) {
         return ptn_string("Reflection");
     }
-    if (ptn_ascii_case_equal(class_name, "DateTime") || ptn_ascii_case_equal(class_name, "DateTimeInterface")) {
+    if (ptn_ascii_case_equal(class_name, "DateTime") || ptn_internal_class_name_is_datetime_immutable(class_name) || ptn_ascii_case_equal(class_name, "DateTimeInterface")) {
         return ptn_string("date");
     }
     if (ptn_internal_class_name_is_array_iterator(class_name) ||

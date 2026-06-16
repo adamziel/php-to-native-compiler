@@ -476,6 +476,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str(
+        "    if (ptn_ascii_case_equal(class_name, \"DateTime\") || ptn_ascii_case_equal(class_name, \"DateTimeImmutable\")) {\n",
+    );
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DateTimeInterface\");\n");
+    out.push_str("    }\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
     out.push_str(
@@ -3250,6 +3255,7 @@ fn emit_class_metadata_helpers(
         "LimitIterator",
         "Closure",
         "DateTime",
+        "DateTimeImmutable",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);
@@ -9511,6 +9517,9 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
             requirements.method_dispatch = true;
+            if name.eq_ignore_ascii_case("setTimestamp") {
+                requirements.internal_function_dispatch = true;
+            }
             if name.eq_ignore_ascii_case("__invoke") {
                 requirements.closure_invoke_method_dispatch = true;
                 requirements.internal_function_dispatch = true;
@@ -9533,6 +9542,7 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
             requirements.method_dispatch = true;
+            requirements.internal_function_dispatch = true;
         }
         ValueExpr::NewObject {
             class_name,
@@ -9555,6 +9565,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IteratorIterator")
                 || class_name.eq_ignore_ascii_case("LimitIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
+                || class_name.eq_ignore_ascii_case("DateTime")
+                || class_name.eq_ignore_ascii_case("DateTimeImmutable")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
@@ -11639,6 +11651,48 @@ impl ValueEmitter {
                 true,
             );
         }
+        if let ValueExpr::MethodCall {
+            receiver,
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            line,
+        } = value
+        {
+            let emitted_value = self.emit_method_call(
+                out,
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+                true,
+            );
+            self.emit_no_discard_warning(out, value);
+            return emitted_value;
+        }
+        if let ValueExpr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            line,
+        } = value
+        {
+            return self.emit_dynamic_method_call(
+                out,
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+                true,
+            );
+        }
         let emitted_value = self.emit_materialized_value(out, value);
         self.emit_no_discard_warning(out, value);
         emitted_value
@@ -11945,6 +11999,22 @@ impl ValueEmitter {
     ) {
         out.push_str("    ptn_emit_no_discard_for_callable(&runtime, ");
         out.push_str(callable_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
+
+    fn emit_no_discard_warning_for_internal_method_expr(
+        &self,
+        out: &mut String,
+        receiver_temp: &str,
+        method_name_expr: &str,
+        line: usize,
+    ) {
+        out.push_str("    ptn_emit_no_discard_for_internal_method(&runtime, ");
+        out.push_str(receiver_temp);
+        out.push_str(", ");
+        out.push_str(method_name_expr);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
@@ -14540,6 +14610,7 @@ impl ValueEmitter {
                 argument_names,
                 argument_unpacks,
                 *line,
+                false,
             ),
             ValueExpr::DynamicMethodCall {
                 receiver,
@@ -14556,6 +14627,7 @@ impl ValueEmitter {
                 argument_names,
                 argument_unpacks,
                 *line,
+                false,
             ),
             ValueExpr::Yield { key, value, line } => {
                 self.emit_yield(out, key.as_deref(), value.as_deref(), *line)
@@ -20152,6 +20224,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
+        discarded: bool,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
             let result_temp = self.next_temp();
@@ -20191,6 +20264,15 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            if discarded {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    line,
+                );
+            }
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -20207,6 +20289,15 @@ impl ValueEmitter {
             out.push_str("\", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            if discarded {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    line,
+                );
+            }
             emit_value_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
@@ -20280,6 +20371,15 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        if discarded {
+            let method_name_expr = format!("\"{}\"", c_string(name));
+            self.emit_no_discard_warning_for_internal_method_expr(
+                out,
+                &receiver_temp,
+                &method_name_expr,
+                line,
+            );
+        }
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);
         }
@@ -20302,6 +20402,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
+        discarded: bool,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
             let result_temp = self.next_temp();
@@ -20344,6 +20445,14 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            if discarded {
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_temp,
+                    line,
+                );
+            }
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -20364,6 +20473,14 @@ impl ValueEmitter {
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            if discarded {
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_temp,
+                    line,
+                );
+            }
             out.push_str("    free(");
             out.push_str(&method_name_temp);
             out.push_str(");\n");
@@ -20407,6 +20524,14 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        if discarded {
+            self.emit_no_discard_warning_for_internal_method_expr(
+                out,
+                &receiver_temp,
+                &method_name_temp,
+                line,
+            );
+        }
         for temp in &unwrap_append_reference_temps {
             emit_unwrap_append_reference_call_argument(out, "    ", temp);
         }
