@@ -21082,6 +21082,8 @@ fn compile_by_value_parameters_near_references_to_native_binary() {
 function change_value($value) { $value = 99; return $value; }\n\
 function change_array_value($value) { $value[0] = 7; return $value[0]; }\n\
 function change_array_ref_element($value) { $value[0] = 8; return $value[0]; }\n\
+function change_ref_arg(&$value) { $value = \"changed\"; }\n\
+function copy_after_ref_arg($option) { change_ref_arg($option[\"bla\"]); $copy = $option; $copy[\"bla\"] = \"copy\"; return [$option, $copy]; }\n\
 $q = 1;\n\
 $qr =& $q;\n\
 var_dump(change_value($q), $q);\n\
@@ -21090,7 +21092,9 @@ $plain_ref =& $plain;\n\
 var_dump(change_array_value($plain), $plain[0]);\n\
 $with_ref = [1];\n\
 $leaf =& $with_ref[0];\n\
-var_dump(change_array_ref_element($with_ref), $with_ref[0], $leaf);",
+var_dump(change_array_ref_element($with_ref), $with_ref[0], $leaf);\n\
+$option = [\"bla\" => \"original\"];\n\
+var_dump(copy_after_ref_arg($option), $option);",
     )
     .unwrap();
 
@@ -21100,7 +21104,31 @@ var_dump(change_array_ref_element($with_ref), $with_ref[0], $leaf);",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(99)\nint(1)\nint(7)\nint(1)\nint(8)\nint(8)\nint(8)\n"
+        concat!(
+            "int(99)\n",
+            "int(1)\n",
+            "int(7)\n",
+            "int(1)\n",
+            "int(8)\n",
+            "int(8)\n",
+            "int(8)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(1) {\n",
+            "    [\"bla\"]=>\n",
+            "    string(7) \"changed\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [\"bla\"]=>\n",
+            "    string(4) \"copy\"\n",
+            "  }\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"bla\"]=>\n",
+            "  string(8) \"original\"\n",
+            "}\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

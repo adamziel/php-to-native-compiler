@@ -10928,7 +10928,7 @@ fn emit_only_variables_assigned_by_reference_notice(out: &mut String, indent: &s
     out.push_str(");\n");
 }
 
-fn emit_unwrap_append_reference_call_argument(out: &mut String, indent: &str, temp: &str) {
+fn emit_unwrap_array_dim_reference_call_argument(out: &mut String, indent: &str, temp: &str) {
     out.push_str(indent);
     out.push_str("ptn_runtime_unwrap_reference_slots_if_unaliased(&runtime, ");
     out.push_str(temp);
@@ -10989,15 +10989,10 @@ fn cursor_temporary_helper_name(name: &str) -> Option<&'static str> {
     }
 }
 
-fn value_is_append_reference_target(value: &ValueExpr) -> bool {
+fn value_is_array_dim_reference_target(value: &ValueExpr) -> bool {
     matches!(
         reference_target_from_value(value),
-        Some(ReferenceTarget::ArrayDim(target))
-            if target.dimensions.iter().any(Option::is_none)
-    ) || matches!(
-        reference_target_from_value(value),
-        Some(ReferenceTarget::PropertyArrayDim { dimensions, .. })
-            if dimensions.iter().any(Option::is_none)
+        Some(ReferenceTarget::ArrayDim(_)) | Some(ReferenceTarget::PropertyArrayDim { .. })
     )
 }
 
@@ -17230,7 +17225,7 @@ impl ValueEmitter {
                 out.push_str(");\n");
             } else {
                 let mut constructor_argument_temps = Vec::with_capacity(arguments.len());
-                let mut unwrap_append_reference_temps = Vec::new();
+                let mut unwrap_array_dim_reference_temps = Vec::new();
                 for (argument_index, argument) in arguments.iter().enumerate() {
                     let by_ref_parameter =
                         by_ref_parameter_for_argument(&constructor_parameters, argument_index);
@@ -17250,8 +17245,8 @@ impl ValueEmitter {
                             true,
                             true,
                         );
-                        if value_is_append_reference_target(argument) {
-                            unwrap_append_reference_temps.push(temp.clone());
+                        if value_is_array_dim_reference_target(argument) {
+                            unwrap_array_dim_reference_temps.push(temp.clone());
                         }
                         constructor_argument_temps.push(temp);
                     } else {
@@ -17287,8 +17282,8 @@ impl ValueEmitter {
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
-                for temp in &unwrap_append_reference_temps {
-                    emit_unwrap_append_reference_call_argument(out, "    ", temp);
+                for temp in &unwrap_array_dim_reference_temps {
+                    emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
                 }
                 for index in 0..constructor_argument_temps.len() {
                     emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
@@ -20592,7 +20587,7 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
-        let mut unwrap_append_reference_temps = Vec::new();
+        let mut unwrap_array_dim_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let by_ref_parameter = direct_user.as_ref().and_then(|direct_user| {
                 by_ref_parameter_for_argument(&direct_user.parameters, argument_index)
@@ -20613,8 +20608,8 @@ impl ValueEmitter {
                     true,
                     true,
                 );
-                if value_is_append_reference_target(argument) {
-                    unwrap_append_reference_temps.push(temp.clone());
+                if value_is_array_dim_reference_target(argument) {
+                    unwrap_array_dim_reference_temps.push(temp.clone());
                 }
                 temps.push(temp);
             } else if let Some(parameter_name) =
@@ -20632,8 +20627,8 @@ impl ValueEmitter {
                     allow_temporary,
                     true,
                 );
-                if value_is_append_reference_target(argument) {
-                    unwrap_append_reference_temps.push(temp.clone());
+                if value_is_array_dim_reference_target(argument) {
+                    unwrap_array_dim_reference_temps.push(temp.clone());
                 }
                 temps.push(temp);
             } else {
@@ -20690,8 +20685,8 @@ impl ValueEmitter {
             out.push_str(&line.to_string());
             out.push_str(");\n");
         }
-        for temp in &unwrap_append_reference_temps {
-            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
@@ -20890,7 +20885,7 @@ impl ValueEmitter {
             .max(arguments.len());
         let mut slot_temps = vec![None; frame_len];
         let mut temps = Vec::with_capacity(arguments.len());
-        let mut unwrap_append_reference_temps = Vec::new();
+        let mut unwrap_array_dim_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let slot_index = argument_slots[argument_index];
             let by_ref_parameter = direct_user
@@ -20916,8 +20911,8 @@ impl ValueEmitter {
             } else {
                 self.emit_call_argument(out, name, argument_index, argument)
             };
-            if by_ref_parameter.is_some() && value_is_append_reference_target(argument) {
-                unwrap_append_reference_temps.push(temp.clone());
+            if by_ref_parameter.is_some() && value_is_array_dim_reference_target(argument) {
+                unwrap_array_dim_reference_temps.push(temp.clone());
             }
             slot_temps[slot_index] = Some(temp.clone());
             temps.push(temp);
@@ -20949,8 +20944,8 @@ impl ValueEmitter {
             line,
             called_class_override,
         );
-        for temp in &unwrap_append_reference_temps {
-            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
         for index in 0..slot_temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
@@ -21038,7 +21033,7 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
-        let mut unwrap_append_reference_temps = Vec::new();
+        let mut unwrap_array_dim_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let temp = self.emit_runtime_callable_call_argument(
                 out,
@@ -21047,8 +21042,8 @@ impl ValueEmitter {
                 argument,
                 line,
             );
-            if value_is_append_reference_target(argument) {
-                unwrap_append_reference_temps.push(temp.clone());
+            if value_is_array_dim_reference_target(argument) {
+                unwrap_array_dim_reference_temps.push(temp.clone());
             }
             temps.push(temp);
         }
@@ -21080,8 +21075,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        for temp in &unwrap_append_reference_temps {
-            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
@@ -21945,7 +21940,7 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
-        let mut unwrap_append_reference_temps = Vec::new();
+        let mut unwrap_array_dim_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let by_ref_parameter = declared_signature.as_ref().and_then(|(_, parameters)| {
                 by_ref_parameter_for_argument(parameters, argument_index)
@@ -21982,8 +21977,8 @@ impl ValueEmitter {
                     line,
                 )
             };
-            if by_ref_parameter.is_some() && value_is_append_reference_target(argument) {
-                unwrap_append_reference_temps.push(temp.clone());
+            if by_ref_parameter.is_some() && value_is_array_dim_reference_target(argument) {
+                unwrap_array_dim_reference_temps.push(temp.clone());
             }
             temps.push(temp);
         }
@@ -22022,8 +22017,8 @@ impl ValueEmitter {
                 line,
             );
         }
-        for temp in &unwrap_append_reference_temps {
-            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
@@ -22132,11 +22127,11 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
-        let mut unwrap_append_reference_temps = Vec::new();
+        let mut unwrap_array_dim_reference_temps = Vec::new();
         for argument in arguments {
             let temp = self.emit_dynamic_call_argument(out, argument);
-            if value_is_append_reference_target(argument) {
-                unwrap_append_reference_temps.push(temp.clone());
+            if value_is_array_dim_reference_target(argument) {
+                unwrap_array_dim_reference_temps.push(temp.clone());
             }
             temps.push(temp);
         }
@@ -22174,8 +22169,8 @@ impl ValueEmitter {
                 line,
             );
         }
-        for temp in &unwrap_append_reference_temps {
-            emit_unwrap_append_reference_call_argument(out, "    ", temp);
+        for temp in &unwrap_array_dim_reference_temps {
+            emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
