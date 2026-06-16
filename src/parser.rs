@@ -3330,7 +3330,13 @@ impl Parser<'_> {
             self.index = start;
             return self.parse_expression_statement();
         }
+        let op_span = self.peek().span;
         let op = self.expect_assignment_op()?;
+        let target = AssignmentTarget::Variable {
+            name: name.clone(),
+            span: token.span,
+        };
+        validate_expression_assignment_target(op, &target, op_span)?;
         if matches!(op, AssignmentOp::Assign) && matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             let source = self.parse_reference_source()?;
@@ -3342,10 +3348,6 @@ impl Parser<'_> {
             });
         }
         let value = self.parse_assignment_expr_without_keyword_boolean()?;
-        let target = AssignmentTarget::Variable {
-            name: name.clone(),
-            span: token.span,
-        };
         if matches!(op, AssignmentOp::Assign) {
             validate_recursive_reference_assignment_value(&target, &value)?;
         }
@@ -4401,6 +4403,11 @@ impl Parser<'_> {
             Ok(target) => target,
             Err(diagnostic)
                 if diagnostic.message == "Spread operator is not supported in assignments" =>
+            {
+                return Err(diagnostic);
+            }
+            Err(diagnostic)
+                if diagnostic.message == "Can't use function return value in write context" =>
             {
                 return Err(diagnostic);
             }
@@ -12965,6 +12972,10 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
                 span,
             }))
         }
+        Expr::Call { span, .. } => Err(Diagnostic::new(
+            "Can't use function return value in write context",
+            Some(span),
+        )),
         Expr::Grouped { expr, .. } => assignment_target_from_expr(*expr),
         other => Err(Diagnostic::new(
             "unsupported assignment target",
@@ -13181,6 +13192,7 @@ fn validate_expression_assignment_target(
     span: SourceSpan,
 ) -> Result<()> {
     validate_coalesce_assignment_target(op, target, span)?;
+    reject_this_assignment_target(target)?;
 
     if matches!(op, AssignmentOp::Assign | AssignmentOp::CoalesceAssign) {
         return Ok(());
@@ -13201,6 +13213,37 @@ fn validate_expression_assignment_target(
                 Some(span),
             ),
         ),
+    }
+}
+
+fn reject_this_assignment_target(target: &AssignmentTarget) -> Result<()> {
+    match target {
+        AssignmentTarget::Variable { name, span } if name.eq_ignore_ascii_case("this") => {
+            Err(Diagnostic::new("Cannot re-assign $this", Some(*span)))
+        }
+        AssignmentTarget::List(list) => reject_this_assignment_list_target(list),
+        _ => Ok(()),
+    }
+}
+
+fn reject_this_assignment_list_target(target: &ListAssignmentTarget) -> Result<()> {
+    for element in &target.elements {
+        match &element.target {
+            ListAssignmentElementTarget::Value(target) => reject_this_assignment_target(target)?,
+            ListAssignmentElementTarget::Reference(target) => {
+                reject_this_assignment_reference_target(target)?
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reject_this_assignment_reference_target(target: &ReferenceTarget) -> Result<()> {
+    match target {
+        ReferenceTarget::Variable { name, span } if name.eq_ignore_ascii_case("this") => {
+            Err(Diagnostic::new("Cannot re-assign $this", Some(*span)))
+        }
+        _ => Ok(()),
     }
 }
 

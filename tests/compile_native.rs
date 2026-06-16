@@ -35113,6 +35113,26 @@ fn parser_rejects_append_null_coalescing_assignment_with_explicit_diagnostics() 
 }
 
 #[test]
+fn parser_rejects_null_coalescing_assignment_to_unwritable_targets() {
+    let function_error =
+        parser::parse("<?php\nfunction foo() { return 123; }\nfoo() ??= 456;\n").unwrap_err();
+    assert_eq!(function_error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        function_error.message,
+        "Can't use function return value in write context"
+    );
+    assert_eq!(function_error.span.unwrap().line, 3);
+
+    let this_error = parser::parse(
+        "<?php\nclass Test {\n    public function foobar() {\n        $this ??= 123;\n    }\n}\n",
+    )
+    .unwrap_err();
+    assert_eq!(this_error.kind, DiagnosticKind::Fatal);
+    assert_eq!(this_error.message, "Cannot re-assign $this");
+    assert_eq!(this_error.span.unwrap().line, 4);
+}
+
+#[test]
 fn phpc_renders_append_null_coalescing_assignment_diagnostic() {
     let root = temp_dir("ptn-phpc-append-null-coalescing-assignment");
     fs::create_dir_all(&root).unwrap();
