@@ -1366,6 +1366,12 @@ ptn_phpt_first_unsupported_language_surface() {
             } else if (ptn_function_body_pending && ptn_line_open_braces == 0 && line ~ /;/) {
                 ptn_function_body_pending = 0
             }
+            if (!ptn_function_declaration_line && ptn_function_body_depth > 0 && ptn_line_open_braces > 0) {
+                ptn_function_body_depth += ptn_line_open_braces
+            }
+            if (!ptn_class_declaration_line && ptn_class_body_depth > 0 && ptn_line_open_braces > 0) {
+                ptn_class_body_depth += ptn_line_open_braces
+            }
             if (line ~ /(^|[^[:alnum:]_$])interface[[:space:]]+[a-z_\\][a-z0-9_\\]*/) {
                 saw_interface = 1
             }
@@ -1506,6 +1512,11 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (ptn_has_named_modeled_array_internal_call(line)) {
                 print "unsupported-internal-call-binding\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(date_create_from_format|date_parse_from_format)[[:space:]]*\(/) {
+                print "unsupported-internal\trequires date format parser diagnostics and fractional-second normalization outside PTN modeled date runtime"
                 found = 1
                 exit
             }

@@ -4589,6 +4589,14 @@ impl Parser<'_> {
                             if member_name.eq_ignore_ascii_case("class")
                                 && !matches!(self.peek().kind, TokenKind::LeftParen)
                             {
+                                if let Some(type_name) =
+                                    constant_expression_class_name_fetch_error_type(&expr)
+                                {
+                                    return Err(Diagnostic::new(
+                                        format!("Cannot use \"::class\" on {type_name}"),
+                                        Some(start_span),
+                                    ));
+                                }
                                 if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr) {
                                     return Err(Diagnostic::new(
                                         "Illegal class name",
@@ -12797,6 +12805,83 @@ fn dynamic_class_name_fetch_has_illegal_literal_receiver(expr: &Expr) -> bool {
         | Expr::Bool(_, _)
         | Expr::Null(_) => true,
         _ => false,
+    }
+}
+
+fn constant_expression_class_name_fetch_error_type(expr: &Expr) -> Option<&'static str> {
+    match expr {
+        Expr::Grouped { expr, .. } => constant_expression_class_name_fetch_error_type(expr),
+        Expr::Binary {
+            op, left, right, ..
+        } => {
+            let left_type = scalar_constant_expr_type(left)?;
+            let right_type = scalar_constant_expr_type(right)?;
+            match op {
+                BinaryOp::Concat => Some("string"),
+                BinaryOp::Equal
+                | BinaryOp::NotEqual
+                | BinaryOp::Identical
+                | BinaryOp::NotIdentical
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::And
+                | BinaryOp::Xor
+                | BinaryOp::Or => Some("bool"),
+                BinaryOp::Divide => Some("float"),
+                BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Power => {
+                    if left_type == "float" || right_type == "float" {
+                        Some("float")
+                    } else {
+                        Some("int")
+                    }
+                }
+                BinaryOp::Modulo
+                | BinaryOp::ShiftLeft
+                | BinaryOp::ShiftRight
+                | BinaryOp::BitwiseAnd
+                | BinaryOp::BitwiseXor
+                | BinaryOp::BitwiseOr
+                | BinaryOp::Spaceship => Some("int"),
+                BinaryOp::Coalesce => None,
+            }
+        }
+        Expr::Unary { op, expr, .. } => {
+            let inner = scalar_constant_expr_type(expr)?;
+            match op {
+                UnaryOp::Positive | UnaryOp::Negate => Some(inner),
+                UnaryOp::Not => Some("bool"),
+                UnaryOp::BitwiseNot => Some(if inner == "string" { "string" } else { "int" }),
+                UnaryOp::ErrorSuppress => None,
+            }
+        }
+        Expr::Cast { kind, expr, .. } => {
+            scalar_constant_expr_type(expr)?;
+            match kind {
+                CastKind::Int | CastKind::Integer => Some("int"),
+                CastKind::Float | CastKind::Double => Some("float"),
+                CastKind::String | CastKind::Binary => Some("string"),
+                CastKind::Bool | CastKind::Boolean => Some("bool"),
+                CastKind::Array | CastKind::Object | CastKind::Void => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn scalar_constant_expr_type(expr: &Expr) -> Option<&'static str> {
+    match expr {
+        Expr::Grouped { expr, .. } => scalar_constant_expr_type(expr),
+        Expr::String(_, _) | Expr::ShellExec { .. } => Some("string"),
+        Expr::Int(_, _) => Some("int"),
+        Expr::Float(_, _) => Some("float"),
+        Expr::Bool(_, _) => Some("bool"),
+        Expr::Null(_) => Some("null"),
+        Expr::Binary { .. } | Expr::Unary { .. } | Expr::Cast { .. } => {
+            constant_expression_class_name_fetch_error_type(expr)
+        }
+        _ => None,
     }
 }
 

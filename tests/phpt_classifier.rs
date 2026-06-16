@@ -641,6 +641,17 @@ fn phpt_classifier_keeps_nullable_never_and_function_static_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_tracks_nested_function_blocks_for_static_locals() {
+    let phpt = "--TEST--\nstatic after nested block\n--FILE--\n<?php\nfunction f($flag) {\n    if ($flag) {\n        echo \"flag\\n\";\n    }\n    static $value = 1;\n    echo $value, \"\\n\";\n}\nf(false);\n--EXPECT--\n1\n";
+
+    assert_eq!(
+        classify(phpt).trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+    assert_eq!(classify(phpt), classify_with_section_cache(phpt));
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_foreach_diagnostics_runnable() {
     let cases = [
         "--TEST--\nappend read\n--FILE--\n<?php\nforeach ($items[] as $value) {}\n--EXPECTF--\n",
@@ -1315,6 +1326,16 @@ fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
 }
 
 #[test]
+fn phpt_classifier_excludes_unsupported_date_format_parser_rows() {
+    let classification = classify(
+        "--TEST--\ndate parser\n--FILE--\n<?php\nvar_dump(date_parse_from_format('Y-m-d H:i:s.u', '2009-03-01 18:00:00.7777777'));\n--EXPECT--\n",
+    );
+
+    assert!(classification.starts_with("unsupported-internal\t"));
+    assert!(classification.contains("date format parser diagnostics"));
+}
+
+#[test]
 fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     let cases = [
         (
@@ -1384,7 +1405,6 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         exception_string_param_max_len.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
-
 }
 
 #[test]
