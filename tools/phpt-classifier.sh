@@ -1664,8 +1664,21 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
+            if (match(line, /[$][a-z_][a-z0-9_]*[[:space:]]*=[^;]*new[[:space:]]+\\?reflectionproperty[[:space:]]*\(/)) {
+                reflection_property_assignment = substr(line, RSTART, RLENGTH)
+                sub(/^[$]/, "", reflection_property_assignment)
+                sub(/[[:space:]]*=.*/, "", reflection_property_assignment)
+                reflection_property_vars[reflection_property_assignment] = 1
+            }
+            for (reflection_property_var in reflection_property_vars) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isfinal|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
+                    print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
+                    found = 1
+                    exit
+                }
+            }
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
-                line ~ /->[[:space:]]*(getattributes|getdoccomment|gettype|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isfinal|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isfinal|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_|export|setaccessible|getmodifiernames)/) {
                 print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                 found = 1

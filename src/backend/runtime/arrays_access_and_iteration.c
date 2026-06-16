@@ -501,6 +501,11 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         return ptn_null();
     }
     PtnObject *source = resolved.as.object;
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_internal_class_name_is_sensitive_parameter_value(source->class_name)) {
+        return ptn_sensitive_parameter_value_clone(runtime, resolved, line);
+    }
+#endif
     if (source->native_data != NULL) {
         char message[192];
         int written = snprintf(

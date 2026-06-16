@@ -548,12 +548,18 @@ static PTN_UNUSED int ptn_try_object_to_string_operand(
     PtnStringOperand *out
 ) {
     value = ptn_value_deref(value);
+    int has_to_string = 0;
+    if (runtime != NULL && runtime->declared_method_exists != NULL && value.type == PTN_OBJECT) {
+        has_to_string = runtime->declared_method_exists(value.as.object->class_name, "__toString");
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        has_to_string = has_to_string || ptn_internal_class_method_exists(value.as.object->class_name, "__toString");
+#endif
+    }
     if (
         runtime == NULL ||
         runtime->method_dispatch == NULL ||
-        runtime->declared_method_exists == NULL ||
         value.type != PTN_OBJECT ||
-        !runtime->declared_method_exists(value.as.object->class_name, "__toString")
+        !has_to_string
     ) {
         return 0;
     }

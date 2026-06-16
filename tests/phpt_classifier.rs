@@ -1500,6 +1500,28 @@ fn phpt_classifier_keeps_declared_reflection_property_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_excludes_reflection_property_type_rows() {
+    let classification = classify(
+        "--TEST--\nreflection property type\n--FILE--\n<?php\nclass Bag { public int $value = 1; }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getType());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("unsupported-internal-reflection-metadata\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_reflection_parameter_named_type_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nreflection parameter type\n--FILE--\n<?php\nfunction takesString(string $value): int { return strlen($value); }\n$function = new ReflectionFunction('takesString');\n$type = $function->getParameters()[0]->getType();\n$return = $function->getReturnType();\nvar_dump($type->getName(), $type->isBuiltin(), $return->getName());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_basic_assertions_runnable() {
     let classification = classify(
         "--TEST--\nassert\n--FILE--\n<?php\nvar_dump(assert(true));\ntry { assert(false, 'failed'); } catch (AssertionError $e) { echo $e->getMessage(); }\n--EXPECT--\n",
