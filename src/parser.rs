@@ -2080,7 +2080,13 @@ impl Parser<'_> {
             ));
         };
         self.expect_equal()?;
-        let value = self.parse_expr()?;
+        let value = self.parse_const_context_expr()?;
+        if const_expr_contains_new_object(&value) {
+            return Err(Diagnostic::new(
+                "New expressions are not supported in this context",
+                Some(value.span()),
+            ));
+        }
         if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "class constant value must be a supported constant expression",
@@ -3883,7 +3889,7 @@ impl Parser<'_> {
         }
         self.declared_constants.insert(name.to_ascii_lowercase());
         self.expect_equal()?;
-        let value = self.parse_expr()?;
+        let value = self.parse_const_context_expr()?;
         if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "constant expression contains invalid operation",
@@ -4821,6 +4827,12 @@ impl Parser<'_> {
                     );
                 }
                 TokenKind::LeftBracket if bracket_depth == 1 && paren_depth == 1 => {
+                    if matches!(self.peek().kind, TokenKind::Comma) {
+                        return Err(Diagnostic::new(
+                            "Cannot use empty array elements in arrays",
+                            Some(span),
+                        ));
+                    }
                     arguments.record_typed_text(
                         pending_argument_name.take(),
                         "Array".to_string(),
@@ -4850,7 +4862,15 @@ impl Parser<'_> {
                     pending_argument_name = None;
                     collecting_name = true;
                 }
-                TokenKind::LeftBracket => bracket_depth += 1,
+                TokenKind::LeftBracket => {
+                    if paren_depth > 0 && matches!(self.peek().kind, TokenKind::Comma) {
+                        return Err(Diagnostic::new(
+                            "Cannot use empty array elements in arrays",
+                            Some(span),
+                        ));
+                    }
+                    bracket_depth += 1;
+                }
                 TokenKind::RightBracket => {
                     if bracket_depth == 1 && paren_depth == 0 {
                         apply_parsed_attribute(
@@ -4873,6 +4893,19 @@ impl Parser<'_> {
 
     fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_assignment_expr()
+    }
+
+    fn parse_const_context_expr(&mut self) -> Result<Expr> {
+        self.parse_expr().map_err(|error| {
+            if error.message == CLASS_CONSTANT_FETCH_UNSUPPORTED {
+                Diagnostic::new(
+                    "Dynamic class names are not allowed in compile-time class constant references",
+                    error.span,
+                )
+            } else {
+                error
+            }
+        })
     }
 
     fn parse_expr_allowing_append_array_read(&mut self) -> Result<Expr> {
@@ -5726,6 +5759,22 @@ impl Parser<'_> {
                     Some(token.span),
                     "expected fully qualified name",
                 )?;
+                if parsed_name
+                    .name
+                    .eq_ignore_ascii_case("__compiler_halt_offset__")
+                    && !matches!(
+                        self.peek().kind,
+                        TokenKind::DoubleColon | TokenKind::LeftParen
+                    )
+                {
+                    if let Some(offset) = self.compiler_halt_offset {
+                        return Ok(Expr::Int(offset, parsed_name.span));
+                    }
+                    return Ok(Expr::Constant(
+                        self.resolve_constant_name(&parsed_name),
+                        parsed_name.span,
+                    ));
+                }
                 if matches!(self.peek().kind, TokenKind::DoubleColon) {
                     let class_name = self.resolve_class_name(&parsed_name);
                     return self.parse_static_member_expr(
@@ -12176,13 +12225,19 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
     match source {
         Expr::Variable(_, _)
         | Expr::DynamicVariable { .. }
-        | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
         | Expr::PropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. } => Ok(()),
+        Expr::Call { name, span, .. } if is_modeled_internal_function_name(name) => {
+            Err(Diagnostic::new(
+                "Cannot use result of built-in function in write context",
+                Some(*span),
+            ))
+        }
+        Expr::Call { .. } => Ok(()),
         Expr::Grouped { expr, .. } => validate_reference_source_expr(expr),
         Expr::ArrayAccess { .. } => validate_array_reference_lvalue_expr(
             source,
@@ -13006,6 +13061,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "ord"
             | "rand"
             | "range"
+            | "register_tick_function"
             | "arsort"
             | "asort"
             | "krsort"
@@ -15034,16 +15090,17 @@ fn scalar_constant_expr_type(expr: &Expr) -> Option<&'static str> {
 }
 
 fn is_supported_global_const_expr(expr: &Expr) -> bool {
-    is_supported_global_const_expr_with_options(expr, false)
+    is_supported_global_const_expr_with_options(expr, false, false)
 }
 
 fn is_supported_const_declaration_expr(expr: &Expr) -> bool {
-    is_supported_global_const_expr_with_options(expr, true)
+    is_supported_global_const_expr_with_options(expr, true, true)
 }
 
 fn is_supported_global_const_expr_with_options(
     expr: &Expr,
     allow_const_array_unpack_error_operands: bool,
+    allow_array_access: bool,
 ) -> bool {
     match expr {
         Expr::String(_, _)
@@ -15059,17 +15116,20 @@ fn is_supported_global_const_expr_with_options(
                 is_supported_global_const_expr_with_options(
                     key,
                     allow_const_array_unpack_error_operands,
+                    allow_array_access,
                 )
             }) && match &element.value {
                 ArrayElementValue::Hole(_) => false,
                 ArrayElementValue::Value(value) => is_supported_global_const_expr_with_options(
                     value,
                     allow_const_array_unpack_error_operands,
+                    allow_array_access,
                 ),
                 ArrayElementValue::Unpack(value) => {
                     is_supported_global_const_expr_with_options(
                         value,
                         allow_const_array_unpack_error_operands,
+                        allow_array_access,
                     ) || (allow_const_array_unpack_error_operands
                         && is_supported_const_array_unpack_error_operand(value))
                 }
@@ -15080,6 +15140,7 @@ fn is_supported_global_const_expr_with_options(
             is_supported_global_const_expr_with_options(
                 expr,
                 allow_const_array_unpack_error_operands,
+                allow_array_access,
             )
         }
         Expr::FirstClassCallable { callable, .. } => {
@@ -15089,9 +15150,26 @@ fn is_supported_global_const_expr_with_options(
             is_supported_global_const_expr_with_options(
                 left,
                 allow_const_array_unpack_error_operands,
+                allow_array_access,
             ) && is_supported_global_const_expr_with_options(
                 right,
                 allow_const_array_unpack_error_operands,
+                allow_array_access,
+            )
+        }
+        Expr::ArrayAccess {
+            array,
+            index: Some(index),
+            ..
+        } if allow_array_access => {
+            is_supported_global_const_expr_with_options(
+                array,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+            ) && is_supported_global_const_expr_with_options(
+                index,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
             )
         }
         Expr::Ternary { .. } | Expr::Match { .. } => false,
@@ -15141,6 +15219,72 @@ fn is_supported_const_array_unpack_error_operand(expr: &Expr) -> bool {
         }
         Expr::Grouped { expr, .. } => is_supported_const_array_unpack_error_operand(expr),
         _ => false,
+    }
+}
+
+fn const_expr_contains_new_object(expr: &Expr) -> bool {
+    match expr {
+        Expr::NewObject { .. } | Expr::DynamicNewObject { .. } => true,
+        Expr::Grouped { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::ArrayAccess {
+            array: expr,
+            index: None,
+            ..
+        } => const_expr_contains_new_object(expr),
+        Expr::ArrayAccess {
+            array,
+            index: Some(index),
+            ..
+        } => const_expr_contains_new_object(array) || const_expr_contains_new_object(index),
+        Expr::Binary { left, right, .. } => {
+            const_expr_contains_new_object(left) || const_expr_contains_new_object(right)
+        }
+        Expr::Array { elements, .. } => elements.iter().any(|element| {
+            element
+                .key
+                .as_ref()
+                .is_some_and(const_expr_contains_new_object)
+                || match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        const_expr_contains_new_object(value)
+                    }
+                    ArrayElementValue::Reference(target) => {
+                        reference_target_contains_new_object(target)
+                    }
+                    ArrayElementValue::Hole(_) => false,
+                }
+        }),
+        _ => false,
+    }
+}
+
+fn reference_target_contains_new_object(target: &ReferenceTarget) -> bool {
+    match target {
+        ReferenceTarget::DynamicVariable { name, .. } => const_expr_contains_new_object(name),
+        ReferenceTarget::ArrayDim(target) => target.dimensions.iter().any(|dimension| {
+            dimension
+                .as_ref()
+                .is_some_and(const_expr_contains_new_object)
+        }),
+        ReferenceTarget::Property { receiver, .. } => const_expr_contains_new_object(receiver),
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            const_expr_contains_new_object(receiver) || const_expr_contains_new_object(name)
+        }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            const_expr_contains_new_object(receiver)
+                || dimensions.iter().any(|dimension| {
+                    dimension
+                        .as_ref()
+                        .is_some_and(const_expr_contains_new_object)
+                })
+        }
+        ReferenceTarget::Variable { .. } => false,
     }
 }
 
@@ -15202,6 +15346,13 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         }),
         Expr::Unary { expr, .. } | Expr::Grouped { expr, .. } => {
             is_supported_parameter_default_expr(expr)
+        }
+        Expr::ArrayAccess {
+            array,
+            index: Some(index),
+            ..
+        } => {
+            is_supported_parameter_default_expr(array) && is_supported_parameter_default_expr(index)
         }
         Expr::FirstClassCallable { callable, .. } => {
             is_supported_first_class_callable_const_target(callable)

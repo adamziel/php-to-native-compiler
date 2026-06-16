@@ -10488,7 +10488,7 @@ static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const
         ptn_array_set_entry(
             result.as.array,
             key,
-            ptn_value_clone(ptn_array_reindexing_internal_value(source->value))
+            ptn_value_clone_deref(source->value)
         );
     }
 
@@ -32691,6 +32691,23 @@ static PtnValue ptn_internal_restore_error_handler(PtnRuntime *runtime, size_t a
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_register_tick_function(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "register_tick_function",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_value_destroy(&callback);
+    return ptn_bool(1);
+}
+
 static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || root->output_buffers_len == 0) {
@@ -34157,6 +34174,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rawurldecode", 1, 1, ptn_internal_rawurldecode },
         { "rawurlencode", 1, 1, ptn_internal_rawurlencode },
         { "range", 2, 3, ptn_internal_range },
+        { "register_tick_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_tick_function },
         { "readdir", 1, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "readlink", 1, 1, ptn_internal_readlink },

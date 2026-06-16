@@ -1541,12 +1541,12 @@ fn parser_accepts_scalar_function_parameter_defaults() {
 #[test]
 fn parser_accepts_array_function_parameter_defaults() {
     let program = parser::parse(
-        "<?php function defaults($a = [1, \"key\" => [false]], $b = array()) { return $a; }",
+        "<?php function defaults($a = [1, \"key\" => [false]], $b = array(), $c = [\"bar\" => 3][\"bar\"]) { return $a; }",
     )
     .unwrap();
 
     let function = &program.functions[0];
-    assert_eq!(function.parameters.len(), 2);
+    assert_eq!(function.parameters.len(), 3);
     assert!(matches!(
         function.parameters[0].default_value,
         Some(Expr::Array { ref elements, .. }) if elements.len() == 2
@@ -1554,6 +1554,12 @@ fn parser_accepts_array_function_parameter_defaults() {
     assert!(matches!(
         function.parameters[1].default_value,
         Some(Expr::Array { ref elements, .. }) if elements.is_empty()
+    ));
+    assert!(matches!(
+        function.parameters[2].default_value,
+        Some(Expr::ArrayAccess { ref array, index: Some(ref index), .. })
+            if matches!(array.as_ref(), Expr::Array { .. })
+                && matches!(index.as_ref(), Expr::String(key, _) if key == "bar")
     ));
 }
 
@@ -3278,6 +3284,12 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "unsupported by-reference assignment target"
     );
 
+    let builtin_result_assignment = parser::parse("<?php $alias =& strlen('x');").unwrap_err();
+    assert_eq!(
+        builtin_result_assignment.message,
+        "Cannot use result of built-in function in write context"
+    );
+
     parser::parse("<?php function &factory(&$value) { $fn = 'id'; return $fn($value); }").unwrap();
 
     let recursive_return =
@@ -3698,14 +3710,14 @@ fn parser_accepts_shift_expressions_and_bare_constants() {
 #[test]
 fn parser_accepts_global_const_declarations() {
     let program = parser::parse(
-        "<?php const C = 0 && __NAMESPACE__, D = PHP_EOL, A = [\"x\" => 1]; var_dump(C, defined(\"D\"));",
+        "<?php const C = 0 && __NAMESPACE__, D = PHP_EOL, A = [\"x\" => 1], B = [\"bar\" => 3][\"bar\"]; var_dump(C, defined(\"D\"));",
     )
     .unwrap();
 
     let Statement::Const { declarations, .. } = &program.statements[0] else {
         panic!("expected const declaration");
     };
-    assert_eq!(declarations.len(), 3);
+    assert_eq!(declarations.len(), 4);
     assert_eq!(declarations[0].name, "C");
     assert!(matches!(
         &declarations[0].value,
@@ -3722,6 +3734,12 @@ fn parser_accepts_global_const_declarations() {
         &declarations[2].value,
         Expr::Array { elements, .. } if elements.len() == 1
     ));
+    assert!(matches!(
+        &declarations[3].value,
+        Expr::ArrayAccess { array, index: Some(index), .. }
+            if matches!(array.as_ref(), Expr::Array { .. })
+                && matches!(index.as_ref(), Expr::String(key, _) if key == "bar")
+    ));
 }
 
 #[test]
@@ -3729,7 +3747,7 @@ fn parser_accepts_class_constant_metadata_and_fetches() {
     let program = parser::parse(
         "<?php
 class Sample {
-    const A = 1, B = [\"x\" => 2];
+    const A = 1, B = [\"x\" => 2], C = [\"bar\" => 3][\"bar\"];
     public const Label = \"ok\";
 
     public static function value() { return self::A; }
@@ -3741,7 +3759,7 @@ echo \\Sample::Label;",
     .unwrap();
 
     assert_eq!(program.classes.len(), 1);
-    assert_eq!(program.classes[0].constants.len(), 3);
+    assert_eq!(program.classes[0].constants.len(), 4);
     assert_eq!(program.classes[0].constants[0].name, "A");
     assert_eq!(
         program.classes[0].constants[0].visibility,
@@ -3754,6 +3772,12 @@ echo \\Sample::Label;",
     assert!(matches!(
         program.classes[0].constants[1].value,
         Expr::Array { ref elements, .. } if elements.len() == 1
+    ));
+    assert!(matches!(
+        program.classes[0].constants[2].value,
+        Expr::ArrayAccess { ref array, index: Some(ref index), .. }
+            if matches!(array.as_ref(), Expr::Array { .. })
+                && matches!(index.as_ref(), Expr::String(key, _) if key == "bar")
     ));
     assert!(matches!(
         program.classes[0].methods[0].body[0],
@@ -3872,6 +3896,16 @@ fn parser_rejects_unsupported_class_constant_boundaries() {
             "dynamic constant",
             "<?php $object = new stdClass; echo $object::CONST;",
             "class constant fetches are unsupported; class constants and enum cases require class metadata",
+        ),
+        (
+            "dynamic constant expression",
+            "<?php $foo = 'test'; const C = $foo::BAR;",
+            "Dynamic class names are not allowed in compile-time class constant references",
+        ),
+        (
+            "new class constant value",
+            "<?php class Test { const X = new stdClass; }",
+            "New expressions are not supported in this context",
         ),
     ];
 
@@ -4836,6 +4870,13 @@ fn parser_validates_attribute_argument_surface() {
     assert_eq!(
         dynamic_class_constant.message,
         "Dynamic class names are not allowed in compile-time class constant references"
+    );
+
+    let empty_array_element = parser::parse("<?php #[A([,]->e)] class C {}").unwrap_err();
+    assert_eq!(empty_array_element.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        empty_array_element.message,
+        "Cannot use empty array elements in arrays"
     );
 
     let unpack_argument = parser::parse("<?php #[A(...[1])] class C {}").unwrap_err();
@@ -6713,6 +6754,31 @@ fn compile_scalar_echo_keeps_direct_output_path_to_native_binary() {
     assert!(echo_body.contains("case PTN_INT:"));
     assert!(echo_body.contains("case PTN_FLOAT:"));
     assert!(echo_body.contains("case PTN_STRING:"));
+}
+
+#[test]
+fn compile_register_tick_function_noop_to_native_binary() {
+    let root = temp_dir("ptn-native-register-tick-function-noop");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("register-tick-function-noop.php");
+    let output = root.join("register-tick-function-noop-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(register_tick_function(function () {}));\n\
+echo \"done\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -18576,7 +18642,7 @@ fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
     fs::create_dir_all(&root).unwrap();
     let input = root.join("halt-compiler-offset.php");
     let output = root.join("halt-compiler-offset-bin");
-    let source = "<?php echo \"before\\n\"; var_dump(__COMPILER_HALT_OFFSET__); __HALT_COMPILER();\necho \"after\\n\";\n";
+    let source = "<?php echo \"before\\n\"; var_dump(__COMPILER_HALT_OFFSET__, \\__COMPILER_HALT_OFFSET__); __HALT_COMPILER();\necho \"after\\n\";\n";
     let expected_offset = source.find("__HALT_COMPILER();").unwrap() + "__HALT_COMPILER();".len();
     fs::write(&input, source).unwrap();
 
@@ -18586,7 +18652,7 @@ fn compile_halt_compiler_offset_and_trailing_source_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        format!("before\nint({expected_offset})\n")
+        format!("before\nint({expected_offset})\nint({expected_offset})\n")
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -26386,6 +26452,11 @@ $nested = [$value, [\"next\"], $value];\n\
 $slice = array_slice($nested, 0, 2);\n\
 $slice[0][] = \"copy\";\n\
 var_dump($slice[0], $nested[0]);\n\
+$target = \"target\";\n\
+$refSource = [&$target, \"other\"];\n\
+$refSlice = array_slice($refSource, 0, 1);\n\
+$refSlice[0] = \"changed\";\n\
+var_dump($target, $refSlice[0]);\n\
 try { array_slice(range(1, 3), 0, \"foo\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists(\"array_slice\"), function_exists(\"ARRAY_SLICE\"));",
     )
@@ -26440,6 +26511,8 @@ var_dump(function_exists(\"array_slice\"), function_exists(\"ARRAY_SLICE\"));",
             "  [0]=>\n",
             "  string(4) \"seed\"\n",
             "}\n",
+            "string(6) \"target\"\n",
+            "string(7) \"changed\"\n",
             "array_slice(): Argument #3 ($length) must be of type ?int, string given\n",
             "bool(true)\n",
             "bool(true)\n"
@@ -34568,6 +34641,7 @@ fn compile_class_constant_reads_to_native_binary() {
         "<?php
 class Sample {
     const X = 42, Data = [\"answer\" => 42];
+    const Extracted = [\"bar\" => 3][\"bar\"];
     public const Label = \"hello\";
 
     public static function label() {
@@ -34577,6 +34651,7 @@ class Sample {
 
 echo Sample::X, \"\\n\";
 var_dump(Sample::Data);
+var_dump(Sample::Extracted);
 echo Sample::label(), \"\\n\";
 var_dump(defined(\"sample::Label\"), constant(\"sample::Label\"));
 var_dump(ArrayObject::STD_PROP_LIST, \\ArrayObject::ARRAY_AS_PROPS, constant(\"arrayobject::STD_PROP_LIST\"), defined(\"ArrayObject::ARRAY_AS_PROPS\"));
@@ -34601,6 +34676,7 @@ try {
             "  [\"answer\"]=>\n",
             "  int(42)\n",
             "}\n",
+            "int(3)\n",
             "hello\n",
             "bool(true)\n",
             "string(5) \"hello\"\n",
