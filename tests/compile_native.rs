@@ -17740,6 +17740,53 @@ try {
 }
 
 #[test]
+fn compile_assertion_text_preserves_lexical_class_names_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-lexical-class-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-lexical-class-text.php");
+    let output = root.join("assert-lexical-class-text-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace Foo;
+class Bar {}
+
+$bar = \"Bar\";
+try {
+    assert(new \\stdClass instanceof $bar);
+} catch (\\AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+try {
+    assert(new \\stdClass instanceof Bar);
+} catch (\\AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+try {
+    assert(new \\stdClass instanceof \\Foo\\Bar);
+} catch (\\AssertionError $e) {
+    echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL;
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert(): assert(new \\stdClass() instanceof $bar) failed\n",
+            "assert(): assert(new \\stdClass() instanceof Bar) failed\n",
+            "assert(): assert(new \\stdClass() instanceof \\Foo\\Bar) failed\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_assert_supplied_throwable_uncaught_trace_to_native_binary() {
     let root = temp_dir("ptn-native-assert-supplied-throwable-trace");
     fs::create_dir_all(&root).unwrap();
@@ -17824,10 +17871,43 @@ fn compile_assertion_runtime_ini_state_to_native_binary() {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "string(1) \"1\"\nstring(1) \"1\"\nstring(1) \"0\"\nbool(true)\nassert(false)\nstring(1) \"0\"\nWarning: assert(): warned failed in ptn on line 1\nbool(false)\nstring(1) \"1\"\nstring(1) \"1\"\n"
+        stdout,
+        "string(1) \"1\"\nstring(1) \"1\"\nstring(1) \"0\"\nbool(true)\nassert(false)\nstring(1) \"0\"\n\nWarning: assert(): warned failed in ptn on line 1\nbool(false)\nstring(1) \"1\"\nstring(1) \"1\"\n"
     );
+    assert!(!stdout.contains("\n\n\nWarning:"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_zend_assertions_runtime_disable_warning_spacing_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-runtime-disable-spacing");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-runtime-disable-spacing.php");
+    let output = root.join("assert-runtime-disable-spacing-bin");
+    fs::write(
+        &input,
+        "<?php ini_set(\"zend.assertions\", 0); var_dump(assert(false)); var_dump(assert(true)); ini_set(\"zend.assertions\", 1); try { var_dump(assert(false)); } catch (AssertionError $e) { echo 'assert(): ', $e->getMessage(), ' failed', PHP_EOL; } var_dump(assert(true)); ini_set(\"zend.assertions\", -1);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_ZEND_ASSERTIONS", "0")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let input_display = input.to_string_lossy();
+    assert_eq!(
+        stdout,
+        format!(
+            "bool(true)\nbool(true)\nassert(): assert(false) failed\nbool(true)\n\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in {input_display} on line 1\n"
+        )
+    );
+    assert!(!stdout.contains("\n\n\nWarning:"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -17855,9 +17935,10 @@ fn compile_zend_assertions_compile_time_disabled_mode_to_native_binary() {
     assert_eq!(
         stdout,
         format!(
-            "string(2) \"-1\"\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in {input_display} on line 1\nbool(true)\n\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in {input_display} on line 1\nbool(true)\n"
+            "string(2) \"-1\"\n\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in {input_display} on line 1\nbool(true)\n\nWarning: zend.assertions may be completely enabled or disabled only in php.ini in {input_display} on line 1\nbool(true)\n"
         )
     );
+    assert!(!stdout.contains("\n\n\nWarning:"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

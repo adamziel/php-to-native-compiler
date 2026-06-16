@@ -917,10 +917,23 @@ impl Parser<'_> {
     }
 
     fn parse_resolved_class_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
+        let (name, span, _) = self.parse_resolved_class_name_with_source(expected)?;
+        Ok((name, span))
+    }
+
+    fn parse_resolved_class_name_with_source(
+        &mut self,
+        expected: &str,
+    ) -> Result<(String, SourceSpan, String)> {
         let parsed = self.parse_name(expected)?;
         let span = parsed.span;
+        let source_name = self.parsed_name_source_text(&parsed);
         let name = self.resolve_class_name(&parsed);
-        Ok((self.resolve_runtime_class_alias_name(&name), span))
+        Ok((
+            self.resolve_runtime_class_alias_name(&name),
+            span,
+            source_name,
+        ))
     }
 
     fn parse_resolved_function_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
@@ -1073,6 +1086,13 @@ impl Parser<'_> {
                 self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
             }
         }
+    }
+
+    fn parsed_name_source_text(&self, parsed: &ParsedName) -> String {
+        self.source
+            .get(parsed.span.byte_start..parsed.span.byte_end)
+            .unwrap_or(parsed.name.as_str())
+            .to_string()
     }
 
     fn resolve_aliasable_name(&self, name: &str, aliases: &HashMap<String, String>) -> String {
@@ -4930,8 +4950,13 @@ impl Parser<'_> {
                 }
                 self.advance();
                 let target = if self.peek_starts_class_name() {
-                    let (name, span) = self.parse_resolved_class_name("expected class name")?;
-                    InstanceOfTarget::ClassName { name, span }
+                    let (name, span, source_name) =
+                        self.parse_resolved_class_name_with_source("expected class name")?;
+                    InstanceOfTarget::ClassName {
+                        name,
+                        source_name,
+                        span,
+                    }
                 } else {
                     InstanceOfTarget::Expr(Box::new(self.parse_unary_expr()?))
                 };
@@ -5988,7 +6013,7 @@ impl Parser<'_> {
             });
         }
 
-        let (class_name, class_span) = self.parse_new_object_class_name()?;
+        let (class_name, class_span, source_name) = self.parse_new_object_class_name()?;
         let mut span = combine_spans(start_span, class_span);
         let (arguments, argument_names, argument_unpacks) =
             if matches!(self.peek().kind, TokenKind::LeftParen) {
@@ -6001,6 +6026,7 @@ impl Parser<'_> {
             };
         Ok(Expr::NewObject {
             class_name,
+            source_name,
             arguments,
             argument_names,
             argument_unpacks,
@@ -6009,8 +6035,8 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_new_object_class_name(&mut self) -> Result<(String, SourceSpan)> {
-        self.parse_resolved_class_name("expected class name")
+    fn parse_new_object_class_name(&mut self) -> Result<(String, SourceSpan, String)> {
+        self.parse_resolved_class_name_with_source("expected class name")
     }
 
     fn parse_anonymous_class_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
@@ -6093,6 +6119,7 @@ impl Parser<'_> {
         });
 
         Ok(Expr::NewObject {
+            source_name: class_name.clone(),
             class_name,
             arguments,
             argument_names,

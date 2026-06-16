@@ -2972,6 +2972,7 @@ impl<'a> LoweringContext<'a> {
             },
             Expr::NewObject {
                 class_name,
+                source_name: _,
                 arguments,
                 argument_names,
                 argument_unpacks,
@@ -3336,7 +3337,7 @@ fn assertion_expr_text(expr: &Expr) -> String {
             assertion_argument_list_text(arguments)
         ),
         Expr::NewObject {
-            class_name,
+            source_name,
             arguments,
             anonymous_class_source,
             ..
@@ -3345,7 +3346,7 @@ fn assertion_expr_text(expr: &Expr) -> String {
                 assertion_anonymous_class_source_text(source)
             } else {
                 format!(
-                    "new {class_name}({})",
+                    "new {source_name}({})",
                     assertion_argument_list_text(arguments)
                 )
             }
@@ -3387,7 +3388,7 @@ fn assertion_expr_text(expr: &Expr) -> String {
         }
         Expr::InstanceOf { expr, target, .. } => {
             let target_text = match target {
-                AstInstanceOfTarget::ClassName { name, .. } => name.clone(),
+                AstInstanceOfTarget::ClassName { source_name, .. } => source_name.clone(),
                 AstInstanceOfTarget::Expr(target) => assertion_expr_text(target),
             };
             format!("{} instanceof {target_text}", assertion_expr_text(expr))

@@ -1420,12 +1420,6 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
             "assert_options() mode/callback state",
         ),
         (
-            "namespace assert",
-            "--TEST--\nnamespace assert\n--FILE--\n<?php\nnamespace Foo;\nvar_dump(assert(false));\n--EXPECT--\n",
-            "unsupported-assertion-runtime\t",
-            "namespace-aware assertion function resolution",
-        ),
-        (
             "assert null coalesce assignment",
             "--TEST--\nassert lvalue\n--FILE--\n<?php\nassert($items['key'] ??= 1);\n--EXPECT--\n",
             "unsupported-assertion-runtime\t",
@@ -1450,6 +1444,14 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
             "{name}: {classification:?}"
         );
     }
+
+    let namespace_assert = classify(
+        "--TEST--\nnamespace assert\n--FILE--\n<?php\nnamespace Foo;\nvar_dump(assert(false));\n--EXPECT--\n",
+    );
+    assert_eq!(
+        namespace_assert.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
 }
 
 #[test]

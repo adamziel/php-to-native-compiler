@@ -30832,9 +30832,6 @@ static void ptn_runtime_set_assert_exception(PtnRuntime *runtime, int enabled) {
 static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requested, size_t line) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (requested < 0) {
-        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-            fputc('\n', stdout);
-        }
         ptn_emit_runtime_warning(
             runtime,
             "zend.assertions may be completely enabled or disabled only in php.ini",
@@ -30843,12 +30840,6 @@ static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requeste
         return 0;
     }
     if (root->initial_zend_assertions < 0) {
-        if (
-            runtime->diagnostics.emitted_warning &&
-            ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)
-        ) {
-            fputc('\n', stdout);
-        }
         ptn_emit_runtime_warning(
             runtime,
             "zend.assertions may be completely enabled or disabled only in php.ini",

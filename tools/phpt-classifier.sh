@@ -1853,15 +1853,7 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])namespace[[:space:]]+[a-z_\\][a-z0-9_\\]*[[:space:]]*;/) {
-                namespace_seen = 1
-            }
             if (line ~ /(^|[^[:alnum:]_$])assert[[:space:]]*\(/) {
-                if (namespace_seen) {
-                    print "unsupported-assertion-runtime\trequires namespace-aware assertion function resolution and diagnostic rendering, outside PTN modeled assertion state"
-                    found = 1
-                    exit
-                }
                 if (line ~ /[?][?]=/) {
                     print "unsupported-assertion-runtime\trequires assertion expression lvalue mode interaction, outside PTN modeled assertion lowering"
                     found = 1

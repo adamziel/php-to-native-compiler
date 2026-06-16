@@ -769,6 +769,7 @@ pub enum Expr {
     },
     NewObject {
         class_name: String,
+        source_name: String,
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
@@ -982,7 +983,11 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InstanceOfTarget {
-    ClassName { name: String, span: SourceSpan },
+    ClassName {
+        name: String,
+        source_name: String,
+        span: SourceSpan,
+    },
     Expr(Box<Expr>),
 }
 
