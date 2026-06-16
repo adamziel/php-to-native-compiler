@@ -52,6 +52,7 @@ pub fn parse(source: &str) -> Result<Program> {
         constant_aliases: HashMap::new(),
         runtime_class_aliases: HashMap::new(),
         declared_functions: HashSet::new(),
+        declared_class_names: HashMap::new(),
         anonymous_classes: Vec::new(),
         nested_functions: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
@@ -76,6 +77,7 @@ struct Parser<'a> {
     constant_aliases: HashMap<String, String>,
     runtime_class_aliases: HashMap<String, String>,
     declared_functions: HashSet<String>,
+    declared_class_names: HashMap<String, SourceSpan>,
     anonymous_classes: Vec<ClassDecl>,
     nested_functions: Vec<FunctionDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
@@ -315,7 +317,11 @@ impl Parser<'_> {
                     ));
                 }
                 if !self.seen_namespace_declaration
-                    && (!classes.is_empty() || !functions.is_empty() || !statements.is_empty())
+                    && (!classes.is_empty()
+                        || !functions.is_empty()
+                        || statements
+                            .iter()
+                            .any(|statement| !matches!(statement, Statement::Empty { .. })))
                 {
                     return Err(Diagnostic::new(
                         "Namespace declaration statement has to be the very first statement or after any declare call in the script",
@@ -334,7 +340,9 @@ impl Parser<'_> {
                 traits.push(self.parse_trait_decl(attributes)?);
             } else if self.peek_starts_class_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                classes.push(self.parse_class_decl(attributes)?);
+                let class = self.parse_class_decl(attributes)?;
+                self.register_declared_class_name(&class)?;
+                classes.push(class);
             } else {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let statement = self.parse_statement()?;
@@ -457,10 +465,25 @@ impl Parser<'_> {
                 "namespace declarations cannot use fully qualified names",
                 Some(parsed.span),
             )),
-            NameResolution::NamespaceRelative => Err(Diagnostic::new(
-                "namespace declarations cannot use namespace-relative names",
-                Some(parsed.span),
-            )),
+            NameResolution::NamespaceRelative => {
+                let text = self
+                    .source
+                    .get(parsed.span.byte_start..parsed.span.byte_end)
+                    .unwrap_or("namespace");
+                if parsed.name.is_empty() {
+                    Err(Diagnostic::new(
+                        format!("Cannot use '{text}' as namespace name"),
+                        Some(parsed.span),
+                    ))
+                } else {
+                    Err(Diagnostic::parse_error(
+                        format!(
+                            "syntax error, unexpected namespace-relative name \"{text}\", expecting \"{{\""
+                        ),
+                        Some(parsed.span),
+                    ))
+                }
+            }
         }
     }
 
@@ -505,22 +528,25 @@ impl Parser<'_> {
         kind: UseDeclarationKind,
         target: ParsedName,
     ) -> Result<()> {
-        let alias = if matches!(self.peek().kind, TokenKind::As) {
+        let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
             self.advance();
             let token = self.advance().clone();
             let TokenKind::Identifier(alias) = token.kind else {
                 return Err(Diagnostic::new("expected import alias", Some(token.span)));
             };
-            alias
+            (alias, token.span)
         } else {
-            target
-                .name
-                .rsplit('\\')
-                .next()
-                .unwrap_or(&target.name)
-                .to_string()
+            (
+                target
+                    .name
+                    .rsplit('\\')
+                    .next()
+                    .unwrap_or(&target.name)
+                    .to_string(),
+                target.span,
+            )
         };
-        self.register_use_import(kind, target, alias);
+        self.register_use_import(kind, target, alias, alias_span)?;
         Ok(())
     }
 
@@ -563,26 +589,29 @@ impl Parser<'_> {
                     Some(item.span),
                 ));
             }
-            let alias = if matches!(self.peek().kind, TokenKind::As) {
+            let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
                 self.advance();
                 let token = self.advance().clone();
                 let TokenKind::Identifier(alias) = token.kind else {
                     return Err(Diagnostic::new("expected import alias", Some(token.span)));
                 };
-                alias
+                (alias, token.span)
             } else {
-                item.name
-                    .rsplit('\\')
-                    .next()
-                    .unwrap_or(&item.name)
-                    .to_string()
+                (
+                    item.name
+                        .rsplit('\\')
+                        .next()
+                        .unwrap_or(&item.name)
+                        .to_string(),
+                    item.span,
+                )
             };
             let grouped_target = ParsedName {
                 name: format!("{}\\{}", prefix.name, item.name),
                 span: combine_spans(prefix.span, item.span),
                 resolution: prefix.resolution,
             };
-            self.register_use_import(item_kind, grouped_target, alias);
+            self.register_use_import(item_kind, grouped_target, alias, alias_span)?;
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
@@ -592,7 +621,13 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn register_use_import(&mut self, kind: UseDeclarationKind, target: ParsedName, alias: String) {
+    fn register_use_import(
+        &mut self,
+        kind: UseDeclarationKind,
+        target: ParsedName,
+        alias: String,
+        alias_span: SourceSpan,
+    ) -> Result<()> {
         let target_name = match target.resolution {
             NameResolution::FullyQualified => target.name,
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
@@ -601,6 +636,15 @@ impl Parser<'_> {
         let alias_key = alias.to_ascii_lowercase();
         match kind {
             UseDeclarationKind::Class => {
+                let declared_key = self.qualify_current_namespace(&alias).to_ascii_lowercase();
+                if self.declared_class_names.contains_key(&declared_key) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot use {target_name} as {alias} because the name is already in use"
+                        ),
+                        Some(alias_span),
+                    ));
+                }
                 self.class_aliases.insert(alias_key, target_name);
             }
             UseDeclarationKind::Function => {
@@ -610,6 +654,30 @@ impl Parser<'_> {
                 self.constant_aliases.insert(alias_key, target_name);
             }
         }
+        Ok(())
+    }
+
+    fn register_declared_class_name(&mut self, class: &ClassDecl) -> Result<()> {
+        let local_name = class
+            .name
+            .rsplit('\\')
+            .next()
+            .unwrap_or(&class.name)
+            .to_string();
+        if self
+            .class_aliases
+            .contains_key(&local_name.to_ascii_lowercase())
+        {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot redeclare class {local_name} (previously declared as local import)"
+                ),
+                Some(class.span),
+            ));
+        }
+        self.declared_class_names
+            .insert(class.name.to_ascii_lowercase(), class.span);
+        Ok(())
     }
 
     fn parse_use_name(&mut self, expected: &str) -> Result<ParsedName> {
@@ -4409,7 +4477,9 @@ impl Parser<'_> {
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
-                if name.eq_ignore_ascii_case("fn") {
+                if name.eq_ignore_ascii_case("fn")
+                    && matches!(self.peek().kind, TokenKind::LeftParen)
+                {
                     return self.parse_arrow_function_expr(token.span, false, attributes);
                 }
                 if name.eq_ignore_ascii_case("static") && self.peek_is_identifier("fn") {

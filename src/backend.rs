@@ -537,7 +537,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given\", function_name, position, parameter_name, expected_class_name, given);\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_exception_owned_message(runtime, \"TypeError\", message);\n");
+    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime->source_path, line);\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -890,10 +890,7 @@ fn emit_user_functions(
                     out.push_str("    if (!(");
                     out.push_str(&condition);
                     out.push_str(")) {\n");
-                    out.push_str("        ptn_runtime_free(&runtime);\n");
-                    out.push_str(
-                        "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
-                    );
+                    out.push_str("        ptn_throw_user_parameter_class_type_error(&runtime, \"");
                     out.push_str(&c_string(&function.display_name));
                     out.push_str("\", ");
                     out.push_str(&(parameter_index + 1).to_string());
@@ -913,14 +910,19 @@ fn emit_user_functions(
                         out.push_str(&parameter_source);
                         out.push_str(").type != PTN_NULL) {\n");
                         out.push_str(
-                            "        ptn_emit_type_error(&caller_runtime->diagnostics, \"",
+                            "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
                         out.push_str(&c_string(&function.display_name));
-                        out.push_str("() argument $");
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
                         out.push_str(&c_string(&parameter.name));
-                        out.push_str(" must be of type null\");\n");
-                        out.push_str("        ptn_runtime_free(&runtime);\n");
-                        out.push_str("        exit(255);\n");
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&type_hint_label(type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line);\n");
+                        out.push_str("        return ptn_null();\n");
                         out.push_str("    }\n");
                     }
                     if matches!(effective_type_hint, Some(TypeHint::Array)) {
@@ -934,14 +936,19 @@ fn emit_user_functions(
                         }
                         out.push_str(") {\n");
                         out.push_str(
-                            "        ptn_emit_type_error(&caller_runtime->diagnostics, \"",
+                            "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
                         out.push_str(&c_string(&function.display_name));
-                        out.push_str("() argument $");
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
                         out.push_str(&c_string(&parameter.name));
-                        out.push_str(" must be of type array\");\n");
-                        out.push_str("        ptn_runtime_free(&runtime);\n");
-                        out.push_str("        exit(255);\n");
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&type_hint_label(type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line);\n");
+                        out.push_str("        return ptn_null();\n");
                         out.push_str("    }\n");
                     }
                     if let Some(TypeHint::Class(class_name)) = effective_type_hint {
@@ -956,9 +963,8 @@ fn emit_user_functions(
                         out.push_str(", \"");
                         out.push_str(&c_string(class_name));
                         out.push_str("\")) {\n");
-                        out.push_str("        ptn_runtime_free(&runtime);\n");
                         out.push_str(
-                            "        ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
+                            "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
                         );
                         out.push_str(&c_string(&function.display_name));
                         out.push_str("\", ");
@@ -966,7 +972,7 @@ fn emit_user_functions(
                         out.push_str(", \"");
                         out.push_str(&c_string(&parameter.name));
                         out.push_str("\", \"");
-                        out.push_str(&c_string(class_name));
+                        out.push_str(&c_string(&type_hint_label(type_hint)));
                         out.push_str("\", ");
                         out.push_str(&parameter_source);
                         out.push_str(", line);\n");
@@ -1244,10 +1250,7 @@ fn emit_variadic_parameter_binding(
             out.push_str("            ptn_value_drop(&");
             out.push_str(&array_temp);
             out.push_str(");\n");
-            out.push_str("            ptn_runtime_free(&runtime);\n");
-            out.push_str(
-                "            ptn_throw_user_parameter_class_type_error(caller_runtime, \"",
-            );
+            out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
             out.push_str(&c_string(&function.name));
             out.push_str("\", ");
             out.push_str(&index_temp);
@@ -1267,16 +1270,23 @@ fn emit_variadic_parameter_binding(
         out.push_str("        if (ptn_value_deref(args[");
         out.push_str(&index_temp);
         out.push_str("]).type != PTN_NULL) {\n");
-        out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-        out.push_str(&c_string(&function.display_name));
-        out.push_str("() argument $");
-        out.push_str(&c_string(&parameter.name));
-        out.push_str(" must be of type null\");\n");
         out.push_str("            ptn_value_drop(&");
         out.push_str(&array_temp);
         out.push_str(");\n");
-        out.push_str("            ptn_runtime_free(&runtime);\n");
-        out.push_str("            exit(255);\n");
+        out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
+        out.push_str(&c_string(&function.display_name));
+        out.push_str("\", ");
+        out.push_str(&index_temp);
+        out.push_str(" + 1, \"");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&type_hint_label(
+            type_hint.expect("effective null type has source type hint"),
+        )));
+        out.push_str("\", args[");
+        out.push_str(&index_temp);
+        out.push_str("], line);\n");
+        out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }
     if matches!(effective_type_hint, Some(TypeHint::Array)) {
@@ -1289,16 +1299,23 @@ fn emit_variadic_parameter_binding(
             out.push_str("]).type != PTN_NULL");
         }
         out.push_str(") {\n");
-        out.push_str("            ptn_emit_type_error(&caller_runtime->diagnostics, \"");
-        out.push_str(&c_string(&function.display_name));
-        out.push_str("() argument $");
-        out.push_str(&c_string(&parameter.name));
-        out.push_str(" must be of type array\");\n");
         out.push_str("            ptn_value_drop(&");
         out.push_str(&array_temp);
         out.push_str(");\n");
-        out.push_str("            ptn_runtime_free(&runtime);\n");
-        out.push_str("            exit(255);\n");
+        out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
+        out.push_str(&c_string(&function.display_name));
+        out.push_str("\", ");
+        out.push_str(&index_temp);
+        out.push_str(" + 1, \"");
+        out.push_str(&c_string(&parameter.name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&type_hint_label(
+            type_hint.expect("effective array type has source type hint"),
+        )));
+        out.push_str("\", args[");
+        out.push_str(&index_temp);
+        out.push_str("], line);\n");
+        out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }
     if let Some(TypeHint::Class(class_name)) = effective_type_hint {
@@ -1316,15 +1333,16 @@ fn emit_variadic_parameter_binding(
         out.push_str("            ptn_value_drop(&");
         out.push_str(&array_temp);
         out.push_str(");\n");
-        out.push_str("            ptn_runtime_free(&runtime);\n");
-        out.push_str("            ptn_throw_user_parameter_class_type_error(caller_runtime, \"");
+        out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"");
         out.push_str(&c_string(&function.name));
         out.push_str("\", ");
         out.push_str(&index_temp);
         out.push_str(" + 1, \"");
         out.push_str(&c_string(&parameter.name));
         out.push_str("\", \"");
-        out.push_str(&c_string(class_name));
+        out.push_str(&c_string(&type_hint_label(
+            type_hint.expect("effective class type has source type hint"),
+        )));
         out.push_str("\", args[");
         out.push_str(&index_temp);
         out.push_str("], line);\n");
