@@ -24479,6 +24479,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *c
     return ptn_ascii_case_equal(class_name, "ReflectionMethod");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionProperty");
+}
+
 static int ptn_internal_reflection_metadata_class_exists(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Reflection")
         || ptn_ascii_case_equal(class_name, "ReflectionAttribute")
@@ -24711,7 +24715,8 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
 
 static int ptn_reflection_property_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
-        || ptn_ascii_case_equal(method_name, "getName");
+        || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "isReadable");
 }
 
 static int ptn_array_iterator_method_exists(const char *method_name) {
@@ -24789,7 +24794,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_reflection_method(class_name)) {
         return ptn_reflection_method_method_exists(method_name);
     }
-    if (ptn_ascii_case_equal(class_name, "ReflectionProperty")) {
+    if (ptn_internal_class_name_is_reflection_property(class_name)) {
         return ptn_reflection_property_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_array_iterator(class_name) ||
@@ -25783,6 +25788,19 @@ static void ptn_reflection_property_data_free(void *data) {
     free(property_data);
 }
 
+static PtnReflectionPropertyData *ptn_reflection_property_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_property(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionProperty object");
+        return NULL;
+    }
+    return (PtnReflectionPropertyData *)receiver.as.object->native_data;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_property_object_from_name(
     PtnRuntime *runtime,
     const char *class_name,
@@ -25809,6 +25827,89 @@ static PTN_UNUSED PtnValue ptn_reflection_property_object_from_name(
         ptn_owned_string(ptn_duplicate_string(class_name))
     );
     return object;
+}
+
+static void ptn_reflection_property_check_exact_arguments(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    size_t expected
+) {
+    if (argc == expected) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionProperty::%s() expects exactly %zu argument%s, %zu given",
+        method_name,
+        expected,
+        expected == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static void ptn_reflection_property_check_at_most_arguments(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    size_t maximum
+) {
+    if (argc <= maximum) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionProperty::%s() expects at most %zu argument%s, %zu given",
+        method_name,
+        maximum,
+        maximum == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnReflectionPropertyData *data = ptn_reflection_property_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getName")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "isReadable")) {
+        ptn_reflection_property_check_at_most_arguments(runtime, name, argc, 2);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue target = argc >= 2 ? ptn_value_deref(args[1]) : ptn_null();
+        if (target.type != PTN_OBJECT) {
+            return ptn_bool(0);
+        }
+        return ptn_bool(ptn_object_property_is_set(runtime, target, data->name, NULL, line));
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static void ptn_reflection_class_throw_missing_method(

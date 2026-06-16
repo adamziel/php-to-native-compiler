@@ -12133,6 +12133,18 @@ impl ValueEmitter {
             }
         }
 
+        if list_assignment_has_reference(target)
+            && !list_reference_source_warns_non_referenceable(value)
+        {
+            out.push_str(
+                "    ptn_abort_type_error_at(\"Cannot assign reference to non referenceable value\", \"",
+            );
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+        }
+
         let value_temp = self.emit_materialized_value(out, value);
         let result_temp = self.emit_list_assignment_from_temp(
             out,
