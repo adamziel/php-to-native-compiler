@@ -2669,6 +2669,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_reflection_property(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_property_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && (ptn_object_is_internal_or_descendant(receiver, "ArrayIterator") ||
             ptn_object_is_internal_or_descendant(receiver, "RecursiveArrayIterator"))
         && ptn_internal_class_method_exists("ArrayIterator", name)

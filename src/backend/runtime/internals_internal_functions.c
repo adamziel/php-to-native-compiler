@@ -353,6 +353,22 @@ static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
+static PTN_UNUSED int ptn_declared_class_reflection_method_metadata(
+    const char *class_name,
+    const char *method_name,
+    const char **declaring_class_out,
+    int *visibility_out,
+    int *is_static_out,
+    int *is_abstract_out,
+    int *returns_reference_out
+);
+static PTN_UNUSED int ptn_declared_class_reflection_property_metadata(
+    const char *class_name,
+    const char *property_name,
+    const char **declaring_class_out,
+    int *visibility_out,
+    int *is_static_out
+);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -24454,6 +24470,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *c
     return ptn_ascii_case_equal(class_name, "ReflectionMethod");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionProperty");
+}
+
 static int ptn_internal_reflection_metadata_class_exists(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Reflection")
         || ptn_ascii_case_equal(class_name, "ReflectionAttribute")
@@ -24669,7 +24689,36 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
 }
 
 static int ptn_reflection_method_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "getName");
+    return ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getDeclaringClass")
+        || ptn_ascii_case_equal(method_name, "getModifiers")
+        || ptn_ascii_case_equal(method_name, "isAbstract")
+        || ptn_ascii_case_equal(method_name, "isConstructor")
+        || ptn_ascii_case_equal(method_name, "isDestructor")
+        || ptn_ascii_case_equal(method_name, "isFinal")
+        || ptn_ascii_case_equal(method_name, "isInternal")
+        || ptn_ascii_case_equal(method_name, "isPrivate")
+        || ptn_ascii_case_equal(method_name, "isProtected")
+        || ptn_ascii_case_equal(method_name, "isPublic")
+        || ptn_ascii_case_equal(method_name, "isStatic")
+        || ptn_ascii_case_equal(method_name, "isUserDefined")
+        || ptn_ascii_case_equal(method_name, "returnsReference")
+        || ptn_ascii_case_equal(method_name, "setAccessible");
+}
+
+static int ptn_reflection_property_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getDeclaringClass")
+        || ptn_ascii_case_equal(method_name, "getModifiers")
+        || ptn_ascii_case_equal(method_name, "getValue")
+        || ptn_ascii_case_equal(method_name, "setValue")
+        || ptn_ascii_case_equal(method_name, "isDefault")
+        || ptn_ascii_case_equal(method_name, "isDynamic")
+        || ptn_ascii_case_equal(method_name, "isPrivate")
+        || ptn_ascii_case_equal(method_name, "isProtected")
+        || ptn_ascii_case_equal(method_name, "isPublic")
+        || ptn_ascii_case_equal(method_name, "isStatic")
+        || ptn_ascii_case_equal(method_name, "setAccessible");
 }
 
 static int ptn_array_iterator_method_exists(const char *method_name) {
@@ -24745,6 +24794,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_reflection_method(class_name)) {
         return ptn_reflection_method_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_reflection_property(class_name)) {
+        return ptn_reflection_property_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_array_iterator(class_name) ||
         ptn_internal_class_name_is_recursive_array_iterator(class_name)) {
@@ -25144,6 +25196,10 @@ static char *ptn_reflection_class_required_class_arg_name(
 typedef struct {
     char *class_name;
     char *name;
+    int visibility;
+    int is_static;
+    int is_abstract;
+    int returns_reference;
 } PtnReflectionMethodData;
 
 static void ptn_reflection_method_data_free(void *data) {
@@ -25174,12 +25230,30 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name(
     const char *class_name,
     const char *method_name
 ) {
+    const char *declaring_class = class_name;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    int is_static = 0;
+    int is_abstract = 0;
+    int returns_reference = 0;
+    (void)ptn_declared_class_reflection_method_metadata(
+        class_name,
+        method_name,
+        &declaring_class,
+        &visibility,
+        &is_static,
+        &is_abstract,
+        &returns_reference
+    );
     PtnReflectionMethodData *data = malloc(sizeof(PtnReflectionMethodData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
-    data->class_name = ptn_duplicate_string(class_name);
+    data->class_name = ptn_duplicate_string(declaring_class);
     data->name = ptn_duplicate_string(method_name);
+    data->visibility = visibility;
+    data->is_static = is_static;
+    data->is_abstract = is_abstract;
+    data->returns_reference = returns_reference;
 
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionMethod");
     object.as.object->native_data = data;
@@ -25192,7 +25266,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_object_from_name(
     ptn_array_set_entry(
         object.as.object->properties,
         ptn_array_string_key("class"),
-        ptn_owned_string(ptn_duplicate_string(class_name))
+        ptn_owned_string(ptn_duplicate_string(declaring_class))
     );
     return object;
 }
@@ -25222,6 +25296,105 @@ static void ptn_reflection_method_check_exact_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static void ptn_reflection_class_throw_missing_method(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name
+);
+
+static int ptn_reflection_member_modifiers(int visibility, int is_static, int is_abstract) {
+    int modifiers = 0;
+    if (visibility == PTN_PROPERTY_PUBLIC) {
+        modifiers |= 1;
+    } else if (visibility == PTN_PROPERTY_PROTECTED) {
+        modifiers |= 2;
+    } else if (visibility == PTN_PROPERTY_PRIVATE) {
+        modifiers |= 4;
+    }
+    if (is_static) {
+        modifiers |= 16;
+    }
+    if (is_abstract) {
+        modifiers |= 64;
+    }
+    return modifiers;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_method_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    char *class_name = NULL;
+    char *method_name = NULL;
+    if (argc == 1) {
+        char *qualified = ptn_value_to_string(args[0]);
+        char *separator = strstr(qualified, "::");
+        if (separator == NULL) {
+            int needed = snprintf(NULL, 0, "Method %s() does not exist", qualified);
+            if (needed < 0) {
+                free(qualified);
+                ptn_abort_out_of_memory();
+            }
+            char *message = malloc((size_t)needed + 1);
+            if (message == NULL) {
+                free(qualified);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(message, (size_t)needed + 1, "Method %s() does not exist", qualified);
+            ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+            free(qualified);
+            return ptn_null();
+        }
+        class_name = ptn_duplicate_string_len(qualified, (size_t)(separator - qualified));
+        method_name = ptn_duplicate_string(separator + 2);
+        free(qualified);
+    } else if (argc == 2) {
+        class_name = ptn_reflection_class_target_name(
+            runtime,
+            "ReflectionMethod::__construct",
+            args[0],
+            line
+        );
+        method_name = ptn_value_to_string(args[1]);
+    } else {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionMethod::__construct() expects 1 or 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (class_name == NULL || method_name == NULL || runtime->exceptions->active_exception != NULL) {
+        free(class_name);
+        free(method_name);
+        return ptn_null();
+    }
+    if (!ptn_reflection_class_symbol_exists(class_name)) {
+        ptn_reflection_class_throw_missing_class(runtime, class_name);
+        free(class_name);
+        free(method_name);
+        return ptn_null();
+    }
+    if (!ptn_internal_class_method_exists(class_name, method_name)) {
+        ptn_reflection_class_throw_missing_method(runtime, class_name, method_name);
+        free(class_name);
+        free(method_name);
+        return ptn_null();
+    }
+    PtnValue object = ptn_reflection_method_object_from_name(runtime, class_name, method_name);
+    free(class_name);
+    free(method_name);
+    return object;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -25232,16 +25405,75 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
 ) {
     (void)args;
     (void)line;
-    ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
-    if (runtime->exceptions->active_exception != NULL) {
-        return ptn_null();
-    }
     PtnReflectionMethodData *data = ptn_reflection_method_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getName")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
         return ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getDeclaringClass")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_class_object_from_name(runtime, data->class_name);
+    }
+    if (ptn_ascii_case_equal(name, "getModifiers")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_int(ptn_reflection_member_modifiers(data->visibility, data->is_static, data->is_abstract));
+    }
+    if (ptn_ascii_case_equal(name, "isPublic")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->visibility == PTN_PROPERTY_PUBLIC);
+    }
+    if (ptn_ascii_case_equal(name, "isProtected")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->visibility == PTN_PROPERTY_PROTECTED);
+    }
+    if (ptn_ascii_case_equal(name, "isPrivate")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->visibility == PTN_PROPERTY_PRIVATE);
+    }
+    if (ptn_ascii_case_equal(name, "isStatic")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->is_static);
+    }
+    if (ptn_ascii_case_equal(name, "isAbstract")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->is_abstract);
+    }
+    if (ptn_ascii_case_equal(name, "isFinal")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "isConstructor")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_ascii_case_equal(data->name, "__construct"));
+    }
+    if (ptn_ascii_case_equal(name, "isDestructor")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_ascii_case_equal(data->name, "__destruct"));
+    }
+    if (ptn_ascii_case_equal(name, "isInternal")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(!ptn_declared_user_class_or_interface_exists(data->class_name));
+    }
+    if (ptn_ascii_case_equal(name, "isUserDefined")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_declared_user_class_or_interface_exists(data->class_name));
+    }
+    if (ptn_ascii_case_equal(name, "returnsReference")) {
+        ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->returns_reference);
+    }
+    if (ptn_ascii_case_equal(name, "setAccessible")) {
+        if (argc > 1) {
+            ptn_reflection_method_check_exact_arguments(runtime, name, argc, 1);
+        }
+        return ptn_null();
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -25250,6 +25482,8 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
 typedef struct {
     char *class_name;
     char *name;
+    int visibility;
+    int is_static;
 } PtnReflectionPropertyData;
 
 static void ptn_reflection_property_data_free(void *data) {
@@ -25262,17 +25496,42 @@ static void ptn_reflection_property_data_free(void *data) {
     free(property_data);
 }
 
+static PtnReflectionPropertyData *ptn_reflection_property_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_property(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionProperty object");
+        return NULL;
+    }
+    return (PtnReflectionPropertyData *)receiver.as.object->native_data;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_property_object_from_name(
     PtnRuntime *runtime,
     const char *class_name,
     const char *property_name
 ) {
+    const char *declaring_class = class_name;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    int is_static = 0;
+    (void)ptn_declared_class_reflection_property_metadata(
+        class_name,
+        property_name,
+        &declaring_class,
+        &visibility,
+        &is_static
+    );
     PtnReflectionPropertyData *data = malloc(sizeof(PtnReflectionPropertyData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
-    data->class_name = ptn_duplicate_string(class_name);
+    data->class_name = ptn_duplicate_string(declaring_class);
     data->name = ptn_duplicate_string(property_name);
+    data->visibility = visibility;
+    data->is_static = is_static;
 
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionProperty");
     object.as.object->native_data = data;
@@ -25285,9 +25544,195 @@ static PTN_UNUSED PtnValue ptn_reflection_property_object_from_name(
     ptn_array_set_entry(
         object.as.object->properties,
         ptn_array_string_key("class"),
-        ptn_owned_string(ptn_duplicate_string(class_name))
+        ptn_owned_string(ptn_duplicate_string(declaring_class))
     );
     return object;
+}
+
+static void ptn_reflection_class_throw_missing_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property_name
+) {
+    int needed = snprintf(NULL, 0, "Property %s::$%s does not exist", class_name, property_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Property %s::$%s does not exist", class_name, property_name);
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static void ptn_reflection_property_check_exact_arguments(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    size_t expected
+) {
+    if (argc == expected) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionProperty::%s() expects exactly %zu argument%s, %zu given",
+        method_name,
+        expected,
+        expected == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_property_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionProperty::__construct() expects exactly 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    char *class_name = ptn_reflection_class_target_name(
+        runtime,
+        "ReflectionProperty::__construct",
+        args[0],
+        line
+    );
+    char *property_name = ptn_value_to_string(args[1]);
+    if (class_name == NULL || property_name == NULL || runtime->exceptions->active_exception != NULL) {
+        free(class_name);
+        free(property_name);
+        return ptn_null();
+    }
+    if (!ptn_reflection_class_symbol_exists(class_name)) {
+        ptn_reflection_class_throw_missing_class(runtime, class_name);
+        free(class_name);
+        free(property_name);
+        return ptn_null();
+    }
+    if (!ptn_declared_class_reflection_property_metadata(class_name, property_name, NULL, NULL, NULL)) {
+        ptn_reflection_class_throw_missing_property(runtime, class_name, property_name);
+        free(class_name);
+        free(property_name);
+        return ptn_null();
+    }
+    PtnValue object = ptn_reflection_property_object_from_name(runtime, class_name, property_name);
+    free(class_name);
+    free(property_name);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnReflectionPropertyData *data = ptn_reflection_property_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getName")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getDeclaringClass")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_class_object_from_name(runtime, data->class_name);
+    }
+    if (ptn_ascii_case_equal(name, "getModifiers")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_int(ptn_reflection_member_modifiers(data->visibility, data->is_static, 0));
+    }
+    if (ptn_ascii_case_equal(name, "isPublic")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->visibility == PTN_PROPERTY_PUBLIC);
+    }
+    if (ptn_ascii_case_equal(name, "isProtected")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->visibility == PTN_PROPERTY_PROTECTED);
+    }
+    if (ptn_ascii_case_equal(name, "isPrivate")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->visibility == PTN_PROPERTY_PRIVATE);
+    }
+    if (ptn_ascii_case_equal(name, "isStatic")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->is_static);
+    }
+    if (ptn_ascii_case_equal(name, "isDefault")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "isDynamic")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "setAccessible")) {
+        if (argc > 1) {
+            ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getValue")) {
+        if (data->is_static) {
+            if (argc > 1) {
+                ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+                return ptn_null();
+            }
+            return ptn_runtime_read_static_property(runtime, data->class_name, data->name, data->class_name, line);
+        }
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_object_read_property(runtime, args[0], data->name, data->class_name, line);
+    }
+    if (ptn_ascii_case_equal(name, "setValue")) {
+        if (data->is_static) {
+            if (argc != 1 && argc != 2) {
+                ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+                return ptn_null();
+            }
+            PtnValue value = argc == 1 ? args[0] : args[1];
+            return ptn_runtime_write_static_property(runtime, data->class_name, data->name, data->class_name, value, line);
+        }
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 2);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_object_write_property(runtime, args[0], data->name, data->class_name, args[1], line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static void ptn_reflection_class_throw_missing_method(

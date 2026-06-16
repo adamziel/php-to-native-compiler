@@ -896,6 +896,7 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name);
@@ -927,6 +928,18 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_reflection_method_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_property_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -936,6 +949,14 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

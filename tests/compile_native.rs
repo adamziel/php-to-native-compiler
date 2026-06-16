@@ -12536,6 +12536,101 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
 }
 
 #[test]
+fn compile_reflection_member_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-member-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-member-metadata.php");
+    let output = root.join("reflection-member-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectBase {
+    protected static $shared = \"base\";
+    protected $label = \"base-label\";
+
+    public function &byRef() {
+        return $this->label;
+    }
+}
+
+class ReflectChild extends ReflectBase {
+    private static $hidden = 7;
+
+    public function __construct() {
+    }
+
+    protected static function helper() {
+    }
+}
+
+$method = new \\ReflectionMethod(ReflectChild::class, \"helper\");
+var_dump($method->getName());
+var_dump($method->getDeclaringClass()->getName());
+var_dump($method->isProtected());
+var_dump($method->isStatic());
+var_dump($method->isConstructor());
+var_dump($method->returnsReference());
+var_dump($method->getModifiers());
+
+$byRef = new \\ReflectionMethod(ReflectChild::class, \"byRef\");
+var_dump($byRef->getDeclaringClass()->getName());
+var_dump($byRef->returnsReference());
+
+$staticProp = new \\ReflectionProperty(ReflectChild::class, \"shared\");
+var_dump($staticProp->getName());
+var_dump($staticProp->getDeclaringClass()->getName());
+var_dump($staticProp->isProtected());
+var_dump($staticProp->isStatic());
+var_dump($staticProp->getModifiers());
+var_dump($staticProp->getValue());
+$staticProp->setValue(\"changed\");
+var_dump($staticProp->getValue());
+
+$child = new ReflectChild();
+$instanceProp = new \\ReflectionProperty(ReflectChild::class, \"label\");
+var_dump($instanceProp->getValue($child));
+$instanceProp->setValue($child, \"updated\");
+var_dump($instanceProp->getValue($child));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(6) \"helper\"\n",
+            "string(12) \"ReflectChild\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "int(18)\n",
+            "string(11) \"ReflectBase\"\n",
+            "bool(true)\n",
+            "string(6) \"shared\"\n",
+            "string(11) \"ReflectBase\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(18)\n",
+            "string(4) \"base\"\n",
+            "string(7) \"changed\"\n",
+            "string(10) \"base-label\"\n",
+            "string(7) \"updated\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_method_metadata"));
+    assert!(c_source.contains("ptn_declared_class_reflection_property_metadata"));
+    assert!(c_source.contains("ptn_reflection_property_call_method"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();

@@ -123,6 +123,7 @@ pub fn emit_c(module: &Module) -> String {
         &mut out,
         &module.classes,
         &module.traits,
+        &module.functions,
         runtime_requirements.internal_function_dispatch,
     );
     if runtime_requirements.internal_function_dispatch {
@@ -2366,6 +2367,7 @@ fn emit_class_metadata_helpers(
     out: &mut String,
     classes: &[ClassDecl],
     traits: &[TraitDecl],
+    functions: &[FunctionDecl],
     emit_reflection_helpers: bool,
 ) {
     out.push_str(
@@ -2891,7 +2893,7 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     if emit_reflection_helpers {
-        emit_class_reflection_metadata_helpers(out, classes);
+        emit_class_reflection_metadata_helpers(out, classes, functions);
     }
 
     out.push_str(
@@ -3320,7 +3322,112 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 }
 
-fn emit_class_reflection_metadata_helpers(out: &mut String, classes: &[ClassDecl]) {
+fn emit_class_reflection_metadata_helpers(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, const char **declaring_class_out, int *visibility_out, int *is_static_out, int *is_abstract_out, int *returns_reference_out) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+    }
+    out.push_str("    if (declaring_class_out != NULL) *declaring_class_out = NULL;\n");
+    out.push_str("    if (visibility_out != NULL) *visibility_out = PTN_PROPERTY_PUBLIC;\n");
+    out.push_str("    if (is_static_out != NULL) *is_static_out = 0;\n");
+    out.push_str("    if (is_abstract_out != NULL) *is_abstract_out = 0;\n");
+    out.push_str("    if (returns_reference_out != NULL) *returns_reference_out = 0;\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            let returns_reference = functions
+                .get(method.function_index)
+                .is_some_and(|function| function.return_by_ref);
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            if (declaring_class_out != NULL) *declaring_class_out = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            if (visibility_out != NULL) *visibility_out = ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            if (is_static_out != NULL) *is_static_out = ");
+            out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            if (is_abstract_out != NULL) *is_abstract_out = ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str(
+                "            if (returns_reference_out != NULL) *returns_reference_out = ",
+            );
+            out.push_str(if returns_reference { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class_out, int *visibility_out, int *is_static_out) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+    }
+    out.push_str("    if (declaring_class_out != NULL) *declaring_class_out = NULL;\n");
+    out.push_str("    if (visibility_out != NULL) *visibility_out = PTN_PROPERTY_PUBLIC;\n");
+    out.push_str("    if (is_static_out != NULL) *is_static_out = 0;\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            if (declaring_class_out != NULL) *declaring_class_out = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            if (visibility_out != NULL) *visibility_out = ");
+            out.push_str(c_property_visibility(entry.visibility));
+            out.push_str(";\n");
+            out.push_str("            if (is_static_out != NULL) *is_static_out = ");
+            out.push_str(if entry.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_reflection_method_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
     );
