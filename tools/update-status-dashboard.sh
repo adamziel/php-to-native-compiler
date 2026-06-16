@@ -118,6 +118,19 @@ if (( window_hours < 1 || window_hours > 168 )); then
   exit 1
 fi
 
+runtime_window_end="${STATUS_DASHBOARD_WINDOW_END_UTC:-}"
+if [[ -z "$runtime_window_end" && -n "${STATUS_DASHBOARD_REFRESH_AT_UTC:-}" ]]; then
+  if ! runtime_window_end="$(date -u -d "$refresh" '+%Y-%m-%dT%H:00Z')"; then
+    echo "STATUS_DASHBOARD_REFRESH_AT_UTC must be parseable by date: $refresh" >&2
+    exit 1
+  fi
+fi
+if [[ -n "$runtime_window_end" ]]; then
+  require_hour "$runtime_window_end" STATUS_DASHBOARD_WINDOW_END_UTC 1
+  window_start="$(date -u -d "${runtime_window_end} - $((window_hours - 1)) hour" '+%Y-%m-%dT%H:00Z')"
+  require_hour "$window_start" derived_window_start_utc 1
+fi
+
 if [[ -z "${PHP_SRC_PHPT:-}" && -z "${PTN_PHP_SRC_REF:-}" && "$php_src_revision_hint" != "unknown" ]]; then
   export PTN_PHP_SRC_REF="$php_src_revision_hint"
 fi
