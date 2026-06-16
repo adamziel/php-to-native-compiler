@@ -739,9 +739,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED void ptn_throw_user_return_type_error(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value) {\n",
+        "\nstatic PTN_UNUSED void ptn_throw_user_return_type_error(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value, int value_was_returned, size_t line) {\n",
     );
-    out.push_str("    const char *given = ptn_user_type_hint_given_name(value);\n");
+    out.push_str("    const char *given = value_was_returned ? ptn_user_type_hint_given_name(value) : \"none\";\n");
     out.push_str("    int needed = snprintf(NULL, 0, \"%s(): Return value must be of type %s, %s returned\", function_name, expected_type_name, given);\n");
     out.push_str("    if (needed < 0) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
@@ -751,7 +751,89 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
     out.push_str("    snprintf(message, (size_t)needed + 1, \"%s(): Return value must be of type %s, %s returned\", function_name, expected_type_name, given);\n");
-    out.push_str("    ptn_throw_exception_owned_message(runtime, \"TypeError\", message);\n");
+    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime != NULL ? runtime->source_path : NULL, line);\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_return_int(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value, int value_was_returned, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_INT) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types) {\n");
+    out.push_str("        if (resolved.type == PTN_BOOL || resolved.type == PTN_FLOAT) {\n");
+    out.push_str("            *out = ptn_cast_int(resolved);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (resolved.type == PTN_STRING) {\n");
+    out.push_str("            double number = 0.0;\n");
+    out.push_str(
+        "            if (ptn_user_parameter_string_is_numeric(resolved.as.string, &number)) {\n",
+    );
+    out.push_str("                *out = ptn_int((int64_t)number);\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_return_type_error(runtime, function_name, expected_type_name, value, value_was_returned, line);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_return_float(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value, int value_was_returned, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_FLOAT) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_INT) {\n");
+    out.push_str("        *out = ptn_cast_float(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types) {\n");
+    out.push_str("        if (resolved.type == PTN_BOOL) {\n");
+    out.push_str("            *out = ptn_cast_float(resolved);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (resolved.type == PTN_STRING) {\n");
+    out.push_str("            double number = 0.0;\n");
+    out.push_str(
+        "            if (ptn_user_parameter_string_is_numeric(resolved.as.string, &number)) {\n",
+    );
+    out.push_str("                *out = ptn_float(number);\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_return_type_error(runtime, function_name, expected_type_name, value, value_was_returned, line);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_return_string(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value, int value_was_returned, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_STRING) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_BOOL)) {\n");
+    out.push_str("        *out = ptn_cast_string(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_return_type_error(runtime, function_name, expected_type_name, value, value_was_returned, line);\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_return_bool(PtnRuntime *runtime, const char *function_name, const char *expected_type_name, PtnValue value, int value_was_returned, size_t line, PtnValue *out) {\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
+    out.push_str("    if (resolved.type == PTN_BOOL) {\n");
+    out.push_str("        *out = ptn_value_clone(resolved);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (!runtime->strict_types && (resolved.type == PTN_INT || resolved.type == PTN_FLOAT || resolved.type == PTN_STRING)) {\n");
+    out.push_str("        *out = ptn_bool(ptn_is_truthy(resolved));\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_throw_user_return_type_error(runtime, function_name, expected_type_name, value, value_was_returned, line);\n");
+    out.push_str("    return 0;\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -1073,6 +1155,8 @@ fn emit_user_functions(
             out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
+        out.push_str("    int ptn_return_value_was_set = 0;\n");
+        out.push_str("    size_t ptn_return_line = line;\n");
         if function.is_generator {
             out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
@@ -1082,7 +1166,6 @@ fn emit_user_functions(
             );
         }
         if function.return_by_ref && !function.is_generator {
-            out.push_str("    size_t ptn_return_line = line;\n");
             if matches!(function.return_type.as_ref(), Some(TypeHint::Void)) {
                 out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
                 out.push_str(&c_string(&format!(
@@ -2344,24 +2427,30 @@ fn emit_return_type_boundary(
     match return_type {
         TypeHint::Null => {
             out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
-            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type null\");\n");
+            out.push_str(
+                "\", \"null\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n",
+            );
+            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
-            out.push_str("        exit(255);\n");
+            out.push_str("        return ptn_null();\n");
             out.push_str("    }\n");
         }
         TypeHint::Array => {
             out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_ARRAY) {\n");
-            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type array\");\n");
+            out.push_str(
+                "\", \"array\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n",
+            );
+            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
-            out.push_str("        exit(255);\n");
+            out.push_str("        return ptn_null();\n");
             out.push_str("    }\n");
         }
         TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
-            emit_return_scalar_cast_boundary(out, return_type, return_by_ref);
+            emit_return_scalar_cast_boundary(out, return_type, function_name, return_by_ref);
         }
         TypeHint::True | TypeHint::False => {
             emit_generic_return_type_boundary(out, return_type, function_name);
@@ -2372,21 +2461,25 @@ fn emit_return_type_boundary(
             );
             out.push_str(&c_string(class_name));
             out.push_str("\")) {\n");
-            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type ");
+            out.push_str("\", \"");
             out.push_str(&c_string(class_name));
-            out.push_str("\");\n");
+            out.push_str("\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n");
+            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
-            out.push_str("        exit(255);\n");
+            out.push_str("        return ptn_null();\n");
             out.push_str("    }\n");
         }
         TypeHint::Never => {
-            out.push_str("    ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str("    ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type never\");\n");
+            out.push_str(
+                "\", \"never\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n",
+            );
+            out.push_str("    ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("    ptn_runtime_free(&runtime);\n");
-            out.push_str("    exit(255);\n");
+            out.push_str("    return ptn_null();\n");
         }
         TypeHint::Nullable(inner) => {
             if type_hint_uses_generic_runtime_check(inner) {
@@ -2720,9 +2813,9 @@ fn emit_generic_return_type_boundary(
     ));
     out.push_str(")) {\n");
     let free_expected_label = emit_return_type_error_label(out, return_type);
-    out.push_str("        ptn_throw_user_return_type_error(caller_runtime, \"");
+    out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
     out.push_str(&c_string(function_name));
-    out.push_str("\", ptn_return_expected_type_name, ptn_return_value);\n");
+    out.push_str("\", ptn_return_expected_type_name, ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n");
     if free_expected_label {
         out.push_str("        free(ptn_return_expected_type_name_owned);\n");
     }
@@ -2756,13 +2849,27 @@ fn type_hint_uses_generic_runtime_check(type_hint: &TypeHint) -> bool {
     }
 }
 
-fn emit_return_scalar_cast_boundary(out: &mut String, return_type: &TypeHint, return_by_ref: bool) {
-    let cast_helper = type_hint_scalar_cast_helper(Some(return_type))
-        .expect("scalar return type should map to cast helper");
+fn emit_return_scalar_cast_boundary(
+    out: &mut String,
+    return_type: &TypeHint,
+    function_name: &str,
+    return_by_ref: bool,
+) {
+    let coercion_helper = type_hint_scalar_return_coercion_helper(Some(return_type))
+        .expect("scalar return type should map to return coercion helper");
+    out.push_str("    PtnValue ptn_typed_return_value;\n");
+    out.push_str("    if (!");
+    out.push_str(coercion_helper);
+    out.push_str("(&runtime, \"");
+    out.push_str(&c_string(function_name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(&type_hint_label(return_type)));
+    out.push_str("\", ptn_return_value, ptn_return_value_was_set, ptn_return_line, &ptn_typed_return_value)) {\n");
+    out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
+    out.push_str("        ptn_runtime_free(&runtime);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
     if return_by_ref {
-        out.push_str("    PtnValue ptn_typed_return_value = ");
-        out.push_str(cast_helper);
-        out.push_str("(ptn_return_value);\n");
         out.push_str("    if (ptn_return_value.type == PTN_REFERENCE) {\n");
         out.push_str(
             "        ptn_reference_assign(caller_runtime, ptn_return_value.as.reference, ptn_typed_return_value);\n",
@@ -2773,9 +2880,6 @@ fn emit_return_scalar_cast_boundary(out: &mut String, return_type: &TypeHint, re
         out.push_str("        ptn_return_value = ptn_typed_return_value;\n");
         out.push_str("    }\n");
     } else {
-        out.push_str("    PtnValue ptn_typed_return_value = ");
-        out.push_str(cast_helper);
-        out.push_str("(ptn_return_value);\n");
         out.push_str("    ptn_value_drop(&ptn_return_value);\n");
         out.push_str("    ptn_return_value = ptn_typed_return_value;\n");
     }
@@ -2790,29 +2894,33 @@ fn emit_nullable_return_type_boundary(
     match return_type {
         TypeHint::Array => {
             out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && ptn_value_deref(ptn_return_value).type != PTN_ARRAY) {\n");
-            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type ?array\");\n");
+            out.push_str(
+                "\", \"?array\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n",
+            );
+            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
-            out.push_str("        exit(255);\n");
+            out.push_str("        return ptn_null();\n");
             out.push_str("    }\n");
         }
         TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
             out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
-            emit_return_scalar_cast_boundary(out, return_type, return_by_ref);
+            emit_return_scalar_cast_boundary(out, return_type, function_name, return_by_ref);
             out.push_str("    }\n");
         }
         TypeHint::Class(class_name) => {
             out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && !ptn_value_satisfies_class_type_hint(&runtime, ptn_return_value, \"");
             out.push_str(&c_string(class_name));
             out.push_str("\")) {\n");
-            out.push_str("        ptn_emit_type_error(&caller_runtime->diagnostics, \"");
+            out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
-            out.push_str("() return value must be of type ?");
+            out.push_str("\", \"?");
             out.push_str(&c_string(class_name));
-            out.push_str("\");\n");
+            out.push_str("\", ptn_return_value, ptn_return_value_was_set, ptn_return_line);\n");
+            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
-            out.push_str("        exit(255);\n");
+            out.push_str("        return ptn_null();\n");
             out.push_str("    }\n");
         }
         TypeHint::Null
@@ -2831,12 +2939,12 @@ fn emit_nullable_return_type_boundary(
     }
 }
 
-fn type_hint_scalar_cast_helper(type_hint: Option<&TypeHint>) -> Option<&'static str> {
+fn type_hint_scalar_return_coercion_helper(type_hint: Option<&TypeHint>) -> Option<&'static str> {
     match type_hint {
-        Some(TypeHint::Int) => Some("ptn_cast_int"),
-        Some(TypeHint::Float) => Some("ptn_cast_float"),
-        Some(TypeHint::String) => Some("ptn_cast_string"),
-        Some(TypeHint::Bool) => Some("ptn_cast_bool"),
+        Some(TypeHint::Int) => Some("ptn_coerce_user_return_int"),
+        Some(TypeHint::Float) => Some("ptn_coerce_user_return_float"),
+        Some(TypeHint::String) => Some("ptn_coerce_user_return_string"),
+        Some(TypeHint::Bool) => Some("ptn_coerce_user_return_bool"),
         Some(
             TypeHint::Null
             | TypeHint::Array
@@ -8017,11 +8125,10 @@ fn emit_instruction(
                     );
                     return;
                 }
-                if values.current_function_return_by_ref {
-                    out.push_str("    ptn_return_line = ");
-                    out.push_str(&line.to_string());
-                    out.push_str(";\n");
-                }
+                out.push_str("    ptn_return_line = ");
+                out.push_str(&line.to_string());
+                out.push_str(";\n");
+                out.push_str("    ptn_return_value_was_set = 1;\n");
                 if let Some(value) = value {
                     if values.current_function_return_by_ref {
                         let reference_value = values.emit_reference_source(out, value, *line);

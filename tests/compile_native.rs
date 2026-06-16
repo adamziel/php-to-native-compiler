@@ -16213,10 +16213,11 @@ fn compile_array_type_errors_to_native_binary() {
     let parameter_execution = Command::new(&parameter_output).output().unwrap();
     assert!(!parameter_execution.status.success());
     assert_eq!(parameter_execution.status.code(), Some(255));
-    assert_eq!(
-        String::from_utf8(parameter_execution.stderr).unwrap(),
-        "Fatal error: takes_array() argument $items must be of type array\n"
-    );
+    let parameter_stderr = String::from_utf8(parameter_execution.stderr).unwrap();
+    assert!(parameter_stderr.contains(
+        "Fatal error: Uncaught TypeError: takes_array(): Argument #1 ($items) must be of type array, string given"
+    ));
+    assert!(parameter_stderr.contains("Stack trace:\n#0 "));
 
     let return_input = root.join("array-return-type-error.php");
     let return_output = root.join("array-return-type-error-bin");
@@ -16234,10 +16235,11 @@ fn compile_array_type_errors_to_native_binary() {
     let return_execution = Command::new(&return_output).output().unwrap();
     assert!(!return_execution.status.success());
     assert_eq!(return_execution.status.code(), Some(255));
-    assert_eq!(
-        String::from_utf8(return_execution.stderr).unwrap(),
-        "Fatal error: returns_array() return value must be of type array\n"
-    );
+    let return_stderr = String::from_utf8(return_execution.stderr).unwrap();
+    assert!(return_stderr.contains(
+        "Fatal error: Uncaught TypeError: returns_array(): Return value must be of type array, string returned"
+    ));
+    assert!(return_stderr.contains("Stack trace:\n#0 "));
 }
 
 #[test]
