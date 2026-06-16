@@ -11573,10 +11573,7 @@ static int64_t ptn_sprintf_value_to_integer(PtnRuntime *runtime, PtnValue value,
 
 static void ptn_sprintf_warn_float_int_cast(PtnRuntime *runtime, double floating, size_t line) {
     char value_text[64];
-    int value_written = snprintf(value_text, sizeof(value_text), "%.17G", floating);
-    if (value_written < 0 || (size_t)value_written >= sizeof(value_text)) {
-        ptn_abort_out_of_memory();
-    }
+    ptn_format_var_dump_float(floating, value_text, sizeof(value_text));
 
     char message[160];
     int written = snprintf(
@@ -20042,21 +20039,18 @@ static size_t ptn_strip_tags_find_php_tag_end(const char *input, size_t len, siz
     unsigned char quote = 0;
     for (size_t i = start; i < len; i++) {
         unsigned char byte = (unsigned char)input[i];
+        int escaped_quote = i > start && input[i - 1] == '\\';
         if (quote != 0) {
-            if (byte == '\\' && i + 1 < len) {
-                i++;
-                continue;
-            }
-            if (byte == quote) {
+            if (byte == quote && !escaped_quote) {
                 quote = 0;
             }
             continue;
         }
-        if (byte == '"' || byte == '\'') {
+        if ((byte == '"' || byte == '\'') && !escaped_quote) {
             quote = byte;
             continue;
         }
-        if (byte == '?' && i + 1 < len && input[i + 1] == '>') {
+        if (input[i] == '?' && i + 1 < len && input[i + 1] == '>') {
             return i;
         }
     }
@@ -20184,7 +20178,13 @@ static char *ptn_strip_tags_string(
                     ) && ptn_strip_tags_allowed_set_contains(allowed, name, name_len);
                     if (allowed_tag) {
                         size_t preserved_start = ptn_strip_tags_preserved_tag_start(input, input_offset);
-                        ptn_string_buffer_append_len(&output, input + preserved_start, tag_end - preserved_start + 1);
+                        size_t preserved_end = tag_end;
+                        size_t extra_open_markers = preserved_start - input_offset;
+                        while (extra_open_markers > 0 && preserved_end > preserved_start && input[preserved_end] == '>') {
+                            preserved_end--;
+                            extra_open_markers--;
+                        }
+                        ptn_string_buffer_append_len(&output, input + preserved_start, preserved_end - preserved_start + 1);
                         if (tag_end + 1 < len && input[tag_end + 1] == '>' && preserved_start != input_offset) {
                             tag_end++;
                         }
