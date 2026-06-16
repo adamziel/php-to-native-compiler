@@ -2053,6 +2053,34 @@ fn parser_rejects_static_catch_type_as_fatal() {
 }
 
 #[test]
+fn parser_reports_group_use_parse_errors_with_php_shapes() {
+    let cases = [
+        (
+            "<?php\nuse Foo\\Bar\\{ A, B { C } };\n",
+            "syntax error, unexpected token \"{\", expecting \"}\"",
+            2,
+        ),
+        (
+            "<?php\nuse const Foo\\Bar\\{ A, const B };\n",
+            "syntax error, unexpected token \"const\", expecting \"}\"",
+            2,
+        ),
+        (
+            "<?php\nuse Foo\\Bar\\{\\Baz};\n",
+            "syntax error, unexpected fully qualified name \"\\Baz\", expecting identifier or namespaced name or \"function\" or \"const\"",
+            2,
+        ),
+    ];
+
+    for (source, expected, line) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::ParseError, "{source}");
+        assert_eq!(error.message, expected, "{source}");
+        assert_eq!(error.span.unwrap().line, line, "{source}");
+    }
+}
+
+#[test]
 fn parser_stops_at_top_level_halt_compiler_statement() {
     let program =
         parser::parse("<?php echo \"before\\n\"; __HALT_COMPILER(); echo \"after\\n\";").unwrap();
