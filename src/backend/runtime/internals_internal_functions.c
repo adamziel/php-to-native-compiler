@@ -24642,6 +24642,234 @@ static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, co
     return ptn_bool(1);
 }
 
+static int ptn_get_meta_ascii_case_prefix(const char *data, size_t len, size_t offset, const char *literal) {
+    size_t literal_len = strlen(literal);
+    return offset <= len &&
+           literal_len <= len - offset &&
+           ptn_ascii_case_equal_n(data + offset, literal, literal_len);
+}
+
+static int ptn_get_meta_tag_boundary(const char *data, size_t len, size_t offset) {
+    if (offset >= len) {
+        return 1;
+    }
+    unsigned char byte = (unsigned char)data[offset];
+    return isspace(byte) || byte == '/' || byte == '>';
+}
+
+static size_t ptn_get_meta_find_tag_end(const char *data, size_t len, size_t offset) {
+    for (size_t i = offset; i < len; i++) {
+        if (data[i] == '>') {
+            return i;
+        }
+        if (data[i] == '<') {
+            return SIZE_MAX;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static int ptn_get_meta_attr_name_byte(unsigned char byte) {
+    return isalnum(byte) || byte == '_' || byte == '-' || byte == '.' || byte == ':';
+}
+
+static char *ptn_get_meta_read_attr_value(
+    const char *data,
+    size_t tag_end,
+    size_t *offset,
+    size_t *value_len_out
+) {
+    while (*offset < tag_end && isspace((unsigned char)data[*offset])) {
+        (*offset)++;
+    }
+    if (*offset >= tag_end) {
+        return NULL;
+    }
+
+    size_t value_start = *offset;
+    size_t value_end = *offset;
+    if (data[*offset] == '\'' || data[*offset] == '"') {
+        char quote = data[(*offset)++];
+        value_start = *offset;
+        while (*offset < tag_end && data[*offset] != quote) {
+            (*offset)++;
+        }
+        if (*offset >= tag_end) {
+            return NULL;
+        }
+        value_end = *offset;
+        (*offset)++;
+    } else {
+        while (*offset < tag_end && !isspace((unsigned char)data[*offset])) {
+            (*offset)++;
+        }
+        value_end = *offset;
+    }
+
+    *value_len_out = value_end - value_start;
+    return ptn_duplicate_string_len(data + value_start, *value_len_out);
+}
+
+static int ptn_get_meta_attr_name_equals(
+    const char *data,
+    size_t name_start,
+    size_t name_len,
+    const char *literal
+) {
+    size_t literal_len = strlen(literal);
+    return name_len == literal_len && ptn_ascii_case_equal_n(data + name_start, literal, literal_len);
+}
+
+static void ptn_get_meta_parse_tag(
+    const char *data,
+    size_t attr_offset,
+    size_t tag_end,
+    char **name_out,
+    size_t *name_len_out,
+    char **content_out,
+    size_t *content_len_out
+) {
+    size_t offset = attr_offset;
+    while (offset < tag_end) {
+        while (offset < tag_end && isspace((unsigned char)data[offset])) {
+            offset++;
+        }
+        if (offset >= tag_end || data[offset] == '/') {
+            break;
+        }
+
+        size_t attr_name_start = offset;
+        while (offset < tag_end && ptn_get_meta_attr_name_byte((unsigned char)data[offset])) {
+            offset++;
+        }
+        size_t attr_name_len = offset - attr_name_start;
+        while (offset < tag_end && isspace((unsigned char)data[offset])) {
+            offset++;
+        }
+        if (attr_name_len == 0 || offset >= tag_end || data[offset] != '=') {
+            while (offset < tag_end && !isspace((unsigned char)data[offset])) {
+                offset++;
+            }
+            continue;
+        }
+        offset++;
+
+        size_t value_len = 0;
+        char *value = ptn_get_meta_read_attr_value(data, tag_end, &offset, &value_len);
+        if (value == NULL) {
+            continue;
+        }
+
+        if (ptn_get_meta_attr_name_equals(data, attr_name_start, attr_name_len, "name")) {
+            free(*name_out);
+            *name_out = value;
+            *name_len_out = value_len;
+        } else if (ptn_get_meta_attr_name_equals(data, attr_name_start, attr_name_len, "content")) {
+            free(*content_out);
+            *content_out = value;
+            *content_len_out = value_len;
+        } else {
+            free(value);
+        }
+    }
+}
+
+static char *ptn_get_meta_normalize_name(const char *name, size_t name_len, size_t *normalized_len_out) {
+    char *normalized = malloc(name_len + 1);
+    if (normalized == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < name_len; i++) {
+        unsigned char byte = (unsigned char)name[i];
+        normalized[i] = byte == '.' ? '_' : (char)tolower(byte);
+    }
+    normalized[name_len] = '\0';
+    *normalized_len_out = name_len;
+    return normalized;
+}
+
+static PtnValue ptn_get_meta_tags_from_bytes(const char *data, size_t len) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < len;) {
+        if (data[i] != '<') {
+            i++;
+            continue;
+        }
+        if (ptn_get_meta_ascii_case_prefix(data, len, i, "</head")) {
+            break;
+        }
+        if (!ptn_get_meta_ascii_case_prefix(data, len, i, "<meta") ||
+            !ptn_get_meta_tag_boundary(data, len, i + 5)) {
+            i++;
+            continue;
+        }
+
+        size_t tag_end = ptn_get_meta_find_tag_end(data, len, i + 5);
+        if (tag_end == SIZE_MAX) {
+            i++;
+            continue;
+        }
+
+        char *name = NULL;
+        char *content = NULL;
+        size_t name_len = 0;
+        size_t content_len = 0;
+        ptn_get_meta_parse_tag(data, i + 5, tag_end, &name, &name_len, &content, &content_len);
+        if (name != NULL && content != NULL && name_len > 0) {
+            size_t normalized_len = 0;
+            char *normalized = ptn_get_meta_normalize_name(name, name_len, &normalized_len);
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key_len(normalized, normalized_len),
+                ptn_owned_string_len(content, content_len)
+            );
+            free(normalized);
+            content = NULL;
+        }
+        free(name);
+        free(content);
+        i = tag_end + 1;
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_get_meta_tags(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "get_meta_tags", 1, "filename", args[0], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "get_meta_tags(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    if (read_result <= 0) {
+        char detail[192];
+        int needed = snprintf(
+            detail,
+            sizeof(detail),
+            "%s: %s",
+            read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+            strerror(errno)
+        );
+        if (needed < 0 || (size_t)needed >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_file_warning(runtime, "get_meta_tags", path, detail, line);
+        free(path);
+        free(data);
+        return ptn_bool(0);
+    }
+    free(path);
+
+    PtnValue result = ptn_get_meta_tags_from_bytes((const char *)data, data_len);
+    free(data);
+    return result;
+}
+
 static void ptn_php_strip_whitespace_append_pending(PtnStringBuffer *buffer, int *has_pending_space) {
     if (!*has_pending_space) {
         return;
@@ -29025,22 +29253,80 @@ static char *ptn_setlocale_try_string(PtnRuntime *runtime, int category, const c
     return result == NULL ? NULL : ptn_duplicate_string(result);
 }
 
-static char *ptn_setlocale_try_value(PtnRuntime *runtime, int category, PtnValue value, size_t line) {
+static void ptn_setlocale_throw_locale_type_error(PtnRuntime *runtime, size_t position, PtnValue value) {
+    value = ptn_value_deref(value);
+    char message[192];
+    int written = position == 2
+        ? snprintf(
+              message,
+              sizeof(message),
+              "setlocale(): Argument #2 ($locales) must be of type array|string|null, %s given",
+              ptn_internal_string_arg_type_name(value)
+          )
+        : snprintf(
+              message,
+              sizeof(message),
+              "setlocale(): Argument #%zu must be of type array|string|null, %s given",
+              position,
+              ptn_internal_string_arg_type_name(value)
+          );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static int ptn_setlocale_strict_top_level_value_allowed(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_NULL ||
+        value.type == PTN_STRING ||
+        value.type == PTN_ARRAY ||
+        value.type == PTN_OBJECT;
+}
+
+static char *ptn_setlocale_try_operand(PtnRuntime *runtime, int category, PtnStringOperand locale, size_t line) {
+    char *locale_c = ptn_duplicate_string_len(locale.data, locale.len);
+    char *result = ptn_setlocale_try_string(runtime, category, locale_c, line);
+    free(locale_c);
+    return result;
+}
+
+static char *ptn_setlocale_try_scalar_value(
+    PtnRuntime *runtime,
+    int category,
+    PtnValue value,
+    size_t position,
+    size_t line,
+    int strict_top_level
+) {
     value = ptn_value_deref(value);
     if (value.type == PTN_NULL) {
         return ptn_setlocale_try_string(runtime, category, "0", line);
     }
+    if (strict_top_level && !ptn_setlocale_strict_top_level_value_allowed(value)) {
+        ptn_setlocale_throw_locale_type_error(runtime, position, value);
+        return NULL;
+    }
+
+    PtnStringOperand locale = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(locale);
+        return NULL;
+    }
+    char *result = ptn_setlocale_try_operand(runtime, category, locale, line);
+    ptn_string_operand_free(locale);
+    return result;
+}
+
+static char *ptn_setlocale_try_value(PtnRuntime *runtime, int category, PtnValue value, size_t position, size_t line) {
+    value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         PtnArray *array = value.as.array;
         for (size_t i = 0; i < array->len; i++) {
             PtnValue candidate = ptn_value_deref(array->entries[i].value);
-            char *result = NULL;
-            if (candidate.type == PTN_NULL) {
-                result = ptn_setlocale_try_string(runtime, category, "0", line);
-            } else {
-                char *locale = ptn_value_to_string(candidate);
-                result = ptn_setlocale_try_string(runtime, category, locale, line);
-                free(locale);
+            char *result = ptn_setlocale_try_scalar_value(runtime, category, candidate, position, line, 0);
+            if (runtime->exceptions->active_exception != NULL) {
+                return NULL;
             }
             if (result != NULL) {
                 return result;
@@ -29048,11 +29334,7 @@ static char *ptn_setlocale_try_value(PtnRuntime *runtime, int category, PtnValue
         }
         return NULL;
     }
-
-    char *locale = ptn_value_to_string(value);
-    char *result = ptn_setlocale_try_string(runtime, category, locale, line);
-    free(locale);
-    return result;
+    return ptn_setlocale_try_scalar_value(runtime, category, value, position, line, runtime->strict_types);
 }
 
 static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -29066,8 +29348,20 @@ static PtnValue ptn_internal_setlocale(PtnRuntime *runtime, size_t argc, const P
         return ptn_bool(0);
     }
 
+    if (runtime->strict_types) {
+        for (size_t i = 1; i < argc; i++) {
+            if (!ptn_setlocale_strict_top_level_value_allowed(args[i])) {
+                ptn_setlocale_throw_locale_type_error(runtime, i + 1, args[i]);
+                return ptn_null();
+            }
+        }
+    }
+
     for (size_t i = 1; i < argc; i++) {
-        char *result = ptn_setlocale_try_value(runtime, category, args[i], line);
+        char *result = ptn_setlocale_try_value(runtime, category, args[i], i + 1, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
         if (result != NULL) {
             return ptn_owned_string(result);
         }
@@ -30914,6 +31208,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
+        { "get_meta_tags", 1, 1, ptn_internal_get_meta_tags },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
         { "getcwd", 0, 0, ptn_internal_getcwd },

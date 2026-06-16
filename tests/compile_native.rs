@@ -9122,6 +9122,55 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_get_meta_tags_file_scan_to_native_binary() {
+    let root = temp_dir("ptn-native-get-meta-tags");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-meta-tags.php");
+    let output = root.join("get-meta-tags-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$filename = __DIR__ . \"/meta.html\";\n\
+$html = '<html><head>' .\n\
+    '<meta name=\"author\" content=\"name\">' .\n\
+    '<meta content=\"php documentation\" name=\"keywords\">' .\n\
+    '<meta name=\"geo.position\" content=\"49.33;-86.59\">' .\n\
+    '</head><body><meta name=\"author\" content=\"later\"></body></html>';\n\
+file_put_contents($filename, $html);\n\
+var_dump(function_exists('get_meta_tags'));\n\
+var_dump(get_meta_tags($filename));\n\
+file_put_contents($filename, \"<meta name=\\\"author\\\" content=\\\"name\\\"\\n<meta name=\\\"keywords\\\" content=\\\"php documentation\\\">\");\n\
+var_dump(get_meta_tags($filename));\n\
+@unlink($filename);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(3) {\n",
+            "  [\"author\"]=>\n",
+            "  string(4) \"name\"\n",
+            "  [\"keywords\"]=>\n",
+            "  string(17) \"php documentation\"\n",
+            "  [\"geo_position\"]=>\n",
+            "  string(12) \"49.33;-86.59\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"keywords\"]=>\n",
+            "  string(17) \"php documentation\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_highlight_string_and_empty_output_buffer_to_native_binary() {
     let root = temp_dir("ptn-native-highlight-string-ob");
     fs::create_dir_all(&root).unwrap();
