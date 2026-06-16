@@ -4370,7 +4370,7 @@ fn emit_class_metadata_helpers(
         out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
         out.push_str("                ptn_abort_out_of_memory();\n");
         out.push_str("            }\n");
-        out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone_deref(args[ptn_magic_arg_i]));\n");
+        out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone(args[ptn_magic_arg_i]));\n");
         out.push_str("        }\n");
         let function = &functions[method.function_index];
         emit_dynamic_method_deprecated_warning(
@@ -6329,7 +6329,7 @@ fn emit_method_dispatch(
             out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
             out.push_str("                ptn_abort_out_of_memory();\n");
             out.push_str("            }\n");
-            out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone_deref(args[ptn_magic_arg_i]));\n");
+            out.push_str("            ptn_array_set_entry(ptn_magic_args[1].as.array, ptn_array_int_key((int64_t)ptn_magic_arg_i), ptn_value_clone(args[ptn_magic_arg_i]));\n");
             out.push_str("        }\n");
             let function = &functions[method.function_index];
             emit_dynamic_method_deprecated_warning(

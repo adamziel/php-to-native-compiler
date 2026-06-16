@@ -10039,7 +10039,7 @@ static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const
         ptn_array_set_entry(
             result.as.array,
             key,
-            ptn_value_clone(ptn_array_reindexing_internal_value(source->value))
+            ptn_value_clone_deref(source->value)
         );
     }
 

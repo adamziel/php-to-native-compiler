@@ -12841,6 +12841,64 @@ echo $dynamic(\"three\"), \"\\n\";
 }
 
 #[test]
+fn compile_magic_call_preserves_reference_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-call-reference-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-call-reference-arguments.php");
+    let output = root.join("magic-call-reference-arguments-bin");
+    fs::write(
+        &input,
+        "<?php
+function inc(&$x) {
+    $x++;
+}
+
+class MagicRefs {
+    public function __call($name, $args) {
+        echo $name, \" called!\\n\";
+        call_user_func_array('inc', $args);
+    }
+}
+
+class StaticMagicRefs {
+    public static function __callStatic($name, $args) {
+        echo $name, \" static called!\\n\";
+        call_user_func_array('inc', $args);
+    }
+}
+
+$value = 1;
+$magic = new MagicRefs();
+$magic->bar($value);
+$magic->bar($value);
+StaticMagicRefs::baz($value);
+var_dump($value);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bar called!\n",
+            "bar called!\n",
+            "baz static called!\n",
+            "int(4)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_clone(args[ptn_magic_arg_i])"));
+    assert!(c_source.contains("MagicRefs::__call"));
+    assert!(c_source.contains("StaticMagicRefs::__callStatic"));
+}
+
+#[test]
 fn compile_magic_call_static_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-magic-call-static-dispatch");
     fs::create_dir_all(&root).unwrap();
@@ -25398,6 +25456,11 @@ $nested = [$value, [\"next\"], $value];\n\
 $slice = array_slice($nested, 0, 2);\n\
 $slice[0][] = \"copy\";\n\
 var_dump($slice[0], $nested[0]);\n\
+function slice_ref_probe(&$ref) { var_dump($ref); }\n\
+$object = new stdClass;\n\
+$refs = [&$object];\n\
+$sliced_refs = array_slice($refs, 0, 1);\n\
+call_user_func_array('slice_ref_probe', $sliced_refs);\n\
 try { array_slice(range(1, 3), 0, \"foo\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists(\"array_slice\"), function_exists(\"ARRAY_SLICE\"));",
     )
@@ -25451,6 +25514,9 @@ var_dump(function_exists(\"array_slice\"), function_exists(\"ARRAY_SLICE\"));",
             "array(1) {\n",
             "  [0]=>\n",
             "  string(4) \"seed\"\n",
+            "}\n",
+            "\nWarning: slice_ref_probe(): Argument #1 ($ref) must be passed by reference, value given in ptn on line 17\n",
+            "object(stdClass)#1 (0) {\n",
             "}\n",
             "array_slice(): Argument #3 ($length) must be of type ?int, string given\n",
             "bool(true)\n",
