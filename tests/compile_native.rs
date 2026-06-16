@@ -25805,6 +25805,41 @@ foreach ([0] as $input) {\n\
 }
 
 #[test]
+fn compile_uncaught_array_merge_type_error_in_foreach_reports_captured_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-array-merge-foreach-uncaught-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-merge-foreach-uncaught-type-error.php");
+    let output = root.join("array-merge-foreach-uncaught-type-error-bin");
+    fs::write(
+        &input,
+        "<?php\n$inputs = [0];\nforeach ($inputs as $input) {\n    array_merge($input, [1, 2]);\n}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            concat!(
+                "\nFatal error: Uncaught TypeError: array_merge(): Argument #1 must be of type array, int given in {}:4\n",
+                "Stack trace:\n",
+                "#0 {}(4): array_merge(0, Array)\n",
+                "#1 {{main}}\n",
+                "  thrown in {} on line 4\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_var_export_and_array_set_operations_to_native_binary() {
     let root = temp_dir("ptn-native-var-export-array-set-operations");
     fs::create_dir_all(&root).unwrap();
@@ -34217,6 +34252,84 @@ echo $property->getDeclaringClass()->getName(), \"::\", $property->getName(),
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_reflection_property_lookup_init"));
+}
+
+#[test]
+fn compile_reflection_class_static_property_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-static-property-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-static-property-metadata.php");
+    let output = root.join("reflection-class-static-property-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectStaticBase {
+    public static $shared = \"base shared\";
+    protected static $prot = \"base prot\";
+    private static $hidden = \"base hidden\";
+    public $baseProp = \"base prop\";
+}
+
+class ReflectStaticChild extends ReflectStaticBase {
+    public static $shared = \"child shared\";
+    private static $own = \"child own\";
+    public $childProp = \"child prop\";
+}
+
+$rc = new ReflectionClass(\"ReflectStaticChild\");
+print_r($rc->getStaticProperties());
+print_r($rc->getDefaultProperties());
+var_dump($rc->getStaticPropertyValue(\"shared\"));
+var_dump($rc->getStaticPropertyValue(\"missing\", \"fallback\"));
+$rc->setStaticPropertyValue(\"own\", \"updated own\");
+print_r($rc->getStaticProperties());
+try {
+    $rc->setStaticPropertyValue(\"missing\", \"value\");
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Array\n",
+            "(\n",
+            "    [shared] => child shared\n",
+            "    [own] => child own\n",
+            "    [prot] => base prot\n",
+            ")\n",
+            "Array\n",
+            "(\n",
+            "    [shared] => child shared\n",
+            "    [own] => child own\n",
+            "    [prot] => base prot\n",
+            "    [childProp] => child prop\n",
+            "    [baseProp] => base prop\n",
+            ")\n",
+            "string(12) \"child shared\"\n",
+            "string(8) \"fallback\"\n",
+            "Array\n",
+            "(\n",
+            "    [shared] => child shared\n",
+            "    [own] => updated own\n",
+            "    [prot] => base prot\n",
+            ")\n",
+            "Class ReflectStaticChild does not have a property named missing\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_default_properties"));
+    assert!(c_source.contains("ptn_declared_class_reflection_static_properties"));
+    assert!(c_source.contains("setStaticPropertyValue"));
 }
 
 #[test]

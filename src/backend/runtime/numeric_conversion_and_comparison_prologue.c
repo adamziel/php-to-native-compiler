@@ -1204,67 +1204,6 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
     }
 }
 
-static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnRuntime *runtime, PtnValue value) {
-    PtnStringBuffer buffer;
-    ptn_string_buffer_init(&buffer);
-    ptn_trace_append_arg(
-        &buffer,
-        value,
-        ptn_runtime_exception_string_param_max_len(runtime)
-    );
-    fwrite(buffer.data, 1, buffer.len, stream);
-    free(buffer.data);
-}
-
-static PTN_UNUSED int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
-    if (runtime == NULL || runtime->trace_frame == NULL) {
-        return 0;
-    }
-
-    size_t index = 0;
-    for (PtnTraceFrame *frame = runtime->trace_frame; frame != NULL; frame = frame->previous) {
-        if (frame->function_name == NULL) {
-            continue;
-        }
-        const char *file = frame->file;
-        size_t line = frame->line;
-        if ((file == NULL || line == 0) && runtime->source_path != NULL && runtime->call_site_line != 0) {
-            file = runtime->source_path;
-            line = runtime->call_site_line;
-        }
-        fprintf(stderr, "#%zu ", index);
-        if (file != NULL && line != 0) {
-            fprintf(stderr, "%s(%zu): ", file, line);
-        }
-        const char *constructor_separator = strstr(frame->function_name, "::__construct");
-        if (constructor_separator != NULL && constructor_separator[13] == '\0') {
-            fwrite(
-                frame->function_name,
-                1,
-                (size_t)(constructor_separator - frame->function_name),
-                stderr
-            );
-            fputs("->__construct", stderr);
-        } else {
-            fputs(frame->function_name, stderr);
-        }
-        fputc('(', stderr);
-        for (size_t i = 0; i < frame->argc; i++) {
-            if (i != 0) {
-                fputs(", ", stderr);
-            }
-            ptn_emit_uncaught_trace_arg(stderr, runtime, frame->args[i]);
-        }
-        fputs(")\n", stderr);
-        index++;
-    }
-    if (index == 0) {
-        return 0;
-    }
-    fprintf(stderr, "#%zu {main}\n", index);
-    return 1;
-}
-
 static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     PtnException *exception,
     int *first

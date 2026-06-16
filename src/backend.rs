@@ -4682,6 +4682,84 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_default_properties(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_reflection_property_defaults_chain(class, classes, true)
+            .into_iter()
+            .chain(class_reflection_property_defaults_chain(
+                class, classes, false,
+            ))
+        {
+            out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\"), ");
+            out.push_str(&c_property_default_value(entry.value));
+            out.push_str(");\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_static_properties(PtnRuntime *runtime, const char *class_name, size_t line) {\n",
+    );
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_reflection_property_defaults_chain(class, classes, true).is_empty())
+    {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)line;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for (index, entry) in class_reflection_property_defaults_chain(class, classes, true)
+            .into_iter()
+            .enumerate()
+        {
+            let value_name = format!("property_value_{index}");
+            out.push_str("        PtnValue ");
+            out.push_str(&value_name);
+            out.push_str(" = ptn_runtime_read_static_property(runtime, \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", line);\n");
+            out.push_str("        if (runtime->exceptions->active_exception != NULL) {\n");
+            out.push_str("            ptn_value_destroy(&result);\n");
+            out.push_str("            return ptn_null();\n");
+            out.push_str("        }\n");
+            out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\"), ");
+            out.push_str(&value_name);
+            out.push_str(");\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default) {\n",
     );
     if classes.is_empty() {
@@ -5342,6 +5420,12 @@ fn property_runtime_declaring_class(
     class.name.clone()
 }
 
+struct ClassReflectionPropertyDefaultEntry<'a> {
+    declaring_class: &'a str,
+    name: &'a str,
+    value: Option<&'a ValueExpr>,
+}
+
 fn class_property_exists_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
@@ -5450,6 +5534,77 @@ fn class_property_vars_chain<'a>(
         classes,
         static_properties,
         &mut seen_classes,
+        &mut properties,
+    );
+    properties
+}
+
+fn class_reflection_property_defaults_chain<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+    static_properties: bool,
+) -> Vec<ClassReflectionPropertyDefaultEntry<'a>> {
+    fn collect<'a>(
+        class: &'a ClassDecl,
+        classes: &'a [ClassDecl],
+        static_properties: bool,
+        include_private: bool,
+        seen_properties: &mut HashSet<String>,
+        properties: &mut Vec<ClassReflectionPropertyDefaultEntry<'a>>,
+    ) {
+        if static_properties {
+            for property in &class.static_properties {
+                if seen_properties.contains(&property.name) {
+                    continue;
+                }
+                if include_private || property.visibility != PropertyVisibility::Private {
+                    seen_properties.insert(property.name.clone());
+                    properties.push(ClassReflectionPropertyDefaultEntry {
+                        declaring_class: class.name.as_str(),
+                        name: property.name.as_str(),
+                        value: property.value.as_ref(),
+                    });
+                }
+            }
+        } else {
+            for property in &class.properties {
+                if seen_properties.contains(&property.name) {
+                    continue;
+                }
+                if include_private || property.visibility != PropertyVisibility::Private {
+                    seen_properties.insert(property.name.clone());
+                    properties.push(ClassReflectionPropertyDefaultEntry {
+                        declaring_class: class.name.as_str(),
+                        name: property.name.as_str(),
+                        value: property.value.as_ref(),
+                    });
+                }
+            }
+        }
+
+        let Some(parent_name) = &class.parent_name else {
+            return;
+        };
+        if let Some(parent) = class_by_name(classes, parent_name) {
+            collect(
+                parent,
+                classes,
+                static_properties,
+                false,
+                seen_properties,
+                properties,
+            );
+        }
+    }
+
+    let mut properties = Vec::new();
+    let mut seen_properties = HashSet::new();
+    collect(
+        class,
+        classes,
+        static_properties,
+        true,
+        &mut seen_properties,
         &mut properties,
     );
     properties
