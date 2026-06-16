@@ -2460,6 +2460,7 @@ typedef struct {
     PtnValue *slot;
     PtnReference *reference;
     PtnObject *retained_object;
+    int slot_is_container_entry;
 } PtnUnserializeIdEntry;
 
 typedef struct {
@@ -2514,6 +2515,7 @@ static void ptn_unserialize_id_entry_clear(PtnUnserializeIdEntry *entry) {
     }
     entry->slot = NULL;
     entry->reference = NULL;
+    entry->slot_is_container_entry = 0;
 }
 
 static PtnStringOperand ptn_internal_expect_string_arg(
@@ -2630,6 +2632,7 @@ static size_t ptn_unserialize_add_slot(PtnUnserializeState *state, PtnValue *slo
         ? slot->as.reference
         : NULL;
     state->ids[state->id_len].retained_object = NULL;
+    state->ids[state->id_len].slot_is_container_entry = 0;
     ptn_unserialize_id_entry_set_object(
         &state->ids[state->id_len],
         ptn_unserialize_slot_object(slot)
@@ -2638,16 +2641,30 @@ static size_t ptn_unserialize_add_slot(PtnUnserializeState *state, PtnValue *slo
     return id;
 }
 
-static void ptn_unserialize_update_slot(PtnUnserializeState *state, size_t id, PtnValue *slot) {
+static void ptn_unserialize_update_slot_ex(
+    PtnUnserializeState *state,
+    size_t id,
+    PtnValue *slot,
+    int slot_is_container_entry
+) {
     if (id == 0 || id > state->id_len) {
         return;
     }
     PtnUnserializeIdEntry *entry = &state->ids[id - 1];
     entry->slot = slot;
+    entry->slot_is_container_entry = slot_is_container_entry;
     if (slot != NULL && slot->type == PTN_REFERENCE) {
         entry->reference = slot->as.reference;
     }
     ptn_unserialize_id_entry_set_object(entry, ptn_unserialize_slot_object(slot));
+}
+
+static void ptn_unserialize_update_slot(PtnUnserializeState *state, size_t id, PtnValue *slot) {
+    ptn_unserialize_update_slot_ex(state, id, slot, 0);
+}
+
+static void ptn_unserialize_update_entry_slot(PtnUnserializeState *state, size_t id, PtnValue *slot) {
+    ptn_unserialize_update_slot_ex(state, id, slot, 1);
 }
 
 static void ptn_unserialize_invalidate_id(PtnUnserializeState *state, size_t id) {
@@ -2825,7 +2842,14 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         entry->reference->refcount++;
         return ptn_reference_value(entry->reference);
     }
-    if (entry->retained_object != NULL) {
+    if (entry->slot != NULL) {
+        PtnValue value = ptn_value_deref(*entry->slot);
+        if (value.type == PTN_OBJECT && !entry->slot_is_container_entry) {
+            PtnReference *reference = ptn_reference_new_owned(ptn_value_clone(value));
+            entry->reference = reference;
+            return ptn_reference_value(reference);
+        }
+    } else if (entry->retained_object != NULL) {
         PtnReference *reference = ptn_reference_new_owned(
             ptn_value_clone(ptn_object(entry->retained_object))
         );
@@ -2835,12 +2859,6 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     if (entry->slot == NULL) {
         ptn_unserialize_fail(state);
         return ptn_null();
-    }
-    PtnValue value = ptn_value_deref(*entry->slot);
-    if (value.type == PTN_OBJECT) {
-        PtnReference *reference = ptn_reference_new_owned(ptn_value_clone(value));
-        entry->reference = reference;
-        return ptn_reference_value(reference);
     }
     if (entry->slot->type == PTN_REFERENCE) {
         entry->reference = entry->slot->as.reference;
@@ -3094,7 +3112,7 @@ static int ptn_unserialize_store_entry(
             }
             ptn_value_destroy(&parsed.value);
             ptn_array_key_free(key);
-            ptn_unserialize_update_slot(state, parsed.id, &array->entries[existing_index].value);
+            ptn_unserialize_update_entry_slot(state, parsed.id, &array->entries[existing_index].value);
             return 1;
         }
         ptn_unserialize_invalidate_slot(state, &array->entries[existing_index].value);
@@ -3111,7 +3129,7 @@ static int ptn_unserialize_store_entry(
         ptn_unserialize_fail(state);
         return 0;
     }
-    ptn_unserialize_update_slot(state, parsed.id, &array->entries[index].value);
+    ptn_unserialize_update_entry_slot(state, parsed.id, &array->entries[index].value);
     return 1;
 }
 
