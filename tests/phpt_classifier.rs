@@ -725,9 +725,9 @@ fn phpt_classifier_splits_unpacking_blockers() {
     let spl_iterator_unpack = classify(
         "--TEST--\nSPL iterator unpack\n--FILE--\n<?php\nvar_dump(...new ArrayIterator([1, 2]));\n--EXPECT--\n",
     );
-    assert!(
-        spl_iterator_unpack.starts_with("unsupported-call-unpacking-traversable\t"),
-        "{spl_iterator_unpack:?}"
+    assert_eq!(
+        spl_iterator_unpack.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
     );
 }
 

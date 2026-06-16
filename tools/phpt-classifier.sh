@@ -1447,11 +1447,6 @@ ptn_phpt_first_unsupported_language_surface() {
             if (ptn_has_by_reference_parameter(line)) {
                 ptn_call_unpack_by_reference_context = 1
             }
-            if (ptn_has_spl_iterator_object(line) && ptn_spread_context(line) == "call") {
-                print "unsupported-call-unpacking-traversable\trequires Traversable/SPL iterator argument unpacking, outside PTN array-only call unpacking runtime"
-                found = 1
-                exit
-            }
             if (ptn_deferred_generator_reason != "" &&
                 line ~ /(^|[^[:alnum:]_$])foreach[[:space:]]*\([^)]*as[^)]*&[[:space:]]*\$[a-z_]/) {
                 print "unsupported-generator-runtime\trequires generator foreach by-reference iteration boundary and generator reference diagnostics, outside PTN generator runtime"
