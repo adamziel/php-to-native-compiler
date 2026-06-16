@@ -1154,9 +1154,20 @@ fn emit_user_functions(
         if function.is_anonymous {
             out.push_str("    ptn_runtime_import_closure_captures(&runtime, receiver);\n");
         }
+        let tracks_return_type_context = !function.is_generator
+            && function
+                .return_type
+                .as_ref()
+                .is_some_and(return_type_needs_runtime_context);
+        let tracks_return_line =
+            (!function.is_generator && function.return_by_ref) || tracks_return_type_context;
         out.push_str("    PtnValue ptn_return_value = ptn_null();\n");
-        out.push_str("    int ptn_return_value_was_set = 0;\n");
-        out.push_str("    size_t ptn_return_line = line;\n");
+        if tracks_return_type_context {
+            out.push_str("    int ptn_return_value_was_set = 0;\n");
+        }
+        if tracks_return_line {
+            out.push_str("    size_t ptn_return_line = line;\n");
+        }
         if function.is_generator {
             out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
@@ -2416,6 +2427,13 @@ fn emit_magic_declaration_fatals(
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    exit(255);\n");
+}
+
+fn return_type_needs_runtime_context(return_type: &TypeHint) -> bool {
+    !matches!(
+        return_type,
+        TypeHint::Callable | TypeHint::Mixed | TypeHint::Void
+    )
 }
 
 fn emit_return_type_boundary(
@@ -8125,10 +8143,14 @@ fn emit_instruction(
                     );
                     return;
                 }
-                out.push_str("    ptn_return_line = ");
-                out.push_str(&line.to_string());
-                out.push_str(";\n");
-                out.push_str("    ptn_return_value_was_set = 1;\n");
+                if values.current_function_tracks_return_line {
+                    out.push_str("    ptn_return_line = ");
+                    out.push_str(&line.to_string());
+                    out.push_str(";\n");
+                }
+                if values.current_function_tracks_return_value_was_set {
+                    out.push_str("    ptn_return_value_was_set = 1;\n");
+                }
                 if let Some(value) = value {
                     if values.current_function_return_by_ref {
                         let reference_value = values.emit_reference_source(out, value, *line);
@@ -12240,6 +12262,8 @@ struct ValueEmitter {
     current_trait_name: Option<String>,
     current_function_return_by_ref: bool,
     current_function_is_generator: bool,
+    current_function_tracks_return_line: bool,
+    current_function_tracks_return_value_was_set: bool,
     current_function_is_anonymous: bool,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
@@ -13449,6 +13473,8 @@ impl ValueEmitter {
             false,
             false,
             false,
+            false,
+            false,
         )
     }
 
@@ -13485,6 +13511,17 @@ impl ValueEmitter {
             function.trait_name.as_deref(),
             function.return_by_ref,
             function.is_generator,
+            !function.is_generator
+                && (function.return_by_ref
+                    || function
+                        .return_type
+                        .as_ref()
+                        .is_some_and(return_type_needs_runtime_context)),
+            !function.is_generator
+                && function
+                    .return_type
+                    .as_ref()
+                    .is_some_and(return_type_needs_runtime_context),
             function.is_anonymous,
             function.is_anonymous,
         )
@@ -13502,6 +13539,8 @@ impl ValueEmitter {
         current_trait_name: Option<&str>,
         current_function_return_by_ref: bool,
         current_function_is_generator: bool,
+        current_function_tracks_return_line: bool,
+        current_function_tracks_return_value_was_set: bool,
         use_runtime_class_scope: bool,
         current_function_is_anonymous: bool,
     ) -> Self {
@@ -13520,6 +13559,8 @@ impl ValueEmitter {
             current_trait_name: current_trait_name.map(str::to_string),
             current_function_return_by_ref,
             current_function_is_generator,
+            current_function_tracks_return_line,
+            current_function_tracks_return_value_was_set,
             current_function_is_anonymous,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
