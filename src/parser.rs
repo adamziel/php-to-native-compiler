@@ -3968,18 +3968,23 @@ impl Parser<'_> {
     }
 
     fn parse_catch_type_names(&mut self) -> Result<Vec<String>> {
-        let mut names = vec![
-            self.parse_resolved_class_name("expected catch type name")?
-                .0,
-        ];
+        let mut names = vec![self.parse_catch_type_name()?];
         while matches!(self.peek().kind, TokenKind::Pipe) {
             self.advance();
-            names.push(
-                self.parse_resolved_class_name("expected catch type name")?
-                    .0,
-            );
+            names.push(self.parse_catch_type_name()?);
         }
         Ok(names)
+    }
+
+    fn parse_catch_type_name(&mut self) -> Result<String> {
+        let (name, span) = self.parse_resolved_class_name("expected catch type name")?;
+        if name.eq_ignore_ascii_case("static") {
+            return Err(Diagnostic::new(
+                "Bad class name in the catch statement",
+                Some(span),
+            ));
+        }
+        Ok(name)
     }
 
     fn parse_goto(&mut self) -> Result<Statement> {
@@ -7655,6 +7660,15 @@ fn collect_arrow_captures_from_string_part(
             );
         }
         StringPart::PropertyFetch { variable, .. } => {
+            add_arrow_capture(
+                variable,
+                SourceSpan::new(0, 0, 0, 0),
+                exclusions,
+                seen,
+                captures,
+            );
+        }
+        StringPart::MethodCall { variable, .. } => {
             add_arrow_capture(
                 variable,
                 SourceSpan::new(0, 0, 0, 0),
@@ -13307,6 +13321,9 @@ fn lower_string_part(part: TokenStringPart) -> StringPart {
         }
         TokenStringPart::PropertyFetch { variable, property } => {
             StringPart::PropertyFetch { variable, property }
+        }
+        TokenStringPart::MethodCall { variable, method } => {
+            StringPart::MethodCall { variable, method }
         }
         TokenStringPart::ArrayAccess { array, indices } => StringPart::ArrayAccess {
             array,

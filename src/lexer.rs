@@ -141,6 +141,10 @@ pub enum StringPart {
         variable: String,
         property: String,
     },
+    MethodCall {
+        variable: String,
+        method: String,
+    },
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,
@@ -932,8 +936,31 @@ impl<'a> Lexer<'a> {
                 Some('-') if self.rest().starts_with("->") && indices.is_empty() => {
                     self.bump_char();
                     self.bump_char();
-                    let property = self.read_interpolation_variable_name(start)?;
+                    let member = self.read_interpolation_variable_name(start)?;
                     self.skip_interpolation_whitespace();
+                    if matches!(self.peek_char(), Some('(')) {
+                        self.bump_char();
+                        self.skip_interpolation_whitespace();
+                        if !matches!(self.peek_char(), Some(')')) {
+                            return Err(Diagnostic::new(
+                                "complex string interpolation is unsupported",
+                                Some(self.current_char_span()),
+                            ));
+                        }
+                        self.bump_char();
+                        self.skip_interpolation_whitespace();
+                        if !matches!(self.peek_char(), Some('}')) {
+                            return Err(Diagnostic::new(
+                                "complex string interpolation is unsupported",
+                                Some(self.current_char_span()),
+                            ));
+                        }
+                        self.bump_char();
+                        return Ok(StringPart::MethodCall {
+                            variable: array,
+                            method: member,
+                        });
+                    }
                     if !matches!(self.peek_char(), Some('}')) {
                         return Err(Diagnostic::new(
                             "complex string interpolation is unsupported",
@@ -943,7 +970,7 @@ impl<'a> Lexer<'a> {
                     self.bump_char();
                     return Ok(StringPart::PropertyFetch {
                         variable: array,
-                        property,
+                        property: member,
                     });
                 }
                 Some('[') => {

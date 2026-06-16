@@ -866,6 +866,10 @@ pub enum StringPart {
         variable: String,
         property: String,
     },
+    MethodCall {
+        variable: String,
+        method: String,
+    },
     ArrayAccess {
         array: String,
         indices: Vec<StringInterpolationIndex>,

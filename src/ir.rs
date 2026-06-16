@@ -2658,6 +2658,21 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
             }),
             line,
         }),
+        AstStringPart::MethodCall { variable, method } => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(ValueExpr::MethodCall {
+                receiver: Box::new(ValueExpr::Load {
+                    name: variable.clone(),
+                    line,
+                }),
+                name: method.clone(),
+                arguments: Vec::new(),
+                argument_names: Vec::new(),
+                argument_unpacks: Vec::new(),
+                line,
+            }),
+            line,
+        }),
         AstStringPart::ArrayAccess { array, indices } => Some(ValueExpr::Cast {
             kind: CastKind::String,
             expr: Box::new(lower_interpolated_array_access(array, indices, line)),

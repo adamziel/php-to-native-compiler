@@ -2042,6 +2042,17 @@ fn parser_accepts_throw_statement_and_expression() {
 }
 
 #[test]
+fn parser_rejects_static_catch_type_as_fatal() {
+    let error =
+        parser::parse("<?php\ntry {\n    throw new Exception('boom');\n} catch (static $e) {}\n")
+            .unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Bad class name in the catch statement");
+    assert_eq!(error.span.unwrap().line, 4);
+}
+
+#[test]
 fn parser_accepts_global_variable_statements() {
     let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
 
@@ -5623,6 +5634,28 @@ fn parser_accepts_braced_property_interpolation() {
             StringPart::PropertyFetch {
                 variable: "object".to_string(),
                 property: "name".to_string(),
+            },
+            StringPart::Literal("\n".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn parser_accepts_braced_method_call_interpolation() {
+    let program = parser::parse("<?php echo \"message={$e->getMessage()}\\n\";").unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    let Expr::InterpolatedString(parts, _) = &expressions[0] else {
+        panic!("expected interpolated string");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("message=".to_string()),
+            StringPart::MethodCall {
+                variable: "e".to_string(),
+                method: "getMessage".to_string(),
             },
             StringPart::Literal("\n".to_string()),
         ]
@@ -29018,6 +29051,34 @@ Warning: Undefined array key \"one\" in ptn on line 7\n\
 \n\
 Warning: Undefined array key \"two\" in ptn on line 7\n\
 a=b=zeroc=d\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_braced_method_call_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-braced-method-call-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("braced-method-call-interpolation.php");
+    let output = root.join("braced-method-call-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class MessageBox {\n\
+    public function text() { return \"ready\"; }\n\
+}\n\
+$box = new MessageBox();\n\
+echo \"value={$box->text()}\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "value=ready\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
