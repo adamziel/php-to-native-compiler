@@ -5302,6 +5302,46 @@ struct ClassPropertyVarsEntry<'a> {
     value: Option<&'a ValueExpr>,
 }
 
+fn inherited_hook_property<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a str, &'a crate::ir::PropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if let Some(property) = parent.properties.iter().find(|candidate| {
+            candidate.has_hooks
+                && candidate.visibility != PropertyVisibility::Private
+                && candidate.name == property_name
+        }) {
+            return Some((parent.name.as_str(), property));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn property_runtime_declaring_class(
+    class: &ClassDecl,
+    property: &crate::ir::PropertyDecl,
+    classes: &[ClassDecl],
+) -> String {
+    if property.visibility != PropertyVisibility::Private {
+        if let Some((declaring_class, _)) = inherited_hook_property(class, &property.name, classes)
+        {
+            return declaring_class.to_string();
+        }
+    }
+    class.name.clone()
+}
+
 fn class_property_exists_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
@@ -5418,12 +5458,12 @@ fn class_property_vars_chain<'a>(
 fn class_property_initialization_chain(
     class: &ClassDecl,
     classes: &[ClassDecl],
-) -> Vec<(String, crate::ir::PropertyDecl)> {
+) -> Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)> {
     fn collect(
         class: &ClassDecl,
         classes: &[ClassDecl],
         seen_classes: &mut HashSet<String>,
-        properties: &mut Vec<(String, crate::ir::PropertyDecl)>,
+        properties: &mut Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
     ) {
         let lookup_name = class.name.to_ascii_lowercase();
         if !seen_classes.insert(lookup_name) {
@@ -5434,13 +5474,18 @@ fn class_property_initialization_chain(
                 collect(parent, classes, seen_classes, properties);
             }
         }
-        properties.extend(
-            class
-                .properties
-                .iter()
-                .cloned()
-                .map(|property| (class.name.clone(), property)),
-        );
+        properties.extend(class.properties.iter().cloned().filter_map(|property| {
+            if property.has_hooks {
+                return None;
+            }
+            let hook_get_value = inherited_hook_property(class, &property.name, classes)
+                .and_then(|(_, hook_property)| hook_property.hook_get_value.clone());
+            Some((
+                property_runtime_declaring_class(class, &property, classes),
+                property,
+                hook_get_value,
+            ))
+        }));
     }
 
     let mut properties = Vec::new();
@@ -13208,6 +13253,134 @@ impl ValueEmitter {
         name_temp
     }
 
+    fn emit_materialized_indirect_write_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+    ) -> String {
+        match receiver {
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let owner_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
+                out.push_str(&owner_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &owner_temp);
+                result_temp
+            }
+            ValueExpr::DynamicPropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let owner_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_read_property_for_indirect_write(&runtime, ");
+                out.push_str(&owner_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &owner_temp);
+                result_temp
+            }
+            _ => self.emit_materialized_value(out, receiver),
+        }
+    }
+
+    fn emit_materialized_unset_receiver(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+    ) -> String {
+        match receiver {
+            ValueExpr::PropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let owner_temp = self.emit_materialized_unset_receiver(out, receiver);
+                let lookup_temp = self.next_temp();
+                out.push_str("    PtnLookupResult ");
+                out.push_str(&lookup_temp);
+                out.push_str(" = ptn_object_property_lookup_quiet(&runtime, ");
+                out.push_str(&owner_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists ? ");
+                out.push_str(&lookup_temp);
+                out.push_str(".value : ptn_null();\n");
+                emit_value_cleanup(out, "    ", &owner_temp);
+                result_temp
+            }
+            ValueExpr::DynamicPropertyFetch {
+                receiver,
+                name,
+                line,
+            } => {
+                let owner_temp = self.emit_materialized_unset_receiver(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let lookup_temp = self.next_temp();
+                out.push_str("    PtnLookupResult ");
+                out.push_str(&lookup_temp);
+                out.push_str(" = ptn_object_property_lookup_quiet(&runtime, ");
+                out.push_str(&owner_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists ? ");
+                out.push_str(&lookup_temp);
+                out.push_str(".value : ptn_null();\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &owner_temp);
+                result_temp
+            }
+            _ => self.emit_materialized_value(out, receiver),
+        }
+    }
+
     fn emit_dynamic_variable_read(
         &mut self,
         out: &mut String,
@@ -13598,11 +13771,7 @@ impl ValueEmitter {
                     value,
                 );
             }
-            let receiver_temp = if assignment_compound_binary_op(op).is_some() {
-                self.emit_materialized_value(out, receiver)
-            } else {
-                self.emit_nested_write_receiver(out, receiver)
-            };
+            let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
             let value_temp = self.emit_materialized_value(out, value);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -13629,7 +13798,7 @@ impl ValueEmitter {
             line,
         } = target
         {
-            let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+            let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
             let name_temp = self.emit_dynamic_property_name(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
             let result_temp = if let Some(compound_op) = assignment_compound_binary_op(op) {
@@ -13842,7 +14011,7 @@ impl ValueEmitter {
         line: usize,
         value_temp: &str,
     ) -> String {
-        let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+        let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
         let path = emit_array_path_segments(out, self, dimensions);
         let current_temp = self.next_temp();
         out.push_str("    ptn_validate_property_write_receiver(&runtime, ");
@@ -15025,7 +15194,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+                let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
@@ -15048,7 +15217,7 @@ impl ValueEmitter {
                 name,
                 line,
             } => {
-                let receiver_temp = self.emit_nested_write_receiver(out, receiver);
+                let receiver_temp = self.emit_materialized_indirect_write_receiver(out, receiver);
                 let name_temp = self.emit_dynamic_property_name(out, name, *line);
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -16969,10 +17138,11 @@ impl ValueEmitter {
         out.push_str(" = ptn_object_new_shell(&runtime, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\");\n");
-        for (declaring_class_name, property) in
+        for (declaring_class_name, property, hook_get_value) in
             class_property_initialization_chain(declared_class, &self.classes)
         {
-            let value_temp = match &property.value {
+            let effective_value = hook_get_value.as_ref().or(property.value.as_ref());
+            let value_temp = match effective_value {
                 Some(value) => self.emit_materialized_value(out, value),
                 None => {
                     let temp = self.next_temp();
@@ -17007,7 +17177,10 @@ impl ValueEmitter {
             out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
             out.push_str(
-                if property.type_hint.is_some() && property.value.is_none() {
+                if property.type_hint.is_some()
+                    && property.value.is_none()
+                    && hook_get_value.is_none()
+                {
                     "0"
                 } else {
                     "1"
@@ -18892,6 +19065,45 @@ impl ValueEmitter {
         lookup_temp
     }
 
+    fn emit_dynamic_property_probe_quiet(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let receiver_lookup_temp = self.emit_quiet_lookup(out, receiver);
+        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let lookup_temp = self.next_temp();
+        out.push_str("        PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(";\n");
+        out.push_str("        if (");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".exists) {\n");
+        out.push_str("            ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_object_property_probe_quiet(&runtime, ");
+        out.push_str(&receiver_lookup_temp);
+        out.push_str(".value, ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        } else {\n");
+        out.push_str("            ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_lookup_missing();\n");
+        out.push_str("        }\n");
+        emit_value_cleanup(out, "        ", &format!("{receiver_lookup_temp}.value"));
+        out.push_str("        free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        lookup_temp
+    }
+
     fn emit_comparison(
         &mut self,
         out: &mut String,
@@ -19286,6 +19498,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_property_probe_quiet(out, receiver, name, *line),
+            ValueExpr::DynamicPropertyFetch {
+                receiver,
+                name,
+                line,
+            } => self.emit_dynamic_property_probe_quiet(out, receiver, name, *line),
             ValueExpr::StaticPropertyFetch {
                 class_name,
                 name,

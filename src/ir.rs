@@ -95,6 +95,8 @@ pub struct PropertyDecl {
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_readonly: bool,
+    pub has_hooks: bool,
+    pub hook_get_value: Option<ValueExpr>,
     pub type_hint: Option<PropertyTypeHint>,
     pub value: Option<ValueExpr>,
     pub line: usize,
@@ -1066,6 +1068,11 @@ impl<'a> LoweringContext<'a> {
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_readonly: property.is_readonly,
+                has_hooks: property.has_hooks,
+                hook_get_value: property
+                    .hook_get_value
+                    .as_ref()
+                    .map(|value| self.lower_expr(value)),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,

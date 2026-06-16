@@ -1966,11 +1966,46 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         property,
         access_scope,
         PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
-        0,
+        1,
         line
     );
     if (storage_key == NULL) {
-        return ptn_null();
+        char *read_storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_READ,
+            1,
+            line
+        );
+        if (read_storage_key != NULL) {
+            PtnArrayKey read_key = ptn_array_string_key(read_storage_key);
+            PtnArrayEntry *read_entry =
+                ptn_array_entry_for_key(receiver.as.object->properties, read_key);
+            ptn_array_key_free(read_key);
+            if (read_entry != NULL) {
+                PtnValue current = ptn_value_clone_deref(read_entry->value);
+                if (current.type == PTN_OBJECT) {
+                    free(read_storage_key);
+                    return current;
+                }
+                ptn_value_destroy(&current);
+            }
+            free(read_storage_key);
+        }
+        storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_INDIRECT_WRITE,
+            0,
+            line
+        );
+        if (storage_key == NULL) {
+            return ptn_null();
+        }
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
@@ -1979,6 +2014,23 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
+        if (metadata != NULL &&
+            metadata->set_visibility != metadata->read_visibility &&
+            !ptn_property_visibility_allows(
+                runtime,
+                metadata->set_visibility,
+                metadata->declaring_class,
+                access_scope
+            )) {
+            ptn_throw_property_indirect_set_visibility_error(
+                runtime,
+                metadata->set_visibility,
+                metadata->declaring_class,
+                metadata->display_name,
+                access_scope
+            );
+            return ptn_null();
+        }
         if (metadata != NULL && metadata->type_kind == PTN_PROPERTY_TYPE_ARRAY) {
             return ptn_array_from_literal_entries(0, NULL);
         }

@@ -1664,7 +1664,7 @@ impl Parser<'_> {
                     modifiers.set_visibility_span,
                     member_is_readonly,
                     attributes,
-                    class_is_interface,
+                    true,
                     class_name,
                 )?,
             ));
@@ -1694,7 +1694,7 @@ impl Parser<'_> {
                     modifiers.set_visibility_span,
                     member_is_readonly,
                     attributes,
-                    class_is_interface,
+                    true,
                     class_name,
                 )?,
             ));
@@ -2175,13 +2175,15 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            self.parse_property_hook_block()?;
+            let hook_get_value = self.parse_property_hook_block()?;
             return Ok((
                 PropertyDecl {
                     name,
                     visibility,
                     set_visibility,
                     is_readonly,
+                    has_hooks: true,
+                    hook_get_value,
                     type_hint,
                     has_override_attribute: attributes.has_override,
                     value: None,
@@ -2215,6 +2217,8 @@ impl Parser<'_> {
                 visibility,
                 set_visibility,
                 is_readonly,
+                has_hooks: false,
+                hook_get_value: None,
                 type_hint,
                 has_override_attribute: attributes.has_override,
                 value,
@@ -2270,7 +2274,64 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_property_hook_block(&mut self) -> Result<()> {
+    fn parse_property_hook_block(&mut self) -> Result<Option<Expr>> {
+        self.expect_left_brace()?;
+        let mut get_value = None;
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            let token = self.advance().clone();
+            match token.kind {
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("get") => {
+                    if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+                        self.advance();
+                        let value = self.parse_expr()?;
+                        if !is_supported_property_default_expr(&value) {
+                            return Err(Diagnostic::new(
+                                "property hook get expression must be a supported constant expression",
+                                Some(value.span()),
+                            ));
+                        }
+                        self.expect_semicolon()?;
+                        get_value = Some(value);
+                    } else {
+                        self.skip_property_hook_body()?;
+                    }
+                }
+                TokenKind::Identifier(_) => {
+                    self.skip_property_hook_body()?;
+                }
+                TokenKind::LeftBrace => {
+                    self.skip_braced_property_hook_body()?;
+                }
+                TokenKind::Eof => {
+                    return Err(Diagnostic::new(
+                        "unterminated property hook block",
+                        Some(token.span),
+                    ));
+                }
+                _ => {}
+            }
+        }
+        self.expect_right_brace()?;
+        Ok(get_value)
+    }
+
+    fn skip_property_hook_body(&mut self) -> Result<()> {
+        if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+            self.advance();
+            let _ = self.parse_expr()?;
+            self.expect_semicolon()?;
+            return Ok(());
+        }
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return self.skip_braced_property_hook_body();
+        }
+        if matches!(self.peek().kind, TokenKind::Semicolon) {
+            self.advance();
+        }
+        Ok(())
+    }
+
+    fn skip_braced_property_hook_body(&mut self) -> Result<()> {
         self.expect_left_brace()?;
         let mut depth = 1usize;
         while depth > 0 {
@@ -8263,6 +8324,8 @@ fn promoted_properties_from_constructor(
                 visibility: promoted.visibility,
                 set_visibility: promoted.set_visibility,
                 is_readonly: class_is_readonly || promoted.is_readonly,
+                has_hooks: false,
+                hook_get_value: None,
                 type_hint: parameter
                     .type_hint
                     .as_ref()
@@ -10550,6 +10613,7 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
                 ));
             }
             if parent_property.set_visibility == parent_property.visibility
+                && !parent_property.has_hooks
                 && property.set_visibility != property.visibility
             {
                 return Err(Diagnostic::new(
@@ -10559,6 +10623,12 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
                     ),
                     Some(property.span),
                 ));
+            }
+            if parent_property.has_hooks
+                && parent_property.set_visibility == parent_property.visibility
+                && property.set_visibility != property.visibility
+            {
+                continue;
             }
             if visibility_rank(property.set_visibility)
                 <= visibility_rank(parent_property.set_visibility)

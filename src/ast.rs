@@ -87,6 +87,8 @@ pub struct PropertyDecl {
     pub visibility: PropertyVisibility,
     pub set_visibility: PropertyVisibility,
     pub is_readonly: bool,
+    pub has_hooks: bool,
+    pub hook_get_value: Option<Expr>,
     pub type_hint: Option<PropertyTypeHint>,
     pub has_override_attribute: bool,
     pub value: Option<Expr>,

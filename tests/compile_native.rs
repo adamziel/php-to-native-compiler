@@ -4540,6 +4540,32 @@ class Book {
 }
 
 #[test]
+fn parser_accepts_property_hook_prototype_metadata() {
+    let program = parser::parse(
+        "<?php
+class ParentBook {
+    public mixed $title { get => 'fallback'; }
+}
+class Book extends ParentBook {
+    public protected(set) mixed $title = 'ptn';
+}
+",
+    )
+    .unwrap();
+
+    assert!(program.classes[0].properties[0].has_hooks);
+    assert!(matches!(
+        program.classes[0].properties[0].hook_get_value.as_ref(),
+        Some(Expr::String(value, _)) if value == "fallback"
+    ));
+    assert_eq!(program.classes[1].properties[0].name, "title");
+    assert_eq!(
+        program.classes[1].properties[0].set_visibility,
+        PropertyVisibility::Protected
+    );
+}
+
+#[test]
 fn parser_lowers_asymmetric_constructor_promoted_properties() {
     let program = parser::parse(
         "<?php
@@ -36073,6 +36099,46 @@ try {
     assert!(c_source.contains("ptn_object_declare_property(&runtime"));
     assert!(c_source.contains("PTN_PROPERTY_PRIVATE"));
     assert!(c_source.contains("PTN_PROPERTY_PROTECTED"));
+}
+
+#[test]
+fn compile_property_hook_prototype_scopes_asymmetric_set_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-prototype-asymmetric-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-prototype-asymmetric-visibility.php");
+    let output = root.join("property-hook-prototype-asymmetric-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+class P {
+    public mixed $foo { get => 42; }
+}
+
+class C1 extends P {
+    public protected(set) mixed $foo = 1;
+}
+
+class C2 extends P {
+    public protected(set) mixed $foo;
+
+    static function foo($c) { return $c->foo += 1; }
+}
+
+var_dump(C2::foo(new C1));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(43)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_declare_property(&runtime"));
+    assert!(c_source.contains("\"P\""));
 }
 
 #[test]
