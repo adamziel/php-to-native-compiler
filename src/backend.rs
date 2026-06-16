@@ -8196,6 +8196,7 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
             if class_name.eq_ignore_ascii_case("ReflectionClass")
+                || class_name.eq_ignore_ascii_case("ReflectionObject")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
                 || class_name.eq_ignore_ascii_case("ReflectionProperty")

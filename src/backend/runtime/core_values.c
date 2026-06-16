@@ -894,6 +894,7 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name);
@@ -917,6 +918,12 @@ static PTN_UNUSED int ptn_runtime_class_or_interface_exists(
     const char *class_name
 );
 static PTN_UNUSED PtnValue ptn_reflection_class_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_object_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,

@@ -1488,6 +1488,39 @@ fn phpt_classifier_keeps_basic_reflection_property_metadata_rows() {
 }
 
 #[test]
+fn phpt_classifier_keeps_reflection_object_metadata_rows() {
+    let classification = classify(
+        "--TEST--\nreflection object\n--FILE--\n<?php\nclass C {}\n$ref = new ReflectionObject(new C());\nvar_dump($ref->getName(), $ref->isUserDefined());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_reflection_property_modifier_constants() {
+    let classification = classify(
+        "--TEST--\nreflection property constants\n--FILE--\n<?php\nvar_dump(ReflectionProperty::IS_PUBLIC, ReflectionProperty::IS_STATIC);\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_builtin_exception_reflection_property_metadata_rows() {
+    let classification = classify(
+        "--TEST--\nreflection property exception metadata\n--FILE--\n<?php\n$ref = new ReflectionProperty(Exception::class, 'message');\nvar_dump($ref->getName(), $ref->isProtected());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_advanced_reflection_property_rows() {
     let classification = classify(
         "--TEST--\nreflection property string\n--FILE--\n<?php\nclass C { public $value = 1; }\n$ref = new ReflectionProperty(C::class, 'value');\nvar_dump($ref->__toString());\n--EXPECT--\n",

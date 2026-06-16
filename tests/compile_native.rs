@@ -12563,6 +12563,12 @@ class ReflectChild extends ReflectBase {
     }
 }
 
+var_dump(\\ReflectionMethod::IS_PUBLIC);
+var_dump(\\ReflectionMethod::IS_STATIC);
+var_dump(\\ReflectionProperty::IS_READONLY);
+var_dump(\\ReflectionClass::IS_FINAL);
+var_dump(constant(\"ReflectionClass::IS_READONLY\"));
+
 $method = new \\ReflectionMethod(ReflectChild::class, \"helper\");
 var_dump($method->getName());
 var_dump($method->getDeclaringClass()->getName());
@@ -12602,6 +12608,11 @@ var_dump($instanceProp->getValue($child));
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
+            "int(1)\n",
+            "int(16)\n",
+            "int(128)\n",
+            "int(32)\n",
+            "int(65536)\n",
             "string(6) \"helper\"\n",
             "string(12) \"ReflectChild\"\n",
             "bool(true)\n",
@@ -12673,6 +12684,69 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_reflection_property_new"));
+}
+
+#[test]
+fn compile_reflection_object_and_internal_property_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-object-internal-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-object-internal-property.php");
+    let output = root.join("reflection-object-internal-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectedObjectClass {
+}
+
+$property = new \\ReflectionProperty(\\Exception::class, \"message\");
+var_dump($property->getName());
+var_dump($property->getDeclaringClass()->getName());
+var_dump($property->isProtected());
+$property->__construct(\\Exception::class, \"trace\");
+var_dump($property->getName());
+var_dump($property->isPrivate());
+
+$object = new \\ReflectionObject(new ReflectedObjectClass());
+var_dump($object->getName());
+var_dump($object->isUserDefined());
+var_dump($object->isInternal());
+$object->__construct(new \\stdClass());
+var_dump($object->getName());
+var_dump($object->isInternal());
+
+$reflectionObject = new \\ReflectionObject(new \\ReflectionClass(ReflectedObjectClass::class));
+var_dump($reflectionObject->getName());
+var_dump($reflectionObject->isInternal());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(7) \"message\"\n",
+            "string(9) \"Exception\"\n",
+            "bool(true)\n",
+            "string(5) \"trace\"\n",
+            "bool(true)\n",
+            "string(20) \"ReflectedObjectClass\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "string(8) \"stdClass\"\n",
+            "bool(true)\n",
+            "string(15) \"ReflectionClass\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_object_new"));
+    assert!(c_source.contains("ptn_reflection_builtin_property_metadata"));
 }
 
 #[test]
