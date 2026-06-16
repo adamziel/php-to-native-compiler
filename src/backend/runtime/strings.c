@@ -366,6 +366,9 @@ static PTN_UNUSED char *ptn_callable_function_name(PtnValue callable) {
 static PTN_UNUSED char *ptn_callable_output_name(PtnValue callable) {
     callable = ptn_value_deref(callable);
     if (callable.type == PTN_CLOSURE) {
+        if (callable.as.closure->has_wrapped_callable) {
+            return ptn_callable_output_name(callable.as.closure->wrapped_callable);
+        }
         return ptn_duplicate_string("Closure::__invoke");
     }
     if (callable.type == PTN_ARRAY && callable.as.array->len == 2) {

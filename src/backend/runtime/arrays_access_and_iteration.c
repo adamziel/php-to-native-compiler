@@ -3089,6 +3089,12 @@ static PTN_UNUSED PtnArrayEntry *ptn_array_reference_entry(
     return &array->entries[index];
 }
 
+static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
+    PtnRuntime *runtime,
+    PtnValue container,
+    size_t line
+);
+
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     PtnRuntime *runtime,
     const char *name,
@@ -3105,6 +3111,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
             if (value.type == PTN_REFERENCE) {
                 return value;
             }
+            ptn_emit_indirect_modification_overloaded_element_notice(runtime, slot_value, line);
             return ptn_reference_value(ptn_reference_new_owned(value));
         }
     }
@@ -3150,6 +3157,18 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
     PtnValue *value = container->type == PTN_REFERENCE
         ? &container->as.reference->value
         : container;
+    if (ptn_arrayaccess_can_dispatch(runtime, *value, "offsetGet")) {
+        PtnValue key = key_value == NULL ? ptn_null() : *key_value;
+        PtnValue result = ptn_arrayaccess_read(runtime, *value, key, line);
+        if (result.type == PTN_REFERENCE) {
+            return result;
+        }
+        if (warn_non_referenceable) {
+            ptn_emit_indirect_modification_overloaded_element_notice(runtime, *value, line);
+        }
+        return ptn_reference_value(ptn_reference_new_owned(result));
+    }
+
     PtnArray *array = NULL;
     if (value->type == PTN_ARRAY) {
         array = ptn_array_detach_value(value);
@@ -4254,6 +4273,29 @@ static PTN_UNUSED PtnValue ptn_arrayaccess_read(
     return result;
 }
 
+static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
+    PtnRuntime *runtime,
+    PtnValue container,
+    size_t line
+) {
+    (void)runtime;
+    container = ptn_value_deref(container);
+    const char *type_name = container.type == PTN_OBJECT
+        ? container.as.object->class_name
+        : ptn_offset_container_type_name(container);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Indirect modification of overloaded element of %s has no effect",
+        type_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_array_runtime_diagnostic("Notice", message, line);
+}
+
 static PTN_UNUSED void ptn_arrayaccess_write(
     PtnRuntime *runtime,
     PtnValue container,
@@ -4366,6 +4408,9 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
     key_value = ptn_value_deref(key_value);
     if (container.type == PTN_NULL) {
         return ptn_null();
+    }
+    if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetGet")) {
+        return ptn_arrayaccess_read(runtime, container, key_value, line);
     }
     if (container.type != PTN_ARRAY) {
         char message[128];

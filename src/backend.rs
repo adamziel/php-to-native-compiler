@@ -638,6 +638,9 @@ fn emit_user_function_prototypes(
         out.push_str(
             "static PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index);\n",
         );
+        out.push_str(
+            "static PTN_UNUSED const char *ptn_callable_argument_parameter_name(PtnRuntime *runtime, PtnValue callable, size_t argument_index, char *fallback, size_t fallback_len);\n",
+        );
     }
     if needs_dynamic_function_dispatch {
         out.push_str("static PTN_UNUSED char *ptn_dynamic_function_name(PtnValue callable);\n");
@@ -1473,7 +1476,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("array_walk_recursive") && argument_index == 0 {
         return Some("array");
     }
-    if name.eq_ignore_ascii_case("preg_match") && argument_index == 2 {
+    if (name.eq_ignore_ascii_case("preg_match") || name.eq_ignore_ascii_case("preg_match_all"))
+        && argument_index == 2
+    {
         return Some("matches");
     }
     if (name.eq_ignore_ascii_case("preg_replace")
@@ -5470,6 +5475,38 @@ fn emit_callable_dispatch(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_callable_argument_parameter_name(PtnRuntime *runtime, PtnValue callable, size_t argument_index, char *fallback, size_t fallback_len) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
+    out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
+    out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
+    out.push_str("            return ptn_callable_argument_parameter_name(runtime, resolved.as.closure->wrapped_callable, argument_index, fallback, fallback_len);\n");
+    out.push_str("        }\n");
+    out.push_str("        return ptn_function_metadata_parameter_name(resolved.as.closure->metadata, argument_index, fallback, fallback_len);\n");
+    out.push_str("    }\n");
+    out.push_str("    if (resolved.type == PTN_STRING) {\n");
+    out.push_str("        char *callable_name = ptn_value_to_string(resolved);\n");
+    out.push_str(
+        "        const char *lookup_name = ptn_symbol_name_without_leading_slash(callable_name);\n",
+    );
+    out.push_str(
+        "        PtnFunctionMetadata metadata = ptn_find_function_metadata(lookup_name);\n",
+    );
+    out.push_str("        const char *parameter_name = ptn_function_metadata_parameter_name(metadata, argument_index, fallback, fallback_len);\n");
+    out.push_str("        free(callable_name);\n");
+    out.push_str("        return parameter_name;\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    int written = snprintf(fallback, fallback_len, \"param%zu\", argument_index + 1);\n",
+    );
+    out.push_str("    if (written < 0 || (size_t)written >= fallback_len) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    return fallback;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
@@ -9254,9 +9291,16 @@ fn value_is_temporary_write_context(value: &ValueExpr) -> bool {
         | ValueExpr::DynamicPropertyFetch { receiver, .. } => {
             property_receiver_is_temporary_write_context(receiver)
         }
-        ValueExpr::NullsafePropertyFetch { .. } | ValueExpr::PipeValue { .. } => true,
         _ => false,
     }
+}
+
+fn value_needs_runtime_by_ref_argument_check(value: &ValueExpr) -> bool {
+    value_is_temporary_write_context(value)
+        || matches!(
+            value,
+            ValueExpr::NullsafePropertyFetch { .. } | ValueExpr::PipeValue { .. }
+        )
 }
 
 fn emit_switch(
@@ -12238,6 +12282,7 @@ impl ValueEmitter {
         let self_referential = list_assignment_references_variable(target, source_name);
         let mut entries = Vec::with_capacity(target.elements.len());
         let mut cleanup_temps = Vec::new();
+        let mut pending_reference_binds: Vec<(ReferenceTarget, String)> = Vec::new();
 
         for (index, element) in target.elements.iter().enumerate() {
             let key_temp = self.emit_list_key(out, element, index);
@@ -12293,29 +12338,32 @@ impl ValueEmitter {
                     }
                 }
                 ListAssignmentElementTarget::Reference(target) => {
-                    let source_temp = if self_referential {
-                        self.emit_reference_target(out, target)
+                    let source_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&source_temp);
+                    out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
+                    out.push_str(&c_string(source_name));
+                    out.push_str("\", &");
+                    out.push_str(&key_temp);
+                    out.push_str(", \"");
+                    out.push_str(&c_string(&self.source_file));
+                    out.push_str("\", ");
+                    out.push_str(&target.line().to_string());
+                    out.push_str(");\n");
+                    if self_referential {
+                        pending_reference_binds.push((target.clone(), source_temp.clone()));
                     } else {
-                        let temp = self.next_temp();
-                        out.push_str("    PtnValue ");
-                        out.push_str(&temp);
-                        out.push_str(" = ptn_runtime_reference_for_array_dim(&runtime, \"");
-                        out.push_str(&c_string(source_name));
-                        out.push_str("\", &");
-                        out.push_str(&key_temp);
-                        out.push_str(", \"");
-                        out.push_str(&c_string(&self.source_file));
-                        out.push_str("\", ");
-                        out.push_str(&target.line().to_string());
-                        out.push_str(");\n");
-                        temp
-                    };
-                    self.emit_bind_reference_target(out, target, &source_temp);
+                        self.emit_bind_reference_target(out, target, &source_temp);
+                    }
                     cleanup_temps.push(source_temp.clone());
                     source_temp
                 }
             };
             entries.push(format!("{{ 0, {key_temp}, {value_temp} }}"));
+        }
+
+        for (target, source_temp) in &pending_reference_binds {
+            self.emit_bind_reference_target(out, target, source_temp);
         }
 
         let result_temp = self.next_temp();
@@ -16408,7 +16456,7 @@ impl ValueEmitter {
         argument: &ValueExpr,
         line: usize,
     ) -> String {
-        if !value_is_temporary_write_context(argument) {
+        if !value_needs_runtime_by_ref_argument_check(argument) {
             return self.emit_dynamic_call_argument(out, argument);
         }
 
@@ -16429,21 +16477,64 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&mode_temp);
         out.push_str(" == 1) {\n");
-        let by_ref_temp = self.emit_by_ref_call_argument(
-            out,
+        if matches!(
             argument,
-            "{closure}",
-            argument_index,
-            "",
-            line,
-            true,
-            true,
-        );
-        out.push_str("        ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
-        out.push_str(&by_ref_temp);
-        out.push_str(";\n");
+            ValueExpr::NullsafePropertyFetch { .. } | ValueExpr::PipeValue { .. }
+        ) {
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            let callable_name_temp = self.next_temp();
+            out.push_str("        char *");
+            out.push_str(&callable_name_temp);
+            out.push_str(" = ptn_callable_output_name(");
+            out.push_str(callee_temp);
+            out.push_str(");\n");
+            let parameter_fallback_temp = self.next_temp();
+            out.push_str("        char ");
+            out.push_str(&parameter_fallback_temp);
+            out.push_str("[64];\n");
+            let parameter_name_temp = self.next_temp();
+            out.push_str("        const char *");
+            out.push_str(&parameter_name_temp);
+            out.push_str(" = ptn_callable_argument_parameter_name(&runtime, ");
+            out.push_str(callee_temp);
+            out.push_str(", ");
+            out.push_str(&argument_index.to_string());
+            out.push_str(", ");
+            out.push_str(&parameter_fallback_temp);
+            out.push_str(", sizeof(");
+            out.push_str(&parameter_fallback_temp);
+            out.push_str("));\n");
+            out.push_str("        ptn_throw_by_reference_argument_error(&runtime, ");
+            out.push_str(&callable_name_temp);
+            out.push_str(", ");
+            out.push_str(&(argument_index + 1).to_string());
+            out.push_str(", ");
+            out.push_str(&parameter_name_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        free(");
+            out.push_str(&callable_name_temp);
+            out.push_str(");\n");
+        } else {
+            let by_ref_temp = self.emit_by_ref_call_argument(
+                out,
+                argument,
+                "{closure}",
+                argument_index,
+                "",
+                line,
+                true,
+                true,
+            );
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&by_ref_temp);
+            out.push_str(";\n");
+        }
 
         out.push_str("    } else if (");
         out.push_str(&mode_temp);
