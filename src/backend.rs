@@ -6576,6 +6576,7 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_dynamic_call_mutates_first_array_argument(const char *name) {\n",
     );
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
     for name in [
         "array_pop",
         "array_push",
@@ -6601,7 +6602,7 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
         "uksort",
         "usort",
     ] {
-        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"");
         out.push_str(name);
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
@@ -6656,15 +6657,53 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str(
         "\nstatic PTN_UNUSED void ptn_dynamic_call_warn_first_reference_argument_mismatch(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
-    out.push_str("    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL || !ptn_dynamic_call_mutates_first_array_argument(name)) {\n");
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL || !ptn_dynamic_call_mutates_first_array_argument(lookup_name)) {\n");
     out.push_str("        return;\n");
     out.push_str("    }\n");
     out.push_str("    if (args[0].type == PTN_REFERENCE) {\n");
     out.push_str("        return;\n");
     out.push_str("    }\n");
     out.push_str(
-        "    ptn_emit_by_reference_argument_warning(runtime, name, 1, \"array\", line);\n",
+        "    ptn_emit_by_reference_argument_warning(runtime, lookup_name, 1, \"array\", line);\n",
     );
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_dynamic_call_internal_by_ref_parameter_name(const char *name, size_t argument_index) {\n",
+    );
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("    if (argument_index == 0 && ptn_dynamic_call_mutates_first_array_argument(lookup_name)) return \"array\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"array_pop\") && argument_index == 0) return \"array\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"array_shift\") && argument_index == 0) return \"array\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"array_splice\") && argument_index == 0) return \"array\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"array_walk_recursive\") && argument_index == 0) return \"array\";\n");
+    out.push_str("    if ((ptn_ascii_case_equal(lookup_name, \"preg_match\") || ptn_ascii_case_equal(lookup_name, \"preg_match_all\")) && argument_index == 2) return \"matches\";\n");
+    out.push_str("    if ((ptn_ascii_case_equal(lookup_name, \"preg_replace\") || ptn_ascii_case_equal(lookup_name, \"preg_replace_callback\")) && argument_index == 4) return \"count\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"parse_str\") && argument_index == 1) return \"result\";\n");
+    out.push_str("    if ((ptn_ascii_case_equal(lookup_name, \"str_replace\") || ptn_ascii_case_equal(lookup_name, \"str_ireplace\")) && argument_index == 3) return \"count\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"similar_text\") && argument_index == 2) return \"percent\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"sscanf\") && argument_index >= 2) return \"var\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"is_callable\") && argument_index == 2) return \"callable_name\";\n");
+    out.push_str("    if (ptn_ascii_case_equal(lookup_name, \"settype\") && argument_index == 0) return \"var\";\n");
+    out.push_str("    if ((ptn_ascii_case_equal(lookup_name, \"end\") || ptn_ascii_case_equal(lookup_name, \"next\") || ptn_ascii_case_equal(lookup_name, \"prev\") || ptn_ascii_case_equal(lookup_name, \"reset\")) && argument_index == 0) return \"array\";\n");
+    out.push_str("    return NULL;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_dynamic_call_warn_internal_reference_argument_mismatches(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("    for (size_t i = 0; i < argc; i++) {\n");
+    out.push_str("        const char *parameter_name = ptn_dynamic_call_internal_by_ref_parameter_name(lookup_name, i);\n");
+    out.push_str("        if (parameter_name == NULL || args[i].type == PTN_REFERENCE) {\n");
+    out.push_str("            continue;\n");
+    out.push_str("        }\n");
+    out.push_str("        ptn_emit_by_reference_argument_warning(runtime, lookup_name, i + 1, parameter_name, line);\n");
+    out.push_str("    }\n");
     out.push_str("}\n");
 }
 
@@ -6683,7 +6722,7 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str("        ptn_throw_exception_at(runtime, \"Error\", \"Cannot call compact() dynamically\", runtime->source_path, line);\n");
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, dynamic_lookup_name, argc, args, line);\n");
+    out.push_str("    ptn_dynamic_call_warn_internal_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
     out.push_str(
@@ -7015,7 +7054,7 @@ fn emit_callable_dispatch(
     out.push_str("    }\n");
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
     out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
-    out.push_str("    ptn_dynamic_call_warn_first_reference_argument_mismatch(runtime, dynamic_lookup_name, argc, args, line);\n");
+    out.push_str("    ptn_dynamic_call_warn_internal_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
     out.push_str(
