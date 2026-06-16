@@ -52,10 +52,13 @@ pub fn parse(source: &str) -> Result<Program> {
         constant_aliases: HashMap::new(),
         runtime_class_aliases: HashMap::new(),
         declared_functions: HashSet::new(),
+        declared_class_names: HashMap::new(),
         anonymous_classes: Vec::new(),
         nested_functions: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
         allow_append_array_read: false,
+        active_type_scope: None,
+        allow_unscoped_relative_types: 0,
         return_by_ref_stack: Vec::new(),
         strict_types: false,
     }
@@ -76,12 +79,22 @@ struct Parser<'a> {
     constant_aliases: HashMap<String, String>,
     runtime_class_aliases: HashMap<String, String>,
     declared_functions: HashSet<String>,
+    declared_class_names: HashMap<String, SourceSpan>,
     anonymous_classes: Vec<ClassDecl>,
     nested_functions: Vec<FunctionDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
     allow_append_array_read: bool,
+    active_type_scope: Option<ActiveTypeScope>,
+    allow_unscoped_relative_types: usize,
     return_by_ref_stack: Vec<bool>,
     strict_types: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ActiveTypeScope {
+    class_name: String,
+    parent_name: Option<String>,
+    allow_unresolved_parent: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,7 +328,11 @@ impl Parser<'_> {
                     ));
                 }
                 if !self.seen_namespace_declaration
-                    && (!classes.is_empty() || !functions.is_empty() || !statements.is_empty())
+                    && (!classes.is_empty()
+                        || !functions.is_empty()
+                        || statements
+                            .iter()
+                            .any(|statement| !matches!(statement, Statement::Empty { .. })))
                 {
                     return Err(Diagnostic::new(
                         "Namespace declaration statement has to be the very first statement or after any declare call in the script",
@@ -334,7 +351,9 @@ impl Parser<'_> {
                 traits.push(self.parse_trait_decl(attributes)?);
             } else if self.peek_starts_class_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
-                classes.push(self.parse_class_decl(attributes)?);
+                let class = self.parse_class_decl(attributes)?;
+                self.register_declared_class_name(&class)?;
+                classes.push(class);
             } else {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let statement = self.parse_statement()?;
@@ -457,10 +476,25 @@ impl Parser<'_> {
                 "namespace declarations cannot use fully qualified names",
                 Some(parsed.span),
             )),
-            NameResolution::NamespaceRelative => Err(Diagnostic::new(
-                "namespace declarations cannot use namespace-relative names",
-                Some(parsed.span),
-            )),
+            NameResolution::NamespaceRelative => {
+                let text = self
+                    .source
+                    .get(parsed.span.byte_start..parsed.span.byte_end)
+                    .unwrap_or("namespace");
+                if parsed.name.is_empty() {
+                    Err(Diagnostic::new(
+                        format!("Cannot use '{text}' as namespace name"),
+                        Some(parsed.span),
+                    ))
+                } else {
+                    Err(Diagnostic::parse_error(
+                        format!(
+                            "syntax error, unexpected namespace-relative name \"{text}\", expecting \"{{\""
+                        ),
+                        Some(parsed.span),
+                    ))
+                }
+            }
         }
     }
 
@@ -505,22 +539,25 @@ impl Parser<'_> {
         kind: UseDeclarationKind,
         target: ParsedName,
     ) -> Result<()> {
-        let alias = if matches!(self.peek().kind, TokenKind::As) {
+        let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
             self.advance();
             let token = self.advance().clone();
             let TokenKind::Identifier(alias) = token.kind else {
                 return Err(Diagnostic::new("expected import alias", Some(token.span)));
             };
-            alias
+            (alias, token.span)
         } else {
-            target
-                .name
-                .rsplit('\\')
-                .next()
-                .unwrap_or(&target.name)
-                .to_string()
+            (
+                target
+                    .name
+                    .rsplit('\\')
+                    .next()
+                    .unwrap_or(&target.name)
+                    .to_string(),
+                target.span,
+            )
         };
-        self.register_use_import(kind, target, alias);
+        self.register_use_import(kind, target, alias, alias_span)?;
         Ok(())
     }
 
@@ -563,26 +600,29 @@ impl Parser<'_> {
                     Some(item.span),
                 ));
             }
-            let alias = if matches!(self.peek().kind, TokenKind::As) {
+            let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
                 self.advance();
                 let token = self.advance().clone();
                 let TokenKind::Identifier(alias) = token.kind else {
                     return Err(Diagnostic::new("expected import alias", Some(token.span)));
                 };
-                alias
+                (alias, token.span)
             } else {
-                item.name
-                    .rsplit('\\')
-                    .next()
-                    .unwrap_or(&item.name)
-                    .to_string()
+                (
+                    item.name
+                        .rsplit('\\')
+                        .next()
+                        .unwrap_or(&item.name)
+                        .to_string(),
+                    item.span,
+                )
             };
             let grouped_target = ParsedName {
                 name: format!("{}\\{}", prefix.name, item.name),
                 span: combine_spans(prefix.span, item.span),
                 resolution: prefix.resolution,
             };
-            self.register_use_import(item_kind, grouped_target, alias);
+            self.register_use_import(item_kind, grouped_target, alias, alias_span)?;
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
@@ -592,7 +632,13 @@ impl Parser<'_> {
         Ok(())
     }
 
-    fn register_use_import(&mut self, kind: UseDeclarationKind, target: ParsedName, alias: String) {
+    fn register_use_import(
+        &mut self,
+        kind: UseDeclarationKind,
+        target: ParsedName,
+        alias: String,
+        alias_span: SourceSpan,
+    ) -> Result<()> {
         let target_name = match target.resolution {
             NameResolution::FullyQualified => target.name,
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
@@ -601,6 +647,15 @@ impl Parser<'_> {
         let alias_key = alias.to_ascii_lowercase();
         match kind {
             UseDeclarationKind::Class => {
+                let declared_key = self.qualify_current_namespace(&alias).to_ascii_lowercase();
+                if self.declared_class_names.contains_key(&declared_key) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot use {target_name} as {alias} because the name is already in use"
+                        ),
+                        Some(alias_span),
+                    ));
+                }
                 self.class_aliases.insert(alias_key, target_name);
             }
             UseDeclarationKind::Function => {
@@ -610,6 +665,30 @@ impl Parser<'_> {
                 self.constant_aliases.insert(alias_key, target_name);
             }
         }
+        Ok(())
+    }
+
+    fn register_declared_class_name(&mut self, class: &ClassDecl) -> Result<()> {
+        let local_name = class
+            .name
+            .rsplit('\\')
+            .next()
+            .unwrap_or(&class.name)
+            .to_string();
+        if self
+            .class_aliases
+            .contains_key(&local_name.to_ascii_lowercase())
+        {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot redeclare class {local_name} (previously declared as local import)"
+                ),
+                Some(class.span),
+            ));
+        }
+        self.declared_class_names
+            .insert(class.name.to_ascii_lowercase(), class.span);
+        Ok(())
     }
 
     fn parse_use_name(&mut self, expected: &str) -> Result<ParsedName> {
@@ -1043,6 +1122,11 @@ impl Parser<'_> {
         }
 
         self.expect_left_brace()?;
+        let previous_type_scope = self.active_type_scope.replace(ActiveTypeScope {
+            class_name: class_name.clone(),
+            parent_name: parent_name.clone(),
+            allow_unresolved_parent: false,
+        });
         let mut properties = Vec::new();
         let mut static_properties = Vec::new();
         let mut constants = Vec::new();
@@ -1071,6 +1155,7 @@ impl Parser<'_> {
                 }
             }
         }
+        self.active_type_scope = previous_type_scope;
         let right_span = self.expect_right_brace()?;
         let span = combine_spans(
             abstract_span.or(readonly_span).unwrap_or(class_token.span),
@@ -1101,6 +1186,11 @@ impl Parser<'_> {
         }
         let (trait_name, _) = self.parse_declaration_name("expected trait name")?;
         self.expect_left_brace()?;
+        let previous_type_scope = self.active_type_scope.replace(ActiveTypeScope {
+            class_name: trait_name.clone(),
+            parent_name: None,
+            allow_unresolved_parent: true,
+        });
 
         let mut properties = Vec::new();
         let mut static_properties = Vec::new();
@@ -1127,6 +1217,7 @@ impl Parser<'_> {
                 }
             }
         }
+        self.active_type_scope = previous_type_scope;
         let right_span = self.expect_right_brace()?;
         Ok(TraitDecl {
             name: trait_name,
@@ -1959,6 +2050,12 @@ impl Parser<'_> {
                 })
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("mixed") => {
+                if allows_null {
+                    return Err(Diagnostic::new(
+                        "Type mixed cannot be marked as nullable since mixed already includes null",
+                        Some(self.peek().span),
+                    ));
+                }
                 self.advance();
                 Ok(PropertyTypeHint {
                     text: format!("{nullable_prefix}mixed"),
@@ -2231,6 +2328,7 @@ impl Parser<'_> {
         } else {
             false
         };
+        self.allow_unscoped_relative_types += 1;
         let parameters = self.parse_function_parameters()?;
         let captures = self.parse_closure_use_captures()?;
         validate_closure_use_parameter_names(&parameters, &captures)?;
@@ -2240,6 +2338,7 @@ impl Parser<'_> {
         } else {
             None
         };
+        self.allow_unscoped_relative_types -= 1;
         self.return_by_ref_stack.push(return_by_ref);
         self.function_depth += 1;
         let body = self.parse_block();
@@ -2568,6 +2667,26 @@ impl Parser<'_> {
                 self.advance();
                 TypeHint::Bool
             }
+            TokenKind::True => {
+                self.advance();
+                TypeHint::True
+            }
+            TokenKind::False => {
+                self.advance();
+                TypeHint::False
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("self") => {
+                self.advance();
+                self.relative_type_hint("self", token.span)?
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("parent") => {
+                self.advance();
+                self.relative_type_hint("parent", token.span)?
+            }
+            TokenKind::Identifier(name) if name.eq_ignore_ascii_case("static") => {
+                self.advance();
+                self.relative_type_hint("static", token.span)?
+            }
             TokenKind::Backslash => {
                 let parsed = self.parse_name("expected type hint")?;
                 if is_unqualified_only_builtin_type_hint_name(&parsed.name) {
@@ -2593,6 +2712,55 @@ impl Parser<'_> {
         })
     }
 
+    fn relative_type_hint(&self, keyword: &str, span: SourceSpan) -> Result<TypeHint> {
+        match keyword.to_ascii_lowercase().as_str() {
+            "self" => {
+                if let Some(scope) = &self.active_type_scope {
+                    Ok(TypeHint::Class(scope.class_name.clone()))
+                } else if self.allow_unscoped_relative_types > 0 {
+                    Ok(TypeHint::Class("self".to_string()))
+                } else {
+                    Err(Diagnostic::new(
+                        "Cannot use \"self\" when no class scope is active",
+                        Some(span),
+                    ))
+                }
+            }
+            "parent" => {
+                if let Some(scope) = &self.active_type_scope {
+                    if let Some(parent_name) = &scope.parent_name {
+                        Ok(TypeHint::Class(parent_name.clone()))
+                    } else if scope.allow_unresolved_parent {
+                        Ok(TypeHint::Class("parent".to_string()))
+                    } else {
+                        Err(Diagnostic::new(
+                            "Cannot use \"parent\" when current class scope has no parent",
+                            Some(span),
+                        ))
+                    }
+                } else if self.allow_unscoped_relative_types > 0 {
+                    Ok(TypeHint::Class("parent".to_string()))
+                } else {
+                    Err(Diagnostic::new(
+                        "Cannot use \"parent\" when no class scope is active",
+                        Some(span),
+                    ))
+                }
+            }
+            "static" => {
+                if self.active_type_scope.is_some() || self.allow_unscoped_relative_types > 0 {
+                    Ok(TypeHint::Static)
+                } else {
+                    Err(Diagnostic::new(
+                        "Cannot use \"static\" when no class scope is active",
+                        Some(span),
+                    ))
+                }
+            }
+            _ => unreachable!("relative type keyword checked by caller"),
+        }
+    }
+
     fn peek_is_type_hint(&self) -> bool {
         match &self.peek().kind {
             TokenKind::Question
@@ -2606,13 +2774,18 @@ impl Parser<'_> {
             | TokenKind::StringType
             | TokenKind::BinaryType
             | TokenKind::BoolType
-            | TokenKind::BooleanType => true,
+            | TokenKind::BooleanType
+            | TokenKind::True
+            | TokenKind::False => true,
             TokenKind::Identifier(name) => {
                 name.eq_ignore_ascii_case("array")
                     || name.eq_ignore_ascii_case("callable")
                     || name.eq_ignore_ascii_case("mixed")
                     || name.eq_ignore_ascii_case("object")
                     || name.eq_ignore_ascii_case("iterable")
+                    || name.eq_ignore_ascii_case("self")
+                    || name.eq_ignore_ascii_case("parent")
+                    || name.eq_ignore_ascii_case("static")
                     || !is_unsupported_builtin_type_hint_name(name)
             }
             _ => false,
@@ -4409,7 +4582,9 @@ impl Parser<'_> {
             TokenKind::New => self.parse_new_object_expr(token.span),
             TokenKind::Yield => self.parse_yield_expr(token.span),
             TokenKind::Identifier(name) => {
-                if name.eq_ignore_ascii_case("fn") {
+                if name.eq_ignore_ascii_case("fn")
+                    && matches!(self.peek().kind, TokenKind::LeftParen)
+                {
                     return self.parse_arrow_function_expr(token.span, false, attributes);
                 }
                 if name.eq_ignore_ascii_case("static") && self.peek_is_identifier("fn") {
@@ -4691,6 +4866,7 @@ impl Parser<'_> {
         } else {
             false
         };
+        self.allow_unscoped_relative_types += 1;
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
@@ -4698,6 +4874,7 @@ impl Parser<'_> {
         } else {
             None
         };
+        self.allow_unscoped_relative_types -= 1;
         self.expect_double_arrow()?;
         let previous_allow_append_array_read = self.allow_append_array_read;
         if return_by_ref {
@@ -6123,6 +6300,11 @@ fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
             kind: PropertyTypeKind::Bool,
             allows_null: false,
         },
+        TypeHint::True | TypeHint::False | TypeHint::Static => PropertyTypeHint {
+            text: type_hint_display(type_hint),
+            kind: PropertyTypeKind::Unsupported,
+            allows_null: false,
+        },
         TypeHint::Mixed => PropertyTypeHint {
             text: "mixed".to_string(),
             kind: PropertyTypeKind::Mixed,
@@ -6162,13 +6344,23 @@ fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
 
 fn nullable_type_hint(type_hint: TypeHint, span: SourceSpan) -> Result<TypeHint> {
     match type_hint {
-        TypeHint::Null
-        | TypeHint::Mixed
-        | TypeHint::Void
-        | TypeHint::Never
-        | TypeHint::Nullable(_)
-        | TypeHint::Union(_)
-        | TypeHint::Intersection(_) => {
+        TypeHint::Null => Err(Diagnostic::new(
+            "null cannot be marked as nullable",
+            Some(span),
+        )),
+        TypeHint::Mixed => Err(Diagnostic::new(
+            "Type mixed cannot be marked as nullable since mixed already includes null",
+            Some(span),
+        )),
+        TypeHint::Void => Err(Diagnostic::new(
+            "void cannot be marked as nullable",
+            Some(span),
+        )),
+        TypeHint::Never => Err(Diagnostic::new(
+            "never cannot be marked as nullable",
+            Some(span),
+        )),
+        TypeHint::Nullable(_) | TypeHint::Union(_) | TypeHint::Intersection(_) => {
             Err(Diagnostic::new("invalid nullable type hint", Some(span)))
         }
         other => Ok(TypeHint::Nullable(Box::new(other))),
@@ -6176,6 +6368,33 @@ fn nullable_type_hint(type_hint: TypeHint, span: SourceSpan) -> Result<TypeHint>
 }
 
 fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> {
+    for type_hint in types {
+        match type_hint {
+            TypeHint::Mixed => {
+                return Err(Diagnostic::new(
+                    "Type mixed can only be used as a standalone type",
+                    Some(span),
+                ));
+            }
+            TypeHint::Void => {
+                return Err(Diagnostic::new(
+                    "Void can only be used as a standalone type",
+                    Some(span),
+                ));
+            }
+            TypeHint::Never => {
+                return Err(Diagnostic::new(
+                    "never can only be used as a standalone type",
+                    Some(span),
+                ));
+            }
+            TypeHint::Nullable(_) | TypeHint::Union(_) => {
+                return Err(Diagnostic::new("invalid union type hint", Some(span)));
+            }
+            _ => {}
+        }
+    }
+
     let iterable_count = types
         .iter()
         .filter(|type_hint| matches!(type_hint, TypeHint::Iterable))
@@ -6196,21 +6415,73 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
             Some(span),
         ));
     }
+    if types
+        .iter()
+        .any(|type_hint| matches!(type_hint, TypeHint::True))
+        && types
+            .iter()
+            .any(|type_hint| matches!(type_hint, TypeHint::False))
+    {
+        return Err(Diagnostic::new(
+            "Type contains both true and false, bool must be used instead",
+            Some(span),
+        ));
+    }
+    if types
+        .iter()
+        .any(|type_hint| matches!(type_hint, TypeHint::Bool))
+    {
+        if types
+            .iter()
+            .any(|type_hint| matches!(type_hint, TypeHint::False))
+        {
+            return Err(Diagnostic::new(
+                "Duplicate type false is redundant",
+                Some(span),
+            ));
+        }
+        if types
+            .iter()
+            .any(|type_hint| matches!(type_hint, TypeHint::True))
+        {
+            return Err(Diagnostic::new(
+                "Duplicate type true is redundant",
+                Some(span),
+            ));
+        }
+    }
+    if types
+        .iter()
+        .any(|type_hint| matches!(type_hint, TypeHint::Object))
+        && types.iter().any(type_hint_is_explicit_class_like)
+    {
+        return Err(Diagnostic::new(
+            format!(
+                "Type {} contains both object and a class type, which is redundant",
+                union_type_redundancy_display(types)
+            ),
+            Some(span),
+        ));
+    }
     let mut seen = Vec::new();
     for type_hint in types {
-        match type_hint {
-            TypeHint::Mixed | TypeHint::Void | TypeHint::Never | TypeHint::Nullable(_) => {
-                return Err(Diagnostic::new("invalid union type hint", Some(span)));
-            }
-            TypeHint::Union(_) => {
-                return Err(Diagnostic::new("invalid union type hint", Some(span)));
-            }
-            _ => {}
-        }
-
         let key = type_hint_key(type_hint);
         if seen.iter().any(|seen_key| seen_key == &key) {
-            return Err(Diagnostic::new("duplicate union type hint", Some(span)));
+            if matches!(type_hint, TypeHint::Intersection(_)) {
+                let display = type_hint_display(type_hint);
+                return Err(Diagnostic::new(
+                    format!("Type {display} is redundant with type {display}"),
+                    Some(span),
+                ));
+            } else {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Duplicate type {} is redundant",
+                        type_hint_duplicate_display(type_hint)
+                    ),
+                    Some(span),
+                ));
+            }
         }
         seen.push(key);
     }
@@ -6218,6 +6489,7 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
 }
 
 fn validate_intersection_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> {
+    let mut seen = Vec::new();
     for type_hint in types {
         match type_hint {
             TypeHint::Class(_) => {}
@@ -6237,6 +6509,17 @@ fn validate_intersection_type_hint(types: &[TypeHint], span: SourceSpan) -> Resu
                 ));
             }
         }
+        let key = type_hint_key(type_hint);
+        if seen.iter().any(|seen_key| seen_key == &key) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Duplicate type {} is redundant",
+                    type_hint_duplicate_display(type_hint)
+                ),
+                Some(span),
+            ));
+        }
+        seen.push(key);
     }
     Ok(())
 }
@@ -6249,6 +6532,55 @@ fn type_hint_is_class_named(type_hint: &TypeHint, name: &str) -> bool {
     matches!(type_hint, TypeHint::Class(class_name) if class_name.eq_ignore_ascii_case(name))
 }
 
+fn type_hint_is_explicit_class_like(type_hint: &TypeHint) -> bool {
+    matches!(
+        type_hint,
+        TypeHint::Class(_) | TypeHint::Static | TypeHint::Intersection(_)
+    )
+}
+
+fn type_hint_duplicate_display(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Class(name) => name.clone(),
+        TypeHint::Static => "static".to_string(),
+        TypeHint::Intersection(_) => type_hint_display(type_hint),
+        other => type_hint_key(other),
+    }
+}
+
+fn union_type_redundancy_display(types: &[TypeHint]) -> String {
+    let mut class_like = Vec::new();
+    let mut object = Vec::new();
+    let mut array_like = Vec::new();
+    let mut other = Vec::new();
+
+    for type_hint in types {
+        match type_hint {
+            TypeHint::Class(name) => class_like.push(name.clone()),
+            TypeHint::Static => class_like.push("static".to_string()),
+            TypeHint::Intersection(_) => {
+                class_like.push(format!("({})", type_hint_display(type_hint)));
+            }
+            TypeHint::Iterable => {
+                class_like.push("Traversable".to_string());
+                array_like.push("array".to_string());
+            }
+            TypeHint::Object => object.push("object".to_string()),
+            TypeHint::Array => array_like.push("array".to_string()),
+            TypeHint::Null => other.push("null".to_string()),
+            other_type => other.push(type_hint_duplicate_display(other_type)),
+        }
+    }
+
+    class_like
+        .into_iter()
+        .chain(object)
+        .chain(array_like)
+        .chain(other)
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 fn type_hint_key(type_hint: &TypeHint) -> String {
     match type_hint {
         TypeHint::Null => "null".to_string(),
@@ -6257,12 +6589,15 @@ fn type_hint_key(type_hint: &TypeHint) -> String {
         TypeHint::Float => "float".to_string(),
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
+        TypeHint::True => "true".to_string(),
+        TypeHint::False => "false".to_string(),
         TypeHint::Callable => "callable".to_string(),
         TypeHint::Object => "object".to_string(),
         TypeHint::Iterable => "iterable".to_string(),
         TypeHint::Mixed => "mixed".to_string(),
         TypeHint::Void => "void".to_string(),
         TypeHint::Never => "never".to_string(),
+        TypeHint::Static => "static".to_string(),
         TypeHint::Nullable(inner) => format!("?{}", type_hint_key(inner)),
         TypeHint::Union(types) => types
             .iter()
@@ -7827,11 +8162,14 @@ fn type_hint_mentions_iterable_or_traversable(type_hint: &TypeHint) -> bool {
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
         | TypeHint::Callable
         | TypeHint::Object
         | TypeHint::Mixed
         | TypeHint::Void
-        | TypeHint::Never => false,
+        | TypeHint::Never
+        | TypeHint::Static => false,
     }
 }
 
@@ -7858,12 +8196,15 @@ fn first_unavailable_intersection_class(
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
         | TypeHint::Callable
         | TypeHint::Object
         | TypeHint::Iterable
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
+        | TypeHint::Static
         | TypeHint::Class(_) => None,
     }
 }
@@ -8007,10 +8348,13 @@ enum TypeAtom {
     Float,
     String,
     Bool,
+    True,
+    False,
     Callable,
     Object,
     Mixed,
     Never,
+    Static,
     Class(String),
 }
 
@@ -8049,6 +8393,12 @@ fn type_hint_alternatives(type_hint: &TypeHint) -> Vec<TypeAlternative> {
         TypeHint::Bool => vec![TypeAlternative {
             atoms: vec![TypeAtom::Bool],
         }],
+        TypeHint::True => vec![TypeAlternative {
+            atoms: vec![TypeAtom::True],
+        }],
+        TypeHint::False => vec![TypeAlternative {
+            atoms: vec![TypeAtom::False],
+        }],
         TypeHint::Callable => vec![TypeAlternative {
             atoms: vec![TypeAtom::Callable],
         }],
@@ -8068,6 +8418,9 @@ fn type_hint_alternatives(type_hint: &TypeHint) -> Vec<TypeAlternative> {
         }],
         TypeHint::Never => vec![TypeAlternative {
             atoms: vec![TypeAtom::Never],
+        }],
+        TypeHint::Static => vec![TypeAlternative {
+            atoms: vec![TypeAtom::Static],
         }],
         TypeHint::Nullable(inner) => {
             let mut alternatives = type_hint_alternatives(inner);
@@ -8120,6 +8473,8 @@ fn type_atom_is_subtype(candidate: &TypeAtom, target: &TypeAtom, classes: &[Clas
         return true;
     }
     match (candidate, target) {
+        (TypeAtom::True | TypeAtom::False, TypeAtom::Bool) => true,
+        (TypeAtom::Static, TypeAtom::Object) => true,
         (TypeAtom::Class(_), TypeAtom::Object) => true,
         (TypeAtom::Class(candidate), TypeAtom::Class(target)) => {
             class_type_name_is_subtype(candidate, target, classes)
@@ -8230,12 +8585,15 @@ fn type_hint_display(type_hint: &TypeHint) -> String {
         TypeHint::Float => "float".to_string(),
         TypeHint::String => "string".to_string(),
         TypeHint::Bool => "bool".to_string(),
+        TypeHint::True => "true".to_string(),
+        TypeHint::False => "false".to_string(),
         TypeHint::Callable => "callable".to_string(),
         TypeHint::Object => "object".to_string(),
         TypeHint::Iterable => "Traversable|array".to_string(),
         TypeHint::Mixed => "mixed".to_string(),
         TypeHint::Void => "void".to_string(),
         TypeHint::Never => "never".to_string(),
+        TypeHint::Static => "static".to_string(),
         TypeHint::Nullable(inner) => match inner.as_ref() {
             TypeHint::Iterable => "Traversable|array|null".to_string(),
             TypeHint::Union(_) | TypeHint::Intersection(_) => {

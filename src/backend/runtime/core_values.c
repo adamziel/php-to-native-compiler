@@ -674,6 +674,11 @@ typedef int (*PtnMagicDebugInfoHandler)(
     size_t line,
     PtnValue *value_out
 );
+typedef int (*PtnClassConstantInitializerHandler)(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant_name
+);
 
 struct PtnRuntime {
     PtnSymbolTable symbols;
@@ -721,6 +726,7 @@ struct PtnRuntime {
     PtnMagicPropertySetHandler magic_property_set;
     PtnMagicPropertyUnsetHandler magic_property_unset;
     PtnMagicDebugInfoHandler magic_debug_info;
+    PtnClassConstantInitializerHandler class_constant_initializer;
     int in_magic_property_dispatch;
     const char *source_path;
     const char *current_function_name;

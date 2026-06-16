@@ -59,6 +59,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->magic_property_set = caller_runtime->magic_property_set;
     runtime->magic_property_unset = caller_runtime->magic_property_unset;
     runtime->magic_debug_info = caller_runtime->magic_debug_info;
+    runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
     runtime->source_path = caller_runtime->source_path;
     runtime->current_function_name = NULL;
@@ -2219,6 +2220,17 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
         if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
             free(key);
             return ptn_value_clone_deref(value);
+        }
+        if (runtime->class_constant_initializer != NULL &&
+            runtime->class_constant_initializer(runtime, lookup_class_name, constant)) {
+            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+                free(key);
+                return ptn_null();
+            }
+            if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
+                free(key);
+                return ptn_value_clone_deref(value);
+            }
         }
         free(key);
         lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
