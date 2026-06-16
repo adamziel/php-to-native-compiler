@@ -10134,6 +10134,21 @@ echo json_encode([1, true, null, \"a\\nb\", \"/\"]), \"\\n\";\n\
 echo json_encode([\"x\" => 1, \"two\" => false]), \"\\n\";\n\
 $nul = chr(0);\n\
 echo json_encode([\"a\" . $nul . \"b\" => 1]), \"\\n\";\n\
+echo json_encode([\"\" => \"\"], JSON_FORCE_OBJECT), \"\\n\";\n\
+echo json_encode([[1]], JSON_FORCE_OBJECT), \"\\n\";\n\
+echo json_encode(\"\\xC3\\xA1\"), \"\\n\";\n\
+echo bin2hex(json_encode(\"\\xC3\\xA1\", JSON_UNESCAPED_UNICODE)), \"\\n\";\n\
+echo json_encode(\"\\xF0\\x9D\\x84\\x80\"), \"\\n\";\n\
+echo json_encode([\"<foo>\", \"'bar'\", \"\\\"baz\\\"\", \"&blong&\"], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP), \"\\n\";\n\
+var_dump(json_encode(\"a\\xB0b\"));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_encode(\"a\\xB0b\", JSON_INVALID_UTF8_IGNORE));\n\
+var_dump(json_encode(\"a\\xB0b\", JSON_INVALID_UTF8_SUBSTITUTE));\n\
+echo bin2hex(json_encode(\"a\\xB0b\", JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE)), \"\\n\";\n\
+var_dump(json_encode(INF));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+var_dump(json_encode(INF, JSON_PARTIAL_OUTPUT_ON_ERROR));\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
 var_dump(printf(\"%s: %s\\n\", \"flag\", json_encode(false)));\n\
 var_dump(function_exists(\"json_encode\"), function_exists(\"printf\"), function_exists(\"PRINTF\"));",
     )
@@ -10150,6 +10165,24 @@ true\n\
 [1,true,null,\"a\\nb\",\"\\/\"]\n\
 {\"x\":1,\"two\":false}\n\
 {\"a\\u0000b\":1}\n\
+{\"\":\"\"}\n\
+{\"0\":{\"0\":1}}\n\
+\"\\u00e1\"\n\
+22c3a122\n\
+\"\\ud834\\udd00\"\n\
+[\"\\u003Cfoo\\u003E\",\"\\u0027bar\\u0027\",\"\\u0022baz\\u0022\",\"\\u0026blong\\u0026\"]\n\
+bool(false)\n\
+int(5)\n\
+string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n\
+string(4) \"\"ab\"\"\n\
+string(10) \"\"a\\ufffdb\"\"\n\
+2261efbfbd6222\n\
+bool(false)\n\
+int(7)\n\
+string(34) \"Inf and NaN cannot be JSON encoded\"\n\
+string(1) \"0\"\n\
+int(7)\n\
+string(34) \"Inf and NaN cannot be JSON encoded\"\n\
 flag: false\n\
 int(12)\n\
 bool(true)\n\
