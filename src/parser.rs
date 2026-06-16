@@ -334,6 +334,12 @@ impl Parser<'_> {
                 }
             } else if token_is_identifier_named(self.peek(), "namespace") {
                 if scope == TopLevelScope::NamespaceBlock {
+                    if self.namespace_declaration_uses_semicolon() {
+                        return Err(Diagnostic::new(
+                            "Cannot mix bracketed namespace declarations with unbracketed namespace declarations",
+                            Some(self.peek().span),
+                        ));
+                    }
                     return Err(Diagnostic::new(
                         "Namespace declarations cannot be nested",
                         Some(self.peek().span),
@@ -352,6 +358,11 @@ impl Parser<'_> {
                     ));
                 }
                 self.parse_namespace_declaration(classes, traits, functions, statements)?;
+            } else if scope == TopLevelScope::Program
+                && token_is_identifier_named(self.peek(), "__halt_compiler")
+            {
+                self.parse_halt_compiler_directive()?;
+                break;
             } else if token_is_identifier_named(self.peek(), "use") {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 self.parse_use_declarations()?;
@@ -373,6 +384,25 @@ impl Parser<'_> {
                 statements.push(statement);
             }
         }
+        Ok(())
+    }
+
+    fn namespace_declaration_uses_semicolon(&self) -> bool {
+        for token in self.tokens.iter().skip(self.index + 1) {
+            match token.kind {
+                TokenKind::Semicolon => return true,
+                TokenKind::LeftBrace | TokenKind::Eof => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
+    fn parse_halt_compiler_directive(&mut self) -> Result<()> {
+        self.advance();
+        self.expect_left_paren()?;
+        self.expect_right_paren()?;
+        self.expect_semicolon()?;
         Ok(())
     }
 
@@ -586,6 +616,19 @@ impl Parser<'_> {
         }
         self.expect_left_brace()?;
         loop {
+            if outer_kind != UseDeclarationKind::Class
+                && (matches!(self.peek().kind, TokenKind::Function)
+                    || matches!(self.peek().kind, TokenKind::Const))
+            {
+                let token = self.peek().clone();
+                return Err(Diagnostic::parse_error(
+                    format!(
+                        "syntax error, unexpected token \"{}\", expecting \"}}\"",
+                        token_text(&token.kind)
+                    ),
+                    Some(token.span),
+                ));
+            }
             let item_kind = if outer_kind == UseDeclarationKind::Class
                 && matches!(self.peek().kind, TokenKind::Function)
             {
@@ -601,8 +644,14 @@ impl Parser<'_> {
             };
             let item = self.parse_name("expected imported name")?;
             if item.resolution == NameResolution::FullyQualified {
-                return Err(Diagnostic::new(
-                    "fully qualified grouped use items are unsupported",
+                let text = self
+                    .source
+                    .get(item.span.byte_start..item.span.byte_end)
+                    .unwrap_or("");
+                return Err(Diagnostic::parse_error(
+                    format!(
+                        "syntax error, unexpected fully qualified name \"{text}\", expecting identifier or namespaced name or \"function\" or \"const\""
+                    ),
                     Some(item.span),
                 ));
             }
@@ -629,6 +678,12 @@ impl Parser<'_> {
                     item.span,
                 )
             };
+            if matches!(self.peek().kind, TokenKind::LeftBrace) {
+                return Err(Diagnostic::parse_error(
+                    "syntax error, unexpected token \"{\", expecting \"}\"",
+                    Some(self.peek().span),
+                ));
+            }
             let grouped_target = ParsedName {
                 name: format!("{}\\{}", prefix.name, item.name),
                 span: combine_spans(prefix.span, item.span),
@@ -3877,7 +3932,7 @@ impl Parser<'_> {
         };
         if catches.is_empty() && !has_finally {
             return Err(Diagnostic::new(
-                "try without catch or finally is unsupported",
+                "Cannot use try without catch or finally",
                 Some(span),
             ));
         }
@@ -12249,6 +12304,12 @@ fn validate_gotos(
                         Some(*span),
                     ));
                 };
+                if !target_finally_path_stays_inside_current(finally_path, &target.finally_path) {
+                    return Err(Diagnostic::new(
+                        "jump out of a finally block is disallowed",
+                        Some(*span),
+                    ));
+                }
                 if !target_control_path_is_reachable(&target.control_path, control_path) {
                     if !target_control_path_is_reachable(&target.finally_path, finally_path) {
                         return Err(Diagnostic::new(
@@ -12287,6 +12348,14 @@ fn target_control_path_is_reachable(target: &[usize], current: &[usize]) -> bool
             .iter()
             .zip(current)
             .all(|(target, current)| target == current)
+}
+
+fn target_finally_path_stays_inside_current(current: &[usize], target: &[usize]) -> bool {
+    current.len() <= target.len()
+        && current
+            .iter()
+            .zip(target)
+            .all(|(current, target)| current == target)
 }
 
 fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {

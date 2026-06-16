@@ -501,6 +501,7 @@ struct PtnObject {
     void *native_data;
     PtnObjectNativeDataFree native_data_free;
     PtnRuntime *lifecycle_runtime;
+    int destructor_enabled;
     int destructor_called;
 };
 

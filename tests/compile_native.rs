@@ -5340,6 +5340,14 @@ fn parser_rejects_goto_into_loop_or_switch() {
 }
 
 #[test]
+fn parser_rejects_goto_out_of_finally() {
+    let error = parser::parse("<?php\ntry {\n} finally {\n    goto L1;\n}\nL1:\n").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "jump out of a finally block is disallowed");
+    assert_eq!(error.span.unwrap().line, 4);
+}
+
+#[test]
 fn parser_accepts_goto_leaving_loop_and_within_same_loop() {
     parser::parse(
         "<?php
@@ -5724,6 +5732,26 @@ fn phpc_renders_goto_into_loop_or_switch_as_php_fatal() {
             )
         );
     }
+}
+
+#[test]
+fn phpc_renders_goto_out_of_finally_as_php_fatal() {
+    let root = temp_dir("ptn-phpc-goto-out-of-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("try_finally_005.php");
+    fs::write(&input, "<?php\nfunction foo() {\n    try {\n    } finally {\n        goto L1;\n    }\nL1:\n}\nfoo();\n").unwrap();
+
+    let execution = Command::new(phpc_bin()).arg(&input).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: jump out of a finally block is disallowed in {} on line 5\n",
+            input.display()
+        )
+    );
 }
 
 #[test]
@@ -12551,6 +12579,46 @@ echo \"===DONE===\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_run_object_destructors(runtime)"));
     assert!(c_source.contains("\"__destruct\""));
+}
+
+#[test]
+fn compile_declared_class_destructor_skips_failed_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-declared-class-destructor-failed-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("declared-class-destructor-failed-constructor.php");
+    let output = root.join("declared-class-destructor-failed-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public function __construct() {
+        throw new Exception();
+    }
+
+    public function __destruct() {
+        echo \"destruct\\n\";
+    }
+}
+
+try {
+    new Test();
+} catch (Exception $e) {
+    echo \"caught\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "caught\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("destructor_enabled = 0"));
+    assert!(c_source.contains("destructor_enabled = 1"));
 }
 
 #[test]
@@ -27524,6 +27592,45 @@ L1: if ($s != \"X\") {
 }
 
 #[test]
+fn compile_goto_within_finally_to_native_binary() {
+    let root = temp_dir("ptn-native-goto-within-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("goto-within-finally.php");
+    let output = root.join("goto-within-finally-bin");
+    fs::write(
+        &input,
+        "<?php
+function foo() {
+    $jmp = 1;
+    try {
+    } finally {
+previous:
+        if ($jmp) {
+            goto label;
+            echo \"dummy\";
+label:
+            echo \"label\\n\";
+            $jmp = 0;
+            goto previous;
+        }
+        echo \"okey\";
+    }
+}
+
+foo();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "label\nokey");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_goto_inside_plain_blocks_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-goto-jump14-blocks");
     fs::create_dir_all(&root).unwrap();
@@ -35795,23 +35902,65 @@ echo "global:", __NAMESPACE__, "\n";
 }
 
 #[test]
+fn compile_bracketed_namespace_halt_compiler_to_native_binary() {
+    let root = temp_dir("ptn-native-bracketed-namespace-halt-compiler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bracketed-namespace-halt-compiler.php");
+    let output = root.join("bracketed-namespace-halt-compiler-bin");
+    fs::write(
+        &input,
+        r#"<?php
+namespace Lib {
+echo "hi\n";
+}
+__HALT_COMPILER();
+namespace Hidden {
+echo "bad\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "hi\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_rejects_unsupported_grouped_namespace_import_forms() {
     let cases = [
         (
             "<?php use namespace\\Lib\\{Foo};",
+            DiagnosticKind::Fatal,
             "namespace-relative grouped use prefixes are unsupported",
         ),
         (
             "<?php use Lib\\{\\Foo};",
-            "fully qualified grouped use items are unsupported",
+            DiagnosticKind::ParseError,
+            "syntax error, unexpected fully qualified name \"\\Foo\", expecting identifier or namespaced name or \"function\" or \"const\"",
         ),
         (
             "<?php use Lib\\{namespace\\Foo};",
+            DiagnosticKind::Fatal,
             "namespace-relative grouped use items are unsupported",
         ),
+        (
+            "<?php use Foo\\Bar\\{A, B { C }};",
+            DiagnosticKind::ParseError,
+            "syntax error, unexpected token \"{\", expecting \"}\"",
+        ),
+        (
+            "<?php use const Foo\\Bar\\{A, const B};",
+            DiagnosticKind::ParseError,
+            "syntax error, unexpected token \"const\", expecting \"}\"",
+        ),
     ];
-    for (source, expected) in cases {
+    for (source, kind, expected) in cases {
         let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, kind);
         assert_eq!(error.message, expected);
     }
 }
@@ -35828,6 +35977,12 @@ fn parser_rejects_namespace_after_function_declaration() {
 #[test]
 fn parser_rejects_mixed_namespace_declaration_styles() {
     let error = parser::parse("<?php namespace A; namespace B {}").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot mix bracketed namespace declarations with unbracketed namespace declarations"
+    );
+
+    let error = parser::parse("<?php namespace A { namespace B; }").unwrap_err();
     assert_eq!(
         error.message,
         "Cannot mix bracketed namespace declarations with unbracketed namespace declarations"
