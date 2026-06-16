@@ -25662,6 +25662,45 @@ fn compile_uncaught_array_merge_type_error_reports_trace_to_native_binary() {
 }
 
 #[test]
+fn compile_uncaught_array_merge_type_error_reports_variable_trace_args_to_native_binary() {
+    let root = temp_dir("ptn-native-array-merge-uncaught-variable-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-merge-uncaught-variable-trace.php");
+    let output = root.join("array-merge-uncaught-variable-trace-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$arr2 = [1, 2];\n\
+foreach ([0] as $input) {\n\
+    array_merge($input, $arr2);\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            concat!(
+                "\nFatal error: Uncaught TypeError: array_merge(): Argument #1 must be of type array, int given in {}:4\n",
+                "Stack trace:\n",
+                "#0 {}(4): array_merge(0, Array)\n",
+                "#1 {{main}}\n",
+                "  thrown in {} on line 4\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_var_export_and_array_set_operations_to_native_binary() {
     let root = temp_dir("ptn-native-var-export-array-set-operations");
     fs::create_dir_all(&root).unwrap();

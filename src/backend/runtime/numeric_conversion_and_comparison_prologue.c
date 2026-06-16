@@ -1214,7 +1214,7 @@ static void ptn_emit_uncaught_trace_arg(FILE *stream, PtnRuntime *runtime, PtnVa
     free(buffer.data);
 }
 
-static int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
+static PTN_UNUSED int ptn_emit_uncaught_internal_trace(PtnRuntime *runtime) {
     if (runtime == NULL || runtime->trace_frame == NULL) {
         return 0;
     }
@@ -1337,19 +1337,10 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
     }
     fprintf(stderr, " in %s:%zu\n", display_path, display_line);
     fputs("Stack trace:\n", stderr);
-    if (ptn_emit_uncaught_internal_trace(runtime)) {
-        /* Trace emitted from the active internal call frame. */
-    } else if (runtime->current_function_name != NULL && runtime->call_site_line != 0) {
-        fprintf(
-            stderr,
-            "#0 %s(%zu): %s()\n#1 {main}\n",
-            runtime->source_path != NULL ? runtime->source_path : exception->path,
-            runtime->call_site_line,
-            runtime->current_function_name
-        );
-    } else {
-        fputs("#0 {main}\n", stderr);
-    }
+    PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
+    fwrite(trace.data, 1, trace.len, stderr);
+    free(trace.owned);
+    fputc('\n', stderr);
     fprintf(stderr, "  thrown in %s on line %zu\n", display_path, display_line);
 }
 
