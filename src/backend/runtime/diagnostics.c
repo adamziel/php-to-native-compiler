@@ -1175,6 +1175,11 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
     );
+    runtime->exception_ignore_args = 0;
+    int configured_exception_ignore_args = 0;
+    if (ptn_parse_bool_env("PTN_EXCEPTION_IGNORE_ARGS", &configured_exception_ignore_args)) {
+        runtime->exception_ignore_args = configured_exception_ignore_args;
+    }
     runtime->exception_string_param_max_len = 15;
     int64_t configured_exception_string_param_max_len = 0;
     if (ptn_parse_int64_env(

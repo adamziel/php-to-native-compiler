@@ -149,6 +149,7 @@ pub struct ClassConstantDecl {
     pub visibility: PropertyVisibility,
     pub attributes: AttributeMetadata,
     pub value: Expr,
+    pub is_enum_case: bool,
     pub span: SourceSpan,
 }
 

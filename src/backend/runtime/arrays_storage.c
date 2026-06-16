@@ -670,6 +670,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->refcount = 1;
     object->object_id = ptn_runtime_alloc_object_id(root);
     object->class_name = ptn_duplicate_string(class_name);
+    object->enum_case_name = NULL;
     object->properties = properties.as.array;
     object->property_metadata = NULL;
     object->property_metadata_len = 0;
@@ -681,6 +682,16 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->destructor_called = 0;
     ptn_runtime_register_object(root, object);
     return ptn_object(object);
+}
+
+static PTN_UNUSED PtnValue ptn_enum_case(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name
+) {
+    PtnValue value = ptn_object_new_shell(runtime, class_name);
+    value.as.object->enum_case_name = ptn_duplicate_string(case_name);
+    return value;
 }
 
 static PTN_UNUSED char *ptn_object_private_storage_key(
@@ -902,6 +913,7 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
         object->native_data_free(object->native_data);
     }
     free(object->class_name);
+    free(object->enum_case_name);
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         free(object->property_metadata[i].storage_name);
         free(object->property_metadata[i].display_name);

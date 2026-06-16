@@ -151,6 +151,7 @@ pub struct ClassConstantDecl {
     pub deprecated_since: Option<String>,
     pub deprecated_message_dependency: Option<DeprecatedMessageDependency>,
     pub deprecated_message_runtime_reference: Option<AttributeConstantReference>,
+    pub is_enum_case: bool,
     pub value: ValueExpr,
 }
 
@@ -1321,6 +1322,7 @@ impl<'a> LoweringContext<'a> {
                     deprecated_since: metadata.since,
                     deprecated_message_dependency: metadata.message_dependency,
                     deprecated_message_runtime_reference: metadata.message_runtime_reference,
+                    is_enum_case: constant.is_enum_case,
                     value: self.lower_expr(&constant.value),
                 }
             })

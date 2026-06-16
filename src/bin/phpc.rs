@@ -108,6 +108,7 @@ struct RuntimeIni {
     zend_assertions: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
+    exception_ignore_args: Option<String>,
     exception_string_param_max_len: Option<String>,
 }
 
@@ -225,6 +226,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         }
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("zend.exception_ignore_args") {
+        ini.exception_ignore_args = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_string_param_max_len") {
         if let Ok(parsed) = raw_value.parse::<i64>() {
             if (0..=1_000_000).contains(&parsed) {
@@ -506,6 +509,7 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
         zend_assertions: ini.zend_assertions.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
+        exception_ignore_args: ini.exception_ignore_args.clone(),
         exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
     };
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
@@ -540,6 +544,9 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
+    }
+    if let Some(exception_ignore_args) = &ini.exception_ignore_args {
+        command.env("PTN_EXCEPTION_IGNORE_ARGS", exception_ignore_args);
     }
     if let Some(exception_string_param_max_len) = &ini.exception_string_param_max_len {
         command.env(

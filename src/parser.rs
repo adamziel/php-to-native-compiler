@@ -398,6 +398,11 @@ impl Parser<'_> {
             } else if token_is_identifier_named(self.peek(), "trait") {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 traits.push(self.parse_trait_decl(attributes)?);
+            } else if token_is_identifier_named(self.peek(), "enum") {
+                self.reject_code_outside_bracketed_namespace(scope)?;
+                let class = self.parse_enum_decl(attributes)?;
+                self.register_declared_class_name(&class)?;
+                classes.push(class);
             } else if self.peek_starts_class_decl() {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let class = self.parse_class_decl(attributes)?;
@@ -1351,6 +1356,85 @@ impl Parser<'_> {
         })
     }
 
+    fn parse_enum_decl(&mut self, attributes: ParsedAttributes) -> Result<ClassDecl> {
+        let enum_token = self.advance().clone();
+        let TokenKind::Identifier(keyword) = &enum_token.kind else {
+            return Err(Diagnostic::new("expected enum", Some(enum_token.span)));
+        };
+        if !keyword.eq_ignore_ascii_case("enum") {
+            return Err(Diagnostic::new("expected enum", Some(enum_token.span)));
+        }
+
+        let (class_name, _) = self.parse_declaration_name("expected enum name")?;
+        if matches!(self.peek().kind, TokenKind::Colon) {
+            return Err(Diagnostic::new(
+                "backed enum declarations are unsupported",
+                Some(self.peek().span),
+            ));
+        }
+
+        let mut interfaces = Vec::new();
+        if token_is_identifier_named(self.peek(), "implements") {
+            self.advance();
+            interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            while matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            }
+        }
+
+        self.expect_left_brace()?;
+        let mut constants = Vec::new();
+        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            let attributes = self.parse_attribute_groups()?;
+            if !matches!(self.peek().kind, TokenKind::Case) {
+                return Err(syntax_error_unexpected(self.peek(), Some("case")));
+            }
+            self.advance();
+            let token = self.advance().clone();
+            let TokenKind::Identifier(name) = token.kind else {
+                return Err(Diagnostic::new("expected enum case name", Some(token.span)));
+            };
+            if matches!(self.peek().kind, TokenKind::Equal) {
+                return Err(Diagnostic::new(
+                    "backed enum case values are unsupported",
+                    Some(self.peek().span),
+                ));
+            }
+            validate_builtin_attributes_for_target(
+                &attributes,
+                AttributeTarget::ClassConstant,
+                token.span,
+            )?;
+            self.expect_semicolon()?;
+            constants.push(ClassConstantDecl {
+                name,
+                visibility: PropertyVisibility::Public,
+                attributes,
+                value: Expr::Null(token.span),
+                is_enum_case: true,
+                span: token.span,
+            });
+        }
+        let right_span = self.expect_right_brace()?;
+        Ok(ClassDecl {
+            name: class_name,
+            parent_name: None,
+            interfaces,
+            trait_uses: Vec::new(),
+            attributes,
+            is_abstract: false,
+            is_final: true,
+            is_interface: false,
+            is_readonly: false,
+            properties: Vec::new(),
+            static_properties: Vec::new(),
+            constants,
+            methods: Vec::new(),
+            span: combine_spans(enum_token.span, right_span),
+        })
+    }
+
     fn parse_trait_decl(&mut self, attributes: ParsedAttributes) -> Result<TraitDecl> {
         let trait_token = self.advance().clone();
         if !token_is_identifier_named(&trait_token, "trait") {
@@ -1987,6 +2071,7 @@ impl Parser<'_> {
             visibility,
             attributes,
             value,
+            is_enum_case: false,
             span: token.span,
         })
     }

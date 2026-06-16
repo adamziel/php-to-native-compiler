@@ -2055,7 +2055,19 @@ fn emit_class_constant_initializer_helper(
             out.push_str("        if (strcmp(constant_name, \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");
-            let value_temp = values.emit_const_materialized_value(out, &constant.value);
+            let value_temp = if constant.is_enum_case {
+                let value_temp = values.next_temp();
+                out.push_str("            PtnValue ");
+                out.push_str(&value_temp);
+                out.push_str(" = ptn_enum_case(&runtime, \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\");\n");
+                value_temp
+            } else {
+                values.emit_const_materialized_value(out, &constant.value)
+            };
             out.push_str("            ptn_runtime_define_class_constant(&runtime, \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\", \"");

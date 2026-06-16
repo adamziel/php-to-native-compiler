@@ -227,20 +227,33 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     ptn_string_buffer_append(&buffer, "Unhandled match case ");
+    int ignore_args = ptn_runtime_exception_ignore_args(runtime);
     size_t max_string_len = ptn_runtime_exception_string_param_max_len(runtime);
 
     char scalar[128];
     switch (value.type) {
         case PTN_NULL:
-            ptn_string_buffer_append(&buffer, "NULL");
+            ptn_string_buffer_append(&buffer, ignore_args ? "of type null" : "NULL");
             break;
         case PTN_BOOL:
-            ptn_string_buffer_append(&buffer, value.as.boolean ? "true" : "false");
+            if (ignore_args) {
+                ptn_string_buffer_append(&buffer, "of type bool");
+            } else {
+                ptn_string_buffer_append(&buffer, value.as.boolean ? "true" : "false");
+            }
             break;
         case PTN_INT:
-            ptn_string_buffer_append_format(&buffer, "%lld", (long long)value.as.integer);
+            if (ignore_args) {
+                ptn_string_buffer_append(&buffer, "of type int");
+            } else {
+                ptn_string_buffer_append_format(&buffer, "%lld", (long long)value.as.integer);
+            }
             break;
         case PTN_FLOAT:
+            if (ignore_args) {
+                ptn_string_buffer_append(&buffer, "of type float");
+                break;
+            }
             ptn_format_scalar_float(value.as.floating, scalar, sizeof(scalar));
             if (
                 isfinite(value.as.floating) &&
@@ -254,7 +267,7 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
             }
             break;
         case PTN_STRING:
-            if (max_string_len == 0) {
+            if (ignore_args || max_string_len == 0) {
                 ptn_string_buffer_append(&buffer, "of type string");
             } else {
                 ptn_match_append_quoted_string(&buffer, value.as.string, max_string_len);
@@ -264,7 +277,16 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
             ptn_string_buffer_append(&buffer, "of type array");
             break;
         case PTN_OBJECT:
-            ptn_string_buffer_append_format(&buffer, "of type %s", value.as.object->class_name);
+            if (value.as.object->enum_case_name != NULL) {
+                ptn_string_buffer_append_format(
+                    &buffer,
+                    "%s::%s",
+                    value.as.object->class_name,
+                    value.as.object->enum_case_name
+                );
+            } else {
+                ptn_string_buffer_append_format(&buffer, "of type %s", value.as.object->class_name);
+            }
             break;
         case PTN_CLOSURE:
             ptn_string_buffer_append(&buffer, "of type Closure");

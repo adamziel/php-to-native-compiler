@@ -114,6 +114,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->open_basedir = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
+    runtime->exception_ignore_args = caller_runtime->exception_ignore_args;
     runtime->exception_string_param_max_len = caller_runtime->exception_string_param_max_len;
     runtime->strict_types = caller_runtime->strict_types;
     runtime->initial_zend_assertions = caller_runtime->initial_zend_assertions;
@@ -782,6 +783,25 @@ static PTN_UNUSED size_t ptn_runtime_exception_string_param_max_len(PtnRuntime *
         return 15;
     }
     return root->exception_string_param_max_len;
+}
+
+static PTN_UNUSED int ptn_runtime_exception_ignore_args(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return 0;
+    }
+    return root->exception_ignore_args;
+}
+
+static PTN_UNUSED void ptn_runtime_set_exception_ignore_args(
+    PtnRuntime *runtime,
+    int value
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    root->exception_ignore_args = value ? 1 : 0;
 }
 
 static PTN_UNUSED void ptn_runtime_set_exception_string_param_max_len(

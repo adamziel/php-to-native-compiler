@@ -554,6 +554,7 @@ struct PtnObject {
     size_t refcount;
     size_t object_id;
     char *class_name;
+    char *enum_case_name;
     PtnArray *properties;
     PtnObjectPropertyMetadata *property_metadata;
     size_t property_metadata_len;
@@ -870,6 +871,7 @@ struct PtnRuntime {
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
+    int exception_ignore_args;
     size_t exception_string_param_max_len;
     int strict_types;
     int initial_zend_assertions;

@@ -30942,6 +30942,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.exception_ignore_args")) {
+        *out = ptn_ini_int_string(ptn_runtime_exception_ignore_args(runtime));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_string_param_max_len")) {
         *out = ptn_ini_size_string(ptn_runtime_exception_string_param_max_len(runtime));
         return 1;
@@ -31101,6 +31105,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.exception_ignore_args")) {
+        ptn_runtime_set_exception_ignore_args(runtime, 0);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_string_param_max_len")) {
         ptn_runtime_set_exception_string_param_max_len(runtime, 15);
         ptn_string_operand_free(option);
@@ -31147,6 +31156,12 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
         ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.exception_ignore_args")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_exception_ignore_args(runtime));
+        ptn_runtime_set_exception_ignore_args(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }
