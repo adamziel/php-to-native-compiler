@@ -10230,6 +10230,10 @@ var_dump(touch(__DIR__ . \"/missing-parent/leaf\"));\n",
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(
+        "\nWarning: filesize(): stat failed for missing-file in ptn on line 2\nbool(false)\n"
+    ));
+    assert!(!stdout.contains("\n\n\nWarning: "));
     assert!(stdout.contains(
         "Warning: filesize(): stat failed for missing-file in ptn on line 2\nbool(false)\n"
     ));
@@ -37684,6 +37688,61 @@ bool(false)\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_stream_mode_is_append"));
     assert!(c_source.contains("ptn_emit_stream_write_notice"));
+}
+
+#[test]
+fn compile_stream_writes_preserve_eof_indicator_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-write-eof");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-write-eof.php");
+    let output = root.join("stream-write-eof-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$path = __DIR__ . '/eof.txt';\n\
+file_put_contents($path, 'abc');\n\
+$file = fopen($path, 'ab+');\n\
+fread($file, 99);\n\
+var_dump(feof($file));\n\
+var_dump(fwrite($file, 'x'));\n\
+var_dump(feof($file));\n\
+fread($file, 1);\n\
+var_dump(feof($file));\n\
+fclose($file);\n\
+var_dump(file_get_contents($path));\n\
+@unlink($path);\n\
+\n\
+$memory = fopen('php://memory', 'w+');\n\
+fwrite($memory, 'abc');\n\
+rewind($memory);\n\
+fread($memory, 99);\n\
+var_dump(feof($memory));\n\
+var_dump(fwrite($memory, 'x'));\n\
+var_dump(feof($memory));\n\
+fseek($memory, 0);\n\
+var_dump(feof($memory));\n\
+var_dump(stream_get_contents($memory));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+int(1)\n\
+bool(true)\n\
+bool(true)\n\
+string(4) \"abcx\"\n\
+bool(true)\n\
+int(1)\n\
+bool(true)\n\
+bool(false)\n\
+string(4) \"abcx\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

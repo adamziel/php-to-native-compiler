@@ -1834,7 +1834,6 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
         stream->len = end;
         ptn_memory_stream_note_size(resource, stream);
     }
-    stream->eof = 0;
     stream->error = 0;
     return len;
 }

@@ -21995,7 +21995,10 @@ static PtnValue ptn_internal_fwrite_named(
         if (append_position > INT64_MAX - (int64_t)written) {
             ptn_abort_out_of_memory();
         }
-        (void)ptn_stream_seek(resource, append_position + (int64_t)written, SEEK_SET);
+        int64_t logical_position = append_position + (int64_t)written;
+        if (ptn_stream_tell(resource) != logical_position) {
+            (void)ptn_stream_seek(resource, logical_position, SEEK_SET);
+        }
     }
     return ptn_int((int64_t)written);
 }
@@ -24551,9 +24554,6 @@ static int ptn_stat_path_from_value(
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
-        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-            fputc('\n', stdout);
-        }
         ptn_emit_warning(&runtime->diagnostics, message, line);
         return 0;
     }
@@ -24789,9 +24789,6 @@ static PtnValue ptn_internal_touch(PtnRuntime *runtime, size_t argc, const PtnVa
         if (written < 0 || written != needed) {
             free(message);
             ptn_abort_out_of_memory();
-        }
-        if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-            fputc('\n', stdout);
         }
         ptn_emit_warning(&runtime->diagnostics, message, line);
         free(message);
