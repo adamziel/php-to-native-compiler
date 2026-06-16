@@ -8198,6 +8198,7 @@ fn collect_value_runtime_requirements(
             if class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
+                || class_name.eq_ignore_ascii_case("ReflectionProperty")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")

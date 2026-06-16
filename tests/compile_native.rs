@@ -12583,7 +12583,7 @@ var_dump($staticProp->isProtected());
 var_dump($staticProp->isStatic());
 var_dump($staticProp->getModifiers());
 var_dump($staticProp->getValue());
-$staticProp->setValue(\"changed\");
+$staticProp->setValue(null, \"changed\");
 var_dump($staticProp->getValue());
 
 $child = new ReflectChild();
@@ -12628,6 +12628,51 @@ var_dump($instanceProp->getValue($child));
     assert!(c_source.contains("ptn_declared_class_reflection_method_metadata"));
     assert!(c_source.contains("ptn_declared_class_reflection_property_metadata"));
     assert!(c_source.contains("ptn_reflection_property_call_method"));
+}
+
+#[test]
+fn compile_reflection_property_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-constructor.php");
+    let output = root.join("reflection-property-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstructorOnlyReflectionProperty {
+    public $value;
+}
+
+try {
+    new \\ReflectionProperty('MissingReflectionPropertyClass', 'value');
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    new \\ReflectionProperty('ConstructorOnlyReflectionProperty', 'missing');
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Class \"MissingReflectionPropertyClass\" does not exist\n",
+            "Property ConstructorOnlyReflectionProperty::$missing does not exist\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_new"));
 }
 
 #[test]

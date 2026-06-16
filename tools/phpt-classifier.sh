@@ -1600,7 +1600,13 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 object_string_unsupported_reason = reason
             }
         }
+        function ptn_mark_reflection_property_unsupported(reason) {
+            if (reflection_property_unsupported_reason == "") {
+                reflection_property_unsupported_reason = reason
+            }
+        }
         {
+            raw_lower = tolower($0)
             line = ptn_php_code_line($0)
             if (implemented_modifier_diagnostic_seen) {
                 next
@@ -1678,9 +1684,49 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\(/ ||
-                line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::/) {
-                print "unsupported-internal-reflection-metadata\trequires ReflectionProperty metadata/mutation support, outside PTN modeled reflection metadata"
+            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionobject[[:space:]]*\(/) {
+                print "unsupported-internal-reflection-metadata\trequires ReflectionObject metadata, outside PTN modeled property reflection metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::/) {
+                print "unsupported-internal-reflection-metadata\trequires ReflectionProperty constants/static APIs, outside PTN modeled property reflection metadata"
+                found = 1
+                exit
+            }
+            if (raw_lower ~ /allowdynamicproperties/) {
+                ptn_mark_reflection_property_unsupported("requires dynamic property reflection metadata, outside PTN modeled declared property metadata")
+            }
+            if (line ~ /new[[:space:]]+\\?(exception|errorexception|error|stdclass|datetime|arrayobject|arrayiterator|spl[a-z0-9_]*|closure|generator)([^[:alnum:]_\\]|$)/) {
+                ptn_mark_reflection_property_unsupported("requires internal/dynamic object ReflectionProperty metadata, outside PTN modeled declared property metadata")
+            }
+            if (line ~ /propertyhooktype[[:space:]]*::/ ||
+                line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*[a-z_\\]?[a-z0-9_\\]*[[:space:]]*\$[a-z_][a-z0-9_]*[[:space:]]*\{/ ||
+                line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*[a-z_\\]?[a-z0-9_\\]*[[:space:]]*\$[a-z_][a-z0-9_]*[[:space:]]*\{[[:space:]]*(get|set)([^[:alnum:]_]|$)/) {
+                ptn_mark_reflection_property_unsupported("requires property hook reflection metadata, outside PTN modeled declared property metadata")
+            }
+            if (line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*final[[:space:]][^;{}]*\$[a-z_]/ ||
+                line ~ /(^|[[:space:]])final[[:space:]]+(public|protected|private|var)?[[:space:]][^;{}]*\$[a-z_]/ ||
+                line ~ /(private|protected)[[:space:]]*\([[:space:]]*set[[:space:]]*\)/ ||
+                line ~ /(^|[[:space:]])abstract[[:space:]][^;{}]*\$[a-z_]/) {
+                ptn_mark_reflection_property_unsupported("requires final/asymmetric/abstract property reflection metadata, outside PTN modeled declared property metadata")
+            }
+            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\(/) {
+                reflection_property_seen = 1
+                if (raw_lower ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^)]*["\047](exception|errorexception|error|stdclass|datetime|arrayobject|arrayiterator|spl[a-z0-9_]*|closure|generator)["\047]/) {
+                    ptn_mark_reflection_property_unsupported("requires internal/dynamic object ReflectionProperty metadata, outside PTN modeled declared property metadata")
+                }
+            }
+            if (line ~ /->[[:space:]]*getvalue[[:space:]]*\([^)]*\)[[:space:]]*\[[[:space:]]*\]/ ||
+                line ~ /->[[:space:]]*__construct[[:space:]]*\(/ ||
+                line ~ /->[[:space:]]*invoke(args)?[[:space:]]*\(/) {
+                ptn_mark_reflection_property_unsupported("requires advanced ReflectionProperty object/value metadata, outside PTN modeled property reflection metadata")
+            }
+            if (line ~ /->[[:space:]]*(__tostring|getmangledname|getrawvalue|setrawvalue|setrawvaluewithoutlazyinitialization|skiplazyinitialization|islazy|isinitialized|isreadable|iswritable|isprivateset|isprotectedset|isreadonly|isabstract|isvirtual|ispromoted|isfinal|getdoccomment|gettype|getsettabletype|hastype|hasdefaultvalue|getdefaultvalue|hashooks|gethooks|hashook|gethook)[[:space:]]*\(/) {
+                ptn_mark_reflection_property_unsupported("requires advanced ReflectionProperty metadata, outside PTN modeled property reflection metadata")
+            }
+            if (reflection_property_seen && reflection_property_unsupported_reason != "") {
+                print "unsupported-internal-reflection-metadata\t" reflection_property_unsupported_reason
                 found = 1
                 exit
             }

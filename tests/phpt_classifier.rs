@@ -1477,6 +1477,28 @@ fn phpt_classifier_excludes_reflection_property_mutation_rows() {
 }
 
 #[test]
+fn phpt_classifier_keeps_basic_reflection_property_metadata_rows() {
+    let classification = classify(
+        "--TEST--\nreflection property\n--FILE--\n<?php\nclass C { protected $value = 1; }\n$ref = new ReflectionProperty(C::class, 'value');\nvar_dump($ref->getName(), $ref->isProtected(), $ref->isDefault());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_advanced_reflection_property_rows() {
+    let classification = classify(
+        "--TEST--\nreflection property string\n--FILE--\n<?php\nclass C { public $value = 1; }\n$ref = new ReflectionProperty(C::class, 'value');\nvar_dump($ref->__toString());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("unsupported-internal-reflection-metadata\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_basic_assertions_runnable() {
     let classification = classify(
         "--TEST--\nassert\n--FILE--\n<?php\nvar_dump(assert(true));\ntry { assert(false, 'failed'); } catch (AssertionError $e) { echo $e->getMessage(); }\n--EXPECT--\n",
