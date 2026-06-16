@@ -648,6 +648,11 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    ValueArrayDim {
+        array: Box<ValueExpr>,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     Property {
         receiver: Box<ValueExpr>,
         name: String,
@@ -1792,6 +1797,9 @@ fn assignment_target_contains_yield(target: &AstAssignmentTarget) -> bool {
             dimensions,
             ..
         } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        AstAssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => expr_contains_yield(array) || dimensions.iter().flatten().any(expr_contains_yield),
         AstAssignmentTarget::DynamicVariable { name, .. } => expr_contains_yield(name),
         AstAssignmentTarget::DynamicArrayDim {
             name, dimensions, ..
@@ -1923,6 +1931,22 @@ impl<'a> LoweringContext<'a> {
             } => AssignmentTarget::DynamicStaticPropertyArrayDim {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
+            AstAssignmentTarget::ValueArrayDim {
+                array,
+                dimensions,
+                span,
+            } => AssignmentTarget::ValueArrayDim {
+                array: Box::new(self.lower_expr(array)),
                 dimensions: dimensions
                     .iter()
                     .map(|dimension| {
@@ -2306,6 +2330,7 @@ impl<'a> LoweringContext<'a> {
                 | AssignmentTarget::PropertyArrayDim { .. }
                 | AssignmentTarget::StaticPropertyArrayDim { .. }
                 | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
+                | AssignmentTarget::ValueArrayDim { .. }
                 | AssignmentTarget::Property { .. }
                 | AssignmentTarget::DynamicProperty { .. }
                 | AssignmentTarget::StaticProperty { .. }
@@ -3367,6 +3392,21 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
             ..
         } => {
             let mut text = format!("{}::${name}", assertion_expr_text(receiver));
+            for dimension in dimensions {
+                let index = dimension
+                    .as_ref()
+                    .map(assertion_expr_text)
+                    .unwrap_or_default();
+                text.push('[');
+                text.push_str(&index);
+                text.push(']');
+            }
+            text
+        }
+        AstAssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            let mut text = assertion_expr_text(array);
             for dimension in dimensions {
                 let index = dimension
                     .as_ref()

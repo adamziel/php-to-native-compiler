@@ -156,6 +156,33 @@ echo $array[0], \":\", $array[1], \"\\n\";",
             expected_stdout: "5:5\n",
         },
         CowReducerCase {
+            name: "call_result_array_dim_assignment_return_reference",
+            oracle: "Zend/tests/dereference/dereference_006.phpt",
+            source: "<?php\n\
+function &slot(&$arg) { return $arg; }\n\
+$items = [1];\n\
+slot($items)[0] = 2;\n\
+slot($items)[] = 3;\n\
+echo count($items), \":\", $items[0], \":\", $items[1], \"\\n\";",
+            expected_stdout: "2:2:3\n",
+        },
+        CowReducerCase {
+            name: "dynamic_method_reference_source",
+            oracle: "Zend/tests/dereference/dereference_008.phpt",
+            source: "<?php\n\
+class Box {\n\
+    public $items = [1];\n\
+    public function &items() { return $this->items; }\n\
+}\n\
+$box = new Box;\n\
+$method = \"items\";\n\
+$ref =& $box->$method();\n\
+$ref[] = 2;\n\
+$out = $box->$method();\n\
+echo count($out), \":\", $out[0], \":\", $out[1], \"\\n\";",
+            expected_stdout: "2:1:2\n",
+        },
+        CowReducerCase {
             name: "nested_extracted_child_write",
             oracle: "Zend/tests/bug35163.phpt",
             source: "<?php\n\
@@ -506,7 +533,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 34, "COW reducer pass count changed");
+    assert_eq!(passed, 35, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
