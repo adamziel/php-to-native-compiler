@@ -5925,6 +5925,12 @@ impl Parser<'_> {
             });
         }
         if self.peek_is_identifier("from") {
+            if self.return_by_ref_stack.last().copied().unwrap_or(false) {
+                return Err(Diagnostic::new(
+                    "Cannot use \"yield from\" inside a by-reference generator",
+                    Some(self.peek().span),
+                ));
+            }
             self.advance();
             let expr = self.parse_expr()?;
             let span = combine_spans(start_span, expr.span());

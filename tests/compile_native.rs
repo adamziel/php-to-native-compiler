@@ -3278,6 +3278,15 @@ takes_ref(($items[0][]));\n",
 fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
     parser::parse("<?php function &factory() { return null; }").unwrap();
 
+    let yield_from_by_ref =
+        parser::parse("<?php function &gen() { yield from other(); }").unwrap_err();
+    assert_eq!(
+        yield_from_by_ref.message,
+        "Cannot use \"yield from\" inside a by-reference generator"
+    );
+
+    parser::parse("<?php function gen() { yield from other(); }").unwrap();
+
     let temporary_assignment = parser::parse("<?php $alias =& 1;").unwrap_err();
     assert_eq!(
         temporary_assignment.message,
@@ -7919,6 +7928,9 @@ var_dump($g instanceof Generator);
 var_dump($g instanceof Traversable);
 var_dump(class_exists("Generator"));
 var_dump(method_exists($g, "current"));
+var_dump(method_exists($g, "next"));
+var_dump($g->current());
+$g->next();
 var_dump($g->current());
 "#,
     )
@@ -7930,7 +7942,7 @@ var_dump($g->current());
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "string(1) \"a\"\nint(1)\nint(0)\nint(2)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(1)\n"
+        "string(1) \"a\"\nint(1)\nint(0)\nint(2)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nint(1)\nint(2)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -8024,6 +8036,13 @@ function &walk(array &$array) {
         yield $key => $value;
     }
 }
+$persisted = [1, 2, 3];
+$generator = walk($persisted);
+foreach ($generator as &$value) {
+    $value *= -1;
+}
+var_dump($persisted);
+
 $items = [1, 2];
 foreach (walk($items) as &$value) {
     $value *= -1;
@@ -8038,6 +8057,14 @@ try {
 } catch (Exception $e) {
     echo $e->getMessage(), "\n";
 }
+
+function &notice_gen() {
+    yield $v = 0;
+    yield $v = 1;
+}
+foreach (notice_gen() as $v) {
+    var_dump($v);
+}
 "#,
     )
     .unwrap();
@@ -8048,7 +8075,7 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "array(2) {\n  [0]=>\n  int(-1)\n  [1]=>\n  &int(-2)\n}\nYou can only iterate a generator by-reference if it declared that it yields by-reference\n"
+        "array(3) {\n  [0]=>\n  int(-1)\n  [1]=>\n  int(-2)\n  [2]=>\n  &int(-3)\n}\narray(2) {\n  [0]=>\n  int(-1)\n  [1]=>\n  &int(-2)\n}\nYou can only iterate a generator by-reference if it declared that it yields by-reference\n\nNotice: Only variable references should be yielded by reference in ptn on line 30\nint(0)\n\nNotice: Only variable references should be yielded by reference in ptn on line 31\nint(1)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

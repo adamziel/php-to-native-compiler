@@ -530,6 +530,7 @@ struct PtnGenerator {
     PtnArray *values;
     PtnArray *keys;
     PtnValue return_value;
+    PtnArray *reference_notice_lines;
     size_t position;
     int64_t next_auto_key;
     int completed;
