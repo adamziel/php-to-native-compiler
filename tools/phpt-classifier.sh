@@ -1715,6 +1715,12 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
+            if (line ~ /(^|[[:space:]])(protected|private)[[:space:]]+static[[:space:]]+\$[a-z_]/ ||
+                line ~ /(^|[[:space:]])static[[:space:]]+(protected|private)[[:space:]]+\$[a-z_]/) {
+                print "unsupported-property-visibility-metadata\trequires non-public static property visibility metadata, outside PTN modeled static property declarations"
+                found = 1
+                exit
+            }
             if (line ~ /[.][.][.]/ &&
                 (line ~ /(^|[[:space:]])(public|protected|private)?[[:space:]]*const[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/ ||
                  line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*static[[:space:]]+\$[a-z_][a-z0-9_]*[[:space:]]*=/)) {
