@@ -9505,6 +9505,22 @@ static int ptn_uudecode_value(unsigned char byte) {
     return (int)((byte - 32) & 0x3f);
 }
 
+static PtnValue ptn_convert_uudecode_invalid(
+    PtnRuntime *runtime,
+    PtnStringOperand string,
+    PtnStringBuffer *output,
+    size_t line
+) {
+    ptn_string_operand_free(string);
+    free(output->data);
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "convert_uudecode(): Argument #1 ($data) is not a valid uuencoded string",
+        line
+    );
+    return ptn_bool(0);
+}
+
 static PtnValue ptn_internal_convert_uuencode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string =
@@ -9552,9 +9568,7 @@ static PtnValue ptn_internal_convert_uudecode(PtnRuntime *runtime, size_t argc, 
         }
         int decoded_len = ptn_uudecode_value((unsigned char)string.data[offset++]);
         if (decoded_len < 0) {
-            ptn_string_operand_free(string);
-            free(output.data);
-            return ptn_bool(0);
+            return ptn_convert_uudecode_invalid(runtime, string, &output, line);
         }
         if (decoded_len == 0) {
             break;
@@ -9567,9 +9581,7 @@ static PtnValue ptn_internal_convert_uudecode(PtnRuntime *runtime, size_t argc, 
             int c = offset < string.len ? ptn_uudecode_value((unsigned char)string.data[offset++]) : -1;
             int d = offset < string.len ? ptn_uudecode_value((unsigned char)string.data[offset++]) : -1;
             if (a < 0 || b < 0 || c < 0 || d < 0) {
-                ptn_string_operand_free(string);
-                free(output.data);
-                return ptn_bool(0);
+                return ptn_convert_uudecode_invalid(runtime, string, &output, line);
             }
             unsigned char bytes[3];
             bytes[0] = (unsigned char)((a << 2) | (b >> 4));
@@ -10096,6 +10108,73 @@ static PtnValue ptn_internal_explode(PtnRuntime *runtime, size_t argc, const Ptn
     return result;
 }
 
+static void ptn_internal_implode_throw_missing_array_arg(PtnRuntime *runtime, const char *function_name) {
+    char message[224];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): If argument #1 ($separator) is of type string, argument #2 ($array) must be of type array, null given",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnArray *ptn_internal_implode_array_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        return value.as.array;
+    }
+    if (value.type == PTN_NULL) {
+        ptn_internal_implode_throw_missing_array_arg(runtime, function_name);
+        return NULL;
+    }
+
+    char message[224];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #2 ($array) must be of type ?array, %s given",
+        function_name,
+        ptn_internal_array_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return NULL;
+}
+
+static PtnStringOperand ptn_internal_implode_separator_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($separator) must be of type array|string, resource given",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_internal_expect_string_arg(runtime, function_name, 1, "separator", value, line);
+}
+
 static PtnValue ptn_internal_implode_named(
     PtnRuntime *runtime,
     const char *function_name,
@@ -10106,10 +10185,25 @@ static PtnValue ptn_internal_implode_named(
     PtnStringOperand separator = ptn_string_operand_borrowed("");
     PtnArray *array = NULL;
     if (argc == 1) {
+        PtnValue value = ptn_value_deref(args[0]);
+        if (value.type == PTN_STRING) {
+            ptn_internal_implode_throw_missing_array_arg(runtime, function_name);
+            return ptn_null();
+        }
         array = ptn_internal_expect_array_arg(runtime, function_name, 1, "array", args[0]);
     } else {
-        separator = ptn_internal_expect_string_arg(runtime, function_name, 1, "separator", args[0], line);
-        array = ptn_internal_expect_array_arg(runtime, function_name, 2, "array", args[1]);
+        separator = ptn_internal_implode_separator_arg(runtime, function_name, args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(separator);
+            return ptn_null();
+        }
+        array = ptn_internal_implode_array_arg(runtime, function_name, args[1]);
+    }
+    if (array == NULL || runtime->exceptions->active_exception != NULL) {
+        if (argc >= 2) {
+            ptn_string_operand_free(separator);
+        }
+        return ptn_null();
     }
 
     PtnStringBuffer buffer;
@@ -11902,16 +11996,19 @@ static int ptn_html_codepoint_allowed(unsigned int value, int64_t flags) {
         return 0;
     }
     if (value >= 0x20) {
-        if ((flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_HTML5) {
+        int64_t doc_type = flags & PTN_ENT_DOC_TYPE_MASK;
+        if (doc_type == PTN_ENT_HTML401 && value >= 0x7f && value <= 0x9f) {
+            return 0;
+        }
+        if (doc_type == PTN_ENT_HTML5) {
             if ((value >= 0x7f && value <= 0x9f) ||
                 (value >= 0xfdd0 && value <= 0xfdef) ||
                 ((value & 0xfffe) == 0xfffe)) {
                 return 0;
             }
         }
-        if (((flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_XML1 ||
-             (flags & PTN_ENT_DOC_TYPE_MASK) == PTN_ENT_XHTML) &&
-            ((value & 0xfffe) == 0xfffe)) {
+        if ((doc_type == PTN_ENT_XML1 || doc_type == PTN_ENT_XHTML) &&
+            (value == 0xfffe || value == 0xffff)) {
             return 0;
         }
         return 1;
@@ -11926,6 +12023,11 @@ typedef struct {
     const char *decoded;
 } PtnHtmlNamedEntity;
 
+typedef enum {
+    PTN_HTML_ENCODING_UTF8,
+    PTN_HTML_ENCODING_ISO_8859_1,
+} PtnHtmlEncoding;
+
 static void ptn_html_consume_optional_encoding(
     PtnRuntime *runtime,
     const char *function_name,
@@ -11936,108 +12038,259 @@ static void ptn_html_consume_optional_encoding(
 
 static const PtnHtmlNamedEntity *ptn_html_named_entities(size_t *count) {
     static const PtnHtmlNamedEntity entities[] = {
-        { "&AElig;", "\xc3\x86" },
-        { "&Aacute;", "\xc3\x81" },
-        { "&Acirc;", "\xc3\x82" },
-        { "&Agrave;", "\xc3\x80" },
-        { "&Aring;", "\xc3\x85" },
-        { "&Atilde;", "\xc3\x83" },
-        { "&Auml;", "\xc3\x84" },
-        { "&Ccedil;", "\xc3\x87" },
-        { "&ETH;", "\xc3\x90" },
-        { "&Eacute;", "\xc3\x89" },
-        { "&Ecirc;", "\xc3\x8a" },
-        { "&Egrave;", "\xc3\x88" },
-        { "&Euml;", "\xc3\x8b" },
-        { "&Iacute;", "\xc3\x8d" },
-        { "&Icirc;", "\xc3\x8e" },
-        { "&Igrave;", "\xc3\x8c" },
-        { "&Iuml;", "\xc3\x8f" },
-        { "&Ntilde;", "\xc3\x91" },
-        { "&Oacute;", "\xc3\x93" },
-        { "&Ocirc;", "\xc3\x94" },
-        { "&Ograve;", "\xc3\x92" },
-        { "&Oslash;", "\xc3\x98" },
-        { "&Otilde;", "\xc3\x95" },
-        { "&Ouml;", "\xc3\x96" },
-        { "&THORN;", "\xc3\x9e" },
-        { "&Uacute;", "\xc3\x9a" },
-        { "&Ucirc;", "\xc3\x9b" },
-        { "&Ugrave;", "\xc3\x99" },
-        { "&Uuml;", "\xc3\x9c" },
-        { "&Yacute;", "\xc3\x9d" },
-        { "&Yuml;", "\xc5\xb8" },
-        { "&aacute;", "\xc3\xa1" },
-        { "&acirc;", "\xc3\xa2" },
-        { "&acute;", "\xc2\xb4" },
-        { "&aelig;", "\xc3\xa6" },
-        { "&agrave;", "\xc3\xa0" },
+        { "&#039;", "'" },
+        { "&AElig;", "\303\206" },
+        { "&Aacute;", "\303\201" },
+        { "&Acirc;", "\303\202" },
+        { "&Agrave;", "\303\200" },
+        { "&Alpha;", "\316\221" },
+        { "&Aring;", "\303\205" },
+        { "&Atilde;", "\303\203" },
+        { "&Auml;", "\303\204" },
+        { "&Beta;", "\316\222" },
+        { "&Ccedil;", "\303\207" },
+        { "&Chi;", "\316\247" },
+        { "&Dagger;", "\342\200\241" },
+        { "&Delta;", "\316\224" },
+        { "&ETH;", "\303\220" },
+        { "&Eacute;", "\303\211" },
+        { "&Ecirc;", "\303\212" },
+        { "&Egrave;", "\303\210" },
+        { "&Epsilon;", "\316\225" },
+        { "&Eta;", "\316\227" },
+        { "&Euml;", "\303\213" },
+        { "&Gamma;", "\316\223" },
+        { "&Iacute;", "\303\215" },
+        { "&Icirc;", "\303\216" },
+        { "&Igrave;", "\303\214" },
+        { "&Iota;", "\316\231" },
+        { "&Iuml;", "\303\217" },
+        { "&Kappa;", "\316\232" },
+        { "&Lambda;", "\316\233" },
+        { "&Mu;", "\316\234" },
+        { "&Ntilde;", "\303\221" },
+        { "&Nu;", "\316\235" },
+        { "&OElig;", "\305\222" },
+        { "&Oacute;", "\303\223" },
+        { "&Ocirc;", "\303\224" },
+        { "&Ograve;", "\303\222" },
+        { "&Omega;", "\316\251" },
+        { "&Omicron;", "\316\237" },
+        { "&Oslash;", "\303\230" },
+        { "&Otilde;", "\303\225" },
+        { "&Ouml;", "\303\226" },
+        { "&Phi;", "\316\246" },
+        { "&Pi;", "\316\240" },
+        { "&Prime;", "\342\200\263" },
+        { "&Psi;", "\316\250" },
+        { "&Rho;", "\316\241" },
+        { "&Scaron;", "\305\240" },
+        { "&Sigma;", "\316\243" },
+        { "&THORN;", "\303\236" },
+        { "&Tau;", "\316\244" },
+        { "&Theta;", "\316\230" },
+        { "&Uacute;", "\303\232" },
+        { "&Ucirc;", "\303\233" },
+        { "&Ugrave;", "\303\231" },
+        { "&Upsilon;", "\316\245" },
+        { "&Uuml;", "\303\234" },
+        { "&Xi;", "\316\236" },
+        { "&Yacute;", "\303\235" },
+        { "&Yuml;", "\305\270" },
+        { "&Zeta;", "\316\226" },
+        { "&aacute;", "\303\241" },
+        { "&acirc;", "\303\242" },
+        { "&acute;", "\302\264" },
+        { "&aelig;", "\303\246" },
+        { "&agrave;", "\303\240" },
+        { "&alefsym;", "\342\204\265" },
+        { "&alpha;", "\316\261" },
         { "&amp;", "&" },
-        { "&aring;", "\xc3\xa5" },
-        { "&atilde;", "\xc3\xa3" },
-        { "&auml;", "\xc3\xa4" },
-        { "&brvbar;", "\xc2\xa6" },
-        { "&ccedil;", "\xc3\xa7" },
-        { "&cedil;", "\xc2\xb8" },
-        { "&cent;", "\xc2\xa2" },
-        { "&copy;", "\xc2\xa9" },
-        { "&curren;", "\xc2\xa4" },
-        { "&deg;", "\xc2\xb0" },
-        { "&divide;", "\xc3\xb7" },
-        { "&eacute;", "\xc3\xa9" },
-        { "&ecirc;", "\xc3\xaa" },
-        { "&egrave;", "\xc3\xa8" },
-        { "&eth;", "\xc3\xb0" },
-        { "&euml;", "\xc3\xab" },
-        { "&euro;", "\xe2\x82\xac" },
-        { "&frac12;", "\xc2\xbd" },
-        { "&frac14;", "\xc2\xbc" },
-        { "&frac34;", "\xc2\xbe" },
+        { "&and;", "\342\210\247" },
+        { "&ang;", "\342\210\240" },
+        { "&aring;", "\303\245" },
+        { "&asymp;", "\342\211\210" },
+        { "&atilde;", "\303\243" },
+        { "&auml;", "\303\244" },
+        { "&bdquo;", "\342\200\236" },
+        { "&beta;", "\316\262" },
+        { "&brvbar;", "\302\246" },
+        { "&bull;", "\342\200\242" },
+        { "&cap;", "\342\210\251" },
+        { "&ccedil;", "\303\247" },
+        { "&cedil;", "\302\270" },
+        { "&cent;", "\302\242" },
+        { "&chi;", "\317\207" },
+        { "&circ;", "\313\206" },
+        { "&clubs;", "\342\231\243" },
+        { "&cong;", "\342\211\205" },
+        { "&copy;", "\302\251" },
+        { "&crarr;", "\342\206\265" },
+        { "&cup;", "\342\210\252" },
+        { "&curren;", "\302\244" },
+        { "&dArr;", "\342\207\223" },
+        { "&dagger;", "\342\200\240" },
+        { "&darr;", "\342\206\223" },
+        { "&deg;", "\302\260" },
+        { "&delta;", "\316\264" },
+        { "&diams;", "\342\231\246" },
+        { "&divide;", "\303\267" },
+        { "&eacute;", "\303\251" },
+        { "&ecirc;", "\303\252" },
+        { "&egrave;", "\303\250" },
+        { "&empty;", "\342\210\205" },
+        { "&emsp;", "\342\200\203" },
+        { "&ensp;", "\342\200\202" },
+        { "&epsilon;", "\316\265" },
+        { "&equiv;", "\342\211\241" },
+        { "&eta;", "\316\267" },
+        { "&eth;", "\303\260" },
+        { "&euml;", "\303\253" },
+        { "&euro;", "\342\202\254" },
+        { "&exist;", "\342\210\203" },
+        { "&fnof;", "\306\222" },
+        { "&forall;", "\342\210\200" },
+        { "&frac12;", "\302\275" },
+        { "&frac14;", "\302\274" },
+        { "&frac34;", "\302\276" },
+        { "&frasl;", "\342\201\204" },
+        { "&gamma;", "\316\263" },
+        { "&ge;", "\342\211\245" },
         { "&gt;", ">" },
-        { "&iacute;", "\xc3\xad" },
-        { "&icirc;", "\xc3\xae" },
-        { "&iexcl;", "\xc2\xa1" },
-        { "&igrave;", "\xc3\xac" },
-        { "&iquest;", "\xc2\xbf" },
-        { "&iuml;", "\xc3\xaf" },
-        { "&laquo;", "\xc2\xab" },
+        { "&hArr;", "\342\207\224" },
+        { "&harr;", "\342\206\224" },
+        { "&hearts;", "\342\231\245" },
+        { "&hellip;", "\342\200\246" },
+        { "&iacute;", "\303\255" },
+        { "&icirc;", "\303\256" },
+        { "&iexcl;", "\302\241" },
+        { "&igrave;", "\303\254" },
+        { "&image;", "\342\204\221" },
+        { "&infin;", "\342\210\236" },
+        { "&int;", "\342\210\253" },
+        { "&iota;", "\316\271" },
+        { "&iquest;", "\302\277" },
+        { "&isin;", "\342\210\210" },
+        { "&iuml;", "\303\257" },
+        { "&kappa;", "\316\272" },
+        { "&lArr;", "\342\207\220" },
+        { "&lambda;", "\316\273" },
+        { "&lang;", "\342\214\251" },
+        { "&laquo;", "\302\253" },
+        { "&larr;", "\342\206\220" },
+        { "&lceil;", "\342\214\210" },
+        { "&ldquo;", "\342\200\234" },
+        { "&le;", "\342\211\244" },
+        { "&lfloor;", "\342\214\212" },
+        { "&lowast;", "\342\210\227" },
+        { "&loz;", "\342\227\212" },
+        { "&lrm;", "\342\200\216" },
+        { "&lsaquo;", "\342\200\271" },
+        { "&lsquo;", "\342\200\230" },
         { "&lt;", "<" },
-        { "&macr;", "\xc2\xaf" },
-        { "&micro;", "\xc2\xb5" },
-        { "&middot;", "\xc2\xb7" },
-        { "&nbsp;", "\xc2\xa0" },
-        { "&not;", "\xc2\xac" },
-        { "&ntilde;", "\xc3\xb1" },
-        { "&oacute;", "\xc3\xb3" },
-        { "&ocirc;", "\xc3\xb4" },
-        { "&ograve;", "\xc3\xb2" },
-        { "&ordf;", "\xc2\xaa" },
-        { "&ordm;", "\xc2\xba" },
-        { "&oslash;", "\xc3\xb8" },
-        { "&otilde;", "\xc3\xb5" },
-        { "&ouml;", "\xc3\xb6" },
-        { "&para;", "\xc2\xb6" },
-        { "&plusmn;", "\xc2\xb1" },
-        { "&pound;", "\xc2\xa3" },
+        { "&macr;", "\302\257" },
+        { "&mdash;", "\342\200\224" },
+        { "&micro;", "\302\265" },
+        { "&middot;", "\302\267" },
+        { "&minus;", "\342\210\222" },
+        { "&mu;", "\316\274" },
+        { "&nabla;", "\342\210\207" },
+        { "&nbsp;", "\302\240" },
+        { "&ndash;", "\342\200\223" },
+        { "&ne;", "\342\211\240" },
+        { "&ni;", "\342\210\213" },
+        { "&not;", "\302\254" },
+        { "&notin;", "\342\210\211" },
+        { "&nsub;", "\342\212\204" },
+        { "&ntilde;", "\303\261" },
+        { "&nu;", "\316\275" },
+        { "&oacute;", "\303\263" },
+        { "&ocirc;", "\303\264" },
+        { "&oelig;", "\305\223" },
+        { "&ograve;", "\303\262" },
+        { "&oline;", "\342\200\276" },
+        { "&omega;", "\317\211" },
+        { "&omicron;", "\316\277" },
+        { "&oplus;", "\342\212\225" },
+        { "&or;", "\342\210\250" },
+        { "&ordf;", "\302\252" },
+        { "&ordm;", "\302\272" },
+        { "&oslash;", "\303\270" },
+        { "&otilde;", "\303\265" },
+        { "&otimes;", "\342\212\227" },
+        { "&ouml;", "\303\266" },
+        { "&para;", "\302\266" },
+        { "&part;", "\342\210\202" },
+        { "&permil;", "\342\200\260" },
+        { "&perp;", "\342\212\245" },
+        { "&phi;", "\317\206" },
+        { "&pi;", "\317\200" },
+        { "&piv;", "\317\226" },
+        { "&plusmn;", "\302\261" },
+        { "&pound;", "\302\243" },
+        { "&prime;", "\342\200\262" },
+        { "&prod;", "\342\210\217" },
+        { "&prop;", "\342\210\235" },
+        { "&psi;", "\317\210" },
         { "&quot;", "\"" },
-        { "&raquo;", "\xc2\xbb" },
-        { "&reg;", "\xc2\xae" },
-        { "&sect;", "\xc2\xa7" },
-        { "&shy;", "\xc2\xad" },
-        { "&sup1;", "\xc2\xb9" },
-        { "&sup2;", "\xc2\xb2" },
-        { "&sup3;", "\xc2\xb3" },
-        { "&szlig;", "\xc3\x9f" },
-        { "&thorn;", "\xc3\xbe" },
-        { "&times;", "\xc3\x97" },
-        { "&uacute;", "\xc3\xba" },
-        { "&ucirc;", "\xc3\xbb" },
-        { "&ugrave;", "\xc3\xb9" },
-        { "&uml;", "\xc2\xa8" },
-        { "&uuml;", "\xc3\xbc" },
-        { "&yacute;", "\xc3\xbd" },
-        { "&yen;", "\xc2\xa5" },
-        { "&yuml;", "\xc3\xbf" },
+        { "&rArr;", "\342\207\222" },
+        { "&radic;", "\342\210\232" },
+        { "&rang;", "\342\214\252" },
+        { "&raquo;", "\302\273" },
+        { "&rarr;", "\342\206\222" },
+        { "&rceil;", "\342\214\211" },
+        { "&rdquo;", "\342\200\235" },
+        { "&real;", "\342\204\234" },
+        { "&reg;", "\302\256" },
+        { "&rfloor;", "\342\214\213" },
+        { "&rho;", "\317\201" },
+        { "&rlm;", "\342\200\217" },
+        { "&rsaquo;", "\342\200\272" },
+        { "&rsquo;", "\342\200\231" },
+        { "&sbquo;", "\342\200\232" },
+        { "&scaron;", "\305\241" },
+        { "&sdot;", "\342\213\205" },
+        { "&sect;", "\302\247" },
+        { "&shy;", "\302\255" },
+        { "&sigma;", "\317\203" },
+        { "&sigmaf;", "\317\202" },
+        { "&sim;", "\342\210\274" },
+        { "&spades;", "\342\231\240" },
+        { "&sub;", "\342\212\202" },
+        { "&sube;", "\342\212\206" },
+        { "&sum;", "\342\210\221" },
+        { "&sup;", "\342\212\203" },
+        { "&sup1;", "\302\271" },
+        { "&sup2;", "\302\262" },
+        { "&sup3;", "\302\263" },
+        { "&supe;", "\342\212\207" },
+        { "&szlig;", "\303\237" },
+        { "&tau;", "\317\204" },
+        { "&there4;", "\342\210\264" },
+        { "&theta;", "\316\270" },
+        { "&thetasym;", "\317\221" },
+        { "&thinsp;", "\342\200\211" },
+        { "&thorn;", "\303\276" },
+        { "&tilde;", "\313\234" },
+        { "&times;", "\303\227" },
+        { "&trade;", "\342\204\242" },
+        { "&uArr;", "\342\207\221" },
+        { "&uacute;", "\303\272" },
+        { "&uarr;", "\342\206\221" },
+        { "&ucirc;", "\303\273" },
+        { "&ugrave;", "\303\271" },
+        { "&uml;", "\302\250" },
+        { "&upsih;", "\317\222" },
+        { "&upsilon;", "\317\205" },
+        { "&uuml;", "\303\274" },
+        { "&weierp;", "\342\204\230" },
+        { "&xi;", "\316\276" },
+        { "&yacute;", "\303\275" },
+        { "&yen;", "\302\245" },
+        { "&yuml;", "\303\277" },
+        { "&zeta;", "\316\266" },
+        { "&zwj;", "\342\200\215" },
+        { "&zwnj;", "\342\200\214" },
     };
     *count = sizeof(entities) / sizeof(entities[0]);
     return entities;
@@ -12076,13 +12329,106 @@ static int ptn_html_decode_named_entity(
     return 0;
 }
 
+static int ptn_html_ascii_case_equal_literal(const char *data, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (ptn_ascii_lower_byte((unsigned char)data[i]) != ptn_ascii_lower_byte((unsigned char)literal[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PtnHtmlEncoding ptn_html_optional_encoding(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 3 || ptn_value_deref(args[2]).type == PTN_NULL) {
+        return PTN_HTML_ENCODING_UTF8;
+    }
+    PtnStringOperand encoding =
+        ptn_internal_expect_string_arg(runtime, function_name, 3, "encoding", args[2], line);
+    PtnHtmlEncoding result =
+        (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-1") ||
+         ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-1"))
+        ? PTN_HTML_ENCODING_ISO_8859_1
+        : PTN_HTML_ENCODING_UTF8;
+    ptn_string_operand_free(encoding);
+    return result;
+}
+
+static int ptn_html_utf8_codepoint(const char *data, size_t len, unsigned int *codepoint) {
+    if (len == 1) {
+        *codepoint = (unsigned char)data[0];
+        return 1;
+    }
+    if (len == 2) {
+        unsigned char first = (unsigned char)data[0];
+        unsigned char second = (unsigned char)data[1];
+        if ((first & 0xe0) == 0xc0 && (second & 0xc0) == 0x80) {
+            *codepoint = ((unsigned int)(first & 0x1f) << 6) | (unsigned int)(second & 0x3f);
+            return *codepoint >= 0x80;
+        }
+        return 0;
+    }
+    if (len == 3) {
+        unsigned char first = (unsigned char)data[0];
+        unsigned char second = (unsigned char)data[1];
+        unsigned char third = (unsigned char)data[2];
+        if ((first & 0xf0) == 0xe0 && (second & 0xc0) == 0x80 && (third & 0xc0) == 0x80) {
+            *codepoint =
+                ((unsigned int)(first & 0x0f) << 12) |
+                ((unsigned int)(second & 0x3f) << 6) |
+                (unsigned int)(third & 0x3f);
+            return *codepoint >= 0x800;
+        }
+        return 0;
+    }
+    if (len == 4) {
+        unsigned char first = (unsigned char)data[0];
+        unsigned char second = (unsigned char)data[1];
+        unsigned char third = (unsigned char)data[2];
+        unsigned char fourth = (unsigned char)data[3];
+        if ((first & 0xf8) == 0xf0 &&
+            (second & 0xc0) == 0x80 &&
+            (third & 0xc0) == 0x80 &&
+            (fourth & 0xc0) == 0x80) {
+            *codepoint =
+                ((unsigned int)(first & 0x07) << 18) |
+                ((unsigned int)(second & 0x3f) << 12) |
+                ((unsigned int)(third & 0x3f) << 6) |
+                (unsigned int)(fourth & 0x3f);
+            return *codepoint >= 0x10000 && *codepoint <= 0x10ffff;
+        }
+    }
+    return 0;
+}
+
+static int ptn_html_decoded_entity_representable(const char *decoded, size_t decoded_len, PtnHtmlEncoding encoding) {
+    if (encoding != PTN_HTML_ENCODING_ISO_8859_1) {
+        return 1;
+    }
+    unsigned int codepoint = 0;
+    if (!ptn_html_utf8_codepoint(decoded, decoded_len, &codepoint)) {
+        return 0;
+    }
+    return codepoint <= 0xff;
+}
+
 static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand string =
         ptn_internal_expect_string_arg(runtime, "html_entity_decode", 1, "string", args[0], line);
     int64_t flags = argc >= 2
         ? ptn_internal_expect_integer_arg(runtime, "html_entity_decode", 2, "flags", args[1], line)
         : PTN_HTML_DEFAULT_FLAGS;
-    ptn_html_consume_optional_encoding(runtime, "html_entity_decode", argc, args, line);
+    PtnHtmlEncoding encoding =
+        ptn_html_optional_encoding(runtime, "html_entity_decode", argc, args, line);
 
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
@@ -12106,7 +12452,8 @@ static PtnValue ptn_internal_html_entity_decode(PtnRuntime *runtime, size_t argc
                     &decoded,
                     &decoded_len,
                     &entity_len
-                )) {
+                ) &&
+                ptn_html_decoded_entity_representable(decoded, decoded_len, encoding)) {
                 ptn_string_buffer_append_len(&output, decoded, decoded_len);
                 i += entity_len - 1;
                 continue;
@@ -12142,7 +12489,6 @@ static PtnValue ptn_internal_get_html_translation_table(PtnRuntime *runtime, siz
     int64_t table_kind = argc >= 1 ? ptn_value_to_integer(args[0]) : PTN_HTML_SPECIALCHARS;
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_HTML_DEFAULT_FLAGS;
     PtnValue table = ptn_array_from_literal_entries(0, NULL);
-    ptn_html_translation_table_add_special(table, flags);
     if (table_kind == PTN_HTML_ENTITIES && (flags & PTN_ENT_DOC_TYPE_MASK) != PTN_ENT_XML1) {
         size_t count = 0;
         const PtnHtmlNamedEntity *entities = ptn_html_named_entities(&count);
@@ -12159,6 +12505,8 @@ static PtnValue ptn_internal_get_html_translation_table(PtnRuntime *runtime, siz
                 ptn_string(entities[i].entity)
             );
         }
+    } else {
+        ptn_html_translation_table_add_special(table, flags);
     }
     return table;
 }
@@ -21969,275 +22317,6 @@ static PtnValue ptn_internal_soundex(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string_len(result, 4);
 }
 
-static int ptn_metaphone_is_alpha(unsigned char byte) {
-    byte = ptn_ascii_upper(byte);
-    return byte >= 'A' && byte <= 'Z';
-}
-
-static int ptn_metaphone_is_vowel(unsigned char byte) {
-    byte = ptn_ascii_upper(byte);
-    return byte == 'A' || byte == 'E' || byte == 'I' || byte == 'O' || byte == 'U';
-}
-
-static unsigned char ptn_metaphone_at(const char *data, size_t len, size_t index) {
-    if (index >= len) {
-        return '\0';
-    }
-    return ptn_ascii_upper((unsigned char)data[index]);
-}
-
-static int ptn_metaphone_match(const char *data, size_t len, size_t index, const char *pattern) {
-    for (size_t i = 0; pattern[i] != '\0'; i++) {
-        if (index + i >= len || ptn_metaphone_at(data, len, index + i) != (unsigned char)pattern[i]) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-static int ptn_metaphone_append(PtnStringBuffer *buffer, char code, size_t max_phonemes) {
-    if (max_phonemes != 0 && buffer->len >= max_phonemes) {
-        return 0;
-    }
-    ptn_string_buffer_append_char(buffer, code);
-    return 1;
-}
-
-static PtnValue ptn_internal_metaphone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "metaphone", 1, "string", args[0], line);
-    int64_t requested_max = argc >= 2
-        ? ptn_internal_expect_integer_arg(runtime, "metaphone", 2, "max_phonemes", args[1], line)
-        : 0;
-    if (requested_max < 0) {
-        ptn_string_operand_free(string);
-        ptn_throw_exception(
-            runtime,
-            "ValueError",
-            "metaphone(): Argument #2 ($max_phonemes) must be greater than or equal to 0"
-        );
-        return ptn_null();
-    }
-
-    size_t max_phonemes = (size_t)requested_max;
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
-    const char *data = string.data;
-    size_t len = string.len;
-    size_t i = 0;
-    while (i < len && !ptn_metaphone_is_alpha((unsigned char)data[i])) {
-        i++;
-    }
-    if (i >= len) {
-        ptn_string_operand_free(string);
-        return ptn_owned_string_len(output.data, output.len);
-    }
-
-    if (
-        ptn_metaphone_match(data, len, i, "AE") ||
-        ptn_metaphone_match(data, len, i, "GN") ||
-        ptn_metaphone_match(data, len, i, "KN") ||
-        ptn_metaphone_match(data, len, i, "PN") ||
-        ptn_metaphone_match(data, len, i, "WR")
-    ) {
-        i++;
-    } else if (ptn_metaphone_match(data, len, i, "WH")) {
-        if (!ptn_metaphone_append(&output, 'W', max_phonemes)) {
-            goto metaphone_done;
-        }
-        i += 2;
-    } else if (ptn_metaphone_at(data, len, i) == 'X') {
-        if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
-            goto metaphone_done;
-        }
-        i++;
-    }
-
-    for (; i < len;) {
-        unsigned char current = ptn_metaphone_at(data, len, i);
-        if (!ptn_metaphone_is_alpha(current)) {
-            i++;
-            continue;
-        }
-
-        unsigned char previous = i == 0 ? '\0' : ptn_metaphone_at(data, len, i - 1);
-        unsigned char next = ptn_metaphone_at(data, len, i + 1);
-        unsigned char next2 = ptn_metaphone_at(data, len, i + 2);
-        if (current == previous && current != 'C') {
-            i++;
-            continue;
-        }
-
-        switch (current) {
-            case 'A':
-            case 'E':
-            case 'I':
-            case 'O':
-            case 'U':
-                if (output.len == 0 && !ptn_metaphone_append(&output, (char)current, max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'B':
-                if (!(previous == 'M' && i + 1 >= len) &&
-                    !ptn_metaphone_append(&output, 'B', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'C':
-                if (previous == 'S' && (next == 'I' || next == 'E' || next == 'Y')) {
-                    break;
-                }
-                if (ptn_metaphone_match(data, len, i, "CIA")) {
-                    if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                } else if (next == 'H') {
-                    if (previous == 'S') {
-                        if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
-                            goto metaphone_done;
-                        }
-                    } else if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                    i++;
-                } else if (next == 'I' || next == 'E' || next == 'Y') {
-                    if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                } else if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'D':
-                if (next == 'G' && (next2 == 'E' || next2 == 'I' || next2 == 'Y')) {
-                    if (!ptn_metaphone_append(&output, 'J', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                    i += 2;
-                } else if (!ptn_metaphone_append(&output, 'T', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'G':
-                if (next == 'H') {
-                    if ((i == 0 || !ptn_metaphone_is_alpha((unsigned char)data[i - 1])) ||
-                        (i > 0 && ptn_metaphone_is_vowel(previous))) {
-                        if (!ptn_metaphone_append(&output, 'F', max_phonemes)) {
-                            goto metaphone_done;
-                        }
-                    }
-                    i++;
-                } else if (next == 'N') {
-                    if (!(i + 2 >= len || (i + 3 >= len && next2 == 'E' && ptn_metaphone_at(data, len, i + 3) == 'D')) &&
-                        !ptn_metaphone_append(&output, 'K', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                } else if ((next == 'E' || next == 'I' || next == 'Y') && previous != 'G') {
-                    if (!ptn_metaphone_append(&output, 'J', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                } else if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'H':
-                if (ptn_metaphone_is_vowel(next) &&
-                    previous != 'C' &&
-                    previous != 'G' &&
-                    previous != 'P' &&
-                    previous != 'S' &&
-                    previous != 'T' &&
-                    !ptn_metaphone_append(&output, 'H', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'F':
-            case 'J':
-            case 'L':
-            case 'M':
-            case 'N':
-            case 'R':
-                if (!ptn_metaphone_append(&output, (char)current, max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'K':
-                if (previous != 'C' && !ptn_metaphone_append(&output, 'K', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'P':
-                if (!ptn_metaphone_append(&output, next == 'H' ? 'F' : 'P', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                if (next == 'H') {
-                    i++;
-                }
-                break;
-            case 'Q':
-                if (!ptn_metaphone_append(&output, 'K', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'S':
-                if (next == 'H' || (next == 'I' && (next2 == 'O' || next2 == 'A'))) {
-                    if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                    if (next == 'H') {
-                        i++;
-                    }
-                } else if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'T':
-                if (next == 'I' && (next2 == 'O' || next2 == 'A')) {
-                    if (!ptn_metaphone_append(&output, 'X', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                } else if (next == 'H') {
-                    if (!ptn_metaphone_append(&output, '0', max_phonemes)) {
-                        goto metaphone_done;
-                    }
-                    i++;
-                } else if (!(next == 'C' && next2 == 'H') &&
-                    !ptn_metaphone_append(&output, 'T', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'V':
-                if (!ptn_metaphone_append(&output, 'F', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'W':
-            case 'Y':
-                if (ptn_metaphone_is_vowel(next) &&
-                    !ptn_metaphone_append(&output, (char)current, max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'X':
-                if (!ptn_metaphone_append(&output, 'K', max_phonemes) ||
-                    !ptn_metaphone_append(&output, 'S', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-            case 'Z':
-                if (!ptn_metaphone_append(&output, 'S', max_phonemes)) {
-                    goto metaphone_done;
-                }
-                break;
-        }
-        i++;
-    }
-
-metaphone_done:
-    ptn_string_operand_free(string);
-    return ptn_owned_string_len(output.data, output.len);
-}
-
 static void ptn_utf8_emit_deprecation(PtnRuntime *runtime, const char *function_name, size_t line) {
     char message[128];
     int written = snprintf(
@@ -22340,72 +22419,661 @@ static PtnValue ptn_internal_utf8_decode(PtnRuntime *runtime, size_t argc, const
     return ptn_owned_string_len(output.data, output.len);
 }
 
-static int ptn_str_increment_is_alnum(unsigned char byte) {
-    return (byte >= '0' && byte <= '9') ||
-        (byte >= 'A' && byte <= 'Z') ||
-        (byte >= 'a' && byte <= 'z');
+static int ptn_string_is_ascii_alnum(PtnStringOperand string) {
+    for (size_t i = 0; i < string.len; i++) {
+        unsigned char byte = (unsigned char)string.data[i];
+        if (!((byte >= '0' && byte <= '9') ||
+              (byte >= 'A' && byte <= 'Z') ||
+              (byte >= 'a' && byte <= 'z'))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_throw_string_incdec_empty(PtnRuntime *runtime, const char *function_name) {
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($string) must not be empty",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_throw_string_incdec_invalid(PtnRuntime *runtime, const char *function_name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($string) must be composed only of alphanumeric ASCII characters",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_throw_string_decrement_range(PtnRuntime *runtime, PtnStringOperand string) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "str_decrement(): Argument #1 ($string) \"%.*s\" is out of decrement range",
+        (int)string.len,
+        string.data
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "str_decrement(): Argument #1 ($string) \"%.*s\" is out of decrement range",
+        (int)string.len,
+        string.data
+    );
+    ptn_throw_exception_owned_message(runtime, "ValueError", message);
 }
 
 static PtnValue ptn_internal_str_increment(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "str_increment", 1, "string", args[0], line);
-    if (input.len == 0) {
-        ptn_string_operand_free(input);
-        ptn_throw_exception(runtime, "ValueError", "str_increment(): Argument #1 ($string) must not be empty");
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "str_increment", 1, "string", args[0], line);
+    if (string.len == 0) {
+        ptn_throw_string_incdec_empty(runtime, "str_increment");
+        ptn_string_operand_free(string);
         return ptn_null();
     }
-    for (size_t i = 0; i < input.len; i++) {
-        if (!ptn_str_increment_is_alnum((unsigned char)input.data[i])) {
-            ptn_string_operand_free(input);
+    if (!ptn_string_is_ascii_alnum(string)) {
+        ptn_throw_string_incdec_invalid(runtime, "str_increment");
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+
+    char *result = ptn_duplicate_string_len(string.data, string.len);
+    size_t position = string.len - 1;
+    int carry = 0;
+    do {
+        char byte = result[position];
+        if (byte != 'z' && byte != 'Z' && byte != '9') {
+            result[position]++;
+            carry = 0;
+        } else {
+            carry = 1;
+            if (byte == '9') {
+                result[position] = '0';
+            } else {
+                result[position] = (char)(byte - 25);
+            }
+        }
+    } while (carry && position-- > 0);
+
+    if (carry) {
+        char *expanded = malloc(string.len + 2);
+        if (expanded == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(expanded + 1, result, string.len);
+        expanded[string.len + 1] = '\0';
+        expanded[0] = result[0] == '0' ? '1' : result[0];
+        free(result);
+        ptn_string_operand_free(string);
+        return ptn_owned_string_len(expanded, string.len + 1);
+    }
+
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(result, strlen(result));
+}
+
+static PtnValue ptn_internal_str_decrement(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "str_decrement", 1, "string", args[0], line);
+    if (string.len == 0) {
+        ptn_throw_string_incdec_empty(runtime, "str_decrement");
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    if (!ptn_string_is_ascii_alnum(string)) {
+        ptn_throw_string_incdec_invalid(runtime, "str_decrement");
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+    if (string.data[0] == '0') {
+        ptn_throw_string_decrement_range(runtime, string);
+        ptn_string_operand_free(string);
+        return ptn_null();
+    }
+
+    char *result = ptn_duplicate_string_len(string.data, string.len);
+    size_t position = string.len - 1;
+    int carry = 0;
+    do {
+        char byte = result[position];
+        if (byte != 'a' && byte != 'A' && byte != '0') {
+            result[position]--;
+            carry = 0;
+        } else {
+            carry = 1;
+            if (byte == '0') {
+                result[position] = '9';
+            } else {
+                result[position] = (char)(byte + 25);
+            }
+        }
+    } while (carry && position-- > 0);
+
+    if (carry || (result[0] == '0' && string.len > 1)) {
+        if (string.len == 1) {
+            free(result);
+            ptn_throw_string_decrement_range(runtime, string);
+            ptn_string_operand_free(string);
+            return ptn_null();
+        }
+        char *trimmed = malloc(string.len);
+        if (trimmed == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(trimmed, result + 1, string.len - 1);
+        trimmed[string.len - 1] = '\0';
+        free(result);
+        ptn_string_operand_free(string);
+        return ptn_owned_string_len(trimmed, string.len - 1);
+    }
+
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(result, strlen(result));
+}
+
+static int ptn_metaphone_code(unsigned char byte) {
+    switch ((unsigned char)toupper(byte)) {
+        case 'A':
+        case 'O':
+        case 'U':
+            return 1;
+        case 'E':
+        case 'I':
+            return 9;
+        case 'F':
+        case 'J':
+        case 'L':
+        case 'M':
+        case 'N':
+        case 'R':
+            return 2;
+        case 'C':
+        case 'G':
+        case 'P':
+        case 'S':
+        case 'T':
+            return 4;
+        case 'Y':
+            return 8;
+        case 'B':
+        case 'D':
+        case 'H':
+            return 16;
+        default:
+            return 0;
+    }
+}
+
+static int ptn_metaphone_is_vowel(char byte) {
+    return (ptn_metaphone_code((unsigned char)byte) & 1) != 0;
+}
+
+static int ptn_metaphone_affects_h(char byte) {
+    return (ptn_metaphone_code((unsigned char)byte) & 4) != 0;
+}
+
+static int ptn_metaphone_makes_soft(char byte) {
+    return (ptn_metaphone_code((unsigned char)byte) & 8) != 0;
+}
+
+static int ptn_metaphone_no_gh_to_f(char byte) {
+    return (ptn_metaphone_code((unsigned char)byte) & 16) != 0;
+}
+
+static char ptn_metaphone_read(const char *word, size_t len, size_t index) {
+    if (index >= len) {
+        return '\0';
+    }
+    return (char)toupper((unsigned char)word[index]);
+}
+
+static int ptn_metaphone_append(char **buffer, size_t *len, size_t *capacity, char byte) {
+    if (*len + 1 >= *capacity) {
+        size_t new_capacity = *capacity == 0 ? 16 : *capacity * 2;
+        char *grown = realloc(*buffer, new_capacity);
+        if (grown == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        *buffer = grown;
+        *capacity = new_capacity;
+    }
+    (*buffer)[(*len)++] = byte;
+    (*buffer)[*len] = '\0';
+    return 1;
+}
+
+static char *ptn_metaphone_string(const char *word, size_t word_len, int64_t max_phonemes, size_t *output_len_out) {
+    size_t w_idx = 0;
+    size_t p_idx = 0;
+    size_t capacity = max_phonemes > 0 && max_phonemes < 1024 ? (size_t)max_phonemes + 3 : word_len * 2 + 3;
+    if (capacity < 16) {
+        capacity = 16;
+    }
+    char *output = calloc(capacity, 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    char curr_letter = '\0';
+    while (w_idx < word_len) {
+        curr_letter = word[w_idx];
+        if (isalpha((unsigned char)curr_letter)) {
+            break;
+        }
+        w_idx++;
+    }
+    if (w_idx >= word_len) {
+        *output_len_out = 0;
+        return output;
+    }
+
+    curr_letter = ptn_metaphone_read(word, word_len, w_idx);
+    switch (curr_letter) {
+        case 'A':
+            if (ptn_metaphone_read(word, word_len, w_idx + 1) == 'E') {
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'E');
+                w_idx += 2;
+            } else {
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'A');
+                w_idx++;
+            }
+            break;
+        case 'G':
+        case 'K':
+        case 'P':
+            if (ptn_metaphone_read(word, word_len, w_idx + 1) == 'N') {
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'N');
+                w_idx += 2;
+            }
+            break;
+        case 'W': {
+            char next = ptn_metaphone_read(word, word_len, w_idx + 1);
+            if (next == 'R') {
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'R');
+                w_idx += 2;
+            } else if (next == 'H' || ptn_metaphone_is_vowel(next)) {
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'W');
+                w_idx += 2;
+            }
+            break;
+        }
+        case 'X':
+            ptn_metaphone_append(&output, &p_idx, &capacity, 'S');
+            w_idx++;
+            break;
+        case 'E':
+        case 'I':
+        case 'O':
+        case 'U':
+            ptn_metaphone_append(&output, &p_idx, &capacity, curr_letter);
+            w_idx++;
+            break;
+        default:
+            break;
+    }
+
+    for (; w_idx < word_len && (max_phonemes == 0 || p_idx < (size_t)max_phonemes); w_idx++) {
+        curr_letter = word[w_idx];
+        if (!isalpha((unsigned char)curr_letter)) {
+            continue;
+        }
+        curr_letter = ptn_metaphone_read(word, word_len, w_idx);
+        char prev_letter = w_idx > 0 ? ptn_metaphone_read(word, word_len, w_idx - 1) : '\0';
+        if (curr_letter == prev_letter && curr_letter != 'C') {
+            continue;
+        }
+
+        size_t skip = 0;
+        switch (curr_letter) {
+            case 'B':
+                if (prev_letter != 'M') {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'B');
+                }
+                break;
+            case 'C': {
+                char next = ptn_metaphone_read(word, word_len, w_idx + 1);
+                if (ptn_metaphone_makes_soft(next)) {
+                    if (next == 'I' && ptn_metaphone_read(word, word_len, w_idx + 2) == 'A') {
+                        ptn_metaphone_append(&output, &p_idx, &capacity, 'X');
+                    } else if (prev_letter != 'S') {
+                        ptn_metaphone_append(&output, &p_idx, &capacity, 'S');
+                    }
+                } else if (next == 'H') {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'X');
+                    skip++;
+                } else {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'K');
+                }
+                break;
+            }
+            case 'D':
+                if (ptn_metaphone_read(word, word_len, w_idx + 1) == 'G' &&
+                    ptn_metaphone_makes_soft(ptn_metaphone_read(word, word_len, w_idx + 2))) {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'J');
+                    skip++;
+                } else {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'T');
+                }
+                break;
+            case 'G': {
+                char next = ptn_metaphone_read(word, word_len, w_idx + 1);
+                if (next == 'H') {
+                    char look3 = w_idx >= 3 ? ptn_metaphone_read(word, word_len, w_idx - 3) : '\0';
+                    char look4 = w_idx >= 4 ? ptn_metaphone_read(word, word_len, w_idx - 4) : '\0';
+                    if (!ptn_metaphone_no_gh_to_f(look3) && look4 != 'H') {
+                        ptn_metaphone_append(&output, &p_idx, &capacity, 'F');
+                        skip++;
+                    }
+                } else if (next == 'N') {
+                    char after = ptn_metaphone_read(word, word_len, w_idx + 2);
+                    if (!(after == '\0' || !isalpha((unsigned char)after) ||
+                          (after == 'E' && ptn_metaphone_read(word, word_len, w_idx + 3) == 'D'))) {
+                        ptn_metaphone_append(&output, &p_idx, &capacity, 'K');
+                    }
+                } else if (ptn_metaphone_makes_soft(next) && prev_letter != 'G') {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'J');
+                } else {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'K');
+                }
+                break;
+            }
+            case 'H':
+                if (ptn_metaphone_is_vowel(ptn_metaphone_read(word, word_len, w_idx + 1)) &&
+                    !ptn_metaphone_affects_h(prev_letter)) {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'H');
+                }
+                break;
+            case 'K':
+                if (prev_letter != 'C') {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'K');
+                }
+                break;
+            case 'P':
+                ptn_metaphone_append(
+                    &output,
+                    &p_idx,
+                    &capacity,
+                    ptn_metaphone_read(word, word_len, w_idx + 1) == 'H' ? 'F' : 'P'
+                );
+                break;
+            case 'Q':
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'K');
+                break;
+            case 'S': {
+                char next = ptn_metaphone_read(word, word_len, w_idx + 1);
+                char after = ptn_metaphone_read(word, word_len, w_idx + 2);
+                if (next == 'I' && (after == 'O' || after == 'A')) {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'X');
+                } else if (next == 'H') {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'X');
+                    skip++;
+                } else {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'S');
+                }
+                break;
+            }
+            case 'T': {
+                char next = ptn_metaphone_read(word, word_len, w_idx + 1);
+                char after = ptn_metaphone_read(word, word_len, w_idx + 2);
+                if (next == 'I' && (after == 'O' || after == 'A')) {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'X');
+                } else if (next == 'H') {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, '0');
+                    skip++;
+                } else if (!(next == 'C' && after == 'H')) {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'T');
+                }
+                break;
+            }
+            case 'V':
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'F');
+                break;
+            case 'W':
+                if (ptn_metaphone_is_vowel(ptn_metaphone_read(word, word_len, w_idx + 1))) {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'W');
+                }
+                break;
+            case 'X':
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'K');
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'S');
+                break;
+            case 'Y':
+                if (ptn_metaphone_is_vowel(ptn_metaphone_read(word, word_len, w_idx + 1))) {
+                    ptn_metaphone_append(&output, &p_idx, &capacity, 'Y');
+                }
+                break;
+            case 'Z':
+                ptn_metaphone_append(&output, &p_idx, &capacity, 'S');
+                break;
+            case 'F':
+            case 'J':
+            case 'L':
+            case 'M':
+            case 'N':
+            case 'R':
+                ptn_metaphone_append(&output, &p_idx, &capacity, curr_letter);
+                break;
+            default:
+                break;
+        }
+        w_idx += skip;
+    }
+
+    output[p_idx] = '\0';
+    *output_len_out = p_idx;
+    return output;
+}
+
+static PtnValue ptn_internal_metaphone(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "metaphone", 1, "string", args[0], line);
+    int64_t max_phonemes = 0;
+    if (argc >= 2) {
+        max_phonemes = ptn_internal_expect_integer_arg(runtime, "metaphone", 2, "max_phonemes", args[1], line);
+        if (max_phonemes < 0) {
             ptn_throw_exception(
                 runtime,
                 "ValueError",
-                "str_increment(): Argument #1 ($string) must be composed only of alphanumeric ASCII characters"
+                "metaphone(): Argument #2 ($max_phonemes) must be greater than or equal to 0"
             );
+            ptn_string_operand_free(string);
             return ptn_null();
         }
     }
 
-    char *output = ptn_duplicate_string_len(input.data, input.len);
-    ptn_string_operand_free(input);
-    char carry_prefix = '\0';
-    int carry = 1;
-    for (size_t offset = strlen(output); offset > 0 && carry; offset--) {
-        size_t index = offset - 1;
-        unsigned char byte = (unsigned char)output[index];
-        if (byte >= '0' && byte <= '8') {
-            output[index] = (char)(byte + 1);
-            carry = 0;
-        } else if (byte == '9') {
-            output[index] = '0';
-            carry_prefix = '1';
-        } else if (byte >= 'a' && byte <= 'y') {
-            output[index] = (char)(byte + 1);
-            carry = 0;
-        } else if (byte == 'z') {
-            output[index] = 'a';
-            carry_prefix = 'a';
-        } else if (byte >= 'A' && byte <= 'Y') {
-            output[index] = (char)(byte + 1);
-            carry = 0;
-        } else if (byte == 'Z') {
-            output[index] = 'A';
-            carry_prefix = 'A';
-        }
-    }
-    if (!carry) {
-        return ptn_owned_string_len(output, strlen(output));
-    }
+    size_t output_len = 0;
+    char *output = ptn_metaphone_string(string.data, string.len, max_phonemes, &output_len);
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(output, output_len);
+}
 
-    size_t len = strlen(output);
-    char *expanded = malloc(len + 2);
-    if (expanded == NULL) {
+static int ptn_hebrev_is_hebrew(unsigned char byte) {
+    return byte >= 224 && byte <= 250;
+}
+
+static int ptn_hebrev_is_blank(unsigned char byte) {
+    return byte == ' ' || byte == '\t';
+}
+
+static int ptn_hebrev_is_newline(unsigned char byte) {
+    return byte == '\n' || byte == '\r';
+}
+
+static char ptn_hebrev_flip_punctuation(char byte) {
+    switch (byte) {
+        case '(':
+            return ')';
+        case ')':
+            return '(';
+        case '[':
+            return ']';
+        case ']':
+            return '[';
+        case '{':
+            return '}';
+        case '}':
+            return '{';
+        case '<':
+            return '>';
+        case '>':
+            return '<';
+        case '\\':
+            return '/';
+        case '/':
+            return '\\';
+        default:
+            return byte;
+    }
+}
+
+static char *ptn_hebrev_string(const char *input, size_t len, int64_t max_chars, size_t *output_len_out) {
+    char *hebrew = malloc(len + 1);
+    char *broken = malloc(len + 1);
+    if (hebrew == NULL || broken == NULL) {
         ptn_abort_out_of_memory();
     }
-    expanded[0] = carry_prefix == '\0' ? '1' : carry_prefix;
-    memcpy(expanded + 1, output, len + 1);
-    free(output);
-    return ptn_owned_string_len(expanded, len + 1);
+
+    size_t block_start = 0;
+    size_t block_end = 0;
+    size_t block_type = ptn_hebrev_is_hebrew((unsigned char)input[0]) ? 2 : 1;
+    size_t target = len;
+    hebrew[target] = '\0';
+
+    while (1) {
+        if (block_type == 2) {
+            while (block_end < len - 1) {
+                unsigned char next = (unsigned char)input[block_end + 1];
+                if (!(ptn_hebrev_is_hebrew(next) || ptn_hebrev_is_blank(next) || ispunct(next) || next == '\n')) {
+                    break;
+                }
+                block_end++;
+            }
+            for (size_t i = block_start; i <= block_end; i++) {
+                hebrew[--target] = ptn_hebrev_flip_punctuation(input[i]);
+            }
+            block_type = 1;
+        } else {
+            while (block_end < len - 1) {
+                unsigned char next = (unsigned char)input[block_end + 1];
+                if (ptn_hebrev_is_hebrew(next) || next == '\n') {
+                    break;
+                }
+                block_end++;
+            }
+            while ((ptn_hebrev_is_blank((unsigned char)input[block_end]) ||
+                    ispunct((unsigned char)input[block_end])) &&
+                   input[block_end] != '/' &&
+                   input[block_end] != '-' &&
+                   block_end > block_start) {
+                block_end--;
+            }
+            size_t i = block_end + 1;
+            while (i > block_start) {
+                i--;
+                hebrew[--target] = input[i];
+            }
+            block_type = 2;
+        }
+        block_start = block_end + 1;
+        if (block_end >= len - 1) {
+            break;
+        }
+        block_end = block_start;
+    }
+
+    size_t begin = len - 1;
+    size_t end = len - 1;
+    size_t out = 0;
+    while (1) {
+        int64_t char_count = 0;
+        while ((max_chars == 0 || (max_chars > 0 && char_count < max_chars)) && begin > 0) {
+            char_count++;
+            begin--;
+            if (ptn_hebrev_is_newline((unsigned char)hebrew[begin])) {
+                while (begin > 0 && ptn_hebrev_is_newline((unsigned char)hebrew[begin - 1])) {
+                    begin--;
+                    char_count++;
+                }
+                break;
+            }
+        }
+        if (max_chars >= 0 && char_count == max_chars) {
+            int64_t new_char_count = char_count;
+            size_t new_begin = begin;
+            while (new_char_count > 0) {
+                if (ptn_hebrev_is_blank((unsigned char)hebrew[new_begin]) ||
+                    ptn_hebrev_is_newline((unsigned char)hebrew[new_begin])) {
+                    break;
+                }
+                new_begin++;
+                new_char_count--;
+            }
+            if (new_char_count > 0) {
+                begin = new_begin;
+            }
+        }
+
+        size_t orig_begin = begin;
+        if (ptn_hebrev_is_blank((unsigned char)hebrew[begin])) {
+            hebrew[begin] = '\n';
+        }
+        while (begin <= end && ptn_hebrev_is_newline((unsigned char)hebrew[begin])) {
+            begin++;
+        }
+        for (size_t i = begin; i <= end; i++) {
+            broken[out++] = hebrew[i];
+        }
+        for (size_t i = orig_begin; i <= end && ptn_hebrev_is_newline((unsigned char)hebrew[i]); i++) {
+            broken[out++] = hebrew[i];
+        }
+
+        begin = orig_begin;
+        if (begin == 0) {
+            broken[out] = '\0';
+            break;
+        }
+        begin--;
+        end = begin;
+    }
+
+    free(hebrew);
+    *output_len_out = out;
+    return broken;
+}
+
+static PtnValue ptn_internal_hebrev(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "hebrev", 1, "string", args[0], line);
+    if (string.len == 0) {
+        ptn_string_operand_free(string);
+        return ptn_string("");
+    }
+    int64_t max_chars = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "hebrev", 2, "max_chars", args[1], line)
+        : 0;
+    size_t output_len = 0;
+    char *output = ptn_hebrev_string(string.data, string.len, max_chars, &output_len);
+    ptn_string_operand_free(string);
+    return ptn_owned_string_len(output, output_len);
 }
 
 static PtnValue ptn_internal_set_time_limit(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -25838,6 +26506,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gettype", 1, 1, ptn_internal_gettype },
         { "gmdate", 1, 2, ptn_internal_gmdate },
         { "gmmktime", 0, 6, ptn_internal_gmmktime },
+        { "hebrev", 1, 2, ptn_internal_hebrev },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
         { "highlight_file", 1, 2, ptn_internal_highlight_file },
@@ -25983,10 +26652,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sscanf", 2, PTN_VARIADIC_ARGS, ptn_internal_sscanf },
         { "stat", 1, 1, ptn_internal_stat },
         { "str_contains", 2, 2, ptn_internal_str_contains },
+        { "str_decrement", 1, 1, ptn_internal_str_decrement },
         { "str_getcsv", 1, 4, ptn_internal_str_getcsv },
         { "str_ireplace", 3, 4, ptn_internal_str_ireplace },
         { "str_increment", 1, 1, ptn_internal_str_increment },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
+        { "str_increment", 1, 1, ptn_internal_str_increment },
         { "str_pad", 2, 4, ptn_internal_str_pad },
         { "str_repeat", 2, 2, ptn_internal_str_repeat },
         { "str_replace", 3, 4, ptn_internal_str_replace },
