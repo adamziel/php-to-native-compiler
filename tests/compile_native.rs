@@ -5,10 +5,11 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
-    ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, Expr, IncDecOp,
-    IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElementTarget,
-    MagicConstantKind, PropertyTypeKind, PropertyVisibility, ReferenceTarget, Statement,
-    StringInterpolationIndex, StringPart, TypeHint, UnaryOp, UnsetTarget,
+    ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, CompileWarningKind,
+    Expr, IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget,
+    ListAssignmentElementTarget, MagicConstantKind, PropertyTypeKind, PropertyVisibility,
+    ReferenceTarget, Statement, StringInterpolationIndex, StringPart, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use ptn::lexer::{self, TokenKind};
 use ptn::{compile_file, parser, CompileOptions, DiagnosticKind};
@@ -3886,6 +3887,24 @@ var_dump(in_array($needle, $haystack, true));";
 }
 
 #[test]
+fn parser_accepts_semi_reserved_class_constant_names() {
+    let program =
+        parser::parse("<?php class Sample { const DEFAULT = 'ok'; } echo Sample::DEFAULT;")
+            .unwrap();
+
+    assert_eq!(program.classes[0].constants[0].name, "default");
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::ClassConstantFetch { class_name, name, .. }
+                    if class_name == "Sample" && name == "default"
+            )
+    ));
+}
+
+#[test]
 fn parser_rejects_unsupported_class_constant_boundaries() {
     let cases = [
         (
@@ -6435,6 +6454,55 @@ fn parser_accepts_braced_switch_cases_default_and_break() {
         cases[1].body.last(),
         Some(Statement::Break { level: 2, .. })
     ));
+}
+
+#[test]
+fn parser_accepts_alternative_control_flow_bodies() {
+    let program = parser::parse(
+        "<?php
+if ($flag):
+    echo \"then\";
+elseif ($other):
+    echo \"elseif\";
+else:
+    echo \"else\";
+endif;
+while ($i < 2):
+    $i++;
+endwhile;
+for ($j = 0; $j < 2; $j++):
+    echo $j;
+endfor;
+foreach ([1, 2] as $value):
+    echo $value;
+endforeach;
+switch ($value):
+    case 1;
+        echo \"one\";
+        break;
+    default;
+        echo \"default\";
+endswitch;
+",
+    )
+    .unwrap();
+
+    assert!(matches!(&program.statements[0], Statement::If { .. }));
+    assert!(matches!(&program.statements[1], Statement::While { .. }));
+    assert!(matches!(&program.statements[2], Statement::For { .. }));
+    assert!(matches!(&program.statements[3], Statement::Foreach { .. }));
+    let Statement::Switch { cases, .. } = &program.statements[4] else {
+        panic!("expected switch");
+    };
+    assert_eq!(cases.len(), 2);
+    assert!(matches!(cases[0].condition, Some(Expr::Int(1, _))));
+    assert!(cases[1].condition.is_none());
+    assert_eq!(program.compile_warnings.len(), 2);
+    assert!(program.compile_warnings.iter().all(|warning| {
+        warning.kind == CompileWarningKind::Deprecation
+            && warning.message
+                == "Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead"
+    }));
 }
 
 #[test]
@@ -32832,6 +32900,55 @@ fn compile_braced_switch_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "good");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_alternative_control_flow_to_native_binary() {
+    let root = temp_dir("ptn-native-alternative-control-flow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("alternative-control-flow.php");
+    let output = root.join("alternative-control-flow-bin");
+    fs::write(
+        &input,
+        "<?php
+$out = '';
+if (false):
+    $out .= 'bad';
+elseif (true):
+    $out .= 'if';
+else:
+    $out .= 'bad';
+endif;
+for ($i = 0; $i < 3; $i++):
+    $out .= $i;
+endfor;
+foreach ([1, 2] as $value):
+    $out .= $value;
+endforeach;
+switch ($value):
+    case 1:
+        $out .= 'bad';
+        break;
+    case 2:
+        $out .= 'switch';
+        break;
+    default:
+        $out .= 'bad';
+endswitch;
+echo $out, \"\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "if01212switch\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

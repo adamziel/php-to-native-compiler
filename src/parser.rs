@@ -2111,7 +2111,7 @@ impl Parser<'_> {
             ));
         }
         let token = self.advance().clone();
-        let TokenKind::Identifier(name) = token.kind else {
+        let Some(name) = name_segment_from_token(&token.kind) else {
             return Err(Diagnostic::new(
                 "expected class constant name",
                 Some(token.span),
@@ -3830,6 +3830,10 @@ impl Parser<'_> {
         self.expect_left_paren()?;
         let condition = self.parse_expr()?;
         self.expect_right_paren()?;
+        if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            return self.parse_alternative_if(span, condition);
+        }
         let then_body = self.parse_statement_body()?;
         self.skip_php_tags();
         let else_body = match self.peek().kind {
@@ -3848,12 +3852,50 @@ impl Parser<'_> {
         })
     }
 
+    fn parse_alternative_if(&mut self, span: SourceSpan, condition: Expr) -> Result<Statement> {
+        let then_body = self.parse_alternative_statements_until(|parser| {
+            matches!(parser.peek().kind, TokenKind::Elseif | TokenKind::Else)
+                || parser.peek_is_identifier("endif")
+        })?;
+        let else_body = match self.peek().kind {
+            TokenKind::Elseif => vec![self.parse_if()?],
+            TokenKind::Else => {
+                self.advance();
+                self.expect_colon()?;
+                let body = self.parse_alternative_statements_until(|parser| {
+                    parser.peek_is_identifier("endif")
+                })?;
+                self.expect_alternative_end_keyword("endif")?;
+                body
+            }
+            _ => {
+                self.expect_alternative_end_keyword("endif")?;
+                Vec::new()
+            }
+        };
+        Ok(Statement::If {
+            condition,
+            then_body,
+            else_body,
+            span,
+        })
+    }
+
     fn parse_while(&mut self) -> Result<Statement> {
         let span = self.expect_while()?;
         self.expect_left_paren()?;
         let condition = self.parse_expr()?;
         self.expect_right_paren()?;
-        let body = self.parse_statement_body()?;
+        let body = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            let body = self.parse_alternative_statements_until(|parser| {
+                parser.peek_is_identifier("endwhile")
+            })?;
+            self.expect_alternative_end_keyword("endwhile")?;
+            body
+        } else {
+            self.parse_statement_body()?
+        };
         Ok(Statement::While {
             condition,
             body,
@@ -3901,7 +3943,15 @@ impl Parser<'_> {
             self.parse_for_clause_list()?
         };
         self.expect_right_paren()?;
-        let body = self.parse_statement_body()?;
+        let body = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            let body = self
+                .parse_alternative_statements_until(|parser| parser.peek_is_identifier("endfor"))?;
+            self.expect_alternative_end_keyword("endfor")?;
+            body
+        } else {
+            self.parse_statement_body()?
+        };
 
         Ok(Statement::For {
             initializers,
@@ -3938,7 +3988,16 @@ impl Parser<'_> {
             (None, first.target, first.by_ref)
         };
         self.expect_right_paren()?;
-        let body = self.parse_statement_body()?;
+        let body = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            let body = self.parse_alternative_statements_until(|parser| {
+                parser.peek_is_identifier("endforeach")
+            })?;
+            self.expect_alternative_end_keyword("endforeach")?;
+            body
+        } else {
+            self.parse_statement_body()?
+        };
         Ok(Statement::Foreach {
             iterable,
             key,
@@ -4109,13 +4168,19 @@ impl Parser<'_> {
         self.expect_left_paren()?;
         let expression = self.parse_expr()?;
         self.expect_right_paren()?;
-        self.expect_left_brace()?;
+        let alternative = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            true
+        } else {
+            self.expect_left_brace()?;
+            false
+        };
 
         let mut cases = Vec::new();
         let mut seen_default = false;
-        while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+        while !self.peek_ends_switch(alternative) {
             self.skip_php_tags();
-            if matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            if self.peek_ends_switch(alternative) {
                 break;
             }
             let case_span = self.peek().span;
@@ -4123,7 +4188,7 @@ impl Parser<'_> {
                 TokenKind::Case => {
                     self.advance();
                     let condition = self.parse_expr()?;
-                    self.expect_colon()?;
+                    self.expect_switch_case_separator()?;
                     Some(condition)
                 }
                 TokenKind::Default => {
@@ -4135,7 +4200,7 @@ impl Parser<'_> {
                         ));
                     }
                     seen_default = true;
-                    self.expect_colon()?;
+                    self.expect_switch_case_separator()?;
                     None
                 }
                 _ => {
@@ -4147,15 +4212,9 @@ impl Parser<'_> {
             };
 
             let mut body = Vec::new();
-            while !matches!(
-                self.peek().kind,
-                TokenKind::Case | TokenKind::Default | TokenKind::RightBrace | TokenKind::Eof
-            ) {
+            while !self.peek_ends_switch_case(alternative) {
                 self.skip_php_tags();
-                if matches!(
-                    self.peek().kind,
-                    TokenKind::Case | TokenKind::Default | TokenKind::RightBrace | TokenKind::Eof
-                ) {
+                if self.peek_ends_switch_case(alternative) {
                     break;
                 }
                 body.push(self.parse_nested_statement()?);
@@ -4167,7 +4226,11 @@ impl Parser<'_> {
             });
         }
 
-        self.expect_right_brace()?;
+        if alternative {
+            self.expect_alternative_end_keyword("endswitch")?;
+        } else {
+            self.expect_right_brace()?;
+        }
         Ok(Statement::Switch {
             expression,
             cases,
@@ -4500,6 +4563,21 @@ impl Parser<'_> {
         Ok(statements)
     }
 
+    fn parse_alternative_statements_until(
+        &mut self,
+        mut is_end: impl FnMut(&Self) -> bool,
+    ) -> Result<Vec<Statement>> {
+        let mut statements = Vec::new();
+        loop {
+            self.skip_php_tags();
+            if is_end(self) || matches!(self.peek().kind, TokenKind::Eof) {
+                break;
+            }
+            statements.push(self.parse_nested_statement()?);
+        }
+        Ok(statements)
+    }
+
     fn parse_statement_body(&mut self) -> Result<Vec<Statement>> {
         self.skip_php_tags();
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
@@ -4515,6 +4593,53 @@ impl Parser<'_> {
         let statement = self.parse_statement();
         self.block_depth -= 1;
         statement
+    }
+
+    fn expect_alternative_end_keyword(&mut self, expected: &str) -> Result<SourceSpan> {
+        let token = self.advance().clone();
+        if matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+        {
+            self.expect_statement_terminator()?;
+            Ok(token.span)
+        } else {
+            Err(Diagnostic::new(
+                format!("expected {expected}"),
+                Some(token.span),
+            ))
+        }
+    }
+
+    fn expect_switch_case_separator(&mut self) -> Result<SourceSpan> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Colon => Ok(token.span),
+            TokenKind::Semicolon => {
+                self.compile_warnings.push(CompileWarning {
+                    message: "Case statements followed by a semicolon (;) are deprecated, use a colon (:) instead".to_string(),
+                    span: token.span,
+                    kind: CompileWarningKind::Deprecation,
+                });
+                Ok(token.span)
+            }
+            _ => Err(Diagnostic::new(
+                "expected switch case separator",
+                Some(token.span),
+            )),
+        }
+    }
+
+    fn peek_ends_switch(&self, alternative: bool) -> bool {
+        matches!(self.peek().kind, TokenKind::Eof)
+            || if alternative {
+                self.peek_is_identifier("endswitch")
+            } else {
+                matches!(self.peek().kind, TokenKind::RightBrace)
+            }
+    }
+
+    fn peek_ends_switch_case(&self, alternative: bool) -> bool {
+        matches!(self.peek().kind, TokenKind::Case | TokenKind::Default)
+            || self.peek_ends_switch(alternative)
     }
 
     fn skip_php_tags(&mut self) {
@@ -4599,7 +4724,7 @@ impl Parser<'_> {
                     } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
                         self.advance();
                         let member = self.advance().clone();
-                        let TokenKind::Identifier(member_name) = member.kind else {
+                        let Some(member_name) = name_segment_from_token(&member.kind) else {
                             return Err(Diagnostic::new(
                                 "expected class constant name",
                                 Some(member.span),
@@ -4660,7 +4785,7 @@ impl Parser<'_> {
                     } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
                         self.advance();
                         let member = self.advance().clone();
-                        let TokenKind::Identifier(member_name) = member.kind else {
+                        let Some(member_name) = name_segment_from_token(&member.kind) else {
                             return Err(Diagnostic::new(
                                 "expected class constant name",
                                 Some(member.span),
@@ -5430,7 +5555,9 @@ impl Parser<'_> {
                     let scope_span = self.advance().span;
                     let member = self.advance().clone();
                     let (literal_name, dynamic_name, member_span) = match member.kind {
-                        TokenKind::Identifier(member_name) => {
+                        _ if name_segment_from_token(&member.kind).is_some() => {
+                            let member_name = name_segment_from_token(&member.kind)
+                                .expect("name segment checked above");
                             if member_name.eq_ignore_ascii_case("class")
                                 && !matches!(self.peek().kind, TokenKind::LeftParen)
                             {
@@ -5993,7 +6120,7 @@ impl Parser<'_> {
             }
             return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
         }
-        let TokenKind::Identifier(member_name) = member.kind else {
+        let Some(member_name) = name_segment_from_token(&member.kind) else {
             return Err(Diagnostic::new(
                 CLASS_CONSTANT_FETCH_UNSUPPORTED,
                 Some(scope_span),
