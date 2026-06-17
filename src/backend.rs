@@ -19262,21 +19262,11 @@ impl ValueEmitter {
         out.push_str(&parent_temp);
         out.push_str(".type == PTN_OBJECT) {\n");
         out.push_str("        ");
+        out.push_str("ptn_adopt_internal_parent_object_state(");
         out.push_str(result_temp);
-        out.push_str(".as.object->native_data = ");
+        out.push_str(", ");
         out.push_str(&parent_temp);
-        out.push_str(".as.object->native_data;\n");
-        out.push_str("        ");
-        out.push_str(result_temp);
-        out.push_str(".as.object->native_data_free = ");
-        out.push_str(&parent_temp);
-        out.push_str(".as.object->native_data_free;\n");
-        out.push_str("        ");
-        out.push_str(&parent_temp);
-        out.push_str(".as.object->native_data = NULL;\n");
-        out.push_str("        ");
-        out.push_str(&parent_temp);
-        out.push_str(".as.object->native_data_free = NULL;\n");
+        out.push_str(");\n");
         out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &parent_temp);
     }

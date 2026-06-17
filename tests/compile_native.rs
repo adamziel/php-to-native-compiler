@@ -7849,6 +7849,152 @@ var_dump(count($decoded));
 }
 
 #[test]
+fn compile_array_object_object_storage_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-storage-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-storage-metadata.php");
+    let output = root.join("array-object-storage-metadata-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ERROR);
+
+$flags = ArrayObject::STD_PROP_LIST | ArrayObject::ARRAY_AS_PROPS;
+$base = new ArrayObject([1, 2, 3], $flags);
+var_dump($base->getFlags());
+
+$wrapped = new ArrayObject($base);
+var_dump($wrapped->getFlags());
+var_dump($wrapped->getIterator()->getFlags());
+
+$iterator = new ArrayIterator($base);
+var_dump($iterator->getFlags());
+
+$explicit = new ArrayObject($base, 0);
+var_dump($explicit->getFlags());
+var_dump((array) $explicit);
+
+$stdBase = new ArrayObject([1, 2, 3], ArrayObject::STD_PROP_LIST);
+$stdBase->prop = "base";
+$stdProps = new ArrayObject($stdBase);
+$stdProps->prop = "std";
+var_dump((array) $stdProps);
+
+$object = new stdClass;
+$objectBacked = new ArrayObject($object);
+$objectBacked[0] = 1;
+$objectBacked[0] += 1;
+var_dump(isset($objectBacked[0]));
+var_dump((array) $objectBacked);
+unset($objectBacked[0]);
+var_dump((array) $object);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(3)\n",
+            "int(3)\n",
+            "int(3)\n",
+            "int(3)\n",
+            "int(0)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"prop\"]=>\n",
+            "  string(3) \"std\"\n",
+            "}\n",
+            "bool(true)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_object_invalid_offset_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-invalid-offset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-invalid-offset.php");
+    let output = root.join("array-object-invalid-offset-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$arrayObject = new ArrayObject([1, 2, 3]);
+try {
+    var_dump($arrayObject[[]]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $arrayObject[[]] = new stdClass;
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $ref =& $arrayObject[[]];
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(isset($arrayObject[[]]));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    unset($arrayObject[[]]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot access offset of type array on ArrayObject\n",
+            "Cannot access offset of type array on ArrayObject\n",
+            "Cannot access offset of type array on ArrayObject\n",
+            "Cannot access offset of type array in isset or empty\n",
+            "Cannot unset offset of type array on ArrayObject\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_unserialize_payload_error_to_native_binary() {
     let root = temp_dir("ptn-native-spl-object-storage-unserialize");
     fs::create_dir_all(&root).unwrap();

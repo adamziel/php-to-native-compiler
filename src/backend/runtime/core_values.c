@@ -1429,6 +1429,7 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
     PtnRuntime *runtime,
     size_t argc,

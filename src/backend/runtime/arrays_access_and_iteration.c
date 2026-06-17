@@ -1035,11 +1035,24 @@ static PTN_UNUSED PtnValue ptn_cast_object(PtnRuntime *runtime, PtnValue value) 
     return object_value;
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
+#endif
+
 static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
         return ptn_value_clone(value);
     }
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (value.type == PTN_OBJECT) {
+        PtnValue specialized_array = ptn_null();
+        if (ptn_internal_cast_array_object(value, &specialized_array)) {
+            return specialized_array;
+        }
+    }
+#endif
 
     PtnValue array_value = ptn_array_from_literal_entries(0, NULL);
     PtnArray *array = array_value.as.array;
@@ -1889,10 +1902,63 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
     ptn_throw_exception(runtime, "Error", message);
 }
 
+static PTN_UNUSED void ptn_emit_array_object_dynamic_property_deprecation(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    size_t line
+) {
+    if (runtime == NULL ||
+        object == NULL ||
+        !ptn_ascii_case_equal(object->class_name, "ArrayObject") ||
+        !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
+        return;
+    }
+    runtime->diagnostics.emitted_deprecation = 1;
+    ptn_diagnostic_printf(
+        &runtime->diagnostics,
+        "\nDeprecated: Creation of dynamic property %s::$%s is deprecated in %s on line %zu\n",
+        object->class_name,
+        property,
+        runtime->source_path != NULL ? runtime->source_path : "ptn",
+        line
+    );
+}
+
 #define PTN_PROPERTY_ACCESS_READ 0
 #define PTN_PROPERTY_ACCESS_WRITE 1
 #define PTN_PROPERTY_ACCESS_INDIRECT_WRITE 2
 #define PTN_PROPERTY_ACCESS_UNSET 3
+
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_array_object_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+);
+static PTN_UNUSED int ptn_internal_array_object_property_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line,
+    PtnValue *value_out
+);
+static PTN_UNUSED int ptn_internal_array_object_property_isset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    int *isset_out
+);
+static PTN_UNUSED int ptn_internal_array_object_property_unset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+);
+#endif
 
 static PTN_UNUSED int ptn_object_static_property_visibility(
     PtnRuntime *runtime,
@@ -2325,6 +2391,12 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue array_object_value = ptn_null();
+    if (ptn_internal_array_object_property_read(runtime, receiver, property, line, &array_object_value)) {
+        return array_object_value;
+    }
+#endif
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 0);
     if (blocked_metadata != NULL) {
@@ -2800,6 +2872,12 @@ static PTN_UNUSED int ptn_object_property_is_set(
     if (receiver.type != PTN_OBJECT) {
         return 0;
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    int array_object_isset = 0;
+    if (ptn_internal_array_object_property_isset(runtime, receiver, property, &array_object_isset)) {
+        return array_object_isset;
+    }
+#endif
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -2853,6 +2931,21 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         }
         return ptn_null();
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (!indirect_write) {
+        PtnValue array_object_value = ptn_null();
+        if (ptn_internal_array_object_property_write(
+            runtime,
+            receiver,
+            property,
+            value,
+            line,
+            &array_object_value
+        )) {
+            return array_object_value;
+        }
+    }
+#endif
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
     if (
@@ -2902,6 +2995,9 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
             line
         );
         return ptn_null();
+    }
+    if (metadata == NULL && entry == NULL) {
+        ptn_emit_array_object_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
     }
     PtnValue stored = ptn_null();
     if (metadata != NULL &&
@@ -3216,6 +3312,11 @@ static PTN_UNUSED void ptn_object_unset_property(
     if (receiver.type != PTN_OBJECT) {
         return;
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_internal_array_object_property_unset(runtime, receiver, property, line)) {
+        return;
+    }
+#endif
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
     if (blocked_metadata != NULL && blocked_metadata->is_unset) {
@@ -4761,6 +4862,18 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         ptn_internal_class_exists_name(object->class_name) &&
         ptn_internal_class_method_exists(object->class_name, method_name)
     ) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayObject") &&
+        ptn_internal_class_method_exists("ArrayObject", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
+        ptn_internal_class_method_exists("ArrayIterator", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator") &&
+        ptn_internal_class_method_exists("RecursiveArrayIterator", method_name)) {
         return 1;
     }
 #endif
