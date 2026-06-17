@@ -2378,6 +2378,14 @@ fn emit_static_property_initializers_with_constants(
             out.push_str(c_property_visibility(property.set_visibility));
             out.push_str(", ");
             out.push_str(&value_temp);
+            out.push_str(", ");
+            out.push_str(
+                if property.value.is_some() || property.type_hint.is_none() {
+                    "1"
+                } else {
+                    "0"
+                },
+            );
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &value_temp);
         }
@@ -3330,6 +3338,67 @@ fn parameter_default_value_is_null(parameter: &FunctionParameter) -> bool {
     matches!(parameter.default_value.as_ref(), Some(ValueExpr::Null))
 }
 
+fn function_static_local_bindings(function: &FunctionDecl) -> Vec<(&str, Option<&ValueExpr>)> {
+    function
+        .body
+        .iter()
+        .filter_map(|instruction| {
+            if let Instruction::BindStatic { name, value, .. } = instruction {
+                Some((name.as_str(), value.as_ref()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn function_static_variables_provider_name(function_index: usize) -> String {
+    format!("ptn_function_{function_index}_static_variables")
+}
+
+fn emit_function_static_variable_providers(out: &mut String, functions: &[FunctionDecl]) {
+    for (function_index, function) in functions.iter().enumerate() {
+        let bindings = function_static_local_bindings(function);
+        if bindings.is_empty() {
+            continue;
+        }
+        out.push_str("\nstatic PtnValue ");
+        out.push_str(&function_static_variables_provider_name(function_index));
+        out.push_str("(PtnRuntime *runtime) {\n");
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+        for (name, value) in bindings {
+            out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+            out.push_str(&c_string(name));
+            out.push_str("\"), ");
+            out.push_str(&c_property_default_value(value));
+            out.push_str(");\n");
+        }
+        out.push_str("    return result;\n");
+        out.push_str("}\n");
+    }
+}
+
+fn emit_function_metadata_source_suffix(
+    out: &mut String,
+    function: &FunctionDecl,
+    function_index: usize,
+) {
+    out.push_str("), \"");
+    out.push_str(&c_string(&function.source_file));
+    out.push_str("\", ");
+    out.push_str(&function.line.to_string());
+    out.push_str(", ");
+    out.push_str(&function.end_line.to_string());
+    out.push_str(", NULL, ");
+    if function_static_local_bindings(function).is_empty() {
+        out.push_str("NULL");
+    } else {
+        out.push_str(&function_static_variables_provider_name(function_index));
+    }
+    out.push(')');
+}
+
 fn emit_user_function_dispatch(
     out: &mut String,
     functions: &[FunctionDecl],
@@ -3387,6 +3456,8 @@ fn emit_user_function_dispatch(
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
+    emit_function_static_variable_providers(out, functions);
+
     out.push_str("\nstatic PtnFunctionMetadata ptn_user_function_metadata(const char *name) {\n");
     if functions
         .iter()
@@ -3416,7 +3487,9 @@ fn emit_user_function_dispatch(
             &format!("ptn_function_{function_index}_parameters"),
             &function.parameters,
         );
-        out.push_str("        return ptn_function_metadata_found(\"");
+        out.push_str(
+            "        return ptn_function_metadata_with_source(ptn_function_metadata_found(\"",
+        );
         out.push_str(&c_string(&function.name));
         out.push_str("\", 0, ");
         out.push_str(&function.parameters.len().to_string());
@@ -3429,7 +3502,8 @@ fn emit_user_function_dispatch(
         out.push_str(", ");
         out.push_str(if function.return_by_ref { "1" } else { "0" });
         emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
-        out.push_str(");\n");
+        emit_function_metadata_source_suffix(out, function, function_index);
+        out.push_str(";\n");
         out.push_str("    }\n");
     }
     for class in classes {
@@ -3456,7 +3530,9 @@ fn emit_user_function_dispatch(
                 &format!("ptn_function_{}_parameters", method.function_index),
                 &function.parameters,
             );
-            out.push_str("        return ptn_function_metadata_found(\"");
+            out.push_str(
+                "        return ptn_function_metadata_with_source(ptn_function_metadata_found(\"",
+            );
             out.push_str(&c_string(&class.name));
             out.push_str("::");
             out.push_str(&c_string(&method.name));
@@ -3471,7 +3547,8 @@ fn emit_user_function_dispatch(
             out.push_str(", ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
             emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
-            out.push_str(");\n");
+            emit_function_metadata_source_suffix(out, function, method.function_index);
+            out.push_str(";\n");
             out.push_str("    }\n");
         }
     }
@@ -19805,7 +19882,9 @@ impl ValueEmitter {
         out.push_str(&function_index.to_string());
         out.push_str(", \"");
         out.push_str(&c_string(&function.display_name));
-        out.push_str("\", ptn_function_metadata_found(\"{closure}\", 0, ");
+        out.push_str(
+            "\", ptn_function_metadata_with_source(ptn_function_metadata_found(\"{closure}\", 0, ",
+        );
         out.push_str(&function.parameters.len().to_string());
         out.push_str(", ");
         out.push_str(&required_parameter_count.to_string());
@@ -19816,7 +19895,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(if function.return_by_ref { "1" } else { "0" });
         emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
-        out.push_str("), ");
+        emit_function_metadata_source_suffix(out, function, function_index);
+        out.push_str(", ");
         out.push_str(if function.is_static { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(if uses_this { "1" } else { "0" });

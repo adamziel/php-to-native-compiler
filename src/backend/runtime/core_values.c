@@ -390,6 +390,8 @@ typedef struct {
     } as;
 } PtnValue;
 
+typedef PtnValue (*PtnFunctionStaticVariablesProvider)(PtnRuntime *runtime);
+
 typedef struct {
     char *name;
     PtnValue value;
@@ -433,6 +435,11 @@ typedef struct {
     const char *return_type_display_name;
     int return_type_allows_null;
     int return_type_is_builtin;
+    const char *source_file;
+    size_t start_line;
+    size_t end_line;
+    const char *doc_comment;
+    PtnFunctionStaticVariablesProvider static_variables_provider;
 } PtnFunctionMetadata;
 
 struct PtnClosure {
@@ -866,6 +873,8 @@ struct PtnRuntime {
     const char *class_constant_deprecation_suppress_constant;
     PtnSymbolTable owned_static_properties;
     PtnSymbolTable *static_properties;
+    PtnSymbolTable owned_static_property_initialized;
+    PtnSymbolTable *static_property_initialized;
     PtnSymbolTable owned_static_property_read_visibility;
     PtnSymbolTable *static_property_read_visibility;
     PtnSymbolTable owned_static_property_set_visibility;
@@ -1090,6 +1099,11 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.return_type_display_name = NULL;
     metadata.return_type_allows_null = 0;
     metadata.return_type_is_builtin = 0;
+    metadata.source_file = NULL;
+    metadata.start_line = 0;
+    metadata.end_line = 0;
+    metadata.doc_comment = NULL;
+    metadata.static_variables_provider = NULL;
     return metadata;
 }
 
@@ -1119,6 +1133,27 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.return_type_display_name = return_type_display_name;
     metadata.return_type_allows_null = return_type_allows_null;
     metadata.return_type_is_builtin = return_type_is_builtin;
+    metadata.source_file = NULL;
+    metadata.start_line = 0;
+    metadata.end_line = 0;
+    metadata.doc_comment = NULL;
+    metadata.static_variables_provider = NULL;
+    return metadata;
+}
+
+static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_with_source(
+    PtnFunctionMetadata metadata,
+    const char *source_file,
+    size_t start_line,
+    size_t end_line,
+    const char *doc_comment,
+    PtnFunctionStaticVariablesProvider static_variables_provider
+) {
+    metadata.source_file = source_file;
+    metadata.start_line = start_line;
+    metadata.end_line = end_line;
+    metadata.doc_comment = doc_comment;
+    metadata.static_variables_provider = static_variables_provider;
     return metadata;
 }
 

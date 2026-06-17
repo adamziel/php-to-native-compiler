@@ -39493,6 +39493,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getConstant")
         || ptn_ascii_case_equal(method_name, "getConstants")
         || ptn_ascii_case_equal(method_name, "getDefaultProperties")
+        || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getExtension")
         || ptn_ascii_case_equal(method_name, "getExtensionName")
         || ptn_ascii_case_equal(method_name, "getFileName")
@@ -39541,11 +39542,17 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__toString")
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getClosureScopeClass")
+        || ptn_ascii_case_equal(method_name, "getClosureThis")
         || ptn_ascii_case_equal(method_name, "getClosure")
+        || ptn_ascii_case_equal(method_name, "getDocComment")
+        || ptn_ascii_case_equal(method_name, "getEndLine")
+        || ptn_ascii_case_equal(method_name, "getFileName")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getReturnType")
+        || ptn_ascii_case_equal(method_name, "getStartLine")
+        || ptn_ascii_case_equal(method_name, "getStaticVariables")
         || ptn_ascii_case_equal(method_name, "invoke")
         || ptn_ascii_case_equal(method_name, "invokeArgs")
         || ptn_ascii_case_equal(method_name, "getNumberOfParameters")
@@ -39581,7 +39588,9 @@ static int ptn_reflection_class_constant_method_exists(const char *method_name) 
 
 static int ptn_reflection_method_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "getAttributes")
+        || ptn_ascii_case_equal(method_name, "getClosure")
         || ptn_ascii_case_equal(method_name, "getDeclaringClass")
+        || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getEndLine")
         || ptn_ascii_case_equal(method_name, "getFileName")
         || ptn_ascii_case_equal(method_name, "getModifiers")
@@ -39589,6 +39598,7 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getParameters")
         || ptn_ascii_case_equal(method_name, "getReturnType")
         || ptn_ascii_case_equal(method_name, "getStartLine")
+        || ptn_ascii_case_equal(method_name, "getStaticVariables")
         || ptn_ascii_case_equal(method_name, "invoke")
         || ptn_ascii_case_equal(method_name, "invokeArgs")
         || ptn_ascii_case_equal(method_name, "returnsReference")
@@ -39638,6 +39648,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isDefault")
         || ptn_ascii_case_equal(method_name, "isDynamic")
         || ptn_ascii_case_equal(method_name, "isFinal")
+        || ptn_ascii_case_equal(method_name, "isInitialized")
         || ptn_ascii_case_equal(method_name, "isPrivate")
         || ptn_ascii_case_equal(method_name, "isProtected")
         || ptn_ascii_case_equal(method_name, "isPublic")
@@ -41788,6 +41799,31 @@ static void ptn_reflection_method_check_at_least_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static void ptn_reflection_method_check_at_most_arguments(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    size_t maximum
+) {
+    if (argc <= maximum) {
+        return;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionMethod::%s() expects at most %zu argument%s, %zu given",
+        method_name,
+        maximum,
+        maximum == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
 static void ptn_reflection_method_throw_abstract(
     PtnRuntime *runtime,
     PtnReflectionMethodData *data
@@ -41881,6 +41917,23 @@ static int ptn_reflection_method_check_object_argument(
     }
     ptn_throw_exception(runtime, "TypeError", message);
     return 0;
+}
+
+static int ptn_reflection_method_target_is_compatible(
+    PtnValue target,
+    const char *declaring_class
+) {
+    target = ptn_value_deref(target);
+    const char *target_class = NULL;
+    if (target.type == PTN_OBJECT) {
+        target_class = target.as.object->class_name;
+    } else if (target.type == PTN_EXCEPTION) {
+        target_class = target.as.exception->class_name;
+    } else {
+        return 0;
+    }
+    return ptn_ascii_case_equal(target_class, declaring_class) ||
+        ptn_declared_class_is_same_or_descendant(target_class, declaring_class);
 }
 
 static int ptn_reflection_method_collect_invoke_args(
@@ -42011,6 +42064,12 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
     return metadata;
 }
 
+static PtnValue ptn_reflection_function_doc_comment(PtnFunctionMetadata metadata);
+static PtnValue ptn_reflection_function_static_variables(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata
+);
+
 static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(
     PtnRuntime *runtime,
     const char *class_name,
@@ -42132,12 +42191,63 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         }
         return ptn_reflection_empty_attributes(runtime, "ReflectionMethod", "getAttributes", argc, args, line);
     }
+    if (ptn_ascii_case_equal(name, "getClosure")) {
+        ptn_reflection_method_check_at_most_arguments(runtime, "getClosure", argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object_arg = ptn_null();
+        if (argc >= 1 && !ptn_reflection_method_check_object_argument(runtime, "getClosure", args[0], &object_arg)) {
+            return ptn_null();
+        }
+        if (!is_static) {
+            if (ptn_value_deref(object_arg).type == PTN_NULL) {
+                ptn_reflection_method_throw_non_static_without_object(runtime, data);
+                return ptn_null();
+            }
+            if (!ptn_reflection_method_target_is_compatible(object_arg, data->class_name)) {
+                ptn_reflection_method_throw_receiver_not_instance(runtime);
+                return ptn_null();
+            }
+        }
+
+        PtnValue callable = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(
+            callable.as.array,
+            ptn_array_int_key(0),
+            is_static ? ptn_string(data->class_name) : ptn_value_clone_deref(object_arg)
+        );
+        ptn_array_set_entry(
+            callable.as.array,
+            ptn_array_int_key(1),
+            ptn_owned_string(ptn_duplicate_string(data->name))
+        );
+        PtnValue closure = ptn_closure_wrap_callable(
+            runtime,
+            callable,
+            ptn_reflection_method_function_metadata(data)
+        );
+        ptn_closure_set_scope(closure, data->class_name, data->class_name);
+        if (!is_static) {
+            ptn_closure_set_capture(closure, "this", object_arg);
+        }
+        return closure;
+    }
     ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getDocComment")) {
+        return ptn_reflection_function_doc_comment(ptn_reflection_method_function_metadata(data));
+    }
+    if (ptn_ascii_case_equal(name, "getStaticVariables")) {
+        return ptn_reflection_function_static_variables(
+            runtime,
+            ptn_reflection_method_function_metadata(data)
+        );
     }
     if (
         ptn_ascii_case_equal(name, "getFileName") ||
@@ -43414,6 +43524,73 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(has_default);
     }
+    if (ptn_ascii_case_equal(name, "isInitialized")) {
+        ptn_reflection_property_check_at_most_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (is_static) {
+            (void)has_default;
+            return ptn_bool(ptn_runtime_static_property_initialized(runtime, data->class_name, data->name));
+        }
+        if (argc != 1) {
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "ReflectionProperty::isInitialized(): Argument #1 ($object) must be provided for instance properties"
+            );
+            return ptn_null();
+        }
+        PtnValue target = ptn_value_deref(args[0]);
+        if (target.type != PTN_OBJECT && target.type != PTN_EXCEPTION) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionProperty::isInitialized(): Argument #1 ($object) must be of type object, %s given",
+                ptn_offset_container_type_name(target)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        const char *storage_declaring_class = data->is_dynamic
+            ? NULL
+            : (declaring_class == NULL ? data->class_name : declaring_class);
+        const char *compatibility_class = data->is_dynamic
+            ? data->class_name
+            : storage_declaring_class;
+        if (!ptn_reflection_property_target_is_compatible(target, compatibility_class)) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Given object is not an instance of the class this property was declared in"
+            );
+            return ptn_null();
+        }
+        if (target.type == PTN_EXCEPTION) {
+            return ptn_bool(
+                ptn_builtin_exception_reflection_property_metadata(
+                    target.as.exception->class_name,
+                    data->name,
+                    &declaring_class,
+                    &is_static,
+                    &visibility,
+                    &has_default,
+                    &modifiers
+                )
+            );
+        }
+        return ptn_bool(
+            ptn_reflection_property_object_storage_initialized(
+                target,
+                data->name,
+                storage_declaring_class
+            )
+        );
+    }
     if (ptn_ascii_case_equal(name, "getDefaultValue")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         if (runtime->exceptions->active_exception != NULL) {
@@ -44169,6 +44346,10 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
             : ptn_declared_class_reflection_to_string(runtime, class_name);
+    }
+    if (ptn_ascii_case_equal(name, "getDocComment")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
@@ -44983,6 +45164,10 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
 typedef struct {
     PtnFunctionMetadata metadata;
     char *closure_scope_class_name;
+    int has_closure_this;
+    PtnValue closure_this;
+    int has_closure;
+    PtnValue closure;
     int has_closure_function_index;
     size_t closure_function_index;
 } PtnReflectionFunctionData;
@@ -45039,6 +45224,8 @@ static void ptn_reflection_function_data_free(void *data) {
         return;
     }
     free(function_data->closure_scope_class_name);
+    ptn_value_destroy(&function_data->closure_this);
+    ptn_value_destroy(&function_data->closure);
     free(data);
 }
 
@@ -45308,6 +45495,37 @@ static PtnValue ptn_reflection_function_size_result(size_t value) {
     return ptn_int((int64_t)value);
 }
 
+static PtnValue ptn_reflection_function_source_location_value(
+    PtnFunctionMetadata metadata,
+    const char *method_name
+) {
+    if (metadata.source_file == NULL || metadata.source_file[0] == '\0') {
+        return ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(method_name, "getFileName")) {
+        return ptn_owned_string(ptn_duplicate_string(metadata.source_file));
+    }
+    if (ptn_ascii_case_equal(method_name, "getStartLine")) {
+        return ptn_reflection_function_size_result(metadata.start_line);
+    }
+    return ptn_reflection_function_size_result(metadata.end_line);
+}
+
+static PtnValue ptn_reflection_function_doc_comment(PtnFunctionMetadata metadata) {
+    return metadata.doc_comment == NULL
+        ? ptn_bool(0)
+        : ptn_owned_string(ptn_duplicate_string(metadata.doc_comment));
+}
+
+static PtnValue ptn_reflection_function_static_variables(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata
+) {
+    return metadata.static_variables_provider == NULL
+        ? ptn_array_from_literal_entries(0, NULL)
+        : metadata.static_variables_provider(runtime);
+}
+
 static const char *ptn_reflection_function_extension_name(PtnFunctionMetadata metadata) {
     if (!metadata.is_internal) {
         return NULL;
@@ -45498,7 +45716,9 @@ static PtnValue ptn_reflection_function_dispatch_invoke(
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
-    PtnValue result = ptn_call_function(runtime, data->metadata.name, function_argc, function_args, line);
+    PtnValue result = data->has_closure
+        ? ptn_call_callable(runtime, data->closure, function_argc, function_args, line)
+        : ptn_call_function(runtime, data->metadata.name, function_argc, function_args, line);
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     return result;
@@ -45596,14 +45816,25 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     }
     data->metadata = metadata;
     data->closure_scope_class_name = NULL;
+    data->has_closure_this = 0;
+    data->closure_this = ptn_null();
+    data->has_closure = 0;
+    data->closure = ptn_null();
     data->has_closure_function_index = 0;
     data->closure_function_index = 0;
     if (target.type == PTN_CLOSURE && target.as.closure->scope_class_name != NULL) {
         data->closure_scope_class_name = ptn_duplicate_string(target.as.closure->scope_class_name);
     }
     if (target.type == PTN_CLOSURE) {
+        data->has_closure = 1;
+        data->closure = ptn_value_clone(target);
         data->has_closure_function_index = 1;
         data->closure_function_index = target.as.closure->function_index;
+        PtnValue closure_this = ptn_null();
+        if (ptn_symbols_get(&target.as.closure->captures, "this", &closure_this)) {
+            data->has_closure_this = 1;
+            data->closure_this = ptn_value_clone_deref(closure_this);
+        }
     }
 
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionFunction");
@@ -47198,8 +47429,26 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
             ? ptn_null()
             : ptn_reflection_class_object_from_name(runtime, data->closure_scope_class_name);
     }
+    if (ptn_ascii_case_equal(name, "getClosureThis")) {
+        return data->has_closure_this
+            ? ptn_value_clone_deref(data->closure_this)
+            : ptn_null();
+    }
     if (ptn_ascii_case_equal(name, "getClosure")) {
         return ptn_closure_wrap_callable(runtime, ptn_string(metadata.name), metadata);
+    }
+    if (
+        ptn_ascii_case_equal(name, "getFileName") ||
+        ptn_ascii_case_equal(name, "getStartLine") ||
+        ptn_ascii_case_equal(name, "getEndLine")
+    ) {
+        return ptn_reflection_function_source_location_value(metadata, name);
+    }
+    if (ptn_ascii_case_equal(name, "getDocComment")) {
+        return ptn_reflection_function_doc_comment(metadata);
+    }
+    if (ptn_ascii_case_equal(name, "getStaticVariables")) {
+        return ptn_reflection_function_static_variables(runtime, metadata);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(metadata.name));

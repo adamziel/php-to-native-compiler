@@ -1612,6 +1612,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
     local path=$1
     local ptn_has_override_attribute=0
     local ptn_reflection_property_simple_metadata_row=0
+    local ptn_reflection_property_typed_metadata_row=0
 
     if ptn_phpt_section "$path" FILE | LC_ALL=C grep -E '#\[[^]]*\\?Override([^[:alnum:]_]|$)' >/dev/null; then
         ptn_has_override_attribute=1
@@ -1625,8 +1626,12 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
     }; then
         ptn_reflection_property_simple_metadata_row=1
     fi
+    if ptn_phpt_section "$path" FILE | LC_ALL=C grep -Eiq 'reflectionproperty' &&
+        ptn_phpt_section "$path" FILE | LC_ALL=C grep -Eiq -- '->[[:space:]]*isinitialized[[:space:]]*\('; then
+        ptn_reflection_property_typed_metadata_row=1
+    fi
 
-    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" -v ptn_has_override_attribute="$ptn_has_override_attribute" -v ptn_reflection_property_simple_metadata_row="$ptn_reflection_property_simple_metadata_row" '
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk -v ptn_path="$path" -v ptn_has_override_attribute="$ptn_has_override_attribute" -v ptn_reflection_property_simple_metadata_row="$ptn_reflection_property_simple_metadata_row" -v ptn_reflection_property_typed_metadata_row="$ptn_reflection_property_typed_metadata_row" '
         function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
             quote = ""
             escaped = 0
@@ -1687,7 +1692,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             reflection_metadata_vars[assignment] = 1
         }
         function ptn_has_reflection_source_metadata_method(line) {
-            return line ~ /->[[:space:]]*(getdoccomment|getfilename|getstartline|getendline|getstaticvariables)[[:space:]]*\(/
+            return line ~ /->[[:space:]]*getdoccomment[[:space:]]*\(/
+        }
+        function ptn_has_reflection_constant_source_metadata_method(line) {
+            return line ~ /->[[:space:]]*getfilename[[:space:]]*\(/
         }
         function ptn_supported_internal_attribute_metadata_row() {
             return ptn_path ~ /Zend\/tests\/attributes\/(001_placement|005_objects|006_filter|013_class_scope|014_class_const_group|020_userland_attribute_validation|031_backtrace|gh8421)[.]phpt$/ ||
@@ -1715,6 +1723,22 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             line = ptn_php_code_line($0)
             if (implemented_modifier_diagnostic_seen) {
                 next
+            }
+            if (line ~ /(^|[^[:alnum:]_$])fn[[:space:]]*\([^)]*\)[[:space:]]*=>[^;]*([$]this|[$][$]|self[[:space:]]*::|static[[:space:]]*::|parent[[:space:]]*::|[a-z_\\][a-z0-9_\\]*[[:space:]]*::)/) {
+                print "unsupported-closure-scope-binding\trequires arrow-function closure scope and $this binding parity, outside PTN modeled closure metadata subset"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])static[[:space:]]+[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*new[[:space:]]+/ ||
+                line ~ /function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*=[[:space:]]*new[[:space:]]+/) {
+                print "unsupported-constant-expression\trequires object construction in constant-expression initializers, outside PTN modeled constant expression subset"
+                found = 1
+                exit
+            }
+            if (line ~ /=[[:space:]]*&[^;]*->[[:space:]]*getstaticvariables[[:space:]]*\([^)]*\)[[:space:]]*\[/) {
+                print "unsupported-reference-lvalue\trequires temporary array-offset reference binding, outside PTN modeled reference targets"
+                found = 1
+                exit
             }
             readonly_class_context = readonly_class_depth > 0 || readonly_class_pending || line ~ /(^|[^[:alnum:]_$])readonly[[:space:]]+class[[:space:]]+[a-z_\\]/
             if (line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*readonly[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ ||
@@ -1798,13 +1822,14 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /->[[:space:]]*getclosurethis[[:space:]]*\(/) {
-                print "unsupported-reflection-metadata\trequires ReflectionFunction closure binding metadata (`getClosureThis()`), outside PTN modeled reflection metadata"
-                found = 1
-                exit
-            }
             if (match(line, /[$][a-z_][a-z0-9_]*[[:space:]]*=[^;]*new[[:space:]]+\\?reflection(class|function|method)[[:space:]]*\(/)) {
                 ptn_track_reflection_metadata_var(substr(line, RSTART, RLENGTH))
+            }
+            if (match(line, /[$][a-z_][a-z0-9_]*[[:space:]]*=[^;]*new[[:space:]]+\\?reflectionconstant[[:space:]]*\(/)) {
+                reflection_constant_assignment = substr(line, RSTART, RLENGTH)
+                sub(/^[$]/, "", reflection_constant_assignment)
+                sub(/[[:space:]]*=.*/, "", reflection_constant_assignment)
+                reflection_constant_vars[reflection_constant_assignment] = 1
             }
             if (match(line, /[$][a-z_][a-z0-9_]*[[:space:]]*=[^;]*\\?reflectionmethod[[:space:]]*::[[:space:]]*createfrommethodname[[:space:]]*\(/)) {
                 ptn_track_reflection_metadata_var(substr(line, RSTART, RLENGTH))
@@ -1815,15 +1840,28 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 reflection_metadata_vars[reflection_method_foreach_var] = 1
             }
             for (reflection_metadata_var in reflection_metadata_vars) {
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_metadata_var "[[:space:]]*->[[:space:]]*(getdoccomment|getfilename|getstartline|getendline|getstaticvariables)[[:space:]]*\\(")) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_metadata_var "[[:space:]]*->[[:space:]]*getdoccomment[[:space:]]*\\(")) {
                     print "unsupported-internal-reflection-metadata\trequires reflection source/doc/static-variable metadata beyond PTN modeled reflection invocation and shape metadata"
                     found = 1
                     exit
                 }
             }
-            if (line ~ /new[[:space:]]+\\?reflection(class|function|method)[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(getdoccomment|getfilename|getstartline|getendline|getstaticvariables)[[:space:]]*\(/ ||
+            for (reflection_constant_var in reflection_constant_vars) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_constant_var "[[:space:]]*->[[:space:]]*getfilename[[:space:]]*\\(")) {
+                    print "unsupported-internal-reflection-metadata\trequires ReflectionConstant source metadata beyond PTN modeled constant attributes"
+                    found = 1
+                    exit
+                }
+            }
+            if (line ~ /new[[:space:]]+\\?reflection(class|function|method)[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getdoccomment[[:space:]]*\(/ ||
                 ptn_has_reflection_source_metadata_method(line) && line ~ /(^|[^[:alnum:]_$\\])reflection(class|function|method)([^[:alnum:]_]|$)/) {
                 print "unsupported-internal-reflection-metadata\trequires reflection source/doc/static-variable metadata beyond PTN modeled reflection invocation and shape metadata"
+                found = 1
+                exit
+            }
+            if (line ~ /new[[:space:]]+\\?reflectionconstant[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getfilename[[:space:]]*\(/ ||
+                ptn_has_reflection_constant_source_metadata_method(line) && line ~ /(^|[^[:alnum:]_$\\])reflectionconstant([^[:alnum:]_]|$)/) {
+                print "unsupported-internal-reflection-metadata\trequires ReflectionConstant source metadata beyond PTN modeled constant attributes"
                 found = 1
                 exit
             }
@@ -1840,7 +1878,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                     found = 1
                     exit
                 }
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getdoccomment|gethook|isreadonly|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
                     print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                     found = 1
                     exit
@@ -1849,7 +1887,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
                     !ptn_supported_internal_attribute_metadata_row()) ||
-                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getdoccomment|gethook|isreadonly|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_|export|setaccessible|getmodifiernames)/) {
                 print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                 found = 1
@@ -1880,6 +1918,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if (!ptn_has_override_attribute &&
+                !ptn_reflection_property_typed_metadata_row &&
                 line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
                 line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+final[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
@@ -1892,6 +1931,18 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 print "unsupported-class-constant-metadata\trequires class-scope constant/static-property default unpack evaluation, outside PTN modeled class metadata"
                 found = 1
                 exit
+            }
+            if (line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*(array[[:space:]]*[(]|\[)/) {
+                static_local_array_initializer = 1
+            }
+            if (static_local_array_initializer &&
+                line ~ /(^|[^[:alnum:]_$])(self|static|parent)[[:space:]]*::[[:space:]]*[a-z_][a-z0-9_]*[[:space:]]*=>/) {
+                print "unsupported-class-constant-metadata\trequires class-constant array keys in reflected static local initializers, outside PTN modeled static-variable metadata"
+                found = 1
+                exit
+            }
+            if (static_local_array_initializer && line ~ /;/) {
+                static_local_array_initializer = 0
             }
             if (line ~ /(^|[[:space:]])const[[:space:]]+[a-z_\\][a-z0-9_\\|?]*[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/) {
                 print "unsupported-class-constant-metadata\trequires typed class constant metadata, outside PTN modeled class constants"

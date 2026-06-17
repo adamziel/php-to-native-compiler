@@ -15,6 +15,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         caller_runtime->class_constant_deprecation_suppress_constant;
     ptn_symbols_init(&runtime->owned_static_properties);
     runtime->static_properties = caller_runtime->static_properties;
+    ptn_symbols_init(&runtime->owned_static_property_initialized);
+    runtime->static_property_initialized = caller_runtime->static_property_initialized;
     ptn_symbols_init(&runtime->owned_static_property_read_visibility);
     runtime->static_property_read_visibility = caller_runtime->static_property_read_visibility;
     ptn_symbols_init(&runtime->owned_static_property_set_visibility);
@@ -366,6 +368,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     }
     ptn_symbols_free(&runtime->owned_static_property_set_visibility);
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);
+    ptn_symbols_free(&runtime->owned_static_property_initialized);
     ptn_symbols_free(&runtime->owned_static_properties);
     ptn_symbols_free(&runtime->owned_class_constant_deprecations);
     ptn_symbols_free(&runtime->owned_class_constants);
@@ -2344,6 +2347,12 @@ static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_table(PtnRuntime *
     return runtime->static_properties == NULL ? &runtime->owned_static_properties : runtime->static_properties;
 }
 
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_initialized_table(PtnRuntime *runtime) {
+    return runtime->static_property_initialized == NULL
+        ? &runtime->owned_static_property_initialized
+        : runtime->static_property_initialized;
+}
+
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_read_visibility_table(PtnRuntime *runtime) {
     return runtime->static_property_read_visibility == NULL
         ? &runtime->owned_static_property_read_visibility
@@ -2969,10 +2978,16 @@ static PTN_UNUSED void ptn_runtime_define_static_property(
     const char *property,
     PtnPropertyVisibility read_visibility,
     PtnPropertyVisibility set_visibility,
-    PtnValue value
+    PtnValue value,
+    int initialized
 ) {
     char *key = ptn_static_property_key(class_name, property);
     ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, ptn_value_deref(value));
+    ptn_symbols_set(
+        ptn_runtime_static_property_initialized_table(runtime),
+        key,
+        ptn_bool(initialized)
+    );
     ptn_symbols_set(
         ptn_runtime_static_property_read_visibility_table(runtime),
         key,
@@ -2984,6 +2999,25 @@ static PTN_UNUSED void ptn_runtime_define_static_property(
         ptn_int((int64_t)set_visibility)
     );
     free(key);
+}
+
+static PTN_UNUSED int ptn_runtime_static_property_initialized(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property
+) {
+    char *key = ptn_runtime_resolve_static_property_key(runtime, class_name, property, NULL);
+    if (key == NULL) {
+        return 0;
+    }
+    PtnValue initialized;
+    int result = ptn_symbols_get(
+        ptn_runtime_static_property_initialized_table(runtime),
+        key,
+        &initialized
+    ) && ptn_is_truthy(initialized);
+    free(key);
+    return result;
 }
 
 static PTN_UNUSED void ptn_runtime_define_class_constant(
@@ -3647,14 +3681,29 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
     if (ptn_symbols_get(static_properties, key, &current) && current.type == PTN_REFERENCE) {
         if (ptn_reference_assign(runtime, current.as.reference, value)) {
             PtnValue result = ptn_value_clone(current.as.reference->value);
+            ptn_symbols_set(
+                ptn_runtime_static_property_initialized_table(runtime),
+                key,
+                ptn_bool(1)
+            );
             free(key);
             return result;
         }
+        ptn_symbols_set(
+            ptn_runtime_static_property_initialized_table(runtime),
+            key,
+            ptn_bool(1)
+        );
         free(key);
         return ptn_value_clone_deref(value);
     }
     PtnValue result = ptn_value_clone_deref(value);
     ptn_symbols_set(static_properties, key, result);
+    ptn_symbols_set(
+        ptn_runtime_static_property_initialized_table(runtime),
+        key,
+        ptn_bool(1)
+    );
     free(key);
     return result;
 }
@@ -3766,6 +3815,11 @@ static PTN_UNUSED void ptn_runtime_bind_static_property_reference(
         return;
     }
     ptn_symbols_set(ptn_runtime_static_property_table(runtime), key, reference);
+    ptn_symbols_set(
+        ptn_runtime_static_property_initialized_table(runtime),
+        key,
+        ptn_bool(1)
+    );
     free(key);
 }
 
