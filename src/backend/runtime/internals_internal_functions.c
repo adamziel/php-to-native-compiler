@@ -20141,6 +20141,14 @@ static int ptn_html_sjis_trail_byte(unsigned char byte) {
     return (byte >= 0x40 && byte <= 0x7e) || (byte >= 0x80 && byte <= 0xfc);
 }
 
+static int ptn_html_euc_jp_single_byte(unsigned char byte) {
+    return (byte >= 0x80 && byte <= 0x8d) || (byte >= 0x90 && byte <= 0x9f);
+}
+
+static int ptn_html_big5_trail_byte(unsigned char byte) {
+    return (byte >= 0x40 && byte <= 0x7e) || (byte >= 0xa1 && byte <= 0xfe);
+}
+
 static int ptn_html_legacy_multibyte_sequence(
     PtnHtmlEncoding encoding,
     const char *data,
@@ -20171,6 +20179,9 @@ static int ptn_html_legacy_multibyte_sequence(
         return 1;
     }
     if (encoding == PTN_HTML_ENCODING_EUC_JP) {
+        if (ptn_html_euc_jp_single_byte(byte)) {
+            return 1;
+        }
         if (byte == 0x8e) {
             if (offset + 1 < len && (unsigned char)data[offset + 1] >= 0xa1 &&
                 (unsigned char)data[offset + 1] <= 0xdf) {
@@ -20210,6 +20221,24 @@ static int ptn_html_legacy_multibyte_sequence(
                 return 1;
             }
             if (offset + 1 < len && (unsigned char)data[offset + 1] >= 0x80) {
+                *sequence_len = 2;
+            }
+            *valid = 0;
+            return 1;
+        }
+        *valid = 0;
+        return 1;
+    }
+    if (encoding == PTN_HTML_ENCODING_LEGACY_MULTIBYTE) {
+        if (byte == 0x80 || byte == 0xff) {
+            return 1;
+        }
+        if (byte >= 0x81 && byte <= 0xfe) {
+            if (offset + 1 < len && ptn_html_big5_trail_byte((unsigned char)data[offset + 1])) {
+                *sequence_len = 2;
+                return 1;
+            }
+            if (offset + 1 < len) {
                 *sequence_len = 2;
             }
             *valid = 0;

@@ -611,6 +611,9 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         "$spaced = <<<  SPACED\n",
         "ok\n",
         "SPACED;\n",
+        "$slash = <<<SLASH\n",
+        "\\\n",
+        "SLASH;\n",
     );
     let program = parser::parse(source).unwrap();
     let Statement::Assign { value, .. } = &program.statements[0] else {
@@ -627,6 +630,11 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
         panic!("expected assignment");
     };
     assert!(matches!(value, Expr::String(value, _) if value == "ok"));
+
+    let Statement::Assign { value, .. } = &program.statements[3] else {
+        panic!("expected assignment");
+    };
+    assert!(matches!(value, Expr::String(value, _) if value == "\\"));
 }
 
 #[test]
@@ -13253,9 +13261,17 @@ foreach ([\"8fa1ff\", \"8fa1\", \"8f\", \"8fa0\", \"8fa121\", \"8f21\", \"8eae\"
     $encoded = htmlentities(hex2bin($hex), ENT_QUOTES | ENT_SUBSTITUTE, \"EUC-JP\");\n\
     echo $hex, \":\", bin2hex($encoded), \"\\n\";\n\
 }\n\
+foreach ([\"80\", \"8d\", \"8e\", \"8f\", \"90\", \"9f\", \"a0\", \"ff\", \"8ea180\", \"a180\"] as $hex) {\n\
+    $encoded = htmlspecialchars(hex2bin($hex), ENT_QUOTES, \"EUC-JP\");\n\
+    echo \"strict-\", $hex, \":\", bin2hex($encoded), \"\\n\";\n\
+}\n\
 foreach ([\"815bff\", \"80\", \"9f\", \"a0\"] as $hex) {\n\
     $encoded = htmlentities(hex2bin($hex), ENT_QUOTES | ENT_SUBSTITUTE, \"SJIS\");\n\
     echo $hex, \":\", bin2hex($encoded), \"\\n\";\n\
+}\n\
+foreach ([\"80\", \"ff\", \"813f\", \"8140\", \"817e\", \"817f\", \"8180\", \"81a0\", \"81a1\", \"81fe\", \"81ff\", \"a040\", \"feff\"] as $hex) {\n\
+    $encoded = htmlspecialchars(hex2bin($hex), ENT_QUOTES, \"BIG5\");\n\
+    echo \"big5-strict-\", $hex, \":\", bin2hex($encoded), \"\\n\";\n\
 }\n\
 var_dump(htmlentities(hex2bin(\"80\"), ENT_HTML5 | ENT_DISALLOWED, \"SJIS\"));\n",
     )
@@ -13286,10 +13302,33 @@ var_dump(htmlentities(hex2bin(\"80\"), ENT_HTML5 | ENT_DISALLOWED, \"SJIS\"));\n
             "b2:262378464646443b\n",
             "b221:262378464646443b21\n",
             "a0:262378464646443b\n",
+            "strict-80:80\n",
+            "strict-8d:8d\n",
+            "strict-8e:\n",
+            "strict-8f:\n",
+            "strict-90:90\n",
+            "strict-9f:9f\n",
+            "strict-a0:\n",
+            "strict-ff:\n",
+            "strict-8ea180:8ea180\n",
+            "strict-a180:\n",
             "815bff:815b262378464646443b\n",
             "80:262378464646443b\n",
             "9f:262378464646443b\n",
             "a0:262378464646443b\n",
+            "big5-strict-80:80\n",
+            "big5-strict-ff:ff\n",
+            "big5-strict-813f:\n",
+            "big5-strict-8140:8140\n",
+            "big5-strict-817e:817e\n",
+            "big5-strict-817f:\n",
+            "big5-strict-8180:\n",
+            "big5-strict-81a0:\n",
+            "big5-strict-81a1:81a1\n",
+            "big5-strict-81fe:81fe\n",
+            "big5-strict-81ff:\n",
+            "big5-strict-a040:a040\n",
+            "big5-strict-feff:\n",
             "string(0) \"\"\n",
         )
     );
