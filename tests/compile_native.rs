@@ -30538,6 +30538,93 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
 }
 
 #[test]
+fn phpc_string_ini_controls_default_charset_and_parse_str_separator() {
+    let root = temp_dir("ptn-phpc-string-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo ini_get('default_charset'), \"\\n\";\n\
+var_dump(htmlentities(\"\\xe4\\xf6\\xfc\", ENT_QUOTES, ''));\n\
+parse_str('first=val1/second=val2/third=val3', $result);\n\
+var_dump($result);\n\
+var_dump(ini_get('output_handler'), ini_get('filter.default'), ini_get('internal_encoding'), ini_get('input_encoding'), ini_get('output_encoding'));\n\
+var_dump(ini_set('arg_separator.input', '&'));\n\
+parse_str('left=1&right=2', $next);\n\
+var_dump($next);\n\
+var_dump(ini_set('internal_encoding', 'ISO-8859-1'), ini_set('input_encoding', 'cp1252'), ini_set('output_encoding', 'EUC-JP'));\n\
+var_dump(ini_get('internal_encoding'), ini_get('input_encoding'), ini_get('output_encoding'));\n\
+ini_restore('internal_encoding');\n\
+ini_restore('input_encoding');\n\
+ini_restore('output_encoding');\n\
+var_dump(ini_get('internal_encoding'), ini_get('input_encoding'), ini_get('output_encoding'));\n\
+ini_restore('arg_separator.input');\n\
+echo ini_get('arg_separator.input'), \"\\n\";",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("default_charset=ISO-8859-1")
+        .arg("-d")
+        .arg("arg_separator.input=/")
+        .arg("-d")
+        .arg("output_handler=")
+        .arg("-d")
+        .arg("filter.default=unsafe_raw")
+        .arg("-d")
+        .arg("internal_encoding=")
+        .arg("-d")
+        .arg("input_encoding=")
+        .arg("-d")
+        .arg("output_encoding=")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ISO-8859-1\n",
+            "string(18) \"&auml;&ouml;&uuml;\"\n",
+            "array(3) {\n",
+            "  [\"first\"]=>\n",
+            "  string(4) \"val1\"\n",
+            "  [\"second\"]=>\n",
+            "  string(4) \"val2\"\n",
+            "  [\"third\"]=>\n",
+            "  string(4) \"val3\"\n",
+            "}\n",
+            "string(0) \"\"\n",
+            "string(10) \"unsafe_raw\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(1) \"/\"\n",
+            "array(2) {\n",
+            "  [\"left\"]=>\n",
+            "  string(1) \"1\"\n",
+            "  [\"right\"]=>\n",
+            "  string(1) \"2\"\n",
+            "}\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(10) \"ISO-8859-1\"\n",
+            "string(6) \"cp1252\"\n",
+            "string(6) \"EUC-JP\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "&\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_ini_parse_quantity_and_memory_limit_ini_to_native_binary() {
     let root = temp_dir("ptn-native-ini-quantity-memory-limit");
     fs::create_dir_all(&root).unwrap();

@@ -11,7 +11,7 @@
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,ctype,date,json,pcre,SPL,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="assert.exception,date.timezone,display_errors,error_reporting,extension_dir,include_path,max_memory_limit,memory_limit,pcre.backtrack_limit,precision,zend.assertions,zend.exception_string_param_max_len"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="arg_separator.input,assert.exception,date.timezone,default_charset,display_errors,error_reporting,extension_dir,filter.default,include_path,input_encoding,internal_encoding,max_memory_limit,memory_limit,output_encoding,output_handler,pcre.backtrack_limit,precision,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,GET,HEADERS,PHPDBG,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT=""
@@ -1017,7 +1017,7 @@ ptn_phpt_unsupported_ini_blocker() {
             printf 'unsupported-opcache-ini\trequires Zend OPcache configuration; PTN native compiler has no OPcache runtime layer\n'
             return 0
             ;;
-        default_charset|serialize_precision)
+        serialize_precision)
             printf 'unsupported-scalar-format-ini\trequires runtime scalar/string formatting default %s; PTN only models bounded precision/display ini state\n' "$key"
             return 0
             ;;

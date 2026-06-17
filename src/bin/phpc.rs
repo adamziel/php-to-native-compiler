@@ -144,10 +144,17 @@ enum Mode {
 #[derive(Debug, Default)]
 struct RuntimeIni {
     precision: Option<i16>,
+    default_charset: Option<String>,
+    arg_separator_input: Option<String>,
     date_timezone: Option<String>,
     assert_exception: Option<String>,
     display_errors: Option<String>,
     error_reporting: Option<i64>,
+    output_handler: Option<String>,
+    filter_default: Option<String>,
+    internal_encoding: Option<String>,
+    input_encoding: Option<String>,
+    output_encoding: Option<String>,
     zend_assertions: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
@@ -261,12 +268,26 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.assert_exception = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("date.timezone") {
         ini.date_timezone = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("default_charset") {
+        ini.default_charset = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("display_errors") {
         ini.display_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("error_reporting") {
         if let Some(parsed) = parse_error_reporting_level(raw_value) {
             ini.error_reporting = Some(parsed);
         }
+    } else if name.eq_ignore_ascii_case("arg_separator.input") {
+        ini.arg_separator_input = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("filter.default") {
+        ini.filter_default = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("output_handler") {
+        ini.output_handler = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("internal_encoding") {
+        ini.internal_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("input_encoding") {
+        ini.input_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("output_encoding") {
+        ini.output_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_ignore_args") {
@@ -545,10 +566,17 @@ fn apply_memory_limit_bounds(ini: &mut RuntimeIni) -> Option<String> {
 fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i32, PhpcError> {
     let mut ini = RuntimeIni {
         precision: ini.precision,
+        default_charset: ini.default_charset.clone(),
+        arg_separator_input: ini.arg_separator_input.clone(),
         date_timezone: ini.date_timezone.clone(),
         assert_exception: ini.assert_exception.clone(),
         display_errors: ini.display_errors.clone(),
         error_reporting: ini.error_reporting,
+        output_handler: ini.output_handler.clone(),
+        filter_default: ini.filter_default.clone(),
+        internal_encoding: ini.internal_encoding.clone(),
+        input_encoding: ini.input_encoding.clone(),
+        output_encoding: ini.output_encoding.clone(),
         zend_assertions: ini.zend_assertions.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
@@ -576,6 +604,12 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     if let Some(date_timezone) = &ini.date_timezone {
         command.env("PTN_DATE_TIMEZONE", date_timezone);
     }
+    if let Some(default_charset) = &ini.default_charset {
+        command.env("PTN_DEFAULT_CHARSET", default_charset);
+    }
+    if let Some(arg_separator_input) = &ini.arg_separator_input {
+        command.env("PTN_ARG_SEPARATOR_INPUT", arg_separator_input);
+    }
     if let Some(assert_exception) = &ini.assert_exception {
         command.env("PTN_ASSERT_EXCEPTION", assert_exception);
     }
@@ -584,6 +618,21 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());
+    }
+    if let Some(output_handler) = &ini.output_handler {
+        command.env("PTN_OUTPUT_HANDLER", output_handler);
+    }
+    if let Some(filter_default) = &ini.filter_default {
+        command.env("PTN_FILTER_DEFAULT", filter_default);
+    }
+    if let Some(internal_encoding) = &ini.internal_encoding {
+        command.env("PTN_INTERNAL_ENCODING", internal_encoding);
+    }
+    if let Some(input_encoding) = &ini.input_encoding {
+        command.env("PTN_INPUT_ENCODING", input_encoding);
+    }
+    if let Some(output_encoding) = &ini.output_encoding {
+        command.env("PTN_OUTPUT_ENCODING", output_encoding);
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);

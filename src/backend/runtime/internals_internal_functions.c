@@ -401,6 +401,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
 static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
+static const char *ptn_runtime_default_charset(PtnRuntime *runtime);
+static const char *ptn_runtime_arg_separator_input(PtnRuntime *runtime);
 
 static char *ptn_format_missing_class_callback_reason(const char *class_name) {
     int needed = snprintf(NULL, 0, "class \"%s\" not found", class_name);
@@ -12284,6 +12286,18 @@ static void ptn_parse_str_assign(PtnArray *array, PtnParseStrPath *path, size_t 
     ptn_parse_str_assign(child.as.array, path, index + 1, value);
 }
 
+static int ptn_parse_str_is_separator(char byte, const char *separators) {
+    if (separators == NULL || separators[0] == '\0') {
+        return byte == '&';
+    }
+    for (const char *cursor = separators; *cursor != '\0'; cursor++) {
+        if (byte == *cursor) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "parse_str", 1, "string", args[0], line);
@@ -12294,10 +12308,11 @@ static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const P
     }
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    const char *separators = ptn_runtime_arg_separator_input(runtime);
     size_t cursor = 0;
     while (cursor <= string.len) {
         size_t pair_start = cursor;
-        while (cursor < string.len && string.data[cursor] != '&') {
+        while (cursor < string.len && !ptn_parse_str_is_separator(string.data[cursor], separators)) {
             cursor++;
         }
         size_t pair_len = cursor - pair_start;
@@ -17386,13 +17401,37 @@ static PtnHtmlEncoding ptn_html_optional_encoding(
     size_t line
 ) {
     if (argc < 3 || ptn_value_deref(args[2]).type == PTN_NULL) {
-        return PTN_HTML_ENCODING_UTF8;
+        PtnStringOperand default_charset =
+            ptn_string_operand_borrowed(ptn_runtime_default_charset(runtime));
+        PtnHtmlEncoding result = PTN_HTML_ENCODING_UTF8;
+        if (default_charset.len == 0) {
+            return PTN_HTML_ENCODING_UTF8;
+        }
+        if (!ptn_html_encoding_from_operand(default_charset, &result)) {
+            ptn_html_emit_unsupported_encoding_warning(runtime, function_name, default_charset, line);
+            result = PTN_HTML_ENCODING_UTF8;
+        }
+        return result;
     }
     PtnStringOperand encoding =
         ptn_internal_expect_string_arg(runtime, function_name, 3, "encoding", args[2], line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(encoding);
         return PTN_HTML_ENCODING_UTF8;
+    }
+    if (encoding.len == 0) {
+        ptn_string_operand_free(encoding);
+        PtnStringOperand default_charset =
+            ptn_string_operand_borrowed(ptn_runtime_default_charset(runtime));
+        PtnHtmlEncoding result = PTN_HTML_ENCODING_UTF8;
+        if (default_charset.len == 0) {
+            return PTN_HTML_ENCODING_UTF8;
+        }
+        if (!ptn_html_encoding_from_operand(default_charset, &result)) {
+            ptn_html_emit_unsupported_encoding_warning(runtime, function_name, default_charset, line);
+            result = PTN_HTML_ENCODING_UTF8;
+        }
+        return result;
     }
     PtnHtmlEncoding result = PTN_HTML_ENCODING_UTF8;
     if (!ptn_html_encoding_from_operand(encoding, &result)) {
@@ -31142,6 +31181,68 @@ static const char *ptn_runtime_max_memory_limit(PtnRuntime *runtime) {
     return root->max_memory_limit;
 }
 
+static const char *ptn_runtime_default_charset(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->default_charset == NULL) {
+        return "UTF-8";
+    }
+    return root->default_charset;
+}
+
+static const char *ptn_runtime_arg_separator_input(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->arg_separator_input == NULL) {
+        return "&";
+    }
+    return root->arg_separator_input;
+}
+
+static const char *ptn_runtime_output_handler(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->output_handler == NULL) {
+        return "";
+    }
+    return root->output_handler;
+}
+
+static const char *ptn_runtime_filter_default(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->filter_default == NULL) {
+        return "unsafe_raw";
+    }
+    return root->filter_default;
+}
+
+static const char *ptn_runtime_internal_encoding(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->internal_encoding == NULL) {
+        return "";
+    }
+    return root->internal_encoding;
+}
+
+static const char *ptn_runtime_input_encoding(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->input_encoding == NULL) {
+        return "";
+    }
+    return root->input_encoding;
+}
+
+static const char *ptn_runtime_output_encoding(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->output_encoding == NULL) {
+        return "";
+    }
+    return root->output_encoding;
+}
+
+static void ptn_runtime_set_ini_string(char **slot, const char *value) {
+    char *copy = ptn_duplicate_string(value);
+    free(*slot);
+    *slot = copy;
+}
+
 static int ptn_ini_quantity_suffix_multiplier(char suffix, int64_t *multiplier) {
     switch (tolower((unsigned char)suffix)) {
         case 'g':
@@ -31306,9 +31407,7 @@ static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requeste
 
 static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory_limit) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
-    char *copy = ptn_duplicate_string(memory_limit);
-    free(root->memory_limit);
-    root->memory_limit = copy;
+    ptn_runtime_set_ini_string(&root->memory_limit, memory_limit);
 }
 
 static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requested, size_t line) {
@@ -31369,12 +31468,32 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_string(configured == NULL ? "1" : configured);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_input(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "default_charset")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_default_charset(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "extension_dir")) {
         *out = ptn_string(PTN_PHP_EXTENSION_DIR);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "filter.default")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_filter_default(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
         *out = ptn_string(".");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "input_encoding")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_input_encoding(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "internal_encoding")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_internal_encoding(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "open_basedir")) {
@@ -31392,6 +31511,14 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
         *out = ptn_string("1000000");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_handler(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_encoding(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "precision")) {
@@ -31426,9 +31553,7 @@ static void ptn_runtime_set_include_path(PtnRuntime *runtime, const char *path) 
     if (root == NULL) {
         return;
     }
-    char *copy = ptn_duplicate_string(path);
-    free(root->include_path);
-    root->include_path = copy;
+    ptn_runtime_set_ini_string(&root->include_path, path);
 }
 
 static const char *ptn_runtime_current_open_basedir(PtnRuntime *runtime) {
@@ -31444,9 +31569,42 @@ static void ptn_runtime_set_open_basedir(PtnRuntime *runtime, const char *path) 
     if (root == NULL) {
         return;
     }
-    char *copy = ptn_duplicate_string(path);
-    free(root->open_basedir);
-    root->open_basedir = copy;
+    ptn_runtime_set_ini_string(&root->open_basedir, path);
+}
+
+static void ptn_runtime_set_default_charset(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->default_charset, value);
+}
+
+static void ptn_runtime_set_arg_separator_input(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->arg_separator_input, value);
+}
+
+static void ptn_runtime_set_output_handler(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->output_handler, value);
+}
+
+static void ptn_runtime_set_filter_default(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->filter_default, value);
+}
+
+static void ptn_runtime_set_internal_encoding(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->internal_encoding, value);
+}
+
+static void ptn_runtime_set_input_encoding(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->input_encoding, value);
+}
+
+static void ptn_runtime_set_output_encoding(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->output_encoding, value);
 }
 
 static int ptn_environment_put_owned(char *assignment) {
@@ -31531,6 +31689,41 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
+        ptn_runtime_set_arg_separator_input(runtime, "&");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "default_charset")) {
+        ptn_runtime_set_default_charset(runtime, "UTF-8");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "filter.default")) {
+        ptn_runtime_set_filter_default(runtime, "unsafe_raw");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
+        ptn_runtime_set_output_handler(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "internal_encoding")) {
+        ptn_runtime_set_internal_encoding(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "input_encoding")) {
+        ptn_runtime_set_input_encoding(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
+        ptn_runtime_set_output_encoding(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         PtnRuntime *root = ptn_runtime_config_root(runtime);
         root->zend_assertions = root->initial_zend_assertions;
@@ -31579,6 +31772,76 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_open_basedir(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_input(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_arg_separator_input(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "default_charset")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_default_charset(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_default_charset(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "filter.default")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_filter_default(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_filter_default(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_handler(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_output_handler(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "internal_encoding")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_internal_encoding(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_internal_encoding(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "input_encoding")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_input_encoding(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_input_encoding(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_encoding(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_output_encoding(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);

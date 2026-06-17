@@ -1197,6 +1197,34 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
     );
+    const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");
+    const char *configured_arg_separator_input = getenv("PTN_ARG_SEPARATOR_INPUT");
+    const char *configured_output_handler = getenv("PTN_OUTPUT_HANDLER");
+    const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
+    const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
+    const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
+    const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
+    runtime->default_charset = ptn_duplicate_string(
+        configured_default_charset == NULL ? "UTF-8" : configured_default_charset
+    );
+    runtime->arg_separator_input = ptn_duplicate_string(
+        configured_arg_separator_input == NULL ? "&" : configured_arg_separator_input
+    );
+    runtime->output_handler = ptn_duplicate_string(
+        configured_output_handler == NULL ? "" : configured_output_handler
+    );
+    runtime->filter_default = ptn_duplicate_string(
+        configured_filter_default == NULL ? "unsafe_raw" : configured_filter_default
+    );
+    runtime->internal_encoding = ptn_duplicate_string(
+        configured_internal_encoding == NULL ? "" : configured_internal_encoding
+    );
+    runtime->input_encoding = ptn_duplicate_string(
+        configured_input_encoding == NULL ? "" : configured_input_encoding
+    );
+    runtime->output_encoding = ptn_duplicate_string(
+        configured_output_encoding == NULL ? "" : configured_output_encoding
+    );
     runtime->exception_ignore_args = 0;
     int configured_exception_ignore_args = 0;
     if (ptn_parse_bool_env("PTN_EXCEPTION_IGNORE_ARGS", &configured_exception_ignore_args)) {

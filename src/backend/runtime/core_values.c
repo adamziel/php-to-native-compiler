@@ -876,6 +876,13 @@ struct PtnRuntime {
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
+    char *default_charset;
+    char *arg_separator_input;
+    char *output_handler;
+    char *filter_default;
+    char *internal_encoding;
+    char *input_encoding;
+    char *output_encoding;
     int exception_ignore_args;
     size_t exception_string_param_max_len;
     int strict_types;
