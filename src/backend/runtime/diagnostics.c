@@ -1043,6 +1043,10 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
     PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
     if (diagnostics->display_errors) {
         FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root != NULL && !root->output_at_line_start) {
+            fputc('\n', stream);
+        }
         fputs("Fatal error: ", stream);
         fputs(message, stream);
         fputs(" in ", stream);
@@ -1502,6 +1506,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
+    runtime->output_at_line_start = 1;
     runtime->shutdown_functions = NULL;
     runtime->shutdown_functions_len = 0;
     runtime->shutdown_functions_capacity = 0;

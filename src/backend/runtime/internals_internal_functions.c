@@ -54,6 +54,9 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
         return;
     }
     fwrite(data, 1, len, stdout);
+    if (root != NULL) {
+        root->output_at_line_start = data[len - 1] == '\n';
+    }
 }
 
 static PTN_UNUSED void ptn_output_write_cstr(PtnRuntime *runtime, const char *data) {
@@ -886,23 +889,24 @@ static PtnValue ptn_output_buffer_apply_callback(PtnRuntime *runtime, PtnOutputB
     PtnValue args[1] = { ptn_value_clone_deref(original) };
     PtnValue callback_result = ptn_internal_call_callback(runtime, buffer->callback, 1, args, line);
     ptn_value_destroy(&args[0]);
-    root->output_buffer_callback_depth--;
-    ptn_try_frame_pop(runtime, &handler_frame);
 
     PtnValue resolved = ptn_value_deref(callback_result);
+    PtnValue output = ptn_string("");
     if (resolved.type == PTN_STRING) {
-        PtnValue output = ptn_value_clone_deref(callback_result);
+        output = ptn_value_clone_deref(callback_result);
         ptn_value_destroy(&callback_result);
         ptn_value_destroy(&original);
-        return output;
-    }
-    if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+    } else if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+        output = original;
         ptn_value_destroy(&callback_result);
-        return original;
+    } else {
+        ptn_value_destroy(&callback_result);
+        ptn_value_destroy(&original);
     }
-    ptn_value_destroy(&callback_result);
-    ptn_value_destroy(&original);
-    return ptn_string("");
+
+    root->output_buffer_callback_depth--;
+    ptn_try_frame_pop(runtime, &handler_frame);
+    return output;
 }
 
 static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) {
@@ -917,8 +921,16 @@ static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) 
             ptn_output_write(runtime, (const char *)string_output.as.string.data, string_output.as.string.len);
         }
     }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    int cleanup_inside_callback = buffer.has_callback && root != NULL;
+    if (cleanup_inside_callback) {
+        root->output_buffer_callback_depth++;
+    }
     ptn_value_destroy(&output);
     ptn_output_buffer_destroy(&buffer);
+    if (cleanup_inside_callback) {
+        root->output_buffer_callback_depth--;
+    }
     return 1;
 }
 
@@ -12819,6 +12831,7 @@ static PtnValue ptn_internal_convert_uudecode(PtnRuntime *runtime, size_t argc, 
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     size_t offset = 0;
+    int saw_encoded_line = 0;
     while (offset < string.len) {
         while (offset < string.len && (string.data[offset] == '\r' || string.data[offset] == '\n')) {
             offset++;
@@ -12826,6 +12839,7 @@ static PtnValue ptn_internal_convert_uudecode(PtnRuntime *runtime, size_t argc, 
         if (offset >= string.len) {
             break;
         }
+        saw_encoded_line = 1;
         int decoded_len = ptn_uudecode_value((unsigned char)string.data[offset++]);
         if (decoded_len < 0) {
             return ptn_convert_uudecode_invalid(runtime, string, &output, line);
@@ -12858,6 +12872,10 @@ static PtnValue ptn_internal_convert_uudecode(PtnRuntime *runtime, size_t argc, 
         if (offset < string.len && string.data[offset] == '\n') {
             offset++;
         }
+    }
+
+    if (!saw_encoded_line) {
+        return ptn_convert_uudecode_invalid(runtime, string, &output, line);
     }
 
     ptn_string_operand_free(string);
@@ -21498,21 +21516,93 @@ static PtnValue ptn_internal_wordwrap(PtnRuntime *runtime, size_t argc, const Pt
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static void ptn_number_format_append_grouped_integer_len(
+    PtnStringBuffer *output,
+    const char *digits,
+    size_t len,
+    PtnStringOperand thousands_separator
+) {
+    size_t first_group_len = len % 3;
+    if (first_group_len == 0) {
+        first_group_len = 3;
+    }
+    if (first_group_len > len) {
+        first_group_len = len;
+    }
+    ptn_string_buffer_append_len(output, digits, first_group_len);
+    for (size_t i = first_group_len; i < len; i += 3) {
+        ptn_string_buffer_append_len(output, thousands_separator.data, thousands_separator.len);
+        size_t group_len = len - i < 3 ? len - i : 3;
+        ptn_string_buffer_append_len(output, digits + i, group_len);
+    }
+}
+
 static void ptn_number_format_append_grouped_integer(
     PtnStringBuffer *output,
     const char *digits,
     PtnStringOperand thousands_separator
 ) {
     size_t len = strlen(digits);
-    size_t first_group_len = len % 3;
-    if (first_group_len == 0) {
-        first_group_len = 3;
+    ptn_number_format_append_grouped_integer_len(output, digits, len, thousands_separator);
+}
+
+static char *ptn_number_format_fixed_abs(double number, int precision, size_t *len_out) {
+    int needed = snprintf(NULL, 0, "%.*f", precision, fabs(number));
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
     }
-    ptn_string_buffer_append_len(output, digits, first_group_len);
-    for (size_t i = first_group_len; i < len; i += 3) {
-        ptn_string_buffer_append_len(output, thousands_separator.data, thousands_separator.len);
-        ptn_string_buffer_append_len(output, digits + i, 3);
+    char *formatted = malloc((size_t)needed + 1);
+    if (formatted == NULL) {
+        ptn_abort_out_of_memory();
     }
+    int written = snprintf(formatted, (size_t)needed + 1, "%.*f", precision, fabs(number));
+    if (written < 0 || written != needed) {
+        free(formatted);
+        ptn_abort_out_of_memory();
+    }
+    *len_out = (size_t)written;
+    return formatted;
+}
+
+static int ptn_number_format_digits_have_nonzero(const char *digits, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (digits[i] >= '1' && digits[i] <= '9') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_number_format_high_precision(
+    double number,
+    int precision,
+    PtnStringOperand decimal_separator,
+    PtnStringOperand thousands_separator
+) {
+    size_t formatted_len = 0;
+    char *formatted = ptn_number_format_fixed_abs(number, precision, &formatted_len);
+    const char *decimal = memchr(formatted, '.', formatted_len);
+    size_t integer_len = decimal == NULL ? formatted_len : (size_t)(decimal - formatted);
+    size_t fractional_len = decimal == NULL ? 0 : formatted_len - integer_len - 1;
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (number < 0.0 && ptn_number_format_digits_have_nonzero(formatted, formatted_len)) {
+        ptn_string_buffer_append_char(&output, '-');
+    }
+    ptn_number_format_append_grouped_integer_len(&output, formatted, integer_len, thousands_separator);
+    if (precision > 0) {
+        ptn_string_buffer_append_len(&output, decimal_separator.data, decimal_separator.len);
+        if (decimal != NULL) {
+            ptn_string_buffer_append_len(&output, decimal + 1, fractional_len);
+        }
+        if ((size_t)precision > fractional_len) {
+            ptn_sprintf_append_repeated(&output, '0', (size_t)precision - fractional_len);
+        }
+    }
+
+    free(formatted);
+    return ptn_owned_string_len(output.data, output.len);
 }
 
 static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -21523,10 +21613,15 @@ static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, con
     if (decimals_arg < 0) {
         decimals_arg = 0;
     }
-    if (decimals_arg > 18) {
-        decimals_arg = 18;
+    if (decimals_arg > INT_MAX) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "number_format(): Argument #2 ($decimals) must be between 0 and 2147483647"
+        );
+        return ptn_null();
     }
-    size_t decimals = (size_t)decimals_arg;
+    int decimals = (int)decimals_arg;
     PtnStringOperand decimal_separator = argc >= 3
         ? ptn_internal_expect_string_arg(runtime, "number_format", 3, "decimal_separator", args[2], line)
         : ptn_string_operand_borrowed(".");
@@ -21534,8 +21629,20 @@ static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, con
         ? ptn_internal_expect_string_arg(runtime, "number_format", 4, "thousands_separator", args[3], line)
         : ptn_string_operand_borrowed(",");
 
+    if (decimals > 18) {
+        PtnValue result = ptn_number_format_high_precision(
+            number,
+            decimals,
+            decimal_separator,
+            thousands_separator
+        );
+        ptn_string_operand_free(decimal_separator);
+        ptn_string_operand_free(thousands_separator);
+        return result;
+    }
+
     uint64_t scale = 1;
-    for (size_t i = 0; i < decimals; i++) {
+    for (int i = 0; i < decimals; i++) {
         scale *= 10;
     }
     double rounded_scaled = floor(fabs(number) * (double)scale + 0.5);
@@ -21561,7 +21668,7 @@ static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, con
             fractional_digits,
             sizeof(fractional_digits),
             "%0*llu",
-            (int)decimals,
+            decimals,
             (unsigned long long)fractional_part
         );
         if (fractional_len < 0 || (size_t)fractional_len >= sizeof(fractional_digits)) {
@@ -30968,7 +31075,32 @@ static void ptn_emit_highlight_file_open_warnings(
     );
 }
 
+static void ptn_guard_source_highlight_output_buffer_handler(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root != NULL && root->output_buffer_callback_depth != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Cannot use output buffering in output buffering display handlers",
+            function_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+    }
+}
+
 static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    ptn_guard_source_highlight_output_buffer_handler(runtime, "highlight_file", line);
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "highlight_file", 1, "filename", args[0], line);
     char *path = ptn_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);
@@ -31464,6 +31596,7 @@ static void ptn_emit_php_strip_whitespace_open_warning(
 
 static PtnValue ptn_internal_php_strip_whitespace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
+    ptn_guard_source_highlight_output_buffer_handler(runtime, "php_strip_whitespace", line);
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "php_strip_whitespace", 1, "filename", args[0], line);
     char *path = ptn_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);

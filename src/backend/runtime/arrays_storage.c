@@ -45,6 +45,8 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
 );
 static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObject *object);
 static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObject *object);
+static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 
 static PTN_UNUSED PtnArrayKey ptn_array_int_key(int64_t integer) {
@@ -644,14 +646,35 @@ static PTN_UNUSED void ptn_runtime_release_static_locals(PtnRuntime *runtime) {
     root->static_local_slots_capacity = 0;
 }
 
-static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
+static void ptn_runtime_remove_live_object_at(PtnRuntime *root, size_t index) {
+    if (root == NULL || index >= root->live_objects_len) {
+        return;
+    }
+    for (size_t i = index + 1; i < root->live_objects_len; i++) {
+        root->live_objects[i - 1] = root->live_objects[i];
+    }
+    root->live_objects_len--;
+}
+
+static void ptn_runtime_run_object_destructors_matching(PtnRuntime *runtime, int only_unreferenced) {
     if (runtime == NULL) {
         return;
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
-    while (root->live_objects_len > 0) {
-        PtnObject *object = root->live_objects[root->live_objects_len - 1];
-        root->live_objects_len--;
+    size_t index = root->live_objects_len;
+    while (index > 0) {
+        index--;
+        PtnObject *object = root->live_objects[index];
+        if (
+            object != NULL &&
+            object->refcount != 0 &&
+            !object->destructor_called &&
+            only_unreferenced &&
+            object->refcount > 1
+        ) {
+            continue;
+        }
+        ptn_runtime_remove_live_object_at(root, index);
         if (object == NULL || object->refcount == 0 || object->destructor_called) {
             continue;
         }
@@ -659,6 +682,40 @@ static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
         ptn_object_run_destructor(object);
         ptn_object_release(object);
     }
+}
+
+static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime) {
+    ptn_runtime_run_object_destructors_matching(runtime, 1);
+}
+
+static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    size_t initial_output_buffers_len = root->output_buffers_len;
+    size_t index = root->live_objects_len;
+    while (index > 0) {
+        index--;
+        PtnObject *object = root->live_objects[index];
+        ptn_runtime_remove_live_object_at(root, index);
+        if (object == NULL || object->refcount == 0 || object->destructor_called) {
+            continue;
+        }
+        ptn_object_retain(object);
+        ptn_object_run_destructor(object);
+        ptn_object_release(object);
+        if (root->output_buffers_len > initial_output_buffers_len) {
+            return;
+        }
+        if (index > root->live_objects_len) {
+            index = root->live_objects_len;
+        }
+    }
+}
+
+static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime) {
+    ptn_runtime_run_object_destructors_matching(runtime, 0);
 }
 
 static PTN_UNUSED void ptn_runtime_run_static_property_value_destructors(PtnValue value, size_t depth) {

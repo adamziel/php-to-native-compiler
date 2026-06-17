@@ -65,6 +65,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
+    runtime->output_at_line_start = 1;
     runtime->shutdown_functions = NULL;
     runtime->shutdown_functions_len = 0;
     runtime->shutdown_functions_capacity = 0;
@@ -370,9 +371,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_run_shutdown_functions(runtime);
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_static_local_destructors(runtime);
-        ptn_runtime_run_object_destructors(runtime);
+        ptn_runtime_run_object_destructors_until_output_buffer(runtime);
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
+        ptn_runtime_run_object_destructors(runtime);
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
         ptn_exception_handlers_clear(&runtime->owned_exceptions);
     }
@@ -490,6 +492,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffers_len = 0;
         runtime->output_buffers_capacity = 0;
         runtime->output_buffer_callback_depth = 0;
+        runtime->output_at_line_start = 1;
         for (size_t i = 0; i < runtime->shutdown_functions_len; i++) {
             ptn_shutdown_function_destroy(&runtime->shutdown_functions[i]);
         }

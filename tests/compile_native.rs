@@ -10832,6 +10832,12 @@ print_r(substr_replace(array(\"abc\" => \"llsskdkk\", 4 => \"hello\"), \"zzz\", 
 echo decbin(65), \"\\n\";\n\
 echo number_format(-1234.5678, 2), \"\\n\";\n\
 echo number_format(1234.5678, 2, \".\", \" \"), \"\\n\";\n\
+$big = number_format(1e300, 2006, \"\", \" \");\n\
+echo strlen($big), \"\\n\";\n\
+echo substr($big, 0, 31), \"\\n\";\n\
+echo substr($big, -24), \"\\n\";\n\
+echo number_format(-0.5, 0), \"\\n\";\n\
+echo number_format(-0.01, 0), \"\\n\";\n\
 var_dump(function_exists(\"htmlspecialchars\"), function_exists(\"ucwords\"), defined(\"ENT_QUOTES\"));\n\
 try { wordwrap(\"x\", 0, \"\", false); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }",
     )
@@ -10859,6 +10865,11 @@ Array\n\
 1000001\n\
 -1,234.57\n\
 1 234.57\n\
+2407\n\
+1 000 000 000 000 000 052 504 7\n\
+000000000000000000000000\n\
+-1\n\
+0\n\
 bool(true)\nbool(true)\nbool(true)\n\
 wordwrap(): Argument #3 ($break) must not be empty\n"
     );
@@ -11904,6 +11915,45 @@ string(0) \"\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_source_highlight_functions_reject_output_buffer_handlers_to_native_binary() {
+    let root = temp_dir("ptn-native-source-highlight-output-buffer-handler");
+    fs::create_dir_all(&root).unwrap();
+
+    for (case, call, expected) in [
+        (
+            "php-strip-whitespace",
+            "php_strip_whitespace(__FILE__);",
+            "Fatal error: php_strip_whitespace(): Cannot use output buffering in output buffering display handlers",
+        ),
+        (
+            "highlight-file",
+            "highlight_file(__FILE__, true);",
+            "Fatal error: highlight_file(): Cannot use output buffering in output buffering display handlers",
+        ),
+    ] {
+        let input = root.join(format!("{case}.php"));
+        let output = root.join(format!("{case}-bin"));
+        fs::write(
+            &input,
+            format!(
+                "<?php\n\
+ob_start(function ($output) {{ {call} return $output; }});\n\
+echo \"buffered\";\n"
+            ),
+        )
+        .unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success());
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        let stderr = String::from_utf8(execution.stderr).unwrap();
+        assert!(stderr.contains(expected), "{stderr}");
+    }
 }
 
 #[test]
@@ -14049,6 +14099,9 @@ var_dump(function_exists('count_chars'), function_exists('convert_uuencode'), fu
 echo implode(count_chars('aba', 1)), \"\\n\";\n\
 $encoded = convert_uuencode(\"abc\");\n\
 var_dump(convert_uudecode($encoded));\n\
+var_dump(@convert_uudecode(\"\"));\n\
+var_dump(@convert_uudecode(\"\\n\"));\n\
+var_dump(convert_uudecode(\"`\\n\"));\n\
 var_dump(levenshtein('kitten', 'sitting'));\n\
 var_dump(quoted_printable_encode(\"\\0A=\"));\n\
 var_dump(str_word_count(\"Hello you're -foo- bar-0var\", 1, '0'));\n\
@@ -14062,7 +14115,7 @@ try { count_chars('x', 5); } catch (ValueError $e) { echo $e->getMessage(), \"\\
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n21\nstring(3) \"abc\"\nint(3)\nstring(7) \"=00A=3D\"\narray(4) {\n  [0]=>\n  string(5) \"Hello\"\n  [1]=>\n  string(6) \"you're\"\n  [2]=>\n  string(3) \"foo\"\n  [3]=>\n  string(8) \"bar-0var\"\n}\ncount_chars(): Argument #2 ($mode) must be between 0 and 4 (inclusive)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n21\nstring(3) \"abc\"\nbool(false)\nbool(false)\nstring(0) \"\"\nint(3)\nstring(7) \"=00A=3D\"\narray(4) {\n  [0]=>\n  string(5) \"Hello\"\n  [1]=>\n  string(6) \"you're\"\n  [2]=>\n  string(3) \"foo\"\n  [3]=>\n  string(8) \"bar-0var\"\n}\ncount_chars(): Argument #2 ($mode) must be between 0 and 4 (inclusive)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

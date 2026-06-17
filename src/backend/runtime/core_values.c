@@ -1053,6 +1053,7 @@ struct PtnRuntime {
     size_t output_buffers_len;
     size_t output_buffers_capacity;
     size_t output_buffer_callback_depth;
+    int output_at_line_start;
     PtnShutdownFunction *shutdown_functions;
     size_t shutdown_functions_len;
     size_t shutdown_functions_capacity;
@@ -1228,6 +1229,9 @@ static PTN_UNUSED int ptn_cow_debug_counter(const char *name, size_t *out);
 static PTN_UNUSED void ptn_cow_debug_assert_named_counter(const char *name, int64_t expected);
 static PTN_UNUSED void ptn_cow_debug_assert_balanced(void);
 static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_run_object_destructors_until_output_buffer(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_run_unreferenced_object_destructors(PtnRuntime *runtime);
+static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
 static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
     PtnRuntime *runtime,
     const char *class_name
