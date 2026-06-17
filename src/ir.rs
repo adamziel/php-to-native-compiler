@@ -3422,6 +3422,76 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
     expr
 }
 
+const ASSERTION_PIPE_PRECEDENCE: u8 = 11;
+
+fn assertion_binary_precedence(op: AstBinaryOp) -> u8 {
+    match op {
+        AstBinaryOp::Or => 4,
+        AstBinaryOp::And => 5,
+        AstBinaryOp::BitwiseOr => 6,
+        AstBinaryOp::BitwiseXor => 7,
+        AstBinaryOp::BitwiseAnd => 8,
+        AstBinaryOp::Equal
+        | AstBinaryOp::NotEqual
+        | AstBinaryOp::Spaceship
+        | AstBinaryOp::Identical
+        | AstBinaryOp::NotIdentical => 9,
+        AstBinaryOp::Less
+        | AstBinaryOp::LessEqual
+        | AstBinaryOp::Greater
+        | AstBinaryOp::GreaterEqual => 10,
+        AstBinaryOp::Concat => 13,
+        AstBinaryOp::ShiftLeft | AstBinaryOp::ShiftRight => 18,
+        AstBinaryOp::Add | AstBinaryOp::Subtract => 23,
+        AstBinaryOp::Multiply | AstBinaryOp::Divide | AstBinaryOp::Modulo => 33,
+        AstBinaryOp::Power => 40,
+        AstBinaryOp::Coalesce | AstBinaryOp::Xor => 4,
+    }
+}
+
+fn assertion_expr_precedence(expr: &Expr) -> u8 {
+    match expr {
+        Expr::Grouped { expr, .. } => assertion_expr_precedence(expr),
+        Expr::DynamicCall { arguments, .. }
+            if matches!(arguments.as_slice(), [Expr::PipeValue { .. }]) =>
+        {
+            ASSERTION_PIPE_PRECEDENCE
+        }
+        Expr::InstanceOf { .. } => 10,
+        Expr::Binary { op, .. } => assertion_binary_precedence(*op),
+        Expr::Ternary { .. } => 3,
+        Expr::Assign { .. } | Expr::AssignRef { .. } => 2,
+        Expr::Print { .. } => 1,
+        _ => u8::MAX,
+    }
+}
+
+fn assertion_operand_text(expr: &Expr, parent_precedence: u8) -> String {
+    if let Expr::Grouped { expr: grouped, .. } = expr {
+        if !matches!(grouped.as_ref(), Expr::AnonymousFunction(_))
+            && assertion_expr_precedence(grouped) > parent_precedence
+        {
+            return assertion_expr_text(grouped);
+        }
+    }
+    assertion_expr_text(expr)
+}
+
+fn assertion_first_class_callable_text(callable: &Expr) -> String {
+    match callable {
+        Expr::String(name, _) if assertion_bare_callable_name(name) => name.clone(),
+        _ => assertion_expr_text(callable),
+    }
+}
+
+fn assertion_bare_callable_name(name: &str) -> bool {
+    name.split('\\').all(|segment| {
+        let mut chars = segment.chars();
+        matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+            && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    })
+}
+
 fn assertion_expr_text(expr: &Expr) -> String {
     match expr {
         Expr::String(value, _) => assertion_string_text(value),
@@ -3455,15 +3525,25 @@ fn assertion_expr_text(expr: &Expr) -> String {
             name, arguments, ..
         } => format!("{}({})", name, assertion_argument_list_text(arguments)),
         Expr::FirstClassCallable { callable, .. } => {
-            format!("{}(...)", assertion_expr_text(callable))
+            format!("{}(...)", assertion_first_class_callable_text(callable))
         }
         Expr::DynamicCall {
             callee, arguments, ..
-        } => format!(
-            "{}({})",
-            assertion_expr_text(callee),
-            assertion_argument_list_text(arguments)
-        ),
+        } => {
+            if let [Expr::PipeValue { expr, .. }] = arguments.as_slice() {
+                format!(
+                    "{} |> {}",
+                    assertion_operand_text(expr, ASSERTION_PIPE_PRECEDENCE),
+                    assertion_operand_text(callee, ASSERTION_PIPE_PRECEDENCE)
+                )
+            } else {
+                format!(
+                    "{}({})",
+                    assertion_expr_text(callee),
+                    assertion_argument_list_text(arguments)
+                )
+            }
+        }
         Expr::MethodCall {
             receiver,
             name,
@@ -3608,12 +3688,15 @@ fn assertion_expr_text(expr: &Expr) -> String {
         }
         Expr::Binary {
             op, left, right, ..
-        } => format!(
-            "{} {} {}",
-            assertion_expr_text(left),
-            assertion_binary_op_text(*op),
-            assertion_expr_text(right)
-        ),
+        } => {
+            let precedence = assertion_binary_precedence(*op);
+            format!(
+                "{} {} {}",
+                assertion_operand_text(left, precedence),
+                assertion_binary_op_text(*op),
+                assertion_operand_text(right, precedence)
+            )
+        }
         Expr::Ternary {
             condition,
             if_true,

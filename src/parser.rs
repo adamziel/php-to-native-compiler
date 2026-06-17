@@ -25,7 +25,7 @@ const KEYWORD_XOR_PRECEDENCE: u8 = 2;
 const KEYWORD_AND_PRECEDENCE: u8 = 3;
 const SYMBOL_OR_PRECEDENCE: u8 = 4;
 const COALESCE_PRECEDENCE: u8 = 4;
-const PIPE_PRECEDENCE: u8 = 4;
+const PIPE_PRECEDENCE: u8 = 11;
 const SYMBOL_AND_PRECEDENCE: u8 = 5;
 const BITWISE_OR_PRECEDENCE: u8 = 6;
 const BITWISE_XOR_PRECEDENCE: u8 = 7;
@@ -5219,7 +5219,13 @@ impl Parser<'_> {
                 if PIPE_PRECEDENCE < min_precedence {
                     break;
                 }
-                self.advance();
+                let pipe_span = self.advance().span;
+                if self.peek_starts_unparenthesized_arrow_function() {
+                    return Err(Diagnostic::new(
+                        "Arrow functions on the right hand side of |> must be parenthesized",
+                        Some(pipe_span),
+                    ));
+                }
                 let input_span = left.span();
                 let next_min_precedence = PIPE_PRECEDENCE + 1;
                 let callee = self.parse_binary_expr(next_min_precedence)?;
@@ -5265,6 +5271,15 @@ impl Parser<'_> {
             };
         }
         Ok(left)
+    }
+
+    fn peek_starts_unparenthesized_arrow_function(&self) -> bool {
+        self.peek_is_identifier("fn")
+            || (self.peek_is_identifier("static")
+                && self
+                    .tokens
+                    .get(self.index + 1)
+                    .is_some_and(|token| token_is_identifier_named(token, "fn")))
     }
 
     fn parse_unary_expr(&mut self) -> Result<Expr> {
@@ -5393,18 +5408,7 @@ impl Parser<'_> {
 
     fn parse_print_expr(&mut self) -> Result<Expr> {
         let token = self.advance().clone();
-        let expression = if matches!(self.peek().kind, TokenKind::LeftParen) {
-            self.advance();
-            let expression = self.parse_expr()?;
-            let right_span = self.expect_right_paren()?;
-            let span = combine_spans(token.span, right_span);
-            return Ok(Expr::Print {
-                expression: Box::new(expression),
-                span,
-            });
-        } else {
-            self.parse_assignment_expr()?
-        };
+        let expression = self.parse_assignment_expr()?;
         let span = combine_spans(token.span, expression.span());
         Ok(Expr::Print {
             expression: Box::new(expression),
@@ -15690,6 +15694,10 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             }))
         }
         Expr::Call { span, .. } => Err(Diagnostic::new(
+            "Can't use function return value in write context",
+            Some(span),
+        )),
+        Expr::DynamicCall { span, .. } => Err(Diagnostic::new(
             "Can't use function return value in write context",
             Some(span),
         )),

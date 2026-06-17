@@ -28463,6 +28463,16 @@ static PtnStringOperand ptn_internal_expect_string_arg(
 ) {
     value = ptn_value_deref(value);
     if (value.type == PTN_NULL) {
+        if (runtime != NULL && runtime->strict_types) {
+            ptn_internal_throw_string_arg_type_error(
+                runtime,
+                function_name,
+                position,
+                argument_name,
+                value
+            );
+            return ptn_string_operand_borrowed("");
+        }
         char message[192];
         int written = snprintf(
             message,
