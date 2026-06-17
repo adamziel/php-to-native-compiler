@@ -1270,6 +1270,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_constant(const char 
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_reference(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_filter_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_infinite_iterator(const char *class_name);
@@ -1562,6 +1563,25 @@ static PTN_UNUSED PtnValue ptn_array_object_clone(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_array_object_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_fixed_array_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_fixed_array_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

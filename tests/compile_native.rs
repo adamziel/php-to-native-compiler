@@ -170,6 +170,94 @@ foreach ($wrap as $value) {
 }
 
 #[test]
+fn compile_spl_fixed_array_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-fixed-array-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-fixed-array-surface.php");
+    let output = root.join("spl-fixed-array-surface-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ERROR);
+
+$fixed = new SplFixedArray(2);
+$fixed[0] = "a";
+$fixed[1] = null;
+var_dump(count($fixed), $fixed->getSize(), $fixed[0], isset($fixed[1]));
+$fixed[1] = "b";
+foreach ($fixed as $key => $value) {
+    echo "$key:$value\n";
+}
+var_dump($fixed->getArrayCopy());
+$fixed->setSize(1);
+var_dump(count($fixed), isset($fixed[1]), $fixed->toArray());
+
+try {
+    new ArrayObject($fixed);
+} catch (InvalidArgumentException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    (new ArrayObject([]))->exchangeArray($fixed);
+} catch (InvalidArgumentException $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    $fixed->fromArray([PHP_INT_MAX => "foo"]);
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$from = $fixed->fromArray(["x", "y"], false);
+var_dump($fixed->getSize(), $from->getSize(), $from[1]);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "int(2)\n",
+            "string(1) \"a\"\n",
+            "bool(false)\n",
+            "0:a\n",
+            "1:b\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "}\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "}\n",
+            "Overloaded object of type SplFixedArray is not compatible with ArrayObject\n",
+            "Overloaded object of type SplFixedArray is not compatible with ArrayObject\n",
+            "integer overflow detected\n",
+            "int(1)\n",
+            "int(2)\n",
+            "string(1) \"y\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
     let root = temp_dir("ptn-native-spl-file-list-surfaces");
     fs::create_dir_all(&root).unwrap();

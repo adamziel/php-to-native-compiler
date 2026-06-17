@@ -4501,6 +4501,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SplFixedArray")
+        && ptn_internal_class_method_exists("SplFixedArray", name)
+    ) {
+        return ptn_spl_fixed_array_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "SplDoublyLinkedList")
         && ptn_internal_class_method_exists("SplDoublyLinkedList", name)
     ) {

@@ -612,6 +612,14 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplFixedArray\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplDoublyLinkedList\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"SplQueue\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"SplStack\")) {\n");
@@ -4011,6 +4019,7 @@ fn emit_class_metadata_helpers(
         "ArrayObject",
         "ArrayIterator",
         "RecursiveArrayIterator",
+        "SplFixedArray",
         "IteratorIterator",
         "FilterIterator",
         "CallbackFilterIterator",
@@ -4335,6 +4344,7 @@ fn emit_class_metadata_helpers(
         "ArrayIterator",
         "RecursiveArrayIterator",
         "ArrayObject",
+        "SplFixedArray",
         "CallbackFilterIterator",
         "FilterIterator",
         "InfiniteIterator",
@@ -8455,6 +8465,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "limititerator" => Some("LimitIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
+        "splfixedarray" => Some("SplFixedArray"),
         "splqueue" => Some("SplQueue"),
         "splstack" => Some("SplStack"),
         "splfileinfo" => Some("SplFileInfo"),
@@ -13944,6 +13955,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("LimitIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
                 || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
+                || class_name.eq_ignore_ascii_case("SplFixedArray")
                 || class_name.eq_ignore_ascii_case("SplQueue")
                 || class_name.eq_ignore_ascii_case("SplStack")
                 || class_name.eq_ignore_ascii_case("SplFileInfo")

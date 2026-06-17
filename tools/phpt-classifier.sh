@@ -1355,6 +1355,15 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_extensions)?[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
+        function ptn_supported_spl_fixed_array_surface_row() {
+            return ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_overloaded_SplFixedArray[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/ArrayObject\/gh15918[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/SplArray_fromArray[.]phpt$/
+        }
+        function ptn_supported_spl_fixed_array_surface_line(line) {
+            return ptn_supported_spl_fixed_array_surface_row() &&
+                line ~ /(^|[^[:alnum:]_$\\])splfixedarray([^[:alnum:]_]|$)/
+        }
         function ptn_supported_anonymous_get_class_row() {
             return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/anon\/gh13097_b[.]phpt$/
@@ -1501,7 +1510,8 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (ptn_has_unmodeled_spl_symbol(line) || ptn_has_unmodeled_spl_function(line)) {
+            if ((ptn_has_unmodeled_spl_symbol(line) && !ptn_supported_spl_fixed_array_surface_line(line)) ||
+                ptn_has_unmodeled_spl_function(line)) {
                 print "unsupported-spl-surface\trequires SPL data structures, filesystem iterators, recursive iterator stacks, or SPL helper functions outside PTN bounded array-backed iterator wrapper surface"
                 found = 1
                 exit
