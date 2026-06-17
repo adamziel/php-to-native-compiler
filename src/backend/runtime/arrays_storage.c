@@ -30,6 +30,18 @@ static PTN_UNUSED void ptn_value_drop(PtnValue *value);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
 static PTN_UNUSED void ptn_object_retain(PtnObject *object);
 static PTN_UNUSED void ptn_object_release(PtnObject *object);
+static PTN_UNUSED void ptn_object_register_property_metadata(
+    PtnObject *object,
+    const char *property,
+    const char *declaring_class,
+    PtnPropertyVisibility read_visibility,
+    PtnPropertyVisibility set_visibility,
+    int is_readonly,
+    PtnPropertyTypeKind type_kind,
+    const char *type_class_name,
+    const char *type_text,
+    int type_allows_null
+);
 static PTN_UNUSED void ptn_runtime_register_object(PtnRuntime *runtime, PtnObject *object);
 static PTN_UNUSED void ptn_runtime_unregister_object(PtnRuntime *runtime, PtnObject *object);
 static PTN_UNUSED void ptn_runtime_run_object_destructors(PtnRuntime *runtime);
@@ -702,14 +714,70 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     return ptn_object(object);
 }
 
+static PTN_UNUSED PtnValue ptn_enum_case_with_backing(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name,
+    int has_backing,
+    PtnPropertyTypeKind backing_type_kind,
+    const char *backing_type_text,
+    PtnValue backing_value
+) {
+    PtnValue value = ptn_object_new_shell(runtime, class_name);
+    value.as.object->enum_case_name = ptn_duplicate_string(case_name);
+    ptn_object_register_property_metadata(
+        value.as.object,
+        "name",
+        class_name,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        1,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "string",
+        0
+    );
+    ptn_array_set_entry(
+        value.as.object->properties,
+        ptn_array_string_key("name"),
+        ptn_string(case_name)
+    );
+    if (has_backing) {
+        ptn_object_register_property_metadata(
+            value.as.object,
+            "value",
+            class_name,
+            PTN_PROPERTY_PUBLIC,
+            PTN_PROPERTY_PUBLIC,
+            1,
+            backing_type_kind,
+            NULL,
+            backing_type_text,
+            0
+        );
+        ptn_array_set_entry(
+            value.as.object->properties,
+            ptn_array_string_key("value"),
+            ptn_value_clone_deref(backing_value)
+        );
+    }
+    return value;
+}
+
 static PTN_UNUSED PtnValue ptn_enum_case(
     PtnRuntime *runtime,
     const char *class_name,
     const char *case_name
 ) {
-    PtnValue value = ptn_object_new_shell(runtime, class_name);
-    value.as.object->enum_case_name = ptn_duplicate_string(case_name);
-    return value;
+    return ptn_enum_case_with_backing(
+        runtime,
+        class_name,
+        case_name,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        ptn_null()
+    );
 }
 
 static PTN_UNUSED char *ptn_object_private_storage_key(

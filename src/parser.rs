@@ -1458,6 +1458,8 @@ impl Parser<'_> {
             is_final,
             is_interface,
             is_readonly,
+            is_enum: false,
+            enum_backing_type: None,
             properties,
             static_properties,
             constants,
@@ -1501,12 +1503,28 @@ impl Parser<'_> {
         }
 
         let (class_name, _) = self.parse_declaration_name("expected enum name")?;
-        if matches!(self.peek().kind, TokenKind::Colon) {
-            return Err(Diagnostic::new(
-                "backed enum declarations are unsupported",
-                Some(self.peek().span),
-            ));
-        }
+        let enum_backing_type = if matches!(self.peek().kind, TokenKind::Colon) {
+            self.advance();
+            let token = self.advance().clone();
+            let Some(type_name) = name_segment_from_token(&token.kind) else {
+                return Err(Diagnostic::new(
+                    "expected enum backing type",
+                    Some(token.span),
+                ));
+            };
+            match type_name.to_ascii_lowercase().as_str() {
+                "int" => Some(EnumBackingType::Int),
+                "string" => Some(EnumBackingType::String),
+                _ => {
+                    return Err(Diagnostic::new(
+                        "Enum backing type must be int or string",
+                        Some(token.span),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
 
         let mut interfaces = Vec::new();
         if token_is_identifier_named(self.peek(), "implements") {
@@ -1519,54 +1537,109 @@ impl Parser<'_> {
         }
 
         self.expect_left_brace()?;
+        let previous_type_scope = self.active_type_scope.replace(ActiveTypeScope {
+            class_name: class_name.clone(),
+            parent_name: None,
+            allow_unresolved_parent: false,
+        });
+        let mut trait_uses = Vec::new();
+        let mut methods = Vec::new();
         let mut constants = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             let attributes = self.parse_attribute_groups()?;
-            if !matches!(self.peek().kind, TokenKind::Case) {
-                return Err(syntax_error_unexpected(self.peek(), Some("case")));
+            if matches!(self.peek().kind, TokenKind::Case) {
+                self.advance();
+                let token = self.advance().clone();
+                let TokenKind::Identifier(name) = token.kind else {
+                    return Err(Diagnostic::new("expected enum case name", Some(token.span)));
+                };
+                let enum_case_value = if matches!(self.peek().kind, TokenKind::Equal) {
+                    self.advance();
+                    let value = self.parse_const_context_expr()?;
+                    if const_expr_contains_new_object(&value) {
+                        return Err(Diagnostic::new(
+                            "New expressions are not supported in this context",
+                            Some(value.span()),
+                        ));
+                    }
+                    if !is_supported_const_declaration_expr(&value) {
+                        return Err(Diagnostic::new(
+                            "enum case value must be a supported constant expression",
+                            Some(value.span()),
+                        ));
+                    }
+                    Some(value)
+                } else {
+                    None
+                };
+                if enum_backing_type.is_some() && enum_case_value.is_none() {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Case {class_name}::{name} of backed enum {class_name} must have a value"
+                        ),
+                        Some(token.span),
+                    ));
+                }
+                if enum_backing_type.is_none() && enum_case_value.is_some() {
+                    return Err(Diagnostic::new(
+                        format!("Case {class_name}::{name} of non-backed enum {class_name} must not have a value"),
+                        Some(token.span),
+                    ));
+                }
+                validate_builtin_attributes_for_target(
+                    &attributes,
+                    AttributeTarget::ClassConstant,
+                    token.span,
+                )?;
+                self.expect_semicolon()?;
+                constants.push(ClassConstantDecl {
+                    name,
+                    visibility: PropertyVisibility::Public,
+                    attributes,
+                    value: Expr::Null(token.span),
+                    is_enum_case: true,
+                    enum_case_value,
+                    is_final: false,
+                    span: token.span,
+                });
+                continue;
             }
-            self.advance();
-            let token = self.advance().clone();
-            let TokenKind::Identifier(name) = token.kind else {
-                return Err(Diagnostic::new("expected enum case name", Some(token.span)));
-            };
-            if matches!(self.peek().kind, TokenKind::Equal) {
-                return Err(Diagnostic::new(
-                    "backed enum case values are unsupported",
-                    Some(self.peek().span),
-                ));
+
+            match self.parse_class_member_with_attributes(false, false, &class_name, attributes)? {
+                ParsedClassMember::Method(method) => methods.push(method),
+                ParsedClassMember::Constants(parsed_constants) => {
+                    constants.extend(parsed_constants);
+                }
+                ParsedClassMember::TraitUses(parsed_trait_uses) => {
+                    trait_uses.extend(parsed_trait_uses);
+                }
+                ParsedClassMember::Properties(_) | ParsedClassMember::StaticProperties(_) => {
+                    self.active_type_scope = previous_type_scope;
+                    return Err(Diagnostic::new(
+                        format!("Enum {class_name} cannot include properties"),
+                        Some(self.previous_span()),
+                    ));
+                }
             }
-            validate_builtin_attributes_for_target(
-                &attributes,
-                AttributeTarget::ClassConstant,
-                token.span,
-            )?;
-            self.expect_semicolon()?;
-            constants.push(ClassConstantDecl {
-                name,
-                visibility: PropertyVisibility::Public,
-                attributes,
-                value: Expr::Null(token.span),
-                is_enum_case: true,
-                is_final: false,
-                span: token.span,
-            });
         }
+        self.active_type_scope = previous_type_scope;
         let right_span = self.expect_right_brace()?;
         Ok(ClassDecl {
             name: class_name,
             parent_name: None,
             interfaces,
-            trait_uses: Vec::new(),
+            trait_uses,
             attributes,
             is_abstract: false,
             is_final: true,
             is_interface: false,
             is_readonly: false,
+            is_enum: true,
+            enum_backing_type,
             properties: Vec::new(),
             static_properties: Vec::new(),
             constants,
-            methods: Vec::new(),
+            methods,
             span: combine_spans(enum_token.span, right_span),
         })
     }
@@ -1785,6 +1858,21 @@ impl Parser<'_> {
         class_name: &str,
     ) -> Result<ParsedClassMember> {
         let attributes = self.parse_attribute_groups()?;
+        self.parse_class_member_with_attributes(
+            class_is_readonly,
+            class_is_interface,
+            class_name,
+            attributes,
+        )
+    }
+
+    fn parse_class_member_with_attributes(
+        &mut self,
+        class_is_readonly: bool,
+        class_is_interface: bool,
+        class_name: &str,
+        attributes: ParsedAttributes,
+    ) -> Result<ParsedClassMember> {
         let mut modifiers = self.parse_class_modifiers()?;
         if token_is_identifier_named(self.peek(), "use") {
             if class_is_interface {
@@ -2254,6 +2342,7 @@ impl Parser<'_> {
             attributes,
             value,
             is_enum_case: false,
+            enum_case_value: None,
             is_final,
             span: token.span,
         })
@@ -6802,6 +6891,8 @@ impl Parser<'_> {
             is_final: false,
             is_interface: false,
             is_readonly: false,
+            is_enum: false,
+            enum_backing_type: None,
             properties,
             static_properties,
             constants,
@@ -9955,6 +10046,8 @@ fn import_trait_method_into_method_list(
         is_final: false,
         is_interface: false,
         is_readonly: false,
+        is_enum: false,
+        enum_backing_type: None,
         properties: Vec::new(),
         static_properties: Vec::new(),
         constants: Vec::new(),
