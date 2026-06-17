@@ -619,7 +619,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 self.bump_char();
-                at_line_start = false;
+                at_line_start = escaped == '\n';
                 continue;
             }
 
@@ -684,7 +684,7 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 self.bump_char();
-                at_line_start = false;
+                at_line_start = escaped == '\n';
                 continue;
             }
 
