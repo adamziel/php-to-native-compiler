@@ -1,0 +1,15 @@
+# ptn-550s.17 reference-call diagnostics and COW-boundary row pack.
+# Source: tools/phpt-cow-broad-frontier-manifest.txt
+# bucket: reference-calls-and-diagnostics rows=12
+Zend/tests/__debugInfo_reference.phpt
+Zend/tests/add_optional_by_ref_arg.phpt
+Zend/tests/array_append_by_reference.phpt
+Zend/tests/array_unshift_COW.phpt
+Zend/tests/assign_ref_error_var_handling.phpt
+Zend/tests/bw_or_assign_with_ref.phpt
+Zend/tests/by_ref_optimization.phpt
+Zend/tests/call_user_functions/call_user_func_array_prefer_ref.phpt
+Zend/tests/call_user_functions/call_user_func_by_ref.phpt
+Zend/tests/div_by_zero_compound_refcounted.phpt
+Zend/tests/function_arguments/sensitive_parameter_value_reflection.phpt
+Zend/tests/indirect_reference_this.phpt
