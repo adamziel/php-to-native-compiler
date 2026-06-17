@@ -3834,7 +3834,7 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
 
 #[test]
 fn parser_accepts_static_property_unset() {
-    let program = parser::parse("<?php unset(Box::$value);").unwrap();
+    let program = parser::parse("<?php unset(Box::$value); unset(Box::$items[0]);").unwrap();
     let Statement::Unset { targets, .. } = &program.statements[0] else {
         panic!("expected unset statement");
     };
@@ -3846,6 +3846,19 @@ fn parser_accepts_static_property_unset() {
             name,
             ..
         } if class_name == "Box" && name == "value"
+    ));
+    let Statement::Unset { targets, .. } = &program.statements[1] else {
+        panic!("expected second unset statement");
+    };
+    assert_eq!(targets.len(), 1);
+    assert!(matches!(
+        &targets[0],
+        UnsetTarget::StaticPropertyArrayDim {
+            class_name,
+            name,
+            dimensions,
+            ..
+        } if class_name == "Box" && name == "items" && dimensions.len() == 1
     ));
 }
 
@@ -4293,6 +4306,17 @@ fn parser_accepts_long_array_literals_and_isset_empty_constructs() {
             && matches!(&targets[1], Expr::ArrayAccess { array, .. } if matches!(array.as_ref(), Expr::Array { .. }))
     ));
     assert!(matches!(&arguments[1], Expr::Empty { .. }));
+}
+
+#[test]
+fn parser_rejects_isset_expression_results() {
+    for source in ["<?php isset(1 + 1);", "<?php isset(abc());"] {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message,
+            "Cannot use isset() on the result of an expression (you can use \"null !== expression\" instead)"
+        );
+    }
 }
 
 #[test]
@@ -26974,7 +26998,10 @@ var_dump(empty($missing));\n\
 $string = \"foobar\";\n\
 var_dump(isset($string[0][0][0][0]));\n\
 var_dump(isset($string[\"foo\"]));\n\
-var_dump(empty($string[\"foo\"]));",
+var_dump(empty($string[\"foo\"]));\n\
+$floatItems = [true];\n\
+var_dump(isset($floatItems[0.6]));\n\
+var_dump(empty($floatItems[0.6]));",
     )
     .unwrap();
 
@@ -26984,7 +27011,13 @@ var_dump(empty($string[\"foo\"]));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n"
+        format!(
+            "bool(true)\nbool(false)\nbool(false)\nbool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\nbool(true)\n\
+\nDeprecated: Implicit conversion from float 0.6 to int loses precision in {} on line 17\nbool(true)\n\
+\nDeprecated: Implicit conversion from float 0.6 to int loses precision in {} on line 18\nbool(false)\n",
+            input.display(),
+            input.display()
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -40664,6 +40697,48 @@ var_dump(isset($declared->secret), empty($declared->secret), $declared->secret ?
 }
 
 #[test]
+fn compile_standalone_nested_uninitialized_typed_property_isset_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-standalone-nested-uninitialized-typed-property-isset-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standalone-nested-uninitialized-typed-property-isset-unset.php");
+    let output = root.join("standalone-nested-uninitialized-typed-property-isset-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public D $x;
+    public static D $y;
+}
+
+$c = new C();
+isset($c->x[0]->prop);
+unset($c->x[0]->prop);
+isset(C::$y[0]->prop);
+unset(C::$y[0]->prop);
+echo \"DONE\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "DONE\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"isset\""));
+    assert!(c_source.contains("ptn_object_property_probe_quiet(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_static_property_quiet(&runtime"));
+}
+
+#[test]
 fn compile_class_constant_reads_to_native_binary() {
     let root = temp_dir("ptn-native-class-constant-reads");
     fs::create_dir_all(&root).unwrap();
@@ -42263,6 +42338,64 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_unset_static_property(&runtime"));
+}
+
+#[test]
+fn compile_static_property_array_dim_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-array-dim-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-array-dim-unset.php");
+    let output = root.join("static-property-array-dim-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Store {
+    public static $items = [[\"x\" => 1], [\"x\" => 2]];
+    public static $boxes;
+}
+
+$copy = Store::$items[0];
+unset(Store::$items[0]);
+var_dump($copy, Store::$items);
+
+Store::$boxes = [(object)[\"items\" => [1, 2]]];
+unset(Store::$boxes[0]->items);
+var_dump(isset(Store::$boxes[0]->items));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "array(1) {\n",
+            "  [1]=>\n",
+            "  array(1) {\n",
+            "    [\"x\"]=>\n",
+            "    int(2)\n",
+            "  }\n",
+            "}\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_unset(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property_indirect(&runtime"));
 }
 
 #[test]

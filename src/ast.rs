@@ -714,6 +714,12 @@ pub enum UnsetTarget {
         name: String,
         span: SourceSpan,
     },
+    StaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<Expr>,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
 }
 

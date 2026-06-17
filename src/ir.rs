@@ -350,6 +350,12 @@ pub enum Instruction {
         name: String,
         line: usize,
     },
+    UnsetStaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<ValueExpr>,
+        line: usize,
+    },
     DefineConstant {
         name: String,
         attributes: AttributeMetadata,
@@ -3117,6 +3123,20 @@ impl<'a> LoweringContext<'a> {
             } => Instruction::UnsetStaticProperty {
                 class_name: class_name.clone(),
                 name: name.clone(),
+                line: span.line,
+            },
+            AstUnsetTarget::StaticPropertyArrayDim {
+                class_name,
+                name,
+                dimensions,
+                span,
+            } => Instruction::UnsetStaticPropertyArrayDim {
+                class_name: class_name.clone(),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| self.lower_expr(dimension))
+                    .collect(),
                 line: span.line,
             },
         }

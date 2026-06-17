@@ -7132,6 +7132,13 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
     }
     if (key_value.type == PTN_NULL) {
         ptn_emit_null_array_offset_deprecation(runtime, line);
+    } else if (key_value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(key_value.as.floating)) {
+        ptn_emit_float_to_int_precision_deprecation_at(
+            &runtime->diagnostics,
+            key_value.as.floating,
+            runtime->source_path == NULL ? "ptn" : runtime->source_path,
+            line
+        );
     }
 
     PtnArrayKey key;
@@ -7189,6 +7196,13 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
     }
     if (key_value.type == PTN_NULL) {
         ptn_emit_null_array_offset_deprecation(runtime, line);
+    } else if (key_value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(key_value.as.floating)) {
+        ptn_emit_float_to_int_precision_deprecation_at(
+            &runtime->diagnostics,
+            key_value.as.floating,
+            runtime->source_path == NULL ? "ptn" : runtime->source_path,
+            line
+        );
     }
 
     PtnArrayKey key;

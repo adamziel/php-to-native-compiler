@@ -3113,6 +3113,12 @@ impl Parser<'_> {
             {
                 self.parse_expression_statement()
             }
+            TokenKind::Identifier(ref name)
+                if (name.eq_ignore_ascii_case("isset") || name.eq_ignore_ascii_case("empty"))
+                    && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
+            {
+                self.parse_expression_statement()
+            }
             TokenKind::Identifier(_) if matches!(self.peek_next().kind, TokenKind::DoubleColon) => {
                 self.parse_expression_statement()
             }
@@ -7237,6 +7243,12 @@ impl Parser<'_> {
             return Err(Diagnostic::new(
                 "isset() expects at least one argument",
                 Some(start_span),
+            ));
+        }
+        if let Some(target) = targets.iter().find(|target| !isset_target_is_valid(target)) {
+            return Err(Diagnostic::new(
+                "Cannot use isset() on the result of an expression (you can use \"null !== expression\" instead)",
+                Some(target.span()),
             ));
         }
         Ok(Expr::Isset {
@@ -14070,6 +14082,9 @@ fn validate_control_transfers_in_unset_target(target: &UnsetTarget) -> Result<()
         UnsetTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
+        UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            validate_control_transfers_in_exprs(dimensions)?;
+        }
         UnsetTarget::StaticProperty { .. } => {}
         UnsetTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
@@ -15014,6 +15029,9 @@ fn unset_target_contains_yield(target: &UnsetTarget) -> bool {
             ..
         } => expr_contains_yield(receiver) || dimensions.iter().any(expr_contains_yield),
         UnsetTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            dimensions.iter().any(expr_contains_yield)
+        }
         UnsetTarget::ArrayDim(target) => {
             target.dimensions.iter().flatten().any(expr_contains_yield)
         }
@@ -16899,6 +16917,19 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
                     span: combine_spans(property_span, span),
                 });
             }
+            Expr::StaticPropertyFetch {
+                class_name,
+                name,
+                span: property_span,
+            } => {
+                dimensions.reverse();
+                return Ok(UnsetTarget::StaticPropertyArrayDim {
+                    class_name,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, span),
+                });
+            }
             Expr::Grouped { expr, .. } => {
                 current = *expr;
             }
@@ -16909,6 +16940,21 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
                 ));
             }
         }
+    }
+}
+
+fn isset_target_is_valid(expr: &Expr) -> bool {
+    match expr {
+        Expr::Variable(..)
+        | Expr::DynamicVariable { .. }
+        | Expr::ArrayAccess { .. }
+        | Expr::PropertyFetch { .. }
+        | Expr::DynamicPropertyFetch { .. }
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyFetch { .. }
+        | Expr::NullsafePropertyFetch { .. } => true,
+        Expr::Grouped { expr, .. } => isset_target_is_valid(expr),
+        _ => false,
     }
 }
 

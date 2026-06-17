@@ -10987,6 +10987,55 @@ fn emit_instruction(
             out.push_str(&line.to_string());
             out.push_str(");\n");
         }
+        Instruction::UnsetStaticPropertyArrayDim {
+            class_name,
+            name,
+            dimensions,
+            line,
+        } => {
+            let resolved_class_name = values.static_property_class_name(class_name);
+            let path = emit_array_unset_path_segments(out, values, dimensions);
+            let current_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&current_temp);
+            out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+            out.push_str(&c_string(&resolved_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            values.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_value_array_path_unset(&runtime, &");
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            let assigned_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&assigned_temp);
+            out.push_str(" = ptn_runtime_write_static_property_indirect(&runtime, \"");
+            out.push_str(&c_string(&resolved_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            values.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &assigned_temp);
+            emit_value_cleanup(out, "    ", &current_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
         Instruction::InternalCall {
             name,
             arguments,
@@ -13175,6 +13224,11 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
         Instruction::UnsetStaticProperty { .. } => {}
+        Instruction::UnsetStaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+            }
+        }
         Instruction::InternalCall { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
@@ -13822,6 +13876,11 @@ fn collect_instruction_runtime_requirements(
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
         Instruction::UnsetStaticProperty { .. } => {}
+        Instruction::UnsetStaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                collect_value_runtime_requirements(dimension, functions, requirements);
+            }
+        }
         Instruction::InternalCall {
             name,
             arguments,
@@ -16076,6 +16135,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::UnsetPropertyArrayDim { line, .. }
         | Instruction::UnsetProperty { line, .. }
         | Instruction::UnsetStaticProperty { line, .. }
+        | Instruction::UnsetStaticPropertyArrayDim { line, .. }
         | Instruction::DefineConstant { line, .. }
         | Instruction::InternalCall { line, .. }
         | Instruction::Return { line, .. }
@@ -16645,6 +16705,9 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
             value: receiver, ..
         } => value_expr_uses_this(receiver),
         Instruction::UnsetStaticProperty { .. } => false,
+        Instruction::UnsetStaticPropertyArrayDim { dimensions, .. } => {
+            dimensions.iter().any(value_expr_uses_this)
+        }
         Instruction::InternalCall { arguments, .. } => arguments.iter().any(value_expr_uses_this),
         Instruction::Return { value, .. } | Instruction::Exit { value, .. } => {
             value.as_ref().is_some_and(value_expr_uses_this)
