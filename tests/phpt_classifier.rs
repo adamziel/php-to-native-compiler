@@ -1418,12 +1418,6 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
 fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
     let cases = [
         (
-            "user error handler",
-            "--TEST--\nhandler\n--FILE--\n<?php\nset_error_handler('handler');\nrestore_error_handler();\n--EXPECT--\n",
-            "unsupported-diagnostics-runtime\t",
-            "user error/exception handler state",
-        ),
-        (
             "assert options",
             "--TEST--\nassert options\n--FILE--\n<?php\nassert_options(ASSERT_BAIL, 1);\nassert(false);\n--EXPECT--\n",
             "unsupported-assertion-runtime\t",
@@ -1778,6 +1772,18 @@ fn phpt_classifier_keeps_attribute_text_in_strings_runnable() {
 fn phpt_classifier_keeps_unsupported_syntax_words_in_strings_and_comments_runnable() {
     let classification = classify(
         "--TEST--\nsyntax text\n--FILE--\n<?php\n// throw new Exception();\n# fn($x) => $x\n/* public private(set) int $value; static $value; array_walk_recursive($a, 'f'); */\necho \"readonly class fn throw private(set) static $value array_walk_recursive($a, 'f') <<<HEREDOC\";\n--EXPECT--\nreadonly class fn throw private(set) static $value array_walk_recursive($a, 'f') <<<HEREDOC\n",
+    );
+
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_user_diagnostic_handlers_runnable() {
+    let classification = classify(
+        "--TEST--\nhandler\n--FILE--\n<?php\nset_error_handler('handler');\nrestore_error_handler();\nset_exception_handler('handler');\nrestore_exception_handler();\ntrigger_error('hello');\n--EXPECT--\n",
     );
 
     assert!(

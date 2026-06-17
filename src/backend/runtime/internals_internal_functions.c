@@ -33251,6 +33251,17 @@ static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, c
     return ptn_int(previous_level);
 }
 
+static PtnValue ptn_internal_get_error_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    return ptn_diagnostics_current_error_handler(&root->diagnostics);
+}
+
 static PtnValue ptn_internal_set_error_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     PtnRuntime *root = ptn_runtime_root(runtime);
@@ -33258,13 +33269,11 @@ static PtnValue ptn_internal_set_error_handler(PtnRuntime *runtime, size_t argc,
         root = runtime;
     }
     PtnDiagnosticSink *diagnostics = &root->diagnostics;
-    PtnValue previous = diagnostics->has_error_handler
-        ? ptn_value_clone(diagnostics->error_handler)
-        : ptn_null();
+    PtnValue previous = ptn_diagnostics_current_error_handler(diagnostics);
 
     PtnValue callback = ptn_value_deref(args[0]);
     if (callback.type == PTN_NULL) {
-        ptn_diagnostics_clear_error_handler(diagnostics);
+        ptn_diagnostics_push_error_handler(diagnostics, 0, ptn_null(), PTN_E_ALL);
         return previous;
     }
 
@@ -33280,10 +33289,8 @@ static PtnValue ptn_internal_set_error_handler(PtnRuntime *runtime, size_t argc,
         return ptn_null();
     }
 
-    ptn_diagnostics_clear_error_handler(diagnostics);
-    diagnostics->error_handler = ptn_value_clone(checked);
-    diagnostics->has_error_handler = 1;
-    diagnostics->error_handler_levels = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_E_ALL;
+    int64_t levels = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_E_ALL;
+    ptn_diagnostics_push_error_handler(diagnostics, 1, checked, levels);
     ptn_value_destroy(&checked);
     return previous;
 }
@@ -33296,7 +33303,125 @@ static PtnValue ptn_internal_restore_error_handler(PtnRuntime *runtime, size_t a
     if (root == NULL) {
         root = runtime;
     }
-    ptn_diagnostics_clear_error_handler(&root->diagnostics);
+    ptn_diagnostics_restore_error_handler(&root->diagnostics);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_get_exception_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_exception_handlers_current(runtime->exceptions);
+}
+
+static PtnValue ptn_internal_set_exception_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue previous = ptn_exception_handlers_current(runtime->exceptions);
+
+    PtnValue callback = ptn_value_deref(args[0]);
+    if (callback.type == PTN_NULL) {
+        ptn_exception_handlers_push(runtime->exceptions, 0, ptn_null());
+        return previous;
+    }
+
+    PtnValue checked = ptn_internal_expect_callback_arg(
+        runtime,
+        "set_exception_handler",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&previous);
+        return ptn_null();
+    }
+
+    ptn_exception_handlers_push(runtime->exceptions, 1, checked);
+    ptn_value_destroy(&checked);
+    return previous;
+}
+
+static PtnValue ptn_internal_restore_exception_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_exception_handlers_restore(runtime->exceptions);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_trigger_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand message = ptn_internal_expect_string_arg(
+        runtime,
+        "trigger_error",
+        1,
+        "message",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
+    int64_t level = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "trigger_error", 2, "error_level", args[1], line)
+        : PTN_E_USER_NOTICE;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
+    char *owned_message = ptn_duplicate_string_len(message.data, message.len);
+    ptn_string_operand_free(message);
+    switch (level) {
+        case PTN_E_USER_ERROR:
+            if (!ptn_diagnostics_try_error_handler(
+                &runtime->diagnostics,
+                PTN_E_USER_ERROR,
+                owned_message,
+                runtime->source_path,
+                line
+            )) {
+                ptn_throw_exception_at(runtime, "Error", owned_message, runtime->source_path, line);
+            }
+            break;
+        case PTN_E_USER_WARNING:
+            ptn_emit_user_warning(&runtime->diagnostics, owned_message, line);
+            break;
+        case PTN_E_USER_NOTICE:
+            ptn_emit_user_notice(&runtime->diagnostics, owned_message, line);
+            break;
+        case PTN_E_USER_DEPRECATED:
+            ptn_emit_user_deprecation(&runtime->diagnostics, owned_message, line);
+            break;
+        default:
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "trigger_error(): Argument #2 ($error_level) must be one of E_USER_ERROR, E_USER_WARNING, E_USER_NOTICE, or E_USER_DEPRECATED"
+            );
+            break;
+    }
+    free(owned_message);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_user_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_trigger_error(runtime, argc, args, line);
+}
+
+static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand message = ptn_internal_expect_string_arg(
+        runtime,
+        "error_log",
+        1,
+        "message",
+        args[0],
+        line
+    );
+    fwrite(message.data, 1, message.len, stderr);
+    fputc('\n', stderr);
+    ptn_string_operand_free(message);
     return ptn_bool(1);
 }
 
@@ -34579,6 +34704,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
         { "doubleval", 1, 1, ptn_internal_floatval },
         { "end", 1, 1, ptn_internal_end },
+        { "error_log", 1, 4, ptn_internal_error_log },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "escapeshellarg", 1, 1, ptn_internal_escapeshellarg },
         { "exit", 0, 1, ptn_internal_exit },
@@ -34642,6 +34768,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_defined_vars", 0, 0, ptn_internal_get_defined_vars },
         { "get_defined_constants", 0, 1, ptn_internal_get_defined_constants },
         { "get_defined_functions", 0, 1, ptn_internal_get_defined_functions },
+        { "get_error_handler", 0, 0, ptn_internal_get_error_handler },
+        { "get_exception_handler", 0, 0, ptn_internal_get_exception_handler },
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
         { "get_included_files", 0, 0, ptn_internal_get_included_files },
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
@@ -34797,6 +34925,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
         { "reset", 1, 1, ptn_internal_reset },
         { "restore_error_handler", 0, 0, ptn_internal_restore_error_handler },
+        { "restore_exception_handler", 0, 0, ptn_internal_restore_exception_handler },
         { "rewind", 1, 1, ptn_internal_rewind },
         { "rewinddir", 1, 1, ptn_internal_rewinddir },
         { "rmdir", 1, 2, ptn_internal_rmdir },
@@ -34805,6 +34934,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "scandir", 1, 3, ptn_internal_scandir },
         { "serialize", 1, 1, ptn_internal_serialize },
         { "set_error_handler", 1, 2, ptn_internal_set_error_handler },
+        { "set_exception_handler", 1, 1, ptn_internal_set_exception_handler },
         { "set_include_path", 1, 1, ptn_internal_set_include_path },
         { "set_time_limit", 1, 1, ptn_internal_set_time_limit },
         { "settype", 2, 2, ptn_internal_settype },
@@ -34889,6 +35019,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "touch", 1, 3, ptn_internal_touch },
         { "trait_exists", 1, 2, ptn_internal_trait_exists },
         { "trim", 1, 2, ptn_internal_trim },
+        { "trigger_error", 1, 2, ptn_internal_trigger_error },
         { "uasort", 2, 2, ptn_internal_uasort },
         { "ucfirst", 1, 1, ptn_internal_ucfirst },
         { "ucwords", 1, 2, ptn_internal_ucwords },
@@ -34900,6 +35031,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "unserialize", 1, 1, ptn_internal_unserialize },
         { "urldecode", 1, 1, ptn_internal_urldecode },
         { "urlencode", 1, 1, ptn_internal_urlencode },
+        { "user_error", 1, 2, ptn_internal_user_error },
         { "usort", 2, 2, ptn_internal_usort },
         { "utf8_decode", 1, 1, ptn_internal_utf8_decode },
         { "utf8_encode", 1, 1, ptn_internal_utf8_encode },

@@ -27,6 +27,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->diagnostics.suppressed = caller_runtime->diagnostics.suppressed;
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
+    ptn_exception_handlers_init(&runtime->owned_exceptions);
     runtime->exceptions = caller_runtime->exceptions;
     runtime->owned_call_frame.argc = 0;
     runtime->owned_call_frame.args = NULL;
@@ -207,6 +208,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         ptn_runtime_release_static_locals(runtime);
         ptn_output_buffer_flush_all(runtime);
         ptn_diagnostics_clear_error_handler(&runtime->diagnostics);
+        ptn_exception_handlers_clear(&runtime->owned_exceptions);
     }
     ptn_symbols_free(&runtime->owned_static_property_set_visibility);
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);
@@ -1399,6 +1401,17 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
 
 static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
     fflush(stdout);
+    if (ptn_exception_handlers_try_uncaught(runtime, exception)) {
+        return;
+    }
+    if (
+        runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL &&
+        runtime->exceptions->active_exception != exception
+    ) {
+        exception = runtime->exceptions->active_exception;
+    }
     if (!runtime->diagnostics.display_errors) {
         return;
     }
@@ -1423,7 +1436,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
         display_path = frame->file;
         display_line = frame->line;
     }
-    if (display_path == NULL || display_line == 0) {
+    if (display_path == NULL) {
         fputs("Fatal error: ", stderr);
         fwrite(exception->message, 1, exception->message_len, stderr);
         fputc('\n', stderr);

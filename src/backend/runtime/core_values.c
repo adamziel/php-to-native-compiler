@@ -676,8 +676,25 @@ struct PtnStreamFilter {
 };
 
 typedef struct {
+    int has_handler;
+    PtnValue handler;
+    int64_t levels;
+} PtnErrorHandlerFrame;
+
+typedef struct {
+    int has_handler;
+    PtnValue handler;
+} PtnExceptionHandlerFrame;
+
+typedef struct {
     PtnException *active_exception;
     PtnTryFrame *try_frame;
+    int has_exception_handler;
+    PtnValue exception_handler;
+    PtnExceptionHandlerFrame *exception_handler_stack;
+    size_t exception_handler_stack_len;
+    size_t exception_handler_stack_capacity;
+    int in_exception_handler;
 } PtnExceptionState;
 
 typedef struct {
@@ -717,6 +734,9 @@ typedef struct {
     int has_error_handler;
     PtnValue error_handler;
     int64_t error_handler_levels;
+    PtnErrorHandlerFrame *error_handler_stack;
+    size_t error_handler_stack_len;
+    size_t error_handler_stack_capacity;
 } PtnDiagnosticSink;
 
 typedef PtnValue (*PtnMethodDispatchHandler)(

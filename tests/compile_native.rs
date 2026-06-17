@@ -5148,6 +5148,83 @@ important();
 }
 
 #[test]
+fn compile_error_handler_stack_and_trigger_error_to_native_binary() {
+    let root = temp_dir("ptn-native-error-handler-stack-trigger");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-handler-stack-trigger.php");
+    let output = root.join("error-handler-stack-trigger-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function ($errno, $errstr) {
+    echo 'first:', $errno, ':', $errstr, \"\\n\";
+    return true;
+});
+set_error_handler(function ($errno, $errstr) {
+    echo 'second:', $errno, ':', $errstr, \"\\n\";
+    return true;
+});
+trigger_error('alpha');
+restore_error_handler();
+trigger_error('beta');
+set_error_handler(null);
+trigger_error('gamma');
+restore_error_handler();
+trigger_error('delta');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("second:1024:alpha\n"), "{stdout}");
+    assert!(stdout.contains("first:1024:beta\n"), "{stdout}");
+    assert!(stdout.contains("Notice: gamma in ptn on line"), "{stdout}");
+    assert!(stdout.contains("first:1024:delta\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_exception_handler_stack_and_null_restore_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-handler-stack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-handler-stack.php");
+    let output = root.join("exception-handler-stack-bin");
+    fs::write(
+        &input,
+        "<?php
+set_exception_handler(function ($e) {
+    echo 'First handler', \"\\n\";
+});
+set_exception_handler(function ($e) {
+    echo 'Second handler: ', $e->getMessage(), \"\\n\";
+});
+set_exception_handler(null);
+set_exception_handler(function ($e) {
+    echo 'Fourth handler', \"\\n\";
+});
+restore_exception_handler();
+restore_exception_handler();
+throw new Exception('boom');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Second handler: boom\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_rejects_unmatched_override_attributes() {
     let cases = [
         (

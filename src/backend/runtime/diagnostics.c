@@ -526,6 +526,9 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->has_error_handler = 0;
     diagnostics->error_handler = ptn_null();
     diagnostics->error_handler_levels = PTN_E_ALL;
+    diagnostics->error_handler_stack = NULL;
+    diagnostics->error_handler_stack_len = 0;
+    diagnostics->error_handler_stack_capacity = 0;
     int64_t configured_error_reporting = 0;
     if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
         diagnostics->error_reporting = configured_error_reporting;
@@ -536,7 +539,7 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     }
 }
 
-static PTN_UNUSED void ptn_diagnostics_clear_error_handler(PtnDiagnosticSink *diagnostics) {
+static void ptn_diagnostics_clear_current_error_handler(PtnDiagnosticSink *diagnostics) {
     if (diagnostics == NULL || !diagnostics->has_error_handler) {
         return;
     }
@@ -544,6 +547,205 @@ static PTN_UNUSED void ptn_diagnostics_clear_error_handler(PtnDiagnosticSink *di
     diagnostics->error_handler = ptn_null();
     diagnostics->has_error_handler = 0;
     diagnostics->error_handler_levels = PTN_E_ALL;
+}
+
+static PTN_UNUSED PtnValue ptn_diagnostics_current_error_handler(PtnDiagnosticSink *diagnostics) {
+    if (diagnostics == NULL || !diagnostics->has_error_handler) {
+        return ptn_null();
+    }
+    return ptn_value_clone(diagnostics->error_handler);
+}
+
+static PTN_UNUSED void ptn_diagnostics_push_error_handler(
+    PtnDiagnosticSink *diagnostics,
+    int has_handler,
+    PtnValue handler,
+    int64_t levels
+) {
+    if (diagnostics == NULL) {
+        return;
+    }
+    if (diagnostics->error_handler_stack_len == diagnostics->error_handler_stack_capacity) {
+        size_t capacity = diagnostics->error_handler_stack_capacity == 0
+            ? 4
+            : diagnostics->error_handler_stack_capacity * 2;
+        PtnErrorHandlerFrame *stack = realloc(
+            diagnostics->error_handler_stack,
+            capacity * sizeof(PtnErrorHandlerFrame)
+        );
+        if (stack == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        diagnostics->error_handler_stack = stack;
+        diagnostics->error_handler_stack_capacity = capacity;
+    }
+    PtnErrorHandlerFrame *frame =
+        &diagnostics->error_handler_stack[diagnostics->error_handler_stack_len++];
+    frame->has_handler = diagnostics->has_error_handler;
+    frame->handler = diagnostics->has_error_handler
+        ? ptn_value_clone(diagnostics->error_handler)
+        : ptn_null();
+    frame->levels = diagnostics->error_handler_levels;
+
+    ptn_diagnostics_clear_current_error_handler(diagnostics);
+    diagnostics->has_error_handler = has_handler;
+    diagnostics->error_handler = has_handler ? ptn_value_clone(handler) : ptn_null();
+    diagnostics->error_handler_levels = levels;
+}
+
+static PTN_UNUSED void ptn_diagnostics_restore_error_handler(PtnDiagnosticSink *diagnostics) {
+    if (diagnostics == NULL) {
+        return;
+    }
+    ptn_diagnostics_clear_current_error_handler(diagnostics);
+    if (diagnostics->error_handler_stack_len == 0) {
+        return;
+    }
+    PtnErrorHandlerFrame frame =
+        diagnostics->error_handler_stack[--diagnostics->error_handler_stack_len];
+    diagnostics->has_error_handler = frame.has_handler;
+    diagnostics->error_handler = frame.has_handler ? frame.handler : ptn_null();
+    diagnostics->error_handler_levels = frame.levels;
+}
+
+static PTN_UNUSED void ptn_diagnostics_clear_error_handler(PtnDiagnosticSink *diagnostics) {
+    if (diagnostics == NULL) {
+        return;
+    }
+    ptn_diagnostics_clear_current_error_handler(diagnostics);
+    for (size_t i = 0; i < diagnostics->error_handler_stack_len; i++) {
+        if (diagnostics->error_handler_stack[i].has_handler) {
+            ptn_value_destroy(&diagnostics->error_handler_stack[i].handler);
+        }
+    }
+    free(diagnostics->error_handler_stack);
+    diagnostics->error_handler_stack = NULL;
+    diagnostics->error_handler_stack_len = 0;
+    diagnostics->error_handler_stack_capacity = 0;
+}
+
+static PTN_UNUSED void ptn_exception_handlers_init(PtnExceptionState *state) {
+    if (state == NULL) {
+        return;
+    }
+    state->has_exception_handler = 0;
+    state->exception_handler = ptn_null();
+    state->exception_handler_stack = NULL;
+    state->exception_handler_stack_len = 0;
+    state->exception_handler_stack_capacity = 0;
+    state->in_exception_handler = 0;
+}
+
+static void ptn_exception_handlers_clear_current(PtnExceptionState *state) {
+    if (state == NULL || !state->has_exception_handler) {
+        return;
+    }
+    ptn_value_destroy(&state->exception_handler);
+    state->exception_handler = ptn_null();
+    state->has_exception_handler = 0;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_handlers_current(PtnExceptionState *state) {
+    if (state == NULL || !state->has_exception_handler) {
+        return ptn_null();
+    }
+    return ptn_value_clone(state->exception_handler);
+}
+
+static PTN_UNUSED void ptn_exception_handlers_push(
+    PtnExceptionState *state,
+    int has_handler,
+    PtnValue handler
+) {
+    if (state == NULL) {
+        return;
+    }
+    if (state->exception_handler_stack_len == state->exception_handler_stack_capacity) {
+        size_t capacity = state->exception_handler_stack_capacity == 0
+            ? 4
+            : state->exception_handler_stack_capacity * 2;
+        PtnExceptionHandlerFrame *stack = realloc(
+            state->exception_handler_stack,
+            capacity * sizeof(PtnExceptionHandlerFrame)
+        );
+        if (stack == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        state->exception_handler_stack = stack;
+        state->exception_handler_stack_capacity = capacity;
+    }
+    PtnExceptionHandlerFrame *frame =
+        &state->exception_handler_stack[state->exception_handler_stack_len++];
+    frame->has_handler = state->has_exception_handler;
+    frame->handler = state->has_exception_handler
+        ? ptn_value_clone(state->exception_handler)
+        : ptn_null();
+
+    ptn_exception_handlers_clear_current(state);
+    state->has_exception_handler = has_handler;
+    state->exception_handler = has_handler ? ptn_value_clone(handler) : ptn_null();
+}
+
+static PTN_UNUSED void ptn_exception_handlers_restore(PtnExceptionState *state) {
+    if (state == NULL) {
+        return;
+    }
+    ptn_exception_handlers_clear_current(state);
+    if (state->exception_handler_stack_len == 0) {
+        return;
+    }
+    PtnExceptionHandlerFrame frame =
+        state->exception_handler_stack[--state->exception_handler_stack_len];
+    state->has_exception_handler = frame.has_handler;
+    state->exception_handler = frame.has_handler ? frame.handler : ptn_null();
+}
+
+static PTN_UNUSED void ptn_exception_handlers_clear(PtnExceptionState *state) {
+    if (state == NULL) {
+        return;
+    }
+    ptn_exception_handlers_clear_current(state);
+    for (size_t i = 0; i < state->exception_handler_stack_len; i++) {
+        if (state->exception_handler_stack[i].has_handler) {
+            ptn_value_destroy(&state->exception_handler_stack[i].handler);
+        }
+    }
+    free(state->exception_handler_stack);
+    state->exception_handler_stack = NULL;
+    state->exception_handler_stack_len = 0;
+    state->exception_handler_stack_capacity = 0;
+    state->in_exception_handler = 0;
+}
+
+static PTN_UNUSED int ptn_exception_handlers_try_uncaught(
+    PtnRuntime *runtime,
+    PtnException *exception
+) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (runtime == NULL || runtime->exceptions == NULL || exception == NULL) {
+        return 0;
+    }
+    PtnExceptionState *state = runtime->exceptions;
+    if (!state->has_exception_handler || state->in_exception_handler) {
+        return 0;
+    }
+    PtnValue handler = ptn_value_clone(state->exception_handler);
+    PtnException *saved_active = state->active_exception;
+    if (saved_active == exception) {
+        state->active_exception = NULL;
+    }
+    state->in_exception_handler = 1;
+    PtnValue arg = ptn_exception_borrow(exception);
+    PtnValue result = ptn_call_callable(runtime, handler, 1, &arg, 0);
+    ptn_value_destroy(&result);
+    state->in_exception_handler = 0;
+    ptn_value_destroy(&handler);
+    return state->active_exception == NULL;
+#else
+    (void)runtime;
+    (void)exception;
+    return 0;
+#endif
 }
 
 static PTN_UNUSED void ptn_diagnostic_output_write(
@@ -611,6 +813,10 @@ static PTN_UNUSED const char *ptn_diagnostic_path(PtnDiagnosticSink *diagnostics
     return "ptn";
 }
 
+static PTN_UNUSED const char *ptn_diagnostic_builtin_path(size_t line) {
+    return line == 0 ? "Unknown" : "ptn";
+}
+
 static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     PtnDiagnosticSink *diagnostics,
     int64_t severity,
@@ -636,14 +842,26 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     }
 
     const char *effective_message = message == NULL ? "" : message;
-    const char *effective_path = ptn_diagnostic_path(diagnostics, path);
+    const char *effective_path = (path == NULL && line == 0)
+        ? "Unknown"
+        : ptn_diagnostic_path(diagnostics, path);
     PtnValue args[4] = {
         ptn_int(severity),
         ptn_owned_string(ptn_duplicate_string(effective_message)),
         ptn_owned_string(ptn_duplicate_string(effective_path)),
         ptn_int((int64_t)line),
     };
-    PtnValue result = ptn_call_callable(runtime, handler_diagnostics->error_handler, 4, args, line);
+    PtnValue saved_handler = ptn_value_clone(handler_diagnostics->error_handler);
+    int64_t saved_handler_levels = handler_diagnostics->error_handler_levels;
+    ptn_diagnostics_clear_current_error_handler(handler_diagnostics);
+    PtnValue result = ptn_call_callable(runtime, saved_handler, 4, args, line);
+    if (!handler_diagnostics->has_error_handler) {
+        handler_diagnostics->error_handler = saved_handler;
+        handler_diagnostics->has_error_handler = 1;
+        handler_diagnostics->error_handler_levels = saved_handler_levels;
+    } else {
+        ptn_value_destroy(&saved_handler);
+    }
     for (size_t i = 0; i < 4; i++) {
         ptn_value_destroy(&args[i]);
     }
@@ -825,7 +1043,13 @@ static PTN_UNUSED void ptn_emit_deprecation(PtnDiagnosticSink *diagnostics, cons
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_DEPRECATED, message, NULL, line)) {
         return;
     }
-    ptn_diagnostic_printf(diagnostics, "\nDeprecated: %s in ptn on line %zu\n", message, line);
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nDeprecated: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_user_deprecation(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
@@ -836,7 +1060,13 @@ static PTN_UNUSED void ptn_emit_user_deprecation(PtnDiagnosticSink *diagnostics,
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_USER_DEPRECATED, message, NULL, line)) {
         return;
     }
-    ptn_diagnostic_printf(diagnostics, "\nDeprecated: %s in ptn on line %zu\n", message, line);
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nDeprecated: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_runtime_deprecation(PtnRuntime *runtime, const char *message, size_t line) {
@@ -871,7 +1101,13 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
         return;
     }
-    ptn_diagnostic_printf(diagnostics, "\nWarning: %s in ptn on line %zu\n", message, line);
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nWarning: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
@@ -882,14 +1118,42 @@ static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, con
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_USER_WARNING, message, NULL, line)) {
         return;
     }
-    ptn_diagnostic_printf(diagnostics, "\nWarning: %s in ptn on line %zu\n", message, line);
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nWarning: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_emit_user_notice(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_USER_NOTICE)) {
+        return;
+    }
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_USER_NOTICE, message, NULL, line)) {
+        return;
+    }
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nNotice: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_notice(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
         return;
     }
-    ptn_diagnostic_printf(diagnostics, "Notice: %s in ptn on line %zu\n", message, line);
+    ptn_diagnostic_printf(
+        diagnostics,
+        "Notice: %s in %s on line %zu\n",
+        message,
+        ptn_diagnostic_builtin_path(line),
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_runtime_warning(PtnRuntime *runtime, const char *message, size_t line) {
@@ -1120,6 +1384,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->diagnostics.runtime = runtime;
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
+    ptn_exception_handlers_init(&runtime->owned_exceptions);
     runtime->exceptions = &runtime->owned_exceptions;
     runtime->owned_call_frame.argc = 0;
     runtime->owned_call_frame.args = NULL;
