@@ -2,8 +2,8 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-17T14:58:59Z |
-| source commit | `5e90e26ebebc` |
+| last refresh | 2026-06-17T15:08:10Z |
+| source commit | `f6172ca6f78c` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
 | evidence source | `tools/status-dashboard-features.tsv` |
@@ -21,9 +21,9 @@
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-17T14:00Z) | 0 |
-| last 24 hours (2026-06-16T15:00Z - 2026-06-17T14:00Z) | 238 |
-| last 7 days (2026-06-10T15:00Z - 2026-06-17T14:00Z) | 673 |
+| latest hour (2026-06-17T15:00Z) | 0 |
+| last 24 hours (2026-06-16T16:00Z - 2026-06-17T15:00Z) | 238 |
+| last 7 days (2026-06-10T16:00Z - 2026-06-17T15:00Z) | 673 |
 
 ## Feature Table
 
@@ -91,7 +91,6 @@
 
 | hour (UTC) | newly passed tests | cumulative passed tests |
 | --- | ---: | ---: |
-| 2026-06-10T15:00Z | 0 | 256 |
 | 2026-06-10T16:00Z | 0 | 256 |
 | 2026-06-10T17:00Z | 0 | 256 |
 | 2026-06-10T18:00Z | 0 | 256 |
@@ -259,3 +258,4 @@
 | 2026-06-17T12:00Z | 0 | 929 |
 | 2026-06-17T13:00Z | 0 | 929 |
 | 2026-06-17T14:00Z | 0 | 929 |
+| 2026-06-17T15:00Z | 0 | 929 |
