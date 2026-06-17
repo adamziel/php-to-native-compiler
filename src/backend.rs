@@ -1399,7 +1399,7 @@ fn emit_user_functions(
                     out.push_str("    if (");
                     out.push_str(&guard_name);
                     out.push_str(") {\n");
-                    let default_temp = values.emit_materialized_value(out, default_value);
+                    let default_temp = values.emit_const_materialized_value(out, default_value);
                     out.push_str("        ");
                     out.push_str(&value_name);
                     out.push_str(" = ");
@@ -2381,7 +2381,7 @@ fn emit_static_property_initializers_with_constants(
                     out.push_str("    runtime.current_called_class_name = \"");
                     out.push_str(&c_string(&class.name));
                     out.push_str("\";\n");
-                    let value_temp = values.emit_materialized_value(out, value);
+                    let value_temp = values.emit_const_materialized_value(out, value);
                     out.push_str("    runtime.current_called_class_name = ");
                     out.push_str(&previous_called_scope_temp);
                     out.push_str(";\n");
@@ -20918,7 +20918,7 @@ impl ValueEmitter {
                     out.push_str("    runtime.current_called_class_name = \"");
                     out.push_str(&c_string(&declaring_class_name));
                     out.push_str("\";\n");
-                    let value_temp = self.emit_materialized_value(out, value);
+                    let value_temp = self.emit_const_materialized_value(out, value);
                     out.push_str("    runtime.current_called_class_name = ");
                     out.push_str(&previous_called_scope_temp);
                     out.push_str(";\n");
@@ -25285,6 +25285,8 @@ impl ValueEmitter {
         out.push_str(&result_temp);
         out.push_str(" = ptn_first_class_callable_create(&runtime, ");
         out.push_str(&callable_temp);
+        out.push_str(", ");
+        out.push_str(if self.in_const_declaration { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
