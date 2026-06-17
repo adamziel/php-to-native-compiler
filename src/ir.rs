@@ -72,6 +72,7 @@ pub struct ClassDecl {
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
+    pub attributes: AttributeMetadata,
     pub line: usize,
     pub is_abstract: bool,
     pub is_final: bool,
@@ -109,6 +110,7 @@ pub struct PropertyDecl {
     pub is_virtual: bool,
     pub hook_get_value: Option<ValueExpr>,
     pub type_hint: Option<PropertyTypeHint>,
+    pub attributes: AttributeMetadata,
     pub value: Option<ValueExpr>,
     pub line: usize,
 }
@@ -127,6 +129,7 @@ pub struct StaticPropertyDecl {
     pub set_visibility: PropertyVisibility,
     pub is_final: bool,
     pub type_hint: Option<PropertyTypeHint>,
+    pub attributes: AttributeMetadata,
     pub value: Option<ValueExpr>,
 }
 
@@ -155,6 +158,7 @@ pub enum PropertyTypeKind {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub attributes: AttributeMetadata,
     pub deprecated_message: Option<String>,
     pub deprecated_since: Option<String>,
     pub deprecated_message_dependency: Option<DeprecatedMessageDependency>,
@@ -176,6 +180,7 @@ pub struct MethodDecl {
     pub name: String,
     pub function_index: usize,
     pub visibility: PropertyVisibility,
+    pub attributes: AttributeMetadata,
     pub is_static: bool,
     pub is_abstract: bool,
     pub line: usize,
@@ -193,6 +198,7 @@ pub struct FunctionDecl {
     pub deprecated_since: Option<String>,
     pub deprecated_message_runtime_reference: Option<AttributeConstantReference>,
     pub no_discard_message: Option<String>,
+    pub attributes: AttributeMetadata,
     pub is_static: bool,
     pub line: usize,
     pub parameters: Vec<FunctionParameter>,
@@ -207,6 +213,7 @@ pub struct FunctionDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionParameter {
     pub name: String,
+    pub attributes: AttributeMetadata,
     pub type_hint: Option<TypeHint>,
     pub by_ref: bool,
     pub is_variadic: bool,
@@ -1051,6 +1058,7 @@ impl<'a> LoweringContext<'a> {
             deprecated_since: deprecated_metadata.since,
             deprecated_message_runtime_reference: deprecated_metadata.message_runtime_reference,
             no_discard_message: function.attributes.no_discard_message.clone(),
+            attributes: function.attributes.clone(),
             is_static: false,
             line: function.span.line,
             parameters,
@@ -1354,6 +1362,7 @@ impl<'a> LoweringContext<'a> {
             deprecated_since: deprecated_metadata.since,
             deprecated_message_runtime_reference: deprecated_metadata.message_runtime_reference,
             no_discard_message: function.attributes.no_discard_message.clone(),
+            attributes: function.attributes.clone(),
             is_static: function.is_static,
             line: function.span.line,
             parameters,
@@ -1394,6 +1403,7 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|value| self.lower_expr(value)),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
+                attributes: property.attributes.clone(),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
             })
@@ -1407,6 +1417,7 @@ impl<'a> LoweringContext<'a> {
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_final: property.is_final,
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
+                attributes: property.attributes.clone(),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })
             .collect();
@@ -1431,6 +1442,7 @@ impl<'a> LoweringContext<'a> {
                 ClassConstantDecl {
                     name: constant.name.clone(),
                     visibility: lower_property_visibility(constant.visibility),
+                    attributes: constant.attributes.clone(),
                     deprecated_message: metadata.message,
                     deprecated_since: metadata.since,
                     deprecated_message_dependency: metadata.message_dependency,
@@ -1469,6 +1481,7 @@ impl<'a> LoweringContext<'a> {
                     deprecated_message_runtime_reference: deprecated_metadata
                         .message_runtime_reference,
                     no_discard_message: method.attributes.no_discard_message.clone(),
+                    attributes: method.attributes.clone(),
                     is_static: method.is_static,
                     line: method.span.line,
                     parameters,
@@ -1491,6 +1504,7 @@ impl<'a> LoweringContext<'a> {
                     name: method.name.clone(),
                     function_index,
                     visibility: lower_property_visibility(method.visibility),
+                    attributes: method.attributes.clone(),
                     is_static: method.is_static,
                     is_abstract: method.is_abstract,
                     line: method.span.line,
@@ -1502,6 +1516,7 @@ impl<'a> LoweringContext<'a> {
             parent_name: class.parent_name.clone(),
             interfaces: class.interfaces.clone(),
             trait_uses: lower_trait_uses(&class.trait_uses),
+            attributes: class.attributes.clone(),
             line: class.span.line,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
@@ -1833,6 +1848,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_parameter(&mut self, parameter: &AstFunctionParameter) -> FunctionParameter {
         FunctionParameter {
             name: parameter.name.clone(),
+            attributes: parameter.attributes.clone(),
             type_hint: parameter.type_hint.clone().map(lower_type_hint),
             by_ref: parameter.by_ref,
             is_variadic: parameter.is_variadic,

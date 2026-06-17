@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, AttributeConstantReference, AttributeMetadata, BinaryOp, CastKind,
+    AssignmentTarget, AttributeArgument, AttributeArgumentKind, AttributeArgumentValue,
+    AttributeConstantReference, AttributeInstance, AttributeMetadata, BinaryOp, CastKind,
     CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning,
     CompileWarningKind, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
     IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
@@ -1055,6 +1056,22 @@ impl Parser<'_> {
                 self.resolve_aliasable_name(&parsed.name, &self.class_aliases)
             }
         }
+    }
+
+    fn resolve_attribute_name(&self, name_segments: &[String], leading_backslash: bool) -> String {
+        if name_segments.is_empty() {
+            return String::new();
+        }
+        if leading_backslash {
+            return name_segments.join("\\");
+        }
+        if name_segments
+            .first()
+            .is_some_and(|segment| segment.eq_ignore_ascii_case("namespace"))
+        {
+            return self.qualify_current_namespace(&name_segments[1..].join("\\"));
+        }
+        self.resolve_aliasable_name(&name_segments.join("\\"), &self.class_aliases)
     }
 
     fn resolve_function_name(&self, parsed: &ParsedName) -> String {
@@ -2358,6 +2375,7 @@ impl Parser<'_> {
                     is_virtual,
                     hook_get_value,
                     type_hint,
+                    attributes: attributes.clone(),
                     has_override_attribute: attributes.has_override,
                     value: None,
                     span: token.span,
@@ -2395,6 +2413,7 @@ impl Parser<'_> {
                 is_virtual: false,
                 hook_get_value: None,
                 type_hint,
+                attributes: attributes.clone(),
                 has_override_attribute: attributes.has_override,
                 value,
                 span: token.span,
@@ -2445,6 +2464,7 @@ impl Parser<'_> {
             set_visibility,
             is_final,
             type_hint,
+            attributes: attributes.clone(),
             has_override_attribute: attributes.has_override,
             value,
             span: token.span,
@@ -4662,6 +4682,7 @@ impl Parser<'_> {
         let mut bracket_depth = 1usize;
         let mut paren_depth = 0usize;
         let mut name_segments = Vec::new();
+        let mut leading_attribute_backslash = false;
         let mut arguments = ParsedAttributeArguments::default();
         let mut pending_argument_name = None;
         let mut collecting_name = true;
@@ -4684,7 +4705,12 @@ impl Parser<'_> {
                     ));
                 }
                 TokenKind::Backslash
-                    if bracket_depth == 1 && paren_depth == 0 && collecting_name => {}
+                    if bracket_depth == 1 && paren_depth == 0 && collecting_name =>
+                {
+                    if name_segments.is_empty() {
+                        leading_attribute_backslash = true;
+                    }
+                }
                 TokenKind::LeftParen if bracket_depth == 1 => {
                     collecting_name = false;
                     paren_depth += 1;
@@ -4732,8 +4758,12 @@ impl Parser<'_> {
                         };
                         let class_name = self.resolve_class_name(&parsed_name);
                         let class_name = self.resolve_runtime_class_alias_name(&class_name);
-                        let text = format!("{class_name}::{member_name}");
                         let kind = parsed_attribute_class_constant_kind(&class_name, &member_name);
+                        let text = if matches!(kind, ParsedAttributeArgumentKind::String) {
+                            class_name.clone()
+                        } else {
+                            format!("{class_name}::{member_name}")
+                        };
                         arguments.record_value(
                             pending_argument_name.take(),
                             ParsedAttributeArgumentValue {
@@ -4793,8 +4823,12 @@ impl Parser<'_> {
                         };
                         let class_name = self.resolve_class_name(&parsed_name);
                         let class_name = self.resolve_runtime_class_alias_name(&class_name);
-                        let text = format!("{class_name}::{member_name}");
                         let kind = parsed_attribute_class_constant_kind(&class_name, &member_name);
+                        let text = if matches!(kind, ParsedAttributeArgumentKind::String) {
+                            class_name.clone()
+                        } else {
+                            format!("{class_name}::{member_name}")
+                        };
                         arguments.record_value(
                             pending_argument_name.take(),
                             ParsedAttributeArgumentValue {
@@ -4897,13 +4931,17 @@ impl Parser<'_> {
                     pending_argument_name = None;
                 }
                 TokenKind::Comma if bracket_depth == 1 && paren_depth == 0 => {
+                    let resolved_name =
+                        self.resolve_attribute_name(&name_segments, leading_attribute_backslash);
                     apply_parsed_attribute(
                         &mut attributes,
                         &name_segments,
+                        &resolved_name,
                         &arguments,
                         self.strict_types,
                     )?;
                     name_segments.clear();
+                    leading_attribute_backslash = false;
                     arguments = ParsedAttributeArguments::default();
                     pending_argument_name = None;
                     collecting_name = true;
@@ -4919,9 +4957,12 @@ impl Parser<'_> {
                 }
                 TokenKind::RightBracket => {
                     if bracket_depth == 1 && paren_depth == 0 {
+                        let resolved_name = self
+                            .resolve_attribute_name(&name_segments, leading_attribute_backslash);
                         apply_parsed_attribute(
                             &mut attributes,
                             &name_segments,
+                            &resolved_name,
                             &arguments,
                             self.strict_types,
                         )?;
@@ -8663,6 +8704,12 @@ struct ParsedAttributeArgumentValue {
 }
 
 #[derive(Clone)]
+struct ParsedAttributeArgument {
+    name: Option<String>,
+    value: ParsedAttributeArgumentValue,
+}
+
+#[derive(Clone)]
 enum ParsedAttributeArgumentKind {
     String,
     Int,
@@ -8680,6 +8727,7 @@ enum ParsedAttributeArgumentKind {
 
 #[derive(Default)]
 struct ParsedAttributeArguments {
+    all: Vec<ParsedAttributeArgument>,
     positional: Vec<ParsedAttributeArgumentValue>,
     message: Option<ParsedAttributeArgumentValue>,
     since: Option<ParsedAttributeArgumentValue>,
@@ -8705,6 +8753,10 @@ impl ParsedAttributeArguments {
     }
 
     fn record_value(&mut self, name: Option<String>, value: ParsedAttributeArgumentValue) {
+        self.all.push(ParsedAttributeArgument {
+            name: name.clone(),
+            value: value.clone(),
+        });
         match name.as_deref() {
             Some(name) if name.eq_ignore_ascii_case("message") => {
                 self.message = Some(value);
@@ -8736,6 +8788,38 @@ impl ParsedAttributeArguments {
 
     fn since(&self) -> Option<String> {
         self.since_value().map(|value| value.text.clone())
+    }
+}
+
+fn parsed_attribute_argument_kind_to_ast(
+    kind: &ParsedAttributeArgumentKind,
+) -> AttributeArgumentKind {
+    match kind {
+        ParsedAttributeArgumentKind::String => AttributeArgumentKind::String,
+        ParsedAttributeArgumentKind::Int => AttributeArgumentKind::Int,
+        ParsedAttributeArgumentKind::Float => AttributeArgumentKind::Float,
+        ParsedAttributeArgumentKind::Bool => AttributeArgumentKind::Bool,
+        ParsedAttributeArgumentKind::Null => AttributeArgumentKind::Null,
+        ParsedAttributeArgumentKind::Array => AttributeArgumentKind::Array,
+        ParsedAttributeArgumentKind::Constant => AttributeArgumentKind::Constant,
+        ParsedAttributeArgumentKind::ClassConstant => AttributeArgumentKind::ClassConstant,
+        ParsedAttributeArgumentKind::NativeEnumCase {
+            class_name,
+            case_name,
+        } => AttributeArgumentKind::NativeEnumCase {
+            class_name: class_name.clone(),
+            case_name: case_name.clone(),
+        },
+    }
+}
+
+fn parsed_attribute_argument_value_to_ast(
+    value: &ParsedAttributeArgumentValue,
+) -> AttributeArgumentValue {
+    AttributeArgumentValue {
+        text: value.text.clone(),
+        kind: parsed_attribute_argument_kind_to_ast(&value.kind),
+        constant_reference: value.constant_reference.clone(),
     }
 }
 
@@ -8822,9 +8906,21 @@ fn attribute_argument_stack_display(value: &ParsedAttributeArgumentValue) -> Str
 fn apply_parsed_attribute(
     attributes: &mut AttributeMetadata,
     name_segments: &[String],
+    resolved_name: &str,
     arguments: &ParsedAttributeArguments,
     strict_types: bool,
 ) -> Result<()> {
+    attributes.instances.push(AttributeInstance {
+        name: resolved_name.to_string(),
+        arguments: arguments
+            .all
+            .iter()
+            .map(|argument| AttributeArgument {
+                name: argument.name.clone(),
+                value: parsed_attribute_argument_value_to_ast(&argument.value),
+            })
+            .collect(),
+    });
     if name_segments.len() != 1 {
         attributes.total_count = attributes.total_count.saturating_add(1);
         return Ok(());
@@ -8881,6 +8977,7 @@ fn apply_parsed_attribute(
 }
 
 fn merge_parsed_attributes(attributes: &mut AttributeMetadata, group: AttributeMetadata) {
+    attributes.instances.extend(group.instances);
     attributes.total_count = attributes.total_count.saturating_add(group.total_count);
     attributes.attribute_count = attributes
         .attribute_count
@@ -9050,6 +9147,7 @@ fn promoted_properties_from_constructor(
                     .type_hint
                     .as_ref()
                     .map(property_type_hint_from_type_hint),
+                attributes: parameter.attributes.clone(),
                 has_override_attribute: promoted.has_override_attribute,
                 value: None,
                 span: promoted.span,

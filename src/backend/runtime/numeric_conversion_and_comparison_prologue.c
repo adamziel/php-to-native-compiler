@@ -2716,6 +2716,12 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionAttribute")) {
+        if (strcmp(constant, "IS_INSTANCEOF") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Attribute")) {
         if (strcmp(constant, "TARGET_CLASS") == 0) {
             *out = ptn_int(1);

@@ -100,6 +100,7 @@ pub struct PropertyDecl {
     pub is_virtual: bool,
     pub hook_get_value: Option<Expr>,
     pub type_hint: Option<PropertyTypeHint>,
+    pub attributes: AttributeMetadata,
     pub has_override_attribute: bool,
     pub value: Option<Expr>,
     pub span: SourceSpan,
@@ -125,6 +126,7 @@ pub struct StaticPropertyDecl {
     pub set_visibility: PropertyVisibility,
     pub is_final: bool,
     pub type_hint: Option<PropertyTypeHint>,
+    pub attributes: AttributeMetadata,
     pub has_override_attribute: bool,
     pub value: Option<Expr>,
     pub span: SourceSpan,
@@ -229,6 +231,7 @@ pub struct AnonymousFunction {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AttributeMetadata {
+    pub instances: Vec<AttributeInstance>,
     pub total_count: u16,
     pub attribute_count: u16,
     pub allow_dynamic_properties_count: u16,
@@ -244,6 +247,41 @@ pub struct AttributeMetadata {
     pub deprecated_message_constant: Option<AttributeConstantReference>,
     pub deprecated_since: Option<String>,
     pub no_discard_message: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeInstance {
+    pub name: String,
+    pub arguments: Vec<AttributeArgument>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeArgument {
+    pub name: Option<String>,
+    pub value: AttributeArgumentValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeArgumentValue {
+    pub text: String,
+    pub kind: AttributeArgumentKind,
+    pub constant_reference: Option<AttributeConstantReference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttributeArgumentKind {
+    String,
+    Int,
+    Float,
+    Bool,
+    Null,
+    Array,
+    Constant,
+    ClassConstant,
+    NativeEnumCase {
+        class_name: String,
+        case_name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
