@@ -6218,13 +6218,10 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    (void)class_name;\n");
     }
     for class in classes {
-        let reflection = reflection_class_to_string(class, classes, functions);
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_string(\"");
-        out.push_str(&c_string(&reflection));
-        out.push_str("\");\n");
+        emit_reflection_class_to_string_case(out, class, classes, functions);
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_string(\"Object\");\n");
@@ -6717,11 +6714,7 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 }
 
-fn reflection_class_to_string(
-    class: &ClassDecl,
-    classes: &[ClassDecl],
-    functions: &[FunctionDecl],
-) -> String {
+fn reflection_class_declaration_to_string(class: &ClassDecl) -> String {
     let mut out = String::new();
     out.push_str("Class [ <user> ");
     if class.is_abstract && !class.is_interface {
@@ -6729,6 +6722,9 @@ fn reflection_class_to_string(
     }
     if class.is_final {
         out.push_str("final ");
+    }
+    if class.is_readonly {
+        out.push_str("readonly ");
     }
     out.push_str(if class.is_interface {
         "interface "
@@ -6745,9 +6741,15 @@ fn reflection_class_to_string(
         out.push_str(&class.interfaces.join(", "));
     }
     out.push_str(" ] {\n");
-    out.push_str("  @@ %s\n\n");
+    out
+}
 
-    reflection_class_constants_to_string(&mut out, class);
+fn reflection_class_static_tail_to_string(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> String {
+    let mut out = String::new();
     reflection_class_properties_to_string(&mut out, "Static properties", &class.static_properties);
 
     let visible_methods = reflection_class_visible_method_entries(class, classes);
@@ -6761,7 +6763,14 @@ fn reflection_class_to_string(
         .copied()
         .filter(|entry| !entry.method.is_static)
         .collect::<Vec<_>>();
-    reflection_class_methods_to_string(&mut out, "Static methods", &static_methods, functions);
+    reflection_class_methods_to_string(
+        &mut out,
+        class.name.as_str(),
+        "Static methods",
+        &static_methods,
+        classes,
+        functions,
+    );
     out.push('\n');
 
     let properties = reflection_class_visible_property_entries(class, classes)
@@ -6769,26 +6778,109 @@ fn reflection_class_to_string(
         .filter(|entry| !entry.is_static)
         .collect::<Vec<_>>();
     reflection_class_properties_to_string(&mut out, "Properties", &properties);
-    reflection_class_methods_to_string(&mut out, "Methods", &instance_methods, functions);
+    reflection_class_methods_to_string(
+        &mut out,
+        class.name.as_str(),
+        "Methods",
+        &instance_methods,
+        classes,
+        functions,
+    );
 
-    out.push('}');
+    out.push_str("}\n");
     out
 }
 
-fn reflection_class_constants_to_string(out: &mut String, class: &ClassDecl) {
-    out.push_str("  - Constants [");
-    out.push_str(&class.constants.len().to_string());
-    out.push_str("] {\n");
-    for constant in &class.constants {
-        out.push_str("    Constant [ ");
-        out.push_str(method_visibility_name(constant.visibility));
-        out.push(' ');
-        out.push_str(&constant.name);
-        out.push_str(" ] { ");
-        out.push_str(&reflection_default_repr(Some(&constant.value)));
-        out.push_str(" }\n");
+fn emit_reflection_class_to_string_case(
+    out: &mut String,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
+    out.push_str("        PtnStringBuffer buffer;\n");
+    out.push_str("        ptn_string_buffer_init(&buffer);\n");
+    out.push_str("        ptn_string_buffer_append(&buffer, \"");
+    out.push_str(&c_string(&reflection_class_declaration_to_string(class)));
+    out.push_str("\");\n");
+    if class.line > 0 && class.end_line > 0 {
+        out.push_str(
+            "        ptn_string_buffer_append_format(&buffer, \"  @@ %s %zu-%zu\\n\\n\", \"",
+        );
+        out.push_str(&c_string(&class.source_file));
+        out.push_str("\", (size_t)");
+        out.push_str(&class.line.to_string());
+        out.push_str(", (size_t)");
+        out.push_str(&class.end_line.to_string());
+        out.push_str(");\n");
+    } else {
+        out.push_str("        ptn_string_buffer_append(&buffer, \"  @@ %s\\n\\n\");\n");
     }
-    out.push_str("  }\n\n");
+    out.push_str("        ptn_string_buffer_append(&buffer, \"  - Constants [");
+    out.push_str(&class.constants.len().to_string());
+    out.push_str("] {\\n\");\n");
+    for (index, constant) in class.constants.iter().enumerate() {
+        emit_reflection_class_constant_to_string(out, class, constant, index);
+    }
+    out.push_str("        ptn_string_buffer_append(&buffer, \"  }\\n\\n\");\n");
+    out.push_str("        ptn_string_buffer_append(&buffer, \"");
+    out.push_str(&c_string(&reflection_class_static_tail_to_string(
+        class, classes, functions,
+    )));
+    out.push_str("\");\n");
+    out.push_str("        return ptn_owned_string_len(buffer.data, buffer.len);\n");
+}
+
+fn emit_reflection_class_constant_to_string(
+    out: &mut String,
+    class: &ClassDecl,
+    constant: &ClassConstantDecl,
+    index: usize,
+) {
+    let value_temp = format!("ptn_reflection_constant_value_{index}");
+    let type_temp = format!("ptn_reflection_constant_type_{index}");
+    let repr_temp = format!("ptn_reflection_constant_repr_{index}");
+    out.push_str("        PtnValue ");
+    out.push_str(&value_temp);
+    out.push_str(" = ptn_runtime_read_class_constant(runtime, \"");
+    out.push_str(&c_string(&class.name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(&constant.name));
+    out.push_str("\", 0);\n");
+    out.push_str("        if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("            ptn_value_destroy(&");
+    out.push_str(&value_temp);
+    out.push_str(");\n");
+    out.push_str("            free(buffer.data);\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
+    out.push_str("        const char *");
+    out.push_str(&type_temp);
+    out.push_str(" = ptn_reflection_class_constant_value_type_name(");
+    out.push_str(&value_temp);
+    out.push_str(");\n");
+    out.push_str("        char *");
+    out.push_str(&repr_temp);
+    out.push_str(" = ptn_value_to_string(");
+    out.push_str(&value_temp);
+    out.push_str(");\n");
+    out.push_str("        ptn_string_buffer_append_format(&buffer, \"    Constant [ ");
+    if constant.is_final {
+        out.push_str("final ");
+    }
+    out.push_str(method_visibility_name(constant.visibility));
+    out.push_str(" %s ");
+    out.push_str(&c_string(&constant.name));
+    out.push_str(" ] { %s }\\n\", ");
+    out.push_str(&type_temp);
+    out.push_str(", ");
+    out.push_str(&repr_temp);
+    out.push_str(");\n");
+    out.push_str("        free(");
+    out.push_str(&repr_temp);
+    out.push_str(");\n");
+    out.push_str("        ptn_value_destroy(&");
+    out.push_str(&value_temp);
+    out.push_str(");\n");
 }
 
 trait ReflectionPropertySummary {
@@ -6797,9 +6889,11 @@ trait ReflectionPropertySummary {
     fn reflection_set_visibility(&self) -> PropertyVisibility;
     fn reflection_is_static(&self) -> bool;
     fn reflection_is_final(&self) -> bool;
+    fn reflection_is_readonly(&self) -> bool;
     fn reflection_is_virtual(&self) -> bool;
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint>;
     fn reflection_value(&self) -> Option<&ValueExpr>;
+    fn reflection_has_default(&self) -> bool;
 }
 
 impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
@@ -6823,6 +6917,10 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
         self.is_final
     }
 
+    fn reflection_is_readonly(&self) -> bool {
+        self.is_readonly
+    }
+
     fn reflection_is_virtual(&self) -> bool {
         self.is_virtual
     }
@@ -6833,6 +6931,10 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
 
     fn reflection_value(&self) -> Option<&ValueExpr> {
         self.value
+    }
+
+    fn reflection_has_default(&self) -> bool {
+        self.has_default
     }
 }
 
@@ -6857,6 +6959,10 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
         self.is_final
     }
 
+    fn reflection_is_readonly(&self) -> bool {
+        false
+    }
+
     fn reflection_is_virtual(&self) -> bool {
         false
     }
@@ -6867,6 +6973,10 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
 
     fn reflection_value(&self) -> Option<&ValueExpr> {
         self.value.as_ref()
+    }
+
+    fn reflection_has_default(&self) -> bool {
+        self.value.is_some() || self.type_hint.is_none()
     }
 }
 
@@ -6894,6 +7004,9 @@ fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
         if property.reflection_is_final() {
             out.push_str(" final");
         }
+        if property.reflection_is_readonly() {
+            out.push_str(" readonly");
+        }
         if property.reflection_is_virtual() {
             out.push_str(" virtual");
         }
@@ -6906,6 +7019,8 @@ fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
         if let Some(value) = property.reflection_value() {
             out.push_str(" = ");
             out.push_str(&reflection_default_repr(Some(value)));
+        } else if property.reflection_has_default() {
+            out.push_str(" = NULL");
         }
         out.push_str(" ]\n");
     }
@@ -6914,8 +7029,10 @@ fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
 
 fn reflection_class_methods_to_string(
     out: &mut String,
+    class_name: &str,
     label: &str,
     methods: &[ClassMethodLookupEntry<'_>],
+    classes: &[ClassDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str("  - ");
@@ -6923,12 +7040,29 @@ fn reflection_class_methods_to_string(
     out.push_str(" [");
     out.push_str(&methods.len().to_string());
     out.push_str("] {\n");
-    for entry in methods {
+    for (index, entry) in methods.iter().enumerate() {
         let method = entry.method;
         let function = &functions[method.function_index];
+        let has_detail_blocks = !function.parameters.is_empty() || function.return_type.is_some();
+        let ancestor_chain = if method.visibility == PropertyVisibility::Private {
+            Vec::new()
+        } else {
+            reflection_visible_method_ancestor_chain(classes, entry.declaring_class, &method.name)
+        };
         out.push_str("    Method [ <user");
         if method.name.eq_ignore_ascii_case("__construct") {
             out.push_str(", ctor");
+        }
+        if !entry.declaring_class.eq_ignore_ascii_case(class_name) {
+            out.push_str(", inherits ");
+            out.push_str(entry.declaring_class);
+        } else if let Some(overwritten_class) = ancestor_chain.first() {
+            out.push_str(", overwrites ");
+            out.push_str(overwritten_class);
+        }
+        if let Some(prototype_class) = ancestor_chain.last() {
+            out.push_str(", prototype ");
+            out.push_str(prototype_class);
         }
         out.push_str("> ");
         out.push_str(method_visibility_name(method.visibility));
@@ -6938,16 +7072,61 @@ fn reflection_class_methods_to_string(
         out.push_str(" method ");
         out.push_str(&method.name);
         out.push_str(" ] {\n");
-        out.push_str("      @@ %s\n\n");
-        reflection_parameters_to_string(out, &function.parameters);
+        if method.line > 0 && method.end_line > 0 {
+            out.push_str("      @@ ");
+            out.push_str(&method.source_file);
+            out.push(' ');
+            out.push_str(&method.line.to_string());
+            out.push_str(" - ");
+            out.push_str(&method.end_line.to_string());
+            out.push('\n');
+        } else {
+            out.push_str("      @@ %s\n");
+        }
+        if has_detail_blocks {
+            out.push('\n');
+        }
+        if !function.parameters.is_empty() {
+            reflection_parameters_to_string(out, &function.parameters);
+        }
         if let Some(return_type) = &function.return_type {
             out.push_str("      - Return [ ");
             out.push_str(&type_hint_label(return_type));
             out.push_str(" ]\n");
         }
         out.push_str("    }\n");
+        if index + 1 < methods.len() {
+            out.push('\n');
+        }
     }
     out.push_str("  }\n");
+}
+
+fn reflection_visible_method_ancestor_chain<'a>(
+    classes: &'a [ClassDecl],
+    declaring_class: &str,
+    method_name: &str,
+) -> Vec<&'a str> {
+    let mut chain = Vec::new();
+    let mut seen = HashSet::new();
+    let mut parent_name =
+        class_by_name(classes, declaring_class).and_then(|class| class.parent_name.as_deref());
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if parent.methods.iter().any(|method| {
+            method.visibility != PropertyVisibility::Private
+                && method.name.eq_ignore_ascii_case(method_name)
+        }) {
+            chain.push(parent.name.as_str());
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    chain
 }
 
 fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParameter]) {
@@ -6964,8 +7143,8 @@ fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParam
             "required"
         });
         out.push_str("> ");
-        if let Some(type_hint) = &parameter.type_hint {
-            out.push_str(&type_hint_label(type_hint));
+        if parameter.type_hint.is_some() {
+            out.push_str(&reflection_parameter_type_label(parameter));
             out.push(' ');
         }
         if parameter.by_ref {
@@ -6983,6 +7162,23 @@ fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParam
         out.push_str(" ]\n");
     }
     out.push_str("      }\n");
+}
+
+fn reflection_parameter_type_label(parameter: &FunctionParameter) -> String {
+    let Some(type_hint) = &parameter.type_hint else {
+        return String::new();
+    };
+    if parameter_default_value_is_null(parameter) && !type_hint_allows_null(Some(type_hint)) {
+        match type_hint {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_label(type_hint))
+            }
+            _ => format!("?{}", type_hint_label(type_hint)),
+        }
+    } else {
+        type_hint_label(type_hint)
+    }
 }
 
 fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
@@ -7285,6 +7481,7 @@ struct ClassPropertyExistsEntry<'a> {
     set_visibility: PropertyVisibility,
     is_static: bool,
     is_final: bool,
+    is_readonly: bool,
     is_virtual: bool,
     type_hint: Option<&'a PropertyTypeHint>,
     value: Option<&'a ValueExpr>,
@@ -7412,6 +7609,7 @@ fn class_property_exists_chain<'a>(
                     set_visibility: property.set_visibility,
                     is_static: false,
                     is_final: property.is_final,
+                    is_readonly: property.is_readonly,
                     is_virtual: property.is_virtual,
                     type_hint: property.type_hint.as_ref(),
                     value: property.value.as_ref(),
@@ -7426,6 +7624,7 @@ fn class_property_exists_chain<'a>(
                 set_visibility: property.set_visibility,
                 is_static: true,
                 is_final: property.is_final,
+                is_readonly: false,
                 is_virtual: false,
                 type_hint: property.type_hint.as_ref(),
                 value: property.value.as_ref(),

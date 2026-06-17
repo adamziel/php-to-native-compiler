@@ -45358,35 +45358,6 @@ static void ptn_reflection_class_constant_check_exact_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
-static const char *ptn_reflection_class_constant_value_type_name(PtnValue value) {
-    value = ptn_value_deref(value);
-    switch (value.type) {
-        case PTN_NULL:
-            return "null";
-        case PTN_BOOL:
-            return "bool";
-        case PTN_INT:
-            return "int";
-        case PTN_FLOAT:
-            return "float";
-        case PTN_STRING:
-            return "string";
-        case PTN_ARRAY:
-            return "array";
-        case PTN_OBJECT:
-            return value.as.object->class_name;
-        case PTN_CLOSURE:
-            return "Closure";
-        case PTN_EXCEPTION:
-            return value.as.exception->class_name;
-        case PTN_RESOURCE:
-            return "resource";
-        case PTN_REFERENCE:
-            return "reference";
-    }
-    return "unknown";
-}
-
 static PtnValue ptn_reflection_class_constant_to_string(
     PtnRuntime *runtime,
     PtnReflectionClassConstantData *data,

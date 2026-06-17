@@ -17567,6 +17567,108 @@ var_dump(gettype($internal->getReflectionConstant(\"IS_IMPLICIT_ABSTRACT\")));
 }
 
 #[test]
+fn compile_reflection_class_to_string_evaluates_lazy_class_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-to-string-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-to-string-constants.php");
+    let output = root.join("reflection-class-to-string-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class MethodParent {
+    public function inherited(array $items = null) {}
+}
+class LazyConstantBox extends MethodParent {
+    public const X = self::Y * 2;
+    public const Y = 1;
+    final public const Z = [\"k\" => \"v\"];
+}
+class RootMethod {
+    public function f() {}
+}
+class OverrideMethod extends RootMethod {
+    public function f() {}
+}
+readonly class ReadonlyReflectionBox {
+    public int $bar;
+}
+class UntypedDefaultBox {
+    private static $b;
+    private $a;
+}
+
+echo new ReflectionClass(\"LazyConstantBox\");
+echo new ReflectionClass(\"OverrideMethod\");
+echo new ReflectionClass(\"ReadonlyReflectionBox\");
+echo new ReflectionClass(\"UntypedDefaultBox\");
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Class [ <user> class LazyConstantBox extends MethodParent ] {\n"));
+    assert!(stdout.contains(" 5-9\n\n"), "{stdout}");
+    assert!(
+        stdout.contains("Constant [ public int X ] { 2 }\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Constant [ public int Y ] { 1 }\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Constant [ final public array Z ] { Array }\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Method [ <user, inherits MethodParent> public method inherited ] {\n"),
+        "{stdout}"
+    );
+    assert!(stdout.contains(" 3 - 3\n\n"), "{stdout}");
+    assert!(
+        stdout.contains("Parameter #0 [ <optional> ?array $items = NULL ]\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Method [ <user, overwrites RootMethod, prototype RootMethod> public method f ] {\n"
+        ),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("- Parameters [0] {"), "{stdout}");
+    assert!(
+        stdout.contains("Class [ <user> readonly class ReadonlyReflectionBox ] {\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Property [ public protected(set) readonly int $bar ]\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Property [ private static $b = NULL ]\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Property [ private $a = NULL ]\n"),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("{ NULL }"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let to_string_body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED PtnValue ptn_declared_class_reflection_to_string(",
+    );
+    assert!(to_string_body.contains("ptn_runtime_read_class_constant"));
+    assert!(to_string_body.contains("ptn_string_buffer_append_format"));
+}
+
+#[test]
 fn compile_reflection_class_without_constants_emits_quiet_helpers_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-class-no-constants");
     fs::create_dir_all(&root).unwrap();
