@@ -987,6 +987,18 @@ ptn_phpt_first_unsupported_ini() {
         local key=${line%%=*}
         key=$(ptn_phpt_trim "$key")
         [[ -z "$key" ]] && continue
+        local lower_key
+        lower_key=$(ptn_phpt_lower "$key")
+        local value=${line#*=}
+        value=$(ptn_phpt_lower "$(ptn_phpt_trim "$value")")
+        case "$lower_key" in
+            enable_post_data_reading)
+                if [[ "$value" != "1" && "$value" != "on" && "$value" != "true" ]]; then
+                    printf '%s\n' "$key"
+                    return 0
+                fi
+                ;;
+        esac
         if ! ptn_phpt_csv_contains_ci "$key" "$supported"; then
             printf '%s\n' "$key"
             return 0
@@ -1003,6 +1015,10 @@ ptn_phpt_unsupported_ini_blocker() {
     case "$key" in
         fatal_error_backtraces|error_log|report_memleaks)
             printf 'unsupported-diagnostics-ini\trequires engine diagnostic/logging mode %s; PTN diagnostics do not yet model that runtime channel\n' "$key"
+            return 0
+            ;;
+        enable_post_data_reading)
+            printf 'unsupported-request-input-ini\trequires request/input/upload SAPI state from ini setting %s; PTN currently models script execution without request body ingestion\n' "$key"
             return 0
             ;;
         disable_functions)
@@ -1292,7 +1308,11 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
         function ptn_supported_anonymous_get_class_row() {
-            return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/
+            return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/anon\/gh13097_b[.]phpt$/
+        }
+        function ptn_supported_anonymous_closure_bind_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/013[.]phpt$/
         }
         function ptn_supported_anonymous_inherited_abstract_row() {
             return ptn_path ~ /Zend\/tests\/anon\/gh15994[.]phpt$/
@@ -1457,7 +1477,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])closure[[:space:]]*::[[:space:]]*bind[[:space:]]*[(]/) {
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])closure[[:space:]]*::[[:space:]]*bind[[:space:]]*[(]/ && !ptn_supported_anonymous_closure_bind_row()) {
                 print "unsupported-anonymous-class\trequires Closure::bind() scope binding for anonymous class instances, outside PTN modeled anonymous class subset"
                 found = 1
                 exit
@@ -1647,10 +1667,20 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         }
         function ptn_supported_internal_attribute_metadata_row() {
             return ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/002_rfcexample[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/004_name_resolution[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/015_property_group[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/027_trailing_comma_args[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/028_grouped[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/029_reflect_internal_symbols[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/032_attribute_validation_scope[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/constants\/constant_redefined_addition[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/034_target_values[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/deprecated\/property_readonly_00[123][.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/property_readonly_00[12][.]phpt$/
+        }
+        function ptn_supported_property_hook_metadata_row() {
+            return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/
         }
         {
             line = ptn_php_code_line($0)
@@ -1685,7 +1715,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (!ptn_reflection_property_simple_metadata_row &&
+            if (!ptn_supported_property_hook_metadata_row() &&
+                !ptn_reflection_property_simple_metadata_row &&
                 line !~ /function[[:space:]]/ &&
                 line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)([[:space:]]|[(])/ &&
                 line ~ /[$][a-z_][a-z0-9_]*[[:space:]]*([=][^;{]*)?[{][[:space:]]*(get|set)[[:space:]]*(=>|[{])/) {
@@ -1693,7 +1724,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (!ptn_reflection_property_simple_metadata_row &&
+            if (!ptn_supported_property_hook_metadata_row() &&
+                !ptn_reflection_property_simple_metadata_row &&
                 line !~ /function[[:space:]]/ &&
                 line ~ /(^|[[:space:]])(public|protected|private|var|static|readonly)([[:space:]]|[(])/ &&
                 line ~ /[$][a-z_][a-z0-9_]*[[:space:]]*([=][^;{]*)?[{][[:space:]]*$/ &&
@@ -1773,12 +1805,15 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionclass[[:space:]]*\([[:space:]]*\\?attribute[[:space:]]*::[[:space:]]*class[[:space:]]*\)/) {
                 reflection_attribute_self_context = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/) {
+            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/ &&
+                !ptn_supported_internal_attribute_metadata_row()) {
                 print "unsupported-internal-attribute-metadata\trequires direct Deprecated/NoDiscard fatal stack parity beyond modeled caught-object behavior"
                 found = 1
                 exit
             }
-            if (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ && !reflection_attribute_self_context) {
+            if (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ &&
+                !reflection_attribute_self_context &&
+                !ptn_supported_internal_attribute_metadata_row()) {
                 print "unsupported-internal-attribute-metadata\trequires internal attribute/reflection metadata beyond modeled Attribute self-reflection"
                 found = 1
                 exit

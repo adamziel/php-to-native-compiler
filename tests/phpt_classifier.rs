@@ -672,6 +672,27 @@ fn phpt_classifier_keeps_supported_anonymous_class_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_anonymous_metadata_rows_runnable_by_path() {
+    let cases = [
+        (
+            "Zend/tests/anon/013.phpt",
+            "--TEST--\nanonymous closure bind\n--FILE--\n<?php\n$class = new class {};\n$foo = function() { return $this; };\n$closure = Closure::bind($foo, $class, $class);\nvar_dump($closure());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/anon/gh13097_b.phpt",
+            "--TEST--\nanonymous exception name\n--FILE--\n<?php\n$anonymous = new class(){};\nthrow new Exception(get_class($anonymous));\n--EXPECTF--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_dynamic_variable_reads_runnable() {
     let cases = [
         "--TEST--\ndynamic read\n--FILE--\n<?php\n$name = 'value';\necho $$name;\n--EXPECT--\n",
@@ -790,6 +811,59 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
         assert!(
             classification.contains(reason),
             "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_supported_attribute_metadata_rows_runnable_by_path() {
+    let cases = [
+        (
+            "Zend/tests/attributes/002_rfcexample.phpt",
+            "--TEST--\nattribute class metadata\n--FILE--\n<?php\n#[SingleArgument(\"Hello World\")]\nclass Foo {}\n$attributes = (new ReflectionClass(Foo::class))->getAttributes();\nvar_dump($attributes[0]->getName(), $attributes[0]->getArguments());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/004_name_resolution.phpt",
+            "--TEST--\nattribute function metadata\n--FILE--\n<?php\nnamespace Foo { #[Entity(\"imported\")] function foo() {} }\nnamespace { var_dump((new ReflectionFunction('Foo\\foo'))->getAttributes()); }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/015_property_group.phpt",
+            "--TEST--\nattribute property metadata\n--FILE--\n<?php\nclass C { #[A(1)] public $x, $y; }\n$rp = new ReflectionProperty('C', 'x');\nvar_dump($rp->getAttributes()[0]->getName());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/027_trailing_comma_args.phpt",
+            "--TEST--\nattribute trailing comma\n--FILE--\n<?php\n#[MyAttribute(\"there\",)]\nclass Foo {}\nvar_dump((new ReflectionClass(Foo::class))->getAttributes()[0]->getArguments());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/028_grouped.phpt",
+            "--TEST--\nattribute grouped\n--FILE--\n<?php\n#[A1(1), A2(2)]\nfunction foo() {}\nvar_dump((new ReflectionFunction('foo'))->getAttributes());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/029_reflect_internal_symbols.phpt",
+            "--TEST--\ninternal symbol attributes\n--FILE--\n<?php\n$rp = new ReflectionProperty('Exception', 'message');\nvar_dump($rp->getAttributes());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/032_attribute_validation_scope.phpt",
+            "--TEST--\nattribute validation scope\n--FILE--\n<?php\n#[Attribute(parent::x)]\nclass x extends y {}\nclass y { protected const x = Attribute::TARGET_CLASS; }\n#[x]\nclass z {}\nvar_dump((new ReflectionClass(z::class))->getAttributes()[0]->newInstance());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/constants/constant_redefined_addition.phpt",
+            "--TEST--\nconstant attribute addition\n--FILE--\n<?php\nconst MY_CONST = \"No attributes\";\n#[\\MyAttribute]\nconst MY_CONST = \"Has attributes\";\nvar_dump((new ReflectionConstant('MY_CONST'))->getAttributes());\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/deprecated/property_readonly_001.phpt",
+            "--TEST--\ndeprecated readonly\n--FILE--\n<?php\n$d = new \\Deprecated(\"foo\");\n$d->message = 'bar';\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/nodiscard/property_readonly_001.phpt",
+            "--TEST--\nnodiscard readonly\n--FILE--\n<?php\n$d = new \\NoDiscard(\"foo\");\n$d->message = 'bar';\n--EXPECTF--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n"
         );
     }
 }
@@ -997,6 +1071,16 @@ fn phpt_classifier_keeps_readonly_property_rows_runnable() {
             "{classification:?}"
         );
     }
+}
+
+#[test]
+fn phpt_classifier_keeps_supported_asymmetric_property_hook_rows_runnable_by_path() {
+    let phpt = "--TEST--\nasymmetric protected set\n--FILE--\n<?php\nclass ParentBox { public protected(set) string $author = \"base\"; }\nclass ChildBox extends ParentBox { public protected(set) string $author = \"child\"; }\nvar_dump(new ChildBox());\n--EXPECT--\n";
+
+    assert_eq!(
+        classify_at_relative_path(phpt, "Zend/tests/asymmetric_visibility/gh19044.phpt"),
+        "runnable\tselected for PTN semantic measurement\n"
+    );
 }
 
 #[test]
