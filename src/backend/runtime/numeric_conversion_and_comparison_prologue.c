@@ -161,6 +161,11 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->strict_types = caller_runtime->strict_types;
     runtime->initial_zend_assertions = caller_runtime->initial_zend_assertions;
     runtime->zend_assertions = caller_runtime->zend_assertions;
+    runtime->assert_active = caller_runtime->assert_active;
+    runtime->assert_warning = caller_runtime->assert_warning;
+    runtime->assert_bail = caller_runtime->assert_bail;
+    runtime->assert_callback_ini = NULL;
+    runtime->assert_callback = ptn_null();
     runtime->assert_exception = caller_runtime->assert_exception;
     runtime->call_site_line = 0;
     runtime->suppress_user_call_frame_location =
@@ -461,6 +466,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->expose_php = NULL;
         free(runtime->user_agent);
         runtime->user_agent = NULL;
+        free(runtime->assert_callback_ini);
+        runtime->assert_callback_ini = NULL;
+        ptn_value_destroy(&runtime->assert_callback);
+        runtime->assert_callback = ptn_null();
         free(runtime->request_body);
         runtime->request_body = NULL;
         runtime->request_body_len = 0;
@@ -1647,10 +1656,11 @@ static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame
 
 static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     PtnException *exception,
-    int *first
+    int *first,
+    const char *first_label
 ) {
     if (exception->previous.type == PTN_EXCEPTION) {
-        ptn_emit_uncaught_exception_chain_entry(exception->previous.as.exception, first);
+        ptn_emit_uncaught_exception_chain_entry(exception->previous.as.exception, first, first_label);
     }
     const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
     size_t display_line = exception->line;
@@ -1658,7 +1668,8 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
         fputc('\n', stderr);
         fprintf(
             stderr,
-            "Fatal error: Uncaught %s: %s in %s:%zu\n",
+            "%s: Uncaught %s: %s in %s:%zu\n",
+            first_label,
             exception->class_name,
             exception->message,
             display_path,
@@ -1678,7 +1689,11 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
     fputs("Stack trace:\n#0 {main}\n", stderr);
 }
 
-static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
+static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
+    PtnRuntime *runtime,
+    PtnException *exception,
+    const char *label
+) {
     fflush(stdout);
     if (ptn_exception_handlers_try_uncaught(runtime, exception)) {
         return;
@@ -1696,7 +1711,7 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
     }
     if (exception->previous.type == PTN_EXCEPTION) {
         int first = 1;
-        ptn_emit_uncaught_exception_chain_entry(exception, &first);
+        ptn_emit_uncaught_exception_chain_entry(exception, &first, label);
         const char *display_path = exception->path != NULL ? exception->path : "[no active file]";
         fprintf(stderr, "  thrown in %s on line %zu\n", display_path, exception->line);
         return;
@@ -1716,14 +1731,14 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
         display_line = frame->line;
     }
     if (display_path == NULL) {
-        fputs("Fatal error: ", stderr);
+        fprintf(stderr, "%s: ", label);
         fwrite(exception->message, 1, exception->message_len, stderr);
         fputc('\n', stderr);
         return;
     }
 
     fputc('\n', stderr);
-    fprintf(stderr, "Fatal error: Uncaught %s", exception->class_name);
+    fprintf(stderr, "%s: Uncaught %s", label, exception->class_name);
     if (exception->message_len != 0) {
         fputs(": ", stderr);
         fwrite(exception->message, 1, exception->message_len, stderr);
@@ -1735,6 +1750,14 @@ static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnExcep
     free(trace.owned);
     fputc('\n', stderr);
     fprintf(stderr, "  thrown in %s on line %zu\n", display_path, display_line);
+}
+
+static PTN_UNUSED void ptn_emit_uncaught_exception(PtnRuntime *runtime, PtnException *exception) {
+    ptn_emit_uncaught_exception_with_label(runtime, exception, "Fatal error");
+}
+
+static PTN_UNUSED void ptn_emit_uncaught_exception_warning(PtnRuntime *runtime, PtnException *exception) {
+    ptn_emit_uncaught_exception_with_label(runtime, exception, "Warning");
 }
 
 static PTN_UNUSED void ptn_throw_exception_at(

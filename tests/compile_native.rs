@@ -21955,6 +21955,83 @@ fn compile_zend_assertions_compile_time_disabled_mode_to_native_binary() {
 }
 
 #[test]
+fn compile_legacy_assert_options_state_to_native_binary() {
+    let root = temp_dir("ptn-native-legacy-assert-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("legacy-assert-options.php");
+    let output = root.join("legacy-assert-options-bin");
+    fs::write(
+        &input,
+        "<?php function assert_cb($file,$line,$code,$desc=null){ echo \"cb:\"; var_dump($code,$desc); } var_dump(ASSERT_ACTIVE, ASSERT_CALLBACK, ASSERT_BAIL, ASSERT_WARNING, ASSERT_EXCEPTION); var_dump(defined(\"ASSERT_CALLBACK\"), constant(\"ASSERT_WARNING\"), get_defined_constants(true)[\"Core\"][\"ASSERT_BAIL\"]); var_dump(ini_get(\"assert.active\"), ini_get(\"assert.warning\"), ini_get(\"assert.bail\"), ini_get(\"assert.callback\")); var_dump(assert_options(ASSERT_ACTIVE), assert_options(ASSERT_WARNING), assert_options(ASSERT_BAIL), assert_options(ASSERT_CALLBACK), assert_options(ASSERT_EXCEPTION)); ini_set(\"assert.exception\", 0); assert_options(ASSERT_CALLBACK, \"assert_cb\"); assert_options(ASSERT_WARNING, 0); var_dump(assert(false, \"silent\")); assert_options(ASSERT_WARNING, 1); var_dump(assert(false, \"loud\")); assert_options(ASSERT_ACTIVE, 0); var_dump(ini_get(\"assert.active\"), assert(false, \"inactive\")); ini_set(\"assert.callback\", \"\"); assert_options(ASSERT_ACTIVE, 1); var_dump(assert_options(ASSERT_CALLBACK)); assert_options(ASSERT_CALLBACK, null); var_dump(assert_options(ASSERT_CALLBACK));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        "int(1)\nint(2)\nint(3)\nint(4)\nint(5)\nbool(true)\nint(4)\nint(3)\nstring(1) \"1\"\nstring(1) \"1\"\nstring(1) \"0\"\nstring(0) \"\"\nint(1)\nint(1)\nint(0)\nNULL\nint(1)\ncb:NULL\nstring(6) \"silent\"\nbool(false)\ncb:NULL\nstring(4) \"loud\"\n\nWarning: assert(): loud failed in ptn on line 1\nbool(false)\nstring(1) \"0\"\nbool(true)\nNULL\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assert_bail_option_exits_native_binary() {
+    let root = temp_dir("ptn-native-assert-bail-option");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-bail-option.php");
+    let output = root.join("assert-bail-option-bin");
+    fs::write(
+        &input,
+        "<?php ini_set(\"assert.exception\", 0); assert_options(ASSERT_WARNING, 0); assert_options(ASSERT_BAIL, 1); assert(false, \"bail\"); echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assert_bail_callback_failure_uses_warning_uncaught_native_binary() {
+    let root = temp_dir("ptn-native-assert-bail-callback-failure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-bail-callback-failure.php");
+    let output = root.join("assert-bail-callback-failure-bin");
+    fs::write(
+        &input,
+        "<?php ini_set(\"assert.exception\", 0); assert_options(ASSERT_BAIL, 1); assert_options(ASSERT_CALLBACK, function () { throw new Exception(\"Boo\"); }); assert(false, \"assertion\"); echo \"after\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: assert(): assertion failed in ptn on line 1\n"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    let input_display = input.to_string_lossy();
+    assert!(
+        stderr.contains(&format!(
+            "\nWarning: Uncaught Exception: Boo in {input_display}:1\n"
+        )),
+        "{stderr}"
+    );
+    assert!(stderr.contains("Stack trace:\n#0 "), "{stderr}");
+    assert!(stderr.contains("  thrown in "), "{stderr}");
+    assert!(!stderr.contains("Fatal error"), "{stderr}");
+}
+
+#[test]
 fn compile_php_int_constants_to_native_binary() {
     let root = temp_dir("ptn-native-php-int-constants");
     fs::create_dir_all(&root).unwrap();

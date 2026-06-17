@@ -92,8 +92,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   call-site argument unpacking (`...`) works for direct, dynamic, method, static,
   constructor, and modeled internal calls; `is_callable()` writes callable-name
   output for supported callable shapes.
-- `assert()` observes modeled `zend.assertions`/`assert.exception` runtime INI
-  state and throws catchable `AssertionError` when exception mode is enabled;
+- `assert()` observes modeled `zend.assertions`, legacy `assert.*`, and
+  `assert_options()` runtime state, including callback/warning/bail modes, and
+  throws catchable `AssertionError` when exception mode is enabled;
   userland `throw` statements and PHP 8 throw expressions propagate boxed
   built-in exception values
   through the shared `try`/`catch` runtime, including `Exception`, `Error`
@@ -204,7 +205,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   runnable, classification, excluded, and per-category manifests under
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
-  (`assert.exception`, `date.timezone`, `display_errors`, `error_reporting`,
+  (`assert.active`, `assert.bail`, `assert.callback`, `assert.exception`,
+  `assert.warning`, `date.timezone`, `display_errors`, `error_reporting`,
   `extension_dir`, `include_path`, `opcache.save_comments`,
   `pcre.backtrack_limit`, `pcre.jit`, `precision`, `serialize_precision`,
   `user_agent`, `zend.assertions`, and `zend.exception_string_param_max_len`); child-process

@@ -1002,6 +1002,11 @@ struct PtnRuntime {
     int strict_types;
     int initial_zend_assertions;
     int zend_assertions;
+    int assert_active;
+    int assert_warning;
+    int assert_bail;
+    char *assert_callback_ini;
+    PtnValue assert_callback;
     int assert_exception;
     size_t call_site_line;
     int suppress_user_call_frame_location;

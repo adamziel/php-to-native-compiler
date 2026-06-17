@@ -1046,9 +1046,10 @@ Post-RC architecture remains explicit rather than hidden:
   by-reference user parameters warn and invoke the target against a by-value
   local; variadic by-reference mismatch handling remains bounded.
 - `assert()` over current boxed assertion expressions. Truthy assertions return
-  `true`; falsey assertions throw a modeled `AssertionError`. One-argument
-  direct calls carry a compiler-generated default assertion message from the
-  parsed expression tree.
+  `true`; falsey assertions observe modeled `zend.assertions`, legacy
+  `assert.*`, and `assert_options()` state, including active, warning,
+  callback, bail, and exception modes. One-argument direct calls carry a
+  compiler-generated default assertion message from the parsed expression tree.
 - `define()` creates runtime constants over the current boxed value subset,
   returning `false` with a warning when the requested name is already defined.
   Its legacy third `$case_insensitive` argument is accepted for PHP 8 parity:
@@ -1078,9 +1079,9 @@ Post-RC architecture remains explicit rather than hidden:
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
   snippets to temporary native binaries through the normal compiler pipeline.
   `-d precision=N`, `-d serialize_precision=N`, and `-d error_reporting=N`
-  influence modeled runtime behavior; `-d display_errors=value` and
-  `-d zend.assertions=value` are accepted for PHPT harness parity and are
-  visible through `ini_get()`.
+  influence modeled runtime behavior; `-d display_errors=value`,
+  `-d zend.assertions=value`, and modeled assertion INI values are accepted for
+  PHPT harness parity and are visible through `ini_get()`.
 - Braced and single-statement `if`, `elseif`, and `else` statements whose
   conditions and bodies use the currently supported scalar expression and
   statement subset.

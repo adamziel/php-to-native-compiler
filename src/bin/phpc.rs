@@ -156,7 +156,11 @@ struct RuntimeIni {
     default_charset: Option<String>,
     arg_separator_input: Option<String>,
     date_timezone: Option<String>,
+    assert_active: Option<String>,
+    assert_bail: Option<String>,
+    assert_callback: Option<String>,
     assert_exception: Option<String>,
+    assert_warning: Option<String>,
     display_errors: Option<String>,
     error_reporting: Option<i64>,
     output_handler: Option<String>,
@@ -307,6 +311,14 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         }
     } else if name.eq_ignore_ascii_case("assert.exception") {
         ini.assert_exception = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("assert.active") {
+        ini.assert_active = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("assert.bail") {
+        ini.assert_bail = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("assert.callback") {
+        ini.assert_callback = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("assert.warning") {
+        ini.assert_warning = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("date.timezone") {
         ini.date_timezone = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("default_charset") {
@@ -644,7 +656,11 @@ fn compile_and_run(
         default_charset: ini.default_charset.clone(),
         arg_separator_input: ini.arg_separator_input.clone(),
         date_timezone: ini.date_timezone.clone(),
+        assert_active: ini.assert_active.clone(),
+        assert_bail: ini.assert_bail.clone(),
+        assert_callback: ini.assert_callback.clone(),
         assert_exception: ini.assert_exception.clone(),
+        assert_warning: ini.assert_warning.clone(),
         display_errors: ini.display_errors.clone(),
         error_reporting: ini.error_reporting,
         output_handler: ini.output_handler.clone(),
@@ -703,8 +719,20 @@ fn compile_and_run(
     if let Some(arg_separator_input) = &ini.arg_separator_input {
         command.env("PTN_ARG_SEPARATOR_INPUT", arg_separator_input);
     }
+    if let Some(assert_active) = &ini.assert_active {
+        command.env("PTN_ASSERT_ACTIVE", assert_active);
+    }
+    if let Some(assert_bail) = &ini.assert_bail {
+        command.env("PTN_ASSERT_BAIL", assert_bail);
+    }
+    if let Some(assert_callback) = &ini.assert_callback {
+        command.env("PTN_ASSERT_CALLBACK", assert_callback);
+    }
     if let Some(assert_exception) = &ini.assert_exception {
         command.env("PTN_ASSERT_EXCEPTION", assert_exception);
+    }
+    if let Some(assert_warning) = &ini.assert_warning {
+        command.env("PTN_ASSERT_WARNING", assert_warning);
     }
     if let Some(display_errors) = &ini.display_errors {
         command.env("PTN_PHP_DISPLAY_ERRORS", display_errors);

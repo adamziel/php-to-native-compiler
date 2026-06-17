@@ -1741,13 +1741,15 @@ fn phpt_classifier_excludes_memory_resource_limit_expectations() {
 
 #[test]
 fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
+    let assert_options = classify(
+        "--TEST--\nassert options\n--FILE--\n<?php\nassert_options(ASSERT_BAIL, 1);\nassert(false);\n--EXPECT--\n",
+    );
+    assert!(
+        assert_options.starts_with("runnable\t"),
+        "{assert_options:?}"
+    );
+
     let cases = [
-        (
-            "assert options",
-            "--TEST--\nassert options\n--FILE--\n<?php\nassert_options(ASSERT_BAIL, 1);\nassert(false);\n--EXPECT--\n",
-            "unsupported-assertion-runtime\t",
-            "assert_options() mode/callback state",
-        ),
         (
             "assert null coalesce assignment",
             "--TEST--\nassert lvalue\n--FILE--\n<?php\nassert($items['key'] ??= 1);\n--EXPECT--\n",

@@ -1691,6 +1691,29 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         }
     }
     runtime->initial_zend_assertions = runtime->zend_assertions;
+    runtime->assert_active = 1;
+    int configured_assert_active = 1;
+    if (ptn_parse_bool_env("PTN_ASSERT_ACTIVE", &configured_assert_active)) {
+        runtime->assert_active = configured_assert_active;
+    }
+    runtime->assert_warning = 1;
+    int configured_assert_warning = 1;
+    if (ptn_parse_bool_env("PTN_ASSERT_WARNING", &configured_assert_warning)) {
+        runtime->assert_warning = configured_assert_warning;
+    }
+    runtime->assert_bail = 0;
+    int configured_assert_bail = 0;
+    if (ptn_parse_bool_env("PTN_ASSERT_BAIL", &configured_assert_bail)) {
+        runtime->assert_bail = configured_assert_bail;
+    }
+    const char *configured_assert_callback = getenv("PTN_ASSERT_CALLBACK");
+    runtime->assert_callback_ini = ptn_duplicate_string(
+        configured_assert_callback == NULL ? "" : configured_assert_callback
+    );
+    runtime->assert_callback = configured_assert_callback == NULL ||
+            configured_assert_callback[0] == '\0'
+        ? ptn_null()
+        : ptn_owned_string(ptn_duplicate_string(configured_assert_callback));
     runtime->assert_exception = 1;
     int configured_assert_exception = 1;
     if (ptn_parse_bool_env("PTN_ASSERT_EXCEPTION", &configured_assert_exception)) {

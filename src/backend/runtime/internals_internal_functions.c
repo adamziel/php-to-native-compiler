@@ -678,13 +678,14 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
     );
 }
 
-static PtnValue ptn_internal_call_callback_impl(
+static int ptn_internal_call_callback_capturing_exception_impl(
     PtnRuntime *runtime,
     PtnValue callback,
     size_t argc,
     const PtnValue *args,
     size_t line,
-    int include_user_call_site
+    int include_user_call_site,
+    PtnValue *result_out
 ) {
     PtnTryFrame callback_frame;
     PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
@@ -704,7 +705,8 @@ static PtnValue ptn_internal_call_callback_impl(
             previous_suppress_user_argument_count_location;
         runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
         runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
-        ptn_rethrow_exception(runtime);
+        *result_out = ptn_null();
+        return 0;
     }
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
@@ -712,7 +714,7 @@ static PtnValue ptn_internal_call_callback_impl(
         runtime->suppress_user_call_frame_location = 1;
         runtime->suppress_user_argument_count_location = 1;
     }
-    PtnValue result = ptn_call_callable(runtime, callback, argc, args, line);
+    *result_out = ptn_call_callable(runtime, callback, argc, args, line);
     ptn_try_frame_pop(runtime, &callback_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->suppress_user_call_frame_location =
@@ -721,6 +723,29 @@ static PtnValue ptn_internal_call_callback_impl(
         previous_suppress_user_argument_count_location;
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    return 1;
+}
+
+static PtnValue ptn_internal_call_callback_impl(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int include_user_call_site
+) {
+    PtnValue result = ptn_null();
+    if (!ptn_internal_call_callback_capturing_exception_impl(
+            runtime,
+            callback,
+            argc,
+            args,
+            line,
+            include_user_call_site,
+            &result
+        )) {
+        ptn_rethrow_exception(runtime);
+    }
     return result;
 }
 
@@ -742,6 +767,25 @@ static PtnValue ptn_internal_call_user_callback(
     size_t line
 ) {
     return ptn_internal_call_callback_impl(runtime, callback, argc, args, line, 1);
+}
+
+static int ptn_internal_call_callback_capturing_exception(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    PtnValue *result_out
+) {
+    return ptn_internal_call_callback_capturing_exception_impl(
+        runtime,
+        callback,
+        argc,
+        args,
+        line,
+        0,
+        result_out
+    );
 }
 
 static PtnValue ptn_output_buffer_contents_value(PtnOutputBuffer *buffer) {
@@ -35038,8 +35082,76 @@ static int ptn_runtime_assert_exception(PtnRuntime *runtime) {
     return ptn_runtime_config_root(runtime)->assert_exception;
 }
 
+static int ptn_runtime_assert_active(PtnRuntime *runtime) {
+    return ptn_runtime_config_root(runtime)->assert_active;
+}
+
+static int ptn_runtime_assert_warning(PtnRuntime *runtime) {
+    return ptn_runtime_config_root(runtime)->assert_warning;
+}
+
+static int ptn_runtime_assert_bail(PtnRuntime *runtime) {
+    return ptn_runtime_config_root(runtime)->assert_bail;
+}
+
+static const char *ptn_runtime_assert_callback_ini(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->assert_callback_ini == NULL) {
+        return "";
+    }
+    return root->assert_callback_ini;
+}
+
+static PtnValue ptn_runtime_assert_callback(PtnRuntime *runtime) {
+    return ptn_value_clone_deref(ptn_runtime_config_root(runtime)->assert_callback);
+}
+
+static int ptn_runtime_assert_callback_configured(PtnRuntime *runtime) {
+    PtnValue callback = ptn_value_deref(ptn_runtime_config_root(runtime)->assert_callback);
+    return callback.type != PTN_NULL &&
+        !(callback.type == PTN_STRING && callback.as.string.len == 0);
+}
+
+static void ptn_runtime_set_assert_active(PtnRuntime *runtime, int enabled) {
+    ptn_runtime_config_root(runtime)->assert_active = enabled ? 1 : 0;
+}
+
+static void ptn_runtime_set_assert_warning(PtnRuntime *runtime, int enabled) {
+    ptn_runtime_config_root(runtime)->assert_warning = enabled ? 1 : 0;
+}
+
+static void ptn_runtime_set_assert_bail(PtnRuntime *runtime, int enabled) {
+    ptn_runtime_config_root(runtime)->assert_bail = enabled ? 1 : 0;
+}
+
 static void ptn_runtime_set_assert_exception(PtnRuntime *runtime, int enabled) {
     ptn_runtime_config_root(runtime)->assert_exception = enabled ? 1 : 0;
+}
+
+static void ptn_runtime_set_assert_callback_ini(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->assert_callback_ini, value);
+}
+
+static void ptn_runtime_set_assert_callback_value(PtnRuntime *runtime, PtnValue callback) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    PtnValue resolved = ptn_value_deref(callback);
+    PtnValue next = ptn_null();
+    if (resolved.type != PTN_NULL &&
+        !(resolved.type == PTN_STRING && resolved.as.string.len == 0)) {
+        next = ptn_value_clone_deref(callback);
+    }
+    ptn_value_destroy(&root->assert_callback);
+    root->assert_callback = next;
+}
+
+static void ptn_runtime_set_assert_callback_string(PtnRuntime *runtime, const char *value) {
+    ptn_runtime_set_assert_callback_ini(runtime, value);
+    PtnValue callback = value == NULL || value[0] == '\0'
+        ? ptn_null()
+        : ptn_owned_string(ptn_duplicate_string(value));
+    ptn_runtime_set_assert_callback_value(runtime, callback);
+    ptn_value_destroy(&callback);
 }
 
 static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requested, size_t line) {
@@ -35197,6 +35309,22 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         *out = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.active")) {
+        *out = ptn_ini_int_string(ptn_runtime_assert_active(runtime));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.bail")) {
+        *out = ptn_ini_int_string(ptn_runtime_assert_bail(runtime));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.callback")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_assert_callback_ini(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.warning")) {
+        *out = ptn_ini_int_string(ptn_runtime_assert_warning(runtime));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "display_errors")) {
@@ -35588,6 +35716,26 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.active")) {
+        ptn_runtime_set_assert_active(runtime, 1);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.bail")) {
+        ptn_runtime_set_assert_bail(runtime, 0);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.callback")) {
+        ptn_runtime_set_assert_callback_string(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.warning")) {
+        ptn_runtime_set_assert_warning(runtime, 1);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_ignore_args")) {
         ptn_runtime_set_exception_ignore_args(runtime, 0);
         ptn_string_operand_free(option);
@@ -35774,6 +35922,34 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_exception(runtime));
         ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.active")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_active(runtime));
+        ptn_runtime_set_assert_active(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.bail")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_bail(runtime));
+        ptn_runtime_set_assert_bail(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.callback")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_assert_callback_ini(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_assert_callback_string(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "assert.warning")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_warning(runtime));
+        ptn_runtime_set_assert_warning(runtime, ptn_is_truthy(args[1]));
         ptn_string_operand_free(option);
         return previous;
     }
@@ -36095,6 +36271,11 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "LOCK_EX", PTN_LOCK_EX);
     ptn_get_defined_constants_add_int(table, "LOCK_UN", PTN_LOCK_UN);
     ptn_get_defined_constants_add_int(table, "LOCK_NB", PTN_LOCK_NB);
+    ptn_get_defined_constants_add_int(table, "ASSERT_ACTIVE", 1);
+    ptn_get_defined_constants_add_int(table, "ASSERT_CALLBACK", 2);
+    ptn_get_defined_constants_add_int(table, "ASSERT_BAIL", 3);
+    ptn_get_defined_constants_add_int(table, "ASSERT_WARNING", 4);
+    ptn_get_defined_constants_add_int(table, "ASSERT_EXCEPTION", 5);
     return table;
 }
 
@@ -38024,12 +38205,170 @@ static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, c
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
+static PtnValue ptn_internal_assert_options(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int64_t option = ptn_value_to_integer(args[0]);
+    PtnValue previous = ptn_null();
+    switch (option) {
+        case 1:
+            previous = ptn_int(ptn_runtime_assert_active(runtime));
+            if (argc >= 2) {
+                ptn_runtime_set_assert_active(runtime, ptn_is_truthy(args[1]));
+            }
+            return previous;
+        case 2:
+            previous = ptn_runtime_assert_callback(runtime);
+            if (argc >= 2) {
+                ptn_runtime_set_assert_callback_value(runtime, args[1]);
+            }
+            return previous;
+        case 3:
+            previous = ptn_int(ptn_runtime_assert_bail(runtime));
+            if (argc >= 2) {
+                ptn_runtime_set_assert_bail(runtime, ptn_is_truthy(args[1]));
+            }
+            return previous;
+        case 4:
+            previous = ptn_int(ptn_runtime_assert_warning(runtime));
+            if (argc >= 2) {
+                ptn_runtime_set_assert_warning(runtime, ptn_is_truthy(args[1]));
+            }
+            return previous;
+        case 5:
+            previous = ptn_int(ptn_runtime_assert_exception(runtime));
+            if (argc >= 2) {
+                ptn_runtime_set_assert_exception(runtime, ptn_is_truthy(args[1]));
+            }
+            return previous;
+        default:
+            ptn_throw_exception(runtime, "ValueError", "assert_options(): Argument #1 ($option) must be an ASSERT_* constant");
+            return ptn_null();
+    }
+}
+
+static char *ptn_assert_invalid_callback_reason(PtnValue callback) {
+    PtnValue resolved = ptn_value_deref(callback);
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        int needed = snprintf(
+            NULL,
+            0,
+            "function \"%s\" not found or invalid function name",
+            name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *reason = malloc((size_t)needed + 1);
+        if (reason == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            reason,
+            (size_t)needed + 1,
+            "function \"%s\" not found or invalid function name",
+            name
+        );
+        free(name);
+        return reason;
+    }
+    if (resolved.type == PTN_ARRAY) {
+        char *reason = ptn_invalid_array_callback_reason(resolved);
+        return reason == NULL ? ptn_duplicate_string("not a valid method callback") : reason;
+    }
+    return ptn_duplicate_string("no array or string given");
+}
+
+static void ptn_assert_set_invalid_callback_exception(PtnRuntime *runtime, PtnValue callback, size_t line) {
+    char *name = ptn_callable_output_name(callback);
+    char *reason = ptn_assert_invalid_callback_reason(callback);
+    int needed = snprintf(NULL, 0, "Invalid callback %s, %s", name, reason);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Invalid callback %s, %s", name, reason);
+    free(name);
+    free(reason);
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "Error",
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+}
+
+static void ptn_assert_set_assertion_exception(PtnRuntime *runtime, char *message, size_t line) {
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "AssertionError",
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+}
+
 static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (ptn_runtime_current_zend_assertions(runtime) <= 0) {
         return ptn_bool(1);
     }
+    if (!ptn_runtime_assert_active(runtime)) {
+        return ptn_bool(1);
+    }
     if (ptn_is_truthy(args[0])) {
         return ptn_bool(1);
+    }
+
+    char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
+    int has_callback_exception = 0;
+    PtnValue callback = ptn_null();
+    if (ptn_runtime_assert_callback_configured(runtime)) {
+        callback = ptn_runtime_assert_callback(runtime);
+        if (ptn_callable_is_valid(runtime, callback, 0)) {
+            PtnValue callback_args[4] = {
+                ptn_owned_string(ptn_duplicate_string(runtime->source_path == NULL ? "" : runtime->source_path)),
+                ptn_int((int64_t)line),
+                ptn_null(),
+                ptn_owned_string(ptn_duplicate_string(message))
+            };
+            PtnValue callback_result = ptn_null();
+            int callback_succeeded = ptn_internal_call_callback_capturing_exception(
+                runtime,
+                callback,
+                4,
+                callback_args,
+                line,
+                &callback_result
+            );
+            for (size_t i = 0; i < 4; i++) {
+                ptn_value_destroy(&callback_args[i]);
+            }
+            ptn_value_destroy(&callback_result);
+            if (!callback_succeeded) {
+                has_callback_exception = 1;
+            }
+        } else {
+            ptn_assert_set_invalid_callback_exception(runtime, callback, line);
+            has_callback_exception = 1;
+        }
     }
 
     if (ptn_runtime_assert_exception(runtime)) {
@@ -38047,33 +38386,56 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
                     runtime->trace_frame = runtime->trace_frame->previous;
                 }
                 ptn_throw_value(runtime, reason, runtime->source_path, line);
+                ptn_value_destroy(&callback);
+                free(message);
                 return ptn_bool(0);
             }
         }
-        char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
-        ptn_throw_exception_owned_message_at(
-            runtime,
-            "AssertionError",
-            message,
-            runtime->source_path,
-            line
-        );
-    } else {
-        char *message = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
-        size_t message_len = strlen(message);
-        const char *prefix = "assert(): ";
-        const char *suffix = " failed";
-        size_t warning_len = strlen(prefix) + message_len + strlen(suffix);
-        char *warning = malloc(warning_len + 1);
-        if (warning == NULL) {
-            free(message);
-            ptn_abort_out_of_memory();
+        ptn_assert_set_assertion_exception(runtime, message, line);
+        if (ptn_runtime_assert_bail(runtime)) {
+            ptn_value_destroy(&callback);
+            ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+            exit(255);
         }
-        snprintf(warning, warning_len + 1, "%s%s%s", prefix, message, suffix);
-        ptn_emit_warning(&runtime->diagnostics, warning, line);
-        free(warning);
-        free(message);
+        ptn_value_destroy(&callback);
+        ptn_rethrow_exception(runtime);
+        return ptn_bool(0);
+    } else {
+        if (ptn_runtime_assert_warning(runtime)) {
+            size_t message_len = strlen(message);
+            const char *prefix = "assert(): ";
+            const char *suffix = " failed";
+            size_t warning_len = strlen(prefix) + message_len + strlen(suffix);
+            char *warning = malloc(warning_len + 1);
+            if (warning == NULL) {
+                ptn_value_destroy(&callback);
+                free(message);
+                ptn_abort_out_of_memory();
+            }
+            snprintf(warning, warning_len + 1, "%s%s%s", prefix, message, suffix);
+            ptn_emit_warning(&runtime->diagnostics, warning, line);
+            free(warning);
+        }
+        if (has_callback_exception) {
+            if (ptn_runtime_assert_bail(runtime)) {
+                ptn_value_destroy(&callback);
+                free(message);
+                ptn_emit_uncaught_exception_warning(runtime, runtime->exceptions->active_exception);
+                exit(0);
+            }
+            ptn_value_destroy(&callback);
+            free(message);
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
+        if (ptn_runtime_assert_bail(runtime)) {
+            ptn_value_destroy(&callback);
+            free(message);
+            exit(0);
+        }
     }
+    ptn_value_destroy(&callback);
+    free(message);
     return ptn_bool(0);
 }
 
@@ -40485,6 +40847,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "asinh", 1, 1, ptn_internal_asinh },
         { "asort", 1, 2, ptn_internal_asort },
         { "assert", 1, 2, ptn_internal_assert },
+        { "assert_options", 1, 2, ptn_internal_assert_options },
         { "atan", 1, 1, ptn_internal_atan },
         { "atan2", 2, 2, ptn_internal_atan2 },
         { "atanh", 1, 1, ptn_internal_atanh },
@@ -40995,6 +41358,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         return "date";
     }
     if (ptn_ascii_case_equal(name, "assert") ||
+        ptn_ascii_case_equal(name, "assert_options") ||
         ptn_ascii_case_equal(name, "class_alias") ||
         ptn_ascii_case_equal(name, "class_exists") ||
         ptn_ascii_case_equal(name, "constant") ||
