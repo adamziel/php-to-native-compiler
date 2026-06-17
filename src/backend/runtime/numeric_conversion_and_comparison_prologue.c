@@ -2836,6 +2836,30 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveArrayIterator")) {
+        if (strcmp(constant, "CHILD_ARRAYS_ONLY") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveIteratorIterator")) {
+        if (strcmp(constant, "LEAVES_ONLY") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "SELF_FIRST") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "CHILD_FIRST") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "CATCH_GET_CHILD") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplDoublyLinkedList") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplQueue") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplStack")) {
@@ -4599,6 +4623,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("IteratorIterator", name)
     ) {
         return ptn_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "RecursiveIteratorIterator")
+        && ptn_internal_class_method_exists("RecursiveIteratorIterator", name)
+    ) {
+        return ptn_recursive_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

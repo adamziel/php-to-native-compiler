@@ -604,7 +604,8 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        ptn_ascii_case_equal(class_name, \"FilterIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"CallbackFilterIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"InfiniteIterator\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"LimitIterator\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"LimitIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveIteratorIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
@@ -4078,6 +4079,7 @@ fn emit_class_metadata_helpers(
         "RecursiveArrayIterator",
         "SplFixedArray",
         "IteratorIterator",
+        "RecursiveIteratorIterator",
         "FilterIterator",
         "CallbackFilterIterator",
         "InfiniteIterator",
@@ -4446,6 +4448,7 @@ fn emit_class_metadata_helpers(
         "FilterIterator",
         "InfiniteIterator",
         "IteratorIterator",
+        "RecursiveIteratorIterator",
         "SplObjectStorage",
         "LimitIterator",
         "SplDoublyLinkedList",
@@ -8735,6 +8738,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "infiniteiterator" => Some("InfiniteIterator"),
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
+        "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
         "splfixedarray" => Some("SplFixedArray"),
@@ -14277,6 +14281,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("InfiniteIterator")
                 || class_name.eq_ignore_ascii_case("IteratorIterator")
                 || class_name.eq_ignore_ascii_case("LimitIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
                 || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
                 || class_name.eq_ignore_ascii_case("SplFixedArray")

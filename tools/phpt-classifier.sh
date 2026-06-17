@@ -1364,6 +1364,17 @@ ptn_phpt_first_unsupported_language_surface() {
             return ptn_supported_spl_fixed_array_surface_row() &&
                 line ~ /(^|[^[:alnum:]_$\\])splfixedarray([^[:alnum:]_]|$)/
         }
+        function ptn_supported_recursive_iterator_iterator_surface_row() {
+            return ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/ArrayObject\/array_009a[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/ArrayObject\/bug73209[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_invalid_aggregate[.]phpt$/ ||
+                ptn_path ~ /ext\/spl\/tests\/RecursiveIteratorIterator_not_initialized[.]phpt$/
+        }
+        function ptn_supported_recursive_iterator_iterator_surface_line(line) {
+            return ptn_supported_recursive_iterator_iterator_surface_row() &&
+                line ~ /(^|[^[:alnum:]_$\\])(recursivearrayiterator|recursiveiteratoriterator)([^[:alnum:]_]|$)/
+        }
         function ptn_supported_anonymous_get_class_row() {
             return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/anon\/gh13097_b[.]phpt$/
@@ -1510,7 +1521,9 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if ((ptn_has_unmodeled_spl_symbol(line) && !ptn_supported_spl_fixed_array_surface_line(line)) ||
+            if ((ptn_has_unmodeled_spl_symbol(line) &&
+                    !ptn_supported_spl_fixed_array_surface_line(line) &&
+                    !ptn_supported_recursive_iterator_iterator_surface_line(line)) ||
                 ptn_has_unmodeled_spl_function(line)) {
                 print "unsupported-spl-surface\trequires SPL data structures, filesystem iterators, recursive iterator stacks, or SPL helper functions outside PTN bounded array-backed iterator wrapper surface"
                 found = 1

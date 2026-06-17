@@ -576,6 +576,106 @@ var_dump($ref->implementsInterface("OuterIterator"));
 }
 
 #[test]
+fn compile_recursive_iterator_iterator_array_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-iterator-iterator-array-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-iterator-iterator-array-surface.php");
+    let output = root.join("recursive-iterator-iterator-array-surface-bin");
+    fs::write(
+        &input,
+        r#"<?php
+error_reporting(E_ERROR);
+
+class FruitPublic {
+    public $title;
+    public function __construct($title) { $this->title = $title; }
+    public function __toString() { return $this->title; }
+}
+
+class FruitProtected {
+    protected $title;
+    public function __construct($title) { $this->title = $title; }
+    public function __toString() { return $this->title; }
+}
+
+$nested = [1, 2 => [21, 22 => [221, 222], 23 => [231]], 3];
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($nested), RecursiveIteratorIterator::LEAVES_ONLY) as $value) {
+    echo "leaf:$value\n";
+}
+
+$duplicateKeys = [1 => [1 => [1 => "apple"], 2 => [1 => "grape"]]];
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($duplicateKeys)) as $key => $value) {
+    echo "dup:$key=$value\n";
+}
+
+$objects = [new FruitPublic("apple"), new FruitProtected("grape")];
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($objects)) as $key => $value) {
+    echo "object:$key=$value\n";
+}
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($objects, RecursiveArrayIterator::CHILD_ARRAYS_ONLY)) as $key => $value) {
+    echo "child-arrays-only:$key=$value\n";
+}
+
+$nestedObjects = [1 => [1 => new FruitPublic("apple")], 2 => [1 => new FruitProtected("grape")]];
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($nestedObjects, RecursiveArrayIterator::CHILD_ARRAYS_ONLY)) as $key => $value) {
+    echo "nested-child-arrays-only:$key=$value\n";
+}
+
+$data = new stdClass();
+$data->props = ["hello" => 5, "props" => ["keyme" => ["test" => 5]]];
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($data), RecursiveIteratorIterator::SELF_FIRST) as $key => $value) {
+    echo "self:$key\n";
+}
+
+$rc = new ReflectionClass(RecursiveIteratorIterator::class);
+$it = $rc->newInstanceWithoutConstructor();
+try {
+    foreach ($it as $value) {
+    }
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "leaf:1\n",
+            "leaf:21\n",
+            "leaf:221\n",
+            "leaf:222\n",
+            "leaf:231\n",
+            "leaf:3\n",
+            "dup:1=apple\n",
+            "dup:1=grape\n",
+            "object:title=apple\n",
+            "child-arrays-only:0=apple\n",
+            "child-arrays-only:1=grape\n",
+            "nested-child-arrays-only:1=apple\n",
+            "nested-child-arrays-only:1=grape\n",
+            "self:props\n",
+            "self:hello\n",
+            "self:props\n",
+            "self:keyme\n",
+            "self:test\n",
+            "Object is not initialized\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_datetime_timezone_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-datetime-timezone-semantics");
     fs::create_dir_all(&root).unwrap();

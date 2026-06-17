@@ -903,6 +903,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_iterator_iterator(lookup_class_name)) {
         return ptn_iterator_iterator_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_recursive_iterator_iterator(lookup_class_name)) {
+        return ptn_recursive_iterator_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_limit_iterator(lookup_class_name)) {
         return ptn_limit_iterator_new(runtime, argc, args, line);
     }

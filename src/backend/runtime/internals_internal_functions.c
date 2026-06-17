@@ -42608,6 +42608,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *c
     return ptn_ascii_case_equal(class_name, "IteratorIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_iterator_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "RecursiveIteratorIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "SplObjectStorage");
 }
@@ -42735,6 +42739,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_filter_iterator(class_name)
         || ptn_internal_class_name_is_infinite_iterator(class_name)
         || ptn_internal_class_name_is_iterator_iterator(class_name)
+        || ptn_internal_class_name_is_recursive_iterator_iterator(class_name)
         || ptn_internal_class_name_is_spl_object_storage(class_name)
         || ptn_internal_class_name_is_limit_iterator(class_name)
         || ptn_internal_class_name_is_spl_doubly_linked_list(class_name)
@@ -43708,6 +43713,11 @@ static int ptn_iterator_iterator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
+static int ptn_recursive_iterator_iterator_method_exists(const char *method_name) {
+    return ptn_iterator_iterator_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "getSubIterator");
+}
+
 static int ptn_limit_iterator_method_exists(const char *method_name) {
     return ptn_iterator_iterator_method_exists(method_name)
         || ptn_ascii_case_equal(method_name, "getPosition")
@@ -43947,6 +43957,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         ptn_internal_class_name_is_infinite_iterator(class_name) ||
         ptn_internal_class_name_is_iterator_iterator(class_name)) {
         return ptn_iterator_iterator_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_recursive_iterator_iterator(class_name)) {
+        return ptn_recursive_iterator_iterator_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_limit_iterator(class_name)) {
         return ptn_limit_iterator_method_exists(method_name);
@@ -49742,6 +49755,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         if (ptn_internal_class_name_is_stdclass_name(class_name)) {
             return ptn_object_new_shell(runtime, "stdClass");
         }
+        if (ptn_internal_class_name_is_recursive_iterator_iterator(class_name)) {
+            return ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
+        }
         ptn_throw_exception(runtime, "ReflectionException", "Cannot instantiate internal class without constructor");
         return ptn_null();
     }
@@ -50125,6 +50141,14 @@ typedef struct {
 
 typedef struct {
     PtnValue inner;
+    PtnValue values;
+    PtnValue keys;
+    size_t index;
+    int mode;
+} PtnRecursiveIteratorIteratorData;
+
+typedef struct {
+    PtnValue inner;
     PtnValue callback;
 } PtnCallbackFilterIteratorData;
 
@@ -50265,6 +50289,18 @@ static void ptn_iterator_iterator_data_free(void *data) {
         return;
     }
     ptn_value_destroy(&iterator_data->inner);
+    free(iterator_data);
+}
+
+static void ptn_recursive_iterator_iterator_data_free(void *data) {
+    PtnRecursiveIteratorIteratorData *iterator_data =
+        (PtnRecursiveIteratorIteratorData *)data;
+    if (iterator_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&iterator_data->inner);
+    ptn_value_destroy(&iterator_data->values);
+    ptn_value_destroy(&iterator_data->keys);
     free(iterator_data);
 }
 
@@ -50448,6 +50484,25 @@ static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, 
         return NULL;
     }
     return (PtnIteratorIteratorData *)receiver.as.object->native_data;
+}
+
+static PtnRecursiveIteratorIteratorData *ptn_recursive_iterator_iterator_data(
+    PtnRuntime *runtime,
+    PtnValue receiver
+) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "RecursiveIteratorIterator")
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid RecursiveIteratorIterator object");
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Object is not initialized");
+        return NULL;
+    }
+    return (PtnRecursiveIteratorIteratorData *)receiver.as.object->native_data;
 }
 
 static PtnCallbackFilterIteratorData *ptn_callback_filter_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -51383,14 +51438,17 @@ static void ptn_spl_array_backing_deprecation(
     const char *method_name,
     size_t line
 ) {
+    const char *display_class_name = ptn_ascii_case_equal(class_name, "RecursiveArrayIterator")
+        ? "ArrayIterator"
+        : class_name;
     char message[256];
     int written = snprintf(
         message,
         sizeof(message),
         "%s::%s(): Using an object as a backing array for %s is deprecated, as it allows violating class constraints and invariants",
-        class_name,
+        display_class_name,
         method_name,
-        class_name
+        display_class_name
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -54675,6 +54733,21 @@ static int ptn_value_is_seekable_iterator_object(PtnValue value) {
     return ptn_value_object_implements_interface(value, "SeekableIterator");
 }
 
+static PtnValue ptn_iterator_inner_call(
+    PtnRuntime *runtime,
+    PtnValue inner,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PtnValue ptn_iterator_inner_call_no_args(
+    PtnRuntime *runtime,
+    PtnValue inner,
+    const char *name,
+    size_t line
+);
+
 static PtnValue ptn_iterator_iterator_resolve_inner(
     PtnRuntime *runtime,
     const char *class_name,
@@ -54775,6 +54848,206 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
     size_t line
 ) {
     return ptn_iterator_iterator_new_for_class(runtime, "IteratorIterator", argc, args, line);
+}
+
+static PtnValue ptn_recursive_iterator_iterator_resolve_inner(
+    PtnRuntime *runtime,
+    PtnValue candidate,
+    size_t line
+) {
+    candidate = ptn_value_deref(candidate);
+    if (ptn_value_object_implements_interface(candidate, "RecursiveIterator")) {
+        return ptn_value_clone_deref(candidate);
+    }
+    if (ptn_value_is_iterator_aggregate_object(candidate) && runtime->method_dispatch != NULL) {
+        PtnValue iterator = runtime->method_dispatch(runtime, candidate, "getIterator", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&iterator);
+            return ptn_null();
+        }
+        if (ptn_value_object_implements_interface(iterator, "RecursiveIterator")) {
+            return iterator;
+        }
+        PtnValue resolved = ptn_value_deref(candidate);
+        const char *class_name = resolved.type == PTN_OBJECT
+            ? resolved.as.object->class_name
+            : "IteratorAggregate";
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::getIterator() must return an object that implements Traversable",
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_value_destroy(&iterator);
+        ptn_throw_exception(runtime, "LogicException", message);
+        return ptn_null();
+    }
+    ptn_throw_exception(
+        runtime,
+        "TypeError",
+        "RecursiveIteratorIterator::__construct(): Argument #1 ($iterator) must be of type Traversable"
+    );
+    return ptn_null();
+}
+
+static void ptn_recursive_iterator_iterator_append_current(
+    PtnRuntime *runtime,
+    PtnArray *values,
+    PtnArray *keys,
+    PtnValue key,
+    PtnValue value
+) {
+    if (values == NULL || keys == NULL) {
+        return;
+    }
+    if (values->len > (size_t)INT64_MAX || keys->len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    size_t index = values->len;
+    ptn_array_set_entry(
+        values,
+        ptn_array_int_key((int64_t)index),
+        ptn_value_clone_deref(value)
+    );
+    ptn_array_set_entry(
+        keys,
+        ptn_array_int_key((int64_t)index),
+        ptn_value_clone_deref(key)
+    );
+    (void)runtime;
+}
+
+static void ptn_recursive_iterator_iterator_flatten(
+    PtnRuntime *runtime,
+    PtnValue iterator,
+    PtnArray *values,
+    PtnArray *keys,
+    int mode,
+    size_t line,
+    size_t depth
+) {
+    if (depth > 64) {
+        ptn_throw_exception(runtime, "Exception", "RecursiveIteratorIterator recursion limit exceeded");
+        return;
+    }
+    PtnValue rewind = ptn_iterator_inner_call_no_args(runtime, iterator, "rewind", line);
+    ptn_value_destroy(&rewind);
+    while (runtime->exceptions->active_exception == NULL) {
+        PtnValue valid = ptn_iterator_inner_call_no_args(runtime, iterator, "valid", line);
+        int is_valid = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
+        ptn_value_destroy(&valid);
+        if (!is_valid || runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+
+        PtnValue current = ptn_iterator_inner_call_no_args(runtime, iterator, "current", line);
+        PtnValue key = ptn_iterator_inner_call_no_args(runtime, iterator, "key", line);
+        PtnValue has_children_value =
+            ptn_iterator_inner_call_no_args(runtime, iterator, "hasChildren", line);
+        int has_children =
+            runtime->exceptions->active_exception == NULL && ptn_is_truthy(has_children_value);
+        ptn_value_destroy(&has_children_value);
+
+        if (runtime->exceptions->active_exception == NULL &&
+            (mode == 1 || !has_children)) {
+            ptn_recursive_iterator_iterator_append_current(runtime, values, keys, key, current);
+        }
+
+        if (runtime->exceptions->active_exception == NULL && has_children) {
+            PtnValue child =
+                ptn_iterator_inner_call_no_args(runtime, iterator, "getChildren", line);
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_recursive_iterator_iterator_flatten(
+                    runtime,
+                    child,
+                    values,
+                    keys,
+                    mode,
+                    line,
+                    depth + 1
+                );
+            }
+            ptn_value_destroy(&child);
+        }
+
+        if (runtime->exceptions->active_exception == NULL && mode == 2 && has_children) {
+            ptn_recursive_iterator_iterator_append_current(runtime, values, keys, key, current);
+        }
+
+        ptn_value_destroy(&current);
+        ptn_value_destroy(&key);
+        if (runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+        PtnValue next = ptn_iterator_inner_call_no_args(runtime, iterator, "next", line);
+        ptn_value_destroy(&next);
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "RecursiveIteratorIterator::__construct() expects at least 1 argument");
+        return ptn_null();
+    }
+    if (argc > 3) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "RecursiveIteratorIterator::__construct() expects at most 3 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    PtnValue inner = ptn_recursive_iterator_iterator_resolve_inner(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t mode_arg = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
+    int mode = (mode_arg == 1 || mode_arg == 2) ? (int)mode_arg : 0;
+
+    PtnRecursiveIteratorIteratorData *data =
+        malloc(sizeof(PtnRecursiveIteratorIteratorData));
+    if (data == NULL) {
+        ptn_value_destroy(&inner);
+        ptn_abort_out_of_memory();
+    }
+    data->inner = inner;
+    data->values = ptn_array_from_literal_entries(0, NULL);
+    data->keys = ptn_array_from_literal_entries(0, NULL);
+    data->index = 0;
+    data->mode = mode;
+    ptn_recursive_iterator_iterator_flatten(
+        runtime,
+        data->inner,
+        data->values.as.array,
+        data->keys.as.array,
+        data->mode,
+        line,
+        0
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_recursive_iterator_iterator_data_free(data);
+        return ptn_null();
+    }
+
+    PtnValue object = ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_recursive_iterator_iterator_data_free;
+    return object;
 }
 
 static PTN_UNUSED PtnValue ptn_filter_iterator_new(
@@ -55468,7 +55741,13 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_bool(0);
         }
         PtnValue current = ptn_value_deref(entry->value);
-        return ptn_bool(current.type == PTN_ARRAY);
+        int follows_objects = current.type == PTN_OBJECT &&
+            ptn_declared_class_is_same_or_descendant(
+                ptn_value_deref(receiver).as.object->class_name,
+                "RecursiveArrayIterator"
+            ) &&
+            (data->flags & 4) == 0;
+        return ptn_bool(current.type == PTN_ARRAY || follows_objects);
     }
     if (ptn_ascii_case_equal(name, "getChildren")) {
         PtnArrayEntry *entry = ptn_spl_storage_visible_entry(runtime, data->storage, data->index, NULL);
@@ -55476,12 +55755,21 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_null();
         }
         PtnValue current = ptn_value_deref(entry->value);
-        if (current.type != PTN_ARRAY) {
+        int follows_object = current.type == PTN_OBJECT &&
+            ptn_declared_class_is_same_or_descendant(
+                ptn_value_deref(receiver).as.object->class_name,
+                "RecursiveArrayIterator"
+            ) &&
+            (data->flags & 4) == 0;
+        if (current.type != PTN_ARRAY && !follows_object) {
             return ptn_null();
         }
-        PtnValue child_arg = ptn_array(ptn_array_clone(current.as.array));
-        PtnValue child = ptn_recursive_array_iterator_new(runtime, 1, &child_arg, line);
-        ptn_value_drop(&child_arg);
+        PtnValue child_args[2] = {
+            ptn_value_clone_deref(current),
+            ptn_int(data->flags)
+        };
+        PtnValue child = ptn_recursive_array_iterator_new(runtime, 2, child_args, line);
+        ptn_value_destroy(&child_args[0]);
         return child;
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
@@ -56022,6 +56310,81 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         ptn_ascii_case_equal(name, "offsetGet")
     ) {
         return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnArrayEntry *ptn_recursive_iterator_iterator_entry(PtnValue storage, size_t index) {
+    storage = ptn_value_deref(storage);
+    if (storage.type != PTN_ARRAY || index >= storage.as.array->len) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_int_key((int64_t)index);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(storage.as.array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    PtnRecursiveIteratorIteratorData *data =
+        ptn_recursive_iterator_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getInnerIterator") ||
+        ptn_ascii_case_equal(name, "getSubIterator")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_value_clone_deref(data->inner);
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception == NULL) {
+            data->index = 0;
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue values = ptn_value_deref(data->values);
+        return ptn_bool(values.type == PTN_ARRAY && data->index < values.as.array->len);
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnArrayEntry *entry = ptn_recursive_iterator_iterator_entry(data->values, data->index);
+        return entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnArrayEntry *entry = ptn_recursive_iterator_iterator_entry(data->keys, data->index);
+        return entry == NULL ? ptn_null() : ptn_value_clone_deref(entry->value);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        if (runtime->exceptions->active_exception == NULL) {
+            data->index++;
+        }
+        return ptn_null();
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
