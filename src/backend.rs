@@ -10350,7 +10350,7 @@ fn emit_exit_instruction(
     out: &mut String,
     values: &mut ValueEmitter,
     value: Option<&ValueExpr>,
-    _line: usize,
+    line: usize,
 ) {
     let Some(value) = value else {
         out.push_str("    ptn_runtime_free(&runtime);\n");
@@ -10416,7 +10416,9 @@ fn emit_exit_instruction(
     out.push_str(" = 0;\n");
     out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"exit\", 1, \"status\", \"string|int\", ");
     out.push_str(&resolved_temp);
-    out.push_str(", 0, runtime.source_path, line);\n");
+    out.push_str(", 0, runtime.source_path, ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
     out.push_str("            break;\n");
     out.push_str("    }\n");
     emit_value_cleanup(out, "    ", &value_temp);

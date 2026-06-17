@@ -33893,6 +33893,42 @@ fn compile_exit_construct_forms_to_native_binary() {
 }
 
 #[test]
+fn compile_exit_invalid_status_type_to_native_binary() {
+    let root = temp_dir("ptn-native-exit-invalid-status-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exit-invalid-status-type.php");
+    let output = root.join("exit-invalid-status-type-bin");
+    fs::write(
+        &input,
+        "<?php
+try {
+    exit([]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+echo \"after\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "exit(): Argument #1 ($status) must be of type string|int, array given\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains(
+        "ptn_throw_user_parameter_class_type_error(&runtime, \"exit\", 1, \"status\", \"string|int\""
+    ));
+    assert!(c_source.contains(", 0, runtime.source_path, 3);"));
+}
+
+#[test]
 fn compile_exit_and_die_soft_identifier_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-exit-die-soft-identifiers");
     fs::create_dir_all(&root).unwrap();
