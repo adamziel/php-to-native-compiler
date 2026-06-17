@@ -5342,7 +5342,9 @@ fn emit_class_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         out.push_str("        PtnValue ptn_magic_args[2];\n");
-        out.push_str("        ptn_magic_args[0] = ptn_string(method_name);\n");
+        out.push_str(
+            "        ptn_magic_args[0] = ptn_owned_string(ptn_duplicate_string(method_name));\n",
+        );
         out.push_str("        ptn_magic_args[1] = ptn_array_from_literal_entries(0, NULL);\n");
         out.push_str("        for (size_t ptn_magic_arg_i = 0; ptn_magic_arg_i < argc; ptn_magic_arg_i++) {\n");
         out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
@@ -5473,6 +5475,7 @@ fn emit_declared_enum_static_method(out: &mut String, classes: &[ClassDecl]) {
             "            PtnValue ptn_enum_cases = ptn_array_from_literal_entries(0, NULL);\n",
         );
         out.push_str("            int64_t ptn_enum_index = 0;\n");
+        out.push_str("            (void)ptn_enum_index;\n");
         for (case_index, constant) in class
             .constants
             .iter()
@@ -9009,7 +9012,9 @@ fn emit_method_dispatch(
         }
         if let Some(method) = class_magic_call_method(class, classes) {
             out.push_str("        PtnValue ptn_magic_args[2];\n");
-            out.push_str("        ptn_magic_args[0] = ptn_string(method_name);\n");
+            out.push_str(
+            "        ptn_magic_args[0] = ptn_owned_string(ptn_duplicate_string(method_name));\n",
+        );
             out.push_str("        ptn_magic_args[1] = ptn_array_from_literal_entries(0, NULL);\n");
             out.push_str("        for (size_t ptn_magic_arg_i = 0; ptn_magic_arg_i < argc; ptn_magic_arg_i++) {\n");
             out.push_str("            if (ptn_magic_arg_i > (size_t)INT64_MAX) {\n");
