@@ -345,6 +345,11 @@ pub enum Instruction {
         name: String,
         line: usize,
     },
+    UnsetStaticProperty {
+        class_name: String,
+        name: String,
+        line: usize,
+    },
     DefineConstant {
         name: String,
         attributes: AttributeMetadata,
@@ -3101,6 +3106,15 @@ impl<'a> LoweringContext<'a> {
                 span,
             } => Instruction::UnsetProperty {
                 receiver: self.lower_expr(receiver),
+                name: name.clone(),
+                line: span.line,
+            },
+            AstUnsetTarget::StaticProperty {
+                class_name,
+                name,
+                span,
+            } => Instruction::UnsetStaticProperty {
+                class_name: class_name.clone(),
                 name: name.clone(),
                 line: span.line,
             },

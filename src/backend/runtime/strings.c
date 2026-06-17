@@ -2013,8 +2013,13 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
     memcpy(class_name, name, class_len);
     class_name[class_len] = '\0';
 
-    const char *lookup_class_name =
-        ptn_declared_class_canonical_name(ptn_runtime_resolve_class_alias(runtime, class_name));
+    const char *resolved_class_name =
+        ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, 0);
+    if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        free(class_name);
+        return 0;
+    }
+    const char *lookup_class_name = ptn_declared_class_canonical_name(resolved_class_name);
     while (lookup_class_name != NULL) {
         char *key = ptn_class_constant_key(lookup_class_name, constant_name);
         PtnValue value;
@@ -2046,7 +2051,7 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
         free(class_name);
         return 1;
     }
-    if (ptn_builtin_class_constant_value(class_name, constant_name, out)) {
+    if (ptn_builtin_class_constant_value(resolved_class_name, constant_name, out)) {
         free(class_name);
         return 1;
     }

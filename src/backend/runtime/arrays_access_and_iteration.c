@@ -760,18 +760,31 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
         return;
     }
 
+    PtnValue active_callback = ptn_null();
+    PtnTryFrame autoload_frame;
     ptn_runtime_push_autoloading_class(root, class_name);
-    for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
-        PtnValue callback = ptn_value_clone(root->autoload_callbacks[i]);
-        PtnValue callback_args[1] = { ptn_string(class_name) };
-        PtnValue result = ptn_call_callable(runtime, callback, 1, callback_args, line);
-        ptn_value_destroy(&result);
-        ptn_value_destroy(&callback);
-        if (runtime->exceptions->active_exception != NULL) {
-            break;
+    ptn_try_frame_push(runtime, &autoload_frame);
+    if (setjmp(autoload_frame.jump) == 0) {
+        for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
+            active_callback = ptn_value_clone(root->autoload_callbacks[i]);
+            PtnValue callback_args[1] = { ptn_string(class_name) };
+            PtnValue result =
+                ptn_call_callable(runtime, active_callback, 1, callback_args, line);
+            ptn_value_destroy(&result);
+            ptn_value_destroy(&active_callback);
+            active_callback = ptn_null();
+            if (runtime->exceptions->active_exception != NULL) {
+                break;
+            }
         }
+        ptn_try_frame_pop(runtime, &autoload_frame);
+        ptn_runtime_pop_autoloading_class(root);
+    } else {
+        ptn_try_frame_pop(runtime, &autoload_frame);
+        ptn_value_destroy(&active_callback);
+        ptn_runtime_pop_autoloading_class(root);
+        ptn_rethrow_exception(runtime);
     }
-    ptn_runtime_pop_autoloading_class(root);
 #endif
 }
 

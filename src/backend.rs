@@ -3817,6 +3817,29 @@ fn emit_user_function_dispatch(
         "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("    const char *ptn_static_call_separator = strstr(lookup_name, \"::\");\n");
+    out.push_str("    if (ptn_static_call_separator != NULL && ptn_static_call_separator != lookup_name && ptn_static_call_separator[2] != '\\0') {\n");
+    out.push_str("        size_t ptn_static_call_class_len = (size_t)(ptn_static_call_separator - lookup_name);\n");
+    out.push_str("        char *ptn_static_call_class = malloc(ptn_static_call_class_len + 1);\n");
+    out.push_str("        if (ptn_static_call_class == NULL) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        memcpy(ptn_static_call_class, lookup_name, ptn_static_call_class_len);\n",
+    );
+    out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
+    out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
+    out.push_str("        if (!ptn_declared_runtime_class_exists(runtime, ptn_static_call_resolved_class) && !ptn_internal_class_exists_name(ptn_static_call_resolved_class)) {\n");
+    out.push_str(
+        "            ptn_runtime_autoload_class(runtime, ptn_static_call_resolved_class, line);\n",
+    );
+    out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("                free(ptn_static_call_class);\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        free(ptn_static_call_class);\n");
+    out.push_str("    }\n");
     out.push_str("    int found = 0;\n");
     out.push_str(
         "    PtnValue result = ptn_call_user_function(runtime, lookup_name, argc, args, line, &found);\n",
@@ -9388,6 +9411,13 @@ fn emit_method_dispatch(
     out.push_str("    (void)result_out;\n");
     out.push_str("    (void)resolved_receiver;\n");
     out.push_str("    (void)effective_called_class;\n");
+    out.push_str("    if (!ptn_declared_runtime_class_exists(runtime, target_class_name)) {\n");
+    out.push_str("        ptn_runtime_autoload_class(runtime, target_class_name, line);\n");
+    out.push_str("        if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("            *result_out = ptn_null();\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(target_class_name, \"");
         out.push_str(&c_string(&class.name));
@@ -10491,6 +10521,22 @@ fn emit_instruction(
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &receiver_temp);
             }
+        }
+        Instruction::UnsetStaticProperty {
+            class_name,
+            name,
+            line,
+        } => {
+            let resolved_class_name = values.static_property_class_name(class_name);
+            out.push_str("    ptn_runtime_unset_static_property(&runtime, \"");
+            out.push_str(&c_string(&resolved_class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            values.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
         }
         Instruction::InternalCall {
             name,
@@ -12636,6 +12682,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::UnsetProperty { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
         }
+        Instruction::UnsetStaticProperty { .. } => {}
         Instruction::InternalCall { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
@@ -13282,6 +13329,7 @@ fn collect_instruction_runtime_requirements(
         Instruction::UnsetProperty { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
+        Instruction::UnsetStaticProperty { .. } => {}
         Instruction::InternalCall {
             name,
             arguments,
@@ -15467,6 +15515,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::UnsetDynamicArrayDim { line, .. }
         | Instruction::UnsetPropertyArrayDim { line, .. }
         | Instruction::UnsetProperty { line, .. }
+        | Instruction::UnsetStaticProperty { line, .. }
         | Instruction::DefineConstant { line, .. }
         | Instruction::InternalCall { line, .. }
         | Instruction::Return { line, .. }
@@ -16035,6 +16084,7 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         | Instruction::Throw {
             value: receiver, ..
         } => value_expr_uses_this(receiver),
+        Instruction::UnsetStaticProperty { .. } => false,
         Instruction::InternalCall { arguments, .. } => arguments.iter().any(value_expr_uses_this),
         Instruction::Return { value, .. } | Instruction::Exit { value, .. } => {
             value.as_ref().is_some_and(value_expr_uses_this)

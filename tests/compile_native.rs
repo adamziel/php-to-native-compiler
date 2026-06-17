@@ -3643,6 +3643,23 @@ fn parser_accepts_variable_root_array_assignment_and_unset() {
 }
 
 #[test]
+fn parser_accepts_static_property_unset() {
+    let program = parser::parse("<?php unset(Box::$value);").unwrap();
+    let Statement::Unset { targets, .. } = &program.statements[0] else {
+        panic!("expected unset statement");
+    };
+    assert_eq!(targets.len(), 1);
+    assert!(matches!(
+        &targets[0],
+        UnsetTarget::StaticProperty {
+            class_name,
+            name,
+            ..
+        } if class_name == "Box" && name == "value"
+    ));
+}
+
+#[test]
 fn parser_accepts_property_root_array_assignment_expressions() {
     let program =
         parser::parse("<?php $this->children[$name] = $value; $this->counts[$name] += 2;").unwrap();
@@ -40778,6 +40795,116 @@ try {
         "Access to undeclared static property Known::$missing\nAccess to undeclared static property Missing::$value\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_static_property_unset_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-unset.php");
+    let output = root.join("static-property-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Known {
+    public static $value = 1;
+}
+
+try {
+    unset(Known::$value);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+spl_autoload_register(function($class) {
+    throw new Exception($class);
+});
+
+try {
+    unset(Missing::$value);
+} catch (Exception $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Attempt to unset static property Known::$value\nMissing\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_unset_static_property(&runtime"));
+}
+
+#[test]
+fn compile_autoload_exception_static_member_surfaces_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-static-members");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-static-members.php");
+    let output = root.join("autoload-static-members-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function($class) {
+    throw new Exception($class);
+});
+
+try {
+    echo MissingStatic::$value;
+} catch (Exception $e) {
+    echo \"prop:\", $e->getMessage(), \"\\n\";
+}
+
+try {
+    echo MissingStatic::VALUE;
+} catch (Exception $e) {
+    echo \"const:\", $e->getMessage(), \"\\n\";
+}
+
+try {
+    MissingStatic::method();
+} catch (Exception $e) {
+    echo \"method:\", $e->getMessage(), \"\\n\";
+}
+
+try {
+    unset(MissingStatic::$value);
+} catch (Exception $e) {
+    echo \"unset:\", $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "prop:MissingStatic\n",
+            "const:MissingStatic\n",
+            "method:MissingStatic\n",
+            "unset:MissingStatic\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_maybe_autoload_static_member_class"));
 }
 
 #[test]

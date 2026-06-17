@@ -709,6 +709,11 @@ pub enum UnsetTarget {
         name: String,
         span: SourceSpan,
     },
+    StaticProperty {
+        class_name: String,
+        name: String,
+        span: SourceSpan,
+    },
     ArrayDim(ArrayDimTarget),
 }
 

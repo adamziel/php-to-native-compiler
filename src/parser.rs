@@ -4980,6 +4980,15 @@ impl Parser<'_> {
                 name,
                 span,
             }),
+            Expr::StaticPropertyFetch {
+                class_name,
+                name,
+                span,
+            } => Ok(UnsetTarget::StaticProperty {
+                class_name,
+                name,
+                span,
+            }),
             _ => Err(Diagnostic::new(
                 "unsupported unset target",
                 Some(target.span()),
@@ -14028,6 +14037,7 @@ fn validate_control_transfers_in_unset_target(target: &UnsetTarget) -> Result<()
         UnsetTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
+        UnsetTarget::StaticProperty { .. } => {}
         UnsetTarget::ArrayDim(target) => {
             validate_control_transfers_in_array_dim_target(target)?;
         }
@@ -14974,7 +14984,7 @@ fn unset_target_contains_yield(target: &UnsetTarget) -> bool {
         UnsetTarget::ArrayDim(target) => {
             target.dimensions.iter().flatten().any(expr_contains_yield)
         }
-        UnsetTarget::Variable { .. } => false,
+        UnsetTarget::Variable { .. } | UnsetTarget::StaticProperty { .. } => false,
     }
 }
 

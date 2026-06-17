@@ -3079,6 +3079,23 @@ static PTN_UNUSED PtnValue ptn_runtime_undeclared_static_property(
     return ptn_null();
 }
 
+static PTN_UNUSED const char *ptn_runtime_maybe_autoload_static_member_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
+    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
+    if (!ptn_declared_runtime_class_exists(runtime, resolved_class_name)) {
+        ptn_runtime_autoload_class(runtime, resolved_class_name, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return resolved_class_name;
+        }
+        resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
+    }
+    return resolved_class_name;
+}
+
 static PTN_UNUSED void ptn_runtime_define_static_property(
     PtnRuntime *runtime,
     const char *class_name,
@@ -3267,7 +3284,11 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     size_t line,
     size_t deprecation_line
 ) {
-    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    const char *resolved_class_name =
+        ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     const char *target_class_name = ptn_declared_class_canonical_name(resolved_class_name);
     const char *lookup_class_name = target_class_name;
     while (lookup_class_name != NULL) {
@@ -3544,6 +3565,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
     size_t line
 ) {
     (void)line;
+    class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     const char *declaring_class = NULL;
     char *key = ptn_runtime_resolve_static_property_key(
         runtime,
@@ -3585,6 +3610,10 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
     size_t line
 ) {
     (void)line;
+    class_name = ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_lookup_missing();
+    }
     const char *declaring_class = NULL;
     char *key = ptn_runtime_resolve_static_property_key(
         runtime,
@@ -3615,6 +3644,73 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
     }
     free(key);
     return ptn_lookup_missing();
+}
+
+static PTN_UNUSED void ptn_throw_static_property_unset_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "Attempt to unset static property %s::$%s",
+        class_name,
+        property
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Attempt to unset static property %s::$%s",
+        class_name,
+        property
+    );
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_throw_class_not_found_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    int needed = snprintf(NULL, 0, "Class \"%s\" not found", class_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Class \"%s\" not found", class_name);
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_runtime_unset_static_property(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    (void)access_scope;
+    const char *resolved_class_name =
+        ptn_runtime_maybe_autoload_static_member_class(runtime, class_name, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return;
+    }
+    if (!ptn_declared_runtime_class_exists(runtime, resolved_class_name)) {
+        ptn_throw_class_not_found_error(runtime, resolved_class_name, line);
+        return;
+    }
+    ptn_throw_static_property_unset_error(runtime, resolved_class_name, property, line);
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_static_property(

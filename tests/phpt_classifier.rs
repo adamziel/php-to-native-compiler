@@ -1286,8 +1286,8 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "autoload type declaration",
             "--TEST--\nautoload\n--FILE--\n<?php\nfunction needs(Missing $value) {}\nspl_autoload_register(function ($class) {});\n--EXPECT--\n",
-            "unsupported-autoload-metadata\t",
-            "requires autoload/type-declaration integration",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "autoload parameter default class constant",
@@ -1298,8 +1298,8 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "autoload exception propagation",
             "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) { throw new Exception($class); });\necho Missing::$value;\n--EXPECT--\n",
-            "unsupported-autoload-metadata\t",
-            "requires autoload exception propagation",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "reflection closure binding",
