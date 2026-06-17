@@ -932,9 +932,6 @@ static PTN_UNUSED PtnValue ptn_trace_frame_arg_value(PtnTraceFrame *frame, size_
         if (ptn_symbols_get(&frame->runtime->symbols, frame->parameter_names[position], &value)) {
             return ptn_trace_value_snapshot(value);
         }
-        if (position < frame->argc) {
-            return ptn_trace_value_snapshot(frame->args[position]);
-        }
         return ptn_null();
     }
     if (position < frame->argc) {

@@ -565,7 +565,13 @@ static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
 
     object->destructor_called = 1;
     PtnValue receiver = ptn_value_borrow(ptn_object(object));
-    PtnValue result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, 0);
+    size_t destructor_line = runtime->call_site_line != 0
+        ? runtime->call_site_line
+        : root->call_site_line;
+    if (destructor_line == 0) {
+        destructor_line = 1;
+    }
+    PtnValue result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
     ptn_value_destroy(&result);
 }
 

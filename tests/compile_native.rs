@@ -33873,9 +33873,35 @@ function traceUnset($left, &$middle, $right)
     var_dump($trace[0]['args'][2] === null);
 }
 
+function traceWrapper()
+{
+    return debug_backtrace();
+}
+
+function traceCallerUnset($first, &$second, $third)
+{
+    unset($third);
+    $trace = traceWrapper();
+    var_dump($trace[1]['args'][0] === 'first');
+    var_dump($trace[1]['args'][1] === 'second');
+    var_dump($trace[1]['args'][2] === null);
+    unset($first);
+    $trace = traceWrapper();
+    var_dump($trace[1]['args'][0] === null);
+    var_dump($trace[1]['args'][1] === 'second');
+    var_dump($trace[1]['args'][2] === null);
+    unset($second);
+    $trace = traceWrapper();
+    var_dump($trace[1]['args'][0] === null);
+    var_dump($trace[1]['args'][1] === null);
+    var_dump($trace[1]['args'][2] === null);
+}
+
 Probe::stat('target');
 $middle = 'middle';
 traceUnset('left', $middle, 'right');
+$second = 'second';
+traceCallerUnset('first', $second, 'third');
 ",
     )
     .unwrap();
@@ -33886,7 +33912,45 @@ traceUnset('left', $middle, 'right');
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\n".repeat(20)
+        "bool(true)\n".repeat(29)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_destructor_exception_trace_keeps_file_line_to_native_binary() {
+    let root = temp_dir("ptn-native-destructor-exception-trace-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("destructor-exception-trace-metadata.php");
+    let output = root.join("destructor-exception-trace-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class TraceInDestructor
+{
+    public function __destruct()
+    {
+        $trace = (new Exception('probe'))->getTrace();
+        var_dump(isset($trace[0]['file']));
+        var_dump(isset($trace[0]['line']));
+        var_dump($trace[0]['function'] === '__destruct');
+        var_dump($trace[0]['class'] === 'TraceInDestructor');
+    }
+}
+
+$object = new TraceInDestructor();
+unset($object);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n".repeat(4)
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
