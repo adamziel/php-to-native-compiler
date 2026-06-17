@@ -819,7 +819,14 @@ static PTN_UNUSED const char *ptn_diagnostic_path(PtnDiagnosticSink *diagnostics
 }
 
 static PTN_UNUSED const char *ptn_diagnostic_builtin_path(size_t line) {
-    return line == 0 ? "Unknown" : "ptn";
+    if (line == 0) {
+        return "Unknown";
+    }
+    const char *script_filename = getenv("PTN_SCRIPT_FILENAME");
+    if (script_filename != NULL && script_filename[0] != '\0') {
+        return script_filename;
+    }
+    return "ptn";
 }
 
 static PTN_UNUSED int ptn_diagnostics_try_error_handler(

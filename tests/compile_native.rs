@@ -13347,6 +13347,78 @@ var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], g
 }
 
 #[test]
+fn compile_preg_match_all_named_and_split_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-match-all-named-and-split");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-match-all-named-and-split.php");
+    let output = root.join("preg-match-all-named-and-split-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+preg_match('~(?P<word>\\\\w+)-(\\\\d+)~x', 'abc-12', $m);\n\
+var_dump($m['word'], $m[1], $m[2]);\n\
+var_dump(preg_match_all('~(?P<word>\\\\w+)-(\\\\d+)~', 'abc-12 def-34', $all, PREG_PATTERN_ORDER));\n\
+var_dump($all['word'][1], $all[2][0]);\n\
+var_dump(preg_match_all('/(\\\\w+)-(\\\\d+)/', 'abc-12 def-34', $sets, PREG_SET_ORDER | PREG_OFFSET_CAPTURE));\n\
+var_dump($sets[1][2][0], $sets[1][2][1]);\n\
+var_dump(preg_match_all('/(?:\\\\([^)]+\\\\))?(&?)([\\\\w>.()-]+(?:\\\\[\\\\w+\\\\])?)\\\\s*,?((?:\\\\)*\\\\s*=)?)/S', '&a, b, &c', $vars, PREG_SET_ORDER));\n\
+var_dump($vars[2][1], $vars[2][2]);\n\
+var_dump(preg_split('/PHP_(?:NAMED_)?(?:FUNCTION|METHOD)\\\\s*\\\\((\\\\w+(?:,\\\\s*\\\\w+)?)\\\\)/S', \"PHP_FUNCTION(s, preg_match)\\n{\\nlalala\", -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_OFFSET_CAPTURE));\n\
+try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"abc\"\n",
+            "string(3) \"abc\"\n",
+            "string(2) \"12\"\n",
+            "int(2)\n",
+            "string(3) \"def\"\n",
+            "string(2) \"12\"\n",
+            "int(2)\n",
+            "string(2) \"34\"\n",
+            "int(11)\n",
+            "int(3)\n",
+            "string(1) \"&\"\n",
+            "string(1) \"c\"\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(0) \"\"\n",
+            "    [1]=>\n",
+            "    int(0)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(13) \"s, preg_match\"\n",
+            "    [1]=>\n",
+            "    int(13)\n",
+            "  }\n",
+            "  [2]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(9) \"\n",
+            "{\n",
+            "lalala\"\n",
+            "    [1]=>\n",
+            "    int(27)\n",
+            "  }\n",
+            "}\n",
+            "preg_match_all(): Argument #4 ($flags) must be a PREG_* constant\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_chunk_split_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
