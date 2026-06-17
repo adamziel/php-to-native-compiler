@@ -53687,7 +53687,6 @@ static PtnValue ptn_reflection_extension_classes(
         }
         return result;
     }
-<<<<<<< HEAD
     if (ptn_ascii_case_equal(extension_name, "SPL")) {
         static const char *const names[] = {
             "ArrayIterator",
@@ -53724,7 +53723,12 @@ static PtnValue ptn_reflection_extension_classes(
             "SoapClient",
             "SoapServer",
             "SoapFault",
-=======
+        };
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
+        }
+        return result;
+    }
     if (ptn_ascii_case_equal(extension_name, "intl")) {
         static const char *const names[] = {
             "IntlBreakIterator",
@@ -53733,7 +53737,6 @@ static PtnValue ptn_reflection_extension_classes(
             "IntlPartsIterator",
             "IntlCalendar",
             "IntlException",
->>>>>>> 8f343b71e (WIP: checkpoint (auto))
         };
         for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
             ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
