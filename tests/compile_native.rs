@@ -8279,6 +8279,127 @@ try {
 }
 
 #[test]
+fn compile_array_object_offset_references_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-offset-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-offset-references.php");
+    let output = root.join("array-object-offset-references-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$arrayObject = new ArrayObject();
+$arrayObject["d1"]["d2"] = "hello";
+$arrayObject["d1"]["d3"] = "world";
+$ref =& $arrayObject["d1"];
+$ref["d4"] = "again";
+$value =& $arrayObject["scalar"];
+$value = 7;
+var_dump($arrayObject["d1"], $arrayObject["scalar"], $arrayObject);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [\"d2\"]=>\n",
+            "  string(5) \"hello\"\n",
+            "  [\"d3\"]=>\n",
+            "  string(5) \"world\"\n",
+            "  [\"d4\"]=>\n",
+            "  string(5) \"again\"\n",
+            "}\n",
+            "int(7)\n",
+            "object(ArrayObject)#1 (1) {\n",
+            "  [\"storage\":\"ArrayObject\":private]=>\n",
+            "  array(2) {\n",
+            "    [\"d1\"]=>\n",
+            "    &array(3) {\n",
+            "      [\"d2\"]=>\n",
+            "      string(5) \"hello\"\n",
+            "      [\"d3\"]=>\n",
+            "      string(5) \"world\"\n",
+            "      [\"d4\"]=>\n",
+            "      string(5) \"again\"\n",
+            "    }\n",
+            "    [\"scalar\"]=>\n",
+            "    &int(7)\n",
+            "  }\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_object_array_as_props_declared_property_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-array-as-props-declared-precedence");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-array-as-props-declared-precedence.php");
+    let output = root.join("array-object-array-as-props-declared-precedence-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Box extends ArrayObject {
+    public $pub = "object pub";
+    private $priv = "object priv";
+    public string $typed;
+    public function inside() { var_dump($this->priv); }
+}
+$box = new Box(["pub" => "array pub", "priv" => "array priv", "typed" => "array typed"], ArrayObject::ARRAY_AS_PROPS);
+var_dump($box->pub);
+var_dump($box->priv);
+$box->inside();
+var_dump($box->typed);
+unset($box->pub);
+var_dump(isset($box->pub));
+var_dump($box->pub);
+$box->pub .= ".changed";
+var_dump($box["pub"]);
+unset($box->priv);
+var_dump(isset($box->priv));
+$box->inside();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(10) \"object pub\"\n",
+            "string(10) \"array priv\"\n",
+            "string(11) \"object priv\"\n",
+            "string(11) \"array typed\"\n",
+            "bool(true)\n",
+            "string(9) \"array pub\"\n",
+            "string(17) \"array pub.changed\"\n",
+            "bool(false)\n",
+            "string(11) \"object priv\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_unserialize_payload_error_to_native_binary() {
     let root = temp_dir("ptn-native-spl-object-storage-unserialize");
     fs::create_dir_all(&root).unwrap();
