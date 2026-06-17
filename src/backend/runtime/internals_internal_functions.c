@@ -53030,7 +53030,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_new_for_class(
     } else {
         storage = ptn_spl_prepare_backing_storage(
             runtime,
-            class_name,
+            "ArrayIterator",
             "__construct",
             "array",
             args[0],
