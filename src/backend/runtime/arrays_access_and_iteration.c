@@ -950,6 +950,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_class_name_is_date_interval(lookup_class_name)) {
         return ptn_date_interval_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_uri_whatwg_url(lookup_class_name)) {
+        return ptn_uri_whatwg_url_new(runtime, argc, args, line);
+    }
 #endif
     if (ptn_class_name_is_generator(lookup_class_name)) {
         ptn_throw_exception_at(
@@ -3216,6 +3219,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     size_t line
 ) {
     receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_EXCEPTION) {
+        if (
+            ptn_exception_name_equal(receiver.as.exception->class_name, "Uri\\WhatWg\\InvalidUrlException") &&
+            ptn_exception_name_equal(property, "errors")
+        ) {
+            return ptn_array_from_literal_entries(0, NULL);
+        }
+        ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
+        return ptn_null();
+    }
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();

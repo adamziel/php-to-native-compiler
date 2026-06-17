@@ -41,6 +41,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("TypeError", "Error"),
     ("ArgumentCountError", "TypeError"),
     ("ValueError", "Error"),
+    ("Uri\\WhatWg\\InvalidUrlException", "ValueError"),
     ("ArithmeticError", "Error"),
     ("DivisionByZeroError", "ArithmeticError"),
     ("AssertionError", "Error"),
@@ -4095,30 +4096,31 @@ fn emit_class_metadata_helpers(
         "ReflectionProperty",
         "SensitiveParameter",
         "SensitiveParameterValue",
+        "Uri\\WhatWg\\Url",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
     for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
@@ -4140,14 +4142,14 @@ fn emit_class_metadata_helpers(
     out.push_str("    }\n");
     for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4192,14 +4194,14 @@ fn emit_class_metadata_helpers(
     out.push_str("    }\n");
     for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4260,7 +4262,7 @@ fn emit_class_metadata_helpers(
         "Serializable",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(builtin);
+        out.push_str(&c_string(builtin));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4301,7 +4303,7 @@ fn emit_class_metadata_helpers(
         "Serializable",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(builtin);
+        out.push_str(&c_string(builtin));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4438,19 +4440,20 @@ fn emit_class_metadata_helpers(
         "DateTimeZone",
         "DateInterval",
         "RoundingMode",
+        "Uri\\WhatWg\\Url",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
-        out.push_str(builtin);
+        out.push_str(&c_string(builtin));
         out.push_str("\"));\n");
     }
     for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\"));\n");
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\"));\n");
     }
     out.push_str("    }\n");
@@ -4500,7 +4503,7 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
         );
-        out.push_str(builtin);
+        out.push_str(&c_string(builtin));
         out.push_str("\"));\n");
     }
     for (class_index, class) in classes.iter().enumerate() {
@@ -4661,10 +4664,10 @@ fn emit_class_metadata_helpers(
     }
     for (class_name, parent_name) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(parent_name);
+        out.push_str(&c_string(parent_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
@@ -4682,10 +4685,10 @@ fn emit_class_metadata_helpers(
         ("SplStack", "SplDoublyLinkedList"),
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(parent_name);
+        out.push_str(&c_string(parent_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
@@ -9531,6 +9534,9 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
+    out.push_str("        return ptn_uri_whatwg_url_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("    }\n");
     out.push_str(
         "    if (resolved.type == PTN_OBJECT && !ptn_internal_class_exists_name(class_name)) {\n",
     );
@@ -14092,6 +14098,9 @@ fn collect_value_runtime_requirements(
             if name.eq_ignore_ascii_case("setTimestamp") {
                 requirements.internal_function_dispatch = true;
             }
+            if is_uri_whatwg_url_method_name(name) {
+                requirements.internal_function_dispatch = true;
+            }
             if name.eq_ignore_ascii_case("__invoke") {
                 requirements.closure_invoke_method_dispatch = true;
                 requirements.internal_function_dispatch = true;
@@ -14157,6 +14166,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DateTime")
                 || class_name.eq_ignore_ascii_case("DateTimeImmutable")
                 || class_name.eq_ignore_ascii_case("DateInterval")
+                || is_uri_whatwg_url_class_name(class_name)
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
@@ -14265,6 +14275,9 @@ fn collect_call_runtime_requirements(
     if name.eq_ignore_ascii_case("count") || name.eq_ignore_ascii_case("sizeof") {
         requirements.method_dispatch = true;
     }
+    if is_uri_whatwg_url_static_call_name(name) {
+        requirements.method_dispatch = true;
+    }
     if argument_names.iter().all(Option::is_none)
         && is_direct_internal_helper_call(name, arguments.len())
     {
@@ -14275,6 +14288,43 @@ fn collect_call_runtime_requirements(
     if internal_call_may_invoke_callable(name) {
         requirements.method_dispatch = true;
     }
+}
+
+fn is_uri_whatwg_url_class_name(name: &str) -> bool {
+    name.trim_start_matches('\\')
+        .eq_ignore_ascii_case("Uri\\WhatWg\\Url")
+}
+
+fn is_uri_whatwg_url_static_call_name(name: &str) -> bool {
+    match name.split_once("::") {
+        Some((class_name, method_name)) => {
+            is_uri_whatwg_url_class_name(class_name) && method_name.eq_ignore_ascii_case("parse")
+        }
+        None => false,
+    }
+}
+
+fn is_uri_whatwg_url_method_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("__construct")
+        || name.eq_ignore_ascii_case("getScheme")
+        || name.eq_ignore_ascii_case("getUsername")
+        || name.eq_ignore_ascii_case("getPassword")
+        || name.eq_ignore_ascii_case("getAsciiHost")
+        || name.eq_ignore_ascii_case("getUnicodeHost")
+        || name.eq_ignore_ascii_case("getPort")
+        || name.eq_ignore_ascii_case("getPath")
+        || name.eq_ignore_ascii_case("getQuery")
+        || name.eq_ignore_ascii_case("getFragment")
+        || name.eq_ignore_ascii_case("toAsciiString")
+        || name.eq_ignore_ascii_case("toUnicodeString")
+        || name.eq_ignore_ascii_case("withScheme")
+        || name.eq_ignore_ascii_case("withUsername")
+        || name.eq_ignore_ascii_case("withPassword")
+        || name.eq_ignore_ascii_case("withHost")
+        || name.eq_ignore_ascii_case("withPort")
+        || name.eq_ignore_ascii_case("withPath")
+        || name.eq_ignore_ascii_case("withQuery")
+        || name.eq_ignore_ascii_case("withFragment")
 }
 
 fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bool {
