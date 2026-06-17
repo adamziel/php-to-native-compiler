@@ -1092,6 +1092,53 @@ static PTN_UNUSED PtnValue ptn_cast_object(PtnRuntime *runtime, PtnValue value) 
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 #endif
 
+static PtnArrayKey ptn_cast_array_object_property_key(PtnObject *object, PtnArrayKey key) {
+    if (object == NULL || key.type != PTN_ARRAY_KEY_STRING) {
+        return ptn_array_key_clone(key);
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, key.as.string);
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        return ptn_array_key_clone(key);
+    }
+
+    size_t display_len = strlen(metadata->display_name);
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        if (display_len > SIZE_MAX - 3) {
+            ptn_abort_out_of_memory();
+        }
+        size_t key_len = display_len + 3;
+        char *storage = malloc(key_len);
+        if (storage == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        storage[0] = '\0';
+        storage[1] = '*';
+        storage[2] = '\0';
+        memcpy(storage + 3, metadata->display_name, display_len);
+        PtnArrayKey result_key = ptn_array_string_key_len(storage, key_len);
+        free(storage);
+        return result_key;
+    }
+
+    size_t declaring_len = strlen(metadata->declaring_class);
+    if (declaring_len > SIZE_MAX - display_len - 2) {
+        ptn_abort_out_of_memory();
+    }
+    size_t key_len = declaring_len + display_len + 2;
+    char *storage = malloc(key_len);
+    if (storage == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    storage[0] = '\0';
+    memcpy(storage + 1, metadata->declaring_class, declaring_len);
+    storage[declaring_len + 1] = '\0';
+    memcpy(storage + declaring_len + 2, metadata->display_name, display_len);
+    PtnArrayKey result_key = ptn_array_string_key_len(storage, key_len);
+    free(storage);
+    return result_key;
+}
+
 static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type == PTN_ARRAY) {
@@ -1117,9 +1164,11 @@ static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
         PtnArray *properties = value.as.object->properties;
         for (size_t i = 0; i < properties->len; i++) {
             PtnArrayEntry *entry = &properties->entries[i];
+            PtnArrayKey array_key =
+                ptn_cast_array_object_property_key(value.as.object, entry->key);
             ptn_array_set_entry(
                 array,
-                ptn_array_key_clone(entry->key),
+                array_key,
                 ptn_value_clone_deref(entry->value)
             );
         }

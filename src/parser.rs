@@ -2752,7 +2752,7 @@ impl Parser<'_> {
         class_is_readonly: bool,
         class_name: &str,
     ) -> Result<MethodDecl> {
-        let span = self.expect_function()?;
+        let start_span = self.expect_function()?;
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             true
@@ -2791,17 +2791,18 @@ impl Parser<'_> {
         } else {
             None
         };
-        let mut body = if modifiers.is_abstract {
-            self.expect_semicolon()?;
-            Vec::new()
+        let (mut body, end_span) = if modifiers.is_abstract {
+            let semicolon_span = self.expect_semicolon()?;
+            (Vec::new(), semicolon_span)
         } else {
             self.return_by_ref_stack.push(return_by_ref);
             self.function_depth += 1;
             let body = self.parse_block();
             self.function_depth -= 1;
             self.return_by_ref_stack.pop();
-            body?
+            (body?, self.previous_span())
         };
+        let span = combine_spans(start_span, end_span);
         if allow_promoted_properties && !modifiers.is_abstract {
             let mut promoted_assignments = constructor_promoted_property_assignments(&parameters);
             if !promoted_assignments.is_empty() {
@@ -2962,7 +2963,7 @@ impl Parser<'_> {
     }
 
     fn parse_function_decl(&mut self, attributes: ParsedAttributes) -> Result<FunctionDecl> {
-        let span = self.expect_function()?;
+        let start_span = self.expect_function()?;
         let mut return_by_ref_span = None;
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             return_by_ref_span = Some(self.advance().span);
@@ -2991,6 +2992,7 @@ impl Parser<'_> {
         self.function_depth -= 1;
         self.return_by_ref_stack.pop();
         let body = body?;
+        let span = combine_spans(start_span, self.previous_span());
         Ok(FunctionDecl {
             name,
             attributes,
@@ -17120,7 +17122,13 @@ fn reject_append_array_read_in_assignment_target(target: &AssignmentTarget) -> R
 }
 
 fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {
-    SourceSpan::new(left.byte_start, right.byte_end, left.line, left.column)
+    SourceSpan::new_with_end_line(
+        left.byte_start,
+        right.byte_end,
+        left.line,
+        right.end_line,
+        left.column,
+    )
 }
 
 fn lower_string_part(part: TokenStringPart) -> StringPart {

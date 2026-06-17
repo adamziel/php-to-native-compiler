@@ -5,6 +5,7 @@ pub struct SourceSpan {
     pub byte_start: usize,
     pub byte_end: usize,
     pub line: usize,
+    pub end_line: usize,
     pub column: usize,
 }
 
@@ -14,6 +15,23 @@ impl SourceSpan {
             byte_start,
             byte_end,
             line,
+            end_line: line,
+            column,
+        }
+    }
+
+    pub fn new_with_end_line(
+        byte_start: usize,
+        byte_end: usize,
+        line: usize,
+        end_line: usize,
+        column: usize,
+    ) -> Self {
+        Self {
+            byte_start,
+            byte_end,
+            line,
+            end_line,
             column,
         }
     }

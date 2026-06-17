@@ -170,6 +170,118 @@ foreach ($wrap as $value) {
 }
 
 #[test]
+fn compile_reflection_class_and_method_source_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-source-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-source-metadata.php");
+    let output = root.join("reflection-source-metadata-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class SourceBox\n\
+{\n\
+    public function multi() {\n\
+        echo \"multi\\n\";\n\
+    }\n\
+\n\
+    protected function oneLine() {}\n\
+}\n\
+\n\
+class ChildBox extends SourceBox {}\n\
+\n\
+$rc = new ReflectionClass(\"SourceBox\");\n\
+var_dump($rc->getFileName());\n\
+var_dump($rc->getStartLine());\n\
+var_dump($rc->getEndLine());\n\
+\n\
+$internal = new ReflectionClass(\"stdClass\");\n\
+var_dump($internal->getFileName());\n\
+var_dump($internal->getStartLine());\n\
+var_dump($internal->getEndLine());\n\
+\n\
+foreach ([[\"ChildBox\", \"multi\"], [\"ChildBox\", \"oneLine\"], [\"ReflectionProperty\", \"__construct\"]] as $pair) {\n\
+    $method = new ReflectionMethod($pair[0], $pair[1]);\n\
+    var_dump($method->getFileName());\n\
+    var_dump($method->getStartLine());\n\
+    var_dump($method->getEndLine());\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let input_path = input.to_string_lossy();
+    let file_dump = format!("string({}) \"{}\"\n", input_path.len(), input_path);
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "{file_dump}int(2)\nint(9)\n\
+bool(false)\nbool(false)\nbool(false)\n\
+{file_dump}int(4)\nint(6)\n\
+{file_dump}int(8)\nint(8)\n\
+bool(false)\nbool(false)\nbool(false)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reflection_class_new_instance_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-new-instance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-new-instance.php");
+    let output = root.join("reflection-class-new-instance-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class B {\n\
+    public function __construct($a, $b) {\n\
+        echo \"In constructor of class B with args $a, $b\\n\";\n\
+    }\n\
+}\n\
+\n\
+class C { protected function __construct() {} }\n\
+class D { private function __construct() {} }\n\
+class E {}\n\
+\n\
+$rcB = new ReflectionClass(\"B\");\n\
+$rcC = new ReflectionClass(\"C\");\n\
+$rcD = new ReflectionClass(\"D\");\n\
+$rcE = new ReflectionClass(\"E\");\n\
+\n\
+try { $rcB->newInstance(); } catch (Throwable $e) { echo \"B0:\" . $e->getMessage() . \"\\n\"; }\n\
+try { $rcB->newInstanceArgs(); } catch (Throwable $e) { echo \"Bargs0:\" . $e->getMessage() . \"\\n\"; }\n\
+var_dump($rcB->newInstance(\"x\", 123) instanceof B);\n\
+var_dump($rcB->newInstanceArgs([\"y\", 456]) instanceof B);\n\
+try { $rcC->newInstance(); } catch (Exception $e) { echo \"C:\" . $e->getMessage() . \"\\n\"; }\n\
+try { $rcD->newInstanceArgs(); } catch (Exception $e) { echo \"D:\" . $e->getMessage() . \"\\n\"; }\n\
+var_dump($rcE->newInstance() instanceof E);\n\
+try { $rcE->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"Eargs:\" . $e->getMessage() . \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let expected =
+        "B0:Too few arguments to function B::__construct(), 0 passed and exactly 2 expected\n\
+Bargs0:Too few arguments to function B::__construct(), 0 passed and exactly 2 expected\n\
+In constructor of class B with args x, 123\n\
+bool(true)\n\
+In constructor of class B with args y, 456\n\
+bool(true)\n\
+C:Access to non-public constructor of class C\n\
+D:Access to non-public constructor of class D\n\
+bool(true)\n\
+Eargs:Class E does not have a constructor, so you cannot pass any constructor arguments\n";
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_broader_spl_iterator_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-spl-iterator-wrappers");
     fs::create_dir_all(&root).unwrap();
@@ -38319,6 +38431,8 @@ try {
             "bool(true)\n",
             "int(20)\n",
             "int(3)\n",
+            "\n",
+            "Deprecated: Calling ReflectionProperty::setValue() with a single argument is deprecated in ptn on line 46\n",
             "int(9)\n",
             "int(33)\n",
             "bool(true)\n",
@@ -38351,6 +38465,99 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_reflection_property_metadata"));
     assert!(c_source.contains("ptn_reflection_property_new"));
+}
+
+#[test]
+fn compile_reflection_property_access_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-access-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-access-metadata.php");
+    let output = root.join("reflection-property-access-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class ReflectAccessBase {
+    public $pub = null;
+    protected $prot = 1;
+    private $priv = 2;
+    public private(set) int $privateSet;
+    public protected(set) int $protectedSet;
+}
+
+class ReflectAccessChild extends ReflectAccessBase {
+    public function __get($name) {}
+    public function __set($name, $value) {}
+}
+
+#[AllowDynamicProperties]
+class ReflectAccessDynamic {}
+
+$obj = new ReflectAccessChild();
+$dynamicObj = new ReflectAccessDynamic();
+$dynamicObj->dynamic = 3;
+
+foreach ([\"pub\", \"prot\", \"priv\"] as $name) {
+    $rp = new ReflectionProperty(ReflectAccessBase::class, $name);
+    echo $name, \":\", str_replace(\"\\0\", \"%0\", $rp->getMangledName()), \"\\n\";
+}
+
+$pub = new ReflectionProperty(ReflectAccessBase::class, \"pub\");
+$prot = new ReflectionProperty(ReflectAccessBase::class, \"prot\");
+$priv = new ReflectionProperty(ReflectAccessBase::class, \"priv\");
+$privateSet = new ReflectionProperty(ReflectAccessBase::class, \"privateSet\");
+$protectedSet = new ReflectionProperty(ReflectAccessBase::class, \"protectedSet\");
+$dynamic = new ReflectionProperty($dynamicObj, \"dynamic\");
+
+var_dump($pub->isReadable(null, $obj));
+var_dump($pub->isWritable(null, $obj));
+var_dump($prot->isReadable(ReflectAccessChild::class, $obj));
+var_dump($prot->isWritable(ReflectAccessChild::class, $obj));
+var_dump($priv->isReadable(ReflectAccessChild::class, $obj));
+var_dump($priv->isWritable(ReflectAccessChild::class, $obj));
+var_dump($privateSet->isWritable(ReflectAccessChild::class, $obj));
+var_dump($protectedSet->isWritable(ReflectAccessChild::class, $obj));
+var_dump($dynamic->isReadable(null, $dynamicObj));
+var_dump($dynamic->isWritable(null, null));
+$prot->setAccessible(false);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "pub:pub\n",
+            "prot:%0*%0prot\n",
+            "priv:%0ReflectAccessBase%0priv\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "\n",
+            "Deprecated: Method ReflectionProperty::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1 in ptn on line 45\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_property_mangled_name"));
+    assert!(c_source.contains("ptn_reflection_property_is_readable_result"));
 }
 
 #[test]

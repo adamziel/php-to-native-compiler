@@ -70,11 +70,13 @@ pub type IncludeResolutionMap = HashMap<(String, usize, usize), Vec<usize>>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassDecl {
     pub name: String,
+    pub source_file: String,
     pub parent_name: Option<String>,
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
     pub attributes: AttributeMetadata,
     pub line: usize,
+    pub end_line: usize,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_interface: bool,
@@ -190,12 +192,14 @@ pub struct DeprecatedMessageDependency {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MethodDecl {
     pub name: String,
+    pub source_file: String,
     pub function_index: usize,
     pub visibility: PropertyVisibility,
     pub attributes: AttributeMetadata,
     pub is_static: bool,
     pub is_abstract: bool,
     pub line: usize,
+    pub end_line: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1542,22 +1546,26 @@ impl<'a> LoweringContext<'a> {
                 self.functions[function_index].body = body;
                 MethodDecl {
                     name: method.name.clone(),
+                    source_file: self.source_file.clone(),
                     function_index,
                     visibility: lower_property_visibility(method.visibility),
                     attributes: method_attributes,
                     is_static: method.is_static,
                     is_abstract: method.is_abstract,
                     line: method.span.line,
+                    end_line: method.span.end_line,
                 }
             })
             .collect();
         ClassDecl {
             name: class.name.clone(),
+            source_file: self.source_file.clone(),
             parent_name: class.parent_name.clone(),
             interfaces: class.interfaces.clone(),
             trait_uses: lower_trait_uses(&class.trait_uses),
             attributes: class_attributes,
             line: class.span.line,
+            end_line: class.span.end_line,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
             is_interface: class.is_interface,

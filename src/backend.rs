@@ -1121,10 +1121,23 @@ fn emit_declared_class_new_instance_without_constructor(
         out.push_str("            return result;\n");
         out.push_str("        }\n");
         if let Some(constructor) = class_constructor_method(declared_class, classes) {
+            if constructor.visibility != PropertyVisibility::Public {
+                out.push_str("        ptn_value_destroy(&result);\n");
+                out.push_str("        ptn_throw_exception(runtime, \"ReflectionException\", \"Access to non-public constructor of class ");
+                out.push_str(&c_string(&declared_class.name));
+                out.push_str("\");\n");
+                out.push_str("        return ptn_null();\n");
+            }
             out.push_str("        result.as.object->destructor_enabled = 0;\n");
-            out.push_str("        PtnValue constructor_result = ");
-            out.push_str(&user_function_c_name(constructor.function_index));
-            out.push_str("(runtime, result, argc, args, line);\n");
+            out.push_str("        int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;\n");
+            out.push_str("        int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;\n");
+            out.push_str("        runtime->warn_by_ref_argument_mismatch = 1;\n");
+            out.push_str("        runtime->throw_argument_count_errors = 1;\n");
+            out.push_str(
+                "        PtnValue constructor_result = ptn_call_declared_method(runtime, result, \"__construct\", argc, args, 0);\n",
+            );
+            out.push_str("        runtime->throw_argument_count_errors = previous_throw_argument_count_errors;\n");
+            out.push_str("        runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;\n");
             out.push_str("        if (runtime->exceptions->active_exception == NULL && result.type == PTN_OBJECT) {\n");
             out.push_str("            result.as.object->destructor_enabled = 1;\n");
             out.push_str("        }\n");
@@ -1132,7 +1145,13 @@ fn emit_declared_class_new_instance_without_constructor(
         } else {
             out.push_str("        if (argc != 0) {\n");
             out.push_str("            ptn_value_destroy(&result);\n");
-            out.push_str("            ptn_throw_exception(runtime, \"ArgumentCountError\", \"Class does not have a constructor, so you cannot pass any constructor arguments\");\n");
+            out.push_str(
+                "            ptn_throw_exception(runtime, \"ArgumentCountError\", \"Class ",
+            );
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str(
+                " does not have a constructor, so you cannot pass any constructor arguments\");\n",
+            );
             out.push_str("            return ptn_null();\n");
             out.push_str("        }\n");
             out.push_str("        (void)args;\n");
@@ -5814,6 +5833,40 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    out.push_str("    (void)file_out;\n");
+    out.push_str("    (void)start_line_out;\n");
+    out.push_str("    (void)end_line_out;\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        if (file_out != NULL) {\n");
+        out.push_str("            *file_out = \"");
+        out.push_str(&c_string(&class.source_file));
+        out.push_str("\";\n");
+        out.push_str("        }\n");
+        out.push_str("        if (start_line_out != NULL) {\n");
+        out.push_str("            *start_line_out = ");
+        out.push_str(&class.line.to_string());
+        out.push_str(";\n");
+        out.push_str("        }\n");
+        out.push_str("        if (end_line_out != NULL) {\n");
+        out.push_str("            *end_line_out = ");
+        out.push_str(&class.end_line.to_string());
+        out.push_str(";\n");
+        out.push_str("        }\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract) {\n",
     );
     if classes.is_empty() && traits.is_empty() {
@@ -5872,6 +5925,54 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("            *is_abstract = ");
             out.push_str(if method.is_abstract { "1" } else { "0" });
             out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+    }
+    out.push_str("    (void)file_out;\n");
+    out.push_str("    (void)start_line_out;\n");
+    out.push_str("    (void)end_line_out;\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            if (file_out != NULL) {\n");
+            out.push_str("                *file_out = \"");
+            out.push_str(&c_string(&method.source_file));
+            out.push_str("\";\n");
+            out.push_str("            }\n");
+            out.push_str("            if (start_line_out != NULL) {\n");
+            out.push_str("                *start_line_out = ");
+            out.push_str(&method.line.to_string());
+            out.push_str(";\n");
+            out.push_str("            }\n");
+            out.push_str("            if (end_line_out != NULL) {\n");
+            out.push_str("                *end_line_out = ");
+            out.push_str(&method.end_line.to_string());
+            out.push_str(";\n");
+            out.push_str("            }\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
