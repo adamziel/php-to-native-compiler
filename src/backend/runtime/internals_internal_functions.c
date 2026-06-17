@@ -102,9 +102,13 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
             ptn_output_write_cstr(runtime, "Object");
             break;
         }
-        case PTN_CLOSURE:
-            ptn_output_write_cstr(runtime, "Object");
+        case PTN_CLOSURE: {
+            PtnStringOperand closure_string =
+                ptn_value_to_string_operand_with_runtime(runtime, value, line);
+            ptn_output_write(runtime, closure_string.data, closure_string.len);
+            ptn_string_operand_free(closure_string);
             break;
+        }
         case PTN_EXCEPTION: {
             PtnStringOperand exception_string =
                 ptn_exception_to_string_operand(runtime, value.as.exception);

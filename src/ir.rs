@@ -900,7 +900,12 @@ pub fn lower_with_source_and_includes(
     );
     let include_function_ranges = context.declare_include_functions(&include_sources);
     for (index, function) in program.functions.iter().enumerate() {
+        let previous_function_display_name = std::mem::replace(
+            &mut context.current_function_display_name,
+            Some(function.name.clone()),
+        );
         let body = context.lower_statements(&function.body);
+        context.current_function_display_name = previous_function_display_name;
         context.functions[index].body = body;
     }
     for (include, start_index) in include_sources.iter().zip(include_function_ranges.iter()) {
@@ -948,6 +953,7 @@ struct LoweringContext<'a> {
     include_resolutions: &'a IncludeResolutionMap,
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
+    current_function_display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1015,6 +1021,7 @@ impl<'a> LoweringContext<'a> {
             include_resolutions,
             current_class_name: None,
             current_trait_name: None,
+            current_function_display_name: None,
         };
         for function in &program.functions {
             context.declare_function(function);
@@ -1050,7 +1057,12 @@ impl<'a> LoweringContext<'a> {
         let previous_strict_types =
             std::mem::replace(&mut self.strict_types, include.program.strict_types);
         for (offset, function) in include.program.functions.iter().enumerate() {
+            let previous_function_display_name = std::mem::replace(
+                &mut self.current_function_display_name,
+                Some(function.name.clone()),
+            );
             let body = self.lower_statements(&function.body);
+            self.current_function_display_name = previous_function_display_name;
             self.functions[start_index + offset].body = body;
         }
         self.source_file = previous_source_file;
@@ -1413,9 +1425,15 @@ impl<'a> LoweringContext<'a> {
             .collect();
         let attributes = self.annotate_attribute_metadata(&function.attributes);
         let deprecated_metadata = self.function_deprecated_metadata(&attributes, None, None, None);
+        let display_name = if let Some(scope_name) = &self.current_function_display_name {
+            format!("{{closure:{}():{}}}", scope_name, function.span.line)
+        } else {
+            format!("{{closure:{}:{}}}", self.source_file, function.span.line)
+        };
+        let nested_display_name = display_name.clone();
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
-            display_name: format!("{{closure:{}:{}}}", self.source_file, function.span.line),
+            display_name,
             source_file: self.source_file.clone(),
             class_name: self.current_class_name.clone(),
             trait_name: self.current_trait_name.clone(),
@@ -1437,7 +1455,12 @@ impl<'a> LoweringContext<'a> {
             initially_declared: true,
             body: Vec::new(),
         });
+        let previous_function_display_name = std::mem::replace(
+            &mut self.current_function_display_name,
+            Some(nested_display_name),
+        );
         let body = self.lower_statements(&function.body);
+        self.current_function_display_name = previous_function_display_name;
         self.functions[function_index].body = body;
         ValueExpr::Closure {
             function_index,
@@ -1581,13 +1604,19 @@ impl<'a> LoweringContext<'a> {
                     initially_declared: true,
                     body: Vec::new(),
                 });
+                let method_display_name = format!("{}::{}", class.name, method.name);
                 let previous_class_name =
                     std::mem::replace(&mut self.current_class_name, Some(class.name.clone()));
                 let previous_trait_name =
                     std::mem::replace(&mut self.current_trait_name, method.trait_name.clone());
+                let previous_function_display_name = std::mem::replace(
+                    &mut self.current_function_display_name,
+                    Some(method_display_name),
+                );
                 let body = self.lower_statements(&method.body);
                 self.current_class_name = previous_class_name;
                 self.current_trait_name = previous_trait_name;
+                self.current_function_display_name = previous_function_display_name;
                 self.functions[function_index].body = body;
                 MethodDecl {
                     name: method.name.clone(),
