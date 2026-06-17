@@ -17847,6 +17847,120 @@ try {
 }
 
 #[test]
+fn compile_reflection_internal_subclasses_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-internal-subclasses");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-internal-subclasses.php");
+    let output = root.join("reflection-internal-subclasses-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectionClassEx extends ReflectionClass
+{
+    public $bla;
+
+    function getMethodNames()
+    {
+        $res = array();
+        foreach ($this->getMethods() as $m) {
+            $res[] = $m->class . '::' . $m->name;
+        }
+        sort($res);
+        return $res;
+    }
+}
+
+$rc = new ReflectionClassEx('ReflectionClassEx');
+$props = array_keys(get_class_vars('ReflectionClassEx'));
+sort($props);
+var_dump($props);
+var_dump($rc->name);
+var_dump($rc->getName());
+var_dump(in_array('ReflectionClassEx::getMethodNames', $rc->getMethodNames(), true));
+
+#[AllowDynamicProperties]
+class ReflectionMethodEx extends ReflectionMethod
+{
+    public $foo = 'xyz';
+
+    function __construct($c, $m)
+    {
+        echo __METHOD__ . \"\\n\";
+        parent::__construct($c, $m);
+    }
+}
+
+$rm = new ReflectionMethodEx('ReflectionMethodEx', 'getName');
+var_dump($rm->class);
+var_dump($rm->name);
+var_dump($rm->foo);
+var_dump($rm->bar ?? null);
+
+try {
+    $rm->class = 'bullshit';
+} catch (ReflectionException $e) {
+    echo $e->getMessage() . \"\\n\";
+}
+
+try {
+    $rm->name = 'bullshit';
+} catch (ReflectionException $e) {
+    echo $e->getMessage() . \"\\n\";
+}
+
+$rm->foo = 'bar';
+$rm->bar = 'baz';
+
+var_dump($rm->class);
+var_dump($rm->name);
+var_dump($rm->foo);
+var_dump($rm->bar);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(3) \"bla\"\n",
+            "  [1]=>\n",
+            "  string(4) \"name\"\n",
+            "}\n",
+            "string(17) \"ReflectionClassEx\"\n",
+            "string(17) \"ReflectionClassEx\"\n",
+            "bool(true)\n",
+            "ReflectionMethodEx::__construct\n",
+            "string(26) \"ReflectionFunctionAbstract\"\n",
+            "string(7) \"getName\"\n",
+            "string(3) \"xyz\"\n",
+            "NULL\n",
+            "Cannot set read-only property ReflectionMethodEx::$class\n",
+            "Cannot set read-only property ReflectionMethodEx::$name\n",
+            "string(26) \"ReflectionFunctionAbstract\"\n",
+            "string(7) \"getName\"\n",
+            "string(3) \"bar\"\n",
+            "string(3) \"baz\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_adopt_internal_parent_object_state"));
+    assert!(c_source.contains("ReflectionFunctionAbstract"));
+}
+
+#[test]
 fn compile_reflection_method_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-method-metadata");
     fs::create_dir_all(&root).unwrap();

@@ -1949,13 +1949,48 @@ static PTN_UNUSED void ptn_throw_overloaded_property_reference_error(
     );
 }
 
+static int ptn_reflection_internal_readonly_property_declaring_class(const char *declaring_class) {
+    return ptn_ascii_case_equal(declaring_class, "ReflectionAttribute")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionClass")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionClassConstant")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionConstant")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionExtension")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionFunction")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionFunctionAbstract")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionMethod")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionObject")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionParameter")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionProperty")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionReference")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionType")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionNamedType")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionUnionType")
+        || ptn_ascii_case_equal(declaring_class, "ReflectionIntersectionType");
+}
+
 static PTN_UNUSED void ptn_throw_readonly_property_error(
     PtnRuntime *runtime,
+    const char *object_class_name,
     const char *declaring_class,
     const char *property,
     size_t line
 ) {
     char message[256];
+    if (ptn_reflection_internal_readonly_property_declaring_class(declaring_class)) {
+        const char *display_class = object_class_name == NULL ? declaring_class : object_class_name;
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot set read-only property %s::$%s",
+            display_class,
+            property
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "ReflectionException", message, runtime->source_path, line);
+        return;
+    }
     int written = snprintf(
         message,
         sizeof(message),
@@ -3173,6 +3208,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         free(storage_key);
         ptn_throw_readonly_property_error(
             runtime,
+            receiver.as.object->class_name,
             metadata->declaring_class,
             metadata->display_name,
             line
@@ -3318,6 +3354,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         free(storage_key);
         ptn_throw_readonly_property_error(
             runtime,
+            receiver.as.object->class_name,
             metadata->declaring_class,
             metadata->display_name,
             line
@@ -3450,6 +3487,7 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         free(storage_key);
         ptn_throw_readonly_property_error(
             runtime,
+            receiver.as.object->class_name,
             metadata->declaring_class,
             metadata->display_name,
             line

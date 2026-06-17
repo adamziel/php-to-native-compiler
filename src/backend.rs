@@ -4502,6 +4502,8 @@ fn emit_class_metadata_helpers(
         ("InfiniteIterator", "IteratorIterator"),
         ("LimitIterator", "IteratorIterator"),
         ("RecursiveArrayIterator", "ArrayIterator"),
+        ("ReflectionFunction", "ReflectionFunctionAbstract"),
+        ("ReflectionMethod", "ReflectionFunctionAbstract"),
         ("ReflectionObject", "ReflectionClass"),
         ("SplFileObject", "SplFileInfo"),
         ("SplQueue", "SplDoublyLinkedList"),
@@ -4763,6 +4765,9 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if let Some(parent_class_name) = inherited_modeled_internal_class_name(class, classes) {
+            emit_modeled_internal_class_vars(out, "        ", parent_class_name);
+        }
         for property in class_property_vars_chain(class, classes, false)
             .into_iter()
             .chain(class_property_vars_chain(class, classes, true))
@@ -8371,13 +8376,64 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
     }
 }
 
-fn inherited_modeled_spl_internal_class_name(
+fn modeled_reflection_internal_class_name(name: &str) -> Option<&'static str> {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "reflection" => Some("Reflection"),
+        "reflectionattribute" => Some("ReflectionAttribute"),
+        "reflectionclass" => Some("ReflectionClass"),
+        "reflectionclassconstant" => Some("ReflectionClassConstant"),
+        "reflectionconstant" => Some("ReflectionConstant"),
+        "reflectionextension" => Some("ReflectionExtension"),
+        "reflectionfunction" => Some("ReflectionFunction"),
+        "reflectionfunctionabstract" => Some("ReflectionFunctionAbstract"),
+        "reflectionmethod" => Some("ReflectionMethod"),
+        "reflectionobject" => Some("ReflectionObject"),
+        "reflectionparameter" => Some("ReflectionParameter"),
+        "reflectionproperty" => Some("ReflectionProperty"),
+        "reflectionreference" => Some("ReflectionReference"),
+        "reflectiontype" => Some("ReflectionType"),
+        "reflectionnamedtype" => Some("ReflectionNamedType"),
+        "reflectionuniontype" => Some("ReflectionUnionType"),
+        "reflectionintersectiontype" => Some("ReflectionIntersectionType"),
+        _ => None,
+    }
+}
+
+fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
+    modeled_spl_internal_class_name(name).or_else(|| modeled_reflection_internal_class_name(name))
+}
+
+fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: &str) {
+    let property_names: &[&str] = if matches!(class_name, "ReflectionClass" | "ReflectionObject") {
+        &["name"]
+    } else if matches!(
+        class_name,
+        "ReflectionClassConstant" | "ReflectionMethod" | "ReflectionProperty"
+    ) {
+        &["name", "class"]
+    } else if matches!(
+        class_name,
+        "ReflectionFunction" | "ReflectionFunctionAbstract" | "ReflectionParameter"
+    ) {
+        &["name"]
+    } else {
+        &[]
+    };
+    for property_name in property_names {
+        out.push_str(indent);
+        out.push_str("ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
+        out.push_str(property_name);
+        out.push_str("\"), ptn_null());\n");
+    }
+}
+
+fn inherited_modeled_internal_class_name(
     class: &ClassDecl,
     classes: &[ClassDecl],
 ) -> Option<&'static str> {
     let mut parent_name = class.parent_name.as_deref();
     while let Some(name) = parent_name {
-        if let Some(internal_name) = modeled_spl_internal_class_name(name) {
+        if let Some(internal_name) = modeled_internal_class_name(name) {
             return Some(internal_name);
         }
         parent_name = class_by_name(classes, name).and_then(|parent| parent.parent_name.as_deref());
@@ -9223,6 +9279,29 @@ fn emit_method_dispatch(
         out.push_str("        }\n");
         out.push_str("    }\n");
     }
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str(
+        "    if (resolved.type == PTN_OBJECT && !ptn_internal_class_exists_name(class_name)) {\n",
+    );
+    out.push_str(
+        "        const char *ptn_modeled_parent = ptn_declared_class_parent_name(class_name);\n",
+    );
+    out.push_str("        while (ptn_modeled_parent != NULL) {\n");
+    out.push_str("            if (ptn_internal_class_exists_name(ptn_modeled_parent) && ptn_internal_class_method_exists(ptn_modeled_parent, method_name)) {\n");
+    out.push_str(
+        "                char *ptn_original_class_name = resolved.as.object->class_name;\n",
+    );
+    out.push_str("                resolved.as.object->class_name = (char *)ptn_modeled_parent;\n");
+    out.push_str("                PtnValue ptn_internal_parent_result = ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("                resolved.as.object->class_name = ptn_original_class_name;\n");
+    out.push_str("                return ptn_internal_parent_result;\n");
+    out.push_str("            }\n");
+    out.push_str(
+        "            ptn_modeled_parent = ptn_declared_class_parent_name(ptn_modeled_parent);\n",
+    );
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     out.push_str("    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
     out.push_str("}\n");
 
@@ -9417,8 +9496,18 @@ fn emit_method_dispatch(
     out.push_str("    }\n");
     out.push_str("    if (resolved_receiver.type == PTN_OBJECT && ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_method_exists(target_class_name, method_name) && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
     out.push_str(
-        "        *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n",
+        "        char *ptn_original_class_name = resolved_receiver.as.object->class_name;\n",
     );
+    out.push_str("        resolved_receiver.as.object->class_name = (char *)target_class_name;\n");
+    out.push_str("        PtnValue ptn_internal_parent_result = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
+    out.push_str("        resolved_receiver.as.object->class_name = ptn_original_class_name;\n");
+    out.push_str("        if (runtime->exceptions->active_exception == NULL && ptn_ascii_case_equal(method_name, \"__construct\") && ptn_internal_parent_result.type == PTN_OBJECT) {\n");
+    out.push_str("            ptn_adopt_internal_parent_object_state(resolved_receiver, ptn_internal_parent_result);\n");
+    out.push_str("            ptn_value_destroy(&ptn_internal_parent_result);\n");
+    out.push_str("            *result_out = ptn_null();\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        *result_out = ptn_internal_parent_result;\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("#endif\n");
@@ -13030,7 +13119,7 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
     if module
         .classes
         .iter()
-        .any(|class| inherited_modeled_spl_internal_class_name(class, &module.classes).is_some())
+        .any(|class| inherited_modeled_internal_class_name(class, &module.classes).is_some())
     {
         requirements.internal_function_dispatch = true;
         requirements.method_dispatch = true;
@@ -21319,7 +21408,7 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &constructor_result);
         } else {
             if let Some(parent_class_name) =
-                inherited_modeled_spl_internal_class_name(declared_class, &self.classes)
+                inherited_modeled_internal_class_name(declared_class, &self.classes)
             {
                 self.emit_declared_internal_parent_constructor(
                     out,
