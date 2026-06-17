@@ -132,6 +132,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->open_basedir = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
+    runtime->serialize_precision = NULL;
     runtime->default_charset = NULL;
     runtime->arg_separator_input = NULL;
     runtime->arg_separator_output = NULL;
@@ -413,6 +414,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->memory_limit = NULL;
         free(runtime->max_memory_limit);
         runtime->max_memory_limit = NULL;
+        free(runtime->serialize_precision);
+        runtime->serialize_precision = NULL;
         free(runtime->default_charset);
         runtime->default_charset = NULL;
         free(runtime->arg_separator_input);

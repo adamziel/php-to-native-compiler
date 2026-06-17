@@ -34206,6 +34206,14 @@ static const char *ptn_runtime_max_memory_limit(PtnRuntime *runtime) {
     return root->max_memory_limit;
 }
 
+static const char *ptn_runtime_serialize_precision(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->serialize_precision == NULL) {
+        return "-1";
+    }
+    return root->serialize_precision;
+}
+
 static const char *ptn_runtime_default_charset(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->default_charset == NULL) {
@@ -34574,6 +34582,15 @@ static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory
     ptn_runtime_set_ini_string(&root->memory_limit, memory_limit);
 }
 
+static int ptn_runtime_set_serialize_precision(PtnRuntime *runtime, const char *value) {
+    if (ptn_ini_precision_value(value, INT_MIN, 100) == INT_MIN) {
+        return 0;
+    }
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->serialize_precision, value);
+    return 1;
+}
+
 static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requested, size_t line) {
     int64_t max_value = ptn_parse_ini_quantity_operand(
         runtime,
@@ -34694,6 +34711,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "memory_limit")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_memory_limit(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_serialize_precision(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
@@ -35029,6 +35050,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
+        ptn_runtime_set_serialize_precision(runtime, "-1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
         ptn_runtime_set_user_agent(runtime, "");
         ptn_string_operand_free(option);
@@ -35214,6 +35240,20 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         free(requested);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_serialize_precision(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        int updated = ptn_runtime_set_serialize_precision(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        if (!updated) {
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
@@ -48141,6 +48181,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "include_path");
         ptn_extension_ini_set_entry(runtime, result, "memory_limit");
         ptn_extension_ini_set_entry(runtime, result, "max_memory_limit");
+        ptn_extension_ini_set_entry(runtime, result, "serialize_precision");
         ptn_extension_ini_set_entry(runtime, result, "zend.assertions");
         ptn_extension_ini_set_entry(runtime, result, "zend.exception_ignore_args");
         ptn_extension_ini_set_entry(runtime, result, "zend.exception_string_param_max_len");

@@ -953,6 +953,7 @@ struct PtnRuntime {
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
+    char *serialize_precision;
     char *default_charset;
     char *arg_separator_input;
     char *arg_separator_output;
@@ -1714,6 +1715,23 @@ static PTN_UNUSED int ptn_float_precision(void) {
         initialized = 1;
     }
     return precision;
+}
+
+static PTN_UNUSED int ptn_ini_precision_value(
+    const char *configured,
+    int default_value,
+    int max_value
+) {
+    if (configured != NULL && configured[0] != '\0') {
+        char *end = NULL;
+        errno = 0;
+        long parsed = strtol(configured, &end, 10);
+        if (errno == 0 && end != configured && *end == '\0' && parsed >= -1 &&
+            parsed <= max_value) {
+            return (int)parsed;
+        }
+    }
+    return default_value;
 }
 
 static PTN_UNUSED void ptn_normalize_scalar_float_exponent(char *buffer) {

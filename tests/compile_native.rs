@@ -34067,6 +34067,40 @@ fn phpc_precision_ini_controls_scalar_float_stringification() {
 }
 
 #[test]
+fn phpc_serialize_precision_ini_is_runtime_visible() {
+    let root = temp_dir("ptn-phpc-serialize-precision-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serialize-precision-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('serialize_precision'));\n\
+var_dump(ini_set('serialize_precision', '17'));\n\
+var_dump(ini_get('serialize_precision'));\n\
+ini_restore('serialize_precision');\n\
+var_dump(ini_get('serialize_precision'));\n\
+$ext = new ReflectionExtension('Core');\n\
+$inis = $ext->getINIEntries();\n\
+var_dump($inis['serialize_precision']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("serialize_precision=14")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(2) \"14\"\nstring(2) \"14\"\nstring(2) \"17\"\nstring(2) \"-1\"\nstring(2) \"-1\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_error_reporting_ini_sets_initial_level() {
     let root = temp_dir("ptn-phpc-error-reporting-ini");
     fs::create_dir_all(&root).unwrap();

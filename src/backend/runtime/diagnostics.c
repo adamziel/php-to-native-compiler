@@ -1560,6 +1560,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
     );
+    const char *configured_serialize_precision = getenv("PTN_SERIALIZE_PRECISION");
+    runtime->serialize_precision = ptn_duplicate_string(
+        configured_serialize_precision == NULL ? "-1" : configured_serialize_precision
+    );
     const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");
     const char *configured_arg_separator_input = getenv("PTN_ARG_SEPARATOR_INPUT");
     const char *configured_arg_separator_output = getenv("PTN_ARG_SEPARATOR_OUTPUT");

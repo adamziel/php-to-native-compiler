@@ -1643,12 +1643,6 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "Zend OPcache configuration",
         ),
         (
-            "scalar formatting",
-            "serialize_precision=17",
-            "unsupported-scalar-format-ini\t",
-            "runtime scalar/string formatting default",
-        ),
-        (
             "host path",
             "sys_temp_dir=/tmp",
             "unsupported-host-path-ini\t",
@@ -1683,6 +1677,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
     assert_eq!(
         residual_extension_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let serialize_precision = classify(
+        "--TEST--\nserialize precision ini\n--INI--\nserialize_precision=-1\n--FILE--\n<?php\necho ini_get('serialize_precision'), \"\\n\";\n--EXPECT--\n-1\n",
+    );
+    assert_eq!(
+        serialize_precision.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
 

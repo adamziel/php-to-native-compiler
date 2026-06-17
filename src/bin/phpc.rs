@@ -152,6 +152,7 @@ enum Mode {
 #[derive(Debug, Default)]
 struct RuntimeIni {
     precision: Option<i16>,
+    serialize_precision: Option<String>,
     default_charset: Option<String>,
     arg_separator_input: Option<String>,
     date_timezone: Option<String>,
@@ -296,6 +297,12 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         if let Ok(parsed) = raw_value.parse::<i16>() {
             if (-1..=53).contains(&parsed) {
                 ini.precision = Some(parsed);
+            }
+        }
+    } else if name.eq_ignore_ascii_case("serialize_precision") {
+        if let Ok(parsed) = raw_value.parse::<i16>() {
+            if (-1..=100).contains(&parsed) {
+                ini.serialize_precision = Some(parsed.to_string());
             }
         }
     } else if name.eq_ignore_ascii_case("assert.exception") {
@@ -633,6 +640,7 @@ fn compile_and_run(
 ) -> Result<i32, PhpcError> {
     let mut ini = RuntimeIni {
         precision: ini.precision,
+        serialize_precision: ini.serialize_precision.clone(),
         default_charset: ini.default_charset.clone(),
         arg_separator_input: ini.arg_separator_input.clone(),
         date_timezone: ini.date_timezone.clone(),
@@ -682,6 +690,9 @@ fn compile_and_run(
     command.env("PTN_SCRIPT_FILENAME", script);
     if let Some(precision) = ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
+    }
+    if let Some(serialize_precision) = &ini.serialize_precision {
+        command.env("PTN_SERIALIZE_PRECISION", serialize_precision);
     }
     if let Some(date_timezone) = &ini.date_timezone {
         command.env("PTN_DATE_TIMEZONE", date_timezone);
