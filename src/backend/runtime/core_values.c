@@ -626,6 +626,7 @@ typedef struct {
 typedef enum {
     PTN_STREAM_BACKEND_FILE,
     PTN_STREAM_BACKEND_MEMORY,
+    PTN_STREAM_BACKEND_INPUT,
     PTN_STREAM_BACKEND_TEMP
 } PtnStreamBackend;
 

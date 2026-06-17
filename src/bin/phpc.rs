@@ -18,6 +18,7 @@ fn main() {
 
 fn run() -> Result<i32, PhpcError> {
     let invocation = Invocation::parse(std::env::args().skip(1))?;
+    let sapi = invocation.sapi;
     let ini = invocation.ini;
     match invocation.mode {
         Mode::Version => {
@@ -25,7 +26,7 @@ fn run() -> Result<i32, PhpcError> {
             Ok(0)
         }
         Mode::Modules => Ok(0),
-        Mode::Script { script, args } => compile_and_run(&script, &args, &ini),
+        Mode::Script { script, args } => compile_and_run(&script, &args, &ini, sapi),
         Mode::Inline { source } => {
             let temp = TempPath::new("ptn-phpc-inline", "php");
             let source = if source.trim_start().starts_with("<?") {
@@ -35,7 +36,7 @@ fn run() -> Result<i32, PhpcError> {
             };
             fs::write(temp.path(), source)
                 .map_err(|error| format!("failed to write inline source: {error}"))?;
-            compile_and_run(temp.path(), &[], &ini)
+            compile_and_run(temp.path(), &[], &ini, sapi)
         }
     }
 }
@@ -131,6 +132,13 @@ impl From<String> for PhpcError {
 struct Invocation {
     mode: Mode,
     ini: RuntimeIni,
+    sapi: Sapi,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Sapi {
+    Cli,
+    Cgi,
 }
 
 #[derive(Debug)]
@@ -181,20 +189,26 @@ impl Invocation {
         let mut script = None;
         let mut script_args = Vec::new();
         let mut ini = RuntimeIni::default();
+        let mut sapi = Sapi::Cli;
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "-q" | "-n" => {}
+                "-C" => {
+                    sapi = Sapi::Cgi;
+                }
                 "-v" | "--version" => {
                     return Ok(Self {
                         mode: Mode::Version,
                         ini,
+                        sapi,
                     });
                 }
                 "-m" => {
                     return Ok(Self {
                         mode: Mode::Modules,
                         ini,
+                        sapi,
                     });
                 }
                 "-d" => {
@@ -225,6 +239,7 @@ impl Invocation {
                     return Ok(Self {
                         mode: Mode::Inline { source },
                         ini,
+                        sapi,
                     });
                 }
                 "run" if script.is_none() => {
@@ -262,6 +277,7 @@ impl Invocation {
                 args: script_args,
             },
             ini,
+            sapi,
         })
     }
 }
@@ -597,7 +613,12 @@ fn apply_memory_limit_bounds(ini: &mut RuntimeIni) -> Option<String> {
     }
 }
 
-fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i32, PhpcError> {
+fn compile_and_run(
+    script: &Path,
+    args: &[String],
+    ini: &RuntimeIni,
+    sapi: Sapi,
+) -> Result<i32, PhpcError> {
     let mut ini = RuntimeIni {
         precision: ini.precision,
         default_charset: ini.default_charset.clone(),
@@ -730,10 +751,10 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     if let Some(expose_php) = &ini.expose_php {
         command.env("PTN_EXPOSE_PHP", expose_php);
     }
-    if !args.is_empty() {
-        command.env("PTN_REQUEST_MODE", "cli");
-    } else if parent_has_cgi_request_env() {
+    if sapi == Sapi::Cgi {
         command.env("PTN_REQUEST_MODE", "cgi");
+    } else {
+        command.env("PTN_REQUEST_MODE", "cli");
     }
     if let Some(warning) = memory_limit_warning {
         print!("{warning}");
@@ -742,18 +763,6 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
         .status()
         .map_err(|error| PhpcError::Message(format!("failed to run native binary: {error}")))?;
     Ok(status.code().unwrap_or(255))
-}
-
-fn parent_has_cgi_request_env() -> bool {
-    [
-        "REQUEST_METHOD",
-        "QUERY_STRING",
-        "CONTENT_TYPE",
-        "CONTENT_LENGTH",
-        "HTTP_COOKIE",
-    ]
-    .iter()
-    .any(|name| std::env::var_os(name).is_some_and(|value| !value.to_string_lossy().is_empty()))
 }
 
 struct TempPath {

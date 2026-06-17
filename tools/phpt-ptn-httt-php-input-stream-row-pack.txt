@@ -1,0 +1,6 @@
+# ptn-httt focused php://input stream rows.
+#
+# These rows exercise reusable and seekable php://input streams after request
+# body startup has already consumed stdin.
+tests/basic/enable_post_data_reading_06.phpt
+tests/basic/enable_post_data_reading_07.phpt

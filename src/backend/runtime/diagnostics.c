@@ -1285,6 +1285,10 @@ static PTN_UNUSED void ptn_emit_spaced_warning(PtnDiagnosticSink *diagnostics, c
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
+    diagnostics->emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
+        return;
+    }
     ptn_diagnostic_printf(diagnostics, "\nWarning: %s in ptn on line %zu\n", message, line);
 }
 
@@ -1387,11 +1391,23 @@ static void ptn_emit_constant_already_defined_warning(
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
+    size_t message_len = strlen(name) + strlen("Constant  already defined, this will be an error in PHP 9") + 1;
+    char *message = malloc(message_len);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, message_len, "Constant %s already defined, this will be an error in PHP 9", name);
+    diagnostics->emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
+        free(message);
+        return;
+    }
     fputs("Warning: Constant ", stdout);
     fputs(name, stdout);
     fputs(" already defined, this will be an error in PHP 9 in ptn on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);
+    free(message);
 }
 
 static PTN_UNUSED void ptn_emit_define_case_insensitive_ignored_warning(
@@ -1399,6 +1415,12 @@ static PTN_UNUSED void ptn_emit_define_case_insensitive_ignored_warning(
     size_t line
 ) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    const char *message =
+        "define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported";
+    diagnostics->emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
         return;
     }
     fputs(

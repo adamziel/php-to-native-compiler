@@ -1,0 +1,10 @@
+# ptn-httt focused runtime recovery rows.
+#
+# These rows were red in the current runtime-boundary manifest on
+# 2026-06-17 before the request/diagnostic recovery patch.
+Zend/tests/bug29890.phpt
+Zend/tests/bug30998.phpt
+tests/basic/011_empty_query.phpt
+tests/basic/011_register_argc_argv_disabled.phpt
+tests/basic/025.phpt
+tests/basic/bug53180.phpt

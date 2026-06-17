@@ -12795,6 +12795,8 @@ static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const P
 }
 
 static PtnRuntime *ptn_runtime_config_root(PtnRuntime *runtime);
+static const char *ptn_runtime_default_charset(PtnRuntime *runtime);
+static char *ptn_request_read_stdin(size_t *len_out);
 static const char *ptn_runtime_variables_order(PtnRuntime *runtime);
 static const char *ptn_runtime_register_argc_argv(PtnRuntime *runtime);
 static const char *ptn_runtime_enable_post_data_reading(PtnRuntime *runtime);
@@ -12827,16 +12829,19 @@ static void ptn_request_merge_array(PtnArray *target, PtnValue source) {
     }
 }
 
-static void ptn_runtime_store_request_body(PtnRuntime *runtime, char *body, size_t len) {
-    PtnRuntime *root = ptn_runtime_config_root(runtime);
-    free(root->request_body);
-    root->request_body = body;
-    root->request_body_len = len;
-}
-
 static const char *ptn_runtime_request_body(PtnRuntime *runtime, size_t *len_out) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
-    if (root == NULL || root->request_body == NULL) {
+    if (root == NULL) {
+        *len_out = 0;
+        return "";
+    }
+    if (root->request_body == NULL) {
+        const char *mode = getenv("PTN_REQUEST_MODE");
+        if (mode != NULL && ptn_ascii_case_equal(mode, "cgi")) {
+            root->request_body = ptn_request_read_stdin(&root->request_body_len);
+        }
+    }
+    if (root->request_body == NULL) {
         *len_out = 0;
         return "";
     }
@@ -12908,6 +12913,29 @@ static void ptn_emit_request_startup_warning(
         body_len,
         (long long)limit
     );
+}
+
+static int ptn_request_should_emit_cgi_header(void) {
+    const char *redirect_status = getenv("REDIRECT_STATUS");
+    if (redirect_status != NULL && redirect_status[0] != '\0') {
+        return 1;
+    }
+    const char *gateway_interface = getenv("GATEWAY_INTERFACE");
+    return gateway_interface != NULL && gateway_interface[0] != '\0';
+}
+
+static void ptn_request_emit_cgi_default_header(PtnRuntime *runtime) {
+    if (!ptn_request_should_emit_cgi_header()) {
+        return;
+    }
+    const char *charset = ptn_runtime_default_charset(runtime);
+    if (charset != NULL && charset[0] != '\0') {
+        fputs("Content-type: text/html; charset=", stdout);
+        fputs(charset, stdout);
+        fputs("\r\n\r\n", stdout);
+        return;
+    }
+    fputs("Content-type: text/html\r\n\r\n", stdout);
 }
 
 static char *ptn_request_read_stdin(size_t *len_out) {
@@ -13445,13 +13473,11 @@ static void ptn_request_seed_query_argv(PtnRuntime *runtime, PtnValue server, co
         ptn_array_set_entry(server.as.array, ptn_array_string_key("argc"), ptn_value_clone(argc_value));
         ptn_array_set_entry(server.as.array, ptn_array_string_key("argv"), ptn_value_clone(argv_array));
     }
-    if (query != NULL && query[0] != '\0') {
-        ptn_emit_runtime_deprecation(
-            runtime,
-            "Deriving $_SERVER['argv'] from the query string is deprecated. Configure register_argc_argv=0 to turn this message off",
-            0
-        );
-    }
+    ptn_emit_runtime_deprecation(
+        runtime,
+        "Deriving $_SERVER['argv'] from the query string is deprecated. Configure register_argc_argv=0 to turn this message off",
+        0
+    );
     ptn_value_destroy(&argc_value);
     ptn_value_destroy(&argv_array);
 }
@@ -13490,6 +13516,7 @@ static PTN_UNUSED void ptn_initialize_request_context(PtnRuntime *runtime, int a
     PtnValue files = ptn_array_from_literal_entries(0, NULL);
 
     if (cgi_mode) {
+        ptn_request_emit_cgi_default_header(runtime);
         const char *query = getenv("QUERY_STRING");
         if (ptn_request_order_contains(runtime, 'G') && query != NULL) {
             ptn_value_destroy(&get);
@@ -13501,22 +13528,22 @@ static PTN_UNUSED void ptn_initialize_request_context(PtnRuntime *runtime, int a
         int has_cookie = http_cookie != NULL && http_cookie[0] != '\0';
         if ((method == NULL || ptn_ascii_case_equal(method, "GET")) &&
             (has_query || !has_cookie)) {
-            ptn_request_seed_query_argv(runtime, server, query == NULL ? "" : query);
+            ptn_request_seed_query_argv(runtime, server, query);
         }
         if (ptn_request_order_contains(runtime, 'C')) {
             ptn_value_destroy(&cookie);
             cookie = ptn_request_parse_cookie_header(http_cookie);
         }
         size_t body_len = 0;
-        char *body = ptn_request_read_stdin(&body_len);
-        ptn_runtime_store_request_body(runtime, ptn_duplicate_string_len(body, body_len), body_len);
+        const char *stored_body = ptn_runtime_request_body(runtime, &body_len);
+        char *body = ptn_duplicate_string_len(stored_body, body_len);
         const char *content_type = getenv("CONTENT_TYPE");
         int should_read_post =
             method != NULL &&
             ptn_ascii_case_equal(method, "POST") &&
             ptn_runtime_ini_bool(ptn_runtime_enable_post_data_reading(runtime), 1);
         int64_t post_max_size = ptn_request_parse_quantity_bytes(ptn_runtime_post_max_size(runtime));
-        if (should_read_post && post_max_size >= 0 && body_len > (size_t)post_max_size) {
+        if (should_read_post && post_max_size > 0 && body_len > (size_t)post_max_size) {
             ptn_emit_request_startup_warning(runtime, body_len, post_max_size);
         } else if (should_read_post && ptn_request_order_contains(runtime, 'P')) {
             if (content_type != NULL &&
@@ -24126,6 +24153,34 @@ static int ptn_try_open_php_memory_stream(const char *path, const char *mode, Pt
     return 1;
 }
 
+static int ptn_try_open_php_input_stream(PtnRuntime *runtime, const char *path, PtnValue *out) {
+    if (!ptn_ascii_case_equal(path, "php://input")) {
+        return 0;
+    }
+
+    size_t request_body_len = 0;
+    const char *request_body = ptn_runtime_request_body(runtime, &request_body_len);
+    PtnResource *resource = ptn_resource_new_memory_stream(
+        "php://input",
+        "rb",
+        PTN_STREAM_BACKEND_INPUT,
+        SIZE_MAX,
+        1,
+        0
+    );
+    if (request_body_len != 0) {
+        size_t written = ptn_stream_write_bytes(resource, request_body, request_body_len);
+        if (written != request_body_len) {
+            ptn_abort_out_of_memory();
+        }
+    }
+    (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    resource->memory_stream->writable = 0;
+    resource->memory_stream->append = 0;
+    *out = ptn_resource(resource);
+    return 1;
+}
+
 static char *ptn_fopen_c_mode(const char *mode) {
     if (mode[0] != 'x') {
         return ptn_duplicate_string(mode);
@@ -24168,6 +24223,11 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     }
 
     PtnValue php_stream;
+    if (ptn_try_open_php_input_stream(runtime, path, &php_stream)) {
+        free(mode);
+        free(path);
+        return php_stream;
+    }
     if (ptn_try_open_php_memory_stream(path, mode, &php_stream)) {
         free(mode);
         free(path);
@@ -26196,7 +26256,11 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
     ptn_stream_meta_set(
         result.as.array,
         "stream_type",
-        ptn_string(resource->memory_stream != NULL ? "MEMORY" : (is_directory ? "dir" : "STDIO"))
+        ptn_string(
+            resource->memory_stream == NULL
+                ? (is_directory ? "dir" : "STDIO")
+                : (resource->stream_backend == PTN_STREAM_BACKEND_INPUT ? "Input" : "MEMORY")
+        )
     );
     ptn_stream_meta_set(
         result.as.array,

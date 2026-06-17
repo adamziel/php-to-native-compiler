@@ -20599,6 +20599,75 @@ var_dump(constant(\"dup\"));\n",
 }
 
 #[test]
+fn compile_duplicate_define_warning_routes_through_user_error_handler() {
+    let root = temp_dir("ptn-native-duplicate-define-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("duplicate-define-handler.php");
+    let output = root.join("duplicate-define-handler-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+set_error_handler(function ($errno, $errstr) {\n\
+    echo \"handled:\", $errno, \":\", $errstr, \"\\n\";\n\
+    return true;\n\
+});\n\
+define(\"DUP\", 1);\n\
+var_dump(define(\"DUP\", 2));\n\
+var_dump(constant(\"DUP\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "handled:2:Constant DUP already defined, this will be an error in PHP 9\nbool(false)\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_spaced_warning_routes_through_user_error_handler_before_builtin_fallback() {
+    let root = temp_dir("ptn-native-spaced-warning-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fopen-handler.php");
+    let output = root.join("fopen-handler-bin");
+    let missing = root.join("missing.txt");
+    let source = format!(
+        "<?php\n\
+error_reporting(-1);\n\
+function my_error($errno, $errstr, $errfile, $errline) {{ echo $errstr, \" (\", $errno, \") in \", $errfile, \":\", $errline, \"\\n\"; return false; }}\n\
+set_error_handler('my_error');\n\
+$f = fopen(\"{}\", \"r\");\n",
+        missing.display()
+    );
+    fs::write(&input, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let expected_handler = format!(
+        "fopen({}): Failed to open stream: No such file or directory (2) in ",
+        missing.display()
+    );
+    let expected_builtin = format!(
+        "Warning: fopen({}): Failed to open stream: No such file or directory in ptn on line 5\n",
+        missing.display()
+    );
+    assert!(stdout.contains(&expected_handler), "{stdout}");
+    assert!(
+        stdout.contains("fopen-handler.php:5\n\nWarning: fopen("),
+        "{stdout}"
+    );
+    assert!(stdout.contains(&expected_builtin), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_define_then_const_duplicate_preserves_original_constant() {
     let root = temp_dir("ptn-native-define-then-const-duplicate");
     fs::create_dir_all(&root).unwrap();
@@ -31822,6 +31891,11 @@ fn phpc_variables_order_controls_env_and_server_superglobals() {
         .arg("run")
         .arg(&input)
         .env("PTN_ENV_TEST", "present")
+        .env("REDIRECT_STATUS", "1")
+        .env("REQUEST_METHOD", "GET")
+        .env("PATH_TRANSLATED", &input)
+        .env("SCRIPT_FILENAME", &input)
+        .env("QUERY_STRING", "")
         .output()
         .unwrap();
     assert!(execution.status.success());
@@ -31847,6 +31921,7 @@ echo file_get_contents('php://input'), \"\\n\";\n",
     .unwrap();
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
         .arg("-d")
         .arg("variables_order=EGPCS")
         .arg("-d")
@@ -31879,13 +31954,106 @@ echo file_get_contents('php://input'), \"\\n\";\n",
 }
 
 #[test]
-fn phpc_cgi_get_without_query_string_does_not_emit_argv_deprecation() {
-    let root = temp_dir("ptn-phpc-cgi-empty-query-argv");
+fn phpc_cgi_php_input_fopen_streams_are_seekable_and_independent() {
+    let root = temp_dir("ptn-phpc-cgi-php-input-stream");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("cgi-empty-query-argv.php");
-    fs::write(&input, "<?php echo \"ok\\n\";").unwrap();
+    let input = root.join("cgi-php-input-stream.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$one = fopen('php://input', 'r');\n\
+$two = fopen('php://input', 'w');\n\
+$meta = stream_get_meta_data($one);\n\
+var_dump($meta['wrapper_type'], $meta['stream_type'], $meta['mode'], $meta['seekable'], $meta['uri']);\n\
+fseek($one, 3, SEEK_SET);\n\
+echo fgetc($one);\n\
+fseek($one, 1, SEEK_SET);\n\
+echo fgetc($one);\n\
+fseek($one, 3, SEEK_CUR);\n\
+echo fgetc($one);\n\
+fseek($one, -3, SEEK_CUR);\n\
+echo fgetc($one);\n\
+fseek($one, 3, SEEK_END);\n\
+echo fgetc($one);\n\
+fseek($one, -3, SEEK_END);\n\
+fseek($two, 1, SEEK_SET);\n\
+echo fgetc($one), fgetc($two), \"\\n\";\n\
+",
+    )
+    .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "POST")
+        .env("CONTENT_TYPE", "application/unknown")
+        .env("CONTENT_LENGTH", "10")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"0123456789")
+        .unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"PHP\"\n\
+string(5) \"Input\"\n\
+string(2) \"rb\"\n\
+bool(true)\n\
+string(11) \"php://input\"\n\
+315371\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_redirect_status_emits_default_content_type_header() {
+    let root = temp_dir("ptn-phpc-cgi-header");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-header.php");
+    fs::write(&input, "<?php echo $_SERVER['REQUEST_METHOD'], \"\\n\";").unwrap();
 
     let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "GET")
+        .env("REDIRECT_STATUS", "1")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Content-type: text/html; charset=UTF-8\r\n\r\nGET\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_get_without_query_string_derives_empty_argv_with_deprecation() {
+    let root = temp_dir("ptn-phpc-cgi-missing-query-argv");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-missing-query-argv.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump($_SERVER['argc'], $_SERVER['argv']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-d")
+        .arg("register_argc_argv=1")
         .arg("run")
         .arg(&input)
         .env("REQUEST_METHOD", "GET")
@@ -31893,7 +32061,44 @@ fn phpc_cgi_get_without_query_string_does_not_emit_argv_deprecation() {
         .output()
         .unwrap();
     assert!(execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deriving $_SERVER['argv'] from the query string is deprecated"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("int(0)\narray(0) {\n}\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_empty_query_string_derives_empty_argv_with_deprecation() {
+    let root = temp_dir("ptn-phpc-cgi-explicit-empty-query-argv");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-explicit-empty-query-argv.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump($_SERVER['argc'], $_SERVER['argv']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-d")
+        .arg("register_argc_argv=1")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "GET")
+        .env("QUERY_STRING", "")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deriving $_SERVER['argv'] from the query string is deprecated"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("int(0)\narray(0) {\n}\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
@@ -31911,6 +32116,7 @@ var_dump(isset($_SERVER['argc']), isset($_SERVER['argv']));\n",
     .unwrap();
 
     let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
         .arg("run")
         .arg(&input)
         .env("REQUEST_METHOD", "GET")
@@ -31921,6 +32127,115 @@ var_dump(isset($_SERVER['argc']), isset($_SERVER['argv']));\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(1) \"0\"\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_register_argc_argv_off_leaves_server_keys_missing() {
+    let root = temp_dir("ptn-phpc-cgi-request-argv-disabled");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-request-argv-disabled.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump($_SERVER['argc'], $_SERVER['argv']);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-d")
+        .arg("register_argc_argv=0")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "GET")
+        .env("QUERY_STRING", "alpha+beta")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Undefined array key \"argc\" in ptn on line 2\n\nWarning: Undefined array key \"argv\" in ptn on line 2\nNULL\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_post_max_size_zero_allows_post_parsing() {
+    let root = temp_dir("ptn-phpc-cgi-post-max-size-zero");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-post-max-size-zero.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump($_POST);\n",
+    )
+    .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-d")
+        .arg("post_max_size=0")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "POST")
+        .env("CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env("CONTENT_LENGTH", "33")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"email=foo&password=bar&submit=Log")
+        .unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [\"email\"]=>\n  string(3) \"foo\"\n  [\"password\"]=>\n  string(3) \"bar\"\n  [\"submit\"]=>\n  string(3) \"Log\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_post_max_size_exceeded_warns_and_skips_post_parsing() {
+    let root = temp_dir("ptn-phpc-cgi-post-max-size-exceeded");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-post-max-size-exceeded.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump($_POST);\n",
+    )
+    .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-d")
+        .arg("post_max_size=4")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "POST")
+        .env("CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env("CONTENT_LENGTH", "5")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.as_mut().unwrap().write_all(b"a=123").unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: PHP Request Startup: POST Content-Length of 5 bytes exceeds the limit of 4 bytes in Unknown on line 0\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
