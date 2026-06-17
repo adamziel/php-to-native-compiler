@@ -1,0 +1,69 @@
+# Focused row pack for ptn-w17z.127.
+# Rows recovered from the ptn-w17z.123 full-corpus 1k sweep extension surface:
+# filter=5, hash=3, iconv=3, intl=22, mbstring=19, tokenizer=2.
+
+# bucket: ext/filter rows=5
+ext/filter/tests/001.phpt
+ext/filter/tests/002.phpt
+ext/filter/tests/003.phpt
+ext/filter/tests/004.phpt
+ext/filter/tests/005.phpt
+
+# bucket: ext/hash rows=3
+ext/hash/tests/HashContext_debugInfo.phpt
+ext/hash/tests/adler32.phpt
+ext/hash/tests/bug52240.phpt
+
+# bucket: ext/iconv rows=3
+ext/iconv/tests/bug37176.phpt
+ext/iconv/tests/bug37773.phpt
+ext/iconv/tests/bug48147.phpt
+
+# bucket: ext/intl rows=22
+ext/intl/tests/IntlIterator_cycle_management.phpt
+ext/intl/tests/badargs.phpt
+ext/intl/tests/breakiter___construct.phpt
+ext/intl/tests/breakiter___construct_error.phpt
+ext/intl/tests/breakiter_clone_basic.phpt
+ext/intl/tests/breakiter_createCodePointInstance_basic.phpt
+ext/intl/tests/breakiter_current_basic.phpt
+ext/intl/tests/breakiter_factories_basic.phpt
+ext/intl/tests/breakiter_first_basic.phpt
+ext/intl/tests/breakiter_following_basic.phpt
+ext/intl/tests/breakiter_getLocale_basic2.phpt
+ext/intl/tests/breakiter_getLocale_basic3.phpt
+ext/intl/tests/breakiter_getLocale_error.phpt
+ext/intl/tests/breakiter_getPartsIterator_basic.phpt
+ext/intl/tests/breakiter_getPartsIterator_basic2.phpt
+ext/intl/tests/breakiter_getPartsIterator_error.phpt
+ext/intl/tests/breakiter_getPartsIterator_var1.phpt
+ext/intl/tests/breakiter_getText_basic.phpt
+ext/intl/tests/breakiter_isBoundary_basic.phpt
+ext/intl/tests/breakiter_last_basic.phpt
+ext/intl/tests/breakiter_next_basic.phpt
+ext/intl/tests/breakiter_preceding_basic.phpt
+
+# bucket: ext/mbstring rows=19
+ext/mbstring/tests/GHSA-74r9-qxhc-fx53.phpt
+ext/mbstring/tests/armscii8_encoding.phpt
+ext/mbstring/tests/base64_encoding.phpt
+ext/mbstring/tests/big5_encoding.phpt
+ext/mbstring/tests/bug25140.phpt
+ext/mbstring/tests/bug26639.phpt
+ext/mbstring/tests/bug30549.phpt
+ext/mbstring/tests/bug31911.phpt
+ext/mbstring/tests/bug40685.phpt
+ext/mbstring/tests/bug43840.phpt
+ext/mbstring/tests/bug43841.phpt
+ext/mbstring/tests/bug43993.phpt
+ext/mbstring/tests/bug43994.phpt
+ext/mbstring/tests/bug43998.phpt
+ext/mbstring/tests/bug45239.phpt
+ext/mbstring/tests/bug45722.phpt
+ext/mbstring/tests/bug45923.phpt
+ext/mbstring/tests/bug46806.phpt
+ext/mbstring/tests/bug46843.phpt
+
+# bucket: ext/tokenizer rows=2
+ext/tokenizer/tests/001.phpt
+ext/tokenizer/tests/002.phpt

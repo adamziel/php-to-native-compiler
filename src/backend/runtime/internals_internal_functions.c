@@ -34992,6 +34992,7 @@ static PtnValue ptn_intl_break_iterator_factory(
     const PtnValue *args,
     size_t line
 ) {
+    (void)line;
     if (argc > 1) {
         char message[160];
         int written = snprintf(message, sizeof(message), "IntlBreakIterator::%s() expects at most 1 argument, %zu given", name, argc);
@@ -35160,6 +35161,7 @@ static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
     const PtnValue *args,
     size_t line
 ) {
+    (void)line;
     PtnValue resolved_receiver = ptn_value_deref(receiver);
     if (resolved_receiver.type == PTN_OBJECT && ptn_intl_class_name_is_parts_iterator_name(resolved_receiver.as.object->class_name)) {
         PtnIntlPartsIteratorData *parts = ptn_intl_parts_iterator_data(runtime, receiver);
