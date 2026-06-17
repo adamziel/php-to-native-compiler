@@ -46,6 +46,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("AssertionError", "Error"),
     ("ParseError", "Error"),
 ];
+const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &["RoundingMode"];
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
@@ -61,7 +62,7 @@ pub fn emit_c(module: &Module) -> String {
     let serializable_deprecations = collect_module_serializable_deprecations(module);
     let mut trait_use_deprecations = collect_module_trait_use_deprecations(module);
     trait_use_deprecations.sort_by_key(|deprecation| deprecation.line);
-    let magic_declaration_fatals = collect_module_magic_declaration_fatals(module);
+    let declaration_fatals = collect_module_declaration_fatals(module);
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let magic_debug_info_deprecations = collect_module_magic_debug_info_return_deprecations(module);
     let needs_direct_callable_dispatch = runtime_requirements.internal_function_dispatch
@@ -308,7 +309,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_file,
     );
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
-    emit_magic_declaration_fatals(&mut out, &magic_declaration_fatals, &module.source_file);
+    emit_declaration_fatals(&mut out, &declaration_fatals, &module.source_file);
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
@@ -640,6 +641,14 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DateTimeInterface\");\n");
     out.push_str("    }\n");
+    for class_name in BUILTIN_ENUM_CLASS_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_ascii_case_equal(interface_name, \"UnitEnum\") ||\n");
+        out.push_str("            ptn_ascii_case_equal(interface_name, \"BackedEnum\");\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
     out.push_str(
@@ -2610,7 +2619,7 @@ struct MagicDebugInfoReturnDeprecation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MagicDeclarationFatal {
+struct DeclarationFatal {
     message: String,
     line: usize,
 }
@@ -2785,17 +2794,13 @@ fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_f
     }
 }
 
-fn emit_magic_declaration_fatals(
-    out: &mut String,
-    fatals: &[MagicDeclarationFatal],
-    source_file: &str,
-) {
+fn emit_declaration_fatals(out: &mut String, fatals: &[DeclarationFatal], source_file: &str) {
     let Some(fatal) = fatals.first() else {
         return;
     };
     out.push_str("    if (runtime.diagnostics.display_errors) {\n");
     out.push_str(
-        "        FILE *ptn_magic_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
+        "        FILE *ptn_declaration_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
     );
     out.push_str("        fputs(\"Fatal error: ");
     out.push_str(&c_string(&fatal.message));
@@ -2803,7 +2808,7 @@ fn emit_magic_declaration_fatals(
     out.push_str(&c_string(source_file));
     out.push_str(" on line ");
     out.push_str(&fatal.line.to_string());
-    out.push_str("\\n\", ptn_magic_fatal_stream);\n");
+    out.push_str("\\n\", ptn_declaration_fatal_stream);\n");
     out.push_str("    }\n");
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    exit(255);\n");
@@ -3934,6 +3939,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_canonical_name(const char *name);\n");
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
+    out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_call_magic(const char *class_name);\n");
     out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
     out.push_str(
@@ -4175,6 +4181,24 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_enum(const char *name) {\n");
+    for class in classes.iter().filter(|class| class.is_enum) {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    for class_name in BUILTIN_ENUM_CLASS_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_interface_exists(const char *name) {\n");
     for builtin in [
         "ArrayAccess",
@@ -4188,6 +4212,8 @@ fn emit_class_metadata_helpers(
         "Traversable",
         "Stringable",
         "Throwable",
+        "UnitEnum",
+        "BackedEnum",
         "DateTimeInterface",
         "Countable",
         "Serializable",
@@ -4227,6 +4253,8 @@ fn emit_class_metadata_helpers(
         "Traversable",
         "Stringable",
         "Throwable",
+        "UnitEnum",
+        "BackedEnum",
         "DateTimeInterface",
         "Countable",
         "Serializable",
@@ -4368,6 +4396,7 @@ fn emit_class_metadata_helpers(
         "DateTimeImmutable",
         "DateTimeZone",
         "DateInterval",
+        "RoundingMode",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);
@@ -4421,6 +4450,8 @@ fn emit_class_metadata_helpers(
         "Traversable",
         "Stringable",
         "Throwable",
+        "UnitEnum",
+        "BackedEnum",
         "DateTimeInterface",
         "Countable",
         "Serializable",
@@ -12503,15 +12534,21 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
     }
 }
 
-fn collect_module_magic_declaration_fatals(module: &Module) -> Vec<MagicDeclarationFatal> {
+fn collect_module_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
     let mut fatals = Vec::new();
     for class in &module.classes {
+        if let Some(message) = enum_class_declaration_fatal_message(class) {
+            fatals.push(DeclarationFatal {
+                message,
+                line: class.line,
+            });
+        }
         for method in &class.methods {
             let Some(function) = module.functions.get(method.function_index) else {
                 continue;
             };
             if let Some(message) = magic_declaration_fatal_message(class, method, function) {
-                fatals.push(MagicDeclarationFatal {
+                fatals.push(DeclarationFatal {
                     message,
                     line: method.line,
                 });
@@ -12519,6 +12556,43 @@ fn collect_module_magic_declaration_fatals(module: &Module) -> Vec<MagicDeclarat
         }
     }
     fatals
+}
+
+fn enum_class_declaration_fatal_message(class: &ClassDecl) -> Option<String> {
+    if !class.is_enum {
+        if class
+            .interfaces
+            .iter()
+            .any(|interface| is_builtin_enum_interface_name(interface))
+        {
+            return Some(format!(
+                "Non-enum class {} cannot implement interface UnitEnum",
+                class.name
+            ));
+        }
+        if class
+            .parent_name
+            .as_deref()
+            .is_some_and(is_builtin_enum_class_name)
+        {
+            let parent_name = class.parent_name.as_deref().unwrap_or_default();
+            return Some(format!(
+                "Class {} cannot extend enum {}",
+                class.name, parent_name
+            ));
+        }
+    }
+    None
+}
+
+fn is_builtin_enum_class_name(name: &str) -> bool {
+    BUILTIN_ENUM_CLASS_NAMES
+        .iter()
+        .any(|class_name| name.eq_ignore_ascii_case(class_name))
+}
+
+fn is_builtin_enum_interface_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("UnitEnum") || name.eq_ignore_ascii_case("BackedEnum")
 }
 
 fn magic_declaration_fatal_message(
