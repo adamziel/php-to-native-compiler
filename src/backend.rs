@@ -4152,6 +4152,7 @@ fn emit_class_metadata_helpers(
         "DateTime",
         "DateTimeImmutable",
         "DateTimeZone",
+        "DateInterval",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);
@@ -8242,6 +8243,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "splfileinfo" => Some("SplFileInfo"),
         "splfileobject" => Some("SplFileObject"),
         "datetimezone" => Some("DateTimeZone"),
+        "dateinterval" => Some("DateInterval"),
         _ => None,
     }
 }
@@ -13539,6 +13541,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("SplFileObject")
                 || class_name.eq_ignore_ascii_case("DateTime")
                 || class_name.eq_ignore_ascii_case("DateTimeImmutable")
+                || class_name.eq_ignore_ascii_case("DateInterval")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;

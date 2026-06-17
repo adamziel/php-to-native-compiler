@@ -564,6 +564,18 @@ static PTN_UNUSED int ptn_class_name_is_datetime_zone(const char *class_name) {
     return *class_name == '\0' && *timezone == '\0';
 }
 
+static PTN_UNUSED int ptn_class_name_is_date_interval(const char *class_name) {
+    const char *date_interval = "DateInterval";
+    while (*class_name != '\0' && *date_interval != '\0') {
+        if (tolower((unsigned char)*class_name) != tolower((unsigned char)*date_interval)) {
+            return 0;
+        }
+        class_name++;
+        date_interval++;
+    }
+    return *class_name == '\0' && *date_interval == '\0';
+}
+
 static PTN_UNUSED int ptn_class_name_is_generator(const char *class_name) {
     const char *generator = "Generator";
     while (*class_name != '\0' && *generator != '\0') {
@@ -909,6 +921,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_class_name_is_datetime_zone(lookup_class_name)) {
         return ptn_datetime_zone_new(runtime, "DateTimeZone", argc, args, line);
+    }
+    if (ptn_class_name_is_date_interval(lookup_class_name)) {
+        return ptn_date_interval_new(runtime, argc, args, line);
     }
 #endif
     if (ptn_class_name_is_generator(lookup_class_name)) {
