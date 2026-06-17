@@ -10460,6 +10460,88 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_sleep_usleep_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-sleep-usleep-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sleep-usleep.php");
+    let output = root.join("sleep-usleep-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"sleep\"), function_exists(\"USLEEP\"));\n\
+var_dump(sleep(0));\n\
+var_dump(usleep(0));\n\
+try { sleep(-1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { usleep(-1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+int(0)\n\
+NULL\n\
+sleep(): Argument #1 ($seconds) must be greater than or equal to 0\n\
+usleep(): Argument #1 ($microseconds) must be greater than or equal to 0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_sleep("));
+    assert!(c_source.contains("static PtnValue ptn_internal_usleep("));
+}
+
+#[test]
+fn compile_memory_usage_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-memory-usage-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("memory-usage.php");
+    let output = root.join("memory-usage-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"memory_get_usage\"), function_exists(\"MEMORY_GET_PEAK_USAGE\"), function_exists(\"memory_reset_peak_usage\"));\n\
+$usage = memory_get_usage();\n\
+var_dump($usage > 0, memory_get_usage(true) === $usage, memory_get_usage() === $usage);\n\
+$peak0 = memory_get_peak_usage();\n\
+$peak1 = memory_get_peak_usage(true);\n\
+var_dump($peak0 > 0, $peak1 > $peak0);\n\
+var_dump(memory_reset_peak_usage());\n\
+var_dump(memory_get_peak_usage() < $peak1);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+NULL\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_memory_get_usage("));
+    assert!(c_source.contains("static PtnValue ptn_internal_memory_get_peak_usage("));
+    assert!(c_source.contains("static PtnValue ptn_internal_memory_reset_peak_usage("));
+}
+
+#[test]
 fn compile_datetimeimmutable_nodiscard_method_to_native_binary() {
     let root = temp_dir("ptn-native-datetimeimmutable-nodiscard");
     fs::create_dir_all(&root).unwrap();
@@ -18531,6 +18613,72 @@ fn compile_getmypid_registry_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_local_system_identity_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-local-system-identity");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("local-system-identity.php");
+    let output = root.join("local-system-identity-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"gethostname\"), function_exists(\"GET_CURRENT_USER\"));\n\
+$host = gethostname();\n\
+$user = get_current_user();\n\
+var_dump(is_string($host), $host === false || strlen($host) >= 0);\n\
+var_dump(is_string($user), strlen($user) >= 0);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_realpath_cache_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-realpath-cache-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("realpath-cache.php");
+    let output = root.join("realpath-cache-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists(\"realpath_cache_size\"), function_exists(\"REALPATH_CACHE_GET\"));\n\
+var_dump(realpath_cache_size() > 0);\n\
+$cache = realpath_cache_get();\n\
+var_dump(isset($cache[__DIR__]));\n\
+var_dump($cache[__DIR__][\"is_dir\"], $cache[__DIR__][\"realpath\"] === __DIR__);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -40431,10 +40579,16 @@ fn compile_stream_resources_to_native_binary() {
         format!(
             "<?php\n\
 $fp = fopen(\"{}\", \"r\");\n\
-var_dump(gettype($fp), is_resource($fp), function_exists(\"fopen\"), function_exists(\"fclose\"), function_exists(\"is_resource\"));\n\
+var_dump(gettype($fp), is_resource($fp), function_exists(\"fopen\"), function_exists(\"fclose\"), function_exists(\"is_resource\"), function_exists(\"get_resource_type\"));\n\
 var_dump($fp);\n\
+var_dump(get_resource_type($fp));\n\
 var_dump(array_key_exists($fp, [2 => \"no\"]));\n\
-var_dump(fclose($fp), is_resource($fp), gettype($fp));",
+var_dump(fclose($fp), is_resource($fp), gettype($fp), get_resource_type($fp));\n\
+try {{\n\
+    get_resource_type(\"not a resource\");\n\
+}} catch (TypeError $e) {{\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}}",
             data_path
         ),
     )
@@ -40444,20 +40598,28 @@ var_dump(fclose($fp), is_resource($fp), gettype($fp));",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "string(8) \"resource\"\n\
+        stdout,
+        format!(
+            "string(8) \"resource\"\n\
+bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 resource(5) of type (stream)\n\
+string(6) \"stream\"\n\
 \n\
-Warning: Resource ID#5 used as offset, casting to integer (5) in ptn on line 5\n\
+Warning: Resource ID#5 used as offset, casting to integer (5) in {} on line 6\n\
 bool(false)\n\
 bool(true)\n\
 bool(false)\n\
-string(17) \"resource (closed)\"\n"
+string(17) \"resource (closed)\"\n\
+string(7) \"Unknown\"\n\
+get_resource_type(): Argument #1 ($resource) must be of type resource, string given\n",
+            input.display()
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

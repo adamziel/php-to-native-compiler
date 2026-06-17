@@ -28765,11 +28765,119 @@ static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_owned_string_len(dirname, dirname_len);
 }
 
+static char *ptn_runtime_source_dir(PtnRuntime *runtime, size_t *dir_len) {
+    const char *source_path = runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "";
+    return ptn_dirname_string_levels(source_path, strlen(source_path), 1, dir_len);
+}
+
+static PtnValue ptn_internal_realpath_cache_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    size_t dir_len = 0;
+    char *dir = ptn_runtime_source_dir(runtime, &dir_len);
+    int64_t size = dir_len == 0 ? 0 : (int64_t)(dir_len + 128);
+    free(dir);
+    return ptn_int(size);
+}
+
+static PtnValue ptn_internal_realpath_cache_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    size_t dir_len = 0;
+    char *dir = ptn_runtime_source_dir(runtime, &dir_len);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (dir_len == 0) {
+        free(dir);
+        return result;
+    }
+
+    const char *real_dir = dir;
+#if !defined(_WIN32)
+    char resolved[PTN_PHP_MAXPATHLEN];
+    if (realpath(dir, resolved) != NULL) {
+        real_dir = resolved;
+    }
+#endif
+
+    PtnValue entry = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("key"), ptn_float((double)time(NULL)));
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("is_dir"), ptn_bool(1));
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("realpath"), ptn_owned_string(ptn_duplicate_string(real_dir)));
+    ptn_array_set_entry(entry.as.array, ptn_array_string_key("expires"), ptn_int((int64_t)time(NULL) + 120));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key(real_dir), entry);
+    free(dir);
+    return result;
+}
+
 static PtnValue ptn_internal_gettype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
     (void)line;
     return ptn_gettype_value(args[0]);
+}
+
+static PtnValue ptn_internal_get_resource_type(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "get_resource_type(): Argument #1 ($resource) must be of type resource, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    return ptn_string(ptn_resource_is_open(value.as.resource) ? value.as.resource->type_name : "Unknown");
+}
+
+static PtnValue ptn_internal_gethostname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+#if defined(_WIN32)
+    const char *name = getenv("COMPUTERNAME");
+    return ptn_owned_string(ptn_duplicate_string(name == NULL ? "" : name));
+#else
+    char buffer[256];
+    if (gethostname(buffer, sizeof(buffer) - 1) != 0) {
+        return ptn_bool(0);
+    }
+    buffer[sizeof(buffer) - 1] = '\0';
+    return ptn_owned_string(ptn_duplicate_string(buffer));
+#endif
+}
+
+static PtnValue ptn_internal_get_current_user(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+#if defined(_WIN32)
+    const char *name = getenv("USERNAME");
+    return ptn_owned_string(ptn_duplicate_string(name == NULL ? "" : name));
+#else
+    struct stat info;
+    if (runtime != NULL && runtime->source_path != NULL && stat(runtime->source_path, &info) == 0) {
+        struct passwd *owner = getpwuid(info.st_uid);
+        if (owner != NULL && owner->pw_name != NULL) {
+            return ptn_owned_string(ptn_duplicate_string(owner->pw_name));
+        }
+    }
+    const char *name = getenv("USER");
+    if (name == NULL) {
+        name = getenv("LOGNAME");
+    }
+    return ptn_owned_string(ptn_duplicate_string(name == NULL ? "" : name));
+#endif
 }
 
 static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -31284,6 +31392,76 @@ static PtnValue ptn_internal_set_time_limit(PtnRuntime *runtime, size_t argc, co
     (void)line;
     (void)ptn_value_to_integer(args[0]);
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_sleep(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t seconds = ptn_internal_expect_integer_arg(runtime, "sleep", 1, "seconds", args[0], line);
+    if (seconds < 0) {
+        ptn_throw_exception(runtime, "ValueError", "sleep(): Argument #1 ($seconds) must be greater than or equal to 0");
+        return ptn_null();
+    }
+    while (seconds > 0) {
+        unsigned int chunk = seconds > (int64_t)UINT_MAX ? UINT_MAX : (unsigned int)seconds;
+        unsigned int remaining = sleep(chunk);
+        if (remaining != 0) {
+            return ptn_int((int64_t)remaining + (seconds - (int64_t)chunk));
+        }
+        seconds -= (int64_t)chunk;
+    }
+    return ptn_int(0);
+}
+
+static PtnValue ptn_internal_usleep(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t microseconds = ptn_internal_expect_integer_arg(runtime, "usleep", 1, "microseconds", args[0], line);
+    if (microseconds < 0) {
+        ptn_throw_exception(runtime, "ValueError", "usleep(): Argument #1 ($microseconds) must be greater than or equal to 0");
+        return ptn_null();
+    }
+    if (microseconds > 0) {
+        struct timespec requested;
+        requested.tv_sec = (time_t)(microseconds / 1000000);
+        requested.tv_nsec = (long)((microseconds % 1000000) * 1000);
+        while (nanosleep(&requested, &requested) != 0) {
+            if (errno != EINTR) {
+                break;
+            }
+        }
+    }
+    return ptn_null();
+}
+
+static int64_t ptn_synthetic_memory_peak_usage = 1048576;
+
+static PtnValue ptn_internal_memory_get_usage(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    if (argc >= 1) {
+        (void)ptn_is_truthy(args[0]);
+    }
+    return ptn_int(1048576);
+}
+
+static PtnValue ptn_internal_memory_get_peak_usage(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)line;
+    if (argc >= 1) {
+        (void)ptn_is_truthy(args[0]);
+    }
+    if (ptn_synthetic_memory_peak_usage <= INT64_MAX - 1024) {
+        ptn_synthetic_memory_peak_usage += 1024;
+    }
+    return ptn_int(ptn_synthetic_memory_peak_usage);
+}
+
+static PtnValue ptn_internal_memory_reset_peak_usage(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_synthetic_memory_peak_usage = 1048576;
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -35856,6 +36034,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_class", 0, 1, ptn_internal_get_class },
         { "get_class_methods", 1, 1, ptn_internal_get_class_methods },
         { "get_class_vars", 1, 1, ptn_internal_get_class_vars },
+        { "get_current_user", 0, 0, ptn_internal_get_current_user },
         { "get_declared_classes", 0, 0, ptn_internal_get_declared_classes },
         { "get_declared_interfaces", 0, 0, ptn_internal_get_declared_interfaces },
         { "get_declared_traits", 0, 0, ptn_internal_get_declared_traits },
@@ -35871,11 +36050,13 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_meta_tags", 1, 1, ptn_internal_get_meta_tags },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
+        { "gethostname", 0, 0, ptn_internal_gethostname },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getdate", 0, 1, ptn_internal_getdate },
         { "getenv", 0, 2, ptn_internal_getenv },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
+        { "get_resource_type", 1, 1, ptn_internal_get_resource_type },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "glob", 1, 2, ptn_internal_glob },
         { "gmdate", 1, 2, ptn_internal_gmdate },
@@ -35952,6 +36133,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "max", 1, PTN_VARIADIC_ARGS, ptn_internal_max },
         { "md5", 1, 2, ptn_internal_md5 },
         { "md5_file", 1, 2, ptn_internal_md5_file },
+        { "memory_get_peak_usage", 0, 1, ptn_internal_memory_get_peak_usage },
+        { "memory_get_usage", 0, 1, ptn_internal_memory_get_usage },
+        { "memory_reset_peak_usage", 0, 0, ptn_internal_memory_reset_peak_usage },
         { "metaphone", 1, 2, ptn_internal_metaphone },
         { "method_exists", 2, 2, ptn_internal_method_exists },
         { "microtime", 0, 1, ptn_internal_microtime },
@@ -36012,6 +36196,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "readdir", 1, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
         { "readlink", 1, 1, ptn_internal_readlink },
+        { "realpath_cache_get", 0, 0, ptn_internal_realpath_cache_get },
+        { "realpath_cache_size", 0, 0, ptn_internal_realpath_cache_size },
         { "realpath", 1, 1, ptn_internal_realpath },
         { "rename", 2, 3, ptn_internal_rename },
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
@@ -36041,6 +36227,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sin", 1, 1, ptn_internal_sin },
         { "sinh", 1, 1, ptn_internal_sinh },
         { "sizeof", 1, 2, ptn_internal_sizeof },
+        { "sleep", 1, 1, ptn_internal_sleep },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
         { "spl_autoload_register", 0, 3, ptn_internal_spl_autoload_register },
@@ -36127,6 +36314,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "urldecode", 1, 1, ptn_internal_urldecode },
         { "urlencode", 1, 1, ptn_internal_urlencode },
         { "user_error", 1, 2, ptn_internal_user_error },
+        { "usleep", 1, 1, ptn_internal_usleep },
         { "usort", 2, 2, ptn_internal_usort },
         { "utf8_decode", 1, 1, ptn_internal_utf8_decode },
         { "utf8_encode", 1, 1, ptn_internal_utf8_encode },

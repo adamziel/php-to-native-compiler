@@ -26,6 +26,7 @@
 #include <fnmatch.h>
 #include <glob.h>
 #include <langinfo.h>
+#include <pwd.h>
 #include <regex.h>
 #include <sys/time.h>
 #include <sys/statvfs.h>
