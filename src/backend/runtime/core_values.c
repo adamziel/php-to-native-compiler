@@ -1890,7 +1890,6 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
     const PtnValue *args,
     size_t line
 );
-<<<<<<< HEAD
 static PTN_UNUSED PtnValue ptn_zip_archive_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1898,19 +1897,20 @@ static PTN_UNUSED PtnValue ptn_zip_archive_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_soap_client_new(
-=======
-static PTN_UNUSED PtnValue ptn_intl_break_iterator_new(
->>>>>>> 827cb7175 (WIP: checkpoint (auto))
     PtnRuntime *runtime,
     const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line
 );
-<<<<<<< HEAD
-=======
+static PTN_UNUSED PtnValue ptn_intl_break_iterator_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_intl_break_iterator_clone(PtnRuntime *runtime, PtnValue source, size_t line);
->>>>>>> 827cb7175 (WIP: checkpoint (auto))
 static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_call_method(

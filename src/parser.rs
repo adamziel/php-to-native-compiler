@@ -15771,12 +15771,9 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "rewind"
             | "set_time_limit"
             | "sleep"
-<<<<<<< HEAD
             | "socket_strerror"
-=======
             | "token_get_all"
             | "token_name"
->>>>>>> 827cb7175 (WIP: checkpoint (auto))
             | "zend_version"
             | "var_export"
             | "bindec"

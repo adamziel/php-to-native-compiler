@@ -35573,16 +35573,14 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "standard")) {
         return "standard";
     }
-<<<<<<< HEAD
+    if (ptn_string_operand_ascii_case_equal(extension, "tokenizer")) {
+        return "tokenizer";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "zip")) {
         return "zip";
     }
     if (ptn_string_operand_ascii_case_equal(extension, "zlib")) {
         return "zlib";
-=======
-    if (ptn_string_operand_ascii_case_equal(extension, "tokenizer")) {
-        return "tokenizer";
->>>>>>> 827cb7175 (WIP: checkpoint (auto))
     }
     return NULL;
 }
@@ -36512,33 +36510,25 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     }
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("ctype"));
-<<<<<<< HEAD
     ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("curl"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("date"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("json"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("openssl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(6), ptn_string("pcre"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(7), ptn_string("Phar"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(8), ptn_string("Reflection"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(9), ptn_string("sockets"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(10), ptn_string("soap"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(11), ptn_string("SPL"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("standard"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(13), ptn_string("zip"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(14), ptn_string("zlib"));
-=======
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("date"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("filter"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("hash"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("iconv"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(6), ptn_string("intl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(7), ptn_string("json"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(8), ptn_string("mbstring"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(9), ptn_string("pcre"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(10), ptn_string("Reflection"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(11), ptn_string("standard"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("tokenizer"));
->>>>>>> 827cb7175 (WIP: checkpoint (auto))
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("filter"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("hash"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(6), ptn_string("iconv"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(7), ptn_string("intl"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(8), ptn_string("json"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(9), ptn_string("mbstring"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(10), ptn_string("openssl"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(11), ptn_string("pcre"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("Phar"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(13), ptn_string("Reflection"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(14), ptn_string("sockets"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(15), ptn_string("soap"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(16), ptn_string("SPL"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(17), ptn_string("standard"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(18), ptn_string("tokenizer"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(19), ptn_string("zip"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(20), ptn_string("zlib"));
     return result;
 }
 
@@ -42062,13 +42052,11 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         if (ptn_internal_function_name_has_prefix(name, "DateTimeZone::")) {
             return "date";
         }
-<<<<<<< HEAD
         if (ptn_internal_function_name_has_prefix(name, "Phar::")) {
             return "Phar";
-=======
+        }
         if (ptn_internal_function_name_has_prefix(name, "Intl")) {
             return "intl";
->>>>>>> 827cb7175 (WIP: checkpoint (auto))
         }
         return "Core";
     }
