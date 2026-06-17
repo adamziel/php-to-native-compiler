@@ -24878,23 +24878,14 @@ impl ValueEmitter {
         line: usize,
     ) -> String {
         let callable_temp = self.emit_materialized_first_class_callable_target(out, callable);
-        let args_temp = self.next_temp();
-        out.push_str("    PtnValue ");
-        out.push_str(&args_temp);
-        out.push_str("[] = { ptn_value_share(");
-        out.push_str(&callable_temp);
-        out.push_str(") };\n");
-
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_internal_closure_from_callable(&runtime, 1, ");
-        out.push_str(&args_temp);
+        out.push_str(" = ptn_first_class_callable_create(&runtime, ");
+        out.push_str(&callable_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-
-        emit_value_cleanup(out, "    ", &format!("{args_temp}[0]"));
         emit_value_cleanup(out, "    ", &callable_temp);
         result_temp
     }
