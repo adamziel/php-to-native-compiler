@@ -2934,6 +2934,24 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveIteratorIterator")) {
+        if (strcmp(constant, "LEAVES_ONLY") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "SELF_FIRST") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "CHILD_FIRST") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "CATCH_GET_CHILD") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionClass")) {
         if (strcmp(constant, "IS_IMPLICIT_ABSTRACT") == 0) {
             *out = ptn_int(16);

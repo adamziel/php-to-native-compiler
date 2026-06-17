@@ -394,6 +394,18 @@ try {{ $uninitDirectory->key(); }} catch (Error $e) {{ echo $e->getMessage(), \"
 class MyDirectoryIterator extends DirectoryIterator {{ public function __construct() {{}} }}\n\
 $subDirectory = new MyDirectoryIterator;\n\
 try {{ $subDirectory->key(); }} catch (Error $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+var_dump(RecursiveIteratorIterator::SELF_FIRST);\n\
+$nested = [1, 2 => [21, 22 => [221, 222], 23 => [231]], 3];\n\
+$flat = [];\n\
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($nested)) as $value) {{\n\
+    $flat[] = $value;\n\
+}}\n\
+var_dump($flat);\n\
+$selfFirstKeys = [];\n\
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator(['props' => ['hello' => 5, 'props' => ['keyme' => ['test' => 5]]]]), RecursiveIteratorIterator::SELF_FIRST) as $key => $value) {{\n\
+    $selfFirstKeys[] = $key;\n\
+}}\n\
+var_dump($selfFirstKeys);\n\
 $uninitRecursive = (new ReflectionClass('RecursiveIteratorIterator'))->newInstanceWithoutConstructor();\n\
 try {{ $uninitRecursive->valid(); }} catch (Error $e) {{ echo $e->getMessage(), \"\\n\"; }}\n",
             php_string_literal(&fixture)
@@ -444,6 +456,33 @@ try {{ $uninitRecursive->valid(); }} catch (Error $e) {{ echo $e->getMessage(), 
             "bool(true)\n",
             "Object not initialized\n",
             "Object not initialized\n",
+            "int(1)\n",
+            "array(6) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(21)\n",
+            "  [2]=>\n",
+            "  int(221)\n",
+            "  [3]=>\n",
+            "  int(222)\n",
+            "  [4]=>\n",
+            "  int(231)\n",
+            "  [5]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  string(5) \"props\"\n",
+            "  [1]=>\n",
+            "  string(5) \"hello\"\n",
+            "  [2]=>\n",
+            "  string(5) \"props\"\n",
+            "  [3]=>\n",
+            "  string(5) \"keyme\"\n",
+            "  [4]=>\n",
+            "  string(4) \"test\"\n",
+            "}\n",
             "Object is not initialized\n",
         )
     );
