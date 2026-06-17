@@ -28415,7 +28415,7 @@ fn compile_range_integer_internal_to_native_binary() {
         "<?php\n\
 print_r(range(1, 3));\n\
 print_r(range(1, 5, 2));\n\
-print_r(range(1, 3, -1));\n\
+try { print_r(range(1, 3, -1)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 print_r(range(-1, -5, -2));\n\
 print_r(range(3, 1, -1));\n\
 print_r(range(3, 1, 1));\n\
@@ -28435,7 +28435,85 @@ var_dump(function_exists('range'), function_exists('RANGE'));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Array\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => 1\n    [1] => 3\n    [2] => 5\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => -1\n    [1] => -3\n    [2] => -5\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n)\nArray\n(\n    [0] => a\n    [1] => b\n    [2] => c\n    [3] => d\n)\nArray\n(\n    [0] => d\n    [1] => b\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nrange(): Argument #3 ($step) must not exceed the specified range\nrange(): Argument #3 ($step) must not exceed the specified range\nbool(true)\nbool(true)\n"
+        "Array\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nArray\n(\n    [0] => 1\n    [1] => 3\n    [2] => 5\n)\nrange(): Argument #3 ($step) must be greater than 0 for increasing ranges\nArray\n(\n    [0] => -1\n    [1] => -3\n    [2] => -5\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n    [1] => 2\n    [2] => 1\n)\nArray\n(\n    [0] => 3\n)\nArray\n(\n    [0] => a\n    [1] => b\n    [2] => c\n    [3] => d\n)\nArray\n(\n    [0] => d\n    [1] => b\n)\nArray\n(\n    [0] => 1\n    [1] => 2\n    [2] => 3\n)\nrange(): Argument #3 ($step) cannot be 0\nrange(): Argument #3 ($step) must be less than the range spanned by argument #1 ($start) and argument #2 ($end)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_range_boundary_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-range-boundary-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("range-boundary-semantics.php");
+    let output = root.join("range-boundary-semantics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"float endpoints\\n\";\n\
+var_dump(range(1.5, 3.5));\n\
+var_dump(range(1, 2, 0.5));\n\
+var_dump(range(\"1\", \"2\", \"0.5\"));\n\
+echo \"nonfinite\\n\";\n\
+foreach ([NAN, INF] as $value) { try { var_dump(range($value, 1)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; } }\n\
+try { var_dump(range(1, INF)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(range(1, 2, NAN)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo \"nulls\\n\";\n\
+var_dump(range(null, 2));\n\
+var_dump(range(2.5, null));\n\
+echo \"strings\\n\";\n\
+var_dump(range(\"AA\", \"BB\"));\n\
+var_dump(range(\"Z\", \"\"));\n\
+var_dump(range(\"\", \"Z\"));\n\
+var_dump(range(\"3.5\", \"A\"));\n\
+var_dump(range(\"?\", \"3.5\"));\n\
+var_dump(range(\"A\", \"H\", 2.6));\n\
+echo \"equal strings\\n\";\n\
+var_dump(range(\"5\", \"5\"));\n\
+var_dump(range(\"5\", \"5\", 0.1));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "float endpoints\n",
+            "array(3) {\n  [0]=>\n  float(1.5)\n  [1]=>\n  float(2.5)\n  [2]=>\n  float(3.5)\n}\n",
+            "array(3) {\n  [0]=>\n  float(1)\n  [1]=>\n  float(1.5)\n  [2]=>\n  float(2)\n}\n",
+            "array(3) {\n  [0]=>\n  float(1)\n  [1]=>\n  float(1.5)\n  [2]=>\n  float(2)\n}\n",
+            "nonfinite\n",
+            "range(): Argument #1 ($start) must be a finite number, NAN provided\n",
+            "range(): Argument #1 ($start) must be a finite number, INF provided\n",
+            "range(): Argument #2 ($end) must be a finite number, INF provided\n",
+            "range(): Argument #3 ($step) must be a finite number, NAN provided\n",
+            "nulls\n",
+            "\nDeprecated: range(): Passing null to parameter #1 ($start) of type string|int|float is deprecated in ptn on line 11\n",
+            "array(3) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n}\n",
+            "\nDeprecated: range(): Passing null to parameter #2 ($end) of type string|int|float is deprecated in ptn on line 12\n",
+            "array(3) {\n  [0]=>\n  float(2.5)\n  [1]=>\n  float(1.5)\n  [2]=>\n  float(0.5)\n}\n",
+            "strings\n",
+            "\nWarning: range(): Argument #1 ($start) must be a single byte, subsequent bytes are ignored in ptn on line 14\n",
+            "\nWarning: range(): Argument #2 ($end) must be a single byte, subsequent bytes are ignored in ptn on line 14\n",
+            "array(2) {\n  [0]=>\n  string(1) \"A\"\n  [1]=>\n  string(1) \"B\"\n}\n",
+            "\nWarning: range(): Argument #2 ($end) must not be empty, casted to 0 in ptn on line 15\n",
+            "\nWarning: range(): Argument #2 ($end) must be a single byte string if argument #1 ($start) is a single byte string, argument #1 ($start) converted to 0 in ptn on line 15\n",
+            "array(1) {\n  [0]=>\n  int(0)\n}\n",
+            "\nWarning: range(): Argument #1 ($start) must not be empty, casted to 0 in ptn on line 16\n",
+            "\nWarning: range(): Argument #1 ($start) must be a single byte string if argument #2 ($end) is a single byte string, argument #2 ($end) converted to 0 in ptn on line 16\n",
+            "array(1) {\n  [0]=>\n  int(0)\n}\n",
+            "\nWarning: range(): Argument #1 ($start) must be a single byte string if argument #2 ($end) is a single byte string, argument #2 ($end) converted to 0 in ptn on line 17\n",
+            "array(4) {\n  [0]=>\n  float(3.5)\n  [1]=>\n  float(2.5)\n  [2]=>\n  float(1.5)\n  [3]=>\n  float(0.5)\n}\n",
+            "\nWarning: range(): Argument #2 ($end) must be a single byte string if argument #1 ($start) is a single byte string, argument #1 ($start) converted to 0 in ptn on line 18\n",
+            "array(4) {\n  [0]=>\n  float(0)\n  [1]=>\n  float(1)\n  [2]=>\n  float(2)\n  [3]=>\n  float(3)\n}\n",
+            "\nWarning: range(): Argument #3 ($step) must be of type int when generating an array of characters, inputs converted to 0 in ptn on line 19\n",
+            "array(1) {\n  [0]=>\n  float(0)\n}\n",
+            "equal strings\n",
+            "array(1) {\n  [0]=>\n  string(1) \"5\"\n}\n",
+            "array(1) {\n  [0]=>\n  float(5)\n}\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -34462,6 +34540,32 @@ var_dump($inis['serialize_precision']);\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(2) \"14\"\nstring(2) \"14\"\nstring(2) \"17\"\nstring(2) \"-1\"\nstring(2) \"-1\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_serialize_precision_ini_controls_var_dump_float_stringification() {
+    let root = temp_dir("ptn-phpc-serialize-precision-var-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serialize-precision-var-dump.php");
+    fs::write(
+        &input,
+        "<?php var_dump(1.2000000000000002); var_dump(2.000000000000001);",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("serialize_precision=14")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "float(1.2)\nfloat(2)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

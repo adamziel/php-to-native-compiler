@@ -1661,8 +1661,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         PTN_DEFAULT_SERIALIZE_PRECISION,
         PTN_MAX_FLOAT_FORMAT_PRECISION
     );
-    runtime->initial_precision = runtime->precision;
-    runtime->initial_serialize_precision = runtime->serialize_precision;
+    runtime->initial_precision = PTN_DEFAULT_PRECISION;
+    runtime->initial_serialize_precision = PTN_DEFAULT_SERIALIZE_PRECISION;
     runtime->exception_ignore_args = 0;
     int configured_exception_ignore_args = 0;
     if (ptn_parse_bool_env("PTN_EXCEPTION_IGNORE_ARGS", &configured_exception_ignore_args)) {

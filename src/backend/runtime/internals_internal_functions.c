@@ -1899,8 +1899,13 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             printf("int(%lld)\n", (long long)value.as.integer);
             break;
         case PTN_FLOAT: {
-            char formatted[64];
-            ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_var_dump_float(
+                value.as.floating,
+                ptn_runtime_serialize_precision(ptn_var_dump_active_runtime),
+                formatted,
+                sizeof(formatted)
+            );
             printf("float(%s)\n", formatted);
             break;
         }
@@ -2124,8 +2129,13 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             printf("int(%lld)\n", (long long)value.as.integer);
             break;
         case PTN_FLOAT: {
-            char formatted[64];
-            ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_var_dump_float(
+                value.as.floating,
+                ptn_runtime_serialize_precision(ptn_var_dump_active_runtime),
+                formatted,
+                sizeof(formatted)
+            );
             printf("float(%s)\n", formatted);
             break;
         }
@@ -11462,78 +11472,452 @@ static PtnValue ptn_internal_array_splice(PtnRuntime *runtime, size_t argc, cons
     );
 }
 
-static int ptn_range_char_endpoint(PtnValue value, unsigned char *byte_out) {
-    value = ptn_value_deref(value);
-    if (value.type != PTN_STRING || value.as.string.len != 1) {
-        return 0;
-    }
-    unsigned char byte = value.as.string.data[0];
-    if (isdigit(byte)) {
-        return 0;
-    }
-    *byte_out = byte;
-    return 1;
-}
+static const char *ptn_numeric_arg_type_name(PtnValue value);
+static int ptn_numeric_arg_string_to_double(PtnString string, double *out);
 
-static uint64_t ptn_range_abs_step(int64_t step_value) {
+typedef enum {
+    PTN_RANGE_BOUND_NUMBER,
+    PTN_RANGE_BOUND_CHARACTER
+} PtnRangeBoundKind;
+
+typedef struct {
+    PtnRangeBoundKind kind;
+    PtnNumber number;
+    unsigned char character;
+    int truncated_string;
+    int original_was_string;
+    size_t original_string_len;
+    unsigned char original_first_byte;
+} PtnRangeBound;
+
+static uint64_t ptn_range_abs_integer_step(int64_t step_value) {
     return step_value < 0 ? (uint64_t)(-(step_value + 1)) + 1 : (uint64_t)step_value;
 }
 
-static void ptn_range_validate_step(PtnRuntime *runtime, uint64_t step, uint64_t distance) {
-    if (step == 0 || (distance != 0 && step > distance)) {
+static const char *ptn_range_finite_label(double value) {
+    return isnan(value) ? "NAN" : "INF";
+}
+
+static void ptn_range_throw_finite_number_error(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    double value
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "range(): Argument #%zu ($%s) must be a finite number, %s provided",
+        position,
+        argument_name,
+        ptn_range_finite_label(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_range_throw_type_error(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    const char *expected_type,
+    PtnValue value
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "range(): Argument #%zu ($%s) must be of type %s, %s given",
+        position,
+        argument_name,
+        expected_type,
+        ptn_numeric_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static void ptn_range_emit_null_deprecation(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    const char *expected_type,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "range(): Passing null to parameter #%zu ($%s) of type %s is deprecated",
+        position,
+        argument_name,
+        expected_type
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
+
+static void ptn_range_emit_empty_string_warning(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    size_t line
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "range(): Argument #%zu ($%s) must not be empty, casted to 0",
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_range_emit_truncated_string_warning(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    size_t line
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "range(): Argument #%zu ($%s) must be a single byte, subsequent bytes are ignored",
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_range_emit_character_mismatch_warning(
+    PtnRuntime *runtime,
+    size_t non_character_position,
+    const char *non_character_name,
+    size_t character_position,
+    const char *character_name,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "range(): Argument #%zu ($%s) must be a single byte string if argument #%zu ($%s) is a single byte string, argument #%zu ($%s) converted to 0",
+        non_character_position,
+        non_character_name,
+        character_position,
+        character_name,
+        character_position,
+        character_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static void ptn_range_emit_fractional_character_step_warning(PtnRuntime *runtime, size_t line) {
+    ptn_emit_warning(
+        &runtime->diagnostics,
+        "range(): Argument #3 ($step) must be of type int when generating an array of characters, inputs converted to 0",
+        line
+    );
+}
+
+static PtnRangeBound ptn_range_number_bound(PtnNumber number) {
+    PtnRangeBound bound;
+    bound.kind = PTN_RANGE_BOUND_NUMBER;
+    bound.number = number;
+    bound.character = 0;
+    bound.truncated_string = 0;
+    bound.original_was_string = 0;
+    bound.original_string_len = 0;
+    bound.original_first_byte = 0;
+    return bound;
+}
+
+static PtnRangeBound ptn_range_character_bound(PtnValue value) {
+    PtnRangeBound bound;
+    value = ptn_value_deref(value);
+    bound.kind = PTN_RANGE_BOUND_CHARACTER;
+    bound.number = ptn_number_int(0);
+    bound.character = value.as.string.data[0];
+    bound.truncated_string = value.as.string.len > 1;
+    bound.original_was_string = 1;
+    bound.original_string_len = value.as.string.len;
+    bound.original_first_byte = value.as.string.data[0];
+    return bound;
+}
+
+static int ptn_range_string_starts_with_c_nonfinite_literal(PtnString string) {
+    const unsigned char *cursor = string.data;
+    const unsigned char *limit = string.data + string.len;
+    while (cursor < limit && isspace(*cursor)) {
+        cursor++;
+    }
+    if (cursor < limit && (*cursor == '+' || *cursor == '-')) {
+        cursor++;
+    }
+    return cursor < limit && (*cursor == 'i' || *cursor == 'I' || *cursor == 'n' || *cursor == 'N');
+}
+
+static PtnRangeBound ptn_range_bound_arg(
+    PtnRuntime *runtime,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_range_emit_null_deprecation(runtime, position, argument_name, "string|int|float", line);
+            return ptn_range_number_bound(ptn_number_int(0));
+        case PTN_BOOL:
+            return ptn_range_number_bound(ptn_number_int(value.as.boolean ? 1 : 0));
+        case PTN_INT:
+            return ptn_range_number_bound(ptn_number_int(value.as.integer));
+        case PTN_FLOAT:
+            if (!isfinite(value.as.floating)) {
+                ptn_range_throw_finite_number_error(runtime, position, argument_name, value.as.floating);
+                return ptn_range_number_bound(ptn_number_int(0));
+            }
+            return ptn_range_number_bound(ptn_number_float(value.as.floating));
+        case PTN_STRING: {
+            if (value.as.string.len == 0) {
+                ptn_range_emit_empty_string_warning(runtime, position, argument_name, line);
+                PtnRangeBound bound = ptn_range_number_bound(ptn_number_int(0));
+                bound.original_was_string = 1;
+                bound.original_string_len = 0;
+                return bound;
+            }
+
+            PtnNumber number;
+            int has_trailing_non_numeric_data = 0;
+            if (
+                !ptn_range_string_starts_with_c_nonfinite_literal(value.as.string) &&
+                ptn_arithmetic_string_to_number(value.as.string, &number, &has_trailing_non_numeric_data)
+            ) {
+                if (number.type == PTN_NUMBER_FLOAT && !isfinite(number.floating)) {
+                    ptn_range_throw_finite_number_error(runtime, position, argument_name, number.floating);
+                    return ptn_range_number_bound(ptn_number_int(0));
+                }
+                PtnRangeBound bound = ptn_range_number_bound(number);
+                bound.original_was_string = 1;
+                bound.original_string_len = value.as.string.len;
+                bound.original_first_byte = value.as.string.data[0];
+                return bound;
+            }
+
+            return ptn_range_character_bound(value);
+        }
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            ptn_range_throw_type_error(runtime, position, argument_name, "string|int|float", value);
+            return ptn_range_number_bound(ptn_number_int(0));
+    }
+    ptn_range_throw_type_error(runtime, position, argument_name, "string|int|float", value);
+    return ptn_range_number_bound(ptn_number_int(0));
+}
+
+static PtnNumber ptn_range_step_arg(PtnRuntime *runtime, PtnValue value, size_t line) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_range_emit_null_deprecation(runtime, 3, "step", "int|float", line);
+            return ptn_number_int(0);
+        case PTN_BOOL:
+            return ptn_number_int(value.as.boolean ? 1 : 0);
+        case PTN_INT:
+            return ptn_number_int(value.as.integer);
+        case PTN_FLOAT:
+            return ptn_number_float(value.as.floating);
+        case PTN_STRING: {
+            double numeric_value = 0.0;
+            PtnNumber number;
+            int has_trailing_non_numeric_data = 0;
+            if (
+                ptn_numeric_arg_string_to_double(value.as.string, &numeric_value) &&
+                ptn_arithmetic_string_to_number(value.as.string, &number, &has_trailing_non_numeric_data) &&
+                !has_trailing_non_numeric_data
+            ) {
+                (void)numeric_value;
+                return number;
+            }
+            break;
+        }
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+    ptn_range_throw_type_error(runtime, 3, "step", "int|float", value);
+    return ptn_number_int(0);
+}
+
+static double ptn_range_number_as_double(PtnNumber number) {
+    return number.type == PTN_NUMBER_FLOAT ? number.floating : (double)number.integer;
+}
+
+static int ptn_range_equal_single_byte_strings(PtnRangeBound start, PtnRangeBound end, PtnNumber step) {
+    return step.type == PTN_NUMBER_INT &&
+        start.kind == PTN_RANGE_BOUND_NUMBER &&
+        end.kind == PTN_RANGE_BOUND_NUMBER &&
+        start.original_was_string &&
+        end.original_was_string &&
+        start.original_string_len == 1 &&
+        end.original_string_len == 1 &&
+        start.original_first_byte == end.original_first_byte;
+}
+
+static void ptn_range_validate_numeric_step(PtnRuntime *runtime, double start, double end, double step) {
+    if (!isfinite(step)) {
+        ptn_range_throw_finite_number_error(runtime, 3, "step", step);
+        return;
+    }
+    if (step == 0.0) {
+        ptn_throw_exception(runtime, "ValueError", "range(): Argument #3 ($step) cannot be 0");
+        return;
+    }
+    if (start < end && step < 0.0) {
         ptn_throw_exception(
             runtime,
             "ValueError",
-            "range(): Argument #3 ($step) must not exceed the specified range"
+            "range(): Argument #3 ($step) must be greater than 0 for increasing ranges"
+        );
+        return;
+    }
+    double distance = fabs(end - start);
+    double abs_step = fabs(step);
+    if (distance != 0.0 && abs_step > distance) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "range(): Argument #3 ($step) must be less than the range spanned by argument #1 ($start) and argument #2 ($end)"
         );
     }
 }
 
-static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    int64_t step_value = argc >= 3 ? ptn_value_to_integer(args[2]) : 1;
-    uint64_t step = ptn_range_abs_step(step_value);
-
-    unsigned char start_char = 0;
-    unsigned char end_char = 0;
-    if (ptn_range_char_endpoint(args[0], &start_char) && ptn_range_char_endpoint(args[1], &end_char)) {
-        uint64_t distance = start_char <= end_char
-            ? (uint64_t)end_char - (uint64_t)start_char
-            : (uint64_t)start_char - (uint64_t)end_char;
-        ptn_range_validate_step(runtime, step, distance);
-        uint64_t count = distance == 0 ? 1 : distance / step + 1;
-        if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
-            ptn_abort_out_of_memory();
-        }
-
-        PtnValue result = ptn_array_from_literal_entries(0, NULL);
-        int ascending = start_char <= end_char;
-        unsigned char current = start_char;
-        for (uint64_t i = 0; i < count; i++) {
-            char string[1] = { (char)current };
-            ptn_array_set_entry(
-                result.as.array,
-                ptn_array_int_key((int64_t)i),
-                ptn_owned_string_len(ptn_duplicate_string_len(string, 1), 1)
-            );
-            if (i + 1 == count) {
-                break;
-            }
-            if (ascending) {
-                current = (unsigned char)(current + step);
-            } else {
-                current = (unsigned char)(current - step);
-            }
-        }
-        return result;
+static void ptn_range_validate_integer_step(PtnRuntime *runtime, int64_t start, int64_t end, int64_t step_value) {
+    if (step_value == 0) {
+        ptn_throw_exception(runtime, "ValueError", "range(): Argument #3 ($step) cannot be 0");
+        return;
     }
-
-    int64_t start = ptn_value_to_integer(args[0]);
-    int64_t end = ptn_value_to_integer(args[1]);
+    if (start < end && step_value < 0) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "range(): Argument #3 ($step) must be greater than 0 for increasing ranges"
+        );
+        return;
+    }
+    uint64_t step = ptn_range_abs_integer_step(step_value);
     uint64_t distance = start <= end
         ? (uint64_t)end - (uint64_t)start
         : (uint64_t)start - (uint64_t)end;
-    ptn_range_validate_step(runtime, step, distance);
+    if (distance != 0 && step > distance) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "range(): Argument #3 ($step) must be less than the range spanned by argument #1 ($start) and argument #2 ($end)"
+        );
+    }
+}
+
+static PtnValue ptn_range_single_string(unsigned char byte) {
+    char string[1] = { (char)byte };
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key(0),
+        ptn_owned_string_len(ptn_duplicate_string_len(string, 1), 1)
+    );
+    return result;
+}
+
+static PtnValue ptn_range_characters(
+    PtnRuntime *runtime,
+    PtnRangeBound start,
+    PtnRangeBound end,
+    int64_t step_value,
+    size_t line
+) {
+    if (start.truncated_string) {
+        ptn_range_emit_truncated_string_warning(runtime, 1, "start", line);
+    }
+    if (end.truncated_string) {
+        ptn_range_emit_truncated_string_warning(runtime, 2, "end", line);
+    }
+
+    int64_t start_value = (int64_t)start.character;
+    int64_t end_value = (int64_t)end.character;
+    ptn_range_validate_integer_step(runtime, start_value, end_value, step_value);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    uint64_t step = ptn_range_abs_integer_step(step_value);
+    uint64_t distance = start.character <= end.character
+        ? (uint64_t)end.character - (uint64_t)start.character
+        : (uint64_t)start.character - (uint64_t)end.character;
+    uint64_t count = distance == 0 ? 1 : distance / step + 1;
+    if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int ascending = start.character <= end.character;
+    unsigned char current = start.character;
+    for (uint64_t i = 0; i < count; i++) {
+        char string[1] = { (char)current };
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_owned_string_len(ptn_duplicate_string_len(string, 1), 1)
+        );
+        if (i + 1 == count) {
+            break;
+        }
+        if (ascending) {
+            current = (unsigned char)(current + step);
+        } else {
+            current = (unsigned char)(current - step);
+        }
+    }
+    return result;
+}
+
+static PtnValue ptn_range_integers(PtnRuntime *runtime, int64_t start, int64_t end, int64_t step_value) {
+    ptn_range_validate_integer_step(runtime, start, end, step_value);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    uint64_t step = ptn_range_abs_integer_step(step_value);
+    uint64_t distance = start <= end
+        ? (uint64_t)end - (uint64_t)start
+        : (uint64_t)start - (uint64_t)end;
 
     uint64_t count = distance == 0 ? 1 : distance / step + 1;
     if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
@@ -11565,6 +11949,85 @@ static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnVa
         }
     }
     return result;
+}
+
+static PtnValue ptn_range_floats(PtnRuntime *runtime, double start, double end, double step_value) {
+    ptn_range_validate_numeric_step(runtime, start, end, step_value);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    double distance = fabs(end - start);
+    double step = fabs(step_value);
+    double count_double = distance == 0.0 ? 1.0 : floor(distance / step) + 1.0;
+    if (!isfinite(count_double) || count_double > (double)INT64_MAX || count_double > (double)SIZE_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    uint64_t count = (uint64_t)count_double;
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int ascending = start <= end;
+    double current = start;
+    for (uint64_t i = 0; i < count; i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_float(current));
+        if (i + 1 == count) {
+            break;
+        }
+        current = ascending ? current + step : current - step;
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnRangeBound start = ptn_range_bound_arg(runtime, 1, "start", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnRangeBound end = ptn_range_bound_arg(runtime, 2, "end", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnNumber step = argc >= 3 ? ptn_range_step_arg(runtime, args[2], line) : ptn_number_int(1);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    double step_number = ptn_range_number_as_double(step);
+    if (!isfinite(step_number)) {
+        ptn_range_throw_finite_number_error(runtime, 3, "step", step_number);
+        return ptn_null();
+    }
+
+    if (ptn_range_equal_single_byte_strings(start, end, step)) {
+        return ptn_range_single_string(start.original_first_byte);
+    }
+
+    if (start.kind == PTN_RANGE_BOUND_CHARACTER && end.kind == PTN_RANGE_BOUND_CHARACTER) {
+        if (step.type != PTN_NUMBER_INT) {
+            ptn_range_emit_fractional_character_step_warning(runtime, line);
+            start = ptn_range_number_bound(ptn_number_int(0));
+            end = ptn_range_number_bound(ptn_number_int(0));
+        } else {
+            return ptn_range_characters(runtime, start, end, step.integer, line);
+        }
+    } else if (start.kind == PTN_RANGE_BOUND_CHARACTER) {
+        ptn_range_emit_character_mismatch_warning(runtime, 2, "end", 1, "start", line);
+        start = ptn_range_number_bound(ptn_number_int(0));
+    } else if (end.kind == PTN_RANGE_BOUND_CHARACTER) {
+        ptn_range_emit_character_mismatch_warning(runtime, 1, "start", 2, "end", line);
+        end = ptn_range_number_bound(ptn_number_int(0));
+    }
+
+    double start_number = ptn_range_number_as_double(start.number);
+    double end_number = ptn_range_number_as_double(end.number);
+    int use_float_range = start.number.type == PTN_NUMBER_FLOAT ||
+        end.number.type == PTN_NUMBER_FLOAT ||
+        step.type == PTN_NUMBER_FLOAT;
+
+    if (use_float_range) {
+        return ptn_range_floats(runtime, start_number, end_number, step_number);
+    }
+    return ptn_range_integers(runtime, start.number.integer, end.number.integer, step.integer);
 }
 
 static PtnArrayKey ptn_array_pad_source_key(PtnArrayKey source_key, int preserve_integer_keys, int64_t *next_integer_key) {
@@ -14913,10 +15376,15 @@ static int64_t ptn_sprintf_value_to_integer(PtnRuntime *runtime, PtnValue value,
 }
 
 static void ptn_sprintf_warn_float_int_cast(PtnRuntime *runtime, double floating, size_t line) {
-    char value_text[64];
-    ptn_format_var_dump_float(floating, value_text, sizeof(value_text));
+    char value_text[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+    ptn_format_var_dump_float(
+        floating,
+        ptn_runtime_serialize_precision(runtime),
+        value_text,
+        sizeof(value_text)
+    );
 
-    char message[160];
+    char message[PTN_FLOAT_FORMAT_BUFFER_SIZE + 96];
     int written = snprintf(
         message,
         sizeof(message),

@@ -58,8 +58,9 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   reads/writes, array/string-offset writes, unsets, compounds, null coalescing
   assignments, and inc/dec targets.
 - Arithmetic models non-numeric string/array `TypeError`s while preserving
-  leading-numeric warnings; float stringification honors `phpc -d precision=N`
-  and PHP-style exponent spelling.
+  leading-numeric warnings; float stringification honors `phpc -d precision=N`,
+  var-dump float formatting honors `phpc -d serialize_precision=N`, and both
+  use PHP-style exponent spelling.
 - Array internals cover set/key/list/search/unique/slice/pad/reverse/
   sum/product/fill/filter/chunk/merge/replace helpers, predicate/find helpers
   (`array_all()`, `array_any()`, `array_find()`, and `array_find_key()`), key-aware
@@ -205,8 +206,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
   (`assert.exception`, `date.timezone`, `display_errors`, `error_reporting`,
   `extension_dir`, `include_path`, `opcache.save_comments`,
-  `pcre.backtrack_limit`, `pcre.jit`, `precision`, `user_agent`,
-  `zend.assertions`, and `zend.exception_string_param_max_len`); child-process
+  `pcre.backtrack_limit`, `pcre.jit`, `precision`, `serialize_precision`,
+  `user_agent`, `zend.assertions`, and `zend.exception_string_param_max_len`); child-process
   control rows are classified until PTN has a native process boundary. Harness
   cleanup, environment setup, unsupported
   SAPI/stdio/source sections, run-tests self-tests, noisy external/flaky

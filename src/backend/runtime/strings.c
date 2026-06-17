@@ -1961,13 +1961,28 @@ static PTN_UNUSED int ptn_format_var_dump_integral_fixed(double value, char *buf
     return 1;
 }
 
-static PTN_UNUSED void ptn_format_var_dump_float(double value, char *buffer, size_t buffer_size) {
+static PTN_UNUSED void ptn_format_var_dump_float(
+    double value,
+    int serialize_precision,
+    char *buffer,
+    size_t buffer_size
+) {
     if (isnan(value)) {
         snprintf(buffer, buffer_size, "NAN");
         return;
     }
     if (isinf(value)) {
         snprintf(buffer, buffer_size, signbit(value) ? "-INF" : "INF");
+        return;
+    }
+
+    if (serialize_precision >= 0) {
+        int written = snprintf(buffer, buffer_size, "%.*g", serialize_precision, value);
+        if (written < 0 || (size_t)written >= buffer_size) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_normalize_var_dump_exponent(buffer);
+        ptn_var_dump_ensure_exponent_decimal(buffer);
         return;
     }
 
