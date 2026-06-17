@@ -961,6 +961,10 @@ struct PtnRuntime {
     char *pcre_backtrack_limit;
     char *pcre_jit;
     char *opcache_save_comments;
+    char *opcache_enable;
+    char *opcache_enable_cli;
+    char *opcache_optimization_level;
+    char *disable_functions;
     char *internal_encoding;
     char *input_encoding;
     char *output_encoding;
@@ -997,6 +1001,7 @@ struct PtnRuntime {
     int json_last_error;
     size_t json_last_error_line;
     size_t json_last_error_column;
+    int pcre_last_error;
 };
 
 typedef struct {

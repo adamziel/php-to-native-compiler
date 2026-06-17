@@ -430,6 +430,29 @@ fn phpt_classifier_models_common_environment_skipif_preconditions() {
         classification.starts_with("runnable\t") && classification.contains("environment"),
         "{classification:?}"
     );
+
+    let tz_mutation = "--TEST--\ntimezone env mutation\n--SKIPIF--\n<?php if (!@putenv(\"TZ=EST5\") || getenv(\"TZ\") != 'EST5') die('skip unable to change TZ environment variable'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(tz_mutation, true);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("environment-mutation"),
+        "{classification:?}"
+    );
+
+    let pcre_utf8 = "--TEST--\npcre utf8\n--SKIPIF--\n<?php if (@preg_match('/./u', '') === false) die('skip no utf8 support in PCRE library'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(pcre_utf8, true);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("PCRE-UTF8"),
+        "{classification:?}"
+    );
+
+    let windows_only = "--TEST--\nwindows only\n--SKIPIF--\n<?php if (substr(PHP_OS, 0, 3) != 'WIN') die('skip only windows test.'); if (false === setlocale(LC_TIME, \"en-us\")) die('skip locale'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification =
+        classify_with_harness_programs_and_env(windows_only, true, &[("PTN_PHPT_PHP_OS", "Linux")]);
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("PHP_OS prefix guard"),
+        "{classification:?}"
+    );
 }
 
 #[test]
@@ -1631,18 +1654,6 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "engine diagnostic/logging mode",
         ),
         (
-            "function disabling",
-            "disable_functions=assert",
-            "unsupported-function-disable-ini\t",
-            "runtime function table mutation",
-        ),
-        (
-            "opcache",
-            "opcache.enable_cli=1",
-            "unsupported-opcache-ini\t",
-            "Zend OPcache configuration",
-        ),
-        (
             "scalar formatting",
             "serialize_precision=17",
             "unsupported-scalar-format-ini\t",
@@ -1683,6 +1694,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
     assert_eq!(
         residual_extension_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let process_start_function_and_opcache_ini = classify(
+        "--TEST--\nfunction and opcache ini\n--INI--\ndisable_functions=assert\nopcache.enable_cli=1\nopcache.enable=1\nopcache.optimization_level=-1\n--FILE--\n<?php\nvar_dump(function_exists('assert'), ini_get('opcache.enable_cli'));\n--EXPECT--\n",
+    );
+    assert_eq!(
+        process_start_function_and_opcache_ini.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
 

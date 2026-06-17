@@ -11,7 +11,7 @@
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,ctype,date,json,pcre,SPL,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.exception,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,max_input_nesting_level,max_input_vars,max_memory_limit,memory_limit,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,post_max_size,precision,register_argc_argv,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.exception,date.timezone,default_charset,disable_functions,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,max_input_nesting_level,max_input_vars,max_memory_limit,memory_limit,opcache.enable,opcache.enable_cli,opcache.optimization_level,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,post_max_size,precision,register_argc_argv,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT=""
@@ -577,7 +577,7 @@ ptn_phpt_modeled_skipif_precondition() {
     while IFS= read -r identifier; do
         [[ -n "$identifier" ]] || continue
         case "$identifier" in
-            if|getenv|die|exit|echo|print|require|require_once|include|include_once|defined|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
+            if|true|false|null|getenv|putenv|preg_match|die|exit|echo|print|require|require_once|include|include_once|defined|__DIR__|PHP_INT_SIZE|PHP_INT_MAX|PHP_OS_FAMILY|PHP_OS|PHP_DEBUG|PHP_ZTS|PHP_VERSION|version_compare|substr|setlocale|LC_ALL|LC_COLLATE|LC_CTYPE|LC_MESSAGES|LC_MONETARY|LC_NUMERIC|LC_TIME)
                 ;;
             *)
                 return 1
@@ -594,6 +594,8 @@ ptn_phpt_modeled_skipif_precondition() {
     local php_os_count
     local php_debug_count
     local php_zts_count
+    local putenv_count
+    local preg_match_count
     local setlocale_count
     local defined_count
     local include_count
@@ -606,12 +608,15 @@ ptn_phpt_modeled_skipif_precondition() {
     php_os_count=$(ptn_phpt_count_matches 'PHP_OS([^_A-Za-z0-9]|$)' "$code_without_strings")
     php_debug_count=$(ptn_phpt_count_matches 'PHP_DEBUG' "$code_without_strings")
     php_zts_count=$(ptn_phpt_count_matches 'PHP_ZTS' "$code_without_strings")
+    putenv_count=$(ptn_phpt_count_matches 'putenv[[:space:]]*\(' "$code_without_strings")
+    preg_match_count=$(ptn_phpt_count_matches 'preg_match[[:space:]]*\(' "$code_without_strings")
     setlocale_count=$(ptn_phpt_count_matches 'setlocale[[:space:]]*\(' "$code_without_strings")
     defined_count=$(ptn_phpt_count_matches 'defined[[:space:]]*\(' "$code_without_strings")
     include_count=$(ptn_phpt_count_matches '(^|[^A-Za-z0-9_])(require|include)(_once)?[[:space:]]+' "$code_without_strings")
 
     local env_probe_lines
     local parsed_env_count=0
+    local parsed_env_mutation_count=0
     local env_family="sanitizer-env"
     env_probe_lines=$(printf '%s\n' "$code" \
         | grep -Eo "getenv[[:space:]]*\\([[:space:]]*['\"][A-Za-z_][A-Za-z0-9_]*['\"][[:space:]]*\\)" \
@@ -621,6 +626,22 @@ ptn_phpt_modeled_skipif_precondition() {
     if [[ -n "$env_probe_lines" ]]; then
         while IFS= read -r env_var; do
             env_var=$(printf '%s\n' "$env_var" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/")
+            local env_mutation_assignment
+            local env_mutation_value
+            env_mutation_assignment=$(printf '%s\n' "$code" \
+                | grep -Eo "@?putenv[[:space:]]*\\([[:space:]]*['\"]$env_var=[^'\"]*['\"][[:space:]]*\\)" \
+                | head -n 1 \
+                || true)
+            if [[ -n "$env_mutation_assignment" ]]; then
+                env_mutation_value=$(printf '%s\n' "$env_mutation_assignment" | sed -E "s/.*['\"]$env_var=([^'\"]*)['\"].*/\\1/")
+                if [[ -n "$env_mutation_value" ]] \
+                    && printf '%s\n' "$code" | grep -Eq "getenv[[:space:]]*\\([[:space:]]*['\"]$env_var['\"][[:space:]]*\\)[[:space:]]*(!==|!=)[[:space:]]*['\"]$env_mutation_value['\"]"; then
+                    parsed_env_count=$((parsed_env_count + 1))
+                    parsed_env_mutation_count=$((parsed_env_mutation_count + 1))
+                    modeled_families+=("environment-mutation")
+                    continue
+                fi
+            fi
             case "$env_var" in
                 SKIP_ASAN|SKIP_MSAN|SKIP_UBSAN)
                     ;;
@@ -672,9 +693,23 @@ ptn_phpt_modeled_skipif_precondition() {
                 return 0
             fi
         done <<< "$env_probe_lines"
-        modeled_families+=("$env_family")
+        if [[ "$parsed_env_count" -gt "$parsed_env_mutation_count" ]]; then
+            modeled_families+=("$env_family")
+        fi
     fi
     [[ "$getenv_count" -eq "$parsed_env_count" ]] || return 1
+    [[ "$putenv_count" -eq "$parsed_env_mutation_count" ]] || return 1
+
+    local parsed_pcre_count=0
+    if [[ "$preg_match_count" -gt 0 ]]; then
+        local pcre_utf8_probe_count
+        pcre_utf8_probe_count=$(ptn_phpt_count_matches "@?preg_match[[:space:]]*\\([[:space:]]*['\"][^'\"]*u['\"][[:space:]]*,[[:space:]]*['\"][[:space:]]*['\"][[:space:]]*\\)[[:space:]]*===[[:space:]]*false" "$code")
+        if [[ "$pcre_utf8_probe_count" -gt 0 ]]; then
+            parsed_pcre_count=$pcre_utf8_probe_count
+            modeled_families+=("PCRE-UTF8")
+        fi
+    fi
+    [[ "$preg_match_count" -eq "$parsed_pcre_count" ]] || return 1
 
     local int_condition_lines
     local parsed_int_count=0
@@ -903,7 +938,7 @@ ptn_phpt_modeled_skipif_precondition() {
         modeled_families+=("inactive-windows-helper")
     fi
 
-    local guard_count=$((parsed_env_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count))
+    local guard_count=$((parsed_env_count + parsed_pcre_count + parsed_int_count + parsed_int_max_count + parsed_os_family_count + parsed_php_os_count + parsed_debug_count + parsed_zts_count + parsed_locale_count + parsed_defined_count))
     local recognized_count=$((guard_count + parsed_include_count + inactive_windows_helper_count))
     [[ "$recognized_count" -gt 0 ]] || return 1
     [[ "$if_count" -eq "$guard_count" ]] || return 1

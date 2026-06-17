@@ -3824,11 +3824,11 @@ fn emit_user_function_dispatch(
     out.push_str("    if (found) {\n");
     out.push_str("        return result;\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
+    out.push_str("    if (ptn_internal_function_available(runtime, lookup_name)) {\n");
     out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
     out.push_str("    }\n");
     out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
-    out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
+    out.push_str("    if (namespace_separator != NULL && ptn_internal_function_available(runtime, namespace_separator + 1)) {\n");
     out.push_str(
         "        return ptn_call_internal(runtime, namespace_separator + 1, argc, args, line);\n",
     );
@@ -8857,7 +8857,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
     out.push_str("        if (!valid) {\n");
-    out.push_str("            valid = ptn_user_function_exists(runtime, name) || ptn_find_internal_function(name) != NULL;\n");
+    out.push_str("            valid = ptn_user_function_exists(runtime, name) || ptn_internal_function_available(runtime, name);\n");
     out.push_str("        }\n");
     out.push_str("        free(name);\n");
     out.push_str("        return valid;\n");
@@ -8922,7 +8922,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            ptn_abort_out_of_memory();\n");
     out.push_str("        }\n");
     out.push_str("        snprintf(function_name, (size_t)needed + 1, \"%s::%s\", class_name, method_name);\n");
-    out.push_str("        int valid = ptn_declared_class_static_method_is_callable(class_name, method_name, access_scope) || ptn_find_internal_function(function_name) != NULL;\n");
+    out.push_str("        int valid = ptn_declared_class_static_method_is_callable(class_name, method_name, access_scope) || ptn_internal_function_available(runtime, function_name);\n");
     out.push_str("        free(function_name);\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        free(class_name);\n");
@@ -9431,11 +9431,11 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
         "\nstatic PTN_UNUSED const char *ptn_dynamic_call_effective_internal_name(PtnRuntime *runtime, const char *name) {\n",
     );
     out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
-    out.push_str("    if (ptn_user_function_exists(runtime, lookup_name) || ptn_find_internal_function(lookup_name) != NULL) {\n");
+    out.push_str("    if (ptn_user_function_exists(runtime, lookup_name) || ptn_internal_function_available(runtime, lookup_name)) {\n");
     out.push_str("        return lookup_name;\n");
     out.push_str("    }\n");
     out.push_str("    const char *namespace_separator = strrchr(lookup_name, '\\\\');\n");
-    out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
+    out.push_str("    if (namespace_separator != NULL && ptn_internal_function_available(runtime, namespace_separator + 1)) {\n");
     out.push_str("        return namespace_separator + 1;\n");
     out.push_str("    }\n");
     out.push_str("    return lookup_name;\n");

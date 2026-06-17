@@ -22926,6 +22926,45 @@ static int ptn_pcre_pattern_starts_with(
         memcmp(pattern.data + offset, literal, literal_len) == 0;
 }
 
+static void ptn_runtime_set_pcre_last_error(PtnRuntime *runtime, int error);
+static int ptn_runtime_pcre_last_error(PtnRuntime *runtime);
+
+static int ptn_pcre_pattern_has_modifier(PtnStringOperand pattern, char modifier) {
+    size_t end = 0;
+    if (!ptn_regex_delimiter_end(pattern, &end)) {
+        return 0;
+    }
+    for (size_t i = end + 1; i < pattern.len; i++) {
+        if (pattern.data[i] == modifier) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_pcre_subject_valid_utf8(PtnStringOperand subject) {
+    const unsigned char *data = (const unsigned char *)subject.data;
+    size_t offset = 0;
+    while (offset < subject.len) {
+        uint32_t codepoint = 0;
+        size_t consumed = 0;
+        if (!ptn_json_utf8_decode(data + offset, subject.len - offset, &codepoint, &consumed) || consumed == 0) {
+            return 0;
+        }
+        offset += consumed;
+    }
+    return 1;
+}
+
+static int ptn_pcre_validate_subject(PtnRuntime *runtime, PtnStringOperand pattern, PtnStringOperand subject) {
+    if (ptn_pcre_pattern_has_modifier(pattern, 'u') && !ptn_pcre_subject_valid_utf8(subject)) {
+        ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
+        return 0;
+    }
+    ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_NO_ERROR);
+    return 1;
+}
+
 static void ptn_capture_map_push(size_t **capture_map, size_t *capture_count, size_t group_index) {
     size_t new_count = *capture_count + 1;
     size_t *new_map = realloc(*capture_map, new_count * sizeof(size_t));
@@ -23175,6 +23214,7 @@ static int ptn_preg_compile_posix(
     int regex_flags = 0;
     char *posix_pattern = ptn_pcre_pattern_to_posix(pattern, &regex_flags, capture_map, capture_count);
     if (posix_pattern == NULL) {
+        ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
         char message[128];
         int written = snprintf(message, sizeof(message), "%s(): Compilation failed", function_name);
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -23189,6 +23229,7 @@ static int ptn_preg_compile_posix(
     free(*capture_map);
     *capture_map = NULL;
     *capture_count = 0;
+    ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
     char message[160];
     int written = snprintf(
         message,
@@ -23208,6 +23249,7 @@ static int ptn_preg_compile_posix(
         free(*capture_map);
         *capture_map = NULL;
         *capture_count = 0;
+        ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
         char message[128];
         int written = snprintf(message, sizeof(message), "%s(): Compilation failed", function_name);
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -23224,6 +23266,11 @@ static int ptn_preg_compile_posix(
 static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand pattern = ptn_value_to_string_operand(args[0]);
     PtnStringOperand subject = ptn_value_to_string_operand(args[1]);
+    if (!ptn_pcre_validate_subject(runtime, pattern, subject)) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
     int regex_flags = 0;
     size_t *capture_map = NULL;
     size_t capture_count = 0;
@@ -23231,6 +23278,7 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
     if (posix_pattern == NULL) {
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
+        ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
         ptn_emit_warning(&runtime->diagnostics, "preg_match(): Compilation failed", line);
         return ptn_bool(0);
     }
@@ -23240,6 +23288,7 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
     free(capture_map);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
+    ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
     ptn_emit_warning(&runtime->diagnostics, "preg_match(): regex matching is unsupported on this platform", line);
     return ptn_bool(0);
 #else
@@ -23250,6 +23299,7 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
         free(capture_map);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
+        ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
         ptn_emit_warning(&runtime->diagnostics, "preg_match(): Compilation failed", line);
         return ptn_bool(0);
     }
@@ -23281,8 +23331,16 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
     regfree(&regex);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
+    ptn_runtime_set_pcre_last_error(runtime, PTN_PREG_NO_ERROR);
     return ptn_int(matched ? 1 : 0);
 #endif
+}
+
+static PtnValue ptn_internal_preg_last_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(ptn_runtime_pcre_last_error(runtime));
 }
 
 static int ptn_preg_quote_needs_escape(unsigned char byte) {
@@ -23482,6 +23540,9 @@ static PtnValue ptn_preg_replace_apply_to_string(
     size_t *capture_map = NULL;
     size_t capture_count = 0;
     size_t match_count = 0;
+    if (!ptn_pcre_validate_subject(runtime, pattern, subject)) {
+        return ptn_null();
+    }
     if (!ptn_preg_compile_posix(
             runtime,
             function_name,
@@ -33729,6 +33790,77 @@ static const char *ptn_runtime_opcache_save_comments(PtnRuntime *runtime) {
     return root->opcache_save_comments;
 }
 
+static const char *ptn_runtime_opcache_enable(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->opcache_enable == NULL) {
+        return "1";
+    }
+    return root->opcache_enable;
+}
+
+static const char *ptn_runtime_opcache_enable_cli(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->opcache_enable_cli == NULL) {
+        return "0";
+    }
+    return root->opcache_enable_cli;
+}
+
+static const char *ptn_runtime_opcache_optimization_level(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->opcache_optimization_level == NULL) {
+        return "0x7FFEBFFF";
+    }
+    return root->opcache_optimization_level;
+}
+
+static const char *ptn_runtime_disable_functions(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->disable_functions == NULL) {
+        return "";
+    }
+    return root->disable_functions;
+}
+
+static int ptn_runtime_function_disabled(PtnRuntime *runtime, const char *name) {
+    const char *list = ptn_runtime_disable_functions(runtime);
+    const char *cursor = list;
+    while (*cursor != '\0') {
+        while (*cursor == ',' || isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        const char *start = cursor;
+        while (*cursor != '\0' && *cursor != ',') {
+            cursor++;
+        }
+        const char *end = cursor;
+        while (end > start && isspace((unsigned char)end[-1])) {
+            end--;
+        }
+        size_t token_len = (size_t)(end - start);
+        if (token_len > 0 && strlen(name) == token_len && ptn_ascii_case_equal_n(start, name, token_len)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_runtime_set_pcre_last_error(PtnRuntime *runtime, int error) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    root->pcre_last_error = error;
+}
+
+static int ptn_runtime_pcre_last_error(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    return root->pcre_last_error;
+}
+
 static const char *ptn_runtime_internal_encoding(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->internal_encoding == NULL) {
@@ -34167,6 +34299,22 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_save_comments(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.enable")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_enable(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.enable_cli")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_enable_cli(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.optimization_level")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_optimization_level(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "disable_functions")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_disable_functions(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_handler(runtime)));
         return 1;
@@ -34310,6 +34458,21 @@ static void ptn_runtime_set_opcache_save_comments(PtnRuntime *runtime, const cha
     ptn_runtime_set_ini_string(&root->opcache_save_comments, value);
 }
 
+static void ptn_runtime_set_opcache_enable(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->opcache_enable, value);
+}
+
+static void ptn_runtime_set_opcache_enable_cli(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->opcache_enable_cli, value);
+}
+
+static void ptn_runtime_set_opcache_optimization_level(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->opcache_optimization_level, value);
+}
+
 static void ptn_runtime_set_internal_encoding(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->internal_encoding, value);
@@ -34444,6 +34607,21 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
         ptn_runtime_set_opcache_save_comments(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.enable")) {
+        ptn_runtime_set_opcache_enable(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.enable_cli")) {
+        ptn_runtime_set_opcache_enable_cli(runtime, "0");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.optimization_level")) {
+        ptn_runtime_set_opcache_optimization_level(runtime, "0x7FFEBFFF");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -34590,6 +34768,36 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_opcache_save_comments(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.enable")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_enable(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_opcache_enable(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.enable_cli")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_enable_cli(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_opcache_enable_cli(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.optimization_level")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_optimization_level(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_opcache_optimization_level(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -36895,6 +37103,10 @@ static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, c
 }
 
 static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (ptn_runtime_function_disabled(runtime, "assert")) {
+        ptn_throw_exception_at(runtime, "Error", "Call to undefined function assert()", runtime->source_path, line);
+        return ptn_null();
+    }
     if (ptn_runtime_current_zend_assertions(runtime) <= 0) {
         return ptn_bool(1);
     }
@@ -39192,6 +39404,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pi", 0, 0, ptn_internal_pi },
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
         { "pow", 2, 2, ptn_internal_pow },
+        { "preg_last_error", 0, 0, ptn_internal_preg_last_error },
         { "preg_match", 2, 5, ptn_internal_preg_match },
         { "preg_quote", 1, 2, ptn_internal_preg_quote },
         { "preg_replace", 3, 5, ptn_internal_preg_replace },
@@ -39374,7 +39587,18 @@ static const PtnInternalFunction *ptn_find_internal_function(const char *name) {
     return NULL;
 }
 
-static PtnValue ptn_internal_function_names(void) {
+static const PtnInternalFunction *ptn_find_enabled_internal_function(PtnRuntime *runtime, const char *name) {
+    if (ptn_runtime_function_disabled(runtime, name)) {
+        return NULL;
+    }
+    return ptn_find_internal_function(name);
+}
+
+static int ptn_internal_function_available(PtnRuntime *runtime, const char *name) {
+    return ptn_find_enabled_internal_function(runtime, name) != NULL;
+}
+
+static PtnValue ptn_internal_function_names(PtnRuntime *runtime) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t count = 0;
     const PtnInternalFunction *functions = ptn_internal_functions(&count);
@@ -39382,6 +39606,9 @@ static PtnValue ptn_internal_function_names(void) {
     for (size_t i = 0; i < count; i++) {
         const char *name = functions[i].name;
         if (strncmp(name, "_ptn_", 5) == 0 || strstr(name, "::") != NULL) {
+            continue;
+        }
+        if (ptn_runtime_function_disabled(runtime, name)) {
             continue;
         }
         ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_string(name));
@@ -39471,11 +39698,16 @@ static const char *ptn_internal_function_extension_name(const char *name) {
 }
 
 static PtnValue ptn_internal_get_defined_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     (void)args;
-    (void)line;
+    if (argc >= 1) {
+        ptn_emit_runtime_deprecation(
+            runtime,
+            "get_defined_functions(): The $exclude_disabled parameter has no effect since PHP 8.0",
+            line
+        );
+    }
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(result.as.array, ptn_array_string_key("internal"), ptn_internal_function_names());
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("internal"), ptn_internal_function_names(runtime));
     ptn_array_set_entry(result.as.array, ptn_array_string_key("user"), ptn_user_function_names(runtime));
     return result;
 }
@@ -52640,12 +52872,11 @@ static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const Ptn
 }
 
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_user_function_exists(runtime, lookup_name) || ptn_find_internal_function(lookup_name) != NULL;
+    int exists = ptn_user_function_exists(runtime, lookup_name) || ptn_internal_function_available(runtime, lookup_name);
     free(name);
     return ptn_bool(exists);
 }
@@ -53364,7 +53595,7 @@ static void ptn_throw_internal_argument_count_error(
 }
 
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
-    const PtnInternalFunction *function = ptn_find_internal_function(name);
+    const PtnInternalFunction *function = ptn_find_enabled_internal_function(runtime, name);
     if (function != NULL) {
         if (argc < function->min_args) {
             ptn_throw_internal_argument_count_error(

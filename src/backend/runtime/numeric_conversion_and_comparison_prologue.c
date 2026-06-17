@@ -137,6 +137,13 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->arg_separator_output = NULL;
     runtime->output_handler = NULL;
     runtime->filter_default = NULL;
+    runtime->pcre_backtrack_limit = NULL;
+    runtime->pcre_jit = NULL;
+    runtime->opcache_save_comments = NULL;
+    runtime->opcache_enable = NULL;
+    runtime->opcache_enable_cli = NULL;
+    runtime->opcache_optimization_level = NULL;
+    runtime->disable_functions = NULL;
     runtime->internal_encoding = NULL;
     runtime->input_encoding = NULL;
     runtime->output_encoding = NULL;
@@ -174,6 +181,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->json_last_error = caller_runtime->json_last_error;
     runtime->json_last_error_line = caller_runtime->json_last_error_line;
     runtime->json_last_error_column = caller_runtime->json_last_error_column;
+    runtime->pcre_last_error = caller_runtime->pcre_last_error;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(
@@ -429,6 +437,14 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->pcre_jit = NULL;
         free(runtime->opcache_save_comments);
         runtime->opcache_save_comments = NULL;
+        free(runtime->opcache_enable);
+        runtime->opcache_enable = NULL;
+        free(runtime->opcache_enable_cli);
+        runtime->opcache_enable_cli = NULL;
+        free(runtime->opcache_optimization_level);
+        runtime->opcache_optimization_level = NULL;
+        free(runtime->disable_functions);
+        runtime->disable_functions = NULL;
         free(runtime->internal_encoding);
         runtime->internal_encoding = NULL;
         free(runtime->input_encoding);

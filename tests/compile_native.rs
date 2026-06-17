@@ -13347,6 +13347,41 @@ var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], g
 }
 
 #[test]
+fn compile_preg_last_error_and_utf8_subject_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-last-error-utf8");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-last-error-utf8.php");
+    let output = root.join("preg-last-error-utf8-bin");
+    fs::write(
+        &input,
+        "<?php
+function keep($match) {
+    return $match[0];
+}
+var_dump(preg_last_error());
+var_dump(preg_replace_callback('#.#u', 'keep', 'abc'));
+var_dump(preg_last_error());
+$bad = \"\\xFF\";
+var_dump(preg_match('/./u', $bad));
+var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);
+var_dump(preg_replace_callback('#.#u', 'keep', $bad));
+var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(0)\nstring(3) \"abc\"\nint(0)\nbool(false)\nbool(true)\nNULL\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_chunk_split_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
@@ -16899,6 +16934,43 @@ var_dump(in_array(\"FunctionListClass::methodEntry\", $defined[\"user\"]));
     assert!(c_source.contains("ptn_internal_get_defined_functions"));
     assert!(c_source.contains("ptn_internal_function_names"));
     assert!(c_source.contains("ptn_user_function_names"));
+}
+
+#[test]
+fn compile_disable_functions_filters_internal_metadata_and_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-disable-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("disable-functions.php");
+    let output = root.join("disable-functions-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(function_exists('assert'));
+$defined = get_defined_functions(false);
+var_dump(in_array('assert', $defined['internal']));
+try {
+    assert(false);
+} catch (Throwable $e) {
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_DISABLE_FUNCTIONS", "assert")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "Deprecated: get_defined_functions(): The $exclude_disabled parameter has no effect since PHP 8.0"
+    ));
+    assert!(stdout.starts_with("bool(false)\n"));
+    assert!(stdout.ends_with("bool(false)\nError: Call to undefined function assert()\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -33868,7 +33940,7 @@ fn phpc_residual_extension_ini_values_are_runtime_visible() {
     fs::write(
         &input,
         "<?php\n\
-var_dump(ini_get('pcre.backtrack_limit'), ini_get('pcre.jit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n\
+var_dump(ini_get('pcre.backtrack_limit'), ini_get('pcre.jit'), ini_get('opcache.save_comments'), ini_get('opcache.enable'), ini_get('opcache.enable_cli'), ini_get('opcache.optimization_level'), ini_get('disable_functions'), ini_get('user_agent'));\n\
 var_dump(ini_set('pcre.jit', '1'), ini_get('pcre.jit'));\n\
 ini_restore('pcre.jit');\n\
 ini_restore('user_agent');\n\
@@ -33887,6 +33959,14 @@ var_dump($ext->getName(), $inis['user_agent']);",
         .arg("-d")
         .arg("opcache.save_comments=0")
         .arg("-d")
+        .arg("opcache.enable=0")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-d")
+        .arg("disable_functions=assert")
+        .arg("-d")
         .arg("user_agent=php")
         .arg("-f")
         .arg(&input)
@@ -33899,6 +33979,10 @@ var_dump($ext->getName(), $inis['user_agent']);",
             "string(6) \"100000\"\n",
             "string(1) \"0\"\n",
             "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"1\"\n",
+            "string(2) \"-1\"\n",
+            "string(6) \"assert\"\n",
             "string(3) \"php\"\n",
             "string(1) \"0\"\n",
             "string(1) \"1\"\n",

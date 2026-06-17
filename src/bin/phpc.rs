@@ -163,10 +163,14 @@ struct RuntimeIni {
     pcre_backtrack_limit: Option<String>,
     pcre_jit: Option<String>,
     opcache_save_comments: Option<String>,
+    opcache_enable: Option<String>,
+    opcache_enable_cli: Option<String>,
+    opcache_optimization_level: Option<String>,
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
     output_encoding: Option<String>,
     zend_assertions: Option<String>,
+    disable_functions: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
     variables_order: Option<String>,
@@ -320,6 +324,12 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("opcache.save_comments") {
         ini.opcache_save_comments = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("opcache.enable") {
+        ini.opcache_enable = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("opcache.enable_cli") {
+        ini.opcache_enable_cli = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("opcache.optimization_level") {
+        ini.opcache_optimization_level = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_handler") {
         ini.output_handler = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("internal_encoding") {
@@ -330,6 +340,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.output_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("disable_functions") {
+        ini.disable_functions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_ignore_args") {
         ini.exception_ignore_args = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_string_param_max_len") {
@@ -644,10 +656,14 @@ fn compile_and_run(
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
         opcache_save_comments: ini.opcache_save_comments.clone(),
+        opcache_enable: ini.opcache_enable.clone(),
+        opcache_enable_cli: ini.opcache_enable_cli.clone(),
+        opcache_optimization_level: ini.opcache_optimization_level.clone(),
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
         output_encoding: ini.output_encoding.clone(),
         zend_assertions: ini.zend_assertions.clone(),
+        disable_functions: ini.disable_functions.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
         variables_order: ini.variables_order.clone(),
@@ -716,6 +732,15 @@ fn compile_and_run(
     if let Some(opcache_save_comments) = &ini.opcache_save_comments {
         command.env("PTN_OPCACHE_SAVE_COMMENTS", opcache_save_comments);
     }
+    if let Some(opcache_enable) = &ini.opcache_enable {
+        command.env("PTN_OPCACHE_ENABLE", opcache_enable);
+    }
+    if let Some(opcache_enable_cli) = &ini.opcache_enable_cli {
+        command.env("PTN_OPCACHE_ENABLE_CLI", opcache_enable_cli);
+    }
+    if let Some(opcache_optimization_level) = &ini.opcache_optimization_level {
+        command.env("PTN_OPCACHE_OPTIMIZATION_LEVEL", opcache_optimization_level);
+    }
     if let Some(internal_encoding) = &ini.internal_encoding {
         command.env("PTN_INTERNAL_ENCODING", internal_encoding);
     }
@@ -727,6 +752,9 @@ fn compile_and_run(
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);
+    }
+    if let Some(disable_functions) = &ini.disable_functions {
+        command.env("PTN_DISABLE_FUNCTIONS", disable_functions);
     }
     if let Some(exception_ignore_args) = &ini.exception_ignore_args {
         command.env("PTN_EXCEPTION_IGNORE_ARGS", exception_ignore_args);

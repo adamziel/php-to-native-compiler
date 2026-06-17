@@ -1561,6 +1561,11 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
     const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
     const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
+    const char *configured_opcache_enable = getenv("PTN_OPCACHE_ENABLE");
+    const char *configured_opcache_enable_cli = getenv("PTN_OPCACHE_ENABLE_CLI");
+    const char *configured_opcache_optimization_level =
+        getenv("PTN_OPCACHE_OPTIMIZATION_LEVEL");
+    const char *configured_disable_functions = getenv("PTN_DISABLE_FUNCTIONS");
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
     const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
     const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
@@ -1599,6 +1604,18 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->opcache_save_comments = ptn_duplicate_string(
         configured_opcache_save_comments == NULL ? "1" : configured_opcache_save_comments
+    );
+    runtime->opcache_enable = ptn_duplicate_string(
+        configured_opcache_enable == NULL ? "1" : configured_opcache_enable
+    );
+    runtime->opcache_enable_cli = ptn_duplicate_string(
+        configured_opcache_enable_cli == NULL ? "0" : configured_opcache_enable_cli
+    );
+    runtime->opcache_optimization_level = ptn_duplicate_string(
+        configured_opcache_optimization_level == NULL ? "0x7FFEBFFF" : configured_opcache_optimization_level
+    );
+    runtime->disable_functions = ptn_duplicate_string(
+        configured_disable_functions == NULL ? "" : configured_disable_functions
     );
     runtime->internal_encoding = ptn_duplicate_string(
         configured_internal_encoding == NULL ? "" : configured_internal_encoding
@@ -1691,4 +1708,5 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->json_last_error = 0;
     runtime->json_last_error_line = 0;
     runtime->json_last_error_column = 0;
+    runtime->pcre_last_error = PTN_PREG_NO_ERROR;
 }

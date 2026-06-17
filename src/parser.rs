@@ -15613,6 +15613,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "php_sapi_name"
             | "php_uname"
             | "phpversion"
+            | "preg_last_error"
             | "preg_match"
             | "print_r"
             | "readlink"
