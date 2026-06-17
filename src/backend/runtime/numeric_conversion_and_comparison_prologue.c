@@ -2693,8 +2693,60 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DateTimeZone")) {
+        if (strcmp(constant, "AFRICA") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "AMERICA") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "ANTARCTICA") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "ARCTIC") == 0) {
+            *out = ptn_int(8);
+            return 1;
+        }
+        if (strcmp(constant, "ASIA") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "ATLANTIC") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "AUSTRALIA") == 0) {
+            *out = ptn_int(64);
+            return 1;
+        }
+        if (strcmp(constant, "EUROPE") == 0) {
+            *out = ptn_int(128);
+            return 1;
+        }
+        if (strcmp(constant, "INDIAN") == 0) {
+            *out = ptn_int(256);
+            return 1;
+        }
+        if (strcmp(constant, "PACIFIC") == 0) {
+            *out = ptn_int(512);
+            return 1;
+        }
+        if (strcmp(constant, "UTC") == 0) {
+            *out = ptn_int(1024);
+            return 1;
+        }
         if (strcmp(constant, "ALL") == 0) {
             *out = ptn_int(2047);
+            return 1;
+        }
+        if (strcmp(constant, "ALL_WITH_BC") == 0) {
+            *out = ptn_int(4095);
+            return 1;
+        }
+        if (strcmp(constant, "PER_COUNTRY") == 0) {
+            *out = ptn_int(4096);
             return 1;
         }
     }
@@ -4035,10 +4087,19 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_internal_class_name_is_datetime_immutable(receiver.as.object->class_name)
-        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+        && (ptn_object_is_internal_or_descendant(receiver, "DateTime") ||
+            ptn_object_is_internal_or_descendant(receiver, "DateTimeImmutable"))
+        && (ptn_internal_class_method_exists("DateTime", name) ||
+            ptn_internal_class_method_exists("DateTimeImmutable", name))
     ) {
-        return ptn_datetime_immutable_call_method(runtime, receiver, name, argc, args, line);
+        return ptn_datetime_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "DateTimeZone")
+        && ptn_internal_class_method_exists("DateTimeZone", name)
+    ) {
+        return ptn_datetime_zone_call_method(runtime, receiver, name, argc, args, line);
     }
 #endif
     ptn_throw_exception(runtime, "Error", "Call to undefined method");

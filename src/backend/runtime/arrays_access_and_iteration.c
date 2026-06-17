@@ -552,6 +552,18 @@ static PTN_UNUSED int ptn_class_name_is_datetime_immutable(const char *class_nam
     return *class_name == '\0' && *datetime == '\0';
 }
 
+static PTN_UNUSED int ptn_class_name_is_datetime_zone(const char *class_name) {
+    const char *timezone = "DateTimeZone";
+    while (*class_name != '\0' && *timezone != '\0') {
+        if (tolower((unsigned char)*class_name) != tolower((unsigned char)*timezone)) {
+            return 0;
+        }
+        class_name++;
+        timezone++;
+    }
+    return *class_name == '\0' && *timezone == '\0';
+}
+
 static PTN_UNUSED int ptn_class_name_is_generator(const char *class_name) {
     const char *generator = "Generator";
     while (*class_name != '\0' && *generator != '\0') {
@@ -859,19 +871,32 @@ static PTN_UNUSED PtnValue ptn_new_object(
         return ptn_new_exception_object(runtime, exception_class_name, argc, args, line);
     }
     if (ptn_class_name_is_datetime(lookup_class_name)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        return ptn_datetime_new(runtime, "DateTime", argc, args, line);
+#else
         if (argc > 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTime constructor expects at most 1 argument");
             return ptn_null();
         }
         return ptn_object_new_shell(runtime, "DateTime");
+#endif
     }
     if (ptn_class_name_is_datetime_immutable(lookup_class_name)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        return ptn_datetime_new(runtime, "DateTimeImmutable", argc, args, line);
+#else
         if (argc > 1) {
             ptn_throw_exception(runtime, "ArgumentCountError", "DateTimeImmutable constructor expects at most 1 argument");
             return ptn_null();
         }
         return ptn_object_new_shell(runtime, "DateTimeImmutable");
+#endif
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_class_name_is_datetime_zone(lookup_class_name)) {
+        return ptn_datetime_zone_new(runtime, "DateTimeZone", argc, args, line);
+    }
+#endif
     if (ptn_class_name_is_generator(lookup_class_name)) {
         ptn_throw_exception_at(
             runtime,
@@ -925,6 +950,13 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "ArrayIterator") ||
         ptn_declared_class_is_same_or_descendant(source->class_name, "RecursiveArrayIterator")) {
         return ptn_array_iterator_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "DateTime") ||
+        ptn_declared_class_is_same_or_descendant(source->class_name, "DateTimeImmutable")) {
+        return ptn_datetime_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "DateTimeZone")) {
+        return ptn_datetime_zone_clone(runtime, resolved, line);
     }
 #endif
     if (source->native_data != NULL) {

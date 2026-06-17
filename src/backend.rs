@@ -6889,6 +6889,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
+        "datetimezone" => Some("DateTimeZone"),
         _ => None,
     }
 }
@@ -7931,6 +7932,10 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_static_method_exists(target_class_name, method_name)) {\n");
+    out.push_str("        *result_out = ptn_internal_class_static_call_method(runtime, target_class_name, method_name, argc, args, line);\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     out.push_str("    if (resolved_receiver.type == PTN_OBJECT && ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_method_exists(target_class_name, method_name) && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
     out.push_str(
         "        *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n",

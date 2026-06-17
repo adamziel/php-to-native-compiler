@@ -284,6 +284,79 @@ var_dump($ref->implementsInterface("OuterIterator"));
 }
 
 #[test]
+fn compile_datetime_timezone_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-timezone-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-timezone-semantics.php");
+    let output = root.join("datetime-timezone-semantics-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+
+$dt = date_create('2006-12-12');
+$tz = date_timezone_get($dt);
+var_dump($tz->getName());
+var_dump(timezone_offset_get($tz, $dt));
+
+$ny = timezone_open('America/New_York');
+var_dump($ny->getName());
+
+$la = new DateTimeZone('America/Los_Angeles');
+var_dump($la->getOffset($dt));
+
+$abbr = timezone_abbreviations_list();
+var_dump($abbr['utc'][0]['timezone_id']);
+var_dump(timezone_name_from_abbr('CET'));
+
+var_dump(in_array('Europe/London', timezone_identifiers_list()));
+var_dump(in_array('UTC', DateTimeZone::listIdentifiers(DateTimeZone::EUROPE | DateTimeZone::UTC)));
+
+$dto = new DateTime();
+$old = $dto->getTimezone();
+$dto->setTimezone(new DateTimeZone('US/Eastern'));
+var_dump($dto->getTimezone()->getName());
+var_dump($old->getName());
+
+class DateTimeZoneExt extends DateTimeZone {
+    public function __toString() {
+        return parent::getName();
+    }
+}
+echo new DateTimeZoneExt('Europe/Kyiv'), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"UTC\"\n",
+            "int(0)\n",
+            "string(16) \"America/New_York\"\n",
+            "int(-28800)\n",
+            "string(13) \"Etc/Universal\"\n",
+            "string(13) \"Europe/Berlin\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(10) \"US/Eastern\"\n",
+            "string(3) \"UTC\"\n",
+            "Europe/Kyiv\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_validates_traversable_interface_combinations() {
     let direct = parser::parse("<?php class T implements Traversable {}").unwrap_err();
     assert_eq!(

@@ -1206,9 +1206,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_nam
 static PTN_UNUSED int ptn_internal_class_name_is_deprecated(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_no_discard(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_datetime_zone(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
+static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name);
 static PTN_UNUSED int ptn_runtime_interface_exists(
     PtnRuntime *runtime,
@@ -1499,6 +1501,46 @@ static PTN_UNUSED PtnValue ptn_limit_iterator_new(
 static PTN_UNUSED PtnValue ptn_limit_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_datetime_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_datetime_zone_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue source, size_t line);
+static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line);
+static PTN_UNUSED PtnValue ptn_datetime_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
+    PtnRuntime *runtime,
+    const char *class_name,
     const char *name,
     size_t argc,
     const PtnValue *args,
