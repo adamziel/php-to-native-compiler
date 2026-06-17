@@ -191,6 +191,7 @@ pub struct FunctionDecl {
     pub method_name: Option<String>,
     pub deprecated_message: Option<String>,
     pub deprecated_since: Option<String>,
+    pub deprecated_message_runtime_reference: Option<AttributeConstantReference>,
     pub no_discard_message: Option<String>,
     pub is_static: bool,
     pub line: usize,
@@ -1037,6 +1038,8 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|parameter| self.lower_parameter(parameter))
             .collect();
+        let deprecated_metadata =
+            self.function_deprecated_metadata(&function.attributes, None, None, None);
         self.functions.push(FunctionDecl {
             name: function.name.clone(),
             display_name: function.name.clone(),
@@ -1044,8 +1047,9 @@ impl<'a> LoweringContext<'a> {
             trait_name: None,
             trait_method_name: None,
             method_name: None,
-            deprecated_message: function.attributes.deprecated_message.clone(),
-            deprecated_since: function.attributes.deprecated_since.clone(),
+            deprecated_message: deprecated_metadata.message,
+            deprecated_since: deprecated_metadata.since,
+            deprecated_message_runtime_reference: deprecated_metadata.message_runtime_reference,
             no_discard_message: function.attributes.no_discard_message.clone(),
             is_static: false,
             line: function.span.line,
@@ -1225,6 +1229,95 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
+    fn function_deprecated_metadata(
+        &self,
+        attributes: &AttributeMetadata,
+        current_class: Option<&str>,
+        current_parent: Option<&str>,
+        class_constant_values: Option<&HashMap<String, String>>,
+    ) -> DeprecatedMetadata {
+        let referenced_message =
+            attributes
+                .deprecated_message_constant
+                .as_ref()
+                .and_then(|reference| match reference {
+                    AttributeConstantReference::Constant(name) => self
+                        .constant_values
+                        .get(&name.to_ascii_lowercase())
+                        .cloned(),
+                    AttributeConstantReference::ClassConstant {
+                        class_name: referenced_class,
+                        name,
+                    } => {
+                        let current_class = current_class?;
+                        let resolved = self.resolve_attribute_class_name_for_function(
+                            referenced_class,
+                            current_class,
+                            current_parent,
+                        )?;
+                        if resolved.eq_ignore_ascii_case(current_class) {
+                            class_constant_values
+                                .and_then(|values| values.get(&name.to_ascii_lowercase()).cloned())
+                        } else {
+                            None
+                        }
+                    }
+                });
+        let message = referenced_message.clone().or_else(|| {
+            attributes
+                .deprecated_message_constant
+                .is_none()
+                .then(|| attributes.deprecated_message.clone())
+                .flatten()
+        });
+        let message_runtime_reference = (referenced_message.is_none())
+            .then(|| {
+                attributes
+                    .deprecated_message_constant
+                    .as_ref()
+                    .map(|reference| match reference {
+                        AttributeConstantReference::Constant(name) => {
+                            AttributeConstantReference::Constant(name.clone())
+                        }
+                        AttributeConstantReference::ClassConstant { class_name, name } => {
+                            let resolved = current_class
+                                .and_then(|current_class| {
+                                    self.resolve_attribute_class_name_for_function(
+                                        class_name,
+                                        current_class,
+                                        current_parent,
+                                    )
+                                })
+                                .unwrap_or_else(|| class_name.trim_start_matches('\\').to_string());
+                            AttributeConstantReference::ClassConstant {
+                                class_name: resolved,
+                                name: name.clone(),
+                            }
+                        }
+                    })
+            })
+            .flatten();
+        DeprecatedMetadata {
+            message,
+            since: attributes.deprecated_since.clone(),
+            message_dependency: None,
+            message_runtime_reference,
+        }
+    }
+
+    fn resolve_attribute_class_name_for_function(
+        &self,
+        referenced_class: &str,
+        current_class: &str,
+        current_parent: Option<&str>,
+    ) -> Option<String> {
+        if referenced_class.eq_ignore_ascii_case("parent") {
+            current_parent.map(ToString::to_string)
+        } else {
+            self.resolve_attribute_class_name(referenced_class, current_class)
+        }
+    }
+
     fn resolve_attribute_class_name(
         &self,
         referenced_class: &str,
@@ -1248,6 +1341,8 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|parameter| self.lower_parameter(parameter))
             .collect();
+        let deprecated_metadata =
+            self.function_deprecated_metadata(&function.attributes, None, None, None);
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
             display_name: format!("{{closure:{}:{}}}", self.source_file, function.span.line),
@@ -1255,8 +1350,9 @@ impl<'a> LoweringContext<'a> {
             trait_name: self.current_trait_name.clone(),
             trait_method_name: None,
             method_name: None,
-            deprecated_message: function.attributes.deprecated_message.clone(),
-            deprecated_since: function.attributes.deprecated_since.clone(),
+            deprecated_message: deprecated_metadata.message,
+            deprecated_since: deprecated_metadata.since,
+            deprecated_message_runtime_reference: deprecated_metadata.message_runtime_reference,
             no_discard_message: function.attributes.no_discard_message.clone(),
             is_static: function.is_static,
             line: function.span.line,
@@ -1355,6 +1451,12 @@ impl<'a> LoweringContext<'a> {
                     .iter()
                     .map(|parameter| self.lower_parameter(parameter))
                     .collect();
+                let deprecated_metadata = self.function_deprecated_metadata(
+                    &method.attributes,
+                    Some(&class.name),
+                    class.parent_name.as_deref(),
+                    Some(&class_constant_values),
+                );
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
                     display_name: format!("{}::{}", class.name, method.name),
@@ -1362,8 +1464,10 @@ impl<'a> LoweringContext<'a> {
                     trait_name: method.trait_name.clone(),
                     trait_method_name: method.trait_method_name.clone(),
                     method_name: Some(method.name.clone()),
-                    deprecated_message: method.attributes.deprecated_message.clone(),
-                    deprecated_since: method.attributes.deprecated_since.clone(),
+                    deprecated_message: deprecated_metadata.message,
+                    deprecated_since: deprecated_metadata.since,
+                    deprecated_message_runtime_reference: deprecated_metadata
+                        .message_runtime_reference,
                     no_discard_message: method.attributes.no_discard_message.clone(),
                     is_static: method.is_static,
                     line: method.span.line,

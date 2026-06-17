@@ -854,7 +854,13 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     PtnValue saved_handler = ptn_value_clone(handler_diagnostics->error_handler);
     int64_t saved_handler_levels = handler_diagnostics->error_handler_levels;
     ptn_diagnostics_clear_current_error_handler(handler_diagnostics);
-    PtnValue result = ptn_call_callable(runtime, saved_handler, 4, args, line);
+    PtnValue result = ptn_null();
+    PtnTryFrame handler_frame;
+    ptn_try_frame_push(runtime, &handler_frame);
+    if (setjmp(handler_frame.jump) == 0) {
+        result = ptn_call_callable(runtime, saved_handler, 4, args, line);
+    }
+    ptn_try_frame_pop(runtime, &handler_frame);
     if (!handler_diagnostics->has_error_handler) {
         handler_diagnostics->error_handler = saved_handler;
         handler_diagnostics->has_error_handler = 1;
@@ -866,6 +872,8 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
         ptn_value_destroy(&args[i]);
     }
     if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        ptn_rethrow_exception(runtime);
         return 1;
     }
     PtnValue resolved = ptn_value_deref(result);
@@ -1067,6 +1075,20 @@ static PTN_UNUSED void ptn_emit_user_deprecation(PtnDiagnosticSink *diagnostics,
         ptn_diagnostic_builtin_path(line),
         line
     );
+}
+
+static PTN_UNUSED void ptn_emit_user_deprecation_len(PtnDiagnosticSink *diagnostics, const char *message, size_t message_len, size_t line) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_USER_DEPRECATED)) {
+        return;
+    }
+    diagnostics->emitted_deprecation = 1;
+    if (memchr(message, '\0', message_len) == NULL &&
+        ptn_diagnostics_try_error_handler(diagnostics, PTN_E_USER_DEPRECATED, message, NULL, line)) {
+        return;
+    }
+    ptn_diagnostic_output_cstr(diagnostics, "\nDeprecated: ");
+    ptn_diagnostic_output_write(diagnostics, message, message_len);
+    ptn_diagnostic_printf(diagnostics, " in ptn on line %zu\n", line);
 }
 
 static PTN_UNUSED void ptn_emit_runtime_deprecation(PtnRuntime *runtime, const char *message, size_t line) {

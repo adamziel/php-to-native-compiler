@@ -3291,6 +3291,8 @@ fn emit_user_function_dispatch(
         emit_deprecated_function_warning(
             out,
             "        ",
+            "runtime",
+            "runtime->source_path",
             "&runtime->diagnostics",
             function,
             "line",
@@ -3342,6 +3344,8 @@ fn emit_user_function_dispatch(
             emit_deprecated_function_warning(
                 out,
                 "        ",
+                "runtime",
+                "runtime->source_path",
                 "&runtime->diagnostics",
                 function,
                 "line",
@@ -7186,6 +7190,8 @@ fn emit_method_dispatch(
             emit_deprecated_function_warning(
                 out,
                 "            ",
+                "runtime",
+                "runtime->source_path",
                 "&runtime->diagnostics",
                 function,
                 "line",
@@ -7381,6 +7387,8 @@ fn emit_method_dispatch(
                 emit_deprecated_function_warning(
                     out,
                     "            ",
+                    "runtime",
+                    "runtime->source_path",
                     "&runtime->diagnostics",
                     function,
                     "line",
@@ -7411,6 +7419,8 @@ fn emit_method_dispatch(
                 emit_deprecated_function_warning(
                     out,
                     "            ",
+                    "runtime",
+                    "runtime->source_path",
                     "&runtime->diagnostics",
                     function,
                     "line",
@@ -7908,6 +7918,8 @@ fn emit_callable_dispatch(
         emit_deprecated_function_warning(
             out,
             "                ",
+            "runtime",
+            "runtime->source_path",
             "&runtime->diagnostics",
             function,
             "line",
@@ -12678,6 +12690,7 @@ struct DirectUserCall {
     visibility_check: Option<StaticMethodVisibilityCheck>,
     deprecated_message: Option<String>,
     deprecated_since: Option<String>,
+    deprecated_message_runtime_reference: Option<AttributeConstantReference>,
     display_name: String,
     class_name: Option<String>,
     method_name: Option<String>,
@@ -13239,18 +13252,6 @@ fn no_discard_warning_message(function: &FunctionDecl) -> Option<String> {
     Some(message)
 }
 
-fn deprecated_warning_message(function: &FunctionDecl) -> Option<String> {
-    deprecated_warning_message_for_parts(
-        &deprecated_call_subject(
-            function.class_name.as_deref(),
-            function.method_name.as_deref(),
-            &function.display_name,
-        ),
-        function.deprecated_message.as_deref(),
-        function.deprecated_since.as_deref(),
-    )
-}
-
 fn deprecated_warning_message_for_parts(
     subject: &str,
     message: Option<&str>,
@@ -13397,21 +13398,145 @@ fn emit_class_constant_deprecation_from_runtime_reference(
 fn emit_deprecated_function_warning(
     out: &mut String,
     indent: &str,
+    runtime_expr: &str,
+    source_path_expr: &str,
     diagnostics_expr: &str,
     function: &FunctionDecl,
     line_expr: &str,
 ) {
-    let Some(message) = deprecated_warning_message(function) else {
+    let subject = deprecated_call_subject(
+        function.class_name.as_deref(),
+        function.method_name.as_deref(),
+        &function.display_name,
+    );
+    emit_deprecated_function_warning_parts(
+        out,
+        indent,
+        runtime_expr,
+        source_path_expr,
+        diagnostics_expr,
+        &subject,
+        function.deprecated_message.as_deref(),
+        function.deprecated_since.as_deref(),
+        function.deprecated_message_runtime_reference.as_ref(),
+        function.class_name.as_deref(),
+        line_expr,
+    );
+}
+
+fn emit_deprecated_function_warning_parts(
+    out: &mut String,
+    indent: &str,
+    runtime_expr: &str,
+    source_path_expr: &str,
+    diagnostics_expr: &str,
+    subject: &str,
+    deprecated_message: Option<&str>,
+    deprecated_since: Option<&str>,
+    runtime_reference: Option<&AttributeConstantReference>,
+    access_scope: Option<&str>,
+    line_expr: &str,
+) {
+    if let Some(reference) = runtime_reference {
+        out.push_str(indent);
+        out.push_str("{\n");
+        out.push_str(indent);
+        out.push_str("    PtnValue ptn_deprecated_message_value = ");
+        match reference {
+            AttributeConstantReference::Constant(name) => {
+                out.push_str("ptn_read_constant(");
+                out.push_str(runtime_expr);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(source_path_expr);
+                out.push_str(", ");
+                out.push_str(line_expr);
+                out.push(')');
+            }
+            AttributeConstantReference::ClassConstant { class_name, name } => {
+                out.push_str("ptn_runtime_read_class_constant_with_scope(");
+                out.push_str(runtime_expr);
+                out.push_str(", \"");
+                out.push_str(&c_string(class_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                if let Some(access_scope) = access_scope {
+                    out.push('"');
+                    out.push_str(&c_string(access_scope));
+                    out.push('"');
+                } else {
+                    out.push_str("NULL");
+                }
+                out.push_str(", ");
+                out.push_str(line_expr);
+                out.push(')');
+            }
+        }
+        out.push_str(";\n");
+        out.push_str(indent);
+        out.push_str("    if (");
+        out.push_str(runtime_expr);
+        out.push_str("->exceptions->active_exception == NULL) {\n");
+        out.push_str(indent);
+        out.push_str("        char *ptn_deprecated_message = ptn_value_to_string(ptn_deprecated_message_value);\n");
+        out.push_str(indent);
+        out.push_str(
+            "        char *ptn_deprecated_warning = ptn_deprecated_warning_message_for_parts(\"",
+        );
+        out.push_str(&c_string(subject));
+        out.push_str("\", \"");
+        out.push_str(&c_string(deprecated_since.unwrap_or("")));
+        out.push_str("\", ptn_deprecated_message);\n");
+        out.push_str(indent);
+        out.push_str("        ptn_emit_user_deprecation(");
+        out.push_str(diagnostics_expr);
+        out.push_str(", ptn_deprecated_warning, ");
+        out.push_str(line_expr);
+        out.push_str(");\n");
+        out.push_str(indent);
+        out.push_str("        free(ptn_deprecated_warning);\n");
+        out.push_str(indent);
+        out.push_str("        free(ptn_deprecated_message);\n");
+        out.push_str(indent);
+        out.push_str("    }\n");
+        out.push_str(indent);
+        out.push_str("    ptn_value_destroy(&ptn_deprecated_message_value);\n");
+        out.push_str(indent);
+        out.push_str("}\n");
+        return;
+    }
+
+    let Some(message) =
+        deprecated_warning_message_for_parts(subject, deprecated_message, deprecated_since)
+    else {
         return;
     };
     out.push_str(indent);
-    out.push_str("ptn_emit_user_deprecation(");
-    out.push_str(diagnostics_expr);
-    out.push_str(", \"");
-    out.push_str(&c_string(&message));
-    out.push_str("\", ");
-    out.push_str(line_expr);
-    out.push_str(");\n");
+    if message.contains('\0') {
+        out.push_str("{\n");
+        out.push_str(indent);
+        out.push_str("    static const char ptn_deprecated_warning[] = \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\";\n");
+        out.push_str(indent);
+        out.push_str("    ptn_emit_user_deprecation_len(");
+        out.push_str(diagnostics_expr);
+        out.push_str(", ptn_deprecated_warning, sizeof(ptn_deprecated_warning) - 1, ");
+        out.push_str(line_expr);
+        out.push_str(");\n");
+        out.push_str(indent);
+        out.push_str("}\n");
+    } else {
+        out.push_str("ptn_emit_user_deprecation(");
+        out.push_str(diagnostics_expr);
+        out.push_str(", \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", ");
+        out.push_str(line_expr);
+        out.push_str(");\n");
+    }
 }
 
 fn emit_dynamic_method_deprecated_warning(
@@ -22102,6 +22227,9 @@ impl ValueEmitter {
                 visibility_check: self.static_method_visibility_check(&resolved_name, function),
                 deprecated_message: function.deprecated_message.clone(),
                 deprecated_since: function.deprecated_since.clone(),
+                deprecated_message_runtime_reference: function
+                    .deprecated_message_runtime_reference
+                    .clone(),
                 display_name: function.display_name.clone(),
                 class_name: function.class_name.clone(),
                 method_name: function.method_name.clone(),
@@ -22371,7 +22499,10 @@ impl ValueEmitter {
         line: usize,
         called_class_override: Option<&CalledClassOverride>,
     ) {
-        if direct_user.deprecated_message.is_some() || direct_user.deprecated_since.is_some() {
+        if direct_user.deprecated_message.is_some()
+            || direct_user.deprecated_since.is_some()
+            || direct_user.deprecated_message_runtime_reference.is_some()
+        {
             self.emit_deprecated_call_warning(out, direct_user, line);
         }
         let previous_override_temp = called_class_override.map(|override_| {
@@ -22464,18 +22595,19 @@ impl ValueEmitter {
             direct_user.method_name.as_deref(),
             &direct_user.display_name,
         );
-        let Some(message) = deprecated_warning_message_for_parts(
+        emit_deprecated_function_warning_parts(
+            out,
+            "    ",
+            "(&runtime)",
+            "runtime.source_path",
+            "&runtime.diagnostics",
             &subject,
             direct_user.deprecated_message.as_deref(),
             direct_user.deprecated_since.as_deref(),
-        ) else {
-            return;
-        };
-        out.push_str("    ptn_emit_user_deprecation(&runtime.diagnostics, \"");
-        out.push_str(&c_string(&message));
-        out.push_str("\", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
+            direct_user.deprecated_message_runtime_reference.as_ref(),
+            direct_user.class_name.as_deref(),
+            &line.to_string(),
+        );
     }
 
     fn emit_relative_scoped_method_call_or_function_fallback(
