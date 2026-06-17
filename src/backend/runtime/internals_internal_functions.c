@@ -49039,254 +49039,6 @@ static PtnValue ptn_reflection_class_extension(PtnRuntime *runtime, const char *
         : ptn_reflection_extension_object_from_name(runtime, extension_name);
 }
 
-static PTN_UNUSED int ptn_builtin_class_constant_value(
-    const char *class_name,
-    const char *constant_name,
-    PtnValue *value_out
-) {
-    if (value_out == NULL) {
-        return 0;
-    }
-    if (ptn_ascii_case_equal(class_name, "ArrayObject")) {
-        if (ptn_ascii_case_equal(constant_name, "STD_PROP_LIST")) {
-            *value_out = ptn_int(1);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "ARRAY_AS_PROPS")) {
-            *value_out = ptn_int(2);
-            return 1;
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "SplDoublyLinkedList") ||
-        ptn_ascii_case_equal(class_name, "SplQueue") ||
-        ptn_ascii_case_equal(class_name, "SplStack")) {
-        if (ptn_ascii_case_equal(constant_name, "IT_MODE_FIFO") ||
-            ptn_ascii_case_equal(constant_name, "IT_MODE_KEEP")) {
-            *value_out = ptn_int(0);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IT_MODE_DELETE")) {
-            *value_out = ptn_int(PTN_SPL_DLLIST_IT_MODE_DELETE);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IT_MODE_LIFO")) {
-            *value_out = ptn_int(PTN_SPL_DLLIST_IT_MODE_LIFO);
-            return 1;
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "SplFileObject")) {
-        if (ptn_ascii_case_equal(constant_name, "DROP_NEW_LINE")) {
-            *value_out = ptn_int(PTN_SPL_FILE_OBJECT_DROP_NEW_LINE);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "READ_AHEAD")) {
-            *value_out = ptn_int(PTN_SPL_FILE_OBJECT_READ_AHEAD);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "SKIP_EMPTY")) {
-            *value_out = ptn_int(PTN_SPL_FILE_OBJECT_SKIP_EMPTY);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "READ_CSV")) {
-            *value_out = ptn_int(PTN_SPL_FILE_OBJECT_READ_CSV);
-            return 1;
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "FilesystemIterator") ||
-        ptn_ascii_case_equal(class_name, "RecursiveDirectoryIterator") ||
-        ptn_ascii_case_equal(class_name, "GlobIterator")) {
-        if (ptn_ascii_case_equal(constant_name, "CURRENT_AS_FILEINFO") ||
-            ptn_ascii_case_equal(constant_name, "KEY_AS_PATHNAME")) {
-            *value_out = ptn_int(0);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "CURRENT_AS_SELF")) {
-            *value_out = ptn_int(PTN_FILESYSTEM_CURRENT_AS_SELF);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "CURRENT_AS_PATHNAME")) {
-            *value_out = ptn_int(PTN_FILESYSTEM_CURRENT_AS_PATHNAME);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "KEY_AS_FILENAME")) {
-            *value_out = ptn_int(PTN_FILESYSTEM_KEY_AS_FILENAME);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "FOLLOW_SYMLINKS")) {
-            *value_out = ptn_int(PTN_FILESYSTEM_FOLLOW_SYMLINKS);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "SKIP_DOTS")) {
-            *value_out = ptn_int(PTN_FILESYSTEM_SKIP_DOTS);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "UNIX_PATHS")) {
-            *value_out = ptn_int(PTN_FILESYSTEM_UNIX_PATHS);
-            return 1;
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "Attribute")) {
-        if (ptn_ascii_case_equal(constant_name, "TARGET_CLASS")) {
-            *value_out = ptn_int(1);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "TARGET_FUNCTION")) {
-            *value_out = ptn_int(2);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "TARGET_METHOD")) {
-            *value_out = ptn_int(4);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "TARGET_PROPERTY")) {
-            *value_out = ptn_int(8);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "TARGET_CLASS_CONSTANT")) {
-            *value_out = ptn_int(16);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "TARGET_PARAMETER")) {
-            *value_out = ptn_int(32);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "TARGET_CONSTANT")) {
-            *value_out = ptn_int(64);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "TARGET_ALL")) {
-            *value_out = ptn_int(127);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_REPEATABLE")) {
-            *value_out = ptn_int(128);
-            return 1;
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "ReflectionClass")) {
-        if (ptn_ascii_case_equal(constant_name, "IS_IMPLICIT_ABSTRACT")) {
-            *value_out = ptn_int(16);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_EXPLICIT_ABSTRACT")) {
-            *value_out = ptn_int(64);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_FINAL")) {
-            *value_out = ptn_int(32);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_READONLY")) {
-            *value_out = ptn_int(65536);
-            return 1;
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "ReflectionClassConstant") ||
-        ptn_ascii_case_equal(class_name, "ReflectionMethod") ||
-        ptn_ascii_case_equal(class_name, "ReflectionProperty")) {
-        if (ptn_ascii_case_equal(constant_name, "IS_PUBLIC")) {
-            *value_out = ptn_int(1);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_PROTECTED")) {
-            *value_out = ptn_int(2);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_PRIVATE")) {
-            *value_out = ptn_int(4);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_STATIC")) {
-            *value_out = ptn_int(16);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_FINAL")) {
-            *value_out = ptn_int(32);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_ABSTRACT")) {
-            *value_out = ptn_int(64);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_READONLY")) {
-            *value_out = ptn_int(128);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_VIRTUAL")) {
-            *value_out = ptn_int(512);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_PROTECTED_SET")) {
-            *value_out = ptn_int(2048);
-            return 1;
-        }
-        if (ptn_ascii_case_equal(constant_name, "IS_PRIVATE_SET")) {
-            *value_out = ptn_int(4096);
-            return 1;
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "ReflectionAttribute") &&
-        ptn_ascii_case_equal(constant_name, "IS_INSTANCEOF")) {
-        *value_out = ptn_int(2);
-        return 1;
-    }
-    if (ptn_ascii_case_equal(class_name, "DateTimeZone")) {
-        static const struct {
-            const char *name;
-            int64_t value;
-        } timezone_constants[] = {
-            { "AFRICA", 1 },
-            { "AMERICA", 2 },
-            { "ANTARCTICA", 4 },
-            { "ARCTIC", 8 },
-            { "ASIA", 16 },
-            { "ATLANTIC", 32 },
-            { "AUSTRALIA", 64 },
-            { "EUROPE", 128 },
-            { "INDIAN", 256 },
-            { "PACIFIC", 512 },
-            { "UTC", 1024 },
-            { "ALL", 2047 },
-            { "ALL_WITH_BC", 4095 },
-            { "PER_COUNTRY", 4096 },
-        };
-        for (size_t i = 0; i < sizeof(timezone_constants) / sizeof(timezone_constants[0]); i++) {
-            if (ptn_ascii_case_equal(constant_name, timezone_constants[i].name)) {
-                *value_out = ptn_int(timezone_constants[i].value);
-                return 1;
-            }
-        }
-    }
-    if (ptn_ascii_case_equal(class_name, "DateTime") ||
-        ptn_ascii_case_equal(class_name, "DateTimeImmutable") ||
-        ptn_ascii_case_equal(class_name, "DateTimeInterface")) {
-        static const struct {
-            const char *name;
-            const char *value;
-        } datetime_constants[] = {
-            { "ATOM", "Y-m-d\\TH:i:sP" },
-            { "COOKIE", "l, d-M-Y H:i:s T" },
-            { "ISO8601", "Y-m-d\\TH:i:sO" },
-            { "RFC3339", "Y-m-d\\TH:i:sP" },
-            { "RFC3339_EXTENDED", "Y-m-d\\TH:i:s.vP" },
-            { "RFC822", "D, d M y H:i:s O" },
-            { "RFC850", "l, d-M-y H:i:s T" },
-            { "RFC1036", "D, d M Y H:i:s O" },
-            { "RFC1123", "D, d M Y H:i:s O" },
-            { "RFC2822", "D, d M Y H:i:s O" },
-            { "RSS", "D, d M Y H:i:s O" },
-            { "W3C", "Y-m-d\\TH:i:sP" },
-        };
-        for (size_t i = 0; i < sizeof(datetime_constants) / sizeof(datetime_constants[0]); i++) {
-            if (ptn_ascii_case_equal(constant_name, datetime_constants[i].name)) {
-                *value_out = ptn_string(datetime_constants[i].value);
-                return 1;
-            }
-        }
-    }
-    return 0;
-}
-
 static void ptn_reflection_class_append_builtin_constants(PtnValue result, const char *class_name) {
     if (ptn_ascii_case_equal(class_name, "ArrayObject")) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("STD_PROP_LIST"), ptn_int(1));
@@ -54610,6 +54362,777 @@ static PtnValue ptn_spl_file_info_call_method(
     return ptn_null();
 }
 
+static int ptn_directory_entry_name_is_dot(const char *name) {
+    return name != NULL &&
+        (strcmp(name, ".") == 0 || strcmp(name, "..") == 0);
+}
+
+static char *ptn_directory_relative_join_alloc(const char *prefix, const char *name) {
+    if (prefix == NULL || prefix[0] == '\0') {
+        return ptn_duplicate_string(name == NULL ? "" : name);
+    }
+    return ptn_path_join_alloc(prefix, name == NULL ? "" : name);
+}
+
+static int ptn_directory_entry_compare(const void *left, const void *right) {
+    const PtnDirectoryEntry *left_entry = (const PtnDirectoryEntry *)left;
+    const PtnDirectoryEntry *right_entry = (const PtnDirectoryEntry *)right;
+    const char *left_name = left_entry->name == NULL ? "" : left_entry->name;
+    const char *right_name = right_entry->name == NULL ? "" : right_entry->name;
+    return strcmp(left_name, right_name);
+}
+
+static void ptn_directory_iterator_append_entry(
+    PtnDirectoryIteratorData *data,
+    const char *name,
+    const char *path,
+    const char *sub_path,
+    const char *sub_pathname
+) {
+    if (data->entries_len == data->entries_capacity) {
+        size_t new_capacity = data->entries_capacity == 0 ? 8 : data->entries_capacity * 2;
+        if (new_capacity < data->entries_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnDirectoryEntry)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnDirectoryEntry *new_entries = realloc(data->entries, new_capacity * sizeof(PtnDirectoryEntry));
+        if (new_entries == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->entries = new_entries;
+        data->entries_capacity = new_capacity;
+    }
+    PtnDirectoryEntry *entry = &data->entries[data->entries_len++];
+    entry->name = ptn_duplicate_string(name == NULL ? "" : name);
+    entry->path = ptn_duplicate_string(path == NULL ? "" : path);
+    entry->sub_path = ptn_duplicate_string(sub_path == NULL ? "" : sub_path);
+    entry->sub_pathname = ptn_duplicate_string(sub_pathname == NULL ? "" : sub_pathname);
+}
+
+static void ptn_directory_iterator_sort_entries(PtnDirectoryIteratorData *data) {
+    if (data != NULL && data->entries_len > 1) {
+        qsort(data->entries, data->entries_len, sizeof(PtnDirectoryEntry), ptn_directory_entry_compare);
+    }
+}
+
+static int ptn_directory_iterator_load_directory(
+    PtnRuntime *runtime,
+    PtnDirectoryIteratorData *data,
+    const char *path,
+    const char *relative_path,
+    int64_t flags,
+    size_t line
+) {
+#if defined(_WIN32)
+    (void)data;
+    (void)relative_path;
+    (void)flags;
+    ptn_emit_directory_open_warning(runtime, "DirectoryIterator", path, "directory iterators are unsupported on this platform", line);
+    return 0;
+#else
+    DIR *directory = opendir(path);
+    if (directory == NULL) {
+        char message[512];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Failed to open directory: %s",
+            strerror(errno)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "UnexpectedValueException", message);
+        return 0;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != NULL) {
+        const char *name = entry->d_name;
+        if ((flags & PTN_FILESYSTEM_SKIP_DOTS) != 0 && ptn_directory_entry_name_is_dot(name)) {
+            continue;
+        }
+        char *full_path = ptn_path_join_alloc(path, name);
+        char *sub_pathname = ptn_directory_relative_join_alloc(relative_path, name);
+        ptn_directory_iterator_append_entry(
+            data,
+            name,
+            full_path,
+            relative_path == NULL ? "" : relative_path,
+            sub_pathname
+        );
+        free(sub_pathname);
+        free(full_path);
+    }
+    closedir(directory);
+    ptn_directory_iterator_sort_entries(data);
+    return 1;
+#endif
+}
+
+static PtnDirectoryEntry *ptn_directory_iterator_current_entry(PtnDirectoryIteratorData *data) {
+    if (data == NULL || !data->initialized || data->index >= data->entries_len) {
+        return NULL;
+    }
+    return &data->entries[data->index];
+}
+
+static void ptn_directory_iterator_set_info_path(PtnDirectoryIteratorData *data, const char *path) {
+    if (data == NULL) {
+        return;
+    }
+    free(data->info.path);
+    data->info.path = ptn_duplicate_string(path == NULL ? "" : path);
+}
+
+static void ptn_directory_iterator_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnDirectoryIteratorData *data,
+    size_t line
+) {
+    if (data == NULL) {
+        return;
+    }
+    PtnDirectoryEntry *entry = ptn_directory_iterator_current_entry(data);
+    ptn_directory_iterator_set_info_path(data, entry == NULL ? "" : entry->path);
+    ptn_spl_file_info_sync_properties(runtime, object, "SplFileInfo", data->info.path, line);
+    if (data->glob_pattern != NULL) {
+        PtnValue glob_value = ptn_owned_string(ptn_duplicate_string(data->glob_pattern));
+        ptn_spl_declare_private_value_property(runtime, object, "glob", "DirectoryIterator", glob_value, line);
+        ptn_value_destroy(&glob_value);
+    }
+    if (ptn_declared_class_is_same_or_descendant(ptn_value_deref(object).as.object->class_name, "RecursiveDirectoryIterator") ||
+        data->is_glob) {
+        PtnValue sub_pathname = ptn_owned_string(
+            ptn_duplicate_string(entry == NULL ? "" : entry->sub_pathname)
+        );
+        ptn_spl_declare_private_value_property(
+            runtime,
+            object,
+            "subPathName",
+            "RecursiveDirectoryIterator",
+            sub_pathname,
+            line
+        );
+        ptn_value_destroy(&sub_pathname);
+    }
+}
+
+static PtnDirectoryIteratorData *ptn_directory_iterator_data_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !(ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "DirectoryIterator") ||
+          ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "FilesystemIterator") ||
+          ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "RecursiveDirectoryIterator") ||
+          ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "GlobIterator")) ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnDirectoryIteratorData *)value.as.object->native_data;
+}
+
+static PtnDirectoryIteratorData *ptn_directory_iterator_data_or_error(
+    PtnRuntime *runtime,
+    PtnValue receiver
+) {
+    PtnDirectoryIteratorData *data = ptn_directory_iterator_data_from_value(receiver);
+    if (data == NULL || !data->initialized) {
+        ptn_throw_exception(runtime, "Error", "Object not initialized");
+        return NULL;
+    }
+    return data;
+}
+
+static PtnDirectoryIteratorData *ptn_glob_iterator_data_or_error(
+    PtnRuntime *runtime,
+    PtnValue receiver
+) {
+    PtnDirectoryIteratorData *data = ptn_directory_iterator_data_from_value(receiver);
+    if (data == NULL || !data->initialized) {
+        ptn_throw_exception(runtime, "Error", "GlobIterator is not initialized");
+        return NULL;
+    }
+    return data;
+}
+
+static PtnDirectoryIteratorData *ptn_directory_iterator_data_new(
+    const char *directory_path,
+    int64_t flags,
+    int is_glob
+) {
+    PtnDirectoryIteratorData *data = malloc(sizeof(PtnDirectoryIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_spl_file_info_init_data(
+        &data->info,
+        ptn_duplicate_string(""),
+        "SplFileObject",
+        "SplFileInfo"
+    );
+    data->directory_path = ptn_duplicate_string(directory_path == NULL ? "" : directory_path);
+    data->glob_pattern = NULL;
+    data->entries = NULL;
+    data->entries_len = 0;
+    data->entries_capacity = 0;
+    data->index = 0;
+    data->flags = flags;
+    data->initialized = 1;
+    data->is_glob = is_glob;
+    return data;
+}
+
+static char *ptn_directory_iterator_directory_arg(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue arg,
+    size_t line
+) {
+    char function_name[96];
+    int written = snprintf(function_name, sizeof(function_name), "%s::__construct", class_name);
+    if (written < 0 || (size_t)written >= sizeof(function_name)) {
+        ptn_abort_out_of_memory();
+    }
+    char *path = ptn_spl_file_path_arg(runtime, function_name, 1, arg, line);
+    if (runtime->exceptions->active_exception != NULL || path == NULL) {
+        free(path);
+        return NULL;
+    }
+    if (path[0] == '\0') {
+        char message[160];
+        written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct(): Argument #1 ($directory) must not be empty",
+            class_name
+        );
+        free(path);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return NULL;
+    }
+    return path;
+}
+
+static PtnValue ptn_directory_iterator_new_for_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    size_t min_args = 1;
+    size_t max_args = ptn_ascii_case_equal(class_name, "DirectoryIterator") ? 1 : 2;
+    if (argc < min_args || argc > max_args) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < min_args
+                ? "%s::__construct() expects at least 1 argument, %zu given"
+                : "%s::__construct() expects at most %zu arguments, %zu given",
+            class_name,
+            argc < min_args ? argc : max_args,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    char *path = ptn_directory_iterator_directory_arg(runtime, class_name, args[0], line);
+    if (runtime->exceptions->active_exception != NULL || path == NULL) {
+        return ptn_null();
+    }
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, class_name, 2, "flags", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(path);
+        return ptn_null();
+    }
+    PtnDirectoryIteratorData *data = ptn_directory_iterator_data_new(path, flags, 0);
+    if (!ptn_directory_iterator_load_directory(runtime, data, path, "", flags, line)) {
+        ptn_directory_iterator_data_free(data);
+        free(path);
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_directory_iterator_data_free;
+    ptn_directory_iterator_sync_properties(runtime, object, data, line);
+    free(path);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_directory_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_directory_iterator_new_for_class(runtime, "DirectoryIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_filesystem_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_directory_iterator_new_for_class(runtime, "FilesystemIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_recursive_directory_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_directory_iterator_new_for_class(runtime, "RecursiveDirectoryIterator", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_glob_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 1
+                ? "GlobIterator::__construct() expects at least 1 argument, %zu given"
+                : "GlobIterator::__construct() expects at most 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    char *pattern = ptn_spl_file_path_arg(runtime, "GlobIterator::__construct", 1, args[0], line);
+    if (runtime->exceptions->active_exception != NULL || pattern == NULL) {
+        free(pattern);
+        return ptn_null();
+    }
+    int64_t flags = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "GlobIterator", 2, "flags", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        free(pattern);
+        return ptn_null();
+    }
+    char *directory = ptn_spl_path_dirname_alloc(pattern);
+    PtnDirectoryIteratorData *data = ptn_directory_iterator_data_new(directory, flags, 1);
+    free(directory);
+    int needed = snprintf(NULL, 0, "glob://%s", pattern);
+    if (needed < 0) {
+        free(pattern);
+        ptn_directory_iterator_data_free(data);
+        ptn_abort_out_of_memory();
+    }
+    data->glob_pattern = malloc((size_t)needed + 1);
+    if (data->glob_pattern == NULL) {
+        free(pattern);
+        ptn_directory_iterator_data_free(data);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(data->glob_pattern, (size_t)needed + 1, "glob://%s", pattern);
+#if defined(_WIN32)
+    (void)line;
+#else
+    glob_t glob_result;
+    memset(&glob_result, 0, sizeof(glob_result));
+    int glob_status = glob(pattern, 0, NULL, &glob_result);
+    if (glob_status == 0) {
+        for (size_t i = 0; i < glob_result.gl_pathc; i++) {
+            const char *path = glob_result.gl_pathv[i];
+            ptn_directory_iterator_append_entry(
+                data,
+                ptn_spl_path_basename_part(path),
+                path,
+                "",
+                ptn_spl_path_basename_part(path)
+            );
+        }
+    } else if (glob_status != GLOB_NOMATCH) {
+        globfree(&glob_result);
+        free(pattern);
+        ptn_directory_iterator_data_free(data);
+        ptn_throw_exception(runtime, "UnexpectedValueException", "GlobIterator::__construct(): glob failed");
+        return ptn_null();
+    }
+    globfree(&glob_result);
+#endif
+    ptn_directory_iterator_sort_entries(data);
+    PtnValue object = ptn_object_new_shell(runtime, "GlobIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_directory_iterator_data_free;
+    ptn_directory_iterator_sync_properties(runtime, object, data, line);
+    free(pattern);
+    return object;
+}
+
+static PtnValue ptn_glob_iterator_empty_file_info_result(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "getBasename")) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileInfo::getBasename() expects at most 1 argument");
+            return ptn_null();
+        }
+        return ptn_owned_string(ptn_duplicate_string(""));
+    }
+    ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString") ||
+        ptn_ascii_case_equal(name, "getPathname") ||
+        ptn_ascii_case_equal(name, "getFilename") ||
+        ptn_ascii_case_equal(name, "getPath") ||
+        ptn_ascii_case_equal(name, "getExtension")) {
+        return ptn_owned_string(ptn_duplicate_string(""));
+    }
+    if (ptn_ascii_case_equal(name, "getPathInfo")) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getRealPath")) {
+        char cwd[PTN_PHP_MAXPATHLEN];
+        if (getcwd(cwd, sizeof(cwd)) == NULL) {
+            return ptn_bool(0);
+        }
+        return ptn_owned_string(ptn_duplicate_string(cwd));
+    }
+    if (ptn_ascii_case_equal(name, "getATime") ||
+        ptn_ascii_case_equal(name, "getCTime") ||
+        ptn_ascii_case_equal(name, "getGroup") ||
+        ptn_ascii_case_equal(name, "getInode") ||
+        ptn_ascii_case_equal(name, "getMTime") ||
+        ptn_ascii_case_equal(name, "getOwner") ||
+        ptn_ascii_case_equal(name, "getPerms") ||
+        ptn_ascii_case_equal(name, "getSize") ||
+        ptn_ascii_case_equal(name, "getType") ||
+        ptn_ascii_case_equal(name, "isDir") ||
+        ptn_ascii_case_equal(name, "isExecutable") ||
+        ptn_ascii_case_equal(name, "isFile") ||
+        ptn_ascii_case_equal(name, "isLink") ||
+        ptn_ascii_case_equal(name, "isReadable") ||
+        ptn_ascii_case_equal(name, "isWritable")) {
+        return ptn_bool(0);
+    }
+    (void)line;
+    return ptn_null();
+}
+
+static int ptn_directory_iterator_current_is_dir(
+    PtnDirectoryIteratorData *data,
+    int follow_symlinks
+) {
+    PtnDirectoryEntry *entry = ptn_directory_iterator_current_entry(data);
+    if (entry == NULL || ptn_directory_entry_name_is_dot(entry->name)) {
+        return 0;
+    }
+    struct stat info;
+    int ok = follow_symlinks
+        ? ptn_stat_path(entry->path, &info) == 0
+        : ptn_lstat_path(entry->path, &info) == 0;
+    return ok && S_ISDIR(info.st_mode);
+}
+
+static PtnValue ptn_directory_iterator_new_single_entry(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *directory_path,
+    const char *name,
+    const char *path,
+    const char *sub_path,
+    const char *sub_pathname,
+    int64_t flags,
+    size_t line
+) {
+    PtnDirectoryIteratorData *data = ptn_directory_iterator_data_new(directory_path, flags, 0);
+    ptn_directory_iterator_append_entry(data, name, path, sub_path, sub_pathname);
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_directory_iterator_data_free;
+    ptn_directory_iterator_sync_properties(runtime, object, data, line);
+    return object;
+}
+
+static void ptn_recursive_directory_collect_leaves(
+    PtnRuntime *runtime,
+    PtnValue result,
+    const char *directory_path,
+    const char *relative_path,
+    int64_t flags,
+    size_t line
+) {
+    PtnDirectoryIteratorData scan;
+    memset(&scan, 0, sizeof(scan));
+    scan.initialized = 1;
+    scan.flags = flags;
+    if (!ptn_directory_iterator_load_directory(runtime, &scan, directory_path, relative_path, flags, line)) {
+        return;
+    }
+    for (size_t i = 0; i < scan.entries_len; i++) {
+        PtnDirectoryEntry *entry = &scan.entries[i];
+        int should_recurse = 0;
+        if (!ptn_directory_entry_name_is_dot(entry->name)) {
+            struct stat info;
+            int ok = (flags & PTN_FILESYSTEM_FOLLOW_SYMLINKS) != 0
+                ? ptn_stat_path(entry->path, &info) == 0
+                : ptn_lstat_path(entry->path, &info) == 0;
+            should_recurse = ok && S_ISDIR(info.st_mode);
+        }
+        if (should_recurse) {
+            ptn_recursive_directory_collect_leaves(
+                runtime,
+                result,
+                entry->path,
+                entry->sub_pathname,
+                flags,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                break;
+            }
+            continue;
+        }
+        PtnValue entry_object = ptn_directory_iterator_new_single_entry(
+            runtime,
+            "RecursiveDirectoryIterator",
+            directory_path,
+            entry->name,
+            entry->path,
+            entry->sub_path,
+            entry->sub_pathname,
+            flags,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&entry_object);
+            break;
+        }
+        if (result.as.array->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)result.as.array->len),
+            entry_object
+        );
+    }
+    for (size_t i = 0; i < scan.entries_len; i++) {
+        ptn_directory_entry_clear(&scan.entries[i]);
+    }
+    free(scan.entries);
+}
+
+static PtnValue ptn_directory_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    int is_glob = resolved_receiver.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, "GlobIterator");
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        const char *class_name = is_glob ? "GlobIterator" : resolved_receiver.as.object->class_name;
+        PtnValue replacement;
+        if (ptn_ascii_case_equal(class_name, "GlobIterator")) {
+            replacement = ptn_glob_iterator_new(runtime, argc, args, line);
+        } else if (ptn_ascii_case_equal(class_name, "RecursiveDirectoryIterator")) {
+            replacement = ptn_recursive_directory_iterator_new(runtime, argc, args, line);
+        } else if (ptn_ascii_case_equal(class_name, "FilesystemIterator")) {
+            replacement = ptn_filesystem_iterator_new(runtime, argc, args, line);
+        } else {
+            replacement = ptn_directory_iterator_new(runtime, argc, args, line);
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnDirectoryIteratorData *new_data = ptn_directory_iterator_data_from_value(replacement);
+        if (replacement.type == PTN_OBJECT && new_data != NULL && resolved_receiver.type == PTN_OBJECT) {
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            if (resolved_receiver.as.object->native_data != NULL) {
+                ptn_directory_iterator_data_free(resolved_receiver.as.object->native_data);
+            }
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_directory_iterator_data_free;
+            ptn_directory_iterator_sync_properties(runtime, resolved_receiver, new_data, line);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    PtnDirectoryIteratorData *data = is_glob
+        ? ptn_glob_iterator_data_or_error(runtime, receiver)
+        : ptn_directory_iterator_data_or_error(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnDirectoryEntry *entry = ptn_directory_iterator_current_entry(data);
+    if (is_glob && entry == NULL && ptn_spl_file_info_method_exists(name)) {
+        return ptn_glob_iterator_empty_file_info_result(runtime, name, argc, line);
+    }
+    if (ptn_spl_file_info_method_exists(name) && !ptn_ascii_case_equal(name, "__construct")) {
+        return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "setFlags")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "FilesystemIterator::setFlags() expects exactly 1 argument");
+            return ptn_null();
+        }
+        data->flags = ptn_internal_expect_integer_arg(runtime, "FilesystemIterator::setFlags", 1, "flags", args[0], line);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getFlags")) {
+        ptn_reflection_check_no_arguments(runtime, "FilesystemIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->flags);
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        data->index = 0;
+        ptn_directory_iterator_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_directory_iterator_current_entry(data) != NULL);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->index < data->entries_len) {
+            data->index++;
+        }
+        ptn_directory_iterator_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "seek")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "DirectoryIterator::seek() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t position = ptn_internal_expect_integer_arg(runtime, "DirectoryIterator::seek", 1, "offset", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (position < 0 || (uint64_t)position >= (uint64_t)data->entries_len) {
+            ptn_throw_exception(runtime, "OutOfBoundsException", "Seek position is out of range");
+            return ptn_null();
+        }
+        data->index = (size_t)position;
+        ptn_directory_iterator_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL || entry == NULL) {
+            return ptn_null();
+        }
+        if ((data->flags & PTN_FILESYSTEM_CURRENT_AS_PATHNAME) != 0) {
+            return ptn_owned_string(ptn_duplicate_string(entry->path));
+        }
+        return ptn_value_clone_deref(receiver);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL || entry == NULL) {
+            return ptn_null();
+        }
+        if ((data->flags & PTN_FILESYSTEM_KEY_AS_FILENAME) != 0) {
+            return ptn_owned_string(ptn_duplicate_string(entry->name));
+        }
+        if (ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, "FilesystemIterator") ||
+            ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, "RecursiveDirectoryIterator") ||
+            ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, "GlobIterator")) {
+            return ptn_owned_string(ptn_duplicate_string(entry->path));
+        }
+        if (data->index > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)data->index);
+    }
+    if (ptn_ascii_case_equal(name, "isDot")) {
+        ptn_reflection_check_no_arguments(runtime, "DirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(entry != NULL && ptn_directory_entry_name_is_dot(entry->name));
+    }
+    if (ptn_ascii_case_equal(name, "hasChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveDirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_directory_iterator_current_is_dir(
+                  data,
+                  (data->flags & PTN_FILESYSTEM_FOLLOW_SYMLINKS) != 0
+              ));
+    }
+    if (ptn_ascii_case_equal(name, "getChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveDirectoryIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL ||
+            !ptn_directory_iterator_current_is_dir(data, (data->flags & PTN_FILESYSTEM_FOLLOW_SYMLINKS) != 0) ||
+            entry == NULL) {
+            return ptn_null();
+        }
+        PtnValue child_args[2] = {
+            ptn_owned_string(ptn_duplicate_string(entry->path)),
+            ptn_int(data->flags)
+        };
+        PtnValue child = ptn_recursive_directory_iterator_new(runtime, 2, child_args, line);
+        ptn_value_destroy(&child_args[0]);
+        ptn_value_destroy(&child_args[1]);
+        return child;
+    }
+    if (ptn_ascii_case_equal(name, "getSubPath")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveDirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL || entry == NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(entry->sub_path));
+    }
+    if (ptn_ascii_case_equal(name, "getSubPathname")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveDirectoryIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL || entry == NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(entry->sub_pathname));
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        ptn_reflection_check_no_arguments(runtime, "GlobIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->entries_len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)data->entries_len);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
 static void ptn_spl_file_object_clear_current(PtnSplFileObjectData *data) {
     if (data == NULL || !data->has_current) {
         return;
@@ -56657,6 +57180,262 @@ static int ptn_iterator_inner_valid(PtnRuntime *runtime, PtnValue inner, size_t 
     int result = runtime->exceptions->active_exception == NULL && ptn_is_truthy(valid);
     ptn_value_destroy(&valid);
     return result;
+}
+
+static PtnRecursiveIteratorIteratorData *ptn_recursive_iterator_iterator_data_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "RecursiveIteratorIterator") ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnRecursiveIteratorIteratorData *)value.as.object->native_data;
+}
+
+static PtnRecursiveIteratorIteratorData *ptn_recursive_iterator_iterator_data(
+    PtnRuntime *runtime,
+    PtnValue receiver
+) {
+    PtnRecursiveIteratorIteratorData *data =
+        ptn_recursive_iterator_iterator_data_from_value(receiver);
+    if (data == NULL || !data->initialized) {
+        ptn_throw_exception(runtime, "Error", "Object is not initialized");
+        return NULL;
+    }
+    return data;
+}
+
+static PtnValue ptn_recursive_iterator_iterator_resolve_inner(
+    PtnRuntime *runtime,
+    PtnValue candidate,
+    size_t line
+) {
+    candidate = ptn_value_deref(candidate);
+    if (candidate.type != PTN_OBJECT) {
+        ptn_throw_exception(runtime, "TypeError", "RecursiveIteratorIterator::__construct(): Argument #1 ($iterator) must be of type Traversable");
+        return ptn_null();
+    }
+    if (ptn_value_object_implements_interface(candidate, "Iterator")) {
+        return ptn_value_clone_deref(candidate);
+    }
+    if (ptn_value_is_iterator_aggregate_object(candidate) && runtime->method_dispatch != NULL) {
+        PtnValue iterator = runtime->method_dispatch(runtime, candidate, "getIterator", 0, NULL, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&iterator);
+            return ptn_null();
+        }
+        PtnValue resolved_iterator = ptn_value_deref(iterator);
+        if (resolved_iterator.type == PTN_OBJECT &&
+            (ptn_value_object_implements_interface(resolved_iterator, "Iterator") ||
+             ptn_value_object_implements_interface(resolved_iterator, "IteratorAggregate"))) {
+            return iterator;
+        }
+        ptn_value_destroy(&iterator);
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::getIterator() must return an object that implements Traversable",
+            candidate.as.object->class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "LogicException", message);
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "TypeError", "RecursiveIteratorIterator::__construct(): Argument #1 ($iterator) must be of type Traversable");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 3) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 1
+                ? "RecursiveIteratorIterator::__construct() expects at least 1 argument, %zu given"
+                : "RecursiveIteratorIterator::__construct() expects at most 3 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue inner = ptn_recursive_iterator_iterator_resolve_inner(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&inner);
+        return ptn_null();
+    }
+    PtnRecursiveIteratorIteratorData *data = malloc(sizeof(PtnRecursiveIteratorIteratorData));
+    if (data == NULL) {
+        ptn_value_destroy(&inner);
+        ptn_abort_out_of_memory();
+    }
+    data->inner = inner;
+    data->storage = ptn_null();
+    data->index = 0;
+    data->uses_storage = 0;
+    data->initialized = 1;
+
+    PtnDirectoryIteratorData *directory_data = ptn_directory_iterator_data_from_value(inner);
+    if (directory_data != NULL &&
+        ptn_declared_class_is_same_or_descendant(
+            ptn_value_deref(inner).as.object->class_name,
+            "RecursiveDirectoryIterator"
+        )) {
+        data->storage = ptn_array_from_literal_entries(0, NULL);
+        data->uses_storage = 1;
+        ptn_recursive_directory_collect_leaves(
+            runtime,
+            data->storage,
+            directory_data->directory_path,
+            "",
+            directory_data->flags,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_recursive_iterator_iterator_data_free(data);
+            return ptn_null();
+        }
+    }
+
+    PtnValue object = ptn_object_new_shell(runtime, "RecursiveIteratorIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_recursive_iterator_iterator_data_free;
+    return object;
+}
+
+static PtnValue ptn_recursive_iterator_iterator_storage_current(
+    PtnRecursiveIteratorIteratorData *data
+) {
+    PtnValue storage = ptn_value_deref(data->storage);
+    if (storage.type != PTN_ARRAY || data->index >= storage.as.array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(storage.as.array->entries[data->index].value);
+}
+
+static PtnValue ptn_recursive_iterator_iterator_storage_sub_path(
+    PtnRuntime *runtime,
+    PtnRecursiveIteratorIteratorData *data,
+    const char *method_name
+) {
+    PtnValue current = ptn_recursive_iterator_iterator_storage_current(data);
+    PtnDirectoryIteratorData *directory_data = ptn_directory_iterator_data_from_value(current);
+    PtnDirectoryEntry *entry = ptn_directory_iterator_current_entry(directory_data);
+    PtnValue result = entry == NULL
+        ? ptn_null()
+        : ptn_owned_string(ptn_duplicate_string(
+              ptn_ascii_case_equal(method_name, "getSubPath")
+                  ? entry->sub_path
+                  : entry->sub_pathname
+          ));
+    ptn_value_destroy(&current);
+    (void)runtime;
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    PtnRecursiveIteratorIteratorData *data =
+        ptn_recursive_iterator_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_recursive_iterator_iterator_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        PtnRecursiveIteratorIteratorData *new_data =
+            ptn_recursive_iterator_iterator_data_from_value(replacement);
+        if (replacement.type == PTN_OBJECT && new_data != NULL && resolved_receiver.type == PTN_OBJECT) {
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_recursive_iterator_iterator_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_recursive_iterator_iterator_data_free;
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getInnerIterator")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_value_clone_deref(data->inner);
+    }
+    if (data->uses_storage) {
+        PtnValue storage = ptn_value_deref(data->storage);
+        size_t count = storage.type == PTN_ARRAY ? storage.as.array->len : 0;
+        if (ptn_ascii_case_equal(name, "rewind")) {
+            ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+            data->index = 0;
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "valid")) {
+            ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->index < count);
+        }
+        if (ptn_ascii_case_equal(name, "next")) {
+            ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+            if (data->index < count) {
+                data->index++;
+            }
+            return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "current")) {
+            ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+            return runtime->exceptions->active_exception != NULL
+                ? ptn_null()
+                : ptn_recursive_iterator_iterator_storage_current(data);
+        }
+        if (ptn_ascii_case_equal(name, "key")) {
+            ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            if (data->index > (size_t)INT64_MAX) {
+                ptn_abort_out_of_memory();
+            }
+            return ptn_int((int64_t)data->index);
+        }
+        if (ptn_ascii_case_equal(name, "getSubPath") || ptn_ascii_case_equal(name, "getSubPathname")) {
+            ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+            return runtime->exceptions->active_exception != NULL
+                ? ptn_null()
+                : ptn_recursive_iterator_iterator_storage_sub_path(runtime, data, name);
+        }
+    }
+    if (ptn_ascii_case_equal(name, "rewind") ||
+        ptn_ascii_case_equal(name, "valid") ||
+        ptn_ascii_case_equal(name, "current") ||
+        ptn_ascii_case_equal(name, "key") ||
+        ptn_ascii_case_equal(name, "next")) {
+        return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "getSubPath") || ptn_ascii_case_equal(name, "getSubPathname")) {
+        ptn_reflection_check_no_arguments(runtime, "RecursiveIteratorIterator", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(""));
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static void ptn_limit_iterator_seek_inner(

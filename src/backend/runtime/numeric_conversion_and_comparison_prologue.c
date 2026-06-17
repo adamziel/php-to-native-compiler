@@ -2898,6 +2898,42 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "FilesystemIterator") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "RecursiveDirectoryIterator") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "GlobIterator")) {
+        if (strcmp(constant, "CURRENT_AS_FILEINFO") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "KEY_AS_PATHNAME") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "CURRENT_AS_SELF") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "CURRENT_AS_PATHNAME") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "KEY_AS_FILENAME") == 0) {
+            *out = ptn_int(256);
+            return 1;
+        }
+        if (strcmp(constant, "FOLLOW_SYMLINKS") == 0) {
+            *out = ptn_int(512);
+            return 1;
+        }
+        if (strcmp(constant, "SKIP_DOTS") == 0) {
+            *out = ptn_int(4096);
+            return 1;
+        }
+        if (strcmp(constant, "UNIX_PATHS") == 0) {
+            *out = ptn_int(8192);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionClass")) {
         if (strcmp(constant, "IS_IMPLICIT_ABSTRACT") == 0) {
             *out = ptn_int(16);
@@ -4600,14 +4636,14 @@ static PTN_UNUSED PtnValue ptn_call_method(
             ptn_object_is_internal_or_descendant(receiver, "FilesystemIterator") ||
             ptn_object_is_internal_or_descendant(receiver, "RecursiveDirectoryIterator") ||
             ptn_object_is_internal_or_descendant(receiver, "GlobIterator"))
-        && ptn_directory_iterator_method_exists(name)
+        && ptn_internal_class_method_exists("DirectoryIterator", name)
     ) {
         return ptn_directory_iterator_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "RecursiveIteratorIterator")
-        && ptn_recursive_iterator_iterator_method_exists(name)
+        && ptn_internal_class_method_exists("RecursiveIteratorIterator", name)
     ) {
         return ptn_recursive_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
     }

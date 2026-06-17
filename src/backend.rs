@@ -640,6 +640,25 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DirectoryIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"FilesystemIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"GlobIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\") ||\n");
+    out.push_str("            (ptn_ascii_case_equal(class_name, \"GlobIterator\") && ptn_ascii_case_equal(interface_name, \"Countable\"));\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"RecursiveDirectoryIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"RecursiveIteratorIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str(
         "    if (ptn_ascii_case_equal(class_name, \"DateTime\") || ptn_ascii_case_equal(class_name, \"DateTimeImmutable\")) {\n",
     );
@@ -4089,6 +4108,11 @@ fn emit_class_metadata_helpers(
         "SplStack",
         "SplFileInfo",
         "SplFileObject",
+        "DirectoryIterator",
+        "FilesystemIterator",
+        "RecursiveDirectoryIterator",
+        "GlobIterator",
+        "RecursiveIteratorIterator",
         "ReflectionAttribute",
         "ReflectionClass",
         "ReflectionClassConstant",
@@ -4456,6 +4480,11 @@ fn emit_class_metadata_helpers(
         "SplStack",
         "SplFileInfo",
         "SplFileObject",
+        "DirectoryIterator",
+        "FilesystemIterator",
+        "RecursiveDirectoryIterator",
+        "GlobIterator",
+        "RecursiveIteratorIterator",
         "Closure",
         "DateTime",
         "DateTimeImmutable",
@@ -4705,6 +4734,11 @@ fn emit_class_metadata_helpers(
         ("ReflectionFunction", "ReflectionFunctionAbstract"),
         ("ReflectionMethod", "ReflectionFunctionAbstract"),
         ("ReflectionObject", "ReflectionClass"),
+        ("DirectoryIterator", "SplFileInfo"),
+        ("FilesystemIterator", "DirectoryIterator"),
+        ("RecursiveDirectoryIterator", "FilesystemIterator"),
+        ("GlobIterator", "FilesystemIterator"),
+        ("RecursiveIteratorIterator", "IteratorIterator"),
         ("SplFileObject", "SplFileInfo"),
         ("SplQueue", "SplDoublyLinkedList"),
         ("SplStack", "SplDoublyLinkedList"),
@@ -8734,12 +8768,17 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "arrayiterator" => Some("ArrayIterator"),
         "arrayobject" => Some("ArrayObject"),
         "callbackfilteriterator" => Some("CallbackFilterIterator"),
+        "directoryiterator" => Some("DirectoryIterator"),
         "filteriterator" => Some("FilterIterator"),
+        "filesystemiterator" => Some("FilesystemIterator"),
+        "globiterator" => Some("GlobIterator"),
         "infiniteiterator" => Some("InfiniteIterator"),
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
         "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
+        "recursivedirectoryiterator" => Some("RecursiveDirectoryIterator"),
+        "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
         "splfixedarray" => Some("SplFixedArray"),
         "splqueue" => Some("SplQueue"),
@@ -14277,12 +14316,17 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
+                || class_name.eq_ignore_ascii_case("DirectoryIterator")
                 || class_name.eq_ignore_ascii_case("FilterIterator")
+                || class_name.eq_ignore_ascii_case("FilesystemIterator")
+                || class_name.eq_ignore_ascii_case("GlobIterator")
                 || class_name.eq_ignore_ascii_case("InfiniteIterator")
                 || class_name.eq_ignore_ascii_case("IteratorIterator")
                 || class_name.eq_ignore_ascii_case("LimitIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveDirectoryIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
                 || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
                 || class_name.eq_ignore_ascii_case("SplFixedArray")
                 || class_name.eq_ignore_ascii_case("SplQueue")

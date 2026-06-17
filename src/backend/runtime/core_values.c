@@ -1272,6 +1272,12 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
     root->free_object_ids[root->free_object_ids_len++] = object_id;
 }
 
+static PTN_UNUSED int ptn_builtin_class_constant_value(
+    const char *class_name,
+    const char *constant_name,
+    PtnValue *value_out
+);
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_attribute(const char *class_name);
@@ -1306,11 +1312,6 @@ static PTN_UNUSED int ptn_internal_class_name_is_recursive_directory_iterator(co
 static PTN_UNUSED int ptn_internal_class_name_is_glob_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_iterator_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
-static PTN_UNUSED int ptn_builtin_class_constant_value(
-    const char *class_name,
-    const char *constant_name,
-    PtnValue *value_out
-);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_name);
