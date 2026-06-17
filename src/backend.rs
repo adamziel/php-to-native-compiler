@@ -4403,6 +4403,37 @@ fn emit_class_metadata_helpers(
         }
         out.push_str("    return 0;\n");
         out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name) {\n",
+        );
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+            out.push_str("    (void)constant_name;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_constant_lookup_chain(class, classes) {
+                let constant = entry.constant;
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ");
+                out.push_str(if class_constant_has_deprecation(constant) {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(";\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return 0;\n");
+        out.push_str("}\n");
     }
 
     out.push_str(
@@ -6271,6 +6302,13 @@ fn class_property_initialization_chain(
 struct ClassConstantLookupEntry<'a> {
     declaring_class: &'a str,
     constant: &'a crate::ir::ClassConstantDecl,
+}
+
+fn class_constant_has_deprecation(constant: &ClassConstantDecl) -> bool {
+    constant.deprecated_message.is_some()
+        || constant.deprecated_since.is_some()
+        || constant.deprecated_message_dependency.is_some()
+        || constant.deprecated_message_runtime_reference.is_some()
 }
 
 fn class_constant_lookup_chain<'a>(

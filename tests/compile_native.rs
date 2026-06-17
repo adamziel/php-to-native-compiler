@@ -16002,6 +16002,11 @@ class ConstantVisChild extends ConstantVisBase {
     private const CHILD_PRIV = \"child-priv\";
 }
 
+class DeprecatedConstantBox {
+    #[Deprecated]
+    public const OLD = \"old\";
+}
+
 $base = new ReflectionClass(ConstantVisBase::class);
 var_dump($base->getConstants(ReflectionClassConstant::IS_PUBLIC));
 var_dump($base->getConstants(ReflectionClassConstant::IS_FINAL));
@@ -16020,6 +16025,12 @@ $private = $base->getReflectionConstant(\"PRIV\");
 var_dump($private->isPublic(), $private->isProtected(), $private->isPrivate(), $private->getModifiers());
 $final = $base->getReflectionConstant(\"FINAL_PUB\");
 var_dump($final->isFinal(), $final->getModifiers());
+$direct = new ReflectionClassConstant(ConstantVisChild::class, \"FINAL_PUB\");
+echo $direct->getDeclaringClass()->getName(), \"::\", $direct->getName(), \"\\n\";
+var_dump($direct->isFinal(), $direct->getValue(), $direct->isDeprecated());
+echo $direct;
+$deprecated = new ReflectionClassConstant(DeprecatedConstantBox::class, \"OLD\");
+var_dump($deprecated->isDeprecated());
 var_dump(ReflectionClassConstant::IS_PUBLIC, ReflectionClassConstant::IS_PROTECTED, ReflectionClassConstant::IS_PRIVATE, ReflectionClassConstant::IS_FINAL);
 ",
     )
@@ -16064,6 +16075,12 @@ var_dump(ReflectionClassConstant::IS_PUBLIC, ReflectionClassConstant::IS_PROTECT
             "int(4)\n",
             "bool(true)\n",
             "int(33)\n",
+            "ConstantVisBase::FINAL_PUB\n",
+            "bool(true)\n",
+            "string(10) \"base-final\"\n",
+            "bool(false)\n",
+            "Constant [ final public string FINAL_PUB ] { base-final }\n",
+            "bool(true)\n",
             "int(1)\n",
             "int(2)\n",
             "int(4)\n",
@@ -16075,6 +16092,7 @@ var_dump(ReflectionClassConstant::IS_PUBLIC, ReflectionClassConstant::IS_PROTECT
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_reflection_constants"));
     assert!(c_source.contains("ptn_declared_class_reflection_constant_modifiers"));
+    assert!(c_source.contains("ptn_declared_class_reflection_constant_is_deprecated"));
 }
 
 #[test]

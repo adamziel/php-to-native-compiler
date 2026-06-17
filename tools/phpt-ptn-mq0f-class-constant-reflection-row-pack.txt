@@ -13,6 +13,7 @@ ext/reflection/tests/ReflectionClass_getConstants_basic.phpt
 ext/reflection/tests/ReflectionClass_getConstants_filter.phpt
 ext/reflection/tests/ReflectionClass_getReflectionConstant.phpt
 ext/reflection/tests/ReflectionClass_getReflectionConstants_filter.phpt
+ext/reflection/tests/ReflectionClassConstant_isDeprecated_userland.phpt
 ext/reflection/tests/ReflectionObject_getConstants_basic.phpt
 ext/reflection/tests/bug53915.phpt
 ext/reflection/tests/gh8080.phpt
