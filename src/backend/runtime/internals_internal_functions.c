@@ -13,7 +13,13 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
         memcpy(class_name, name, class_len);
         class_name[class_len] = '\0';
         const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
-        PtnValue value = ptn_runtime_read_class_constant(runtime, resolved_class_name, separator + 2, line);
+        PtnValue value = ptn_runtime_read_class_constant_with_scope(
+            runtime,
+            resolved_class_name,
+            separator + 2,
+            runtime == NULL ? NULL : runtime->current_class_name,
+            line
+        );
         free(class_name);
         return value;
     }
@@ -34078,9 +34084,11 @@ static PtnValue ptn_declared_class_reflection_static_properties(PtnRuntime *runt
 static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects);
+static PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
+static int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
-static PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name);
+static PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
 static const char *ptn_property_exists_target_type_name(PtnValue value);
 static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -35171,6 +35179,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getProperty")
         || ptn_ascii_case_equal(method_name, "getProperties")
         || ptn_ascii_case_equal(method_name, "getReflectionConstant")
+        || ptn_ascii_case_equal(method_name, "getReflectionConstants")
         || ptn_ascii_case_equal(method_name, "getShortName")
         || ptn_ascii_case_equal(method_name, "getStaticProperties")
         || ptn_ascii_case_equal(method_name, "getStaticPropertyValue")
@@ -35220,6 +35229,7 @@ static int ptn_reflection_class_constant_method_exists(const char *method_name) 
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getValue")
+        || ptn_ascii_case_equal(method_name, "isFinal")
         || ptn_ascii_case_equal(method_name, "isPrivate")
         || ptn_ascii_case_equal(method_name, "isProtected")
         || ptn_ascii_case_equal(method_name, "isPublic");
@@ -35494,6 +35504,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getProperty",
             "getProperties",
             "getReflectionConstant",
+            "getReflectionConstants",
             "getShortName",
             "getStaticProperties",
             "getStaticPropertyValue",
@@ -35547,6 +35558,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getModifiers",
             "getName",
             "getValue",
+            "isFinal",
             "isPrivate",
             "isProtected",
             "isPublic",
@@ -38096,6 +38108,13 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_EXPLICIT_ABSTRACT"), ptn_int(64));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_FINAL"), ptn_int(32));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_READONLY"), ptn_int(65536));
+        return;
+    }
+    if (ptn_ascii_case_equal(class_name, "ReflectionClassConstant")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PUBLIC"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PROTECTED"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PRIVATE"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_FINAL"), ptn_int(32));
     }
 }
 
@@ -38441,12 +38460,27 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        PtnValue constants = ptn_declared_class_constants(runtime, class_name);
+        PtnValue filter = argc == 1 ? ptn_value_deref(args[0]) : ptn_null();
+        int filter_present = filter.type != PTN_NULL;
+        int filter_value = filter_present ? (int)ptn_value_to_integer(filter) : 0;
+        PtnValue constants = ptn_declared_class_constants(runtime, class_name, filter_present, filter_value);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        ptn_reflection_class_append_builtin_constants(constants, class_name);
+        if (!filter_present) {
+            ptn_reflection_class_append_builtin_constants(constants, class_name);
+        }
         return constants;
+    }
+    if (ptn_ascii_case_equal(name, "getReflectionConstants")) {
+        ptn_reflection_class_check_at_most_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue filter = argc == 1 ? ptn_value_deref(args[0]) : ptn_null();
+        int filter_present = filter.type != PTN_NULL;
+        int filter_value = filter_present ? (int)ptn_value_to_integer(filter) : 0;
+        return ptn_declared_class_reflection_constants(runtime, class_name, filter_present, filter_value);
     }
     if (ptn_ascii_case_equal(name, "getReflectionConstant")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
@@ -38719,13 +38753,19 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         return ptn_runtime_read_class_constant(runtime, data->class_name, data->name, line);
     }
     if (ptn_ascii_case_equal(name, "getModifiers")) {
-        return ptn_int(1);
+        return ptn_int(ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name));
+    }
+    if (ptn_ascii_case_equal(name, "isFinal")) {
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 32) != 0);
     }
     if (ptn_ascii_case_equal(name, "isPublic")) {
-        return ptn_bool(1);
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 1) != 0);
     }
-    if (ptn_ascii_case_equal(name, "isProtected") || ptn_ascii_case_equal(name, "isPrivate")) {
-        return ptn_bool(0);
+    if (ptn_ascii_case_equal(name, "isProtected")) {
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 2) != 0);
+    }
+    if (ptn_ascii_case_equal(name, "isPrivate")) {
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 4) != 0);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

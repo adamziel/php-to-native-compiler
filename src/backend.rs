@@ -3428,6 +3428,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     );
     out.push_str("static const char *ptn_declared_class_canonical_name(const char *name);\n");
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
+    out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
     out.push_str(
         "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
     );
@@ -4201,17 +4202,18 @@ fn emit_class_metadata_helpers(
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
-    if classes
+    let has_class_constant_lookup_entries = classes
         .iter()
-        .all(|class| class_constant_lookup_chain(class, classes).is_empty())
-    {
+        .any(|class| !class_constant_lookup_chain(class, classes).is_empty());
+    if !has_class_constant_lookup_entries {
         out.push_str("    (void)constant_name;\n");
     }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        for constant in class_constant_lookup_chain(class, classes) {
+        for entry in class_constant_lookup_chain(class, classes) {
+            let constant = entry.constant;
             out.push_str("        if (strcmp(constant_name, \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");
@@ -4225,7 +4227,69 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if !has_class_constant_lookup_entries {
+        out.push_str("    (void)constant_name;\n");
+        out.push_str("    (void)declaring_class_out;\n");
+        out.push_str("    (void)visibility_out;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_constant_lookup_chain(class, classes) {
+            let constant = entry.constant;
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            if (declaring_class_out != NULL) {\n");
+            out.push_str("                *declaring_class_out = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            }\n");
+            out.push_str("            if (visibility_out != NULL) {\n");
+            out.push_str("                *visibility_out = ");
+            out.push_str(c_property_visibility(constant.visibility));
+            out.push_str(";\n");
+            out.push_str("            }\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_class_constant_modifiers(int visibility, int is_final) {\n",
+    );
+    out.push_str("    int modifiers = visibility == PTN_PROPERTY_PUBLIC ? 1 : (visibility == PTN_PROPERTY_PROTECTED ? 2 : 4);\n");
+    out.push_str("    if (is_final) {\n");
+    out.push_str("        modifiers |= 32;\n");
+    out.push_str("    }\n");
+    out.push_str("    return modifiers;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_class_constant_matches_filter(int visibility, int is_final, int filter_present, int filter) {\n",
+    );
+    out.push_str("    if (!filter_present) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (filter == 0) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    int modifiers = ptn_class_constant_modifiers(visibility, is_final);\n");
+    out.push_str("    return (modifiers & filter) != 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     if classes.is_empty() {
@@ -4237,13 +4301,24 @@ fn emit_class_metadata_helpers(
     {
         out.push_str("    (void)runtime;\n");
     }
+    if classes.is_empty() {
+        out.push_str("    (void)filter_present;\n");
+        out.push_str("    (void)filter;\n");
+    }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        for constant in class_constant_lookup_chain(class, classes) {
-            out.push_str("        {\n");
-            out.push_str("            PtnValue ptn_constant_value = ptn_runtime_read_class_constant(runtime, class_name, \"");
+        for entry in class_constant_lookup_chain(class, classes) {
+            let constant = entry.constant;
+            out.push_str("        if (ptn_class_constant_matches_filter(");
+            out.push_str(c_property_visibility(constant.visibility));
+            out.push_str(", ");
+            out.push_str(if constant.is_final { "1" } else { "0" });
+            out.push_str(", filter_present, filter)) {\n");
+            out.push_str("            PtnValue ptn_constant_value = ptn_runtime_read_class_constant(runtime, \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\", 0);\n");
             out.push_str("            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
@@ -4262,6 +4337,73 @@ fn emit_class_metadata_helpers(
     }
     out.push_str("    return result;\n");
     out.push_str("}\n");
+
+    if emit_reflection_helpers {
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
+        );
+        out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+        out.push_str("    int64_t index = 0;\n");
+        if classes.is_empty() {
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    (void)class_name;\n");
+            out.push_str("    (void)filter_present;\n");
+            out.push_str("    (void)filter;\n");
+            out.push_str("    (void)index;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_constant_lookup_chain(class, classes) {
+                let constant = entry.constant;
+                out.push_str("        if (ptn_class_constant_matches_filter(");
+                out.push_str(c_property_visibility(constant.visibility));
+                out.push_str(", ");
+                out.push_str(if constant.is_final { "1" } else { "0" });
+                out.push_str(", filter_present, filter)) {\n");
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_class_constant_object_from_name(runtime, \"");
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\"));\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return result;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return result;\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name) {\n",
+        );
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+            out.push_str("    (void)constant_name;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_constant_lookup_chain(class, classes) {
+                let constant = entry.constant;
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ptn_class_constant_modifiers(");
+                out.push_str(c_property_visibility(constant.visibility));
+                out.push_str(", ");
+                out.push_str(if constant.is_final { "1" } else { "0" });
+                out.push_str(");\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return 0;\n");
+        out.push_str("}\n");
+    }
 
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_method_exists(const char *class_name, const char *method_name) {\n",
@@ -6126,16 +6268,22 @@ fn class_property_initialization_chain(
     properties
 }
 
+struct ClassConstantLookupEntry<'a> {
+    declaring_class: &'a str,
+    constant: &'a crate::ir::ClassConstantDecl,
+}
+
 fn class_constant_lookup_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
-) -> Vec<&'a crate::ir::ClassConstantDecl> {
+) -> Vec<ClassConstantLookupEntry<'a>> {
     fn collect<'a>(
+        target_class_name: &str,
         class: &'a ClassDecl,
         classes: &'a [ClassDecl],
         seen_classes: &mut HashSet<String>,
         seen_constants: &mut HashSet<String>,
-        constants: &mut Vec<&'a crate::ir::ClassConstantDecl>,
+        constants: &mut Vec<ClassConstantLookupEntry<'a>>,
     ) {
         let lookup_name = class.name.to_ascii_lowercase();
         if !seen_classes.insert(lookup_name) {
@@ -6143,14 +6291,28 @@ fn class_constant_lookup_chain<'a>(
         }
         for constant in &class.constants {
             if seen_constants.insert(constant.name.clone()) {
-                constants.push(constant);
+                if constant.visibility != PropertyVisibility::Private
+                    || class.name.eq_ignore_ascii_case(target_class_name)
+                {
+                    constants.push(ClassConstantLookupEntry {
+                        declaring_class: &class.name,
+                        constant,
+                    });
+                }
             }
         }
         let Some(parent_name) = &class.parent_name else {
             return;
         };
         if let Some(parent) = class_by_name(classes, parent_name) {
-            collect(parent, classes, seen_classes, seen_constants, constants);
+            collect(
+                target_class_name,
+                parent,
+                classes,
+                seen_classes,
+                seen_constants,
+                constants,
+            );
         }
     }
 
@@ -6158,6 +6320,7 @@ fn class_constant_lookup_chain<'a>(
     let mut seen_classes = HashSet::new();
     let mut seen_constants = HashSet::new();
     collect(
+        &class.name,
         class,
         classes,
         &mut seen_classes,
@@ -13870,6 +14033,7 @@ impl ValueEmitter {
         let class = class_by_name(&self.classes, &resolved_class_name)?;
         let constant = class_constant_lookup_chain(class, &self.classes)
             .into_iter()
+            .map(|entry| entry.constant)
             .find(|constant| constant.name.eq_ignore_ascii_case(name))?;
         if constant.deprecated_message_runtime_reference.is_some() {
             return None;
@@ -19310,20 +19474,28 @@ impl ValueEmitter {
                     out.push_str("        if (runtime.exceptions->active_exception == NULL) {\n");
                     out.push_str("            ");
                     out.push_str(&result_temp);
-                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, ");
-                    out.push_str(&result_temp);
-                    out.push_str("_class_name, \"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\", 0);\n");
-                    out.push_str("        }\n");
-                } else {
-                    out.push_str("        ");
-                    out.push_str(&result_temp);
-                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, ");
+                    out.push_str(
+                        " = ptn_runtime_read_class_constant_with_scope_suppress_deprecation(&runtime, ",
+                    );
                     out.push_str(&result_temp);
                     out.push_str("_class_name, \"");
                     out.push_str(&c_string(name));
                     out.push_str("\", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("        }\n");
+                } else {
+                    out.push_str("        ");
+                    out.push_str(&result_temp);
+                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, ");
+                    out.push_str(&result_temp);
+                    out.push_str("_class_name, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
                 }
@@ -19352,18 +19524,26 @@ impl ValueEmitter {
                     out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
                     out.push_str("        ");
                     out.push_str(&result_temp);
-                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
-                    out.push_str(&c_string(&resolved_class_name));
-                    out.push_str("\", \"");
-                    out.push_str(&c_string(name));
-                    out.push_str("\", 0);\n");
-                    out.push_str("    }\n");
-                } else {
-                    out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
+                    out.push_str(
+                        " = ptn_runtime_read_class_constant_with_scope_suppress_deprecation(&runtime, \"",
+                    );
                     out.push_str(&c_string(&resolved_class_name));
                     out.push_str("\", \"");
                     out.push_str(&c_string(name));
                     out.push_str("\", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    out.push_str("    }\n");
+                } else {
+                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                    out.push_str(&c_string(&resolved_class_name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
                     out.push_str(&line.to_string());
                     out.push_str(");\n");
                 }

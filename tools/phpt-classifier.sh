@@ -1744,11 +1744,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[[:space:]])(private|protected)[[:space:]]+const[[:space:]]+/) {
-                print "unsupported-class-constant-metadata\trequires non-public class constant metadata, outside PTN modeled class constants"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[[:space:]])const[[:space:]]+[a-z_\\][a-z0-9_\\|?]*[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/) {
                 print "unsupported-class-constant-metadata\trequires typed class constant metadata, outside PTN modeled class constants"
                 found = 1

@@ -2115,6 +2115,28 @@ static PTN_UNUSED void ptn_throw_property_visibility_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED void ptn_throw_class_constant_visibility_error(
+    PtnRuntime *runtime,
+    PtnPropertyVisibility visibility,
+    const char *class_name,
+    const char *constant,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot access %s constant %s::%s",
+        ptn_property_visibility_name(visibility),
+        class_name,
+        constant
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_throw_property_set_visibility_error_ex(
     PtnRuntime *runtime,
     PtnPropertyVisibility visibility,
@@ -2445,6 +2467,24 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionClassConstant")) {
+        if (strcmp(constant, "IS_PUBLIC") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PROTECTED") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PRIVATE") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "IS_FINAL") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -2617,19 +2657,56 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     return ptn_null();
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     PtnRuntime *runtime,
     const char *class_name,
     const char *constant,
-    size_t line
+    const char *access_scope,
+    int enforce_visibility,
+    size_t line,
+    size_t deprecation_line
 ) {
     const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);
-    const char *lookup_class_name = ptn_declared_class_canonical_name(resolved_class_name);
+    const char *target_class_name = ptn_declared_class_canonical_name(resolved_class_name);
+    const char *lookup_class_name = target_class_name;
     while (lookup_class_name != NULL) {
         char *key = ptn_class_constant_key(lookup_class_name, constant);
         PtnValue value;
         if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
-            ptn_runtime_emit_class_constant_deprecation(runtime, lookup_class_name, constant, line);
+            const char *declaring_class = lookup_class_name;
+            int visibility_int = (int)PTN_PROPERTY_PUBLIC;
+            int has_metadata = ptn_declared_class_constant_metadata(
+                target_class_name,
+                constant,
+                &declaring_class,
+                &visibility_int
+            );
+            if (!has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
+                free(key);
+                lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+                continue;
+            }
+            PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
+            if (
+                enforce_visibility &&
+                !ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)
+            ) {
+                free(key);
+                ptn_throw_class_constant_visibility_error(
+                    runtime,
+                    visibility,
+                    target_class_name,
+                    constant,
+                    line
+                );
+                return ptn_null();
+            }
+            ptn_runtime_emit_class_constant_deprecation(
+                runtime,
+                lookup_class_name,
+                constant,
+                deprecation_line
+            );
             free(key);
             return ptn_value_clone_deref(value);
         }
@@ -2640,7 +2717,40 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
                 return ptn_null();
             }
             if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
-                ptn_runtime_emit_class_constant_deprecation(runtime, lookup_class_name, constant, line);
+                const char *declaring_class = lookup_class_name;
+                int visibility_int = (int)PTN_PROPERTY_PUBLIC;
+                int has_metadata = ptn_declared_class_constant_metadata(
+                    target_class_name,
+                    constant,
+                    &declaring_class,
+                    &visibility_int
+                );
+                if (!has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
+                    free(key);
+                    lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+                    continue;
+                }
+                PtnPropertyVisibility visibility = (PtnPropertyVisibility)visibility_int;
+                if (
+                    enforce_visibility &&
+                    !ptn_property_visibility_allows(runtime, visibility, declaring_class, access_scope)
+                ) {
+                    free(key);
+                    ptn_throw_class_constant_visibility_error(
+                        runtime,
+                        visibility,
+                        target_class_name,
+                        constant,
+                        line
+                    );
+                    return ptn_null();
+                }
+                ptn_runtime_emit_class_constant_deprecation(
+                    runtime,
+                    lookup_class_name,
+                    constant,
+                    deprecation_line
+                );
                 free(key);
                 return ptn_value_clone_deref(value);
             }
@@ -2653,6 +2763,59 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
         return builtin_value;
     }
     return ptn_runtime_undefined_class_constant(runtime, resolved_class_name, constant);
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    size_t line
+) {
+    return ptn_runtime_read_class_constant_impl(
+        runtime,
+        class_name,
+        constant,
+        NULL,
+        0,
+        line,
+        line
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *access_scope,
+    size_t line
+) {
+    return ptn_runtime_read_class_constant_impl(
+        runtime,
+        class_name,
+        constant,
+        access_scope,
+        1,
+        line,
+        line
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope_suppress_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *access_scope,
+    size_t line
+) {
+    return ptn_runtime_read_class_constant_impl(
+        runtime,
+        class_name,
+        constant,
+        access_scope,
+        1,
+        line,
+        0
+    );
 }
 
 static PTN_UNUSED const char *ptn_dynamic_class_name_fetch_type_name(PtnValue value) {

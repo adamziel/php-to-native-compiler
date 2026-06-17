@@ -3887,11 +3887,6 @@ var_dump(in_array($needle, $haystack, true));";
 fn parser_rejects_unsupported_class_constant_boundaries() {
     let cases = [
         (
-            "non-public",
-            "<?php class Sample { private const A = 1; }",
-            "non-public class constants are unsupported",
-        ),
-        (
             "typed",
             "<?php class Sample { public const int A = 1; }",
             "typed class constants are unsupported",
@@ -3915,6 +3910,62 @@ fn parser_rejects_unsupported_class_constant_boundaries() {
             "new class constant value",
             "<?php class Test { const X = new stdClass; }",
             "New expressions are not supported in this context",
+        ),
+    ];
+
+    for (name, source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{name}");
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+    }
+}
+
+#[test]
+fn parser_accepts_non_public_class_constants() {
+    let program = parser::parse(
+        "<?php
+class Sample {
+    public const PUB = 1;
+    final public const FINAL_PUB = 4;
+    protected const PROT = 2;
+    private const PRIV = 3;
+}
+",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].constants.len(), 4);
+    assert!(program.classes[0].constants[1].is_final);
+}
+
+#[test]
+fn parser_rejects_invalid_final_class_constant_overrides() {
+    let cases = [
+        (
+            "final private",
+            "<?php class Sample { final private const PRIV = 1; }",
+            "Private constant Sample::PRIV cannot be final as it is not visible to other classes",
+        ),
+        (
+            "override final",
+            "<?php class Base { final public const NAME = 'base'; } class Child extends Base { public const NAME = 'child'; }",
+            "Child::NAME cannot override final constant Base::NAME",
+        ),
+        (
+            "narrow public",
+            "<?php class Base { public const NAME = 'base'; } class Child extends Base { protected const NAME = 'child'; }",
+            "Access level to Child::NAME must be public (as in class Base)",
+        ),
+        (
+            "narrow protected",
+            "<?php class Base { protected const NAME = 'base'; } class Child extends Base { private const NAME = 'child'; }",
+            "Access level to Child::NAME must be protected (as in class Base) or weaker",
+        ),
+        (
+            "interface invariant",
+            "<?php interface Contract { public const NAME = 'base'; } class Impl implements Contract { private const NAME = 'child'; }",
+            "Access level to Impl::NAME must be public (as in interface Contract)",
         ),
     ];
 
@@ -15928,6 +15979,199 @@ var_dump(gettype($internal->getReflectionConstant(\"IS_IMPLICIT_ABSTRACT\")));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_constants"));
     assert!(c_source.contains("ptn_reflection_class_constant_call_method"));
+}
+
+#[test]
+fn compile_reflection_class_constant_visibility_filters_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-constant-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-constant-visibility.php");
+    let output = root.join("reflection-class-constant-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstantVisBase {
+    public const PUB = \"base-pub\";
+    final public const FINAL_PUB = \"base-final\";
+    protected const PROT = \"base-prot\";
+    private const PRIV = \"base-priv\";
+}
+
+class ConstantVisChild extends ConstantVisBase {
+    public const OWN = \"child-own\";
+    private const CHILD_PRIV = \"child-priv\";
+}
+
+$base = new ReflectionClass(ConstantVisBase::class);
+var_dump($base->getConstants(ReflectionClassConstant::IS_PUBLIC));
+var_dump($base->getConstants(ReflectionClassConstant::IS_FINAL));
+var_dump($base->getConstants(ReflectionClassConstant::IS_PROTECTED));
+var_dump($base->getConstants(ReflectionClassConstant::IS_PRIVATE));
+
+$child = new ReflectionClass(ConstantVisChild::class);
+var_dump($child->getConstants(ReflectionClassConstant::IS_PRIVATE));
+
+foreach ($base->getReflectionConstants(ReflectionClassConstant::IS_PROTECTED) as $constant) {
+    echo $constant->getDeclaringClass()->getName(), \"::\", $constant->getName(), \"\\n\";
+    var_dump($constant->isProtected(), $constant->getModifiers(), $constant->getValue());
+}
+
+$private = $base->getReflectionConstant(\"PRIV\");
+var_dump($private->isPublic(), $private->isProtected(), $private->isPrivate(), $private->getModifiers());
+$final = $base->getReflectionConstant(\"FINAL_PUB\");
+var_dump($final->isFinal(), $final->getModifiers());
+var_dump(ReflectionClassConstant::IS_PUBLIC, ReflectionClassConstant::IS_PROTECTED, ReflectionClassConstant::IS_PRIVATE, ReflectionClassConstant::IS_FINAL);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [\"PUB\"]=>\n",
+            "  string(8) \"base-pub\"\n",
+            "  [\"FINAL_PUB\"]=>\n",
+            "  string(10) \"base-final\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"FINAL_PUB\"]=>\n",
+            "  string(10) \"base-final\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"PROT\"]=>\n",
+            "  string(9) \"base-prot\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"PRIV\"]=>\n",
+            "  string(9) \"base-priv\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"CHILD_PRIV\"]=>\n",
+            "  string(10) \"child-priv\"\n",
+            "}\n",
+            "ConstantVisBase::PROT\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "string(9) \"base-prot\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "int(4)\n",
+            "bool(true)\n",
+            "int(33)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(4)\n",
+            "int(32)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_constants"));
+    assert!(c_source.contains("ptn_declared_class_reflection_constant_modifiers"));
+}
+
+#[test]
+fn compile_non_public_class_constant_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-non-public-class-constant-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-public-class-constant-visibility.php");
+    let output = root.join("non-public-class-constant-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstScopeBase {
+    protected const PROT = \"base-prot\";
+    private const PRIV = \"base-priv\";
+
+    public static function basePrivate() {
+        return self::PRIV;
+    }
+
+    public static function baseProtected() {
+        return self::PROT;
+    }
+}
+
+class ConstScopeChild extends ConstScopeBase {
+    private const CHILD_PRIV = \"child-priv\";
+
+    public static function childPrivate() {
+        return self::CHILD_PRIV;
+    }
+
+    public static function inheritedProtected() {
+        return self::PROT;
+    }
+
+    public static function parentProtected() {
+        return parent::PROT;
+    }
+
+    public static function inheritedPrivateMiss() {
+        return self::PRIV;
+    }
+
+    public static function dynamicProtected() {
+        return constant(\"ConstScopeBase::PROT\");
+    }
+}
+
+function show_access($label, $value) {
+    echo $label, \": \";
+    try {
+        var_dump($value());
+    } catch (Error $e) {
+        echo \"Error: \", $e->getMessage(), \"\\n\";
+    }
+}
+
+show_access(\"global-base-prot\", function() { return ConstScopeBase::PROT; });
+show_access(\"global-base-priv\", function() { return ConstScopeBase::PRIV; });
+show_access(\"global-child-prot\", function() { return ConstScopeChild::PROT; });
+show_access(\"global-child-priv-miss\", function() { return ConstScopeChild::PRIV; });
+show_access(\"base-private\", function() { return ConstScopeBase::basePrivate(); });
+show_access(\"base-protected\", function() { return ConstScopeBase::baseProtected(); });
+show_access(\"child-private\", function() { return ConstScopeChild::childPrivate(); });
+show_access(\"child-inherited-protected\", function() { return ConstScopeChild::inheritedProtected(); });
+show_access(\"child-parent-protected\", function() { return ConstScopeChild::parentProtected(); });
+show_access(\"child-inherited-private-miss\", function() { return ConstScopeChild::inheritedPrivateMiss(); });
+show_access(\"child-dynamic-protected\", function() { return ConstScopeChild::dynamicProtected(); });
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "global-base-prot: Error: Cannot access protected constant ConstScopeBase::PROT\n",
+            "global-base-priv: Error: Cannot access private constant ConstScopeBase::PRIV\n",
+            "global-child-prot: Error: Cannot access protected constant ConstScopeChild::PROT\n",
+            "global-child-priv-miss: Error: Undefined constant ConstScopeChild::PRIV\n",
+            "base-private: string(9) \"base-priv\"\n",
+            "base-protected: string(9) \"base-prot\"\n",
+            "child-private: string(10) \"child-priv\"\n",
+            "child-inherited-protected: string(9) \"base-prot\"\n",
+            "child-parent-protected: string(9) \"base-prot\"\n",
+            "child-inherited-private-miss: Error: Undefined constant ConstScopeChild::PRIV\n",
+            "child-dynamic-protected: string(9) \"base-prot\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_constant_metadata"));
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope"));
 }
 
 #[test]

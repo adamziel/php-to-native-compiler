@@ -1089,6 +1089,18 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires typed class constant metadata",
         ),
         (
+            "non-public class constant direct access",
+            "--TEST--\nprotected class constant\n--FILE--\n<?php\nclass Bag { protected const NAME = 'bag'; }\necho Bag::NAME;\n--EXPECT--\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
+            "non-public class constant reflection metadata",
+            "--TEST--\nreflection class constants\n--FILE--\n<?php\nclass Bag { protected const NAME = 'bag'; }\n$r = new ReflectionClass(Bag::class);\nvar_dump($r->getConstants(ReflectionClassConstant::IS_PROTECTED));\n--EXPECT--\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
             "class constant spread default",
             "--TEST--\nclass constant spread\n--FILE--\n<?php\nclass Bag { public const VALUES = [0, ...self::MORE]; }\n--EXPECT--\n",
             "unsupported-class-constant-metadata\t",

@@ -302,6 +302,7 @@ impl Parser<'_> {
         validate_readonly_class_inheritance(&classes)?;
         validate_property_override_set_visibility(&classes)?;
         validate_property_type_invariance(&classes)?;
+        validate_class_constant_overrides(&classes)?;
         validate_class_scoped_constant_exprs(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
@@ -1457,6 +1458,7 @@ impl Parser<'_> {
                 attributes,
                 value: Expr::Null(token.span),
                 is_enum_case: true,
+                is_final: false,
                 span: token.span,
             });
         }
@@ -1742,12 +1744,6 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            if modifiers.visibility != PropertyVisibility::Public {
-                return Err(Diagnostic::new(
-                    "non-public class constants are unsupported",
-                    modifiers.visibility_span,
-                ));
-            }
             if class_is_interface && modifiers.visibility != PropertyVisibility::Public {
                 return Err(Diagnostic::new(
                     format!("Access type for interface constant {class_name} must be public"),
@@ -1755,7 +1751,11 @@ impl Parser<'_> {
                 ));
             }
             return Ok(ParsedClassMember::Constants(
-                self.parse_class_constant_declarations(modifiers.visibility, attributes)?,
+                self.parse_class_constant_declarations(
+                    modifiers.visibility,
+                    modifiers.is_final,
+                    attributes,
+                )?,
             ));
         }
         if class_is_interface && matches!(self.peek().kind, TokenKind::Variable(_)) {
@@ -2060,11 +2060,15 @@ impl Parser<'_> {
     fn parse_class_constant_declarations(
         &mut self,
         visibility: PropertyVisibility,
+        is_final: bool,
         attributes: ParsedAttributes,
     ) -> Result<Vec<ClassConstantDecl>> {
         self.expect_const()?;
-        let mut constants =
-            vec![self.parse_class_constant_declaration(visibility, attributes.clone())?];
+        let mut constants = vec![self.parse_class_constant_declaration(
+            visibility,
+            is_final,
+            attributes.clone(),
+        )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             if attributes.total_count > 0 {
                 return Err(Diagnostic::new(
@@ -2073,9 +2077,11 @@ impl Parser<'_> {
                 ));
             }
             self.advance();
-            constants.push(
-                self.parse_class_constant_declaration(visibility, AttributeMetadata::default())?,
-            );
+            constants.push(self.parse_class_constant_declaration(
+                visibility,
+                is_final,
+                AttributeMetadata::default(),
+            )?);
         }
         validate_builtin_attributes_for_target(
             &attributes,
@@ -2092,6 +2098,7 @@ impl Parser<'_> {
     fn parse_class_constant_declaration(
         &mut self,
         visibility: PropertyVisibility,
+        is_final: bool,
         attributes: ParsedAttributes,
     ) -> Result<ClassConstantDecl> {
         let looks_like_typed_constant = (self.peek_is_type_hint()
@@ -2130,6 +2137,7 @@ impl Parser<'_> {
             attributes,
             value,
             is_enum_case: false,
+            is_final,
             span: token.span,
         })
     }
@@ -11452,6 +11460,103 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
                 ),
                 Some(property.span),
             ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        for constant in &class.constants {
+            if constant.is_final && constant.visibility == PropertyVisibility::Private {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Private constant {}::{} cannot be final as it is not visible to other classes",
+                        class.name, constant.name
+                    ),
+                    Some(constant.span),
+                ));
+            }
+
+            let mut parent_name = class.parent_name.as_deref();
+            while let Some(name) = parent_name {
+                let Some(parent) = classes
+                    .iter()
+                    .find(|candidate| candidate.name.eq_ignore_ascii_case(name))
+                else {
+                    break;
+                };
+                let Some(parent_constant) = parent
+                    .constants
+                    .iter()
+                    .find(|candidate| candidate.name == constant.name)
+                else {
+                    parent_name = parent.parent_name.as_deref();
+                    continue;
+                };
+                if parent_constant.visibility == PropertyVisibility::Private {
+                    parent_name = parent.parent_name.as_deref();
+                    continue;
+                }
+                if parent_constant.is_final {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "{}::{} cannot override final constant {}::{}",
+                            class.name, constant.name, parent.name, parent_constant.name
+                        ),
+                        Some(constant.span),
+                    ));
+                }
+                if visibility_rank(constant.visibility)
+                    > visibility_rank(parent_constant.visibility)
+                {
+                    let suffix = if parent_constant.visibility == PropertyVisibility::Public {
+                        ""
+                    } else {
+                        " or weaker"
+                    };
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Access level to {}::{} must be {} (as in class {}){}",
+                            class.name,
+                            constant.name,
+                            property_visibility_name(parent_constant.visibility),
+                            parent.name,
+                            suffix
+                        ),
+                        Some(constant.span),
+                    ));
+                }
+                break;
+            }
+
+            for interface_name in &class.interfaces {
+                let Some(interface) = classes
+                    .iter()
+                    .find(|candidate| candidate.name.eq_ignore_ascii_case(interface_name))
+                else {
+                    continue;
+                };
+                let Some(interface_constant) = interface
+                    .constants
+                    .iter()
+                    .find(|candidate| candidate.name == constant.name)
+                else {
+                    continue;
+                };
+                if constant.visibility != interface_constant.visibility {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Access level to {}::{} must be {} (as in interface {})",
+                            class.name,
+                            constant.name,
+                            property_visibility_name(interface_constant.visibility),
+                            interface.name
+                        ),
+                        Some(constant.span),
+                    ));
+                }
+            }
         }
     }
     Ok(())

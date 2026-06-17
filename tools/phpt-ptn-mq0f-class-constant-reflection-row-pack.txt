@@ -1,0 +1,19 @@
+# ptn-mq0f: full-corpus class constant metadata and reflection row pack.
+#
+# Source bucket: full php-src corpus Zend/ext rows matching class constant
+# visibility/finality and ReflectionClass constant metadata surfaces.
+Zend/tests/constants/bug76754.phpt
+Zend/tests/constants/final_constants/final_const2.phpt
+Zend/tests/constants/final_constants/final_const3.phpt
+Zend/tests/constants/iface_constant_visibility_variance.phpt
+Zend/tests/inheritance/bug78344.phpt
+Zend/tests/traits/constant_014.phpt
+Zend/tests/traits/constant_015.phpt
+ext/reflection/tests/ReflectionClass_getConstants_basic.phpt
+ext/reflection/tests/ReflectionClass_getConstants_filter.phpt
+ext/reflection/tests/ReflectionClass_getReflectionConstant.phpt
+ext/reflection/tests/ReflectionClass_getReflectionConstants_filter.phpt
+ext/reflection/tests/ReflectionObject_getConstants_basic.phpt
+ext/reflection/tests/bug53915.phpt
+ext/reflection/tests/gh8080.phpt
+ext/standard/tests/general_functions/bug72920.phpt
