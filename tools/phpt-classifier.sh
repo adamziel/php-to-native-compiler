@@ -1757,6 +1757,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/deprecated\/property_readonly_00[123][.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/property_readonly_00[12][.]phpt$/
         }
+        function ptn_supported_reflection_property_named_type_metadata_row() {
+            return ptn_path !~ /(^|\/)(lazy_objects|property_hooks)\// &&
+                ptn_path !~ /ext\/reflection\/tests\/types\//
+        }
         function ptn_supported_property_hook_metadata_row() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/with_Override_(okay|error_get|error_set)[.]phpt$/ ||
@@ -1929,7 +1933,13 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                     found = 1
                     exit
                 }
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getdoccomment|gethook|isreadonly|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
+                    print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
+                    found = 1
+                    exit
+                }
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|isreadonly)[[:space:]]*\\(") &&
+                    !ptn_supported_reflection_property_named_type_metadata_row()) {
                     print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                     found = 1
                     exit
@@ -1938,7 +1948,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
                     !ptn_supported_internal_attribute_metadata_row()) ||
-                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getdoccomment|gethook|isreadonly|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|isreadonly)[[:space:]]*\(/ &&
+                    !ptn_supported_reflection_property_named_type_metadata_row()) ||
                 line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_|export|setaccessible|getmodifiernames)/) {
                 print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                 found = 1

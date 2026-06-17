@@ -3065,6 +3065,47 @@ fn emit_reflection_type_metadata_arguments(out: &mut String, type_hint: Option<&
     }
 }
 
+fn reflection_property_named_type_metadata(
+    type_hint: &PropertyTypeHint,
+) -> Option<ReflectionNamedTypeMetadata> {
+    let name = match &type_hint.kind {
+        PropertyTypeKind::Null => "null",
+        PropertyTypeKind::Array => "array",
+        PropertyTypeKind::Int => "int",
+        PropertyTypeKind::Float => "float",
+        PropertyTypeKind::String => "string",
+        PropertyTypeKind::Bool => "bool",
+        PropertyTypeKind::Mixed => "mixed",
+        PropertyTypeKind::Object => "object",
+        PropertyTypeKind::Class(class_name) => {
+            return Some(ReflectionNamedTypeMetadata {
+                name: class_name.clone(),
+                display_name: type_hint.text.clone(),
+                allows_null: type_hint.allows_null,
+                is_builtin: false,
+            });
+        }
+        PropertyTypeKind::Unsupported => {
+            let name = type_hint.text.strip_prefix('?').unwrap_or(&type_hint.text);
+            if matches!(name, "callable" | "iterable" | "true" | "false" | "static") {
+                return Some(ReflectionNamedTypeMetadata {
+                    name: name.to_string(),
+                    display_name: type_hint.text.clone(),
+                    allows_null: type_hint.allows_null,
+                    is_builtin: !name.eq_ignore_ascii_case("static"),
+                });
+            }
+            return None;
+        }
+    };
+    Some(ReflectionNamedTypeMetadata {
+        name: name.to_string(),
+        display_name: type_hint.text.clone(),
+        allows_null: type_hint.allows_null,
+        is_builtin: true,
+    })
+}
+
 fn reflection_named_type_name(type_hint: &TypeHint) -> String {
     match type_hint {
         TypeHint::Null => "null".to_string(),
@@ -7429,6 +7470,70 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_property_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin, int *is_readonly) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)type_name;\n");
+        out.push_str("    (void)type_display_name;\n");
+        out.push_str("    (void)allows_null;\n");
+        out.push_str("    (void)is_builtin;\n");
+        out.push_str("    (void)is_readonly;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            *is_readonly = ");
+            out.push_str(if entry.is_readonly { "1" } else { "0" });
+            out.push_str(";\n");
+            if let Some(type_metadata) = entry
+                .type_hint
+                .and_then(reflection_property_named_type_metadata)
+            {
+                out.push_str("            *type_name = \"");
+                out.push_str(&c_string(&type_metadata.name));
+                out.push_str("\";\n");
+                out.push_str("            *type_display_name = \"");
+                out.push_str(&c_string(&type_metadata.display_name));
+                out.push_str("\";\n");
+                out.push_str("            *allows_null = ");
+                out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+                out.push_str(";\n");
+                out.push_str("            *is_builtin = ");
+                out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+                out.push_str(";\n");
+            } else {
+                out.push_str("            *type_name = NULL;\n");
+                out.push_str("            *type_display_name = NULL;\n");
+                out.push_str("            *allows_null = 0;\n");
+                out.push_str("            *is_builtin = 0;\n");
+            }
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name) {\n",
     );
     out.push_str("    (void)runtime;\n");
@@ -8083,6 +8188,7 @@ struct ClassPropertyExistsEntry<'a> {
     set_visibility: PropertyVisibility,
     is_static: bool,
     is_final: bool,
+    is_readonly: bool,
     is_virtual: bool,
     type_hint: Option<&'a PropertyTypeHint>,
     value: Option<&'a ValueExpr>,
@@ -8096,6 +8202,7 @@ impl ClassPropertyExistsEntry<'_> {
             self.set_visibility,
             self.is_static,
             self.is_final,
+            self.is_readonly,
             self.is_virtual,
         )
     }
@@ -8106,6 +8213,7 @@ fn property_reflection_modifiers(
     set_visibility: PropertyVisibility,
     is_static: bool,
     is_final: bool,
+    is_readonly: bool,
     is_virtual: bool,
 ) -> i32 {
     let mut modifiers = match visibility {
@@ -8118,6 +8226,9 @@ fn property_reflection_modifiers(
     }
     if is_final || (set_visibility != visibility && set_visibility == PropertyVisibility::Private) {
         modifiers |= 32;
+    }
+    if is_readonly {
+        modifiers |= 128;
     }
     if set_visibility != visibility {
         modifiers |= match set_visibility {
@@ -8210,6 +8321,7 @@ fn class_property_exists_chain<'a>(
                     set_visibility: property.set_visibility,
                     is_static: false,
                     is_final: property.is_final,
+                    is_readonly: property.is_readonly,
                     is_virtual: property.is_virtual,
                     type_hint: property.type_hint.as_ref(),
                     value: property.value.as_ref(),
@@ -8224,6 +8336,7 @@ fn class_property_exists_chain<'a>(
                 set_visibility: property.set_visibility,
                 is_static: true,
                 is_final: property.is_final,
+                is_readonly: false,
                 is_virtual: false,
                 type_hint: property.type_hint.as_ref(),
                 value: property.value.as_ref(),

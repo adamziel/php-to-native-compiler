@@ -1872,9 +1872,21 @@ fn phpt_classifier_keeps_declared_reflection_property_rows_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_reflection_property_type_rows() {
+fn phpt_classifier_keeps_declared_reflection_property_type_rows_runnable() {
     let classification = classify(
         "--TEST--\nreflection property type\n--FILE--\n<?php\nclass Bag { public int $value = 1; }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getType());\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_reflection_property_union_type_rows() {
+    let classification = classify_at_relative_path(
+        "--TEST--\nreflection property union type\n--FILE--\n<?php\nclass Bag { public int|string $value; }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getType());\n--EXPECT--\n",
+        "ext/reflection/tests/types/union_types.phpt",
     );
     assert!(
         classification.starts_with("unsupported-internal-reflection-metadata\t"),

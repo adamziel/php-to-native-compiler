@@ -40997,7 +40997,12 @@ class ReflectPropChild extends ReflectPropBase {
     private static $count = 3;
 }
 
+class ReflectPropTypes {}
+
 class ReflectPropModifiers {
+    public readonly int $readonlyValue;
+    public ?string $nullableName = null;
+    public ReflectPropTypes $classTyped;
     public final $finalInstance;
     public static final $finalStatic;
     public $getHook { get { return 42; } }
@@ -41061,6 +41066,19 @@ var_dump($protectedSet->isFinal());
 $privateSet = new ReflectionProperty(\"ReflectPropModifiers\", \"privateSet\");
 var_dump($privateSet->getModifiers());
 var_dump($privateSet->isFinal());
+$readonly = new ReflectionProperty(\"ReflectPropModifiers\", \"readonlyValue\");
+var_dump($readonly->isReadOnly());
+var_dump($readonly->getModifiers());
+$readonlyType = $readonly->getType();
+var_dump($readonly->hasType(), $readonlyType->getName(), (string) $readonlyType, $readonlyType->allowsNull(), $readonlyType->isBuiltin());
+$nullable = new ReflectionProperty(\"ReflectPropModifiers\", \"nullableName\");
+$nullableType = $nullable->getType();
+var_dump($nullableType->getName(), (string) $nullableType, $nullableType->allowsNull(), $nullableType->isBuiltin());
+$classTyped = new ReflectionProperty(\"ReflectPropModifiers\", \"classTyped\");
+$classType = $classTyped->getType();
+var_dump($classType->getName(), (string) $classType, $classType->allowsNull(), $classType->isBuiltin());
+var_dump($finalInstance->hasType());
+var_dump($finalInstance->getType());
 
 $internal = new ReflectionProperty(Exception::class, \"message\");
 var_dump($internal->getDeclaringClass()->getName());
@@ -41073,6 +41091,9 @@ var_dump($internal->getDeclaringClass()->getName());
 var_dump($internal->getDefaultValue());
 
 var_dump(method_exists(\"ReflectionProperty\", \"getModifiers\"));
+var_dump(method_exists(\"ReflectionProperty\", \"getType\"));
+var_dump(method_exists(\"ReflectionProperty\", \"hasType\"));
+var_dump(method_exists(\"ReflectionProperty\", \"isReadOnly\"));
 var_dump(in_array(\"getProperty\", get_class_methods(\"ReflectionClass\")));
 try {
     $rc->getProperty(\"missing\");
@@ -41118,7 +41139,7 @@ try {
             "int(20)\n",
             "int(3)\n",
             "\n",
-            "Deprecated: Calling ReflectionProperty::setValue() with a single argument is deprecated in ptn on line 46\n",
+            "Deprecated: Calling ReflectionProperty::setValue() with a single argument is deprecated in ptn on line 56\n",
             "int(9)\n",
             "int(33)\n",
             "bool(true)\n",
@@ -41134,6 +41155,23 @@ try {
             "bool(false)\n",
             "int(4129)\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "int(2177)\n",
+            "bool(true)\n",
+            "string(3) \"int\"\n",
+            "string(3) \"int\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(6) \"string\"\n",
+            "string(7) \"?string\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(16) \"ReflectPropTypes\"\n",
+            "string(16) \"ReflectPropTypes\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "NULL\n",
             "string(9) \"Exception\"\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -41143,6 +41181,9 @@ try {
             "int(1)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "ReflectionException: Property ReflectPropChild::$missing does not exist\n",
         )
     );
@@ -41150,6 +41191,7 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_reflection_property_metadata"));
+    assert!(c_source.contains("ptn_declared_class_reflection_property_type_metadata"));
     assert!(c_source.contains("ptn_reflection_property_new"));
 }
 

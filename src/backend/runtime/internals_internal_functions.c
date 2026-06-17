@@ -40783,6 +40783,7 @@ static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, co
 static PtnValue ptn_declared_class_reflection_default_properties(PtnRuntime *runtime, const char *class_name);
 static PtnValue ptn_declared_class_reflection_static_properties(PtnRuntime *runtime, const char *class_name, size_t line);
 static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers);
+static int ptn_declared_class_reflection_property_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin, int *is_readonly);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects);
 static PtnValue ptn_declared_class_reflection_attributes(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
@@ -42985,7 +42986,9 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getRawValue")
+        || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "getValue")
+        || ptn_ascii_case_equal(method_name, "hasType")
         || ptn_ascii_case_equal(method_name, "hasDefaultValue")
         || ptn_ascii_case_equal(method_name, "isDefault")
         || ptn_ascii_case_equal(method_name, "isDynamic")
@@ -42995,6 +42998,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isProtected")
         || ptn_ascii_case_equal(method_name, "isPublic")
         || ptn_ascii_case_equal(method_name, "isReadable")
+        || ptn_ascii_case_equal(method_name, "isReadOnly")
         || ptn_ascii_case_equal(method_name, "isStatic")
         || ptn_ascii_case_equal(method_name, "isVirtual")
         || ptn_ascii_case_equal(method_name, "isWritable")
@@ -46595,6 +46599,33 @@ static int ptn_reflection_property_metadata(
     );
 }
 
+static int ptn_reflection_property_type_metadata(
+    PtnReflectionPropertyData *data,
+    const char **type_name,
+    const char **type_display_name,
+    int *allows_null,
+    int *is_builtin,
+    int *is_readonly
+) {
+    *type_name = NULL;
+    *type_display_name = NULL;
+    *allows_null = 0;
+    *is_builtin = 0;
+    *is_readonly = 0;
+    if (data->is_dynamic) {
+        return 0;
+    }
+    return ptn_declared_class_reflection_property_type_metadata(
+        data->class_name,
+        data->name,
+        type_name,
+        type_display_name,
+        allows_null,
+        is_builtin,
+        is_readonly
+    );
+}
+
 static int ptn_reflection_property_visibility_allows(
     const char *scope_class,
     const char *declaring_class,
@@ -47291,6 +47322,60 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         }
         return ptn_int(modifiers);
     }
+    if (ptn_ascii_case_equal(name, "hasType")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *type_name = NULL;
+        const char *type_display_name = NULL;
+        int allows_null = 0;
+        int is_builtin = 0;
+        int is_readonly = 0;
+        ptn_reflection_property_type_metadata(
+            data,
+            &type_name,
+            &type_display_name,
+            &allows_null,
+            &is_builtin,
+            &is_readonly
+        );
+        (void)type_display_name;
+        (void)allows_null;
+        (void)is_builtin;
+        (void)is_readonly;
+        return ptn_bool(type_name != NULL);
+    }
+    if (ptn_ascii_case_equal(name, "getType")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *type_name = NULL;
+        const char *type_display_name = NULL;
+        int allows_null = 0;
+        int is_builtin = 0;
+        int is_readonly = 0;
+        ptn_reflection_property_type_metadata(
+            data,
+            &type_name,
+            &type_display_name,
+            &allows_null,
+            &is_builtin,
+            &is_readonly
+        );
+        (void)is_readonly;
+        if (type_name == NULL) {
+            return ptn_null();
+        }
+        return ptn_reflection_named_type_object_from_metadata(
+            runtime,
+            type_name,
+            type_display_name,
+            allows_null,
+            is_builtin
+        );
+    }
     if (ptn_ascii_case_equal(name, "isPublic")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL
@@ -47326,6 +47411,30 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
             : ptn_bool((modifiers & 32) != 0);
+    }
+    if (ptn_ascii_case_equal(name, "isReadOnly")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *type_name = NULL;
+        const char *type_display_name = NULL;
+        int allows_null = 0;
+        int is_builtin = 0;
+        int is_readonly = 0;
+        ptn_reflection_property_type_metadata(
+            data,
+            &type_name,
+            &type_display_name,
+            &allows_null,
+            &is_builtin,
+            &is_readonly
+        );
+        (void)type_name;
+        (void)type_display_name;
+        (void)allows_null;
+        (void)is_builtin;
+        return ptn_bool(is_readonly);
     }
     if (ptn_ascii_case_equal(name, "isVirtual")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
