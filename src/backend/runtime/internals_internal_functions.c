@@ -403,6 +403,7 @@ static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
+static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
@@ -3458,6 +3459,34 @@ static void ptn_unserialize_emit_extra_data_warning(
     ptn_emit_runtime_warning(runtime, message, line);
 }
 
+static void ptn_unserialize_emit_non_enum_class_warning(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "unserialize(): Class '%s' is not an enum",
+        class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "unserialize(): Class '%s' is not an enum",
+        class_name
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
 static PtnValue ptn_unserialize_new_object_shell(
     PtnRuntime *runtime,
     const char *class_name,
@@ -3854,6 +3883,36 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             ptn_unserialize_update_slot(state, result.id, &result.value);
             free(class_name);
+            return result;
+        }
+        case 'E': {
+            size_t enum_len = 0;
+            if (!ptn_unserialize_parse_unsigned_fail_at(state, value_start, &enum_len) ||
+                !ptn_unserialize_consume(state, ':') ||
+                !ptn_unserialize_consume(state, '"') ||
+                !ptn_unserialize_require(state, enum_len)) {
+                return result;
+            }
+            const char *enum_name = state->data + state->pos;
+            const char *separator = memchr(enum_name, ':', enum_len);
+            if (separator == NULL || separator == enum_name || separator + 1 >= enum_name + enum_len) {
+                ptn_unserialize_fail_at(state, value_start);
+                return result;
+            }
+            size_t class_len = (size_t)(separator - enum_name);
+            char *class_name = ptn_duplicate_string_len(enum_name, class_len);
+            state->pos += enum_len;
+            if (!ptn_unserialize_consume(state, '"') ||
+                !ptn_unserialize_consume(state, ';')) {
+                free(class_name);
+                return result;
+            }
+            if ((ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) &&
+                !ptn_declared_class_is_enum(class_name)) {
+                ptn_unserialize_emit_non_enum_class_warning(runtime, class_name, state->line);
+            }
+            free(class_name);
+            ptn_unserialize_fail_at(state, value_start);
             return result;
         }
         case 'R': {
@@ -40699,6 +40758,7 @@ static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_user_class_or_interface_exists(const char *name);
+static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_is_abstract(const char *name);
 static int ptn_declared_class_is_final(const char *name);
 static int ptn_declared_class_is_readonly(const char *name);
@@ -42051,6 +42111,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class
     return ptn_ascii_case_equal(class_name, "DateInterval");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "RoundingMode");
+}
+
 static int ptn_internal_interface_exists_name(const char *name) {
     return ptn_ascii_case_equal(name, "ArrayAccess")
         || ptn_ascii_case_equal(name, "Iterator")
@@ -42098,6 +42162,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_datetime_immutable(class_name)
         || ptn_internal_class_name_is_datetime_zone(class_name)
         || ptn_internal_class_name_is_date_interval(class_name)
+        || ptn_internal_class_name_is_rounding_mode(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
