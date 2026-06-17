@@ -6839,6 +6839,20 @@ enum Code: int {
 }
 
 #[test]
+fn parser_rejects_enum_cases_in_classes() {
+    let error = parser::parse(
+        "<?php
+class Foo {
+    case Bar;
+}",
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Case can only be used in enums");
+    assert_eq!(error.span.unwrap().line, 3);
+}
+
+#[test]
 fn parser_accepts_simple_trait_declarations_and_use_composition() {
     let program = parser::parse(
         "<?php
@@ -44891,6 +44905,66 @@ echo \"unreachable\\n\";
 }
 
 #[test]
+fn compile_enum_declaration_contract_fatals_to_native_binary() {
+    let cases = [
+        (
+            "enum-extend-builtin",
+            "<?php
+class Demo extends RoundingMode {}
+echo \"unreachable\\n\";
+",
+            "Class Demo cannot extend enum RoundingMode",
+            2,
+        ),
+        (
+            "class-implements-unit-enum",
+            "<?php
+class Foo implements UnitEnum {}
+echo \"unreachable\\n\";
+",
+            "Non-enum class Foo cannot implement interface UnitEnum",
+            2,
+        ),
+        (
+            "class-implements-backed-enum",
+            "<?php
+class Foo implements BackedEnum {}
+echo \"unreachable\\n\";
+",
+            "Non-enum class Foo cannot implement interface UnitEnum",
+            2,
+        ),
+    ];
+
+    for (name, source, message, line) in cases {
+        let root_name = format!("ptn-native-{name}");
+        let root = temp_dir(&root_name);
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{name}.php"));
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{name}");
+        assert_eq!(execution.status.code(), Some(255), "{name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: {message} in {} on line {line}\n",
+                input.display()
+            ),
+            "{name}"
+        );
+
+        let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+        assert!(c_source.contains(message), "{name}");
+    }
+}
+
+#[test]
 fn compile_non_public_method_visibility_dispatch_to_native_binary() {
     let root = temp_dir("ptn-native-non-public-method-visibility");
     fs::create_dir_all(&root).unwrap();
@@ -46398,6 +46472,36 @@ new C;
             input.display()
         )
     );
+}
+
+#[test]
+fn compile_unserialize_non_enum_payload_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-non-enum-payload");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-non-enum-payload.php");
+    let output = root.join("unserialize-non-enum-payload-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {}
+var_dump(unserialize('E:7:\"Foo:Bar\";'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: unserialize(): Class 'Foo' is not an enum in {} on line 3\n\nWarning: unserialize(): Error at offset 0 of 14 bytes in {} on line 3\nbool(false)\n",
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

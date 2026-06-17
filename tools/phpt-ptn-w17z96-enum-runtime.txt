@@ -21,3 +21,9 @@ Zend/tests/enum/backed-duplicate-int.phpt
 Zend/tests/enum/backed-duplicate-string.phpt
 Zend/tests/enum/backed-from-invalid-int.phpt
 Zend/tests/enum/backed-from-invalid-string.phpt
+Zend/tests/enum/case-in-class.phpt
+Zend/tests/enum/enum-reserved-non-modifiers.phpt
+Zend/tests/enum/extending-builtin-error.phpt
+Zend/tests/enum/no-class-implements-backed-enum.phpt
+Zend/tests/enum/no-class-implements-unit-enum.phpt
+Zend/tests/enum/unserialize-non-enum.phpt

@@ -2014,6 +2014,12 @@ impl Parser<'_> {
                 )?,
             ));
         }
+        if matches!(self.peek().kind, TokenKind::Case) {
+            return Err(Diagnostic::new(
+                "Case can only be used in enums",
+                Some(self.peek().span),
+            ));
+        }
         if !matches!(self.peek().kind, TokenKind::Function) {
             return Err(Diagnostic::new(
                 "unsupported class member",
@@ -9639,6 +9645,8 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
             | "traversable"
             | "stringable"
             | "throwable"
+            | "unitenum"
+            | "backedenum"
             | "datetimeinterface"
             | "countable"
             | "serializable"
@@ -9669,6 +9677,10 @@ fn is_modeled_builtin_date_class_name(name: &str) -> bool {
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
         "datetime" | "datetimeimmutable" | "datetimezone" | "dateinterval"
     )
+}
+
+fn is_modeled_builtin_enum_class_name(name: &str) -> bool {
+    is_known_internal_enum_class(name)
 }
 
 fn is_modeled_builtin_reflection_class_name(name: &str) -> bool {
@@ -10395,6 +10407,7 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
         if parent_name.eq_ignore_ascii_case("stdClass")
             || is_modeled_spl_iterator_class_name(parent_name)
             || is_modeled_builtin_date_class_name(parent_name)
+            || is_modeled_builtin_enum_class_name(parent_name)
             || is_modeled_builtin_exception_class_name(parent_name)
             || is_modeled_builtin_reflection_class_name(parent_name)
             || parent_name.eq_ignore_ascii_case("Generator")
@@ -10982,6 +10995,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("SplFileObject")
         || name.eq_ignore_ascii_case("Generator")
         || is_modeled_builtin_date_class_name(name)
+        || is_modeled_builtin_enum_class_name(name)
         || is_modeled_builtin_exception_class_name(name)
         || is_modeled_builtin_reflection_class_name(name)
         || find_class(classes, name).is_some()
@@ -11382,6 +11396,8 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         || candidate_name.eq_ignore_ascii_case("DateTimeImmutable")
     {
         &["DateTimeInterface"][..]
+    } else if is_modeled_builtin_enum_class_name(candidate_name) {
+        &["UnitEnum", "BackedEnum"][..]
     } else if candidate_name.eq_ignore_ascii_case("ReflectionFunction")
         || candidate_name.eq_ignore_ascii_case("ReflectionMethod")
     {
