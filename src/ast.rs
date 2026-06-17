@@ -893,6 +893,7 @@ pub enum Expr {
     },
     Array {
         elements: Vec<ArrayElement>,
+        short_syntax: bool,
         span: SourceSpan,
     },
     List(ListExpr),

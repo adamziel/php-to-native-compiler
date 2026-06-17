@@ -3286,6 +3286,74 @@ fn parser_accepts_short_list_assignment_holes() {
 }
 
 #[test]
+fn parser_rejects_invalid_list_assignment_shapes() {
+    let cases = [
+        (
+            "<?php [42] = [1];",
+            "Assignments can only happen to writable values",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php [, \"a\" => $b] = [1, \"a\" => 2];",
+            "Cannot use empty array entries in keyed array assignment",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php list($zero, 1 => $one) = [0, 1 => 1];",
+            "Cannot mix keyed and unkeyed array entries in assignments",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php list([$a]) = [[1]];",
+            "Cannot mix [] and list()",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php [list($a)] = [[1]];",
+            "Cannot mix [] and list()",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php [array($a)] = [array(42)];",
+            "Cannot assign to array(), use [] instead",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php [list($a)];",
+            "Cannot use list() as standalone expression",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php var_dump(list($a));",
+            "syntax error, unexpected token \")\", expecting \"=\"",
+            DiagnosticKind::ParseError,
+        ),
+    ];
+
+    for (source, message, kind) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+        assert_eq!(error.kind, kind, "{source}");
+    }
+}
+
+#[test]
+fn parser_reports_php_write_context_and_unset_append_errors() {
+    let method_write =
+        parser::parse("<?php class Box { function get() {} } $box = new Box(); $box->get() = 1;")
+            .unwrap_err();
+    assert_eq!(
+        method_write.message,
+        "Can't use method return value in write context"
+    );
+    assert_eq!(method_write.kind, DiagnosticKind::Fatal);
+
+    let unset_append = parser::parse("<?php unset($items[]);").unwrap_err();
+    assert_eq!(unset_append.message, "Cannot use [] for unsetting");
+    assert_eq!(unset_append.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
 fn parser_accepts_variable_root_array_assignment_and_unset() {
     let program = parser::parse(
         "<?php $items[null] = \"value\"; $items[] += 2; $items[0][\"nested\"] = 3; unset($items[null], $items[0][\"nested\"], $items);",
@@ -24075,6 +24143,32 @@ Array of nulls:\n\
 NULL\n\
 NULL\n\
 NULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_list_destructuring_non_array_container_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-list-destructuring-non-array-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("list-destructuring-non-array-diagnostics.php");
+    let output = root.join("list-destructuring-non-array-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+list($boolValue) = true;\n\
+var_dump($boolValue);\n\
+try { list($objectValue) = new stdClass(); } catch (\\Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Cannot use bool as array in ptn on line 2\nNULL\nCannot use object of type stdClass as array\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

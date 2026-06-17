@@ -6207,19 +6207,39 @@ static PTN_UNUSED PtnValue ptn_array_read_for_list_destructure(
     if (ptn_arrayaccess_can_dispatch(runtime, container, "offsetGet")) {
         return ptn_arrayaccess_read(runtime, container, key_value, line);
     }
+    if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
+        ptn_throw_cannot_use_object_as_array(runtime, container, line);
+        return ptn_null();
+    }
     if (container.type != PTN_ARRAY) {
         char message[128];
+        const char *type_name = container.type == PTN_BOOL
+            ? "bool"
+            : ptn_offset_container_type_name(container);
         int written = snprintf(
             message,
             sizeof(message),
             "Cannot use %s as array",
-            ptn_offset_container_type_name(container)
+            type_name
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
         ptn_emit_array_runtime_diagnostic(runtime, "Warning", message, line);
         return ptn_null();
+    }
+
+    if (key_value.type == PTN_NULL) {
+        ptn_emit_null_array_offset_deprecation(runtime, line);
+    } else if (key_value.type == PTN_RESOURCE) {
+        ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
+    } else if (key_value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(key_value.as.floating)) {
+        ptn_emit_float_to_int_precision_deprecation_at(
+            &runtime->diagnostics,
+            key_value.as.floating,
+            runtime->source_path == NULL ? "ptn" : runtime->source_path,
+            line
+        );
     }
 
     PtnArrayKey key;

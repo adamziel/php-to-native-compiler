@@ -85,6 +85,7 @@ fn parse_with_options(
         nested_functions: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
         allow_append_array_read: false,
+        allow_standalone_list_array_element: false,
         active_type_scope: None,
         allow_unscoped_relative_types: 0,
         return_by_ref_stack: Vec::new(),
@@ -116,6 +117,7 @@ struct Parser<'a> {
     nested_functions: Vec<FunctionDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
     allow_append_array_read: bool,
+    allow_standalone_list_array_element: bool,
     active_type_scope: Option<ActiveTypeScope>,
     allow_unscoped_relative_types: usize,
     return_by_ref_stack: Vec<bool>,
@@ -4718,7 +4720,7 @@ impl Parser<'_> {
     }
 
     fn parse_unset_target(&mut self) -> Result<UnsetTarget> {
-        let target = self.parse_expr()?;
+        let target = self.parse_expr_allowing_append_array_read()?;
         match target {
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
             Expr::DynamicVariable { name, span } => Ok(UnsetTarget::DynamicVariable { name, span }),
@@ -5192,6 +5194,14 @@ impl Parser<'_> {
         expr
     }
 
+    fn parse_array_element_expr(&mut self) -> Result<Expr> {
+        let previous_allow_standalone_list = self.allow_standalone_list_array_element;
+        self.allow_standalone_list_array_element = true;
+        let expr = self.parse_expr_allowing_append_array_read();
+        self.allow_standalone_list_array_element = previous_allow_standalone_list;
+        expr
+    }
+
     fn parse_assignment_expr(&mut self) -> Result<Expr> {
         let left = self.parse_ternary_expr(0)?;
         self.parse_assignment_expr_from_left(left)
@@ -5204,6 +5214,15 @@ impl Parser<'_> {
 
     fn parse_assignment_expr_from_left(&mut self, left: Expr) -> Result<Expr> {
         if !self.peek_is_expression_assignment_op() {
+            if matches!(left, Expr::List(_)) {
+                if self.allow_standalone_list_array_element {
+                    return Ok(left);
+                }
+                return Err(syntax_error_unexpected(self.peek(), Some("\"=\"")));
+            }
+            if !self.allow_standalone_list_array_element {
+                reject_standalone_list_expr(&left)?;
+            }
             if !self.allow_append_array_read {
                 reject_append_array_read(&left)?;
             }
@@ -5239,6 +5258,14 @@ impl Parser<'_> {
             Err(diagnostic)
                 if diagnostic.message == "Can't use function return value in write context" =>
             {
+                return Err(diagnostic);
+            }
+            Err(diagnostic)
+                if diagnostic.message == "Can't use method return value in write context" =>
+            {
+                return Err(diagnostic);
+            }
+            Err(diagnostic) if list_assignment_diagnostic_should_surface(&diagnostic) => {
                 return Err(diagnostic);
             }
             Err(_) => {
@@ -5730,6 +5757,7 @@ impl Parser<'_> {
                                     line: member_span.line,
                                 },
                             ],
+                            short_syntax: true,
                             span: callable_span,
                         };
                         expr = Expr::FirstClassCallable {
@@ -6448,6 +6476,7 @@ impl Parser<'_> {
                     line: class_span.line,
                 },
             ],
+            short_syntax: true,
             span: class_span,
         };
         Ok(Expr::DynamicCall {
@@ -6677,6 +6706,7 @@ impl Parser<'_> {
         let (elements, right_span) = self.parse_array_elements(TokenKind::RightBracket)?;
         Ok(Expr::Array {
             elements,
+            short_syntax: true,
             span: combine_spans(left_span, right_span),
         })
     }
@@ -6686,6 +6716,7 @@ impl Parser<'_> {
         let (elements, right_span) = self.parse_array_elements(TokenKind::RightParen)?;
         Ok(Expr::Array {
             elements,
+            short_syntax: false,
             span: combine_spans(start_span, right_span),
         })
     }
@@ -6742,7 +6773,7 @@ impl Parser<'_> {
             });
         }
 
-        let first = self.parse_expr_allowing_append_array_read()?;
+        let first = self.parse_array_element_expr()?;
         let first_span = first.span();
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
@@ -6770,7 +6801,7 @@ impl Parser<'_> {
             ));
         }
         Ok(ListExprElementTarget::Value(
-            self.parse_expr_allowing_append_array_read()?,
+            self.parse_array_element_expr()?,
         ))
     }
 
@@ -6842,7 +6873,7 @@ impl Parser<'_> {
             });
         }
 
-        let first = self.parse_expr_allowing_append_array_read()?;
+        let first = self.parse_array_element_expr()?;
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
             let value = self.parse_array_element_value()?;
@@ -6865,9 +6896,7 @@ impl Parser<'_> {
             self.advance();
             return Ok(ArrayElementValue::Reference(self.parse_reference_target()?));
         }
-        Ok(ArrayElementValue::Value(
-            self.parse_expr_allowing_append_array_read()?,
-        ))
+        Ok(ArrayElementValue::Value(self.parse_array_element_expr()?))
     }
 
     fn parse_isset_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
@@ -15989,11 +16018,9 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
         match current {
             Expr::ArrayAccess { array, index, .. } => {
                 let Some(index) = index else {
-                    return Err(Diagnostic::new(
-                        "append array access is unsupported in unset targets",
-                        Some(span),
-                    ));
+                    return Err(Diagnostic::new("Cannot use [] for unsetting", Some(span)));
                 };
+                reject_append_array_read(&index)?;
                 dimensions.push(*index);
                 current = *array;
             }
@@ -16247,9 +16274,21 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             "class name fetch is not a writable target",
             Some(span),
         )),
-        Expr::Array { elements, span } => Ok(AssignmentTarget::List(
-            list_assignment_target_from_array_elements(elements, span)?,
-        )),
+        Expr::Array {
+            elements,
+            short_syntax,
+            span,
+        } => {
+            if !short_syntax {
+                return Err(Diagnostic::new(
+                    "Cannot assign to array(), use [] instead",
+                    Some(span),
+                ));
+            }
+            Ok(AssignmentTarget::List(
+                list_assignment_target_from_array_elements(elements, span)?,
+            ))
+        }
         Expr::List(list) => Ok(AssignmentTarget::List(
             list_assignment_target_from_list_expr(list)?,
         )),
@@ -16286,6 +16325,9 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             "Can't use function return value in write context",
             Some(span),
         )),
+        Expr::MethodCall { span, .. } | Expr::DynamicMethodCall { span, .. } => Err(
+            Diagnostic::new("Can't use method return value in write context", Some(span)),
+        ),
         Expr::Grouped { expr, .. } => assignment_target_from_expr(*expr),
         other => Err(Diagnostic::new(
             "unsupported assignment target",
@@ -16682,10 +16724,17 @@ fn validate_reference_assignment_target_source(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ListDestructuringSyntax {
+    Short,
+    Long,
+}
+
 fn list_assignment_target_from_array_elements(
     elements: Vec<ArrayElement>,
     span: SourceSpan,
 ) -> Result<ListAssignmentTarget> {
+    validate_keyed_array_assignment_elements(&elements)?;
     let mut lowered = Vec::with_capacity(elements.len());
     for (index, element) in elements.into_iter().enumerate() {
         if matches!(element.value, ArrayElementValue::Hole(_)) {
@@ -16698,9 +16747,9 @@ fn list_assignment_target_from_array_elements(
             ))
         });
         let target = match element.value {
-            ArrayElementValue::Value(value) => {
-                ListAssignmentElementTarget::Value(Box::new(assignment_target_from_expr(value)?))
-            }
+            ArrayElementValue::Value(value) => ListAssignmentElementTarget::Value(Box::new(
+                list_assignment_target_from_value_expr(value, ListDestructuringSyntax::Short)?,
+            )),
             ArrayElementValue::Reference(target) => ListAssignmentElementTarget::Reference(target),
             ArrayElementValue::Hole(_) => unreachable!("list assignment holes are skipped"),
             ArrayElementValue::Unpack(value) => {
@@ -16722,6 +16771,7 @@ fn list_assignment_target_from_array_elements(
 }
 
 fn list_assignment_target_from_list_expr(list: ListExpr) -> Result<ListAssignmentTarget> {
+    validate_keyed_list_expr_elements(&list.elements)?;
     let mut lowered = Vec::with_capacity(list.elements.len());
     for (index, element) in list.elements.into_iter().enumerate() {
         let Some(target) = element.target else {
@@ -16734,9 +16784,9 @@ fn list_assignment_target_from_list_expr(list: ListExpr) -> Result<ListAssignmen
             ))
         });
         let target = match target {
-            ListExprElementTarget::Value(value) => {
-                ListAssignmentElementTarget::Value(Box::new(assignment_target_from_expr(value)?))
-            }
+            ListExprElementTarget::Value(value) => ListAssignmentElementTarget::Value(Box::new(
+                list_assignment_target_from_value_expr(value, ListDestructuringSyntax::Long)?,
+            )),
             ListExprElementTarget::Reference(target) => {
                 ListAssignmentElementTarget::Reference(target)
             }
@@ -16750,6 +16800,299 @@ fn list_assignment_target_from_list_expr(list: ListExpr) -> Result<ListAssignmen
         elements: lowered,
         span: list.span,
     })
+}
+
+fn validate_keyed_array_assignment_elements(elements: &[ArrayElement]) -> Result<()> {
+    if !elements.iter().any(|element| element.key.is_some()) {
+        return Ok(());
+    }
+    for element in elements {
+        if let ArrayElementValue::Hole(span) = &element.value {
+            return Err(Diagnostic::new(
+                "Cannot use empty array entries in keyed array assignment",
+                Some(*span),
+            ));
+        }
+        if element.key.is_none() {
+            return Err(Diagnostic::new(
+                "Cannot mix keyed and unkeyed array entries in assignments",
+                Some(array_element_value_span(&element.value)),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_keyed_list_expr_elements(elements: &[ListExprElement]) -> Result<()> {
+    if !elements.iter().any(|element| element.key.is_some()) {
+        return Ok(());
+    }
+    for element in elements {
+        if element.target.is_none() {
+            return Err(Diagnostic::new(
+                "Cannot use empty array entries in keyed array assignment",
+                Some(element.span),
+            ));
+        }
+        if element.key.is_none() {
+            return Err(Diagnostic::new(
+                "Cannot mix keyed and unkeyed array entries in assignments",
+                Some(element.span),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn array_element_value_span(value: &ArrayElementValue) -> SourceSpan {
+    match value {
+        ArrayElementValue::Hole(span) => *span,
+        ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => value.span(),
+        ArrayElementValue::Reference(target) => reference_target_span(target),
+    }
+}
+
+fn list_assignment_target_from_value_expr(
+    value: Expr,
+    syntax: ListDestructuringSyntax,
+) -> Result<AssignmentTarget> {
+    let span = value.span();
+    match value {
+        Expr::Grouped { expr, .. } => list_assignment_target_from_value_expr(*expr, syntax),
+        Expr::List(_) if matches!(syntax, ListDestructuringSyntax::Short) => {
+            Err(Diagnostic::new("Cannot mix [] and list()", Some(span)))
+        }
+        Expr::Array {
+            short_syntax: true, ..
+        } if matches!(syntax, ListDestructuringSyntax::Long) => {
+            Err(Diagnostic::new("Cannot mix [] and list()", Some(span)))
+        }
+        Expr::Array {
+            short_syntax: false,
+            ..
+        } => Err(Diagnostic::new(
+            "Cannot assign to array(), use [] instead",
+            Some(span),
+        )),
+        other => assignment_target_from_expr(other)
+            .map_err(|diagnostic| list_assignment_writable_error(diagnostic, span)),
+    }
+}
+
+fn list_assignment_writable_error(diagnostic: Diagnostic, span: SourceSpan) -> Diagnostic {
+    match diagnostic.message.as_str() {
+        "unsupported assignment target"
+        | "class constant fetch is not a writable target"
+        | "class name fetch is not a writable target" => {
+            Diagnostic::new("Assignments can only happen to writable values", Some(span))
+        }
+        _ => diagnostic,
+    }
+}
+
+fn list_assignment_diagnostic_should_surface(diagnostic: &Diagnostic) -> bool {
+    matches!(
+        diagnostic.message.as_str(),
+        "Assignments can only happen to writable values"
+            | "Cannot assign to array(), use [] instead"
+            | "Cannot mix [] and list()"
+            | "Cannot mix keyed and unkeyed array entries in assignments"
+            | "Cannot use empty array entries in keyed array assignment"
+            | "Cannot use empty list"
+            | "Cannot use list() as standalone expression"
+    )
+}
+
+fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::List(list) => {
+            return Err(Diagnostic::new(
+                "Cannot use list() as standalone expression",
+                Some(list.span),
+            ));
+        }
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    reject_standalone_list_expr(key)?;
+                }
+                match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        reject_standalone_list_expr(value)?;
+                    }
+                    ArrayElementValue::Hole(_) | ArrayElementValue::Reference(_) => {}
+                }
+            }
+        }
+        Expr::Grouped { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Clone { expr, .. }
+        | Expr::YieldFrom { expr, .. } => reject_standalone_list_expr(expr)?,
+        Expr::Assign { value, .. } => reject_standalone_list_expr(value)?,
+        Expr::AssignRef { source, .. } => reject_standalone_list_expr(source)?,
+        Expr::FirstClassCallable { callable, .. } => reject_standalone_list_expr(callable)?,
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            reject_standalone_list_expr(callee)?;
+            for argument in arguments {
+                reject_standalone_list_expr(argument)?;
+            }
+        }
+        Expr::Call { arguments, .. }
+        | Expr::NewObject { arguments, .. }
+        | Expr::DynamicNewObject { arguments, .. } => {
+            for argument in arguments {
+                reject_standalone_list_expr(argument)?;
+            }
+        }
+        Expr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            reject_standalone_list_expr(receiver)?;
+            for argument in arguments {
+                reject_standalone_list_expr(argument)?;
+            }
+        }
+        Expr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            reject_standalone_list_expr(receiver)?;
+            reject_standalone_list_expr(name)?;
+            for argument in arguments {
+                reject_standalone_list_expr(argument)?;
+            }
+        }
+        Expr::ArrayAccess { array, index, .. } => {
+            reject_standalone_list_expr(array)?;
+            if let Some(index) = index {
+                reject_standalone_list_expr(index)?;
+            }
+        }
+        Expr::PropertyFetch { receiver, .. }
+        | Expr::NullsafePropertyFetch { receiver, .. }
+        | Expr::DynamicStaticPropertyFetch { receiver, .. }
+        | Expr::DynamicClassNameFetch { receiver, .. } => reject_standalone_list_expr(receiver)?,
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            reject_standalone_list_expr(receiver)?;
+            reject_standalone_list_expr(name)?;
+        }
+        Expr::InstanceOf { expr, target, .. } => {
+            reject_standalone_list_expr(expr)?;
+            if let InstanceOfTarget::Expr(target) = target {
+                reject_standalone_list_expr(target)?;
+            }
+        }
+        Expr::Isset { targets, .. } => {
+            for target in targets {
+                reject_standalone_list_expr(target)?;
+            }
+        }
+        Expr::Empty { target, .. }
+        | Expr::Print {
+            expression: target, ..
+        }
+        | Expr::DynamicVariable { name: target, .. }
+        | Expr::Include { path: target, .. }
+        | Expr::Throw { value: target, .. }
+        | Expr::PipeValue { expr: target, .. } => reject_standalone_list_expr(target)?,
+        Expr::Yield { key, value, .. } => {
+            if let Some(key) = key {
+                reject_standalone_list_expr(key)?;
+            }
+            if let Some(value) = value {
+                reject_standalone_list_expr(value)?;
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            reject_standalone_list_expr(left)?;
+            reject_standalone_list_expr(right)?;
+        }
+        Expr::IncDec { target, .. } => {
+            reject_standalone_list_expr_in_inc_dec_target(target)?;
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            reject_standalone_list_expr(condition)?;
+            if let Some(if_true) = if_true {
+                reject_standalone_list_expr(if_true)?;
+            }
+            reject_standalone_list_expr(if_false)?;
+        }
+        Expr::Match { subject, arms, .. } => {
+            reject_standalone_list_expr(subject)?;
+            for arm in arms {
+                for condition in &arm.conditions {
+                    reject_standalone_list_expr(condition)?;
+                }
+                reject_standalone_list_expr(&arm.value)?;
+            }
+        }
+        Expr::StaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. }
+        | Expr::InterpolatedString(_, _)
+        | Expr::AnonymousFunction(_)
+        | Expr::ShellExec { .. }
+        | Expr::String(_, _)
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _) => {}
+    }
+    Ok(())
+}
+
+fn reject_standalone_list_expr_in_inc_dec_target(target: &IncDecTarget) -> Result<()> {
+    match target {
+        IncDecTarget::ArrayDim(target) => {
+            for dimension in &target.dimensions {
+                if let Some(dimension) = dimension {
+                    reject_standalone_list_expr(dimension)?;
+                }
+            }
+        }
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            reject_standalone_list_expr(name)?;
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_standalone_list_expr(dimension)?;
+                }
+            }
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            reject_standalone_list_expr(receiver)?;
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_standalone_list_expr(dimension)?;
+                }
+            }
+        }
+        IncDecTarget::DynamicVariable { name, .. } => reject_standalone_list_expr(name)?,
+        IncDecTarget::Property { receiver, .. } => {
+            reject_standalone_list_expr(receiver)?;
+        }
+        IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => {}
+    }
+    Ok(())
 }
 
 fn reject_append_array_read(expr: &Expr) -> Result<()> {
@@ -16805,7 +17148,10 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                 }
                 match &element.value {
                     ArrayElementValue::Hole(span) => {
-                        return Err(Diagnostic::new("expected expression", Some(*span)));
+                        return Err(Diagnostic::new(
+                            "Cannot use empty array elements in arrays",
+                            Some(*span),
+                        ));
                     }
                     ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         reject_append_array_read(value)?;
@@ -16901,7 +17247,10 @@ fn reject_array_literal_holes(expr: &Expr) -> Result<()> {
                 }
                 match &element.value {
                     ArrayElementValue::Hole(span) => {
-                        return Err(Diagnostic::new("expected expression", Some(*span)));
+                        return Err(Diagnostic::new(
+                            "Cannot use empty array elements in arrays",
+                            Some(*span),
+                        ));
                     }
                     ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
                         reject_array_literal_holes(value)?;
