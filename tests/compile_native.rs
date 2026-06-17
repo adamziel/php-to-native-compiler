@@ -43654,6 +43654,57 @@ string(17) \"resource (closed)\"\n"
 }
 
 #[test]
+fn compile_dir_directory_object_to_native_binary() {
+    let root = temp_dir("ptn-native-dir-directory-object");
+    let directory = root.join("entries");
+    fs::create_dir_all(&directory).unwrap();
+    let input = root.join("dir-directory-object.php");
+    let output = root.join("dir-directory-object-bin");
+    let dir_path = directory.to_string_lossy();
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$path = \"{}\";\n\
+$dir = dir($path);\n\
+var_dump(get_class($dir));\n\
+var_dump($dir->path === $path);\n\
+var_dump(is_resource($dir->handle));\n\
+var_dump(function_exists(\"dir\"));\n\
+var_dump(method_exists($dir, \"close\"));\n\
+var_dump(gettype($dir->handle));\n\
+var_dump(get_resource_type($dir->handle));\n\
+var_dump($dir->close());\n\
+var_dump(gettype($dir->handle));",
+            dir_path
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_dir"));
+    assert!(c_source.contains("ptn_directory_call_method"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(9) \"Directory\"\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+string(8) \"resource\"\n\
+string(6) \"stream\"\n\
+NULL\n\
+string(17) \"resource (closed)\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stream_get_meta_data_to_native_binary() {
     let root = temp_dir("ptn-native-stream-get-meta-data");
     fs::create_dir_all(&root).unwrap();

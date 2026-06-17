@@ -24729,6 +24729,21 @@ static void ptn_emit_file_warning(
     free(message);
 }
 
+static void ptn_emit_directory_open_warning(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    const char *detail,
+    size_t line
+) {
+    char reason[256];
+    int written = snprintf(reason, sizeof(reason), "Failed to open directory: %s", detail);
+    if (written < 0 || (size_t)written >= sizeof(reason)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_file_warning(runtime, function_name, path, reason, line);
+}
+
 static int64_t ptn_internal_expect_integer_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -24998,6 +25013,77 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
     PtnValue resource = ptn_resource(ptn_resource_new_directory(directory, path));
     free(path);
     return resource;
+#endif
+}
+
+static PtnValue ptn_directory_object_from_resource(PtnRuntime *runtime, PtnValue handle, const char *path, size_t line) {
+    PtnValue object = ptn_object_new_shell(runtime, "Directory");
+    PtnValue path_value = ptn_owned_string(ptn_duplicate_string(path));
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "path",
+        "Directory",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        path_value,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&path_value);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "handle",
+        "Directory",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        handle,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&handle);
+    return object;
+}
+
+static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "dir", 1, "directory", args[0], line);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "dir(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    ptn_emit_directory_open_warning(runtime, "dir", path, "directory streams are unsupported on this platform", line);
+    free(path);
+    return ptn_bool(0);
+#else
+    DIR *directory = opendir(path);
+    if (directory == NULL) {
+        ptn_emit_directory_open_warning(runtime, "dir", path, strerror(errno), line);
+        free(path);
+        return ptn_bool(0);
+    }
+
+    PtnValue handle = ptn_resource(ptn_resource_new_directory(directory, path));
+    PtnValue object = ptn_directory_object_from_resource(runtime, handle, path, line);
+    free(path);
+    return object;
 #endif
 }
 
@@ -38710,6 +38796,7 @@ static PtnValue ptn_internal_timezone_version_get(PtnRuntime *runtime, size_t ar
 static PtnValue ptn_internal_array_key_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closedir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_disk_free_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_disk_total_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_diskfreespace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -38894,6 +38981,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "defined", 1, 1, ptn_internal_defined },
         { "deg2rad", 1, 1, ptn_internal_deg2rad },
         { "die", 0, 1, ptn_internal_die },
+        { "dir", 1, 2, ptn_internal_dir },
         { "dirname", 1, 2, ptn_internal_dirname },
         { "disk_free_space", 1, 1, ptn_internal_disk_free_space },
         { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
@@ -39896,6 +39984,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *cla
     return ptn_ascii_case_equal(class_name, "SplFileObject");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Directory");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Closure");
 }
@@ -39965,6 +40057,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_spl_stack(class_name)
         || ptn_internal_class_name_is_spl_file_info(class_name)
         || ptn_internal_class_name_is_spl_file_object(class_name)
+        || ptn_internal_class_name_is_directory(class_name)
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_internal_class_name_is_sensitive_parameter(class_name)
         || ptn_internal_class_name_is_sensitive_parameter_value(class_name)
@@ -40924,7 +41017,15 @@ static int ptn_attribute_metadata_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct");
 }
 
+static int ptn_directory_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "close");
+}
+
 static int ptn_internal_class_property_exists(const char *class_name, const char *property_name) {
+    if (ptn_internal_class_name_is_directory(class_name)) {
+        return ptn_ascii_case_equal(property_name, "path")
+            || ptn_ascii_case_equal(property_name, "handle");
+    }
     if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
         return ptn_ascii_case_equal(property_name, "value");
     }
@@ -41033,6 +41134,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_spl_file_info(class_name)) {
         return ptn_spl_file_info_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_directory(class_name)) {
+        return ptn_directory_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_closure_method_exists(method_name);
@@ -41545,6 +41649,10 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "valid",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_directory(class_name)) {
+        ptn_append_method_name(result, &index, "close");
         return result;
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
@@ -47161,6 +47269,34 @@ static void ptn_reflection_check_no_arguments(
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "ArgumentCountError", message);
+}
+
+static PTN_UNUSED PtnValue ptn_directory_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (ptn_ascii_case_equal(name, "close")) {
+        ptn_reflection_check_no_arguments(runtime, "Directory", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnLookupResult handle =
+            ptn_object_property_lookup_quiet(runtime, receiver, "handle", "Directory", line);
+        if (!handle.exists) {
+            ptn_throw_exception(runtime, "Error", "Invalid Directory object");
+            return ptn_null();
+        }
+        PtnValue result = ptn_internal_closedir(runtime, 1, &handle.value, line);
+        ptn_value_destroy(&handle.value);
+        return result;
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static void ptn_reflection_check_exact_arguments(

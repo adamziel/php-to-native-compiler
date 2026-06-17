@@ -4340,6 +4340,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_directory(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists("Directory", name)
+    ) {
+        return ptn_directory_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_object_is_internal_or_descendant(receiver, "CallbackFilterIterator")
         && ptn_internal_class_method_exists("CallbackFilterIterator", name)
     ) {
