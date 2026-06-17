@@ -3298,6 +3298,7 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         builtin_result_assignment.message,
         "Cannot use result of built-in function in write context"
     );
+    parser::parse("<?php $alias =& array_shift($array);").unwrap();
 
     parser::parse("<?php function &factory(&$value) { $fn = 'id'; return $fn($value); }").unwrap();
 
@@ -16056,6 +16057,51 @@ var_dump(gettype($internal->getReflectionConstant(\"IS_IMPLICIT_ABSTRACT\")));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_constants"));
     assert!(c_source.contains("ptn_reflection_class_constant_call_method"));
+}
+
+#[test]
+fn compile_reflection_class_without_constants_emits_quiet_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-class-no-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-class-no-constants.php");
+    let output = root.join("reflection-class-no-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class NoConstantBox {
+    public function read() {
+        return 1;
+    }
+}
+
+$reflection = new ReflectionClass(NoConstantBox::class);
+var_dump($reflection->getConstants());
+var_dump($reflection->getReflectionConstants());
+var_dump($reflection->hasConstant(\"MISSING\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(0) {\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_constants"));
+    assert!(c_source.contains("(void)filter_present;"));
+    assert!(c_source.contains("(void)constant_name;"));
 }
 
 #[test]
