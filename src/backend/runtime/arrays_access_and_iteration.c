@@ -868,6 +868,17 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_recursive_array_iterator(lookup_class_name)) {
         return ptn_recursive_array_iterator_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_spl_doubly_linked_list(lookup_class_name) ||
+        ptn_internal_class_name_is_spl_queue(lookup_class_name) ||
+        ptn_internal_class_name_is_spl_stack(lookup_class_name)) {
+        return ptn_spl_doubly_linked_list_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_spl_file_object(lookup_class_name)) {
+        return ptn_spl_file_object_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
+        return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
+    }
 #endif
     const char *exception_class_name = ptn_builtin_exception_class_name(lookup_class_name);
     if (exception_class_name != NULL) {
@@ -953,6 +964,15 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "ArrayIterator") ||
         ptn_declared_class_is_same_or_descendant(source->class_name, "RecursiveArrayIterator")) {
         return ptn_array_iterator_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplDoublyLinkedList")) {
+        return ptn_spl_doubly_linked_list_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplFileObject")) {
+        return ptn_spl_file_object_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplFileInfo")) {
+        return ptn_spl_file_info_clone(runtime, resolved, line);
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "DateTime") ||
         ptn_declared_class_is_same_or_descendant(source->class_name, "DateTimeImmutable")) {
@@ -5060,6 +5080,14 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
         ptn_internal_class_method_exists("RecursiveArrayIterator", method_name)) {
         return 1;
     }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplDoublyLinkedList") &&
+        ptn_internal_class_method_exists("SplDoublyLinkedList", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "SplFileObject") &&
+        ptn_internal_class_method_exists("SplFileObject", method_name)) {
+        return 1;
+    }
 #endif
     return runtime->declared_method_exists != NULL &&
         runtime->declared_method_exists(object->class_name, method_name);
@@ -6023,6 +6051,12 @@ static PTN_UNUSED int ptn_arrayaccess_can_dispatch(
         (ptn_object_is_internal_or_descendant(container, "ArrayIterator") ||
          ptn_object_is_internal_or_descendant(container, "RecursiveArrayIterator")) &&
         ptn_internal_class_method_exists("ArrayIterator", method_name)
+    ) {
+        return 1;
+    }
+    if (
+        ptn_object_is_internal_or_descendant(container, "SplDoublyLinkedList") &&
+        ptn_internal_class_method_exists("SplDoublyLinkedList", method_name)
     ) {
         return 1;
     }

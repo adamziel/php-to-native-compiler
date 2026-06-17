@@ -9424,6 +9424,11 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
             | "iteratoriterator"
             | "limititerator"
             | "recursivearrayiterator"
+            | "spldoublylinkedlist"
+            | "splfileinfo"
+            | "splfileobject"
+            | "splqueue"
+            | "splstack"
     )
 }
 
@@ -10709,6 +10714,11 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("ArrayIterator")
         || name.eq_ignore_ascii_case("IteratorIterator")
         || name.eq_ignore_ascii_case("ArrayObject")
+        || name.eq_ignore_ascii_case("SplDoublyLinkedList")
+        || name.eq_ignore_ascii_case("SplQueue")
+        || name.eq_ignore_ascii_case("SplStack")
+        || name.eq_ignore_ascii_case("SplFileInfo")
+        || name.eq_ignore_ascii_case("SplFileObject")
         || name.eq_ignore_ascii_case("Generator")
         || is_modeled_builtin_date_class_name(name)
         || is_modeled_builtin_exception_class_name(name)
@@ -11090,6 +11100,18 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
             "ArrayAccess",
             "Countable",
             "IteratorAggregate",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplDoublyLinkedList")
+        || candidate_name.eq_ignore_ascii_case("SplQueue")
+        || candidate_name.eq_ignore_ascii_case("SplStack")
+    {
+        &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplFileObject") {
+        &[
+            "Iterator",
+            "RecursiveIterator",
+            "SeekableIterator",
             "Traversable",
         ][..]
     } else if candidate_name.eq_ignore_ascii_case("Generator") {

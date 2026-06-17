@@ -170,6 +170,96 @@ foreach ($wrap as $value) {
 }
 
 #[test]
+fn compile_spl_file_info_file_object_and_dllist_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-file-list-surfaces");
+    fs::create_dir_all(&root).unwrap();
+    let data_path = root.join("rows.csv");
+    fs::write(&data_path, "first\nsecond\n").unwrap();
+    let input = root.join("spl-file-list-surfaces.php");
+    let output = root.join("spl-file-list-surfaces-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+class MyInfoObject extends SplFileInfo {{}}\n\
+class MyFileObject extends SplFileObject {{}}\n\
+$path = {};\n\
+$info = new SplFileInfo($path);\n\
+var_dump($info->getFilename(), $info->getExtension(), $info->getSize() > 0);\n\
+$info->setInfoClass('MyInfoObject');\n\
+$info->setFileClass('MyFileObject');\n\
+echo get_class($info->getFileInfo()), \"\\n\";\n\
+echo get_class($info->getPathInfo()), \"\\n\";\n\
+echo get_class($info->openFile()), \"\\n\";\n\
+$file = new SplFileObject($path);\n\
+echo $file->current();\n\
+$file->next();\n\
+echo $file->current();\n\
+$csv = new SplFileObject($path, 'w+');\n\
+$csv->setCsvControl(escape: '');\n\
+$csv->fputcsv(fields: ['a', 'b'], escape: '', eol: \"\\n\");\n\
+$csv->rewind();\n\
+var_dump($csv->getCsvControl(), $csv->fgetcsv(escape: ''));\n\
+$list = new SplDoublyLinkedList();\n\
+$list->push('o');\n\
+$list->push('o');\n\
+$list->push('f');\n\
+$list->setIteratorMode(SplDoublyLinkedList::IT_MODE_LIFO);\n\
+foreach ($list as $value) {{ echo $value; }}\n\
+echo \"\\n\";\n\
+$method = new ReflectionMethod('SplFileObject', 'fputcsv');\n\
+foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), \"\\n\"; }}\n",
+            php_string_literal(&data_path)
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(8) \"rows.csv\"\n",
+            "string(3) \"csv\"\n",
+            "bool(true)\n",
+            "MyInfoObject\n",
+            "MyInfoObject\n",
+            "MyFileObject\n",
+            "first\n",
+            "second\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \",\"\n",
+            "  [1]=>\n",
+            "  string(1) \"\"\"\n",
+            "  [2]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "}\n",
+            "foo\n",
+            "fields\n",
+            "separator\n",
+            "enclosure\n",
+            "escape\n",
+            "eol\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_class_and_method_source_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-source-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -44016,6 +44106,11 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
         .unwrap()
         .as_nanos();
     std::env::temp_dir().join(format!("{name}-{}-{now}", std::process::id()))
+}
+
+fn php_string_literal(path: &Path) -> String {
+    let raw = path.display().to_string();
+    format!("'{}'", raw.replace('\\', "\\\\").replace('\'', "\\'"))
 }
 
 fn phpc_bin() -> PathBuf {

@@ -1253,6 +1253,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_infinite_iterator(const char *c
 static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_doubly_linked_list(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_queue(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_stack(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_file_info(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_name);
@@ -1519,6 +1524,65 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
     size_t line
 );
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
+static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_file_info_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_file_info_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_file_info_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_file_object_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_file_object_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_file_object_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -2127,7 +2191,11 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
         return 0;
     }
     if (resource->memory_stream == NULL) {
-        return fwrite(data, 1, len, resource->stream);
+        size_t written = fwrite(data, 1, len, resource->stream);
+        if (written > 0) {
+            (void)fflush(resource->stream);
+        }
+        return written;
     }
 
     PtnMemoryStream *stream = resource->memory_stream;

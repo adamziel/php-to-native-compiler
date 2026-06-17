@@ -1117,6 +1117,40 @@ typedef struct {
 #define PTN_ARRAY_OBJECT_STD_PROP_LIST 1
 #define PTN_ARRAY_OBJECT_ARRAY_AS_PROPS 2
 
+typedef struct {
+    PtnValue storage;
+    size_t index;
+    int64_t flags;
+} PtnSplDoublyLinkedListData;
+
+typedef struct {
+    char *path;
+    char *file_class;
+    char *info_class;
+} PtnSplFileInfoData;
+
+typedef struct {
+    PtnSplFileInfoData info;
+    PtnValue stream;
+    int64_t flags;
+    int64_t key;
+    int has_current;
+    PtnValue current;
+    char delimiter;
+    char enclosure;
+    char escape;
+    int escape_enabled;
+    int escape_configured;
+    int64_t max_line_len;
+} PtnSplFileObjectData;
+
+#define PTN_SPL_DLLIST_IT_MODE_DELETE 1
+#define PTN_SPL_DLLIST_IT_MODE_LIFO 2
+#define PTN_SPL_FILE_OBJECT_DROP_NEW_LINE 1
+#define PTN_SPL_FILE_OBJECT_READ_AHEAD 2
+#define PTN_SPL_FILE_OBJECT_SKIP_EMPTY 4
+#define PTN_SPL_FILE_OBJECT_READ_CSV 8
+
 static void ptn_unserialize_hydrate_spl_array_backed_object(
     PtnRuntime *runtime,
     PtnValue object,
@@ -37937,6 +37971,7 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_method_metadata_stub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
@@ -38466,6 +38501,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
+        { "SplFileObject::fgetcsv", 0, 3, ptn_internal_method_metadata_stub },
+        { "SplFileObject::fputcsv", 1, 5, ptn_internal_method_metadata_stub },
+        { "SplFileObject::setCsvControl", 0, 3, ptn_internal_method_metadata_stub },
         { "reset", 1, 1, ptn_internal_reset },
         { "restore_error_handler", 0, 0, ptn_internal_restore_error_handler },
         { "restore_exception_handler", 0, 0, ptn_internal_restore_exception_handler },
@@ -38646,6 +38684,23 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
     static const PtnParameterMetadata PTN_INTERNAL_EXIT_PARAMETERS[] = {
         { "status", NULL, NULL, 0, 0, 0, 0, 1 },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS[] = {
+        { "separator", "string", "string", 0, 1, 1, 0, 1 },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1 },
+        { "escape", "string", "string", 0, 1, 1, 0, 1 },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FPUTCSV_PARAMETERS[] = {
+        { "fields", "array", "array", 0, 0, 1, 0, 1 },
+        { "separator", "string", "string", 0, 1, 1, 0, 1 },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1 },
+        { "escape", "string", "string", 0, 1, 1, 0, 1 },
+        { "eol", "string", "string", 0, 1, 1, 0, 1 },
+    };
+    static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS[] = {
+        { "separator", "string", "string", 0, 1, 1, 0, 1 },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1 },
+        { "escape", "string", "string", 0, 1, 1, 0, 1 },
+    };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
             "exit",
@@ -38659,6 +38714,54 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             NULL,
             0,
             0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "SplFileObject::fgetcsv")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS) /
+                sizeof(PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS,
+            0,
+            "array|false",
+            "array|false",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "SplFileObject::fputcsv")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_SPL_FILE_OBJECT_FPUTCSV_PARAMETERS) /
+                sizeof(PTN_INTERNAL_SPL_FILE_OBJECT_FPUTCSV_PARAMETERS[0]),
+            1,
+            0,
+            PTN_INTERNAL_SPL_FILE_OBJECT_FPUTCSV_PARAMETERS,
+            0,
+            "int|false",
+            "int|false",
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "SplFileObject::setCsvControl")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS) /
+                sizeof(PTN_INTERNAL_SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS,
+            0,
+            "void",
+            "void",
+            0,
+            1
         );
     }
     if (ptn_ascii_case_equal(function->name, "htmlspecialchars")) {
@@ -38863,6 +38966,26 @@ static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *clas
     return ptn_ascii_case_equal(class_name, "LimitIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_spl_doubly_linked_list(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplDoublyLinkedList");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_spl_queue(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplQueue");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_spl_stack(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplStack");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_spl_file_info(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplFileInfo");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplFileObject");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Closure");
 }
@@ -38921,6 +39044,11 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_iterator_iterator(class_name)
         || ptn_internal_class_name_is_spl_object_storage(class_name)
         || ptn_internal_class_name_is_limit_iterator(class_name)
+        || ptn_internal_class_name_is_spl_doubly_linked_list(class_name)
+        || ptn_internal_class_name_is_spl_queue(class_name)
+        || ptn_internal_class_name_is_spl_stack(class_name)
+        || ptn_internal_class_name_is_spl_file_info(class_name)
+        || ptn_internal_class_name_is_spl_file_object(class_name)
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_internal_class_name_is_sensitive_parameter(class_name)
         || ptn_internal_class_name_is_sensitive_parameter_value(class_name)
@@ -39741,6 +39869,94 @@ static int ptn_limit_iterator_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "seek");
 }
 
+static int ptn_spl_doubly_linked_list_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "add")
+        || ptn_ascii_case_equal(method_name, "bottom")
+        || ptn_ascii_case_equal(method_name, "count")
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "getIteratorMode")
+        || ptn_ascii_case_equal(method_name, "isEmpty")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "offsetExists")
+        || ptn_ascii_case_equal(method_name, "offsetGet")
+        || ptn_ascii_case_equal(method_name, "offsetSet")
+        || ptn_ascii_case_equal(method_name, "offsetUnset")
+        || ptn_ascii_case_equal(method_name, "pop")
+        || ptn_ascii_case_equal(method_name, "prev")
+        || ptn_ascii_case_equal(method_name, "push")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "setIteratorMode")
+        || ptn_ascii_case_equal(method_name, "shift")
+        || ptn_ascii_case_equal(method_name, "top")
+        || ptn_ascii_case_equal(method_name, "unshift")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
+static int ptn_spl_file_info_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getATime")
+        || ptn_ascii_case_equal(method_name, "getBasename")
+        || ptn_ascii_case_equal(method_name, "getCTime")
+        || ptn_ascii_case_equal(method_name, "getExtension")
+        || ptn_ascii_case_equal(method_name, "getFileInfo")
+        || ptn_ascii_case_equal(method_name, "getFilename")
+        || ptn_ascii_case_equal(method_name, "getGroup")
+        || ptn_ascii_case_equal(method_name, "getInode")
+        || ptn_ascii_case_equal(method_name, "getMTime")
+        || ptn_ascii_case_equal(method_name, "getOwner")
+        || ptn_ascii_case_equal(method_name, "getPath")
+        || ptn_ascii_case_equal(method_name, "getPathInfo")
+        || ptn_ascii_case_equal(method_name, "getPathname")
+        || ptn_ascii_case_equal(method_name, "getPerms")
+        || ptn_ascii_case_equal(method_name, "getRealPath")
+        || ptn_ascii_case_equal(method_name, "getSize")
+        || ptn_ascii_case_equal(method_name, "getType")
+        || ptn_ascii_case_equal(method_name, "isDir")
+        || ptn_ascii_case_equal(method_name, "isExecutable")
+        || ptn_ascii_case_equal(method_name, "isFile")
+        || ptn_ascii_case_equal(method_name, "isLink")
+        || ptn_ascii_case_equal(method_name, "isReadable")
+        || ptn_ascii_case_equal(method_name, "isWritable")
+        || ptn_ascii_case_equal(method_name, "openFile")
+        || ptn_ascii_case_equal(method_name, "setFileClass")
+        || ptn_ascii_case_equal(method_name, "setInfoClass");
+}
+
+static int ptn_spl_file_object_method_exists(const char *method_name) {
+    return ptn_spl_file_info_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "eof")
+        || ptn_ascii_case_equal(method_name, "fflush")
+        || ptn_ascii_case_equal(method_name, "fgetc")
+        || ptn_ascii_case_equal(method_name, "fgetcsv")
+        || ptn_ascii_case_equal(method_name, "fgets")
+        || ptn_ascii_case_equal(method_name, "fpassthru")
+        || ptn_ascii_case_equal(method_name, "fputcsv")
+        || ptn_ascii_case_equal(method_name, "fscanf")
+        || ptn_ascii_case_equal(method_name, "fseek")
+        || ptn_ascii_case_equal(method_name, "fstat")
+        || ptn_ascii_case_equal(method_name, "ftell")
+        || ptn_ascii_case_equal(method_name, "ftruncate")
+        || ptn_ascii_case_equal(method_name, "fwrite")
+        || ptn_ascii_case_equal(method_name, "getChildren")
+        || ptn_ascii_case_equal(method_name, "getCsvControl")
+        || ptn_ascii_case_equal(method_name, "getCurrentLine")
+        || ptn_ascii_case_equal(method_name, "getFlags")
+        || ptn_ascii_case_equal(method_name, "getMaxLineLen")
+        || ptn_ascii_case_equal(method_name, "hasChildren")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "seek")
+        || ptn_ascii_case_equal(method_name, "setCsvControl")
+        || ptn_ascii_case_equal(method_name, "setFlags")
+        || ptn_ascii_case_equal(method_name, "setMaxLineLen")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
 static int ptn_closure_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__invoke")
         || ptn_ascii_case_equal(method_name, "bind")
@@ -39790,6 +40006,17 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
     }
     if (ptn_internal_class_name_is_no_discard(class_name)) {
         return ptn_ascii_case_equal(property_name, "message");
+    }
+    if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
+        ptn_internal_class_name_is_spl_queue(class_name) ||
+        ptn_internal_class_name_is_spl_stack(class_name)) {
+        return ptn_ascii_case_equal(property_name, "flags")
+            || ptn_ascii_case_equal(property_name, "dllist");
+    }
+    if (ptn_internal_class_name_is_spl_file_info(class_name) ||
+        ptn_internal_class_name_is_spl_file_object(class_name)) {
+        return ptn_ascii_case_equal(property_name, "pathName")
+            || ptn_ascii_case_equal(property_name, "fileName");
     }
     return 0;
 }
@@ -39861,6 +40088,17 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_limit_iterator(class_name)) {
         return ptn_limit_iterator_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
+        ptn_internal_class_name_is_spl_queue(class_name) ||
+        ptn_internal_class_name_is_spl_stack(class_name)) {
+        return ptn_spl_doubly_linked_list_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_spl_file_object(class_name)) {
+        return ptn_spl_file_object_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_spl_file_info(class_name)) {
+        return ptn_spl_file_info_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_closure_method_exists(method_name);
@@ -40224,6 +40462,120 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "valid",
             "getPosition",
             "seek",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
+        ptn_internal_class_name_is_spl_queue(class_name) ||
+        ptn_internal_class_name_is_spl_stack(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "add",
+            "bottom",
+            "count",
+            "current",
+            "getIteratorMode",
+            "isEmpty",
+            "key",
+            "next",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "pop",
+            "prev",
+            "push",
+            "rewind",
+            "setIteratorMode",
+            "shift",
+            "top",
+            "unshift",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_spl_file_info(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "getATime",
+            "getBasename",
+            "getCTime",
+            "getExtension",
+            "getFileInfo",
+            "getFilename",
+            "getGroup",
+            "getInode",
+            "getMTime",
+            "getOwner",
+            "getPath",
+            "getPathInfo",
+            "getPathname",
+            "getPerms",
+            "getRealPath",
+            "getSize",
+            "getType",
+            "isDir",
+            "isExecutable",
+            "isFile",
+            "isLink",
+            "isReadable",
+            "isWritable",
+            "openFile",
+            "setFileClass",
+            "setInfoClass",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_spl_file_object(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "current",
+            "eof",
+            "fflush",
+            "fgetc",
+            "fgetcsv",
+            "fgets",
+            "fpassthru",
+            "fputcsv",
+            "fscanf",
+            "fseek",
+            "fstat",
+            "ftell",
+            "ftruncate",
+            "fwrite",
+            "getBasename",
+            "getChildren",
+            "getCsvControl",
+            "getCurrentLine",
+            "getExtension",
+            "getFileInfo",
+            "getFilename",
+            "getFlags",
+            "getMaxLineLen",
+            "getPath",
+            "getPathname",
+            "getRealPath",
+            "getSize",
+            "hasChildren",
+            "isDir",
+            "isExecutable",
+            "isFile",
+            "isLink",
+            "isReadable",
+            "isWritable",
+            "key",
+            "next",
+            "rewind",
+            "seek",
+            "setCsvControl",
+            "setFlags",
+            "setMaxLineLen",
+            "valid",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -41433,6 +41785,11 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
             || ptn_internal_class_name_is_infinite_iterator(class_name)
             || ptn_internal_class_name_is_iterator_iterator(class_name)
             || ptn_internal_class_name_is_limit_iterator(class_name)
+            || ptn_internal_class_name_is_spl_doubly_linked_list(class_name)
+            || ptn_internal_class_name_is_spl_queue(class_name)
+            || ptn_internal_class_name_is_spl_stack(class_name)
+            || ptn_internal_class_name_is_spl_file_info(class_name)
+            || ptn_internal_class_name_is_spl_file_object(class_name)
             || ptn_builtin_exception_class_name(class_name) != NULL;
     }
     return ptn_declared_class_exists(class_name);
@@ -44227,7 +44584,12 @@ static PtnValue ptn_reflection_class_extension_name(const char *class_name) {
         ptn_internal_class_name_is_filter_iterator(class_name) ||
         ptn_internal_class_name_is_infinite_iterator(class_name) ||
         ptn_internal_class_name_is_iterator_iterator(class_name) ||
-        ptn_internal_class_name_is_limit_iterator(class_name)) {
+        ptn_internal_class_name_is_limit_iterator(class_name) ||
+        ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
+        ptn_internal_class_name_is_spl_queue(class_name) ||
+        ptn_internal_class_name_is_spl_stack(class_name) ||
+        ptn_internal_class_name_is_spl_file_info(class_name) ||
+        ptn_internal_class_name_is_spl_file_object(class_name)) {
         return ptn_string("SPL");
     }
     return ptn_string("Core");
@@ -44237,6 +44599,22 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
     if (ptn_ascii_case_equal(class_name, "ArrayObject")) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("STD_PROP_LIST"), ptn_int(1));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("ARRAY_AS_PROPS"), ptn_int(2));
+        return;
+    }
+    if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
+        ptn_internal_class_name_is_spl_queue(class_name) ||
+        ptn_internal_class_name_is_spl_stack(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IT_MODE_FIFO"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IT_MODE_LIFO"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IT_MODE_KEEP"), ptn_int(0));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IT_MODE_DELETE"), ptn_int(1));
+        return;
+    }
+    if (ptn_internal_class_name_is_spl_file_object(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DROP_NEW_LINE"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("READ_AHEAD"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_EMPTY"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("READ_CSV"), ptn_int(8));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionClass")) {
@@ -45278,6 +45656,47 @@ static void ptn_array_object_data_free(void *data) {
     ptn_value_destroy(&object_data->storage);
     free(object_data->iterator_class);
     free(object_data);
+}
+
+static void ptn_spl_doubly_linked_list_data_free(void *data) {
+    PtnSplDoublyLinkedListData *list_data = (PtnSplDoublyLinkedListData *)data;
+    if (list_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&list_data->storage);
+    free(list_data);
+}
+
+static void ptn_spl_file_info_data_clear(PtnSplFileInfoData *data) {
+    if (data == NULL) {
+        return;
+    }
+    free(data->path);
+    free(data->file_class);
+    free(data->info_class);
+    data->path = NULL;
+    data->file_class = NULL;
+    data->info_class = NULL;
+}
+
+static void ptn_spl_file_info_data_free(void *data) {
+    PtnSplFileInfoData *info_data = (PtnSplFileInfoData *)data;
+    if (info_data == NULL) {
+        return;
+    }
+    ptn_spl_file_info_data_clear(info_data);
+    free(info_data);
+}
+
+static void ptn_spl_file_object_data_free(void *data) {
+    PtnSplFileObjectData *file_data = (PtnSplFileObjectData *)data;
+    if (file_data == NULL) {
+        return;
+    }
+    ptn_spl_file_info_data_clear(&file_data->info);
+    ptn_value_destroy(&file_data->stream);
+    ptn_value_destroy(&file_data->current);
+    free(file_data);
 }
 
 static void ptn_iterator_iterator_data_free(void *data) {
@@ -46859,6 +47278,392 @@ static void ptn_spl_declare_storage_property(
     ptn_value_destroy(&storage_value);
 }
 
+static void ptn_spl_declare_private_value_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *property_name,
+    const char *declaring_class,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue property_value = ptn_value_clone_deref(value);
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        property_name,
+        declaring_class,
+        PTN_PROPERTY_PRIVATE,
+        PTN_PROPERTY_PRIVATE,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        property_value,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&property_value);
+}
+
+static const char *ptn_spl_path_basename_part(const char *path) {
+    if (path == NULL) {
+        return "";
+    }
+    const char *slash = strrchr(path, '/');
+#if defined(_WIN32)
+    const char *backslash = strrchr(path, '\\');
+    if (backslash != NULL && (slash == NULL || backslash > slash)) {
+        slash = backslash;
+    }
+#endif
+    return slash == NULL ? path : slash + 1;
+}
+
+static char *ptn_spl_path_basename_alloc(const char *path) {
+    return ptn_duplicate_string(ptn_spl_path_basename_part(path));
+}
+
+static char *ptn_spl_path_dirname_alloc(const char *path) {
+    if (path == NULL || path[0] == '\0') {
+        return ptn_duplicate_string("");
+    }
+    const char *base = ptn_spl_path_basename_part(path);
+    if (base == path) {
+        return ptn_duplicate_string("");
+    }
+    size_t len = (size_t)(base - path);
+    while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\')) {
+        len--;
+    }
+    if (len == 0 && (path[0] == '/' || path[0] == '\\')) {
+        len = 1;
+    }
+    return ptn_duplicate_string_len(path, len);
+}
+
+static void ptn_spl_file_info_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    const char *path,
+    size_t line
+) {
+    PtnValue path_value = ptn_owned_string(ptn_duplicate_string(path == NULL ? "" : path));
+    char *basename = ptn_spl_path_basename_alloc(path == NULL ? "" : path);
+    PtnValue filename_value = ptn_owned_string(basename);
+    ptn_spl_declare_private_value_property(runtime, object, "pathName", declaring_class, path_value, line);
+    ptn_spl_declare_private_value_property(runtime, object, "fileName", declaring_class, filename_value, line);
+    ptn_value_destroy(&path_value);
+    ptn_value_destroy(&filename_value);
+}
+
+static void ptn_spl_dllist_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplDoublyLinkedListData *data,
+    size_t line
+) {
+    if (data == NULL) {
+        return;
+    }
+    PtnValue flags = ptn_int(data->flags);
+    ptn_spl_declare_private_value_property(runtime, object, "flags", "SplDoublyLinkedList", flags, line);
+    ptn_value_destroy(&flags);
+    ptn_spl_declare_private_value_property(runtime, object, "dllist", "SplDoublyLinkedList", data->storage, line);
+}
+
+static PtnArray *ptn_spl_dllist_array(PtnSplDoublyLinkedListData *data) {
+    if (data == NULL) {
+        return NULL;
+    }
+    PtnValue storage = ptn_value_deref(data->storage);
+    return storage.type == PTN_ARRAY ? storage.as.array : NULL;
+}
+
+static size_t ptn_spl_dllist_count(PtnSplDoublyLinkedListData *data) {
+    PtnArray *array = ptn_spl_dllist_array(data);
+    return array == NULL ? 0 : array->len;
+}
+
+static int ptn_spl_dllist_uses_lifo(PtnSplDoublyLinkedListData *data) {
+    return data != NULL && (data->flags & PTN_SPL_DLLIST_IT_MODE_LIFO) != 0;
+}
+
+static size_t ptn_spl_dllist_physical_index(PtnSplDoublyLinkedListData *data, size_t logical_index) {
+    size_t count = ptn_spl_dllist_count(data);
+    if (ptn_spl_dllist_uses_lifo(data)) {
+        return count == 0 ? 0 : count - 1 - logical_index;
+    }
+    return logical_index;
+}
+
+static int ptn_spl_dllist_offset_index(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    int64_t *index_out
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_INT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must be of type int, %s given",
+            function_name,
+            position,
+            argument_name,
+            ptn_offset_container_type_name(resolved)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    *index_out = resolved.as.integer;
+    (void)line;
+    return 1;
+}
+
+static PtnValue ptn_spl_dllist_rebuild_with_insert(
+    PtnSplDoublyLinkedListData *data,
+    size_t offset,
+    PtnValue value
+) {
+    PtnArray *array = ptn_spl_dllist_array(data);
+    PtnValue rebuilt = ptn_array_from_literal_entries(0, NULL);
+    size_t count = array == NULL ? 0 : array->len;
+    if (offset > count) {
+        offset = count;
+    }
+    int64_t next = 0;
+    for (size_t i = 0; i < offset; i++) {
+        ptn_array_set_entry(
+            rebuilt.as.array,
+            ptn_array_int_key(next++),
+            ptn_value_clone_deref(array->entries[i].value)
+        );
+    }
+    ptn_array_set_entry(rebuilt.as.array, ptn_array_int_key(next++), ptn_value_clone_deref(value));
+    for (size_t i = offset; i < count; i++) {
+        ptn_array_set_entry(
+            rebuilt.as.array,
+            ptn_array_int_key(next++),
+            ptn_value_clone_deref(array->entries[i].value)
+        );
+    }
+    return rebuilt;
+}
+
+static PtnValue ptn_spl_dllist_rebuild_without_index(
+    PtnSplDoublyLinkedListData *data,
+    size_t offset,
+    PtnValue *removed_out
+) {
+    PtnArray *array = ptn_spl_dllist_array(data);
+    PtnValue rebuilt = ptn_array_from_literal_entries(0, NULL);
+    if (removed_out != NULL) {
+        *removed_out = ptn_null();
+    }
+    size_t count = array == NULL ? 0 : array->len;
+    int64_t next = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (i == offset) {
+            if (removed_out != NULL) {
+                *removed_out = ptn_value_clone_deref(array->entries[i].value);
+            }
+            continue;
+        }
+        ptn_array_set_entry(
+            rebuilt.as.array,
+            ptn_array_int_key(next++),
+            ptn_value_clone_deref(array->entries[i].value)
+        );
+    }
+    return rebuilt;
+}
+
+static void ptn_spl_dllist_replace_storage(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplDoublyLinkedListData *data,
+    PtnValue storage,
+    size_t line
+) {
+    ptn_value_destroy(&data->storage);
+    data->storage = ptn_value_clone_deref(storage);
+    size_t count = ptn_spl_dllist_count(data);
+    if (data->index > count) {
+        data->index = count;
+    }
+    ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
+}
+
+static PtnValue ptn_spl_dllist_entry_at(PtnSplDoublyLinkedListData *data, size_t physical_index) {
+    PtnArray *array = ptn_spl_dllist_array(data);
+    if (array == NULL || physical_index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(array->entries[physical_index].value);
+}
+
+static void ptn_spl_throw_empty_dllist(PtnRuntime *runtime, const char *method_name) {
+    char message[128];
+    const char *verb = (ptn_ascii_case_equal(method_name, "top") || ptn_ascii_case_equal(method_name, "bottom"))
+        ? "peek at"
+        : method_name;
+    int written = snprintf(
+        message,
+        sizeof(message),
+        ptn_ascii_case_equal(verb, "peek at")
+            ? "Can't %s an empty datastructure"
+            : "Can't %s from an empty datastructure",
+        verb
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "RuntimeException", message);
+}
+
+static PtnStringOperand ptn_spl_file_path_operand(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_internal_expect_string_arg(runtime, function_name, position, "filename", value, line);
+}
+
+static char *ptn_spl_file_path_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand operand = ptn_spl_file_path_operand(runtime, function_name, position, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return NULL;
+    }
+    char *path = ptn_path_operand_to_c_string(operand);
+    ptn_string_operand_free(operand);
+    if (path == NULL) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+    }
+    return path;
+}
+
+static int ptn_spl_file_info_stat(
+    PtnRuntime *runtime,
+    PtnSplFileInfoData *data,
+    const char *method_name,
+    int use_lstat,
+    struct stat *info
+) {
+    if (data == NULL || data->path == NULL || data->path[0] == '\0') {
+        ptn_throw_exception(runtime, "RuntimeException", "SplFileInfo object is uninitialized");
+        return 0;
+    }
+    int ok = use_lstat ? ptn_lstat_path(data->path, info) == 0 : ptn_stat_path(data->path, info) == 0;
+    if (!ok) {
+        char message[512];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): stat failed for %s",
+            method_name,
+            data->path
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "RuntimeException", message);
+        return 0;
+    }
+    return 1;
+}
+
+static char *ptn_spl_file_info_extension_alloc(const char *path) {
+    const char *base = ptn_spl_path_basename_part(path);
+    const char *dot = strrchr(base, '.');
+    if (dot == NULL || dot == base || dot[1] == '\0') {
+        return ptn_duplicate_string("");
+    }
+    return ptn_duplicate_string(dot + 1);
+}
+
+static char *ptn_spl_file_info_basename_with_suffix(const char *path, const char *suffix) {
+    char *base = ptn_spl_path_basename_alloc(path);
+    size_t base_len = strlen(base);
+    size_t suffix_len = suffix == NULL ? 0 : strlen(suffix);
+    if (suffix_len != 0 && base_len >= suffix_len &&
+        memcmp(base + base_len - suffix_len, suffix, suffix_len) == 0) {
+        base[base_len - suffix_len] = '\0';
+    }
+    return base;
+}
+
+static PtnValue ptn_spl_stream_method_call(
+    PtnRuntime *runtime,
+    PtnValue stream,
+    PtnValue (*fn)(PtnRuntime *, size_t, const PtnValue *, size_t),
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue *forwarded = malloc((argc + 1) * sizeof(PtnValue));
+    if (forwarded == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    forwarded[0] = ptn_value_clone_deref(stream);
+    for (size_t i = 0; i < argc; i++) {
+        forwarded[i + 1] = ptn_value_clone_deref(args[i]);
+    }
+    PtnValue result = fn(runtime, argc + 1, forwarded, line);
+    for (size_t i = 0; i < argc + 1; i++) {
+        ptn_value_destroy(&forwarded[i]);
+    }
+    free(forwarded);
+    return result;
+}
+
+static PtnSplFileInfoData *ptn_spl_file_info_data_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplFileInfo") ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    if (ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplFileObject")) {
+        return &((PtnSplFileObjectData *)value.as.object->native_data)->info;
+    }
+    return (PtnSplFileInfoData *)value.as.object->native_data;
+}
+
+static PtnSplFileObjectData *ptn_spl_file_object_data_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplFileObject") ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnSplFileObjectData *)value.as.object->native_data;
+}
+
 static void ptn_spl_array_object_set_storage(
     PtnRuntime *runtime,
     PtnValue object,
@@ -47096,6 +47901,1343 @@ static PTN_UNUSED PtnValue ptn_array_object_clone(
     PtnValue clone = ptn_array_object_new(runtime, 3, args, line);
     ptn_value_destroy(&storage_copy);
     return clone;
+}
+
+static PtnSplDoublyLinkedListData *ptn_spl_doubly_linked_list_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplDoublyLinkedList") ||
+        receiver.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid SplDoublyLinkedList object");
+        return NULL;
+    }
+    return (PtnSplDoublyLinkedListData *)receiver.as.object->native_data;
+}
+
+static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects exactly 0 arguments, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnSplDoublyLinkedListData *data = malloc(sizeof(PtnSplDoublyLinkedListData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->storage = ptn_array_from_literal_entries(0, NULL);
+    data->index = 0;
+    data->flags = ptn_internal_class_name_is_spl_stack(class_name)
+        ? 6
+        : (ptn_internal_class_name_is_spl_queue(class_name) ? 4 : 0);
+
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_spl_doubly_linked_list_data_free;
+    ptn_spl_dllist_sync_properties(runtime, object, data, line);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnSplDoublyLinkedListData *source_data = ptn_spl_doubly_linked_list_data(runtime, source);
+    if (source_data == NULL) {
+        return ptn_null();
+    }
+    PtnValue resolved = ptn_value_deref(source);
+    PtnValue clone = ptn_spl_doubly_linked_list_new(
+        runtime,
+        resolved.as.object->class_name,
+        0,
+        NULL,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL || clone.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    PtnSplDoublyLinkedListData *clone_data = (PtnSplDoublyLinkedListData *)clone.as.object->native_data;
+    ptn_value_destroy(&clone_data->storage);
+    clone_data->storage = ptn_array(ptn_array_clone(ptn_value_deref(source_data->storage).as.array));
+    clone_data->index = source_data->index;
+    clone_data->flags = source_data->flags;
+    ptn_spl_dllist_sync_properties(runtime, clone, clone_data, line);
+    return clone;
+}
+
+static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnSplDoublyLinkedListData *data = ptn_spl_doubly_linked_list_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        const char *class_name = resolved_receiver.type == PTN_OBJECT
+            ? resolved_receiver.as.object->class_name
+            : "SplDoublyLinkedList";
+        PtnValue replacement = ptn_spl_doubly_linked_list_new(runtime, class_name, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnSplDoublyLinkedListData *new_data =
+                (PtnSplDoublyLinkedListData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_spl_doubly_linked_list_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_spl_doubly_linked_list_data_free;
+            ptn_spl_dllist_sync_properties(runtime, resolved_receiver, new_data, line);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "push")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplDoublyLinkedList::push() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnArray *array = ptn_spl_dllist_array(data);
+        ptn_array_set_entry(array, ptn_array_int_key(array->next_auto_key), ptn_value_clone_deref(args[0]));
+        ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "unshift")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplDoublyLinkedList::unshift() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnValue rebuilt = ptn_spl_dllist_rebuild_with_insert(data, 0, args[0]);
+        ptn_spl_dllist_replace_storage(runtime, receiver, data, rebuilt, line);
+        ptn_value_destroy(&rebuilt);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "add")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplDoublyLinkedList::add() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        int64_t offset = 0;
+        if (!ptn_spl_dllist_offset_index(runtime, "SplDoublyLinkedList::add", 1, "index", args[0], line, &offset)) {
+            return ptn_null();
+        }
+        size_t count = ptn_spl_dllist_count(data);
+        if (offset < 0 || (uint64_t)offset > count) {
+            ptn_throw_exception(runtime, "OutOfRangeException", "SplDoublyLinkedList::add(): Argument #1 ($index) is out of range");
+            return ptn_null();
+        }
+        PtnValue rebuilt = ptn_spl_dllist_rebuild_with_insert(data, (size_t)offset, args[1]);
+        ptn_spl_dllist_replace_storage(runtime, receiver, data, rebuilt, line);
+        ptn_value_destroy(&rebuilt);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "pop") || ptn_ascii_case_equal(name, "shift")) {
+        if (argc != 0) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplDoublyLinkedList::%s() expects exactly 0 arguments",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        size_t count = ptn_spl_dllist_count(data);
+        if (count == 0) {
+            ptn_spl_throw_empty_dllist(runtime, name);
+            return ptn_null();
+        }
+        size_t offset = ptn_ascii_case_equal(name, "pop") ? count - 1 : 0;
+        PtnValue removed = ptn_null();
+        PtnValue rebuilt = ptn_spl_dllist_rebuild_without_index(data, offset, &removed);
+        ptn_spl_dllist_replace_storage(runtime, receiver, data, rebuilt, line);
+        ptn_value_destroy(&rebuilt);
+        return removed;
+    }
+    if (ptn_ascii_case_equal(name, "top") || ptn_ascii_case_equal(name, "bottom")) {
+        if (argc != 0) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplDoublyLinkedList::%s() expects exactly 0 arguments",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        size_t count = ptn_spl_dllist_count(data);
+        if (count == 0) {
+            ptn_spl_throw_empty_dllist(runtime, name);
+            return ptn_null();
+        }
+        return ptn_spl_dllist_entry_at(data, ptn_ascii_case_equal(name, "top") ? count - 1 : 0);
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        ptn_reflection_check_no_arguments(runtime, "SplDoublyLinkedList", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int((int64_t)ptn_spl_dllist_count(data));
+    }
+    if (ptn_ascii_case_equal(name, "isEmpty")) {
+        ptn_reflection_check_no_arguments(runtime, "SplDoublyLinkedList", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_spl_dllist_count(data) == 0);
+    }
+    if (ptn_ascii_case_equal(name, "getIteratorMode")) {
+        ptn_reflection_check_no_arguments(runtime, "SplDoublyLinkedList", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->flags);
+    }
+    if (ptn_ascii_case_equal(name, "setIteratorMode")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplDoublyLinkedList::setIteratorMode() expects exactly 1 argument");
+            return ptn_null();
+        }
+        data->flags = ptn_internal_expect_integer_arg(runtime, "SplDoublyLinkedList::setIteratorMode", 1, "mode", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "offsetExists") || ptn_ascii_case_equal(name, "offsetGet") ||
+        ptn_ascii_case_equal(name, "offsetUnset")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplDoublyLinkedList::%s() expects exactly 1 argument",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        int64_t offset = 0;
+        if (!ptn_spl_dllist_offset_index(runtime, "SplDoublyLinkedList::offsetGet", 1, "index", args[0], line, &offset)) {
+            return ptn_null();
+        }
+        size_t count = ptn_spl_dllist_count(data);
+        int in_range = offset >= 0 && (uint64_t)offset < count;
+        if (ptn_ascii_case_equal(name, "offsetExists")) {
+            return ptn_bool(in_range);
+        }
+        if (!in_range) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplDoublyLinkedList::%s(): Argument #1 ($index) is out of range",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "OutOfRangeException", message);
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "offsetGet")) {
+            return ptn_spl_dllist_entry_at(data, (size_t)offset);
+        }
+        PtnValue rebuilt = ptn_spl_dllist_rebuild_without_index(data, (size_t)offset, NULL);
+        ptn_spl_dllist_replace_storage(runtime, receiver, data, rebuilt, line);
+        ptn_value_destroy(&rebuilt);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "offsetSet")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplDoublyLinkedList::offsetSet() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        PtnValue offset_value = ptn_value_deref(args[0]);
+        if (offset_value.type == PTN_NULL) {
+            PtnArray *array = ptn_spl_dllist_array(data);
+            ptn_array_set_entry(array, ptn_array_int_key(array->next_auto_key), ptn_value_clone_deref(args[1]));
+            ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
+            return ptn_null();
+        }
+        int64_t offset = 0;
+        if (!ptn_spl_dllist_offset_index(runtime, "SplDoublyLinkedList::offsetSet", 1, "index", args[0], line, &offset)) {
+            return ptn_null();
+        }
+        size_t count = ptn_spl_dllist_count(data);
+        if (offset < 0 || (uint64_t)offset >= count) {
+            ptn_throw_exception(runtime, "OutOfRangeException", "SplDoublyLinkedList::offsetSet(): Argument #1 ($index) is out of range");
+            return ptn_null();
+        }
+        PtnArray *array = ptn_spl_dllist_array(data);
+        ptn_value_destroy(&array->entries[offset].value);
+        array->entries[offset].value = ptn_value_clone_deref(args[1]);
+        ptn_spl_dllist_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    ptn_reflection_check_no_arguments(runtime, "SplDoublyLinkedList", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        data->index = 0;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        return ptn_bool(data->index < ptn_spl_dllist_count(data));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        if (data->index >= ptn_spl_dllist_count(data)) {
+            return ptn_null();
+        }
+        return ptn_spl_dllist_entry_at(data, ptn_spl_dllist_physical_index(data, data->index));
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        return ptn_int((int64_t)data->index);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        if (data->index < ptn_spl_dllist_count(data)) {
+            data->index++;
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "prev")) {
+        if (data->index > 0) {
+            data->index--;
+        } else {
+            data->index = ptn_spl_dllist_count(data);
+        }
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnSplFileInfoData *ptn_spl_file_info_data(PtnRuntime *runtime, PtnValue receiver) {
+    PtnSplFileInfoData *data = ptn_spl_file_info_data_from_value(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid SplFileInfo object");
+    }
+    return data;
+}
+
+static void ptn_spl_file_info_init_data(
+    PtnSplFileInfoData *data,
+    char *path,
+    const char *file_class,
+    const char *info_class
+) {
+    data->path = path;
+    data->file_class = ptn_duplicate_string(file_class == NULL ? "SplFileObject" : file_class);
+    data->info_class = ptn_duplicate_string(info_class == NULL ? "SplFileInfo" : info_class);
+}
+
+static PTN_UNUSED PtnValue ptn_spl_file_info_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects exactly 1 argument, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    char *path = ptn_spl_file_path_arg(runtime, "SplFileInfo::__construct", 1, args[0], line);
+    if (runtime->exceptions->active_exception != NULL || path == NULL) {
+        free(path);
+        return ptn_null();
+    }
+    PtnSplFileInfoData *data = malloc(sizeof(PtnSplFileInfoData));
+    if (data == NULL) {
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    ptn_spl_file_info_init_data(data, path, "SplFileObject", "SplFileInfo");
+    PtnValue object;
+    if (!ptn_internal_class_name_is_spl_file_info(class_name) &&
+        runtime->new_instance_without_constructor != NULL &&
+        ptn_declared_class_is_same_or_descendant(class_name, "SplFileInfo")) {
+        object = runtime->new_instance_without_constructor(runtime, class_name, line);
+        if (runtime->exceptions->active_exception != NULL || object.type != PTN_OBJECT) {
+            ptn_spl_file_info_data_free(data);
+            return ptn_null();
+        }
+    } else {
+        object = ptn_object_new_shell(runtime, class_name);
+    }
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_spl_file_info_data_free;
+    ptn_spl_file_info_sync_properties(runtime, object, "SplFileInfo", data->path, line);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_spl_file_info_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnSplFileInfoData *source_data = ptn_spl_file_info_data(runtime, source);
+    if (source_data == NULL) {
+        return ptn_null();
+    }
+    PtnValue resolved = ptn_value_deref(source);
+    PtnValue path_arg = ptn_owned_string(ptn_duplicate_string(source_data->path == NULL ? "" : source_data->path));
+    PtnValue clone = ptn_spl_file_info_new(runtime, resolved.as.object->class_name, 1, &path_arg, line);
+    ptn_value_destroy(&path_arg);
+    if (runtime->exceptions->active_exception != NULL || clone.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    PtnSplFileInfoData *clone_data = ptn_spl_file_info_data_from_value(clone);
+    free(clone_data->file_class);
+    free(clone_data->info_class);
+    clone_data->file_class = ptn_duplicate_string(source_data->file_class == NULL ? "SplFileObject" : source_data->file_class);
+    clone_data->info_class = ptn_duplicate_string(source_data->info_class == NULL ? "SplFileInfo" : source_data->info_class);
+    return clone;
+}
+
+static PtnValue ptn_spl_file_info_make_info_object(
+    PtnRuntime *runtime,
+    PtnSplFileInfoData *data,
+    const char *class_name,
+    size_t line
+) {
+    PtnValue path_arg = ptn_owned_string(ptn_duplicate_string(data->path == NULL ? "" : data->path));
+    PtnValue result = ptn_spl_file_info_new(runtime, class_name, 1, &path_arg, line);
+    ptn_value_destroy(&path_arg);
+    return result;
+}
+
+static PtnValue ptn_spl_file_object_new_for_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+
+static PtnValue ptn_spl_file_info_make_file_object(
+    PtnRuntime *runtime,
+    PtnSplFileInfoData *data,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue forwarded[4];
+    size_t forwarded_argc = argc + 1;
+    forwarded[0] = ptn_owned_string(ptn_duplicate_string(data->path == NULL ? "" : data->path));
+    for (size_t i = 0; i < argc && i < 3; i++) {
+        forwarded[i + 1] = ptn_value_clone_deref(args[i]);
+    }
+    PtnValue result = ptn_spl_file_object_new_for_class(runtime, class_name, forwarded_argc, forwarded, line);
+    for (size_t i = 0; i < forwarded_argc; i++) {
+        ptn_value_destroy(&forwarded[i]);
+    }
+    return result;
+}
+
+static int ptn_spl_file_info_class_is_derived_from(const char *class_name, const char *base_name) {
+    return class_name != NULL &&
+        (ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) &&
+        ptn_declared_class_is_same_or_descendant(class_name, base_name);
+}
+
+static PtnValue ptn_spl_file_info_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnSplFileInfoData *data = ptn_spl_file_info_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        PtnSplFileInfoData *new_data = ptn_spl_file_info_data_from_value(replacement);
+        if (resolved_receiver.type == PTN_OBJECT && new_data != NULL) {
+            if (ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, "SplFileObject")) {
+                PtnSplFileObjectData *file_data = (PtnSplFileObjectData *)resolved_receiver.as.object->native_data;
+                ptn_spl_file_info_data_clear(&file_data->info);
+                ptn_spl_file_info_init_data(
+                    &file_data->info,
+                    ptn_duplicate_string(new_data->path),
+                    new_data->file_class,
+                    new_data->info_class
+                );
+            } else {
+                ptn_spl_file_info_data_free(resolved_receiver.as.object->native_data);
+                resolved_receiver.as.object->native_data = new_data;
+                resolved_receiver.as.object->native_data_free = ptn_spl_file_info_data_free;
+                replacement.as.object->native_data = NULL;
+                replacement.as.object->native_data_free = NULL;
+            }
+            ptn_spl_file_info_sync_properties(runtime, resolved_receiver, "SplFileInfo", new_data->path, line);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString") || ptn_ascii_case_equal(name, "getPathname")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_duplicate_string(data->path == NULL ? "" : data->path));
+    }
+    if (ptn_ascii_case_equal(name, "getFilename")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_spl_path_basename_alloc(data->path == NULL ? "" : data->path));
+    }
+    if (ptn_ascii_case_equal(name, "getPath")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_spl_path_dirname_alloc(data->path == NULL ? "" : data->path));
+    }
+    if (ptn_ascii_case_equal(name, "getBasename")) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileInfo::getBasename() expects at most 1 argument");
+            return ptn_null();
+        }
+        char *suffix = NULL;
+        if (argc == 1) {
+            suffix = ptn_value_to_string(args[0]);
+        }
+        char *base = ptn_spl_file_info_basename_with_suffix(data->path == NULL ? "" : data->path, suffix);
+        free(suffix);
+        return ptn_owned_string(base);
+    }
+    if (ptn_ascii_case_equal(name, "getExtension")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_owned_string(ptn_spl_file_info_extension_alloc(data->path == NULL ? "" : data->path));
+    }
+    if (ptn_ascii_case_equal(name, "getRealPath")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        char resolved[PTN_PHP_MAXPATHLEN];
+        if (data->path == NULL || realpath(data->path, resolved) == NULL) {
+            return ptn_bool(0);
+        }
+        return ptn_owned_string(ptn_duplicate_string(resolved));
+    }
+    if (ptn_ascii_case_equal(name, "getType") ||
+        ptn_ascii_case_equal(name, "getSize") ||
+        ptn_ascii_case_equal(name, "getPerms") ||
+        ptn_ascii_case_equal(name, "getInode") ||
+        ptn_ascii_case_equal(name, "getOwner") ||
+        ptn_ascii_case_equal(name, "getGroup") ||
+        ptn_ascii_case_equal(name, "getATime") ||
+        ptn_ascii_case_equal(name, "getMTime") ||
+        ptn_ascii_case_equal(name, "getCTime")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        struct stat info;
+        if (!ptn_spl_file_info_stat(runtime, data, name, ptn_ascii_case_equal(name, "getType"), &info)) {
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "getType")) {
+            return ptn_string(ptn_filetype_from_mode(info.st_mode));
+        }
+        if (ptn_ascii_case_equal(name, "getSize")) {
+            return ptn_int((int64_t)info.st_size);
+        }
+        if (ptn_ascii_case_equal(name, "getPerms")) {
+            return ptn_int((int64_t)info.st_mode);
+        }
+        if (ptn_ascii_case_equal(name, "getInode")) {
+            return ptn_int((int64_t)info.st_ino);
+        }
+        if (ptn_ascii_case_equal(name, "getOwner")) {
+            return ptn_int((int64_t)info.st_uid);
+        }
+        if (ptn_ascii_case_equal(name, "getGroup")) {
+            return ptn_int((int64_t)info.st_gid);
+        }
+        if (ptn_ascii_case_equal(name, "getATime")) {
+            return ptn_int((int64_t)info.st_atime);
+        }
+        if (ptn_ascii_case_equal(name, "getMTime")) {
+            return ptn_int((int64_t)info.st_mtime);
+        }
+        return ptn_int((int64_t)info.st_ctime);
+    }
+    if (ptn_ascii_case_equal(name, "isFile") ||
+        ptn_ascii_case_equal(name, "isDir") ||
+        ptn_ascii_case_equal(name, "isLink") ||
+        ptn_ascii_case_equal(name, "isReadable") ||
+        ptn_ascii_case_equal(name, "isWritable") ||
+        ptn_ascii_case_equal(name, "isExecutable")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->path == NULL) {
+            return ptn_bool(0);
+        }
+        if (ptn_ascii_case_equal(name, "isReadable")) {
+            return ptn_bool(access(data->path, R_OK) == 0);
+        }
+        if (ptn_ascii_case_equal(name, "isWritable")) {
+            return ptn_bool(access(data->path, W_OK) == 0);
+        }
+        if (ptn_ascii_case_equal(name, "isExecutable")) {
+            return ptn_bool(access(data->path, X_OK) == 0);
+        }
+        struct stat info;
+        int ok = ptn_ascii_case_equal(name, "isLink")
+            ? ptn_lstat_path(data->path, &info) == 0
+            : ptn_stat_path(data->path, &info) == 0;
+        if (!ok) {
+            return ptn_bool(0);
+        }
+        if (ptn_ascii_case_equal(name, "isFile")) {
+            return ptn_bool(S_ISREG(info.st_mode));
+        }
+        if (ptn_ascii_case_equal(name, "isDir")) {
+            return ptn_bool(S_ISDIR(info.st_mode));
+        }
+#if defined(S_ISLNK)
+        return ptn_bool(S_ISLNK(info.st_mode));
+#else
+        return ptn_bool(0);
+#endif
+    }
+    if (ptn_ascii_case_equal(name, "setFileClass") || ptn_ascii_case_equal(name, "setInfoClass")) {
+        if (argc > 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplFileInfo::%s() expects at most 1 argument",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        const char *default_class = ptn_ascii_case_equal(name, "setFileClass") ? "SplFileObject" : "SplFileInfo";
+        const char *base_class = default_class;
+        char *class_name = argc == 0 ? ptn_duplicate_string(default_class) : ptn_value_to_string(args[0]);
+        if (!ptn_spl_file_info_class_is_derived_from(class_name, base_class)) {
+            char message[256];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplFileInfo::%s(): Argument #1 ($class) must be a class name derived from %s, %s given",
+                name,
+                base_class,
+                class_name == NULL ? "" : class_name
+            );
+            free(class_name);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "setFileClass")) {
+            free(data->file_class);
+            data->file_class = class_name;
+        } else {
+            free(data->info_class);
+            data->info_class = class_name;
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getFileInfo")) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileInfo::getFileInfo() expects at most 1 argument");
+            return ptn_null();
+        }
+        char *class_name = argc == 1
+            ? ptn_value_to_string(args[0])
+            : ptn_duplicate_string(data->info_class == NULL ? "SplFileInfo" : data->info_class);
+        PtnValue result = ptn_spl_file_info_make_info_object(runtime, data, class_name, line);
+        free(class_name);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "getPathInfo")) {
+        if (argc > 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileInfo::getPathInfo() expects at most 1 argument");
+            return ptn_null();
+        }
+        char *class_name = argc == 1
+            ? ptn_value_to_string(args[0])
+            : ptn_duplicate_string(data->info_class == NULL ? "SplFileInfo" : data->info_class);
+        char *path = ptn_spl_path_dirname_alloc(data->path == NULL ? "" : data->path);
+        PtnValue path_arg = ptn_owned_string(path);
+        PtnValue result = ptn_spl_file_info_new(runtime, class_name, 1, &path_arg, line);
+        ptn_value_destroy(&path_arg);
+        free(class_name);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "openFile")) {
+        if (argc > 3) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileInfo::openFile() expects at most 3 arguments");
+            return ptn_null();
+        }
+        PtnValue mode = argc >= 1 ? ptn_value_clone_deref(args[0]) : ptn_string("r");
+        PtnValue forwarded[3] = { mode, ptn_bool(0), ptn_null() };
+        size_t forwarded_argc = 1;
+        if (argc >= 2) {
+            ptn_value_destroy(&forwarded[1]);
+            forwarded[1] = ptn_value_clone_deref(args[1]);
+            forwarded_argc = 2;
+        }
+        if (argc >= 3) {
+            ptn_value_destroy(&forwarded[2]);
+            forwarded[2] = ptn_value_clone_deref(args[2]);
+            forwarded_argc = 3;
+        }
+        const char *class_name = data->file_class == NULL ? "SplFileObject" : data->file_class;
+        PtnValue result = ptn_spl_file_info_make_file_object(runtime, data, class_name, forwarded_argc, forwarded, line);
+        for (size_t i = 0; i < 3; i++) {
+            ptn_value_destroy(&forwarded[i]);
+        }
+        return result;
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static void ptn_spl_file_object_clear_current(PtnSplFileObjectData *data) {
+    if (data == NULL || !data->has_current) {
+        return;
+    }
+    ptn_value_destroy(&data->current);
+    data->current = ptn_null();
+    data->has_current = 0;
+}
+
+static PtnValue ptn_spl_file_object_read_line(
+    PtnRuntime *runtime,
+    PtnSplFileObjectData *data,
+    size_t line
+) {
+    PtnValue args[2];
+    size_t argc = 1;
+    args[0] = ptn_value_clone_deref(data->stream);
+    if (data->max_line_len > 0) {
+        args[1] = ptn_int(data->max_line_len);
+        argc = 2;
+    }
+    PtnValue result = ptn_internal_fgets(runtime, argc, args, line);
+    for (size_t i = 0; i < argc; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    if ((data->flags & PTN_SPL_FILE_OBJECT_DROP_NEW_LINE) != 0 && ptn_value_deref(result).type == PTN_STRING) {
+        PtnValue resolved = ptn_value_deref(result);
+        size_t len = resolved.as.string.len;
+        while (len > 0) {
+            unsigned char byte = resolved.as.string.data[len - 1];
+            if (byte != '\n' && byte != '\r') {
+                break;
+            }
+            len--;
+        }
+        if (len != resolved.as.string.len) {
+            char *trimmed = ptn_duplicate_string_len((const char *)resolved.as.string.data, len);
+            ptn_value_destroy(&result);
+            result = ptn_owned_string_len(trimmed, len);
+        }
+    }
+    return result;
+}
+
+static PtnValue ptn_spl_file_object_read_csv(
+    PtnRuntime *runtime,
+    PtnSplFileObjectData *data,
+    size_t line
+) {
+    PtnValue args[5] = {
+        ptn_value_clone_deref(data->stream),
+        ptn_null(),
+        ptn_owned_string_len(ptn_duplicate_string_len(&data->delimiter, 1), 1),
+        ptn_owned_string_len(ptn_duplicate_string_len(&data->enclosure, 1), 1),
+        data->escape_enabled
+            ? ptn_owned_string_len(ptn_duplicate_string_len(&data->escape, 1), 1)
+            : ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0)
+    };
+    PtnValue result = ptn_internal_fgetcsv(runtime, 5, args, line);
+    for (size_t i = 0; i < 5; i++) {
+        ptn_value_destroy(&args[i]);
+    }
+    return result;
+}
+
+static void ptn_spl_file_object_ensure_current(
+    PtnRuntime *runtime,
+    PtnSplFileObjectData *data,
+    size_t line
+) {
+    if (data == NULL || data->has_current || runtime->exceptions->active_exception != NULL) {
+        return;
+    }
+    data->current = (data->flags & PTN_SPL_FILE_OBJECT_READ_CSV) != 0
+        ? ptn_spl_file_object_read_csv(runtime, data, line)
+        : ptn_spl_file_object_read_line(runtime, data, line);
+    data->has_current = 1;
+}
+
+static int ptn_spl_file_object_current_valid(PtnSplFileObjectData *data) {
+    if (data == NULL || !data->has_current) {
+        return 0;
+    }
+    PtnValue current = ptn_value_deref(data->current);
+    return !(current.type == PTN_BOOL && current.as.boolean == 0);
+}
+
+static PtnValue ptn_spl_file_object_new_for_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 4) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SplFileObject::__construct() expects between 1 and 4 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    char *path = ptn_spl_file_path_arg(runtime, "SplFileObject::__construct", 1, args[0], line);
+    if (runtime->exceptions->active_exception != NULL || path == NULL) {
+        free(path);
+        return ptn_null();
+    }
+    PtnValue mode = argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_string("r");
+    PtnValue fopen_args[2] = { ptn_owned_string(ptn_duplicate_string(path)), mode };
+    PtnValue stream = ptn_internal_fopen(runtime, 2, fopen_args, line);
+    ptn_value_destroy(&fopen_args[0]);
+    ptn_value_destroy(&fopen_args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        free(path);
+        ptn_value_destroy(&stream);
+        return ptn_null();
+    }
+    PtnValue resolved_stream = ptn_value_deref(stream);
+    if (resolved_stream.type != PTN_RESOURCE) {
+        ptn_value_destroy(&stream);
+        char message[512];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SplFileObject::__construct(%s): Failed to open stream",
+            path
+        );
+        free(path);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "RuntimeException", message);
+        return ptn_null();
+    }
+    PtnSplFileObjectData *data = malloc(sizeof(PtnSplFileObjectData));
+    if (data == NULL) {
+        ptn_value_destroy(&stream);
+        free(path);
+        ptn_abort_out_of_memory();
+    }
+    ptn_spl_file_info_init_data(&data->info, path, "SplFileObject", "SplFileInfo");
+    data->stream = stream;
+    data->flags = 0;
+    data->key = 0;
+    data->has_current = 0;
+    data->current = ptn_null();
+    data->delimiter = ',';
+    data->enclosure = '"';
+    data->escape = '\\';
+    data->escape_enabled = 1;
+    data->escape_configured = 0;
+    data->max_line_len = 0;
+    PtnValue object;
+    if (!ptn_internal_class_name_is_spl_file_object(class_name) &&
+        runtime->new_instance_without_constructor != NULL &&
+        ptn_declared_class_is_same_or_descendant(class_name, "SplFileObject")) {
+        object = runtime->new_instance_without_constructor(runtime, class_name, line);
+        if (runtime->exceptions->active_exception != NULL || object.type != PTN_OBJECT) {
+            ptn_spl_file_object_data_free(data);
+            return ptn_null();
+        }
+    } else {
+        object = ptn_object_new_shell(runtime, class_name);
+    }
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_spl_file_object_data_free;
+    ptn_spl_file_info_sync_properties(runtime, object, "SplFileInfo", data->info.path, line);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_spl_file_object_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_spl_file_object_new_for_class(runtime, "SplFileObject", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_spl_file_object_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnSplFileObjectData *source_data = ptn_spl_file_object_data_from_value(source);
+    if (source_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid SplFileObject object");
+        return ptn_null();
+    }
+    PtnValue path = ptn_owned_string(ptn_duplicate_string(source_data->info.path == NULL ? "" : source_data->info.path));
+    PtnValue clone = ptn_spl_file_object_new(runtime, 1, &path, line);
+    ptn_value_destroy(&path);
+    if (runtime->exceptions->active_exception != NULL || clone.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    PtnSplFileObjectData *clone_data = ptn_spl_file_object_data_from_value(clone);
+    clone_data->flags = source_data->flags;
+    clone_data->delimiter = source_data->delimiter;
+    clone_data->enclosure = source_data->enclosure;
+    clone_data->escape = source_data->escape;
+    clone_data->escape_enabled = source_data->escape_enabled;
+    clone_data->escape_configured = source_data->escape_configured;
+    clone_data->max_line_len = source_data->max_line_len;
+    return clone;
+}
+
+static PtnValue ptn_spl_file_object_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnSplFileObjectData *data = ptn_spl_file_object_data_from_value(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid SplFileObject object");
+        return ptn_null();
+    }
+    if (ptn_internal_class_method_exists("SplFileInfo", name) &&
+        !ptn_ascii_case_equal(name, "openFile")) {
+        return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_spl_file_object_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnSplFileObjectData *new_data = (PtnSplFileObjectData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_spl_file_object_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_spl_file_object_data_free;
+            ptn_spl_file_info_sync_properties(runtime, resolved_receiver, "SplFileInfo", new_data->info.path, line);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "setFlags")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::setFlags() expects exactly 1 argument");
+            return ptn_null();
+        }
+        data->flags = ptn_internal_expect_integer_arg(runtime, "SplFileObject::setFlags", 1, "flags", args[0], line);
+        ptn_spl_file_object_clear_current(data);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getFlags")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->flags);
+    }
+    if (ptn_ascii_case_equal(name, "setCsvControl")) {
+        if (argc > 3) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::setCsvControl() expects at most 3 arguments");
+            return ptn_null();
+        }
+        if (argc >= 1) {
+            data->delimiter = (char)ptn_csv_char_arg(runtime, "SplFileObject::setCsvControl", 1, "separator", args[0], line, ',', 0, NULL);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (argc >= 2) {
+            data->enclosure = (char)ptn_csv_char_arg(runtime, "SplFileObject::setCsvControl", 2, "enclosure", args[1], line, '"', 0, NULL);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (argc >= 3) {
+            int escape_enabled = data->escape_enabled;
+            char escape = (char)ptn_csv_char_arg(runtime, "SplFileObject::setCsvControl", 3, "escape", args[2], line, '\\', 1, &escape_enabled);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            data->escape = escape;
+            data->escape_enabled = escape_enabled;
+            data->escape_configured = 1;
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getCsvControl")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_owned_string_len(ptn_duplicate_string_len(&data->delimiter, 1), 1));
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_owned_string_len(ptn_duplicate_string_len(&data->enclosure, 1), 1));
+        if (data->escape_enabled) {
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_owned_string_len(ptn_duplicate_string_len(&data->escape, 1), 1));
+        } else {
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0));
+        }
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "fgetcsv")) {
+        if (argc > 3) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::fgetcsv() expects at most 3 arguments");
+            return ptn_null();
+        }
+        if (argc >= 1) {
+            ptn_csv_char_arg(runtime, "SplFileObject::fgetcsv", 1, "separator", args[0], line, ',', 0, NULL);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (argc >= 2) {
+            ptn_csv_char_arg(runtime, "SplFileObject::fgetcsv", 2, "enclosure", args[1], line, '"', 0, NULL);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (argc >= 3) {
+            int escape_enabled = data->escape_enabled;
+            ptn_csv_char_arg(runtime, "SplFileObject::fgetcsv", 3, "escape", args[2], line, '\\', 1, &escape_enabled);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        } else if (!data->escape_configured) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "SplFileObject::fgetcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl()",
+                line
+            );
+        }
+        if (argc == 0) {
+            return ptn_spl_file_object_read_csv(runtime, data, line);
+        }
+        PtnValue forwarded[5] = {
+            ptn_value_clone_deref(data->stream),
+            ptn_null(),
+            argc >= 1 ? ptn_value_clone_deref(args[0]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->delimiter, 1), 1),
+            argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->enclosure, 1), 1),
+            argc >= 3 ? ptn_value_clone_deref(args[2]) : (data->escape_enabled ? ptn_owned_string_len(ptn_duplicate_string_len(&data->escape, 1), 1) : ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0))
+        };
+        PtnValue result = ptn_internal_fgetcsv(runtime, 5, forwarded, line);
+        for (size_t i = 0; i < 5; i++) {
+            ptn_value_destroy(&forwarded[i]);
+        }
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "fputcsv")) {
+        if (argc < 1 || argc > 5) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::fputcsv() expects between 1 and 5 arguments");
+            return ptn_null();
+        }
+        if (argc >= 2) {
+            ptn_csv_char_arg(runtime, "SplFileObject::fputcsv", 2, "separator", args[1], line, ',', 0, NULL);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (argc >= 3) {
+            ptn_csv_char_arg(runtime, "SplFileObject::fputcsv", 3, "enclosure", args[2], line, '"', 0, NULL);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (argc >= 4) {
+            int escape_enabled = data->escape_enabled;
+            ptn_csv_char_arg(runtime, "SplFileObject::fputcsv", 4, "escape", args[3], line, '\\', 1, &escape_enabled);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        } else if (!data->escape_configured) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "SplFileObject::fputcsv(): the $escape parameter must be provided, as its default value will change, either explicitly or via SplFileObject::setCsvControl()",
+                line
+            );
+        }
+        PtnValue forwarded[6] = {
+            ptn_value_clone_deref(data->stream),
+            ptn_value_clone_deref(args[0]),
+            argc >= 2 ? ptn_value_clone_deref(args[1]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->delimiter, 1), 1),
+            argc >= 3 ? ptn_value_clone_deref(args[2]) : ptn_owned_string_len(ptn_duplicate_string_len(&data->enclosure, 1), 1),
+            argc >= 4 ? ptn_value_clone_deref(args[3]) : (data->escape_enabled ? ptn_owned_string_len(ptn_duplicate_string_len(&data->escape, 1), 1) : ptn_owned_string_len(ptn_duplicate_string_len("", 0), 0)),
+            argc >= 5 ? ptn_value_clone_deref(args[4]) : ptn_string("\n")
+        };
+        PtnValue result = ptn_internal_fputcsv(runtime, 6, forwarded, line);
+        for (size_t i = 0; i < 6; i++) {
+            ptn_value_destroy(&forwarded[i]);
+        }
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "fflush")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fflush, 0, NULL, line);
+    }
+    if (ptn_ascii_case_equal(name, "fpassthru")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fpassthru, 0, NULL, line);
+    }
+    if (ptn_ascii_case_equal(name, "fgets") || ptn_ascii_case_equal(name, "getCurrentLine")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_spl_file_object_clear_current(data);
+        PtnValue result = ptn_spl_file_object_read_line(runtime, data, line);
+        if (!(ptn_value_deref(result).type == PTN_BOOL && ptn_value_deref(result).as.boolean == 0)) {
+            data->key++;
+        }
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "fwrite")) {
+        if (argc < 1 || argc > 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::fwrite() expects between 1 and 2 arguments");
+            return ptn_null();
+        }
+        return ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fwrite, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "fgetc")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fgetc, 0, NULL, line);
+    }
+    if (ptn_ascii_case_equal(name, "fseek")) {
+        if (argc < 1 || argc > 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::fseek() expects between 1 and 2 arguments");
+            return ptn_null();
+        }
+        ptn_spl_file_object_clear_current(data);
+        return ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fseek, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "fscanf")) {
+        if (argc < 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::fscanf() expects at least 1 argument");
+            return ptn_null();
+        }
+        return ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fscanf, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "ftruncate")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::ftruncate() expects exactly 1 argument");
+            return ptn_null();
+        }
+        return ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_ftruncate, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "fstat")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_fstat, 0, NULL, line);
+    }
+    if (ptn_ascii_case_equal(name, "ftell")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_ftell, 0, NULL, line);
+    }
+    if (ptn_ascii_case_equal(name, "eof")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_stream_method_call(runtime, data->stream, ptn_internal_feof, 0, NULL, line);
+    }
+    if (ptn_ascii_case_equal(name, "getMaxLineLen")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->max_line_len);
+    }
+    if (ptn_ascii_case_equal(name, "setMaxLineLen")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::setMaxLineLen() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t length = ptn_internal_expect_integer_arg(runtime, "SplFileObject::setMaxLineLen", 1, "maxLength", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (length < 0) {
+            ptn_throw_exception(runtime, "ValueError", "SplFileObject::setMaxLineLen(): Argument #1 ($maxLength) must be greater than or equal to 0");
+            return ptn_null();
+        }
+        data->max_line_len = length;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue seek_args[2] = { ptn_value_clone_deref(data->stream), ptn_int(0) };
+        PtnValue seek = ptn_internal_fseek(runtime, 2, seek_args, line);
+        ptn_value_destroy(&seek_args[0]);
+        ptn_value_destroy(&seek_args[1]);
+        ptn_value_destroy(&seek);
+        data->key = 0;
+        ptn_spl_file_object_clear_current(data);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "seek")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplFileObject::seek() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t target = ptn_internal_expect_integer_arg(runtime, "SplFileObject::seek", 1, "line", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (target < 0) {
+            ptn_throw_exception(runtime, "LogicException", "Can't seek file to negative line");
+            return ptn_null();
+        }
+        PtnValue rewind_result = ptn_spl_file_object_call_method(runtime, receiver, "rewind", 0, NULL, line);
+        ptn_value_destroy(&rewind_result);
+        while (runtime->exceptions->active_exception == NULL && data->key < target) {
+            PtnValue next_result = ptn_spl_file_object_call_method(runtime, receiver, "next", 0, NULL, line);
+            ptn_value_destroy(&next_result);
+            PtnValue valid = ptn_spl_file_object_call_method(runtime, receiver, "valid", 0, NULL, line);
+            int still_valid = ptn_is_truthy(valid);
+            ptn_value_destroy(&valid);
+            if (!still_valid) {
+                ptn_throw_exception(runtime, "RuntimeException", "Cannot seek to line beyond EOF");
+                return ptn_null();
+            }
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (!data->has_current) {
+            PtnValue discarded = ptn_spl_file_object_read_line(runtime, data, line);
+            ptn_value_destroy(&discarded);
+        }
+        ptn_spl_file_object_clear_current(data);
+        data->key++;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_spl_file_object_ensure_current(runtime, data, line);
+        return ptn_bool(ptn_spl_file_object_current_valid(data));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_spl_file_object_ensure_current(runtime, data, line);
+        return ptn_value_clone_deref(data->current);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->key);
+    }
+    if (ptn_ascii_case_equal(name, "hasChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "getChildren")) {
+        ptn_reflection_check_no_arguments(runtime, "SplFileObject", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static int ptn_value_object_implements_interface(PtnValue value, const char *interface_name) {
@@ -48623,6 +50765,19 @@ static PtnValue ptn_internal_reflection_class_is_iterateable_static(
         runtime->source_path,
         line
     );
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_method_metadata_stub(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_throw_exception(runtime, "Error", "Internal method metadata stub cannot be invoked directly");
     return ptn_null();
 }
 

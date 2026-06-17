@@ -599,6 +599,21 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplDoublyLinkedList\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"SplQueue\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"SplStack\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplFileObject\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str(
         "    if (ptn_ascii_case_equal(class_name, \"DateTime\") || ptn_ascii_case_equal(class_name, \"DateTimeImmutable\")) {\n",
     );
@@ -3836,6 +3851,11 @@ fn emit_class_metadata_helpers(
         "CallbackFilterIterator",
         "InfiniteIterator",
         "LimitIterator",
+        "SplDoublyLinkedList",
+        "SplQueue",
+        "SplStack",
+        "SplFileInfo",
+        "SplFileObject",
         "ReflectionAttribute",
         "ReflectionClass",
         "ReflectionClassConstant",
@@ -4054,6 +4074,11 @@ fn emit_class_metadata_helpers(
         "IteratorIterator",
         "SplObjectStorage",
         "LimitIterator",
+        "SplDoublyLinkedList",
+        "SplQueue",
+        "SplStack",
+        "SplFileInfo",
+        "SplFileObject",
         "Closure",
         "DateTime",
         "DateTimeImmutable",
@@ -4285,6 +4310,9 @@ fn emit_class_metadata_helpers(
         ("LimitIterator", "IteratorIterator"),
         ("RecursiveArrayIterator", "ArrayIterator"),
         ("ReflectionObject", "ReflectionClass"),
+        ("SplFileObject", "SplFileInfo"),
+        ("SplQueue", "SplDoublyLinkedList"),
+        ("SplStack", "SplDoublyLinkedList"),
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -7676,6 +7704,11 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
+        "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
+        "splqueue" => Some("SplQueue"),
+        "splstack" => Some("SplStack"),
+        "splfileinfo" => Some("SplFileInfo"),
+        "splfileobject" => Some("SplFileObject"),
         "datetimezone" => Some("DateTimeZone"),
         _ => None,
     }
@@ -12927,6 +12960,11 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IteratorIterator")
                 || class_name.eq_ignore_ascii_case("LimitIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
+                || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
+                || class_name.eq_ignore_ascii_case("SplQueue")
+                || class_name.eq_ignore_ascii_case("SplStack")
+                || class_name.eq_ignore_ascii_case("SplFileInfo")
+                || class_name.eq_ignore_ascii_case("SplFileObject")
                 || class_name.eq_ignore_ascii_case("DateTime")
                 || class_name.eq_ignore_ascii_case("DateTimeImmutable")
             {
@@ -13240,6 +13278,69 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
     }
 }
 
+fn internal_named_method_call_parameters(name: &str) -> Option<&'static [InternalParameterSpec]> {
+    static SPL_FILE_OBJECT_FGETCSV_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "separator",
+            default: Some(InternalParameterDefault::String(",")),
+        },
+        InternalParameterSpec {
+            name: "enclosure",
+            default: Some(InternalParameterDefault::String("\"")),
+        },
+        InternalParameterSpec {
+            name: "escape",
+            default: Some(InternalParameterDefault::String("\\")),
+        },
+    ];
+    static SPL_FILE_OBJECT_FPUTCSV_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "fields",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "separator",
+            default: Some(InternalParameterDefault::String(",")),
+        },
+        InternalParameterSpec {
+            name: "enclosure",
+            default: Some(InternalParameterDefault::String("\"")),
+        },
+        InternalParameterSpec {
+            name: "escape",
+            default: Some(InternalParameterDefault::String("\\")),
+        },
+        InternalParameterSpec {
+            name: "eol",
+            default: Some(InternalParameterDefault::String("\n")),
+        },
+    ];
+    static SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "separator",
+            default: Some(InternalParameterDefault::String(",")),
+        },
+        InternalParameterSpec {
+            name: "enclosure",
+            default: Some(InternalParameterDefault::String("\"")),
+        },
+        InternalParameterSpec {
+            name: "escape",
+            default: Some(InternalParameterDefault::String("\\")),
+        },
+    ];
+
+    if name.eq_ignore_ascii_case("fgetcsv") {
+        Some(&SPL_FILE_OBJECT_FGETCSV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("fputcsv") {
+        Some(&SPL_FILE_OBJECT_FPUTCSV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("setCsvControl") {
+        Some(&SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS)
+    } else {
+        None
+    }
+}
+
 fn internal_parameter_default_expr(default: InternalParameterDefault) -> ValueExpr {
     match default {
         InternalParameterDefault::Null => ValueExpr::Null,
@@ -13253,7 +13354,30 @@ fn bind_named_internal_call_arguments(
     arguments: &[ValueExpr],
     argument_names: &[Option<String>],
 ) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
-    let parameters = internal_named_call_parameters(name)?;
+    bind_named_internal_arguments(
+        internal_named_call_parameters(name)?,
+        arguments,
+        argument_names,
+    )
+}
+
+fn bind_named_internal_method_call_arguments(
+    name: &str,
+    arguments: &[ValueExpr],
+    argument_names: &[Option<String>],
+) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
+    bind_named_internal_arguments(
+        internal_named_method_call_parameters(name)?,
+        arguments,
+        argument_names,
+    )
+}
+
+fn bind_named_internal_arguments(
+    parameters: &[InternalParameterSpec],
+    arguments: &[ValueExpr],
+    argument_names: &[Option<String>],
+) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
     let mut slots = vec![None; parameters.len()];
     for (argument_index, (argument, argument_name)) in
         arguments.iter().zip(argument_names.iter()).enumerate()
@@ -25235,6 +25359,34 @@ impl ValueEmitter {
         line: usize,
         discarded: bool,
     ) -> String {
+        if argument_names.iter().any(Option::is_some)
+            && argument_unpacks.iter().all(|unpack| !*unpack)
+        {
+            if let Some(binding) =
+                bind_named_internal_method_call_arguments(name, arguments, argument_names)
+            {
+                return match binding {
+                    Ok(normalized_arguments) => {
+                        let normalized_argument_names = vec![None; normalized_arguments.len()];
+                        self.emit_method_call(
+                            out,
+                            receiver,
+                            name,
+                            &normalized_arguments,
+                            &normalized_argument_names,
+                            &vec![false; normalized_arguments.len()],
+                            line,
+                            discarded,
+                        )
+                    }
+                    Err(error) => {
+                        let result_temp = self.next_temp();
+                        self.emit_fatal_value(out, &result_temp, &error.message());
+                        result_temp
+                    }
+                };
+            }
+        }
         if argument_names.iter().any(Option::is_some) {
             let result_temp = self.next_temp();
             self.emit_fatal_value(

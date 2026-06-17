@@ -2770,6 +2770,44 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplDoublyLinkedList") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplQueue") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplStack")) {
+        if (strcmp(constant, "IT_MODE_FIFO") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "IT_MODE_LIFO") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "IT_MODE_KEEP") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "IT_MODE_DELETE") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplFileObject")) {
+        if (strcmp(constant, "DROP_NEW_LINE") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "READ_AHEAD") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "SKIP_EMPTY") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "READ_CSV") == 0) {
+            *out = ptn_int(8);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionClass")) {
         if (strcmp(constant, "IS_IMPLICIT_ABSTRACT") == 0) {
             *out = ptn_int(16);
@@ -4209,6 +4247,28 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("ArrayObject", name)
     ) {
         return ptn_array_object_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SplDoublyLinkedList")
+        && ptn_internal_class_method_exists("SplDoublyLinkedList", name)
+    ) {
+        return ptn_spl_doubly_linked_list_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SplFileObject")
+        && (ptn_internal_class_method_exists("SplFileObject", name) ||
+            ptn_internal_class_method_exists("SplFileInfo", name))
+    ) {
+        return ptn_spl_file_object_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SplFileInfo")
+        && ptn_internal_class_method_exists("SplFileInfo", name)
+    ) {
+        return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT
