@@ -47,6 +47,9 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let mut runtime_requirements = module_runtime_requirements(module);
+    if runtime_requirements.request_context {
+        runtime_requirements.internal_function_dispatch = true;
+    }
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let serializable_deprecations = collect_module_serializable_deprecations(module);
@@ -186,17 +189,25 @@ pub fn emit_c(module: &Module) -> String {
             &module.includes,
         );
     }
-    out.push_str("\nint main(void) {\n");
+    out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
-    out.push_str("    PtnValue ptn_env_superglobal = ptn_environment_snapshot();\n");
-    out.push_str(
-        "    ptn_runtime_write_global_variable(&runtime, \"_ENV\", ptn_env_superglobal);\n",
-    );
-    out.push_str(
-        "    ptn_runtime_write_global_variable(&runtime, \"_SERVER\", ptn_env_superglobal);\n",
-    );
-    out.push_str("    ptn_value_destroy(&ptn_env_superglobal);\n");
+    if runtime_requirements.request_context {
+        out.push_str(
+            "    ptn_initialize_request_context(&runtime, ptn_native_argc, ptn_native_argv);\n",
+        );
+    } else {
+        out.push_str("    (void)ptn_native_argc;\n");
+        out.push_str("    (void)ptn_native_argv;\n");
+        out.push_str("    PtnValue ptn_env_superglobal = ptn_environment_snapshot();\n");
+        out.push_str(
+            "    ptn_runtime_write_global_variable(&runtime, \"_ENV\", ptn_env_superglobal);\n",
+        );
+        out.push_str(
+            "    ptn_runtime_write_global_variable(&runtime, \"_SERVER\", ptn_env_superglobal);\n",
+        );
+        out.push_str("    ptn_value_destroy(&ptn_env_superglobal);\n");
+    }
     if !module.functions.is_empty() {
         out.push_str("    static int ptn_declared_user_functions[");
         out.push_str(&module.functions.len().to_string());
@@ -436,6 +447,24 @@ struct RuntimeRequirements {
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     direct_internal_helpers: bool,
+    request_context: bool,
+}
+
+fn variable_needs_request_context(name: &str) -> bool {
+    matches!(
+        name,
+        "GLOBALS"
+            | "_SERVER"
+            | "_GET"
+            | "_POST"
+            | "_FILES"
+            | "_COOKIE"
+            | "_SESSION"
+            | "_REQUEST"
+            | "_ENV"
+            | "argc"
+            | "argv"
+    )
 }
 
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
@@ -11048,8 +11077,13 @@ fn collect_instruction_runtime_requirements(
     requirements: &mut RuntimeRequirements,
 ) {
     match instruction {
-        Instruction::Store { value, .. }
-        | Instruction::DefineConstant { value, .. }
+        Instruction::Store { name, value } => {
+            if variable_needs_request_context(name) {
+                requirements.request_context = true;
+            }
+            collect_value_runtime_requirements(value, functions, requirements);
+        }
+        Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
         | Instruction::Echo(value) => {
             collect_value_runtime_requirements(value, functions, requirements);
@@ -11061,8 +11095,14 @@ fn collect_instruction_runtime_requirements(
         }
         Instruction::BindStatic { value: None, .. } => {}
         Instruction::StoreArrayDim {
-            dimensions, value, ..
+            array,
+            dimensions,
+            value,
+            ..
         } => {
+            if variable_needs_request_context(array) {
+                requirements.request_context = true;
+            }
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -11070,7 +11110,10 @@ fn collect_instruction_runtime_requirements(
             }
             collect_value_runtime_requirements(value, functions, requirements);
         }
-        Instruction::StoreRef { source, .. } => {
+        Instruction::StoreRef { name, source, .. } => {
+            if variable_needs_request_context(name) {
+                requirements.request_context = true;
+            }
             collect_value_runtime_requirements(source, functions, requirements);
         }
         Instruction::StoreArrayDimRef { target, source } => {
@@ -11084,13 +11127,21 @@ fn collect_instruction_runtime_requirements(
         Instruction::Increment { target, .. } => {
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
         }
-        Instruction::UnsetVariable { .. }
-        | Instruction::BindGlobal { .. }
-        | Instruction::DeclareFunction { .. } => {}
+        Instruction::UnsetVariable { name } | Instruction::BindGlobal { name } => {
+            if variable_needs_request_context(name) {
+                requirements.request_context = true;
+            }
+        }
+        Instruction::DeclareFunction { .. } => {}
         Instruction::UnsetDynamicVariable { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
         }
-        Instruction::UnsetArrayDim { dimensions, .. } => {
+        Instruction::UnsetArrayDim {
+            array, dimensions, ..
+        } => {
+            if variable_needs_request_context(array) {
+                requirements.request_context = true;
+            }
             for dimension in dimensions {
                 collect_value_runtime_requirements(dimension, functions, requirements);
             }
@@ -11211,11 +11262,19 @@ fn collect_reference_target_runtime_requirements(
     requirements: &mut RuntimeRequirements,
 ) {
     match target {
-        ReferenceTarget::Variable { .. } => {}
+        ReferenceTarget::Variable { name, .. } => {
+            if variable_needs_request_context(name) {
+                requirements.request_context = true;
+            }
+        }
         ReferenceTarget::DynamicVariable { name, .. } => {
+            requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
         }
         ReferenceTarget::ArrayDim(target) => {
+            if variable_needs_request_context(&target.array) {
+                requirements.request_context = true;
+            }
             for dimension in &target.dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -11248,13 +11307,19 @@ fn collect_assignment_target_runtime_requirements(
     requirements: &mut RuntimeRequirements,
 ) {
     match target {
-        AssignmentTarget::Variable { .. } => {}
+        AssignmentTarget::Variable { name, .. } => {
+            if variable_needs_request_context(name) {
+                requirements.request_context = true;
+            }
+        }
         AssignmentTarget::DynamicVariable { name, .. } => {
+            requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
         }
         AssignmentTarget::DynamicArrayDim {
             name, dimensions, ..
         } => {
+            requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
@@ -11262,7 +11327,12 @@ fn collect_assignment_target_runtime_requirements(
                 }
             }
         }
-        AssignmentTarget::ArrayDim { dimensions, .. } => {
+        AssignmentTarget::ArrayDim {
+            array, dimensions, ..
+        } => {
+            if variable_needs_request_context(array) {
+                requirements.request_context = true;
+            }
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -11353,13 +11423,19 @@ fn collect_inc_dec_target_runtime_requirements(
     requirements: &mut RuntimeRequirements,
 ) {
     match target {
-        IncDecTarget::Variable { .. } => {}
+        IncDecTarget::Variable { name, .. } => {
+            if variable_needs_request_context(name) {
+                requirements.request_context = true;
+            }
+        }
         IncDecTarget::DynamicVariable { name, .. } => {
+            requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
         }
         IncDecTarget::DynamicArrayDim {
             name, dimensions, ..
         } => {
+            requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
@@ -11367,7 +11443,12 @@ fn collect_inc_dec_target_runtime_requirements(
                 }
             }
         }
-        IncDecTarget::ArrayDim { dimensions, .. } => {
+        IncDecTarget::ArrayDim {
+            array, dimensions, ..
+        } => {
+            if variable_needs_request_context(array) {
+                requirements.request_context = true;
+            }
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -11404,11 +11485,21 @@ fn collect_value_runtime_requirements(
         | ValueExpr::Float(_)
         | ValueExpr::Bool(_)
         | ValueExpr::Null
-        | ValueExpr::Closure { .. }
-        | ValueExpr::Load { .. }
-        | ValueExpr::LegacyDollarBraceStringVariable { .. }
         | ValueExpr::Constant { .. }
         | ValueExpr::MagicConstant { .. } => {}
+        ValueExpr::Closure { captures, .. } => {
+            if captures
+                .iter()
+                .any(|capture| variable_needs_request_context(&capture.name))
+            {
+                requirements.request_context = true;
+            }
+        }
+        ValueExpr::Load { name, .. } | ValueExpr::LegacyDollarBraceStringVariable { name, .. } => {
+            if variable_needs_request_context(name) {
+                requirements.request_context = true;
+            }
+        }
         ValueExpr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 collect_value_runtime_requirements(key, functions, requirements);
@@ -11424,6 +11515,7 @@ fn collect_value_runtime_requirements(
             collect_inc_dec_target_runtime_requirements(target, functions, requirements);
         }
         ValueExpr::DynamicVariable { name, .. } => {
+            requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
         }
         ValueExpr::Assign { target, value, .. } => {
@@ -11659,6 +11751,14 @@ fn collect_call_runtime_requirements(
 ) {
     for argument in arguments {
         collect_value_runtime_requirements(argument, functions, requirements);
+    }
+    if name.eq_ignore_ascii_case("file_get_contents")
+        && matches!(
+            arguments.first(),
+            Some(ValueExpr::String(path)) if path.eq_ignore_ascii_case("php://input")
+        )
+    {
+        requirements.request_context = true;
     }
     if is_generated_user_function_call(name, functions) {
         return;

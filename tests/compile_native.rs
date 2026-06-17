@@ -1,6 +1,7 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
@@ -13653,7 +13654,9 @@ fn compile_user_function_calls_use_direct_generated_path_to_native_binary() {
     assert!(c_source.contains("ptn_runtime_init_function_frame(&runtime, caller_runtime);"));
     assert!(c_source.contains("ptn_user_function_0(&runtime, ptn_null(), 1,"));
 
-    let main_start = c_source.find("\nint main(void)").unwrap();
+    let main_start = c_source
+        .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
+        .unwrap();
     let main_body = &c_source[main_start..];
     assert!(main_body.contains("ptn_user_function_1(&runtime, ptn_null(), 1,"));
     assert!(!main_body.contains("ptn_call_function(&runtime, \"apply\""));
@@ -19566,7 +19569,7 @@ echo _ptn_cow_debug_counter(\"array.live\"), \":\", _ptn_cow_debug_counter(\"str
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     let main_start = c_source
-        .find("\nint main(void)")
+        .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
     assert!(main_body.contains(" = ptn_bool(ptn_compare_equal(&runtime, "));
@@ -23339,7 +23342,7 @@ string(14) \"chain-fallback\"\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     let main_start = c_source
-        .find("\nint main(void)")
+        .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
     assert!(main_body.contains("ptn_runtime_read_variable_quiet(&runtime"));
@@ -25223,7 +25226,7 @@ var_dump(empty($missing));",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     let main_start = c_source
-        .find("\nint main(void)")
+        .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
     assert!(main_body.contains("ptn_count_value(&runtime"));
@@ -30638,6 +30641,116 @@ fn phpc_run_alias_executes_compiled_native_binary() {
 }
 
 #[test]
+fn phpc_cli_request_context_populates_argc_argv() {
+    let root = temp_dir("ptn-phpc-cli-request-argv");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cli-request-argv.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo $argc, \"\\n\";\n\
+echo $argv[0] === __FILE__ ? \"script\\n\" : \"wrong\\n\";\n\
+echo $_SERVER['argc'], \"\\n\";\n\
+echo $_SERVER['argv'][1], '/', $_SERVER['argv'][2], '/', $_SERVER['argv'][3], \"\\n\";\n\
+echo $argv === $_SERVER['argv'] ? \"same\\n\" : \"different\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("register_argc_argv=0")
+        .arg("-d")
+        .arg("variables_order=GPS")
+        .arg("-f")
+        .arg(&input)
+        .arg("--")
+        .arg("alpha")
+        .arg("beta")
+        .arg("gamma")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "4\nscript\n4\nalpha/beta/gamma\nsame\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_variables_order_controls_env_and_server_superglobals() {
+    let root = temp_dir("ptn-phpc-variables-order-gpc");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("variables-order-gpc.php");
+    fs::write(
+        &input,
+        "<?php var_dump($_ENV, $_SERVER, ini_get('variables_order'));",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("variables_order=GPC")
+        .arg("run")
+        .arg(&input)
+        .env("PTN_ENV_TEST", "present")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\narray(0) {\n}\nstring(3) \"GPC\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_request_context_populates_input_superglobals() {
+    let root = temp_dir("ptn-phpc-cgi-request-input");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-request-input.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo $_GET['b'], \"\\n\";\n\
+echo $_POST['a'], \"\\n\";\n\
+echo file_get_contents('php://input'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("variables_order=EGPCS")
+        .arg("-d")
+        .arg("register_argc_argv=0")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "POST")
+        .env("QUERY_STRING", "b=Hello+Again")
+        .env("CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env("CONTENT_LENGTH", "13")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"a=Hello+World")
+        .unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Hello Again\nHello World\na=Hello+World\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_precision_ini_controls_scalar_float_stringification() {
     let root = temp_dir("ptn-phpc-precision-ini");
     fs::create_dir_all(&root).unwrap();
@@ -33132,7 +33245,7 @@ b7|\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     let main_start = c_source
-        .find("\nint main(void)")
+        .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
     assert_eq!(main_body.matches("ptn_concat_many(&runtime").count(), 2);
@@ -33175,7 +33288,7 @@ echo strlen($value), \" \", count($array), \" \", $array[\"replacement\"], \"\\n
     assert!(c_source.contains("static PTN_UNUSED void ptn_value_destroy(PtnValue *value)"));
     assert!(c_source.contains("ptn_value_destroy(&symbols->items[index].value);"));
     let main_start = c_source
-        .find("\nint main(void)")
+        .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
     assert!(main_body.contains("ptn_value_drop(&ptn_tmp_"));
@@ -33229,7 +33342,7 @@ var_dump($source, $result);
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     let main_start = c_source
-        .find("\nint main(void)")
+        .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
     assert!(c_source.contains("static PTN_UNUSED PtnValue ptn_value_share(PtnValue value)"));

@@ -356,7 +356,10 @@ for bucket in "${bucket_order[@]}"; do
     fi
 
     set +e
-    PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q -p "$phpc_bin" "${tests[@]}" 2>&1 | tee "$log"
+    PHPC_BIN="$phpc_bin" \
+      TEST_PHP_CGI_EXECUTABLE="$phpc_bin" \
+      TEST_PHP_CGI_EXECUTABLE_ESCAPED="'$phpc_bin'" \
+      php "$php_src/run-tests.php" -q -p "$phpc_bin" "${tests[@]}" 2>&1 | tee "$log"
     run_status=${PIPESTATUS[0]}
     set -e
 

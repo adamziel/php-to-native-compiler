@@ -1497,6 +1497,17 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
     const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
     const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
+    const char *configured_variables_order = getenv("PTN_VARIABLES_ORDER");
+    const char *configured_register_argc_argv = getenv("PTN_REGISTER_ARGC_ARGV");
+    const char *configured_enable_post_data_reading = getenv("PTN_ENABLE_POST_DATA_READING");
+    const char *configured_file_uploads = getenv("PTN_FILE_UPLOADS");
+    const char *configured_max_input_vars = getenv("PTN_MAX_INPUT_VARS");
+    const char *configured_max_input_nesting_level = getenv("PTN_MAX_INPUT_NESTING_LEVEL");
+    const char *configured_post_max_size = getenv("PTN_POST_MAX_SIZE");
+    const char *configured_always_populate_raw_post_data =
+        getenv("PTN_ALWAYS_POPULATE_RAW_POST_DATA");
+    const char *configured_upload_tmp_dir = getenv("PTN_UPLOAD_TMP_DIR");
+    const char *configured_expose_php = getenv("PTN_EXPOSE_PHP");
     runtime->default_charset = ptn_duplicate_string(
         configured_default_charset == NULL ? "UTF-8" : configured_default_charset
     );
@@ -1518,6 +1529,38 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_encoding = ptn_duplicate_string(
         configured_output_encoding == NULL ? "" : configured_output_encoding
     );
+    runtime->variables_order = ptn_duplicate_string(
+        configured_variables_order == NULL ? "EGPCS" : configured_variables_order
+    );
+    runtime->register_argc_argv = ptn_duplicate_string(
+        configured_register_argc_argv == NULL ? "1" : configured_register_argc_argv
+    );
+    runtime->enable_post_data_reading = ptn_duplicate_string(
+        configured_enable_post_data_reading == NULL ? "1" : configured_enable_post_data_reading
+    );
+    runtime->file_uploads = ptn_duplicate_string(
+        configured_file_uploads == NULL ? "1" : configured_file_uploads
+    );
+    runtime->max_input_vars = ptn_duplicate_string(
+        configured_max_input_vars == NULL ? "1000" : configured_max_input_vars
+    );
+    runtime->max_input_nesting_level = ptn_duplicate_string(
+        configured_max_input_nesting_level == NULL ? "64" : configured_max_input_nesting_level
+    );
+    runtime->post_max_size = ptn_duplicate_string(
+        configured_post_max_size == NULL ? "8M" : configured_post_max_size
+    );
+    runtime->always_populate_raw_post_data = ptn_duplicate_string(
+        configured_always_populate_raw_post_data == NULL ? "-1" : configured_always_populate_raw_post_data
+    );
+    runtime->upload_tmp_dir = ptn_duplicate_string(
+        configured_upload_tmp_dir == NULL ? "" : configured_upload_tmp_dir
+    );
+    runtime->expose_php = ptn_duplicate_string(
+        configured_expose_php == NULL ? "1" : configured_expose_php
+    );
+    runtime->request_body = NULL;
+    runtime->request_body_len = 0;
     runtime->exception_ignore_args = 0;
     int configured_exception_ignore_args = 0;
     if (ptn_parse_bool_env("PTN_EXCEPTION_IGNORE_ARGS", &configured_exception_ignore_args)) {

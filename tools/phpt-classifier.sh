@@ -4,15 +4,15 @@
 #
 # The classifier filters only PHPT harness/environment requirements that PTN
 # does not currently model: extension availability, unsupported ini/runtime
-# modes, SAPI/request sections, external service harnesses, process-boundary
+# modes, unmodeled SAPI sections, external service harnesses, process-boundary
 # rows, broad harness cleanup/setup sections, opt-in harness preconditions,
 # noisy upstream rows, broad unsupported language surfaces, source-level
 # runtime diagnostic APIs, and upstream XFAILs. Generic PHP semantic gaps
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,ctype,date,json,pcre,SPL,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="arg_separator.input,assert.exception,date.timezone,default_charset,display_errors,error_reporting,extension_dir,filter.default,include_path,input_encoding,internal_encoding,max_memory_limit,memory_limit,output_encoding,output_handler,pcre.backtrack_limit,precision,zend.assertions,zend.exception_string_param_max_len"
-PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="ARGS,CAPTURE_STDIO,CGI,COOKIE,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,GET,HEADERS,PHPDBG,POST,POST_RAW,PUT,REDIRECTTEST,REQUEST,STDIN"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.exception,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,max_input_nesting_level,max_input_vars,max_memory_limit,memory_limit,output_encoding,output_handler,pcre.backtrack_limit,post_max_size,precision,register_argc_argv,upload_tmp_dir,variables_order,zend.assertions,zend.exception_string_param_max_len"
+PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT=""
 PTN_PHPT_NOISY_SECTIONS_DEFAULT="EXPECT_EXTERNAL,EXPECTF_EXTERNAL,EXPECTREGEX_EXTERNAL,FLAKY,WHITESPACE_SENSITIVE"
@@ -1001,10 +1001,6 @@ ptn_phpt_unsupported_ini_blocker() {
     key=$(ptn_phpt_lower "$(ptn_phpt_trim "$1")")
 
     case "$key" in
-        register_argc_argv|variables_order|enable_post_data_reading|file_uploads|max_input_vars|max_input_nesting_level|post_max_size|always_populate_raw_post_data)
-            printf 'unsupported-request-input-ini\trequires request/input/upload SAPI state controlled by %s; PTN native CLI currently has no request boundary\n' "$key"
-            return 0
-            ;;
         fatal_error_backtraces|error_log|report_memleaks)
             printf 'unsupported-diagnostics-ini\trequires engine diagnostic/logging mode %s; PTN diagnostics do not yet model that runtime channel\n' "$key"
             return 0

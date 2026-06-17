@@ -909,6 +909,18 @@ struct PtnRuntime {
     char *internal_encoding;
     char *input_encoding;
     char *output_encoding;
+    char *variables_order;
+    char *register_argc_argv;
+    char *enable_post_data_reading;
+    char *file_uploads;
+    char *max_input_vars;
+    char *max_input_nesting_level;
+    char *post_max_size;
+    char *always_populate_raw_post_data;
+    char *upload_tmp_dir;
+    char *expose_php;
+    char *request_body;
+    size_t request_body_len;
     int exception_ignore_args;
     size_t exception_string_param_max_len;
     int strict_types;

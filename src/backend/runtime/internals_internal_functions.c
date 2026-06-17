@@ -12214,30 +12214,37 @@ static char *ptn_parse_str_mangle_name(const char *input, size_t len, size_t *ou
 }
 
 typedef struct {
-    PtnArrayKey *segments;
+    PtnArrayKey key;
+    int append;
+} PtnParseStrPathSegment;
+
+typedef struct {
+    PtnParseStrPathSegment *segments;
     size_t len;
     size_t capacity;
 } PtnParseStrPath;
 
-static void ptn_parse_str_path_push(PtnParseStrPath *path, PtnArrayKey key) {
+static void ptn_parse_str_path_push(PtnParseStrPath *path, PtnArrayKey key, int append) {
     if (path->len == path->capacity) {
         size_t new_capacity = path->capacity == 0 ? 4 : path->capacity * 2;
         if (new_capacity < path->capacity) {
             ptn_abort_out_of_memory();
         }
-        PtnArrayKey *segments = realloc(path->segments, new_capacity * sizeof(PtnArrayKey));
+        PtnParseStrPathSegment *segments = realloc(path->segments, new_capacity * sizeof(PtnParseStrPathSegment));
         if (segments == NULL) {
             ptn_abort_out_of_memory();
         }
         path->segments = segments;
         path->capacity = new_capacity;
     }
-    path->segments[path->len++] = key;
+    path->segments[path->len].key = key;
+    path->segments[path->len].append = append;
+    path->len++;
 }
 
 static void ptn_parse_str_path_free(PtnParseStrPath *path) {
     for (size_t i = 0; i < path->len; i++) {
-        ptn_array_key_free(path->segments[i]);
+        ptn_array_key_free(path->segments[i].key);
     }
     free(path->segments);
 }
@@ -12262,7 +12269,7 @@ static PtnParseStrPath ptn_parse_str_parse_key(const char *data, size_t len) {
 
     size_t mangled_len = 0;
     char *mangled = ptn_parse_str_mangle_name(data, base_len, &mangled_len);
-    ptn_parse_str_path_push(&path, ptn_parse_str_key_from_decoded(mangled, mangled_len));
+    ptn_parse_str_path_push(&path, ptn_parse_str_key_from_decoded(mangled, mangled_len), 0);
     free(mangled);
 
     size_t cursor = base_len;
@@ -12274,15 +12281,24 @@ static PtnParseStrPath ptn_parse_str_parse_key(const char *data, size_t len) {
         }
         if (close >= len) {
             if (valid_segment_count == 0) {
-                ptn_array_key_free(path.segments[0]);
+                ptn_array_key_free(path.segments[0].key);
                 path.len = 0;
                 mangled = ptn_parse_str_mangle_name(data, len, &mangled_len);
-                ptn_parse_str_path_push(&path, ptn_parse_str_key_from_decoded(mangled, mangled_len));
+                ptn_parse_str_path_push(&path, ptn_parse_str_key_from_decoded(mangled, mangled_len), 0);
                 free(mangled);
             }
             break;
         }
-        ptn_parse_str_path_push(&path, ptn_parse_str_key_from_decoded(data + cursor + 1, close - cursor - 1));
+        size_t segment_len = close - cursor - 1;
+        if (segment_len == 0) {
+            ptn_parse_str_path_push(&path, ptn_array_int_key(0), 1);
+        } else {
+            ptn_parse_str_path_push(
+                &path,
+                ptn_parse_str_key_from_decoded(data + cursor + 1, segment_len),
+                0
+            );
+        }
         valid_segment_count++;
         cursor = close + 1;
     }
@@ -12290,15 +12306,23 @@ static PtnParseStrPath ptn_parse_str_parse_key(const char *data, size_t len) {
 }
 
 static void ptn_parse_str_assign(PtnArray *array, PtnParseStrPath *path, size_t index, PtnValue value) {
+    PtnParseStrPathSegment *segment = &path->segments[index];
+    PtnArrayKey key = segment->append
+        ? ptn_array_int_key(array->next_auto_key)
+        : ptn_array_key_clone(segment->key);
     if (index + 1 == path->len) {
-        ptn_array_set_entry(array, ptn_array_key_clone(path->segments[index]), value);
+        ptn_array_set_entry(array, key, value);
         return;
     }
-    PtnArrayEntry *entry = ptn_array_entry_for_key(array, path->segments[index]);
+    PtnArrayKey lookup_key = ptn_array_key_clone(key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, lookup_key);
     if (entry == NULL || ptn_value_deref(entry->value).type != PTN_ARRAY) {
-        ptn_array_set_entry(array, ptn_array_key_clone(path->segments[index]), ptn_array_from_literal_entries(0, NULL));
-        entry = ptn_array_entry_for_key(array, path->segments[index]);
+        ptn_array_set_entry(array, key, ptn_array_from_literal_entries(0, NULL));
+        entry = ptn_array_entry_for_key(array, lookup_key);
+    } else {
+        ptn_array_key_free(key);
     }
+    ptn_array_key_free(lookup_key);
     PtnValue child = ptn_value_deref(entry->value);
     ptn_parse_str_assign(child.as.array, path, index + 1, value);
 }
@@ -12315,26 +12339,23 @@ static int ptn_parse_str_is_separator(char byte, const char *separators) {
     return 0;
 }
 
-static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "parse_str", 1, "string", args[0], line);
-    if (memchr(string.data, '\0', string.len) != NULL) {
-        ptn_string_operand_free(string);
-        ptn_throw_exception(runtime, "ValueError", "parse_str(): Argument #1 ($string) must not contain any null bytes");
-        return ptn_null();
-    }
-
+static PtnValue ptn_parse_str_to_array_with_separators(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    const char *separators
+) {
+    (void)runtime;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    const char *separators = ptn_runtime_arg_separator_input(runtime);
     size_t cursor = 0;
-    while (cursor <= string.len) {
+    while (cursor <= len) {
         size_t pair_start = cursor;
-        while (cursor < string.len && !ptn_parse_str_is_separator(string.data[cursor], separators)) {
+        while (cursor < len && !ptn_parse_str_is_separator(data[cursor], separators)) {
             cursor++;
         }
         size_t pair_len = cursor - pair_start;
         if (pair_len != 0) {
-            const char *pair = string.data + pair_start;
+            const char *pair = data + pair_start;
             size_t equals = 0;
             while (equals < pair_len && pair[equals] != '=') {
                 equals++;
@@ -12355,11 +12376,29 @@ static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const P
             ptn_parse_str_path_free(&path);
             free(key_decoded);
         }
-        if (cursor == string.len) {
+        if (cursor == len) {
             break;
         }
         cursor++;
     }
+    return result;
+}
+
+static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "parse_str", 1, "string", args[0], line);
+    if (memchr(string.data, '\0', string.len) != NULL) {
+        ptn_string_operand_free(string);
+        ptn_throw_exception(runtime, "ValueError", "parse_str(): Argument #1 ($string) must not contain any null bytes");
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_parse_str_to_array_with_separators(
+        runtime,
+        string.data,
+        string.len,
+        ptn_runtime_arg_separator_input(runtime)
+    );
 
     if (args[1].type == PTN_REFERENCE) {
         ptn_reference_assign(runtime, args[1].as.reference, result);
@@ -12368,6 +12407,761 @@ static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const P
     }
     ptn_string_operand_free(string);
     return ptn_null();
+}
+
+static PtnRuntime *ptn_runtime_config_root(PtnRuntime *runtime);
+static const char *ptn_runtime_variables_order(PtnRuntime *runtime);
+static const char *ptn_runtime_register_argc_argv(PtnRuntime *runtime);
+static const char *ptn_runtime_enable_post_data_reading(PtnRuntime *runtime);
+static const char *ptn_runtime_post_max_size(PtnRuntime *runtime);
+static const char *ptn_runtime_upload_tmp_dir(PtnRuntime *runtime);
+static int ptn_runtime_ini_bool(const char *value, int default_value);
+
+static int ptn_request_order_contains(PtnRuntime *runtime, char target) {
+    const char *order = ptn_runtime_variables_order(runtime);
+    for (const char *cursor = order; cursor != NULL && *cursor != '\0'; cursor++) {
+        if (toupper((unsigned char)*cursor) == toupper((unsigned char)target)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_request_merge_array(PtnArray *target, PtnValue source) {
+    source = ptn_value_deref(source);
+    if (target == NULL || source.type != PTN_ARRAY || source.as.array == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < source.as.array->len; i++) {
+        PtnArrayEntry *entry = &source.as.array->entries[i];
+        ptn_array_set_entry(
+            target,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
+    }
+}
+
+static void ptn_runtime_store_request_body(PtnRuntime *runtime, char *body, size_t len) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    free(root->request_body);
+    root->request_body = body;
+    root->request_body_len = len;
+}
+
+static const char *ptn_runtime_request_body(PtnRuntime *runtime, size_t *len_out) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->request_body == NULL) {
+        *len_out = 0;
+        return "";
+    }
+    *len_out = root->request_body_len;
+    return root->request_body;
+}
+
+static int64_t ptn_request_parse_quantity_bytes(const char *raw) {
+    if (raw == NULL) {
+        return -1;
+    }
+    while (isspace((unsigned char)*raw)) {
+        raw++;
+    }
+    if (*raw == '\0') {
+        return -1;
+    }
+    char *end = NULL;
+    errno = 0;
+    long long value = strtoll(raw, &end, 0);
+    if (end == raw || errno == ERANGE) {
+        return -1;
+    }
+    while (end != NULL && isspace((unsigned char)*end)) {
+        end++;
+    }
+    int64_t multiplier = 1;
+    if (end != NULL && *end != '\0') {
+        switch (tolower((unsigned char)*end)) {
+            case 'g':
+                multiplier = 1024LL * 1024LL * 1024LL;
+                break;
+            case 'm':
+                multiplier = 1024LL * 1024LL;
+                break;
+            case 'k':
+                multiplier = 1024LL;
+                break;
+            default:
+                multiplier = 1;
+                break;
+        }
+    }
+    if (value < 0) {
+        return -1;
+    }
+    if (value > INT64_MAX / multiplier) {
+        return INT64_MAX;
+    }
+    return (int64_t)value * multiplier;
+}
+
+static void ptn_emit_request_startup_warning(
+    PtnRuntime *runtime,
+    size_t body_len,
+    int64_t limit
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    FILE *stream = runtime->diagnostics.stream == NULL ? stdout : runtime->diagnostics.stream;
+    if (runtime->diagnostics.emitted_warning) {
+        fputc('\n', stream);
+    }
+    runtime->diagnostics.emitted_warning = 1;
+    fprintf(
+        stream,
+        "Warning: PHP Request Startup: POST Content-Length of %zu bytes exceeds the limit of %lld bytes in Unknown on line 0\n",
+        body_len,
+        (long long)limit
+    );
+}
+
+static char *ptn_request_read_stdin(size_t *len_out) {
+    *len_out = 0;
+    const char *content_length = getenv("CONTENT_LENGTH");
+    if (content_length == NULL || content_length[0] == '\0') {
+        return ptn_duplicate_string_len("", 0);
+    }
+    char *end = NULL;
+    errno = 0;
+    unsigned long long wanted = strtoull(content_length, &end, 10);
+    if (end == content_length || errno == ERANGE || wanted > SIZE_MAX) {
+        return ptn_duplicate_string_len("", 0);
+    }
+    size_t target = (size_t)wanted;
+    char *buffer = malloc(target + 1);
+    if (buffer == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t offset = 0;
+    while (offset < target) {
+        size_t read_now = fread(buffer + offset, 1, target - offset, stdin);
+        if (read_now == 0) {
+            break;
+        }
+        offset += read_now;
+    }
+    buffer[offset] = '\0';
+    *len_out = offset;
+    return buffer;
+}
+
+static void ptn_request_assign_field(
+    PtnArray *array,
+    const char *name,
+    size_t name_len,
+    char *value,
+    size_t value_len
+) {
+    PtnParseStrPath path = ptn_parse_str_parse_key(name, name_len);
+    ptn_parse_str_assign(array, &path, 0, ptn_owned_string_len(value, value_len));
+    ptn_parse_str_path_free(&path);
+}
+
+static int ptn_request_array_has_string_key(PtnArray *array, const char *name, size_t name_len) {
+    PtnArrayKey key = ptn_array_string_key(ptn_duplicate_string_len(name, name_len));
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    return entry != NULL;
+}
+
+static char *ptn_request_cookie_name(const char *name, size_t name_len, size_t *out_len) {
+    char *copy = malloc(name_len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < name_len; i++) {
+        char ch = name[i];
+        copy[i] = (ch == ' ' || ch == '.') ? '_' : ch;
+    }
+    copy[name_len] = '\0';
+    *out_len = name_len;
+    return copy;
+}
+
+static PtnValue ptn_request_parse_cookie_header(const char *header) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (header == NULL) {
+        return result;
+    }
+    const char *cursor = header;
+    while (*cursor != '\0') {
+        const char *token_start = cursor;
+        while (*cursor != '\0' && *cursor != ';') {
+            cursor++;
+        }
+        const char *token_end = cursor;
+        if (*cursor == ';') {
+            cursor++;
+        }
+        while (token_start < token_end && (*token_start == ' ' || *token_start == '\t')) {
+            token_start++;
+        }
+        if (token_start >= token_end) {
+            continue;
+        }
+        const char *equals = memchr(token_start, '=', (size_t)(token_end - token_start));
+        if (equals == NULL && token_start[0] != '$') {
+            continue;
+        }
+        const char *name_end = equals == NULL ? token_end : equals;
+        while (name_end > token_start && (name_end[-1] == ' ' || name_end[-1] == '\t')) {
+            name_end--;
+        }
+        if (name_end <= token_start) {
+            continue;
+        }
+        size_t cookie_name_len = 0;
+        char *cookie_name =
+            ptn_request_cookie_name(token_start, (size_t)(name_end - token_start), &cookie_name_len);
+        if (ptn_request_array_has_string_key(result.as.array, cookie_name, cookie_name_len)) {
+            free(cookie_name);
+            continue;
+        }
+        const char *value_start = equals == NULL ? token_end : equals + 1;
+        size_t value_len = (size_t)(token_end - value_start);
+        size_t decoded_len = 0;
+        char *decoded = ptn_url_decode_bytes(value_start, value_len, 0, &decoded_len);
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(cookie_name),
+            ptn_owned_string_len(decoded, decoded_len)
+        );
+        free(cookie_name);
+    }
+    return result;
+}
+
+static const char *ptn_memmem_simple(
+    const char *haystack,
+    size_t haystack_len,
+    const char *needle,
+    size_t needle_len
+) {
+    if (needle_len == 0) {
+        return haystack;
+    }
+    if (haystack_len < needle_len) {
+        return NULL;
+    }
+    for (size_t i = 0; i <= haystack_len - needle_len; i++) {
+        if (memcmp(haystack + i, needle, needle_len) == 0) {
+            return haystack + i;
+        }
+    }
+    return NULL;
+}
+
+static char *ptn_multipart_boundary_from_content_type(const char *content_type, size_t *len_out) {
+    *len_out = 0;
+    if (content_type == NULL) {
+        return NULL;
+    }
+    const char *cursor = content_type;
+    while (*cursor != '\0') {
+        if (ptn_ascii_case_equal_n(cursor, "boundary=", 9)) {
+            cursor += 9;
+            while (*cursor == ' ' || *cursor == '\t') {
+                cursor++;
+            }
+            char quote = '\0';
+            if (*cursor == '"' || *cursor == '\'') {
+                quote = *cursor;
+                cursor++;
+            }
+            const char *start = cursor;
+            while (*cursor != '\0') {
+                if ((quote != '\0' && *cursor == quote) ||
+                    (quote == '\0' && (*cursor == ';' || *cursor == ','))) {
+                    break;
+                }
+                cursor++;
+            }
+            while (cursor > start && isspace((unsigned char)cursor[-1])) {
+                cursor--;
+            }
+            *len_out = (size_t)(cursor - start);
+            return ptn_duplicate_string_len(start, *len_out);
+        }
+        cursor++;
+    }
+    return NULL;
+}
+
+static int ptn_header_line_has_name(
+    const char *line,
+    size_t line_len,
+    const char *name,
+    size_t name_len
+) {
+    return line_len > name_len &&
+        line[name_len] == ':' &&
+        ptn_ascii_case_equal_n(line, name, name_len);
+}
+
+static char *ptn_multipart_header_value(
+    const char *headers,
+    size_t headers_len,
+    const char *name,
+    size_t *len_out
+) {
+    size_t name_len = strlen(name);
+    const char *cursor = headers;
+    const char *end = headers + headers_len;
+    while (cursor < end) {
+        const char *line_end = cursor;
+        while (line_end < end && *line_end != '\n') {
+            line_end++;
+        }
+        const char *trim_end = line_end;
+        if (trim_end > cursor && trim_end[-1] == '\r') {
+            trim_end--;
+        }
+        size_t line_len = (size_t)(trim_end - cursor);
+        if (ptn_header_line_has_name(cursor, line_len, name, name_len)) {
+            const char *value = cursor + name_len + 1;
+            while (value < trim_end && (*value == ' ' || *value == '\t')) {
+                value++;
+            }
+            *len_out = (size_t)(trim_end - value);
+            return ptn_duplicate_string_len(value, *len_out);
+        }
+        cursor = line_end < end ? line_end + 1 : end;
+    }
+    *len_out = 0;
+    return NULL;
+}
+
+static const char *ptn_multipart_find_param(
+    const char *value,
+    size_t value_len,
+    const char *name
+) {
+    size_t name_len = strlen(name);
+    for (size_t i = 0; i + name_len + 1 <= value_len; i++) {
+        if ((i == 0 || value[i - 1] == ';' || isspace((unsigned char)value[i - 1])) &&
+            ptn_ascii_case_equal_n(value + i, name, name_len) &&
+            value[i + name_len] == '=') {
+            return value + i + name_len + 1;
+        }
+    }
+    return NULL;
+}
+
+static char *ptn_multipart_param_value(
+    const char *value,
+    size_t value_len,
+    const char *name,
+    size_t *len_out
+) {
+    *len_out = 0;
+    const char *start = ptn_multipart_find_param(value, value_len, name);
+    if (start == NULL) {
+        return NULL;
+    }
+    const char *end = value + value_len;
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (start < end && (*start == '"' || *start == '\'')) {
+        char quote = *start++;
+        while (start < end && *start != quote) {
+            if (*start == '\\' && start + 1 < end) {
+                char next = start[1];
+                if (next == '\\' || next == quote) {
+                    ptn_string_buffer_append_char(&buffer, next);
+                    start += 2;
+                    continue;
+                }
+            }
+            ptn_string_buffer_append_char(&buffer, *start++);
+        }
+    } else {
+        while (start < end && *start != ';' && *start != '\r' && *start != '\n') {
+            if (*start == '\\' && start + 1 < end && start[1] == '\\') {
+                ptn_string_buffer_append_char(&buffer, '\\');
+                start += 2;
+                continue;
+            }
+            ptn_string_buffer_append_char(&buffer, *start++);
+        }
+        while (buffer.len > 0 && isspace((unsigned char)buffer.data[buffer.len - 1])) {
+            buffer.len--;
+        }
+    }
+    *len_out = buffer.len;
+    return buffer.data == NULL ? ptn_duplicate_string_len("", 0) : buffer.data;
+}
+
+static void ptn_request_set_file_upload(
+    PtnRuntime *runtime,
+    PtnArray *files,
+    const char *field_name,
+    size_t field_name_len,
+    const char *filename,
+    size_t filename_len,
+    const char *content_type,
+    size_t content_type_len,
+    size_t size,
+    size_t index
+) {
+    PtnValue file = ptn_array_from_literal_entries(0, NULL);
+    char *filename_copy = ptn_duplicate_string_len(filename, filename_len);
+    ptn_array_set_entry(file.as.array, ptn_array_string_key("name"), ptn_owned_string_len(filename_copy, filename_len));
+    ptn_array_set_entry(
+        file.as.array,
+        ptn_array_string_key("full_path"),
+        ptn_owned_string_len(ptn_duplicate_string_len(filename, filename_len), filename_len)
+    );
+    ptn_array_set_entry(
+        file.as.array,
+        ptn_array_string_key("type"),
+        ptn_owned_string_len(ptn_duplicate_string_len(content_type, content_type_len), content_type_len)
+    );
+    const char *upload_dir = ptn_runtime_upload_tmp_dir(runtime);
+    if (upload_dir == NULL || upload_dir[0] == '\0' || strcmp(upload_dir, ".") == 0) {
+        upload_dir = "/tmp";
+    }
+    char tmp_name[256];
+    snprintf(tmp_name, sizeof(tmp_name), "%s/ptn-upload-%zu", upload_dir, index);
+    ptn_array_set_entry(
+        file.as.array,
+        ptn_array_string_key("tmp_name"),
+        ptn_owned_string(ptn_duplicate_string(tmp_name))
+    );
+    ptn_array_set_entry(file.as.array, ptn_array_string_key("error"), ptn_int(0));
+    ptn_array_set_entry(file.as.array, ptn_array_string_key("size"), ptn_int((int64_t)size));
+    ptn_array_set_entry(
+        files,
+        ptn_array_string_key(ptn_duplicate_string_len(field_name, field_name_len)),
+        file
+    );
+}
+
+static void ptn_request_parse_multipart(
+    PtnRuntime *runtime,
+    PtnValue post,
+    PtnValue files,
+    const char *body,
+    size_t body_len,
+    const char *content_type
+) {
+    size_t boundary_len = 0;
+    char *boundary = ptn_multipart_boundary_from_content_type(content_type, &boundary_len);
+    if (boundary == NULL || boundary_len == 0) {
+        free(boundary);
+        return;
+    }
+    size_t marker_len = boundary_len + 2;
+    char *marker = malloc(marker_len + 1);
+    if (marker == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    marker[0] = '-';
+    marker[1] = '-';
+    memcpy(marker + 2, boundary, boundary_len);
+    marker[marker_len] = '\0';
+
+    const char *cursor = ptn_memmem_simple(body, body_len, marker, marker_len);
+    size_t upload_index = 0;
+    while (cursor != NULL) {
+        cursor += marker_len;
+        if (cursor + 1 < body + body_len && cursor[0] == '-' && cursor[1] == '-') {
+            break;
+        }
+        if (cursor < body + body_len && *cursor == '\r') {
+            cursor++;
+        }
+        if (cursor < body + body_len && *cursor == '\n') {
+            cursor++;
+        }
+        const char *headers_start = cursor;
+        const char *headers_end = NULL;
+        const char *content_start = NULL;
+        for (const char *scan = cursor; scan < body + body_len; scan++) {
+            if (scan + 3 < body + body_len &&
+                scan[0] == '\r' && scan[1] == '\n' && scan[2] == '\r' && scan[3] == '\n') {
+                headers_end = scan;
+                content_start = scan + 4;
+                break;
+            }
+            if (scan + 1 < body + body_len && scan[0] == '\n' && scan[1] == '\n') {
+                headers_end = scan;
+                content_start = scan + 2;
+                break;
+            }
+        }
+        if (headers_end == NULL || content_start == NULL) {
+            break;
+        }
+        const char *next = ptn_memmem_simple(
+            content_start,
+            (size_t)((body + body_len) - content_start),
+            marker,
+            marker_len
+        );
+        if (next == NULL) {
+            break;
+        }
+        const char *content_end = next;
+        if (content_end > content_start && content_end[-1] == '\n') {
+            content_end--;
+            if (content_end > content_start && content_end[-1] == '\r') {
+                content_end--;
+            }
+        }
+        size_t disposition_len = 0;
+        char *disposition = ptn_multipart_header_value(
+            headers_start,
+            (size_t)(headers_end - headers_start),
+            "Content-Disposition",
+            &disposition_len
+        );
+        if (disposition != NULL) {
+            size_t name_len = 0;
+            char *name = ptn_multipart_param_value(disposition, disposition_len, "name", &name_len);
+            size_t filename_len = 0;
+            char *filename =
+                ptn_multipart_param_value(disposition, disposition_len, "filename", &filename_len);
+            if (name != NULL && name_len > 0) {
+                if (filename != NULL) {
+                    size_t part_type_len = 0;
+                    char *part_type = ptn_multipart_header_value(
+                        headers_start,
+                        (size_t)(headers_end - headers_start),
+                        "Content-Type",
+                        &part_type_len
+                    );
+                    if (part_type == NULL) {
+                        part_type = ptn_duplicate_string_len("", 0);
+                        part_type_len = 0;
+                    }
+                    ptn_request_set_file_upload(
+                        runtime,
+                        files.as.array,
+                        name,
+                        name_len,
+                        filename,
+                        filename_len,
+                        part_type,
+                        part_type_len,
+                        (size_t)(content_end - content_start),
+                        upload_index++
+                    );
+                    free(part_type);
+                } else {
+                    ptn_request_assign_field(
+                        post.as.array,
+                        name,
+                        name_len,
+                        ptn_duplicate_string_len(content_start, (size_t)(content_end - content_start)),
+                        (size_t)(content_end - content_start)
+                    );
+                }
+            }
+            free(name);
+            free(filename);
+            free(disposition);
+        }
+        cursor = next;
+    }
+    free(marker);
+    free(boundary);
+}
+
+static PtnValue ptn_request_argv_from_query(const char *query) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (query == NULL) {
+        return result;
+    }
+    size_t query_len = strlen(query);
+    size_t cursor = 0;
+    int64_t index = 0;
+    while (cursor <= query_len) {
+        size_t start = cursor;
+        while (cursor < query_len && query[cursor] != '+') {
+            cursor++;
+        }
+        size_t part_len = cursor - start;
+        if (part_len != 0) {
+            size_t decoded_len = 0;
+            char *decoded = ptn_url_decode_component(query + start, part_len, &decoded_len);
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_int_key(index++),
+                ptn_owned_string_len(decoded, decoded_len)
+            );
+        }
+        if (cursor == query_len) {
+            break;
+        }
+        cursor++;
+    }
+    return result;
+}
+
+static PtnValue ptn_request_argv_from_native(int argc, char **argv) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    const char *script_filename = getenv("PTN_SCRIPT_FILENAME");
+    for (int i = 0; i < argc; i++) {
+        const char *value = argv[i] == NULL ? "" : argv[i];
+        if (i == 0 && script_filename != NULL && script_filename[0] != '\0') {
+            value = script_filename;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_owned_string(ptn_duplicate_string(value))
+        );
+    }
+    return result;
+}
+
+static void ptn_request_seed_cli_argv(PtnRuntime *runtime, PtnValue server, int argc, char **argv) {
+    PtnValue argv_array = ptn_request_argv_from_native(argc, argv);
+    PtnValue argc_value = ptn_int(argc);
+    if (server.type == PTN_ARRAY && ptn_request_order_contains(runtime, 'S')) {
+        ptn_array_set_entry(server.as.array, ptn_array_string_key("argc"), ptn_value_clone(argc_value));
+        ptn_array_set_entry(server.as.array, ptn_array_string_key("argv"), ptn_value_clone(argv_array));
+    }
+    ptn_runtime_write_global_variable(runtime, "argc", argc_value);
+    ptn_runtime_write_global_variable(runtime, "argv", argv_array);
+    ptn_value_destroy(&argc_value);
+    ptn_value_destroy(&argv_array);
+}
+
+static void ptn_request_clear_server_argv(PtnValue server) {
+    if (server.type != PTN_ARRAY) {
+        return;
+    }
+    (void)ptn_array_unset_entry(server.as.array, ptn_array_string_key("argc"));
+    (void)ptn_array_unset_entry(server.as.array, ptn_array_string_key("argv"));
+}
+
+static void ptn_request_seed_query_argv(PtnRuntime *runtime, PtnValue server, const char *query) {
+    if (!ptn_request_order_contains(runtime, 'S')) {
+        return;
+    }
+    if (!ptn_runtime_ini_bool(ptn_runtime_register_argc_argv(runtime), 1)) {
+        ptn_request_clear_server_argv(server);
+        return;
+    }
+    PtnValue argv_array = ptn_request_argv_from_query(query == NULL ? "" : query);
+    PtnValue argc_value = ptn_int((int64_t)argv_array.as.array->len);
+    if (server.type == PTN_ARRAY) {
+        ptn_array_set_entry(server.as.array, ptn_array_string_key("argc"), ptn_value_clone(argc_value));
+        ptn_array_set_entry(server.as.array, ptn_array_string_key("argv"), ptn_value_clone(argv_array));
+    }
+    ptn_emit_runtime_deprecation(
+        runtime,
+        "Deriving $_SERVER['argv'] from the query string is deprecated. Configure register_argc_argv=0 to turn this message off",
+        0
+    );
+    ptn_value_destroy(&argc_value);
+    ptn_value_destroy(&argv_array);
+}
+
+static PtnValue ptn_request_build_request(PtnRuntime *runtime, PtnValue get, PtnValue post, PtnValue cookie) {
+    PtnValue request = ptn_array_from_literal_entries(0, NULL);
+    const char *order = ptn_runtime_variables_order(runtime);
+    for (const char *cursor = order; cursor != NULL && *cursor != '\0'; cursor++) {
+        switch (toupper((unsigned char)*cursor)) {
+            case 'G':
+                ptn_request_merge_array(request.as.array, get);
+                break;
+            case 'P':
+                ptn_request_merge_array(request.as.array, post);
+                break;
+            case 'C':
+                ptn_request_merge_array(request.as.array, cookie);
+                break;
+        }
+    }
+    return request;
+}
+
+static PTN_UNUSED void ptn_initialize_request_context(PtnRuntime *runtime, int argc, char **argv) {
+    const char *mode = getenv("PTN_REQUEST_MODE");
+    int cgi_mode = mode != NULL && ptn_ascii_case_equal(mode, "cgi");
+    PtnValue env = ptn_request_order_contains(runtime, 'E')
+        ? ptn_environment_snapshot()
+        : ptn_array_from_literal_entries(0, NULL);
+    PtnValue server = ptn_request_order_contains(runtime, 'S')
+        ? ptn_environment_snapshot()
+        : ptn_array_from_literal_entries(0, NULL);
+    PtnValue get = ptn_array_from_literal_entries(0, NULL);
+    PtnValue post = ptn_array_from_literal_entries(0, NULL);
+    PtnValue cookie = ptn_array_from_literal_entries(0, NULL);
+    PtnValue files = ptn_array_from_literal_entries(0, NULL);
+
+    if (cgi_mode) {
+        const char *query = getenv("QUERY_STRING");
+        if (ptn_request_order_contains(runtime, 'G') && query != NULL) {
+            ptn_value_destroy(&get);
+            get = ptn_parse_str_to_array_with_separators(runtime, query, strlen(query), "&");
+        }
+        const char *method = getenv("REQUEST_METHOD");
+        const char *http_cookie = getenv("HTTP_COOKIE");
+        int has_query = query != NULL && query[0] != '\0';
+        int has_cookie = http_cookie != NULL && http_cookie[0] != '\0';
+        if ((method == NULL || ptn_ascii_case_equal(method, "GET")) &&
+            (has_query || !has_cookie)) {
+            ptn_request_seed_query_argv(runtime, server, query == NULL ? "" : query);
+        }
+        if (ptn_request_order_contains(runtime, 'C')) {
+            ptn_value_destroy(&cookie);
+            cookie = ptn_request_parse_cookie_header(http_cookie);
+        }
+        size_t body_len = 0;
+        char *body = ptn_request_read_stdin(&body_len);
+        ptn_runtime_store_request_body(runtime, ptn_duplicate_string_len(body, body_len), body_len);
+        const char *content_type = getenv("CONTENT_TYPE");
+        int should_read_post =
+            method != NULL &&
+            ptn_ascii_case_equal(method, "POST") &&
+            ptn_runtime_ini_bool(ptn_runtime_enable_post_data_reading(runtime), 1);
+        int64_t post_max_size = ptn_request_parse_quantity_bytes(ptn_runtime_post_max_size(runtime));
+        if (should_read_post && post_max_size >= 0 && body_len > (size_t)post_max_size) {
+            ptn_emit_request_startup_warning(runtime, body_len, post_max_size);
+        } else if (should_read_post && ptn_request_order_contains(runtime, 'P')) {
+            if (content_type != NULL &&
+                strlen(content_type) >= strlen("multipart/form-data") &&
+                ptn_ascii_case_equal_n(content_type, "multipart/form-data", strlen("multipart/form-data"))) {
+                ptn_request_parse_multipart(runtime, post, files, body, body_len, content_type);
+            } else {
+                ptn_value_destroy(&post);
+                post = ptn_parse_str_to_array_with_separators(runtime, body, body_len, "&");
+            }
+        }
+        free(body);
+    } else {
+        ptn_request_seed_cli_argv(runtime, server, argc, argv);
+    }
+
+    PtnValue request = ptn_request_build_request(runtime, get, post, cookie);
+    ptn_runtime_write_global_variable(runtime, "_ENV", env);
+    ptn_runtime_write_global_variable(runtime, "_SERVER", server);
+    ptn_runtime_write_global_variable(runtime, "_GET", get);
+    ptn_runtime_write_global_variable(runtime, "_POST", post);
+    ptn_runtime_write_global_variable(runtime, "_COOKIE", cookie);
+    ptn_runtime_write_global_variable(runtime, "_FILES", files);
+    ptn_runtime_write_global_variable(runtime, "_REQUEST", request);
+
+    ptn_value_destroy(&env);
+    ptn_value_destroy(&server);
+    ptn_value_destroy(&get);
+    ptn_value_destroy(&post);
+    ptn_value_destroy(&cookie);
+    ptn_value_destroy(&files);
+    ptn_value_destroy(&request);
 }
 
 static PtnValue ptn_internal_quoted_printable_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -25087,6 +25881,34 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
         has_length = 1;
     }
 
+    if (ptn_ascii_case_equal(path, "php://input")) {
+        size_t request_body_len = 0;
+        const char *request_body = ptn_runtime_request_body(runtime, &request_body_len);
+        int64_t start_offset = offset;
+        if (start_offset < 0) {
+            uint64_t distance = start_offset == INT64_MIN
+                ? (uint64_t)INT64_MAX + 1
+                : (uint64_t)(-start_offset);
+            if (distance > request_body_len) {
+                start_offset = 0;
+            } else {
+                start_offset = (int64_t)request_body_len + start_offset;
+            }
+        }
+        size_t start = start_offset <= 0 ? 0 : (size_t)start_offset;
+        if (start > request_body_len) {
+            start = request_body_len;
+        }
+        size_t available = request_body_len - start;
+        size_t result_len = available;
+        if (has_length && (uint64_t)length < result_len) {
+            result_len = (size_t)length;
+        }
+        char *copy = ptn_duplicate_string_len(request_body + start, result_len);
+        free(path);
+        return ptn_owned_string_len(copy, result_len);
+    }
+
     unsigned char *data = NULL;
     size_t data_len = 0;
     char *opened_path = NULL;
@@ -31254,6 +32076,105 @@ static const char *ptn_runtime_output_encoding(PtnRuntime *runtime) {
     return root->output_encoding;
 }
 
+static const char *ptn_runtime_variables_order(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->variables_order == NULL) {
+        return "EGPCS";
+    }
+    return root->variables_order;
+}
+
+static const char *ptn_runtime_register_argc_argv(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->register_argc_argv == NULL) {
+        return "1";
+    }
+    return root->register_argc_argv;
+}
+
+static const char *ptn_runtime_enable_post_data_reading(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->enable_post_data_reading == NULL) {
+        return "1";
+    }
+    return root->enable_post_data_reading;
+}
+
+static const char *ptn_runtime_file_uploads(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->file_uploads == NULL) {
+        return "1";
+    }
+    return root->file_uploads;
+}
+
+static const char *ptn_runtime_max_input_vars(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->max_input_vars == NULL) {
+        return "1000";
+    }
+    return root->max_input_vars;
+}
+
+static const char *ptn_runtime_max_input_nesting_level(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->max_input_nesting_level == NULL) {
+        return "64";
+    }
+    return root->max_input_nesting_level;
+}
+
+static const char *ptn_runtime_post_max_size(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->post_max_size == NULL) {
+        return "8M";
+    }
+    return root->post_max_size;
+}
+
+static const char *ptn_runtime_always_populate_raw_post_data(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->always_populate_raw_post_data == NULL) {
+        return "-1";
+    }
+    return root->always_populate_raw_post_data;
+}
+
+static const char *ptn_runtime_upload_tmp_dir(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->upload_tmp_dir == NULL) {
+        return "";
+    }
+    return root->upload_tmp_dir;
+}
+
+static const char *ptn_runtime_expose_php(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->expose_php == NULL) {
+        return "1";
+    }
+    return root->expose_php;
+}
+
+static int ptn_runtime_ini_bool(const char *value, int default_value) {
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(value, "0") ||
+        ptn_ascii_case_equal(value, "off") ||
+        ptn_ascii_case_equal(value, "false") ||
+        ptn_ascii_case_equal(value, "no")) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal(value, "1") ||
+        ptn_ascii_case_equal(value, "on") ||
+        ptn_ascii_case_equal(value, "true") ||
+        ptn_ascii_case_equal(value, "yes")) {
+        return 1;
+    }
+    return default_value;
+}
+
 static void ptn_runtime_set_ini_string(char **slot, const char *value) {
     char *copy = ptn_duplicate_string(value);
     free(*slot);
@@ -31540,6 +32461,46 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "precision")) {
         *out = ptn_string("14");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "variables_order")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_variables_order(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "register_argc_argv")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_register_argc_argv(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "enable_post_data_reading")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_enable_post_data_reading(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "file_uploads")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_file_uploads(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "max_input_vars")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_max_input_vars(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "max_input_nesting_level")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_max_input_nesting_level(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "post_max_size")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_post_max_size(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "always_populate_raw_post_data")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_always_populate_raw_post_data(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "upload_tmp_dir")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_upload_tmp_dir(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "expose_php")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_expose_php(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {

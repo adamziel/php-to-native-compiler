@@ -158,6 +158,16 @@ struct RuntimeIni {
     zend_assertions: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
+    variables_order: Option<String>,
+    register_argc_argv: Option<String>,
+    enable_post_data_reading: Option<String>,
+    file_uploads: Option<String>,
+    max_input_vars: Option<String>,
+    max_input_nesting_level: Option<String>,
+    post_max_size: Option<String>,
+    always_populate_raw_post_data: Option<String>,
+    upload_tmp_dir: Option<String>,
+    expose_php: Option<String>,
     exception_ignore_args: Option<String>,
     exception_string_param_max_len: Option<String>,
 }
@@ -202,6 +212,10 @@ impl Invocation {
                         .next()
                         .ok_or_else(|| "missing value for -f".to_string())?;
                     script = Some(PathBuf::from(path));
+                    if matches!(args.peek().map(String::as_str), Some("--")) {
+                        args.next();
+                    }
+                    script_args.extend(args);
                     break;
                 }
                 "-r" => {
@@ -302,6 +316,26 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.memory_limit = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("max_memory_limit") {
         ini.max_memory_limit = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("variables_order") {
+        ini.variables_order = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("register_argc_argv") {
+        ini.register_argc_argv = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("enable_post_data_reading") {
+        ini.enable_post_data_reading = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("file_uploads") {
+        ini.file_uploads = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("max_input_vars") {
+        ini.max_input_vars = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("max_input_nesting_level") {
+        ini.max_input_nesting_level = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("post_max_size") {
+        ini.post_max_size = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("always_populate_raw_post_data") {
+        ini.always_populate_raw_post_data = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("upload_tmp_dir") {
+        ini.upload_tmp_dir = Some(raw_value.to_string());
+    } else if name.eq_ignore_ascii_case("expose_php") {
+        ini.expose_php = Some(normalize_ini_scalar(raw_value));
     }
 }
 
@@ -580,6 +614,16 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
         zend_assertions: ini.zend_assertions.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
+        variables_order: ini.variables_order.clone(),
+        register_argc_argv: ini.register_argc_argv.clone(),
+        enable_post_data_reading: ini.enable_post_data_reading.clone(),
+        file_uploads: ini.file_uploads.clone(),
+        max_input_vars: ini.max_input_vars.clone(),
+        max_input_nesting_level: ini.max_input_nesting_level.clone(),
+        post_max_size: ini.post_max_size.clone(),
+        always_populate_raw_post_data: ini.always_populate_raw_post_data.clone(),
+        upload_tmp_dir: ini.upload_tmp_dir.clone(),
+        expose_php: ini.expose_php.clone(),
         exception_ignore_args: ini.exception_ignore_args.clone(),
         exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
     };
@@ -598,6 +642,7 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
 
     let mut command = Command::new(native.path());
     command.args(args);
+    command.env("PTN_SCRIPT_FILENAME", script);
     if let Some(precision) = ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
     }
@@ -652,6 +697,44 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
     if let Some(max_memory_limit) = &ini.max_memory_limit {
         command.env("PTN_MAX_MEMORY_LIMIT", max_memory_limit);
     }
+    if let Some(variables_order) = &ini.variables_order {
+        command.env("PTN_VARIABLES_ORDER", variables_order);
+    }
+    if let Some(register_argc_argv) = &ini.register_argc_argv {
+        command.env("PTN_REGISTER_ARGC_ARGV", register_argc_argv);
+    }
+    if let Some(enable_post_data_reading) = &ini.enable_post_data_reading {
+        command.env("PTN_ENABLE_POST_DATA_READING", enable_post_data_reading);
+    }
+    if let Some(file_uploads) = &ini.file_uploads {
+        command.env("PTN_FILE_UPLOADS", file_uploads);
+    }
+    if let Some(max_input_vars) = &ini.max_input_vars {
+        command.env("PTN_MAX_INPUT_VARS", max_input_vars);
+    }
+    if let Some(max_input_nesting_level) = &ini.max_input_nesting_level {
+        command.env("PTN_MAX_INPUT_NESTING_LEVEL", max_input_nesting_level);
+    }
+    if let Some(post_max_size) = &ini.post_max_size {
+        command.env("PTN_POST_MAX_SIZE", post_max_size);
+    }
+    if let Some(always_populate_raw_post_data) = &ini.always_populate_raw_post_data {
+        command.env(
+            "PTN_ALWAYS_POPULATE_RAW_POST_DATA",
+            always_populate_raw_post_data,
+        );
+    }
+    if let Some(upload_tmp_dir) = &ini.upload_tmp_dir {
+        command.env("PTN_UPLOAD_TMP_DIR", upload_tmp_dir);
+    }
+    if let Some(expose_php) = &ini.expose_php {
+        command.env("PTN_EXPOSE_PHP", expose_php);
+    }
+    if !args.is_empty() {
+        command.env("PTN_REQUEST_MODE", "cli");
+    } else if parent_has_cgi_request_env() {
+        command.env("PTN_REQUEST_MODE", "cgi");
+    }
     if let Some(warning) = memory_limit_warning {
         print!("{warning}");
     }
@@ -659,6 +742,18 @@ fn compile_and_run(script: &Path, args: &[String], ini: &RuntimeIni) -> Result<i
         .status()
         .map_err(|error| PhpcError::Message(format!("failed to run native binary: {error}")))?;
     Ok(status.code().unwrap_or(255))
+}
+
+fn parent_has_cgi_request_env() -> bool {
+    [
+        "REQUEST_METHOD",
+        "QUERY_STRING",
+        "CONTENT_TYPE",
+        "CONTENT_LENGTH",
+        "HTTP_COOKIE",
+    ]
+    .iter()
+    .any(|name| std::env::var_os(name).is_some_and(|value| !value.to_string_lossy().is_empty()))
 }
 
 struct TempPath {
