@@ -34684,6 +34684,11 @@ static PtnValue ptn_internal_mb_check_encoding(PtnRuntime *runtime, size_t argc,
         PtnStringOperand encoding = ptn_internal_expect_string_arg(runtime, "mb_check_encoding", 2, "encoding", args[1], line);
         if (ptn_mb_encoding_equals(encoding, "HTML-ENTITIES")) {
             ptn_emit_deprecation(&runtime->diagnostics, "mb_check_encoding(): Handling HTML entities via mbstring is deprecated; use htmlspecialchars, htmlentities, or mb_encode_numericentity/mb_decode_numericentity instead", line);
+            ptn_string_operand_free(encoding);
+            if (has_input) {
+                ptn_string_operand_free(input);
+            }
+            return ptn_bool(1);
         }
         if (has_input && runtime->exceptions->active_exception == NULL) {
             PtnStringOperand utf32 = { "UTF-32BE", NULL, 8 };
@@ -35569,7 +35574,7 @@ static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
             ptn_throw_exception(runtime, "ValueError", "IntlBreakIterator::getLocale(): Argument #1 ($type) must be either Locale::ACTUAL_LOCALE or Locale::VALID_LOCALE");
             return ptn_null();
         }
-        return type == 0 ? ptn_string("root") : ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale));
+        return type == 0 ? ptn_string("") : ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale));
     }
     if (ptn_ascii_case_equal(name, "getPartsIterator")) {
         int64_t key_type = argc >= 1 ? ptn_value_to_integer(args[0]) : PTN_INTL_PARTS_KEY_SEQUENTIAL;
@@ -38850,6 +38855,112 @@ static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const 
         return ptn_string(PTN_PHP_VERSION);
     }
     return ptn_bool(0);
+}
+
+static int ptn_version_token_is_number(const char *data, size_t len) {
+    if (len == 0) {
+        return 1;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!isdigit((unsigned char)data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static size_t ptn_version_next_token(PtnStringOperand version, size_t offset, const char **token_out) {
+    while (offset < version.len &&
+           (version.data[offset] == '.' || version.data[offset] == '-' ||
+            version.data[offset] == '_' || version.data[offset] == '+')) {
+        offset++;
+    }
+    *token_out = version.data + offset;
+    while (offset < version.len &&
+           version.data[offset] != '.' && version.data[offset] != '-' &&
+           version.data[offset] != '_' && version.data[offset] != '+') {
+        offset++;
+    }
+    return offset;
+}
+
+static int ptn_version_compare_operands(PtnStringOperand left, PtnStringOperand right) {
+    size_t left_offset = 0;
+    size_t right_offset = 0;
+    while (left_offset < left.len || right_offset < right.len) {
+        const char *left_token = "";
+        const char *right_token = "";
+        size_t left_next = ptn_version_next_token(left, left_offset, &left_token);
+        size_t right_next = ptn_version_next_token(right, right_offset, &right_token);
+        size_t left_len = (size_t)((left.data + left_next) - left_token);
+        size_t right_len = (size_t)((right.data + right_next) - right_token);
+        int left_number = ptn_version_token_is_number(left_token, left_len);
+        int right_number = ptn_version_token_is_number(right_token, right_len);
+        int compared = 0;
+        if (left_number && right_number) {
+            int64_t left_value = left_len == 0 ? 0 : strtoll(left_token, NULL, 10);
+            int64_t right_value = right_len == 0 ? 0 : strtoll(right_token, NULL, 10);
+            compared = (left_value > right_value) - (left_value < right_value);
+        } else {
+            size_t shared = left_len < right_len ? left_len : right_len;
+            for (size_t i = 0; i < shared; i++) {
+                unsigned char left_ch = (unsigned char)tolower((unsigned char)left_token[i]);
+                unsigned char right_ch = (unsigned char)tolower((unsigned char)right_token[i]);
+                if (left_ch != right_ch) {
+                    compared = (left_ch > right_ch) - (left_ch < right_ch);
+                    break;
+                }
+            }
+            if (compared == 0) {
+                compared = (left_len > right_len) - (left_len < right_len);
+            }
+        }
+        if (compared != 0) {
+            return compared > 0 ? 1 : -1;
+        }
+        left_offset = left_next;
+        right_offset = right_next;
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_version_compare(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand left = ptn_internal_expect_string_arg(runtime, "version_compare", 1, "version1", args[0], line);
+    PtnStringOperand right = ptn_internal_expect_string_arg(runtime, "version_compare", 2, "version2", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(left);
+        ptn_string_operand_free(right);
+        return ptn_null();
+    }
+    int compared = ptn_version_compare_operands(left, right);
+    ptn_string_operand_free(left);
+    ptn_string_operand_free(right);
+    if (argc < 3) {
+        return ptn_int(compared);
+    }
+    PtnStringOperand op = ptn_internal_expect_string_arg(runtime, "version_compare", 3, "operator", args[2], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(op);
+        return ptn_null();
+    }
+    int result = 0;
+    if (ptn_text_operand_ascii_case_equal(op, "<") || ptn_text_operand_ascii_case_equal(op, "lt")) {
+        result = compared < 0;
+    } else if (ptn_text_operand_ascii_case_equal(op, "<=") || ptn_text_operand_ascii_case_equal(op, "le")) {
+        result = compared <= 0;
+    } else if (ptn_text_operand_ascii_case_equal(op, ">") || ptn_text_operand_ascii_case_equal(op, "gt")) {
+        result = compared > 0;
+    } else if (ptn_text_operand_ascii_case_equal(op, ">=") || ptn_text_operand_ascii_case_equal(op, "ge")) {
+        result = compared >= 0;
+    } else if (ptn_text_operand_ascii_case_equal(op, "==") || ptn_text_operand_ascii_case_equal(op, "=") ||
+               ptn_text_operand_ascii_case_equal(op, "eq")) {
+        result = compared == 0;
+    } else if (ptn_text_operand_ascii_case_equal(op, "!=") || ptn_text_operand_ascii_case_equal(op, "<>") ||
+               ptn_text_operand_ascii_case_equal(op, "ne")) {
+        result = compared != 0;
+    }
+    ptn_string_operand_free(op);
+    return ptn_bool(result);
 }
 
 static PtnValue ptn_internal_php_uname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -44674,6 +44785,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "utf8_encode", 1, 1, ptn_internal_utf8_encode },
         { "var_dump", 1, PTN_VARIADIC_ARGS, ptn_internal_var_dump },
         { "var_export", 1, 2, ptn_internal_var_export },
+        { "version_compare", 2, 3, ptn_internal_version_compare },
         { "vfprintf", 3, 3, ptn_internal_vfprintf },
         { "vprintf", 2, 2, ptn_internal_vprintf },
         { "vsprintf", 2, 2, ptn_internal_vsprintf },

@@ -15777,6 +15777,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "socket_strerror"
             | "token_get_all"
             | "token_name"
+            | "version_compare"
             | "zend_version"
             | "var_export"
             | "bindec"
