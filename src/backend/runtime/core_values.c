@@ -194,6 +194,7 @@ typedef struct {
 #define PTN_FILE_USE_INCLUDE_PATH 1
 #define PTN_FILE_IGNORE_NEW_LINES 2
 #define PTN_FILE_SKIP_EMPTY_LINES 4
+#define PTN_FILE_APPEND 8
 #define PTN_LOCK_SH 1
 #define PTN_LOCK_EX 2
 #define PTN_LOCK_UN 3

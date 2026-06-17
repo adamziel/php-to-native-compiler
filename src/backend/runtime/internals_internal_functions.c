@@ -26087,7 +26087,7 @@ static PtnValue ptn_internal_opendir(PtnRuntime *runtime, size_t argc, const Ptn
 #else
     DIR *directory = opendir(path);
     if (directory == NULL) {
-        ptn_emit_file_warning(runtime, "opendir", path, strerror(errno), line);
+        ptn_emit_directory_open_warning(runtime, "opendir", path, strerror(errno), line);
         free(path);
         return ptn_bool(0);
     }
@@ -28264,7 +28264,6 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 }
 
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     char *path = ptn_internal_non_empty_path_arg_c_string_or_value_error(
         runtime,
         "file_put_contents",
@@ -28278,7 +28277,16 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
     }
 
     PtnStringOperand data = ptn_value_to_string_operand(args[1]);
-    FILE *stream = fopen(path, "wb");
+    int64_t flags = 0;
+    if (argc >= 3) {
+        flags = ptn_internal_expect_integer_arg(runtime, "file_put_contents", 3, "flags", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(path);
+            ptn_string_operand_free(data);
+            return ptn_null();
+        }
+    }
+    FILE *stream = fopen(path, (flags & PTN_FILE_APPEND) != 0 ? "ab" : "wb");
     if (stream == NULL) {
         char detail[192];
         int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
@@ -28619,7 +28627,12 @@ static PtnValue ptn_internal_unlink(PtnRuntime *runtime, size_t argc, const PtnV
         return ptn_bool(0);
     }
 
-    if (remove(path) == 0) {
+#if defined(_WIN32)
+    int unlink_result = _unlink(path);
+#else
+    int unlink_result = unlink(path);
+#endif
+    if (unlink_result == 0) {
         free(path);
         return ptn_bool(1);
     }
@@ -28723,6 +28736,29 @@ static int ptn_paths_are_same_existing_file(const char *source, const char *dest
     return source_stat.st_dev == dest_stat.st_dev && source_stat.st_ino == dest_stat.st_ino;
 }
 
+static int ptn_path_is_directory_for_copy(const char *path) {
+    struct stat info;
+    return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+static void ptn_emit_copy_directory_argument_warning(
+    PtnRuntime *runtime,
+    const char *ordinal,
+    size_t line
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "copy(): The %s argument to copy() function cannot be a directory",
+        ordinal
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+}
+
 static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     char *source = ptn_internal_path_arg_c_string_or_value_error(runtime, "copy", 1, "from", args[0], line);
@@ -28735,6 +28771,18 @@ static PtnValue ptn_internal_copy(PtnRuntime *runtime, size_t argc, const PtnVal
         return ptn_null();
     }
     if (ptn_paths_are_same_existing_file(source, dest)) {
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
+    if (ptn_path_is_directory_for_copy(source)) {
+        ptn_emit_copy_directory_argument_warning(runtime, "first", line);
+        free(dest);
+        free(source);
+        return ptn_bool(0);
+    }
+    if (ptn_path_is_directory_for_copy(dest)) {
+        ptn_emit_copy_directory_argument_warning(runtime, "second", line);
         free(dest);
         free(source);
         return ptn_bool(0);
@@ -28859,6 +28907,20 @@ static const char *ptn_system_temp_dir(void) {
     return ".";
 }
 
+static char *ptn_tempnam_prefix_basename(const char *prefix) {
+    const char *start = prefix;
+    for (const char *cursor = prefix; *cursor != '\0'; cursor++) {
+        if (ptn_path_is_separator(*cursor)) {
+            start = cursor + 1;
+        }
+    }
+    size_t len = strlen(start);
+    if (len > 63) {
+        len = 63;
+    }
+    return ptn_duplicate_string_len(start, len);
+}
+
 static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -28873,7 +28935,7 @@ static char *ptn_tempnam_template(const char *directory, const char *prefix, int
     struct stat info;
     if (selected_dir[0] == '\0' || stat(selected_dir, &info) != 0 || !S_ISDIR(info.st_mode)) {
         selected_dir = ptn_system_temp_dir();
-        *used_fallback = 1;
+        *used_fallback = directory[0] != '\0';
     }
     char *resolved_dir = NULL;
 #if defined(_WIN32)
@@ -28885,15 +28947,18 @@ static char *ptn_tempnam_template(const char *directory, const char *prefix, int
         selected_dir = resolved_dir;
     }
     size_t dir_len = strlen(selected_dir);
-    size_t prefix_len = strlen(prefix);
+    char *safe_prefix = ptn_tempnam_prefix_basename(prefix);
+    size_t prefix_len = strlen(safe_prefix);
     int needs_separator = dir_len > 0 && !ptn_path_is_separator(selected_dir[dir_len - 1]);
-    size_t len = dir_len + (needs_separator ? 1 : 0) + prefix_len + 6;
+    size_t len = dir_len + (needs_separator ? 1 : 0) + prefix_len + 19;
     if (len < dir_len || len < prefix_len) {
+        free(safe_prefix);
         free(resolved_dir);
         ptn_abort_out_of_memory();
     }
     char *templ = malloc(len + 1);
     if (templ == NULL) {
+        free(safe_prefix);
         free(resolved_dir);
         ptn_abort_out_of_memory();
     }
@@ -28903,10 +28968,11 @@ static char *ptn_tempnam_template(const char *directory, const char *prefix, int
     if (needs_separator) {
         templ[offset++] = '/';
     }
-    memcpy(templ + offset, prefix, prefix_len);
+    memcpy(templ + offset, safe_prefix, prefix_len);
     offset += prefix_len;
-    memcpy(templ + offset, "XXXXXX", 6);
+    memset(templ + offset, 'X', 19);
     templ[len] = '\0';
+    free(safe_prefix);
     return templ;
 }
 
@@ -29802,7 +29868,14 @@ static PtnValue ptn_internal_scandir(PtnRuntime *runtime, size_t argc, const Ptn
 #else
     DIR *dir = opendir(path);
     if (dir == NULL) {
-        ptn_emit_file_warning(runtime, "scandir", path, strerror(errno), line);
+        int saved_errno = errno;
+        ptn_emit_directory_open_warning(runtime, "scandir", path, strerror(saved_errno), line);
+        char detail[192];
+        int written = snprintf(detail, sizeof(detail), "(errno %d): %s", saved_errno, strerror(saved_errno));
+        if (written < 0 || (size_t)written >= sizeof(detail)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_function_warning(runtime, "scandir", detail, line);
         free(path);
         return ptn_bool(0);
     }
@@ -30153,7 +30226,7 @@ static PtnValue ptn_internal_mkdir(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_bool(1);
     }
 
-    ptn_emit_file_warning(runtime, "mkdir", path, strerror(errno), line);
+    ptn_emit_function_warning(runtime, "mkdir", strerror(errno), line);
     free(path);
     return ptn_bool(0);
 }
@@ -36393,6 +36466,7 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "FILE_USE_INCLUDE_PATH", PTN_FILE_USE_INCLUDE_PATH);
     ptn_get_defined_constants_add_int(table, "FILE_IGNORE_NEW_LINES", PTN_FILE_IGNORE_NEW_LINES);
     ptn_get_defined_constants_add_int(table, "FILE_SKIP_EMPTY_LINES", PTN_FILE_SKIP_EMPTY_LINES);
+    ptn_get_defined_constants_add_int(table, "FILE_APPEND", PTN_FILE_APPEND);
     ptn_get_defined_constants_add_int(table, "SEEK_SET", PTN_SEEK_SET);
     ptn_get_defined_constants_add_int(table, "SEEK_CUR", PTN_SEEK_CUR);
     ptn_get_defined_constants_add_int(table, "SEEK_END", PTN_SEEK_END);
@@ -36516,6 +36590,7 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "FILE_USE_INCLUDE_PATH",
         "FILE_IGNORE_NEW_LINES",
         "FILE_SKIP_EMPTY_LINES",
+        "FILE_APPEND",
         "SEEK_SET",
         "SEEK_CUR",
         "SEEK_END",
@@ -40942,7 +41017,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "file", 1, 3, ptn_internal_file },
         { "file_exists", 1, 1, ptn_internal_file_exists },
         { "file_get_contents", 1, 5, ptn_internal_file_get_contents },
-        { "file_put_contents", 2, 2, ptn_internal_file_put_contents },
+        { "file_put_contents", 2, 4, ptn_internal_file_put_contents },
         { "fileatime", 1, 1, ptn_internal_fileatime },
         { "filectime", 1, 1, ptn_internal_filectime },
         { "filegroup", 1, 1, ptn_internal_filegroup },

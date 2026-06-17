@@ -12498,6 +12498,66 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_filesystem_directory_and_tempname_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-filesystem-directory-tempname-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filesystem-directory-tempname-edges.php");
+    let output = root.join("filesystem-directory-tempname-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$dir = __DIR__ . '/copy-source';\n\
+mkdir($dir);\n\
+var_dump(copy($dir, __DIR__ . '/copy-dest'));\n\
+var_dump(file_exists(__DIR__ . '/copy-dest'));\n\
+var_dump(unlink($dir));\n\
+var_dump(is_dir($dir));\n\
+rmdir($dir);\n\
+$file = __DIR__ . '/append.txt';\n\
+file_put_contents($file, 'one');\n\
+var_dump(defined('FILE_APPEND'), FILE_APPEND);\n\
+var_dump(file_put_contents($file, 'two', FILE_APPEND));\n\
+echo file_get_contents($file), \"\\n\";\n\
+unlink($file);\n\
+$base = __DIR__ . '/tmpbase';\n\
+mkdir($base);\n\
+$tmp = tempnam($base, '/nested/prefix');\n\
+echo dirname($tmp) === realpath($base) ? \"temp-dir-ok\\n\" : \"temp-dir-bad\\n\";\n\
+echo substr(basename($tmp), 0, 6), \"\\n\";\n\
+$long = tempnam($base, str_repeat('x', 300));\n\
+echo strlen(basename($long)), \"\\n\";\n\
+unlink($tmp);\n\
+unlink($long);\n\
+rmdir($base);\n\
+var_dump(opendir(__DIR__ . '/missing-open'));\n\
+var_dump(scandir(__DIR__ . '/missing-scan'));\n\
+var_dump(mkdir(__DIR__ . '/missing-parent/child'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("copy(): The first argument to copy() function cannot be a directory"));
+    assert!(stdout.contains("bool(false)\nbool(false)"));
+    assert!(stdout.contains("Warning: unlink("));
+    assert!(stdout.contains("bool(false)\nbool(true)"));
+    assert!(stdout.contains("bool(true)\nint(8)\nint(3)\nonetwo\n"));
+    assert!(stdout.contains("temp-dir-ok\nprefix\n82\n"));
+    assert!(stdout.contains("opendir("));
+    assert!(stdout.contains("Failed to open directory:"));
+    assert!(stdout.contains("scandir(): (errno "));
+    assert!(stdout.contains("mkdir(): No such file or directory"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_FILE_APPEND"));
+    assert!(c_source.contains("ptn_tempnam_prefix_basename"));
+}
+
+#[test]
 fn compile_stream_read_and_csv_internals_to_native_binary() {
     let root = temp_dir("ptn-native-stream-read-csv-internals");
     fs::create_dir_all(&root).unwrap();

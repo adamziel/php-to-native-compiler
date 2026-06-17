@@ -1585,6 +1585,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_FILE_SKIP_EMPTY_LINES);
         return 1;
     }
+    if (strcmp(name, "FILE_APPEND") == 0) {
+        *out = ptn_int(PTN_FILE_APPEND);
+        return 1;
+    }
     if (strcmp(name, "LOCK_SH") == 0) {
         *out = ptn_int(PTN_LOCK_SH);
         return 1;

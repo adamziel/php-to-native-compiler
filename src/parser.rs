@@ -15976,6 +15976,7 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "PATHINFO_EXTENSION"
             | "PATHINFO_FILENAME"
             | "PATHINFO_ALL"
+            | "FILE_APPEND"
             | "LOCK_SH"
             | "LOCK_EX"
             | "LOCK_UN"
