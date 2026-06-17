@@ -2233,6 +2233,9 @@ static PTN_UNUSED void ptn_throw_user_argument_count_error(
 ) {
     const char *mode = exactly ? "exactly" : "at least";
     const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
+    if (runtime->suppress_user_call_frame_location) {
+        line = 0;
+    }
     int needed = line == 0
         ? snprintf(
             NULL,

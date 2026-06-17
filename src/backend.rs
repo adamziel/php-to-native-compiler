@@ -2165,6 +2165,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("fscanf") && argument_index >= 2 {
         return Some("var");
     }
+    if name.eq_ignore_ascii_case("flock") && argument_index == 2 {
+        return Some("would_block");
+    }
     if name.eq_ignore_ascii_case("is_callable") && argument_index == 2 {
         return Some("callable_name");
     }
