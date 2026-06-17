@@ -268,6 +268,9 @@ typedef struct {
 #define PTN_NOEXPR 327681
 #define PTN_CODESET 14
 #define PTN_DEFAULT_PRECISION 14
+#define PTN_DEFAULT_SERIALIZE_PRECISION -1
+#define PTN_MAX_FLOAT_FORMAT_PRECISION 1000
+#define PTN_FLOAT_FORMAT_BUFFER_SIZE 1200
 #define PTN_JSON_ERROR_NONE 0
 #define PTN_JSON_ERROR_DEPTH 1
 #define PTN_JSON_ERROR_STATE_MISMATCH 2
@@ -966,7 +969,6 @@ struct PtnRuntime {
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
-    char *serialize_precision;
     char *default_charset;
     char *arg_separator_input;
     char *arg_separator_output;
@@ -991,6 +993,10 @@ struct PtnRuntime {
     char *user_agent;
     char *request_body;
     size_t request_body_len;
+    int precision;
+    int serialize_precision;
+    int initial_precision;
+    int initial_serialize_precision;
     int exception_ignore_args;
     size_t exception_string_param_max_len;
     int strict_types;
@@ -1733,24 +1739,6 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
 );
 #endif
 
-static PTN_UNUSED int ptn_float_precision(void) {
-    static int initialized = 0;
-    static int precision = PTN_DEFAULT_PRECISION;
-    if (!initialized) {
-        const char *configured = getenv("PTN_PHP_PRECISION");
-        if (configured != NULL && configured[0] != '\0') {
-            char *end = NULL;
-            errno = 0;
-            long parsed = strtol(configured, &end, 10);
-            if (errno == 0 && end != configured && *end == '\0' && parsed >= -1 && parsed <= 53) {
-                precision = (int)parsed;
-            }
-        }
-        initialized = 1;
-    }
-    return precision;
-}
-
 static PTN_UNUSED int ptn_ini_precision_value(
     const char *configured,
     int default_value,
@@ -1766,6 +1754,44 @@ static PTN_UNUSED int ptn_ini_precision_value(
         }
     }
     return default_value;
+}
+
+static PTN_UNUSED int ptn_default_float_precision(void) {
+    static int initialized = 0;
+    static int precision = PTN_DEFAULT_PRECISION;
+    if (!initialized) {
+        precision = ptn_ini_precision_value(
+            getenv("PTN_PHP_PRECISION"),
+            PTN_DEFAULT_PRECISION,
+            PTN_MAX_FLOAT_FORMAT_PRECISION
+        );
+        initialized = 1;
+    }
+    return precision;
+}
+
+static PTN_UNUSED int ptn_default_serialize_precision(void) {
+    static int initialized = 0;
+    static int precision = PTN_DEFAULT_SERIALIZE_PRECISION;
+    if (!initialized) {
+        precision = ptn_ini_precision_value(
+            getenv("PTN_PHP_SERIALIZE_PRECISION"),
+            PTN_DEFAULT_SERIALIZE_PRECISION,
+            PTN_MAX_FLOAT_FORMAT_PRECISION
+        );
+        initialized = 1;
+    }
+    return precision;
+}
+
+static PTN_UNUSED int ptn_runtime_float_precision(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? ptn_default_float_precision() : root->precision;
+}
+
+static PTN_UNUSED int ptn_runtime_serialize_precision(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? ptn_default_serialize_precision() : root->serialize_precision;
 }
 
 static PTN_UNUSED void ptn_normalize_scalar_float_exponent(char *buffer) {
@@ -1830,23 +1856,110 @@ static PTN_UNUSED void ptn_format_scalar_shortest_float(double value, char *buff
     ptn_scalar_float_ensure_exponent_decimal(buffer);
 }
 
-static PTN_UNUSED void ptn_format_scalar_float(double value, char *buffer, size_t buffer_size) {
+static PTN_UNUSED int ptn_formatted_float_has_decimal_or_exponent(const char *buffer) {
+    for (const char *cursor = buffer; *cursor != '\0'; cursor++) {
+        if (*cursor == '.' || *cursor == 'E' || *cursor == 'e') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_format_scalar_float_with_precision(
+    double value,
+    int precision,
+    char *buffer,
+    size_t buffer_size
+) {
     int written;
     if (isnan(value)) {
         written = snprintf(buffer, buffer_size, "NAN");
     } else if (isinf(value)) {
         written = snprintf(buffer, buffer_size, signbit(value) ? "-INF" : "INF");
-    } else if (ptn_float_precision() < 0) {
+    } else if (precision < 0) {
         ptn_format_scalar_shortest_float(value, buffer, buffer_size);
         return;
     } else {
-        written = snprintf(buffer, buffer_size, "%.*g", ptn_float_precision(), value);
+        written = snprintf(buffer, buffer_size, "%.*g", precision, value);
     }
     if (written < 0 || (size_t)written >= buffer_size) {
         ptn_abort_out_of_memory();
     }
     ptn_normalize_scalar_float_exponent(buffer);
     ptn_scalar_float_ensure_exponent_decimal(buffer);
+}
+
+static PTN_UNUSED void ptn_format_scalar_float(double value, char *buffer, size_t buffer_size) {
+    ptn_format_scalar_float_with_precision(value, ptn_default_float_precision(), buffer, buffer_size);
+}
+
+static PTN_UNUSED void ptn_format_runtime_scalar_float(
+    PtnRuntime *runtime,
+    double value,
+    char *buffer,
+    size_t buffer_size
+) {
+    ptn_format_scalar_float_with_precision(
+        value,
+        ptn_runtime_float_precision(runtime),
+        buffer,
+        buffer_size
+    );
+}
+
+static PTN_UNUSED void ptn_format_serialize_float_with_precision(
+    double value,
+    int precision,
+    char *buffer,
+    size_t buffer_size
+) {
+    ptn_format_scalar_float_with_precision(value, precision, buffer, buffer_size);
+    if (precision == 0 &&
+        isfinite(value) &&
+        !ptn_formatted_float_has_decimal_or_exponent(buffer)) {
+        size_t len = strlen(buffer);
+        if (buffer_size < 6 || len > buffer_size - 6) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(buffer + len, ".0E+0", 6);
+    }
+}
+
+static PTN_UNUSED void ptn_format_runtime_serialize_float(
+    PtnRuntime *runtime,
+    double value,
+    char *buffer,
+    size_t buffer_size
+) {
+    ptn_format_serialize_float_with_precision(
+        value,
+        ptn_runtime_serialize_precision(runtime),
+        buffer,
+        buffer_size
+    );
+}
+
+static PTN_UNUSED void ptn_format_runtime_var_export_float(
+    PtnRuntime *runtime,
+    double value,
+    char *buffer,
+    size_t buffer_size
+) {
+    ptn_format_scalar_float_with_precision(
+        value,
+        ptn_runtime_serialize_precision(runtime),
+        buffer,
+        buffer_size
+    );
+    if (isfinite(value) && !ptn_formatted_float_has_decimal_or_exponent(buffer)) {
+        size_t len = strlen(buffer);
+        if (buffer_size < 3 || len > buffer_size - 3) {
+            ptn_abort_out_of_memory();
+        }
+        buffer[len] = '.';
+        buffer[len + 1] = '0';
+        buffer[len + 2] = '\0';
+    }
 }
 
 static PTN_UNUSED PtnValue ptn_null(void) {

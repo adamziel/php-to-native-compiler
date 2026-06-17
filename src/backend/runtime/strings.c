@@ -140,7 +140,7 @@ static PTN_UNUSED PtnValue ptn_shift_right(PtnRuntime *runtime, PtnValue left, P
 
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
     value = ptn_value_deref(value);
-    char buffer[128];
+    char buffer[PTN_FLOAT_FORMAT_BUFFER_SIZE];
     int written = 0;
 
     switch (value.type) {
@@ -231,7 +231,7 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
     int ignore_args = ptn_runtime_exception_ignore_args(runtime);
     size_t max_string_len = ptn_runtime_exception_string_param_max_len(runtime);
 
-    char scalar[128];
+    char scalar[PTN_FLOAT_FORMAT_BUFFER_SIZE];
     switch (value.type) {
         case PTN_NULL:
             ptn_string_buffer_append(&buffer, ignore_args ? "of type null" : "NULL");
@@ -255,7 +255,7 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
                 ptn_string_buffer_append(&buffer, "of type float");
                 break;
             }
-            ptn_format_scalar_float(value.as.floating, scalar, sizeof(scalar));
+            ptn_format_runtime_scalar_float(runtime, value.as.floating, scalar, sizeof(scalar));
             if (
                 isfinite(value.as.floating) &&
                 strchr(scalar, '.') == NULL &&
@@ -506,7 +506,7 @@ static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand) {
 
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value) {
     value = ptn_value_deref(value);
-    char buffer[128];
+    char buffer[PTN_FLOAT_FORMAT_BUFFER_SIZE];
     int written = 0;
 
     switch (value.type) {
@@ -681,6 +681,12 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
         free(message);
         return ptn_string_operand_borrowed("");
     }
+    if (resolved.type == PTN_FLOAT) {
+        char buffer[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+        ptn_format_runtime_scalar_float(runtime, resolved.as.floating, buffer, sizeof(buffer));
+        size_t len = strlen(buffer);
+        return ptn_string_operand_owned_len(ptn_duplicate_string_len(buffer, len), len);
+    }
     return ptn_value_to_string_operand(value);
 }
 
@@ -715,6 +721,12 @@ static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime_skip
         ptn_throw_exception_at_without_current_trace_frame(runtime, "Error", message, runtime->source_path, line);
         free(message);
         return ptn_string_operand_borrowed("");
+    }
+    if (resolved.type == PTN_FLOAT) {
+        char buffer[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+        ptn_format_runtime_scalar_float(runtime, resolved.as.floating, buffer, sizeof(buffer));
+        size_t len = strlen(buffer);
+        return ptn_string_operand_owned_len(ptn_duplicate_string_len(buffer, len), len);
     }
     return ptn_value_to_string_operand(value);
 }

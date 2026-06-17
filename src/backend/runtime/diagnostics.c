@@ -1560,10 +1560,6 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->memory_limit = ptn_duplicate_string(
         configured_memory_limit == NULL ? "128M" : configured_memory_limit
     );
-    const char *configured_serialize_precision = getenv("PTN_SERIALIZE_PRECISION");
-    runtime->serialize_precision = ptn_duplicate_string(
-        configured_serialize_precision == NULL ? "-1" : configured_serialize_precision
-    );
     const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");
     const char *configured_arg_separator_input = getenv("PTN_ARG_SEPARATOR_INPUT");
     const char *configured_arg_separator_output = getenv("PTN_ARG_SEPARATOR_OUTPUT");
@@ -1655,6 +1651,18 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
+    runtime->precision = ptn_ini_precision_value(
+        getenv("PTN_PHP_PRECISION"),
+        PTN_DEFAULT_PRECISION,
+        PTN_MAX_FLOAT_FORMAT_PRECISION
+    );
+    runtime->serialize_precision = ptn_ini_precision_value(
+        getenv("PTN_PHP_SERIALIZE_PRECISION"),
+        PTN_DEFAULT_SERIALIZE_PRECISION,
+        PTN_MAX_FLOAT_FORMAT_PRECISION
+    );
+    runtime->initial_precision = runtime->precision;
+    runtime->initial_serialize_precision = runtime->serialize_precision;
     runtime->exception_ignore_args = 0;
     int configured_exception_ignore_args = 0;
     if (ptn_parse_bool_env("PTN_EXCEPTION_IGNORE_ARGS", &configured_exception_ignore_args)) {

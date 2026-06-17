@@ -8086,6 +8086,48 @@ fn compile_scalar_echo_keeps_direct_output_path_to_native_binary() {
 }
 
 #[test]
+fn compile_dynamic_precision_ini_formats_scalars_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-precision-formatting");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-precision-formatting.php");
+    let output = root.join("dynamic-precision-formatting-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$v = array(123456789.012345678901234567890, 10/3, 987e100, 10.0000001);
+ini_set('precision', 9);
+ini_set('serialize_precision', 17);
+echo ini_get('precision'), '/', ini_get('serialize_precision'), "\n";
+echo join(' ', $v), "\n";
+echo serialize($v), "\n";
+echo var_export($v, true), "\n";
+ini_set('precision', 100);
+ini_set('serialize_precision', 0);
+echo join(' ', array(3.0, 123456789.0)), "\n";
+echo serialize(array(3.0, 123456789.0)), "\n";
+echo var_export(array(3.0, 123456789.0), true), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "9/17\n\
+123456789 3.33333333 9.87E+102 10.0000001\n\
+a:4:{i:0;d:123456789.01234567;i:1;d:3.3333333333333335;i:2;d:9.8700000000000007E+102;i:3;d:10.000000099999999;}\n\
+array (\n  0 => 123456789.01234567,\n  1 => 3.3333333333333335,\n  2 => 9.8700000000000007E+102,\n  3 => 10.000000099999999,\n)\n\
+3 123456789\n\
+a:2:{i:0;d:3.0E+0;i:1;d:1.0E+8;}\n\
+array (\n  0 => 3.0,\n  1 => 1.0E+8,\n)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_register_tick_function_noop_to_native_binary() {
     let root = temp_dir("ptn-native-register-tick-function-noop");
     fs::create_dir_all(&root).unwrap();

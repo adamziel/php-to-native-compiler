@@ -295,13 +295,13 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     let raw_value = raw_value.trim();
     if name.eq_ignore_ascii_case("precision") {
         if let Ok(parsed) = raw_value.parse::<i16>() {
-            if (-1..=53).contains(&parsed) {
+            if (-1..=1000).contains(&parsed) {
                 ini.precision = Some(parsed);
             }
         }
     } else if name.eq_ignore_ascii_case("serialize_precision") {
         if let Ok(parsed) = raw_value.parse::<i16>() {
-            if (-1..=100).contains(&parsed) {
+            if (-1..=1000).contains(&parsed) {
                 ini.serialize_precision = Some(parsed.to_string());
             }
         }
@@ -692,7 +692,7 @@ fn compile_and_run(
         command.env("PTN_PHP_PRECISION", precision.to_string());
     }
     if let Some(serialize_precision) = &ini.serialize_precision {
-        command.env("PTN_SERIALIZE_PRECISION", serialize_precision);
+        command.env("PTN_PHP_SERIALIZE_PRECISION", serialize_precision);
     }
     if let Some(date_timezone) = &ini.date_timezone {
         command.env("PTN_DATE_TIMEZONE", date_timezone);

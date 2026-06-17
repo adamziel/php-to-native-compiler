@@ -132,7 +132,6 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->open_basedir = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
-    runtime->serialize_precision = NULL;
     runtime->default_charset = NULL;
     runtime->arg_separator_input = NULL;
     runtime->arg_separator_output = NULL;
@@ -153,6 +152,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->expose_php = NULL;
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
+    runtime->precision = caller_runtime->precision;
+    runtime->serialize_precision = caller_runtime->serialize_precision;
+    runtime->initial_precision = caller_runtime->initial_precision;
+    runtime->initial_serialize_precision = caller_runtime->initial_serialize_precision;
     runtime->exception_ignore_args = caller_runtime->exception_ignore_args;
     runtime->exception_string_param_max_len = caller_runtime->exception_string_param_max_len;
     runtime->strict_types = caller_runtime->strict_types;
@@ -414,8 +417,6 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->memory_limit = NULL;
         free(runtime->max_memory_limit);
         runtime->max_memory_limit = NULL;
-        free(runtime->serialize_precision);
-        runtime->serialize_precision = NULL;
         free(runtime->default_charset);
         runtime->default_charset = NULL;
         free(runtime->arg_separator_input);

@@ -1695,6 +1695,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         exception_string_param_max_len.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
+
+    let serialize_precision = classify(
+        "--TEST--\nserialize precision ini\n--INI--\nprecision=14\nserialize_precision=17\n--FILE--\n<?php\necho ini_get('serialize_precision'), \"\\n\";\n--EXPECT--\n17\n",
+    );
+    assert_eq!(
+        serialize_precision.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
 }
 
 #[test]

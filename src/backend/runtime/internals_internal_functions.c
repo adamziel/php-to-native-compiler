@@ -80,8 +80,8 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
             break;
         }
         case PTN_FLOAT: {
-            char formatted[128];
-            ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_runtime_scalar_float(runtime, value.as.floating, formatted, sizeof(formatted));
             ptn_output_write_cstr(runtime, formatted);
             break;
         }
@@ -2807,8 +2807,8 @@ static void ptn_serialize_append_value_with_id(
             ptn_string_buffer_append_format(buffer, "i:%lld;", (long long)value.as.integer);
             break;
         case PTN_FLOAT: {
-            char formatted[64];
-            ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_runtime_serialize_float(state->runtime, value.as.floating, formatted, sizeof(formatted));
             ptn_string_buffer_append_format(buffer, "d:%s;", formatted);
             break;
         }
@@ -3965,7 +3965,12 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
     return parsed.value;
 }
 
-static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value, size_t indent);
+static void ptn_var_export_append_value(
+    PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t indent
+);
 
 static void ptn_var_export_append_single_quoted_string(
     PtnStringBuffer *buffer,
@@ -4014,7 +4019,12 @@ static int ptn_var_export_is_complex_value(PtnValue value) {
     return value.type == PTN_ARRAY || value.type == PTN_OBJECT;
 }
 
-static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array, size_t indent) {
+static void ptn_var_export_append_array(
+    PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
+    PtnArray *array,
+    size_t indent
+) {
     ptn_string_buffer_append(buffer, "array (\n");
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
@@ -4026,7 +4036,7 @@ static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array
             ptn_string_buffer_append_char(buffer, '\n');
             ptn_string_buffer_append_indent(buffer, indent + 2);
         }
-        ptn_var_export_append_value(buffer, entry_value, indent + 2);
+        ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2);
         ptn_string_buffer_append(buffer, ",\n");
     }
     ptn_string_buffer_append_indent(buffer, indent);
@@ -4035,6 +4045,7 @@ static void ptn_var_export_append_array(PtnStringBuffer *buffer, PtnArray *array
 
 static void ptn_var_export_append_object_state_array(
     PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
     PtnObject *object,
     size_t indent
 ) {
@@ -4063,14 +4074,19 @@ static void ptn_var_export_append_object_state_array(
             ptn_string_buffer_append_char(buffer, '\n');
             ptn_string_buffer_append_indent(buffer, indent + 2);
         }
-        ptn_var_export_append_value(buffer, entry_value, indent + 2);
+        ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2);
         ptn_string_buffer_append(buffer, ",\n");
     }
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append_char(buffer, ')');
 }
 
-static void ptn_var_export_append_object(PtnStringBuffer *buffer, PtnObject *object, size_t indent) {
+static void ptn_var_export_append_object(
+    PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent
+) {
     if (strcmp(object->class_name, "stdClass") == 0) {
         ptn_string_buffer_append(buffer, "(object) ");
     } else {
@@ -4078,7 +4094,7 @@ static void ptn_var_export_append_object(PtnStringBuffer *buffer, PtnObject *obj
         ptn_string_buffer_append(buffer, object->class_name);
         ptn_string_buffer_append(buffer, "::__set_state(");
     }
-    ptn_var_export_append_object_state_array(buffer, object, indent);
+    ptn_var_export_append_object_state_array(buffer, runtime, object, indent);
     if (strcmp(object->class_name, "stdClass") != 0) {
         ptn_string_buffer_append_char(buffer, ')');
     }
@@ -4128,7 +4144,7 @@ static void ptn_var_export_append_exception(
         ptn_string_buffer_append_char(buffer, '\n');
         ptn_string_buffer_append_indent(buffer, indent + 2);
     }
-    ptn_var_export_append_value(buffer, trace, indent + 2);
+    ptn_var_export_append_value(buffer, runtime, trace, indent + 2);
     ptn_string_buffer_append(buffer, ",\n");
 
     ptn_string_buffer_append_indent(buffer, indent + 3);
@@ -4138,7 +4154,12 @@ static void ptn_var_export_append_exception(
     ptn_string_buffer_append(buffer, "))");
 }
 
-static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value, size_t indent) {
+static void ptn_var_export_append_value(
+    PtnStringBuffer *buffer,
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t indent
+) {
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
@@ -4151,8 +4172,8 @@ static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value,
             ptn_string_buffer_append_format(buffer, "%lld", (long long)value.as.integer);
             break;
         case PTN_FLOAT: {
-            char formatted[64];
-            ptn_format_var_dump_float(value.as.floating, formatted, sizeof(formatted));
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_runtime_var_export_float(runtime, value.as.floating, formatted, sizeof(formatted));
             ptn_string_buffer_append(buffer, formatted);
             break;
         }
@@ -4167,17 +4188,17 @@ static void ptn_var_export_append_value(PtnStringBuffer *buffer, PtnValue value,
             ptn_string_buffer_append(buffer, "NULL");
             break;
         case PTN_ARRAY:
-            ptn_var_export_append_array(buffer, value.as.array, indent);
+            ptn_var_export_append_array(buffer, runtime, value.as.array, indent);
             break;
         case PTN_OBJECT:
-            ptn_var_export_append_object(buffer, value.as.object, indent);
+            ptn_var_export_append_object(buffer, runtime, value.as.object, indent);
             break;
         case PTN_CLOSURE:
         case PTN_REFERENCE:
             ptn_string_buffer_append(buffer, "NULL");
             break;
         case PTN_EXCEPTION:
-            ptn_var_export_append_exception(buffer, NULL, value.as.exception, indent);
+            ptn_var_export_append_exception(buffer, runtime, value.as.exception, indent);
             break;
     }
 }
@@ -4191,7 +4212,7 @@ static PtnValue ptn_internal_var_export(PtnRuntime *runtime, size_t argc, const 
     if (value.type == PTN_EXCEPTION) {
         ptn_var_export_append_exception(&buffer, runtime, value.as.exception, 0);
     } else {
-        ptn_var_export_append_value(&buffer, value, 0);
+        ptn_var_export_append_value(&buffer, runtime, value, 0);
     }
     if (return_output) {
         return ptn_owned_string_len(buffer.data, buffer.len);
@@ -34206,14 +34227,6 @@ static const char *ptn_runtime_max_memory_limit(PtnRuntime *runtime) {
     return root->max_memory_limit;
 }
 
-static const char *ptn_runtime_serialize_precision(PtnRuntime *runtime) {
-    PtnRuntime *root = ptn_runtime_config_root(runtime);
-    if (root == NULL || root->serialize_precision == NULL) {
-        return "-1";
-    }
-    return root->serialize_precision;
-}
-
 static const char *ptn_runtime_default_charset(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->default_charset == NULL) {
@@ -34577,18 +34590,67 @@ static int ptn_runtime_set_zend_assertions(PtnRuntime *runtime, int64_t requeste
     return 1;
 }
 
+static int ptn_runtime_current_precision(PtnRuntime *runtime) {
+    return ptn_runtime_config_root(runtime)->precision;
+}
+
+static int ptn_runtime_current_serialize_precision(PtnRuntime *runtime) {
+    return ptn_runtime_config_root(runtime)->serialize_precision;
+}
+
+static int ptn_parse_precision_operand(PtnStringOperand value, int *out) {
+    char *text = ptn_duplicate_string_len(value.data, value.len);
+    char *start = text;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    char *end = NULL;
+    errno = 0;
+    long parsed = strtol(start, &end, 10);
+    while (end != NULL && isspace((unsigned char)*end)) {
+        end++;
+    }
+    int ok = errno == 0 &&
+        end != start &&
+        end != NULL &&
+        *end == '\0' &&
+        parsed >= -1 &&
+        parsed <= PTN_MAX_FLOAT_FORMAT_PRECISION;
+    if (ok) {
+        *out = (int)parsed;
+    }
+    free(text);
+    return ok;
+}
+
+static int ptn_precision_value_from_arg(PtnValue value, int *out) {
+    PtnStringOperand operand = ptn_value_to_string_operand(value);
+    int ok = ptn_parse_precision_operand(operand, out);
+    ptn_string_operand_free(operand);
+    return ok;
+}
+
+static int ptn_runtime_set_precision(PtnRuntime *runtime, PtnValue value) {
+    int precision = 0;
+    if (!ptn_precision_value_from_arg(value, &precision)) {
+        return 0;
+    }
+    ptn_runtime_config_root(runtime)->precision = precision;
+    return 1;
+}
+
+static int ptn_runtime_set_serialize_precision(PtnRuntime *runtime, PtnValue value) {
+    int precision = 0;
+    if (!ptn_precision_value_from_arg(value, &precision)) {
+        return 0;
+    }
+    ptn_runtime_config_root(runtime)->serialize_precision = precision;
+    return 1;
+}
+
 static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory_limit) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->memory_limit, memory_limit);
-}
-
-static int ptn_runtime_set_serialize_precision(PtnRuntime *runtime, const char *value) {
-    if (ptn_ini_precision_value(value, INT_MIN, 100) == INT_MIN) {
-        return 0;
-    }
-    PtnRuntime *root = ptn_runtime_config_root(runtime);
-    ptn_runtime_set_ini_string(&root->serialize_precision, value);
-    return 1;
 }
 
 static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requested, size_t line) {
@@ -34713,10 +34775,6 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_memory_limit(runtime)));
         return 1;
     }
-    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
-        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_serialize_precision(runtime)));
-        return 1;
-    }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_backtrack_limit(runtime)));
         return 1;
@@ -34738,7 +34796,11 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "precision")) {
-        *out = ptn_string("14");
+        *out = ptn_ini_int_string(ptn_runtime_current_precision(runtime));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
+        *out = ptn_ini_int_string(ptn_runtime_current_serialize_precision(runtime));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "variables_order")) {
@@ -35029,6 +35091,18 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "precision")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        root->precision = root->initial_precision;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        root->serialize_precision = root->initial_serialize_precision;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         PtnRuntime *root = ptn_runtime_config_root(runtime);
         root->zend_assertions = root->initial_zend_assertions;
@@ -35047,11 +35121,6 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_string_param_max_len")) {
         ptn_runtime_set_exception_string_param_max_len(runtime, 15);
-        ptn_string_operand_free(option);
-        return ptn_null();
-    }
-    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
-        ptn_runtime_set_serialize_precision(runtime, "-1");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -35202,6 +35271,26 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return previous;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "precision")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_current_precision(runtime));
+        if (!ptn_runtime_set_precision(runtime, args[1])) {
+            ptn_value_destroy(&previous);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
+        PtnValue previous = ptn_ini_int_string(ptn_runtime_current_serialize_precision(runtime));
+        if (!ptn_runtime_set_serialize_precision(runtime, args[1])) {
+            ptn_value_destroy(&previous);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        ptn_string_operand_free(option);
+        return previous;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_current_zend_assertions(runtime));
         ptn_runtime_set_zend_assertions(runtime, ptn_value_to_integer(args[1]), line);
@@ -35240,20 +35329,6 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         free(requested);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
-        return previous;
-    }
-    if (ptn_string_operand_ascii_case_equal(option, "serialize_precision")) {
-        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_serialize_precision(runtime)));
-        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
-        char *next = ptn_duplicate_string_len(value.data, value.len);
-        int updated = ptn_runtime_set_serialize_precision(runtime, next);
-        free(next);
-        ptn_string_operand_free(value);
-        ptn_string_operand_free(option);
-        if (!updated) {
-            ptn_value_destroy(&previous);
-            return ptn_bool(0);
-        }
         return previous;
     }
     if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
@@ -48292,6 +48367,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "include_path");
         ptn_extension_ini_set_entry(runtime, result, "memory_limit");
         ptn_extension_ini_set_entry(runtime, result, "max_memory_limit");
+        ptn_extension_ini_set_entry(runtime, result, "precision");
         ptn_extension_ini_set_entry(runtime, result, "serialize_precision");
         ptn_extension_ini_set_entry(runtime, result, "zend.assertions");
         ptn_extension_ini_set_entry(runtime, result, "zend.exception_ignore_args");
