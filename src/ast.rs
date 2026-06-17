@@ -35,11 +35,19 @@ pub struct ClassDecl {
     pub is_final: bool,
     pub is_interface: bool,
     pub is_readonly: bool,
+    pub is_enum: bool,
+    pub enum_backing_type: Option<EnumBackingType>,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
     pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnumBackingType {
+    Int,
+    String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -166,6 +174,7 @@ pub struct ClassConstantDecl {
     pub attributes: AttributeMetadata,
     pub value: Expr,
     pub is_enum_case: bool,
+    pub enum_case_value: Option<Expr>,
     pub is_final: bool,
     pub span: SourceSpan,
 }
