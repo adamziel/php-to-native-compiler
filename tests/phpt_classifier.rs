@@ -1293,14 +1293,14 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "reflection closure binding",
             "--TEST--\nreflection\n--FILE--\n<?php\n$r = new ReflectionFunction(fn() => 1);\nvar_dump($r->getClosureThis());\n--EXPECT--\n",
-            "unsupported-reflection-metadata\t",
-            "requires ReflectionFunction closure binding metadata",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "reflection function source metadata",
             "--TEST--\nreflection\n--INI--\nopcache.save_comments=1\n--FILE--\n<?php\nfunction test() {}\n$r = new ReflectionFunction('test');\nvar_dump($r->getFilename());\n--EXPECT--\n",
-            "unsupported-internal-reflection-metadata\t",
-            "requires reflection source/doc/static-variable metadata",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "reflection method doc comments",
