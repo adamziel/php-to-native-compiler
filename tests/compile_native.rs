@@ -27918,6 +27918,78 @@ var_dump($obj->prop);
 }
 
 #[test]
+fn compile_typed_property_reference_overflow_and_union_sources_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-property-reference-overflow-union");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-property-reference-overflow-union.php");
+    let output = root.join("typed-property-reference-overflow-union-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public int $i;
+    public int|string $x;
+    public float|string $y;
+}
+
+$box = new Box();
+$box->i = PHP_INT_MAX;
+$ref =& $box->i;
+try {
+    $ref++;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($box->i);
+try {
+    ++$box->i;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($box->i);
+
+$shared = \"foobar\";
+$box->x =& $shared;
+$box->y =& $shared;
+try {
+    $shared = 42;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($shared);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot increment a reference held by property Box::$i of type int past its maximal value\n",
+            "int(9223372036854775807)\n",
+            "Cannot increment a reference held by property Box::$i of type int past its maximal value\n",
+            "int(9223372036854775807)\n",
+            "Cannot assign int to reference held by property Box::$x of type string|int and property Box::$y of type string|float, as this would result in an inconsistent type conversion\n",
+            "string(6) \"foobar\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_variable_for_increment"));
+    assert!(c_source.contains("ptn_property_increment_value"));
+    assert!(c_source.contains("string|int"));
+}
+
+#[test]
 fn compile_array_callback_validation_to_native_binary() {
     let root = temp_dir("ptn-native-array-callback-validation");
     fs::create_dir_all(&root).unwrap();

@@ -27,6 +27,9 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     reference->property_type_allows_null = 0;
     reference->property_declaring_class = NULL;
     reference->property_name = NULL;
+    reference->property_type_sources = NULL;
+    reference->property_type_source_len = 0;
+    reference->property_type_source_cap = 0;
     return reference;
 }
 
@@ -120,6 +123,13 @@ static PTN_UNUSED void ptn_reference_release(PtnReference *reference) {
     free(reference->property_type_text);
     free(reference->property_declaring_class);
     free(reference->property_name);
+    for (size_t i = 0; i < reference->property_type_source_len; i++) {
+        free(reference->property_type_sources[i].class_name);
+        free(reference->property_type_sources[i].text);
+        free(reference->property_type_sources[i].declaring_class);
+        free(reference->property_type_sources[i].property_name);
+    }
+    free(reference->property_type_sources);
     free(reference);
 }
 

@@ -475,8 +475,18 @@ typedef enum {
     PTN_PROPERTY_TYPE_BOOL,
     PTN_PROPERTY_TYPE_MIXED,
     PTN_PROPERTY_TYPE_OBJECT,
-    PTN_PROPERTY_TYPE_CLASS
+    PTN_PROPERTY_TYPE_CLASS,
+    PTN_PROPERTY_TYPE_TEXT
 } PtnPropertyTypeKind;
+
+typedef struct {
+    PtnPropertyTypeKind kind;
+    char *class_name;
+    char *text;
+    int allows_null;
+    char *declaring_class;
+    char *property_name;
+} PtnReferencePropertyTypeSource;
 
 struct PtnReference {
     size_t refcount;
@@ -487,6 +497,9 @@ struct PtnReference {
     int property_type_allows_null;
     char *property_declaring_class;
     char *property_name;
+    PtnReferencePropertyTypeSource *property_type_sources;
+    size_t property_type_source_len;
+    size_t property_type_source_cap;
 };
 
 typedef struct {

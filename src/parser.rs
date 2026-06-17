@@ -11534,18 +11534,24 @@ fn union_builtin_display_rank(member: &str) -> Option<usize> {
 fn type_hint_display_canonical(type_hint: &TypeHint) -> String {
     match type_hint {
         TypeHint::Union(types) => {
-            let mut members = types.iter().collect::<Vec<_>>();
-            members.sort_by_key(|member| !matches!(member, TypeHint::Intersection(_)));
-            members
-                .into_iter()
+            let mut members = types
+                .iter()
                 .map(|member| match member {
                     TypeHint::Intersection(_) => {
                         format!("({})", type_hint_display_canonical(member))
                     }
                     _ => type_hint_display_canonical(member),
                 })
-                .collect::<Vec<_>>()
-                .join("|")
+                .collect::<Vec<_>>();
+            if members
+                .iter()
+                .all(|member| union_builtin_display_rank(member).is_some())
+            {
+                members.sort_by_key(|member| union_builtin_display_rank(member).unwrap());
+            } else {
+                members.sort_by_key(|member| !member.starts_with('('));
+            }
+            members.join("|")
         }
         TypeHint::Intersection(types) => types
             .iter()

@@ -14753,7 +14753,7 @@ fn emit_increment_statement(
             let current_temp = values.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&current_temp);
-            out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+            out.push_str(" = ptn_runtime_read_variable_for_increment(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", \"");
             out.push_str(&c_string(source_path));
@@ -20430,7 +20430,7 @@ impl ValueEmitter {
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
-                out.push_str(" = ptn_runtime_read_variable(&runtime, \"");
+                out.push_str(" = ptn_runtime_read_variable_for_increment(&runtime, \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", \"");
                 out.push_str(&c_string(&self.source_file));
@@ -20482,7 +20482,7 @@ impl ValueEmitter {
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
-                out.push_str(" = ptn_runtime_read_variable(&runtime, ");
+                out.push_str(" = ptn_runtime_read_variable_for_increment(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", \"");
                 out.push_str(&c_string(&self.source_file));
@@ -20815,10 +20815,19 @@ impl ValueEmitter {
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ");
-                out.push_str(inc_dec_runtime_function(op));
-                out.push_str("(&runtime, ");
+                out.push_str(" = ptn_property_increment_value(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
                 out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(match op {
+                    IncDecOp::Increment => "1",
+                    IncDecOp::Decrement => "0",
+                });
                 out.push_str(", ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
@@ -27152,7 +27161,8 @@ fn c_property_type_kind(type_hint: Option<&PropertyTypeHint>) -> &'static str {
         Some(PropertyTypeKind::Mixed) => "PTN_PROPERTY_TYPE_MIXED",
         Some(PropertyTypeKind::Object) => "PTN_PROPERTY_TYPE_OBJECT",
         Some(PropertyTypeKind::Class(_)) => "PTN_PROPERTY_TYPE_CLASS",
-        Some(PropertyTypeKind::Unsupported) | None => "PTN_PROPERTY_TYPE_NONE",
+        Some(PropertyTypeKind::Unsupported) => "PTN_PROPERTY_TYPE_TEXT",
+        None => "PTN_PROPERTY_TYPE_NONE",
     }
 }
 

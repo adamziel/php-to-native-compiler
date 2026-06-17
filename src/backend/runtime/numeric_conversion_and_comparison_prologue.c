@@ -556,7 +556,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_variable_result(PtnRuntime *runtime
         if (ptn_reference_assign(runtime, current.as.reference, value)) {
             return ptn_value_clone(current.as.reference->value);
         }
-        return ptn_value_clone_deref(value);
+        return ptn_value_clone(current.as.reference->value);
     }
     PtnValue result = ptn_value_clone_deref(value);
     ptn_symbols_set(&runtime->symbols, name, result);
@@ -575,7 +575,7 @@ static PTN_UNUSED PtnValue ptn_runtime_write_global_variable_result(PtnRuntime *
         if (ptn_reference_assign(runtime, current.as.reference, value)) {
             return ptn_value_clone(current.as.reference->value);
         }
-        return ptn_value_clone_deref(value);
+        return ptn_value_clone(current.as.reference->value);
     }
     PtnValue result = ptn_value_clone_deref(value);
     ptn_symbols_set(globals, name, result);
@@ -788,6 +788,33 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
     PtnValue value;
     if (ptn_symbols_get(&runtime->symbols, name, &value)) {
         return ptn_value_deref(value);
+    }
+    if (strcmp(name, "this") == 0) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Using $this when not in object context",
+            path,
+            line
+        );
+        return ptn_null();
+    }
+    ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_increment(
+    PtnRuntime *runtime,
+    const char *name,
+    const char *path,
+    size_t line
+) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        return ptn_runtime_globals_snapshot(runtime);
+    }
+    PtnValue value;
+    if (ptn_symbols_get(&runtime->symbols, name, &value)) {
+        return ptn_value_clone(value);
     }
     if (strcmp(name, "this") == 0) {
         ptn_throw_exception_at(

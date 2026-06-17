@@ -1380,7 +1380,55 @@ static PTN_UNUSED void ptn_throw_invalid_increment_decrement(
     free(message);
 }
 
+static PTN_UNUSED void ptn_throw_property_increment_overflow_error(
+    PtnRuntime *runtime,
+    int increment,
+    int reference_context,
+    const char *declaring_class,
+    const char *property,
+    const char *type_text
+);
+
+static PTN_UNUSED const PtnReferencePropertyTypeSource *ptn_reference_float_blocking_type_source(
+    PtnReference *reference,
+    PtnReferencePropertyTypeSource *primary
+);
+
+static PTN_UNUSED int ptn_reference_increment_overflow_guard(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int increment
+) {
+    if (value.type != PTN_REFERENCE) {
+        return 0;
+    }
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_INT ||
+        (increment && resolved.as.integer != INT64_MAX) ||
+        (!increment && resolved.as.integer != INT64_MIN)) {
+        return 0;
+    }
+    PtnReferencePropertyTypeSource primary;
+    const PtnReferencePropertyTypeSource *source =
+        ptn_reference_float_blocking_type_source(value.as.reference, &primary);
+    if (source == NULL) {
+        return 0;
+    }
+    ptn_throw_property_increment_overflow_error(
+        runtime,
+        increment,
+        1,
+        source->declaring_class,
+        source->property_name,
+        source->text
+    );
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_increment_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    if (ptn_reference_increment_overflow_guard(runtime, value, 1)) {
+        return ptn_value_clone(ptn_value_deref(value));
+    }
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
@@ -1406,6 +1454,9 @@ static PTN_UNUSED PtnValue ptn_increment_value(PtnRuntime *runtime, PtnValue val
 }
 
 static PTN_UNUSED PtnValue ptn_decrement_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    if (ptn_reference_increment_overflow_guard(runtime, value, 0)) {
+        return ptn_value_clone(ptn_value_deref(value));
+    }
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_NULL:
@@ -1428,6 +1479,140 @@ static PTN_UNUSED PtnValue ptn_decrement_value(PtnRuntime *runtime, PtnValue val
             return ptn_null();
     }
     return ptn_null();
+}
+
+static PTN_UNUSED void ptn_throw_property_increment_overflow_error(
+    PtnRuntime *runtime,
+    int increment,
+    int reference_context,
+    const char *declaring_class,
+    const char *property,
+    const char *type_text
+) {
+    char message[384];
+    const char *operation = increment ? "increment" : "decrement";
+    const char *boundary = increment ? "maximal" : "minimal";
+    const char *declared_type = type_text == NULL ? "mixed" : type_text;
+    int written;
+    if (reference_context) {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot %s a reference held by property %s::$%s of type %s past its %s value",
+            operation,
+            declaring_class,
+            property,
+            declared_type,
+            boundary
+        );
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot %s property %s::$%s of type %s past its %s value",
+            operation,
+            declaring_class,
+            property,
+            declared_type,
+            boundary
+        );
+    }
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PTN_UNUSED const PtnReferencePropertyTypeSource *ptn_reference_float_blocking_type_source(
+    PtnReference *reference,
+    PtnReferencePropertyTypeSource *primary
+) {
+    if (reference == NULL || reference->property_type_kind == PTN_PROPERTY_TYPE_NONE) {
+        return NULL;
+    }
+    *primary = ptn_reference_primary_property_type_source(reference);
+    if (!ptn_reference_property_type_source_allows_float(primary)) {
+        return primary;
+    }
+    for (size_t i = 0; i < reference->property_type_source_len; i++) {
+        if (!ptn_reference_property_type_source_allows_float(&reference->property_type_sources[i])) {
+            return &reference->property_type_sources[i];
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_property_increment_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    PtnValue current,
+    int increment,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(current);
+    int boundary = resolved.type == PTN_INT &&
+        ((increment && resolved.as.integer == INT64_MAX) ||
+            (!increment && resolved.as.integer == INT64_MIN));
+    if (boundary) {
+        PtnValue object = ptn_value_deref(receiver);
+        if (object.type == PTN_OBJECT) {
+            char *storage_key = ptn_object_resolve_property_storage_key(
+                runtime,
+                object.as.object,
+                property,
+                access_scope,
+                PTN_PROPERTY_ACCESS_READ,
+                1,
+                line
+            );
+            if (storage_key != NULL) {
+                const PtnObjectPropertyMetadata *metadata =
+                    ptn_object_property_metadata(object.as.object, storage_key);
+                PtnArrayKey key = ptn_array_string_key(storage_key);
+                PtnArrayEntry *entry = ptn_array_entry_for_key(object.as.object->properties, key);
+                if (entry != NULL && entry->value.type == PTN_REFERENCE) {
+                    PtnReferencePropertyTypeSource primary;
+                    const PtnReferencePropertyTypeSource *source =
+                        ptn_reference_float_blocking_type_source(entry->value.as.reference, &primary);
+                    if (source != NULL) {
+                        ptn_throw_property_increment_overflow_error(
+                            runtime,
+                            increment,
+                            1,
+                            source->declaring_class,
+                            source->property_name,
+                            source->text
+                        );
+                        ptn_array_key_free(key);
+                        free(storage_key);
+                        return ptn_value_clone(resolved);
+                    }
+                }
+                ptn_array_key_free(key);
+                if (metadata != NULL &&
+                    ptn_property_type_is_declared(metadata->type_kind) &&
+                    !ptn_property_type_allows_float(metadata->type_kind, metadata->type_text)) {
+                    ptn_throw_property_increment_overflow_error(
+                        runtime,
+                        increment,
+                        0,
+                        metadata->declaring_class,
+                        metadata->display_name,
+                        metadata->type_text
+                    );
+                    free(storage_key);
+                    return ptn_value_clone(resolved);
+                }
+                free(storage_key);
+            }
+        }
+    }
+
+    return increment
+        ? ptn_increment_value(runtime, resolved, line)
+        : ptn_decrement_value(runtime, resolved, line);
 }
 
 static PTN_UNUSED PtnValue ptn_bitwise_string_and(PtnStringOperand left, PtnStringOperand right) {

@@ -1639,6 +1639,418 @@ static PTN_UNUSED int ptn_property_string_is_numeric(PtnString string, double *n
     return is_numeric;
 }
 
+static PTN_UNUSED int ptn_property_double_fits_int(double value) {
+    return isfinite(value) && value >= -9223372036854775808.0 && value < 9223372036854775808.0;
+}
+
+static PTN_UNUSED void ptn_property_trim_type_span(
+    const char **start,
+    size_t *len
+) {
+    while (*len > 0 && isspace((unsigned char)(*start)[0])) {
+        (*start)++;
+        (*len)--;
+    }
+    while (*len > 0 && isspace((unsigned char)(*start)[*len - 1])) {
+        (*len)--;
+    }
+    if (*len >= 2 && (*start)[0] == '(' && (*start)[*len - 1] == ')') {
+        int depth = 0;
+        int wraps = 1;
+        for (size_t i = 0; i < *len; i++) {
+            if ((*start)[i] == '(') {
+                depth++;
+            } else if ((*start)[i] == ')') {
+                depth--;
+                if (depth == 0 && i + 1 < *len) {
+                    wraps = 0;
+                    break;
+                }
+            }
+        }
+        if (wraps) {
+            (*start)++;
+            *len -= 2;
+            ptn_property_trim_type_span(start, len);
+        }
+    }
+    if (*len > 0 && (*start)[0] == '?') {
+        (*start)++;
+        (*len)--;
+        ptn_property_trim_type_span(start, len);
+    }
+}
+
+static PTN_UNUSED char *ptn_property_type_span_to_string(const char *start, size_t len) {
+    char *copy = malloc(len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(copy, start, len);
+    copy[len] = '\0';
+    return copy;
+}
+
+static PTN_UNUSED int ptn_property_type_text_allows_float(const char *start, size_t len) {
+    ptn_property_trim_type_span(&start, &len);
+    if (len == 0) {
+        return 0;
+    }
+    int depth = 0;
+    int saw_union = 0;
+    for (size_t i = 0; i < len; i++) {
+        char ch = start[i];
+        if (ch == '(') {
+            depth++;
+            continue;
+        }
+        if (ch == ')') {
+            depth--;
+            continue;
+        }
+        if (ch == '|' && depth == 0) {
+            saw_union = 1;
+            break;
+        }
+    }
+    if (saw_union) {
+        size_t part_start = 0;
+        depth = 0;
+        for (size_t i = 0; i <= len; i++) {
+            char ch = i < len ? start[i] : '|';
+            if (i < len && ch == '(') {
+                depth++;
+                continue;
+            }
+            if (i < len && ch == ')') {
+                depth--;
+                continue;
+            }
+            if (i < len && (ch != '|' || depth != 0)) {
+                continue;
+            }
+            if (ptn_property_type_text_allows_float(start + part_start, i - part_start)) {
+                return 1;
+            }
+            part_start = i + 1;
+        }
+        return 0;
+    }
+
+    depth = 0;
+    int saw_intersection = 0;
+    for (size_t i = 0; i < len; i++) {
+        char ch = start[i];
+        if (ch == '(') {
+            depth++;
+            continue;
+        }
+        if (ch == ')') {
+            depth--;
+            continue;
+        }
+        if (ch == '&' && depth == 0) {
+            saw_intersection = 1;
+            break;
+        }
+    }
+    if (saw_intersection) {
+        size_t part_start = 0;
+        depth = 0;
+        for (size_t i = 0; i <= len; i++) {
+            char ch = i < len ? start[i] : '&';
+            if (i < len && ch == '(') {
+                depth++;
+                continue;
+            }
+            if (i < len && ch == ')') {
+                depth--;
+                continue;
+            }
+            if (i < len && (ch != '&' || depth != 0)) {
+                continue;
+            }
+            if (!ptn_property_type_text_allows_float(start + part_start, i - part_start)) {
+                return 0;
+            }
+            part_start = i + 1;
+        }
+        return 1;
+    }
+
+    return ptn_ascii_case_equal_span_to_string(start, len, "float") ||
+        ptn_ascii_case_equal_span_to_string(start, len, "mixed");
+}
+
+static PTN_UNUSED int ptn_property_type_allows_float(
+    PtnPropertyTypeKind kind,
+    const char *type_text
+) {
+    switch (kind) {
+        case PTN_PROPERTY_TYPE_NONE:
+        case PTN_PROPERTY_TYPE_MIXED:
+        case PTN_PROPERTY_TYPE_FLOAT:
+            return 1;
+        case PTN_PROPERTY_TYPE_TEXT:
+            return type_text != NULL &&
+                ptn_property_type_text_allows_float(type_text, strlen(type_text));
+        case PTN_PROPERTY_TYPE_NULL:
+        case PTN_PROPERTY_TYPE_ARRAY:
+        case PTN_PROPERTY_TYPE_INT:
+        case PTN_PROPERTY_TYPE_STRING:
+        case PTN_PROPERTY_TYPE_BOOL:
+        case PTN_PROPERTY_TYPE_OBJECT:
+        case PTN_PROPERTY_TYPE_CLASS:
+            return 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_reference_property_type_source_allows_float(
+    const PtnReferencePropertyTypeSource *source
+) {
+    return source == NULL ||
+        ptn_property_type_allows_float(source->kind, source->text);
+}
+
+static PTN_UNUSED int ptn_property_type_text_coerce_atom(
+    PtnRuntime *runtime,
+    const char *start,
+    size_t len,
+    PtnValue resolved,
+    int allow_scalar_coercion,
+    PtnValue *out
+) {
+    ptn_property_trim_type_span(&start, &len);
+    if (len == 0) {
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "mixed")) {
+        *out = ptn_value_clone(resolved);
+        return 1;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "null")) {
+        if (resolved.type == PTN_NULL) {
+            *out = ptn_null();
+            return 1;
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "array")) {
+        if (resolved.type == PTN_ARRAY) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "object")) {
+        if (resolved.type == PTN_OBJECT ||
+            resolved.type == PTN_CLOSURE ||
+            resolved.type == PTN_EXCEPTION) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "iterable")) {
+        if (resolved.type == PTN_ARRAY) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        if (resolved.type == PTN_OBJECT ||
+            resolved.type == PTN_CLOSURE ||
+            resolved.type == PTN_EXCEPTION) {
+            if (ptn_value_satisfies_class_type_hint(runtime, resolved, "Traversable") ||
+                ptn_value_satisfies_class_type_hint(runtime, resolved, "Iterator")) {
+                *out = ptn_value_clone(resolved);
+                return 1;
+            }
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "int")) {
+        if (resolved.type == PTN_INT) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        if (!allow_scalar_coercion) {
+            return 0;
+        }
+        if (resolved.type == PTN_BOOL) {
+            *out = ptn_cast_int(resolved);
+            return 1;
+        }
+        if (resolved.type == PTN_FLOAT && ptn_property_double_fits_int(resolved.as.floating)) {
+            *out = ptn_cast_int(resolved);
+            return 1;
+        }
+        if (resolved.type == PTN_STRING) {
+            double number = 0.0;
+            if (ptn_property_string_is_numeric(resolved.as.string, &number) &&
+                ptn_property_double_fits_int(number)) {
+                *out = ptn_int((int64_t)number);
+                return 1;
+            }
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "float")) {
+        if (resolved.type == PTN_FLOAT) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        if (!allow_scalar_coercion) {
+            return 0;
+        }
+        if (resolved.type == PTN_INT || resolved.type == PTN_BOOL) {
+            *out = ptn_cast_float(resolved);
+            return 1;
+        }
+        if (resolved.type == PTN_STRING) {
+            double number = 0.0;
+            if (ptn_property_string_is_numeric(resolved.as.string, &number)) {
+                *out = ptn_float(number);
+                return 1;
+            }
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "string")) {
+        if (resolved.type == PTN_STRING) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        if (!allow_scalar_coercion) {
+            return 0;
+        }
+        if (resolved.type == PTN_INT ||
+            resolved.type == PTN_FLOAT ||
+            resolved.type == PTN_BOOL) {
+            *out = ptn_cast_string(resolved);
+            return 1;
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "bool")) {
+        if (resolved.type == PTN_BOOL) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        if (!allow_scalar_coercion) {
+            return 0;
+        }
+        if (resolved.type == PTN_INT ||
+            resolved.type == PTN_FLOAT ||
+            resolved.type == PTN_STRING) {
+            *out = ptn_bool(ptn_is_truthy(resolved));
+            return 1;
+        }
+        return 0;
+    }
+    char *class_name = ptn_property_type_span_to_string(start, len);
+    int matches = ptn_value_satisfies_class_type_hint(runtime, resolved, class_name);
+    free(class_name);
+    if (matches) {
+        *out = ptn_value_clone(resolved);
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_property_type_text_coerce_intersection(
+    PtnRuntime *runtime,
+    const char *start,
+    size_t len,
+    PtnValue resolved,
+    int allow_scalar_coercion,
+    PtnValue *out
+) {
+    ptn_property_trim_type_span(&start, &len);
+    int depth = 0;
+    size_t part_start = 0;
+    int saw_intersection = 0;
+    for (size_t i = 0; i <= len; i++) {
+        char ch = i < len ? start[i] : '&';
+        if (i < len && ch == '(') {
+            depth++;
+            continue;
+        }
+        if (i < len && ch == ')') {
+            depth--;
+            continue;
+        }
+        if (i < len && (ch != '&' || depth != 0)) {
+            continue;
+        }
+        size_t part_len = i - part_start;
+        PtnValue ignored = ptn_null();
+        if (!ptn_property_type_text_coerce_atom(
+            runtime,
+            start + part_start,
+            part_len,
+            resolved,
+            allow_scalar_coercion,
+            &ignored
+        )) {
+            return 0;
+        }
+        ptn_value_destroy(&ignored);
+        if (i < len) {
+            saw_intersection = 1;
+        }
+        part_start = i + 1;
+    }
+    if (saw_intersection) {
+        *out = ptn_value_clone(resolved);
+        return 1;
+    }
+    return ptn_property_type_text_coerce_atom(runtime, start, len, resolved, allow_scalar_coercion, out);
+}
+
+static PTN_UNUSED int ptn_property_type_text_coerce_assignment(
+    PtnRuntime *runtime,
+    const char *type_text,
+    PtnValue resolved,
+    PtnValue *out
+) {
+    if (type_text == NULL) {
+        return 0;
+    }
+    const char *start = type_text;
+    size_t len = strlen(type_text);
+    ptn_property_trim_type_span(&start, &len);
+    for (int allow_scalar_coercion = 0; allow_scalar_coercion <= 1; allow_scalar_coercion++) {
+        int depth = 0;
+        size_t part_start = 0;
+        for (size_t i = 0; i <= len; i++) {
+            char ch = i < len ? start[i] : '|';
+            if (i < len && ch == '(') {
+                depth++;
+                continue;
+            }
+            if (i < len && ch == ')') {
+                depth--;
+                continue;
+            }
+            if (i < len && (ch != '|' || depth != 0)) {
+                continue;
+            }
+            if (ptn_property_type_text_coerce_intersection(
+                runtime,
+                start + part_start,
+                i - part_start,
+                resolved,
+                allow_scalar_coercion,
+                out
+            )) {
+                return 1;
+            }
+            part_start = i + 1;
+        }
+    }
+    return 0;
+}
+
 static PTN_UNUSED int ptn_property_type_coerce_assignment(
     PtnRuntime *runtime,
     PtnPropertyTypeKind kind,
@@ -1689,13 +2101,18 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
                 *out = ptn_value_clone(resolved);
                 return 1;
             }
-            if (resolved.type == PTN_BOOL || resolved.type == PTN_FLOAT) {
+            if (resolved.type == PTN_BOOL) {
+                *out = ptn_cast_int(resolved);
+                return 1;
+            }
+            if (resolved.type == PTN_FLOAT && ptn_property_double_fits_int(resolved.as.floating)) {
                 *out = ptn_cast_int(resolved);
                 return 1;
             }
             if (resolved.type == PTN_STRING) {
                 double number = 0.0;
-                if (ptn_property_string_is_numeric(resolved.as.string, &number)) {
+                if (ptn_property_string_is_numeric(resolved.as.string, &number) &&
+                    ptn_property_double_fits_int(number)) {
                     *out = ptn_int((int64_t)number);
                     return 1;
                 }
@@ -1754,6 +2171,11 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
                 return 1;
             }
             break;
+        case PTN_PROPERTY_TYPE_TEXT:
+            if (ptn_property_type_text_coerce_assignment(runtime, type_text, resolved, out)) {
+                return 1;
+            }
+            break;
         case PTN_PROPERTY_TYPE_NONE:
         case PTN_PROPERTY_TYPE_MIXED:
             *out = ptn_value_clone(resolved);
@@ -1770,6 +2192,68 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
     return 0;
 }
 
+static PTN_UNUSED int ptn_reference_property_type_source_coerce_assignment(
+    PtnRuntime *runtime,
+    const PtnReferencePropertyTypeSource *source,
+    PtnValue value,
+    int reference_context,
+    PtnValue *out
+) {
+    return ptn_property_type_coerce_assignment(
+        runtime,
+        source->kind,
+        source->class_name,
+        source->text,
+        source->allows_null,
+        source->declaring_class,
+        source->property_name,
+        value,
+        reference_context,
+        out
+    );
+}
+
+static PTN_UNUSED void ptn_throw_reference_inconsistent_assignment_error(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const PtnReferencePropertyTypeSource *first,
+    const PtnReferencePropertyTypeSource *second
+) {
+    char message[768];
+    const char *given = ptn_property_assignment_given_name(value);
+    const char *first_type = first->text == NULL ? "mixed" : first->text;
+    const char *second_type = second->text == NULL ? "mixed" : second->text;
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot assign %s to reference held by property %s::$%s of type %s and property %s::$%s of type %s, as this would result in an inconsistent type conversion",
+        given,
+        first->declaring_class,
+        first->property_name,
+        first_type,
+        second->declaring_class,
+        second->property_name,
+        second_type
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PTN_UNUSED PtnReferencePropertyTypeSource ptn_reference_primary_property_type_source(
+    const PtnReference *reference
+) {
+    PtnReferencePropertyTypeSource source;
+    source.kind = reference->property_type_kind;
+    source.class_name = reference->property_type_class_name;
+    source.text = reference->property_type_text;
+    source.allows_null = reference->property_type_allows_null;
+    source.declaring_class = reference->property_declaring_class;
+    source.property_name = reference->property_name;
+    return source;
+}
+
 static PTN_UNUSED int ptn_property_reference_coerce_assignment(
     PtnRuntime *runtime,
     const PtnReference *reference,
@@ -1781,18 +2265,74 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
         *out = ptn_value_clone_deref(value);
         return 1;
     }
-    return ptn_property_type_coerce_assignment(
+    PtnReferencePropertyTypeSource primary =
+        ptn_reference_primary_property_type_source(reference);
+    PtnValue coerced = ptn_null();
+    if (!ptn_reference_property_type_source_coerce_assignment(
         runtime,
-        reference->property_type_kind,
-        reference->property_type_class_name,
-        reference->property_type_text,
-        reference->property_type_allows_null,
-        reference->property_declaring_class,
-        reference->property_name,
+        &primary,
         value,
         reference_context,
-        out
-    );
+        &coerced
+    )) {
+        return 0;
+    }
+    for (size_t i = 0; i < reference->property_type_source_len; i++) {
+        PtnValue next = ptn_null();
+        if (!ptn_reference_property_type_source_coerce_assignment(
+            runtime,
+            &reference->property_type_sources[i],
+            value,
+            reference_context,
+            &next
+        )) {
+            ptn_value_destroy(&coerced);
+            return 0;
+        }
+        if (!ptn_compare_identical(coerced, next)) {
+            ptn_throw_reference_inconsistent_assignment_error(
+                runtime,
+                value,
+                &primary,
+                &reference->property_type_sources[i]
+            );
+            ptn_value_destroy(&coerced);
+            ptn_value_destroy(&next);
+            return 0;
+        }
+        ptn_value_destroy(&next);
+    }
+    *out = coerced;
+    return 1;
+}
+
+static PTN_UNUSED int ptn_reference_property_source_matches(
+    const PtnReferencePropertyTypeSource *source,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    return source != NULL &&
+        metadata != NULL &&
+        source->declaring_class != NULL &&
+        source->property_name != NULL &&
+        strcmp(source->declaring_class, metadata->declaring_class) == 0 &&
+        strcmp(source->property_name, metadata->display_name) == 0;
+}
+
+static PTN_UNUSED PtnReferencePropertyTypeSource ptn_reference_property_source_from_metadata(
+    const PtnObjectPropertyMetadata *metadata
+) {
+    PtnReferencePropertyTypeSource source;
+    source.kind = metadata->type_kind;
+    source.class_name = metadata->type_class_name == NULL
+        ? NULL
+        : ptn_duplicate_string(metadata->type_class_name);
+    source.text = metadata->type_text == NULL
+        ? NULL
+        : ptn_duplicate_string(metadata->type_text);
+    source.allows_null = metadata->type_allows_null;
+    source.declaring_class = ptn_duplicate_string(metadata->declaring_class);
+    source.property_name = ptn_duplicate_string(metadata->display_name);
+    return source;
 }
 
 static PTN_UNUSED void ptn_reference_adopt_property_type(
@@ -1802,6 +2342,35 @@ static PTN_UNUSED void ptn_reference_adopt_property_type(
     if (reference == NULL ||
         metadata == NULL ||
         !ptn_property_type_is_declared(metadata->type_kind)) {
+        return;
+    }
+    if (reference->property_type_kind != PTN_PROPERTY_TYPE_NONE) {
+        PtnReferencePropertyTypeSource primary =
+            ptn_reference_primary_property_type_source(reference);
+        if (ptn_reference_property_source_matches(&primary, metadata)) {
+            return;
+        }
+        for (size_t i = 0; i < reference->property_type_source_len; i++) {
+            if (ptn_reference_property_source_matches(&reference->property_type_sources[i], metadata)) {
+                return;
+            }
+        }
+        if (reference->property_type_source_len == reference->property_type_source_cap) {
+            size_t new_cap = reference->property_type_source_cap == 0
+                ? 2
+                : reference->property_type_source_cap * 2;
+            PtnReferencePropertyTypeSource *new_sources = realloc(
+                reference->property_type_sources,
+                new_cap * sizeof(PtnReferencePropertyTypeSource)
+            );
+            if (new_sources == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            reference->property_type_sources = new_sources;
+            reference->property_type_source_cap = new_cap;
+        }
+        reference->property_type_sources[reference->property_type_source_len++] =
+            ptn_reference_property_source_from_metadata(metadata);
         return;
     }
     free(reference->property_type_class_name);
@@ -1816,6 +2385,34 @@ static PTN_UNUSED void ptn_reference_adopt_property_type(
     reference->property_type_allows_null = metadata->type_allows_null;
     reference->property_declaring_class = ptn_duplicate_string(metadata->declaring_class);
     reference->property_name = ptn_duplicate_string(metadata->display_name);
+}
+
+static PTN_UNUSED void ptn_throw_reference_property_bind_incompatibility(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const PtnReferencePropertyTypeSource *existing,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    char message[768];
+    const char *given = ptn_property_assignment_given_name(value);
+    const char *existing_type = existing->text == NULL ? "mixed" : existing->text;
+    const char *new_type = metadata->type_text == NULL ? "mixed" : metadata->type_text;
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Reference with value of type %s held by property %s::$%s of type %s is not compatible with property %s::$%s of type %s",
+        given,
+        existing->declaring_class,
+        existing->property_name,
+        existing_type,
+        metadata->declaring_class,
+        metadata->display_name,
+        new_type
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
 }
 
 static PTN_UNUSED int ptn_magic_property_is_active(
@@ -3400,6 +3997,37 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
             ptn_array_key_free(key);
             free(storage_key);
             return;
+        }
+        if (reference.as.reference->property_type_kind != PTN_PROPERTY_TYPE_NONE) {
+            PtnValue existing_coerced = ptn_null();
+            if (!ptn_property_reference_coerce_assignment(
+                runtime,
+                reference.as.reference,
+                reference,
+                1,
+                &existing_coerced
+            )) {
+                ptn_value_destroy(&coerced);
+                ptn_array_key_free(key);
+                free(storage_key);
+                return;
+            }
+            if (!ptn_compare_identical(existing_coerced, coerced)) {
+                PtnReferencePropertyTypeSource existing =
+                    ptn_reference_primary_property_type_source(reference.as.reference);
+                ptn_throw_reference_property_bind_incompatibility(
+                    runtime,
+                    reference.as.reference->value,
+                    &existing,
+                    metadata
+                );
+                ptn_value_destroy(&existing_coerced);
+                ptn_value_destroy(&coerced);
+                ptn_array_key_free(key);
+                free(storage_key);
+                return;
+            }
+            ptn_value_destroy(&existing_coerced);
         }
         ptn_value_destroy(&reference.as.reference->value);
         reference.as.reference->value = coerced;
