@@ -1,4 +1,4 @@
-# refreshed_at_utc=2026-06-17T00:09:15Z
+# refreshed_at_utc=2026-06-17T00:20:57Z
 # source_commit=6bd885ced118
 # php_src_revision=8c63ec400ce8e07c57a8d9499317b96a8beafb8b
 # window_start_utc=2026-06-10T01:00Z
@@ -9,6 +9,7 @@ ptn-cl81 ArrayObject flipped-green PHPT rows	31	31	31	2026-06-16T21:00Z	31	git:f
 ptn-6rea html entity charset rows	5	5	5	2026-06-16T21:00Z	5	mail:hq-wisp-2o5aqg
 ptn-2ey0 sparse reference call rows	7	7	7	2026-06-16T21:00Z	2	.runtime/phpt-progress/run-20260616T213415Z-manifest.log
 ptn-je79 match diagnostics rows	2	2	2	2026-06-16T21:00Z	2	.runtime/phpt-progress/run-20260616T213717Z.log
+ptn-811r loose numeric string comparison row	1	1	1	2026-06-16T21:00Z	1	bead:ptn-811r
 ptn-1yvd array memory-limit row	1	1	1	2026-06-16T21:00Z	1	.runtime/ptn-wisp-zcz-bug70258/run-20260616T214241Z-manifest.log
 ptn-ygnm deprecated class constant metadata rows	5	5	8	2026-06-16T21:00Z	5	.runtime/ptn-wisp-0wl-deprecated-class-constants/run-20260616T214639Z-manifest.log
 ptn-v8e5 self-extending interface diagnostic row	1	1	1	2026-06-16T22:00Z	1	.runtime/ptn-wisp-g6w-bug30922/run-20260616T221619Z-manifest.log

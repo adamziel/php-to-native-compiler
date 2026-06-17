@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-17T00:09:15Z |
+| last refresh | 2026-06-17T00:20:57Z |
 | source commit | `6bd885ced118` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -13,8 +13,8 @@
 
 | metric | tests |
 | --- | ---: |
-| ported tests | 1004 |
-| passed tests | 709 |
+| ported tests | 1005 |
+| passed tests | 710 |
 | upstream tests | 21867 |
 
 ## Recent Progress
@@ -22,8 +22,8 @@
 | window | newly passed tests |
 | --- | ---: |
 | latest hour (2026-06-17T00:00Z) | 14 |
-| last 24 hours (2026-06-16T01:00Z - 2026-06-17T00:00Z) | 138 |
-| last 7 days (2026-06-10T01:00Z - 2026-06-17T00:00Z) | 573 |
+| last 24 hours (2026-06-16T01:00Z - 2026-06-17T00:00Z) | 139 |
+| last 7 days (2026-06-10T01:00Z - 2026-06-17T00:00Z) | 574 |
 
 ## Feature Table
 
@@ -34,6 +34,7 @@
 | ptn-6rea html entity charset rows | 5 | 5 | 5 |
 | ptn-2ey0 sparse reference call rows | 7 | 7 | 7 |
 | ptn-je79 match diagnostics rows | 2 | 2 | 2 |
+| ptn-811r loose numeric string comparison row | 1 | 1 | 1 |
 | ptn-1yvd array memory-limit row | 1 | 1 | 1 |
 | ptn-ygnm deprecated class constant metadata rows | 5 | 5 | 8 |
 | ptn-v8e5 self-extending interface diagnostic row | 1 | 1 | 1 |
@@ -80,7 +81,7 @@
 | ptn-w17z.18 numeric/math/conversions row pack | 35 | 35 | 35 |
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 | 13 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 | 126 |
-| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18611 |
+| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18610 |
 
 ## Last 7 Days
 
@@ -250,7 +251,7 @@
 | 2026-06-16T18:00Z | 0 | 571 |
 | 2026-06-16T19:00Z | 0 | 571 |
 | 2026-06-16T20:00Z | 0 | 571 |
-| 2026-06-16T21:00Z | 46 | 617 |
-| 2026-06-16T22:00Z | 34 | 651 |
-| 2026-06-16T23:00Z | 44 | 695 |
-| 2026-06-17T00:00Z | 14 | 709 |
+| 2026-06-16T21:00Z | 47 | 618 |
+| 2026-06-16T22:00Z | 34 | 652 |
+| 2026-06-16T23:00Z | 44 | 696 |
+| 2026-06-17T00:00Z | 14 | 710 |
