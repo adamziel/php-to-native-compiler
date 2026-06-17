@@ -16944,7 +16944,7 @@ var_dump(in_array('ClosureLocalClass', get_declared_classes()));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_declared_runtime_class_exists"));
+    assert!(c_source.contains("ptn_declared_class_exists"));
     assert!(c_source.contains("ptn_declared_runtime_interface_exists"));
     assert!(c_source.contains("ptn_declared_user_classes"));
 }
@@ -27857,6 +27857,58 @@ var_dump(EXTR_REFS, EXTR_OVERWRITE, function_exists(\"extract\"), function_exist
 }
 
 #[test]
+fn compile_forbidden_dynamic_scope_function_calls_to_native_binary() {
+    let root = temp_dir("ptn-native-forbidden-dynamic-scope-calls");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("forbidden-dynamic-scope-calls.php");
+    let output = root.join("forbidden-dynamic-scope-calls-bin");
+    fs::write(
+        &input,
+        "<?php
+function report($label, $callable, $args = []) {
+    try {
+        call_user_func_array($callable, $args);
+        echo $label, \": ok\\n\";
+    } catch (Error $e) {
+        echo $label, \": \", $e->getMessage(), \"\\n\";
+    }
+}
+
+foreach ([\"extract\", \"compact\", \"get_defined_vars\", \"func_get_args\", \"func_get_arg\", \"func_num_args\"] as $name) {
+    report(\"direct \" . $name, $name, $name === \"func_get_arg\" ? [0] : [[]]);
+}
+
+report(\"array_map\", fn() => array_map(\"extract\", [[\"i\" => new stdClass]]));
+report(\"call_user_func\", fn() => call_user_func(\"extract\", [\"i\" => new stdClass]));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "direct extract: Cannot call extract() dynamically\n",
+            "direct compact: Cannot call compact() dynamically\n",
+            "direct get_defined_vars: Cannot call get_defined_vars() dynamically\n",
+            "direct func_get_args: Cannot call func_get_args() dynamically\n",
+            "direct func_get_arg: Cannot call func_get_arg() dynamically\n",
+            "direct func_num_args: Cannot call func_num_args() dynamically\n",
+            "array_map: Cannot call extract() dynamically\n",
+            "call_user_func: Cannot call extract() dynamically\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dynamic_call_throw_if_forbidden"));
+    assert!(c_source.contains("ptn_dynamic_call_forbidden_name"));
+}
+
+#[test]
 fn compile_extract_into_typed_property_references_to_native_binary() {
     let root = temp_dir("ptn-native-extract-typed-property-refs");
     fs::create_dir_all(&root).unwrap();
@@ -37637,6 +37689,61 @@ var_dump(call_user_func(\"inspect_args\", \"one\", \"two\"));
     assert!(c_source.contains("ptn_call_callable("));
     assert!(c_source.contains("args[0]"));
     assert!(c_source.contains("argc - 1"));
+}
+
+#[test]
+fn compile_string_static_callable_error_precedence_to_native_binary() {
+    let root = temp_dir("ptn-native-string-static-callable-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-static-callable-errors.php");
+    let output = root.join("string-static-callable-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+class StaticCallableProbe {
+    public function instance() {}
+}
+
+class MagicStaticCallableProbe {
+    public function __call($name, $args) {}
+}
+
+foreach ([\"StaticCallableProbe::instance\", \"MagicStaticCallableProbe::missing\", \"MissingCallableProbe::method\"] as $name) {
+    try {
+        $name();
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+try {
+    $bad = [1 => 0, 2 => 0];
+    $bad();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Non-static method StaticCallableProbe::instance() cannot be called statically\n",
+            "Non-static method MagicStaticCallableProbe::missing() cannot be called statically\n",
+            "Class \"MissingCallableProbe\" not found\n",
+            "Array callback has to contain indices 0 and 1\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_runtime_class_exists"));
+    assert!(c_source.contains("cannot be called statically"));
 }
 
 #[test]

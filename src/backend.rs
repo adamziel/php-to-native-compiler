@@ -3777,12 +3777,51 @@ fn emit_user_function_dispatch(
             out.push_str("    }\n");
         }
     }
+    for class in classes {
+        for entry in class_public_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            if method.is_static {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("::");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("        *found = 1;\n");
+            out.push_str("        char ptn_nonstatic_message[512];\n");
+            out.push_str("        int ptn_nonstatic_written = snprintf(ptn_nonstatic_message, sizeof(ptn_nonstatic_message), \"Non-static method %s::%s() cannot be called statically\", \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\");\n");
+            out.push_str("        if (ptn_nonstatic_written < 0 || (size_t)ptn_nonstatic_written >= sizeof(ptn_nonstatic_message)) {\n");
+            out.push_str("            ptn_abort_out_of_memory();\n");
+            out.push_str("        }\n");
+            out.push_str("        ptn_throw_exception_at(runtime, \"Error\", ptn_nonstatic_message, runtime->source_path, line);\n");
+            out.push_str("        return ptn_null();\n");
+            out.push_str("    }\n");
+        }
+    }
     out.push_str("    char *ptn_static_magic_name = ptn_duplicate_string(name);\n");
     out.push_str("    char *ptn_static_magic_separator = strstr(ptn_static_magic_name, \"::\");\n");
     out.push_str("    if (ptn_static_magic_separator != NULL) {\n");
     out.push_str("        *ptn_static_magic_separator = '\\0';\n");
     out.push_str("        const char *ptn_static_magic_class = ptn_static_magic_name;\n");
     out.push_str("        const char *ptn_static_magic_method = ptn_static_magic_separator + 2;\n");
+    out.push_str("        const char *ptn_static_magic_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_magic_class);\n");
+    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class);\n");
+    out.push_str("        if (!ptn_static_magic_class_exists) {\n");
+    out.push_str("            char ptn_class_not_found_message[512];\n");
+    out.push_str("            int ptn_class_not_found_written = snprintf(ptn_class_not_found_message, sizeof(ptn_class_not_found_message), \"Class \\\"%s\\\" not found\", ptn_static_magic_class);\n");
+    out.push_str("            if (ptn_class_not_found_written < 0 || (size_t)ptn_class_not_found_written >= sizeof(ptn_class_not_found_message)) {\n");
+    out.push_str("                ptn_abort_out_of_memory();\n");
+    out.push_str("            }\n");
+    out.push_str("            free(ptn_static_magic_name);\n");
+    out.push_str("            *found = 1;\n");
+    out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_class_not_found_message, runtime->source_path, line);\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
     out.push_str("        if (ptn_ascii_case_equal(ptn_static_magic_method, \"__construct\")) {\n");
     out.push_str("            free(ptn_static_magic_name);\n");
     out.push_str("            *found = 1;\n");
@@ -3801,6 +3840,19 @@ fn emit_user_function_dispatch(
     out.push_str("                    return ptn_static_magic_result;\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        if (ptn_declared_class_has_call_magic(ptn_static_magic_resolved_class)) {\n",
+    );
+    out.push_str("            char ptn_nonstatic_magic_message[512];\n");
+    out.push_str("            int ptn_nonstatic_magic_written = snprintf(ptn_nonstatic_magic_message, sizeof(ptn_nonstatic_magic_message), \"Non-static method %s::%s() cannot be called statically\", ptn_static_magic_class, ptn_static_magic_method);\n");
+    out.push_str("            if (ptn_nonstatic_magic_written < 0 || (size_t)ptn_nonstatic_magic_written >= sizeof(ptn_nonstatic_magic_message)) {\n");
+    out.push_str("                ptn_abort_out_of_memory();\n");
+    out.push_str("            }\n");
+    out.push_str("            free(ptn_static_magic_name);\n");
+    out.push_str("            *found = 1;\n");
+    out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_nonstatic_magic_message, runtime->source_path, line);\n");
+    out.push_str("            return ptn_null();\n");
     out.push_str("        }\n");
     out.push_str("        if (ptn_declared_magic_static_call(runtime, ptn_static_magic_class, ptn_static_magic_method, argc, args, line, &ptn_static_magic_result)) {\n");
     out.push_str("            free(ptn_static_magic_name);\n");
@@ -3866,6 +3918,8 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     );
     out.push_str("static const char *ptn_declared_class_canonical_name(const char *name);\n");
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
+    out.push_str("static int ptn_declared_class_exists(const char *name);\n");
+    out.push_str("static int ptn_declared_class_has_call_magic(const char *class_name);\n");
     out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
     out.push_str(
         "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
@@ -9681,6 +9735,40 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str("        ptn_emit_by_reference_argument_warning(runtime, metadata.name != NULL ? metadata.name : name, i + 1, parameter_name, line);\n");
     out.push_str("    }\n");
     out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_dynamic_call_forbidden_name(const char *name) {\n");
+    for name in [
+        "compact",
+        "extract",
+        "func_get_arg",
+        "func_get_args",
+        "func_num_args",
+        "get_defined_vars",
+    ] {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_dynamic_call_throw_if_forbidden(PtnRuntime *runtime, const char *name, size_t line) {\n",
+    );
+    out.push_str("    if (!ptn_dynamic_call_forbidden_name(name)) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    char message[160];\n");
+    out.push_str(
+        "    snprintf(message, sizeof(message), \"Cannot call %s() dynamically\", name);\n",
+    );
+    out.push_str(
+        "    ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, line);\n",
+    );
+    out.push_str("    return 1;\n");
+    out.push_str("}\n");
 }
 
 fn emit_dynamic_function_dispatch(out: &mut String) {
@@ -9694,8 +9782,9 @@ fn emit_dynamic_function_dispatch(out: &mut String) {
     out.push_str(
         "    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n",
     );
-    out.push_str("    if (ptn_ascii_case_equal(dynamic_lookup_name, \"compact\")) {\n");
-    out.push_str("        ptn_throw_exception_at(runtime, \"Error\", \"Cannot call compact() dynamically\", runtime->source_path, line);\n");
+    out.push_str(
+        "    if (ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, line)) {\n",
+    );
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
     out.push_str("    ptn_dynamic_call_warn_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
@@ -9990,6 +10079,10 @@ fn emit_callable_dispatch(
         out.push_str("            }\n");
         out.push_str("        }\n");
         out.push_str("    }\n");
+        out.push_str("    if (resolved.type == PTN_ARRAY) {\n");
+        out.push_str("        ptn_throw_exception_at(runtime, \"Error\", \"Array callback has to contain indices 0 and 1\", runtime->source_path, line);\n");
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_OBJECT && ptn_declared_class_has_invoke_magic(resolved.as.object->class_name)) {\n");
         out.push_str("        return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
         out.push_str("    }\n");
@@ -10049,6 +10142,12 @@ fn emit_callable_dispatch(
     out.push_str("    }\n");
     out.push_str("    char *name = ptn_callable_function_name(resolved);\n");
     out.push_str("    const char *dynamic_lookup_name = ptn_dynamic_call_effective_internal_name(runtime, name);\n");
+    out.push_str(
+        "    if (ptn_dynamic_call_throw_if_forbidden(runtime, dynamic_lookup_name, line)) {\n",
+    );
+    out.push_str("        free(name);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
     out.push_str("    ptn_dynamic_call_warn_reference_argument_mismatches(runtime, dynamic_lookup_name, argc, args, line);\n");
     out.push_str("    const PtnValue *call_args = args;\n");
     out.push_str("    PtnValue *prepared_args = ptn_dynamic_call_prepare_first_array_argument(dynamic_lookup_name, argc, args, &call_args);\n");
