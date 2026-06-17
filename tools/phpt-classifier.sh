@@ -1868,7 +1868,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$])array_column[[:space:]]*\(/) {
                 array_column_seen = 1
             }
-            if (line ~ /function[[:space:]]+&?[[:space:]]*__(serialize|unserialize|sleep|wakeup)[[:space:]]*\(/) {
+            if (line ~ /function[[:space:]]+&?[[:space:]]*__(serialize|unserialize|sleep|wakeup)[[:space:]]*\(/ &&
+                !ptn_supported_enum_metadata_row()) {
                 print "unsupported-magic-method-metadata\trequires magic method dispatch/reflection metadata, outside PTN modeled object/class metadata"
                 found = 1
                 exit
