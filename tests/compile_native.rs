@@ -10541,6 +10541,62 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_file_path_validation_and_flock_to_native_binary() {
+    let root = temp_dir("ptn-native-file-path-validation-flock");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-path-validation-flock.php");
+    let output = root.join("file-path-validation-flock-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('flock'));\n\
+var_dump(LOCK_SH, LOCK_EX, LOCK_UN, LOCK_NB);\n\
+$constants = get_defined_constants(true);\n\
+var_dump($constants['Core']['LOCK_EX']);\n\
+$path = __DIR__ . '/lock.txt';\n\
+$fp = fopen($path, 'w+');\n\
+var_dump(flock($fp, LOCK_EX));\n\
+var_dump(flock($fp, LOCK_UN | LOCK_NB));\n\
+try { flock($fp, 0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+fclose($fp);\n\
+try { flock($fp, LOCK_SH); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_get_contents(\"bad\\0path\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_put_contents(\"bad\\0path\", 'x'); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { readfile(\"bad\\0path\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_get_contents(false); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_put_contents([], 'x'); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+@unlink($path);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(4)\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "flock(): Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN\n",
+            "flock(): Argument #1 ($stream) must be an open stream resource\n",
+            "file_get_contents(): Argument #1 ($filename) must not contain any null bytes\n",
+            "file_put_contents(): Argument #1 ($filename) must not contain any null bytes\n",
+            "readfile(): Argument #1 ($filename) must not contain any null bytes\n",
+            "Path must not be empty\n",
+            "file_put_contents(): Argument #1 ($filename) must be of type string, array given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_get_meta_tags_file_scan_to_native_binary() {
     let root = temp_dir("ptn-native-get-meta-tags");
     fs::create_dir_all(&root).unwrap();

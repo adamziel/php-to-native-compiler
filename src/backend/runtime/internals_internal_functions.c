@@ -25089,6 +25089,49 @@ static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "flock", args[0], line);
+    if (resource == NULL) {
+        return ptn_null();
+    }
+    int64_t operation = ptn_internal_expect_integer_arg(runtime, "flock", 2, "operation", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    int64_t base_operation = operation & ~PTN_LOCK_NB;
+    if (base_operation != PTN_LOCK_SH && base_operation != PTN_LOCK_EX && base_operation != PTN_LOCK_UN) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "flock(): Argument #2 ($operation) must be one of LOCK_SH, LOCK_EX, or LOCK_UN"
+        );
+        return ptn_null();
+    }
+
+    if (resource->stream == NULL) {
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    return ptn_bool(1);
+#else
+    int native_operation = 0;
+    if (base_operation == PTN_LOCK_SH) {
+        native_operation = LOCK_SH;
+    } else if (base_operation == PTN_LOCK_EX) {
+        native_operation = LOCK_EX;
+    } else {
+        native_operation = LOCK_UN;
+    }
+    if ((operation & PTN_LOCK_NB) != 0) {
+        native_operation |= LOCK_NB;
+    }
+    return ptn_bool(flock(fileno(resource->stream), native_operation) == 0);
+#endif
+}
+
 static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnResource *resource = ptn_internal_expect_open_stream_arg(runtime, "fgetc", args[0], line);
@@ -26057,6 +26100,53 @@ static void ptn_file_array_append_line(
     (*index)++;
 }
 
+static char *ptn_internal_expect_path_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand operand = ptn_internal_expect_string_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        value,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return NULL;
+    }
+
+    char *path = ptn_path_operand_to_c_string(operand);
+    ptn_string_operand_free(operand);
+    if (path == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must not contain any null bytes",
+            function_name,
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return NULL;
+    }
+    if (path[0] == '\0') {
+        free(path);
+        ptn_throw_exception(runtime, "ValueError", "Path must not be empty");
+        return NULL;
+    }
+    return path;
+}
+
 static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
     char *path = ptn_path_operand_to_c_string(path_operand);
@@ -26119,16 +26209,8 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
 }
 
 static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
+    char *path = ptn_internal_expect_path_arg(runtime, "readfile", 1, "filename", args[0], line);
     if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "readfile(): Filename contains null byte", line);
-        return ptn_bool(0);
-    }
-    if (path[0] == '\0') {
-        free(path);
-        ptn_throw_exception(runtime, "ValueError", "Path must not be empty");
         return ptn_null();
     }
 
@@ -26537,12 +26619,9 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
+    char *path = ptn_internal_expect_path_arg(runtime, "file_put_contents", 1, "filename", args[0], line);
     if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "file_put_contents(): Filename contains null byte", line);
-        return ptn_bool(0);
+        return ptn_null();
     }
 
     PtnStringOperand data = ptn_value_to_string_operand(args[1]);
@@ -26593,12 +26672,9 @@ static int64_t ptn_internal_expect_integer_arg(
 );
 
 static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
+    char *path = ptn_internal_expect_path_arg(runtime, "file_get_contents", 1, "filename", args[0], line);
     if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "file_get_contents(): Filename contains null byte", line);
-        return ptn_bool(0);
+        return ptn_null();
     }
 
     int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
@@ -34088,6 +34164,10 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "CRYPT_SHA512", PTN_CRYPT_SHA512);
     ptn_get_defined_constants_add_int(table, "PHP_QUERY_RFC1738", PTN_PHP_QUERY_RFC1738);
     ptn_get_defined_constants_add_int(table, "PHP_QUERY_RFC3986", PTN_PHP_QUERY_RFC3986);
+    ptn_get_defined_constants_add_int(table, "LOCK_SH", PTN_LOCK_SH);
+    ptn_get_defined_constants_add_int(table, "LOCK_EX", PTN_LOCK_EX);
+    ptn_get_defined_constants_add_int(table, "LOCK_UN", PTN_LOCK_UN);
+    ptn_get_defined_constants_add_int(table, "LOCK_NB", PTN_LOCK_NB);
     return table;
 }
 
@@ -37542,6 +37622,7 @@ static PtnValue ptn_internal_diskfreespace(PtnRuntime *runtime, size_t argc, con
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_flock(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgetc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgetcsv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fgets(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -37743,6 +37824,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fgetc", 1, 1, ptn_internal_fgetc },
         { "fgetcsv", 1, 5, ptn_internal_fgetcsv },
         { "fgets", 1, 2, ptn_internal_fgets },
+        { "flock", 2, 2, ptn_internal_flock },
         { "fscanf", 2, PTN_VARIADIC_ARGS, ptn_internal_fscanf },
         { "file", 1, 3, ptn_internal_file },
         { "file_exists", 1, 1, ptn_internal_file_exists },

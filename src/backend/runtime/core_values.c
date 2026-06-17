@@ -28,6 +28,7 @@
 #include <langinfo.h>
 #include <pwd.h>
 #include <regex.h>
+#include <sys/file.h>
 #include <sys/time.h>
 #include <sys/statvfs.h>
 #include <sys/utsname.h>
@@ -193,6 +194,10 @@ typedef struct {
 #define PTN_FILE_USE_INCLUDE_PATH 1
 #define PTN_FILE_IGNORE_NEW_LINES 2
 #define PTN_FILE_SKIP_EMPTY_LINES 4
+#define PTN_LOCK_SH 1
+#define PTN_LOCK_EX 2
+#define PTN_LOCK_UN 3
+#define PTN_LOCK_NB 4
 #define PTN_FNM_NOESCAPE 1
 #define PTN_FNM_PATHNAME 2
 #define PTN_FNM_PERIOD 4

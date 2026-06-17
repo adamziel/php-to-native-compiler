@@ -1120,6 +1120,22 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_SORT_FLAG_CASE);
         return 1;
     }
+    if (strcmp(name, "LOCK_SH") == 0) {
+        *out = ptn_int(PTN_LOCK_SH);
+        return 1;
+    }
+    if (strcmp(name, "LOCK_EX") == 0) {
+        *out = ptn_int(PTN_LOCK_EX);
+        return 1;
+    }
+    if (strcmp(name, "LOCK_UN") == 0) {
+        *out = ptn_int(PTN_LOCK_UN);
+        return 1;
+    }
+    if (strcmp(name, "LOCK_NB") == 0) {
+        *out = ptn_int(PTN_LOCK_NB);
+        return 1;
+    }
     if (strcmp(name, "ARRAY_FILTER_USE_BOTH") == 0) {
         *out = ptn_int(PTN_ARRAY_FILTER_USE_BOTH);
         return 1;
