@@ -326,7 +326,7 @@ static PTN_UNUSED int ptn_value_is_plain_object_for_array_offset(PtnRuntime *run
         !ptn_arrayaccess_can_dispatch(runtime, value, "offsetUnset");
 }
 
-static PTN_UNUSED void ptn_throw_cannot_use_object_as_array(PtnRuntime *runtime, PtnValue value) {
+static PTN_UNUSED void ptn_throw_cannot_use_object_as_array(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     const char *class_name = "stdClass";
     if (value.type == PTN_OBJECT && value.as.object != NULL && value.as.object->class_name != NULL) {
@@ -347,7 +347,7 @@ static PTN_UNUSED void ptn_throw_cannot_use_object_as_array(PtnRuntime *runtime,
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED const char *ptn_offset_key_type_name(PtnValue value) {
@@ -3293,7 +3293,7 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
         return NULL;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *value);
+        ptn_throw_cannot_use_object_as_array(runtime, *value, line);
         return NULL;
     }
 
@@ -4442,7 +4442,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
     } else if ((array = ptn_array_convertible_scalar_for_write(runtime, value, line)) != NULL) {
         /* false/null conversion handled by shared lvalue write semantics. */
     } else if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *value);
+        ptn_throw_cannot_use_object_as_array(runtime, *value, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else {
         ptn_throw_exception(runtime, "Error", "Cannot use a scalar value as an array");
@@ -5724,7 +5724,7 @@ static PTN_UNUSED PtnLookupResult ptn_offset_lookup(PtnRuntime *runtime, PtnValu
     }
 
     if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
-        ptn_throw_cannot_use_object_as_array(runtime, container);
+        ptn_throw_cannot_use_object_as_array(runtime, container, line);
         return ptn_lookup_missing();
     }
 
@@ -5839,7 +5839,7 @@ static PTN_UNUSED int ptn_offset_is_set(PtnRuntime *runtime, PtnValue container,
     }
 
     if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
-        ptn_throw_cannot_use_object_as_array(runtime, container);
+        ptn_throw_cannot_use_object_as_array(runtime, container, line);
         return 0;
     }
 
@@ -5896,7 +5896,7 @@ static PTN_UNUSED int ptn_offset_is_empty(PtnRuntime *runtime, PtnValue containe
     }
 
     if (ptn_value_is_plain_object_for_array_offset(runtime, container)) {
-        ptn_throw_cannot_use_object_as_array(runtime, container);
+        ptn_throw_cannot_use_object_as_array(runtime, container, line);
         return 1;
     }
 
@@ -6000,7 +6000,7 @@ static PTN_UNUSED PtnArray *ptn_array_root_slot_for_write(
         return converted;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *value);
+        ptn_throw_cannot_use_object_as_array(runtime, *value, line);
         return NULL;
     }
     (void)runtime;
@@ -6215,7 +6215,7 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_reference_write(
         return NULL;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *entry_value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *entry_value);
+        ptn_throw_cannot_use_object_as_array(runtime, *entry_value, line);
         return NULL;
     }
 
@@ -6466,7 +6466,7 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
     } else if ((array = ptn_array_convertible_scalar_for_write(runtime, target_value, line)) != NULL) {
         /* false/null conversion handled by shared lvalue write semantics. */
     } else if (ptn_value_is_plain_object_for_array_offset(runtime, *target_value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *target_value);
+        ptn_throw_cannot_use_object_as_array(runtime, *target_value, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else {
         ptn_throw_exception(runtime, "Error", "Cannot use a scalar value as an array");
@@ -6537,7 +6537,7 @@ static PTN_UNUSED void ptn_value_bind_array_path_reference(
     } else if ((array = ptn_array_convertible_scalar_for_write(runtime, target_value, line)) != NULL) {
         /* false/null conversion handled by shared lvalue write semantics. */
     } else if (ptn_value_is_plain_object_for_array_offset(runtime, *target_value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *target_value);
+        ptn_throw_cannot_use_object_as_array(runtime, *target_value, line);
         return;
     } else {
         ptn_throw_exception(runtime, "Error", "Cannot use a scalar value as an array");
@@ -6599,7 +6599,7 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_write(
         return converted;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *entry_value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *entry_value);
+        ptn_throw_cannot_use_object_as_array(runtime, *entry_value, line);
         return NULL;
     }
 
@@ -7018,7 +7018,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         return ptn_arrayaccess_read(runtime, slot_value, key, line);
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, slot_value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, slot_value);
+        ptn_throw_cannot_use_object_as_array(runtime, slot_value, line);
         return ptn_null();
     }
 
@@ -7257,7 +7257,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
         return ptn_arrayaccess_read(runtime, slot_value, key, line);
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, slot_value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, slot_value);
+        ptn_throw_cannot_use_object_as_array(runtime, slot_value, line);
         return ptn_null();
     }
 
@@ -7327,7 +7327,7 @@ static PTN_UNUSED void ptn_value_array_path_unset(
         return;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *value);
+        ptn_throw_cannot_use_object_as_array(runtime, *value, line);
         return;
     }
     if (value->type != PTN_ARRAY) {
@@ -7370,7 +7370,7 @@ static PTN_UNUSED void ptn_value_array_path_unset(
             return;
         }
         if (ptn_value_is_plain_object_for_array_offset(runtime, *entry_value)) {
-            ptn_throw_cannot_use_object_as_array(runtime, *entry_value);
+            ptn_throw_cannot_use_object_as_array(runtime, *entry_value, line);
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
@@ -7573,7 +7573,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
         return;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *value);
+        ptn_throw_cannot_use_object_as_array(runtime, *value, line);
         return;
     }
     if (value->type != PTN_ARRAY) {
@@ -7616,7 +7616,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
             return;
         }
         if (ptn_value_is_plain_object_for_array_offset(runtime, *entry_value)) {
-            ptn_throw_cannot_use_object_as_array(runtime, *entry_value);
+            ptn_throw_cannot_use_object_as_array(runtime, *entry_value, line);
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
@@ -7698,7 +7698,7 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
         return;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
-        ptn_throw_cannot_use_object_as_array(runtime, *value);
+        ptn_throw_cannot_use_object_as_array(runtime, *value, line);
         return;
     }
     if (value->type != PTN_ARRAY) {
@@ -7741,7 +7741,7 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
             return;
         }
         if (ptn_value_is_plain_object_for_array_offset(runtime, *entry_value)) {
-            ptn_throw_cannot_use_object_as_array(runtime, *entry_value);
+            ptn_throw_cannot_use_object_as_array(runtime, *entry_value, line);
             return;
         }
         if (entry_value->type != PTN_ARRAY) {

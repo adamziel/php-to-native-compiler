@@ -12822,7 +12822,10 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
         | Expr::PropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. } => Ok(()),
-        Expr::Call { name, span, .. } if is_modeled_internal_function_name(name) => {
+        Expr::Call { name, span, .. }
+            if is_modeled_internal_function_name(name)
+                && !modeled_internal_has_by_ref_parameter(name) =>
+        {
             Err(Diagnostic::new(
                 "Cannot use result of built-in function in write context",
                 Some(*span),
@@ -14605,6 +14608,51 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
     )
 }
 
+fn modeled_internal_has_by_ref_parameter(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array_multisort"
+            | "array_pop"
+            | "array_push"
+            | "array_shift"
+            | "array_splice"
+            | "array_unshift"
+            | "array_walk"
+            | "array_walk_recursive"
+            | "arsort"
+            | "asort"
+            | "end"
+            | "exec"
+            | "fscanf"
+            | "is_callable"
+            | "krsort"
+            | "ksort"
+            | "natcasesort"
+            | "natsort"
+            | "next"
+            | "parse_str"
+            | "passthru"
+            | "preg_match"
+            | "preg_match_all"
+            | "preg_replace"
+            | "preg_replace_callback"
+            | "prev"
+            | "reset"
+            | "rsort"
+            | "settype"
+            | "shuffle"
+            | "similar_text"
+            | "sort"
+            | "sscanf"
+            | "str_ireplace"
+            | "str_replace"
+            | "system"
+            | "uasort"
+            | "uksort"
+            | "usort"
+    )
+}
+
 fn is_reserved_compile_time_constant_declaration_name(name: &str) -> bool {
     name.rsplit('\\').next().is_some_and(|local| {
         matches!(
@@ -15542,10 +15590,18 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
-        AssignmentTarget::ValueArrayDim { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports variables, array/string offsets, and properties",
-            Some(span),
-        )),
+        AssignmentTarget::ValueArrayDim { array, .. } => {
+            if let Some(call_span) = modeled_internal_write_context_error_span(array) {
+                return Err(Diagnostic::new(
+                    "Cannot use result of built-in function in write context",
+                    Some(call_span),
+                ));
+            }
+            Err(Diagnostic::new(
+                "null coalescing assignment currently supports variables, array/string offsets, and properties",
+                Some(span),
+            ))
+        }
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::DynamicProperty { .. } => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
@@ -15560,6 +15616,19 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),
         )),
+    }
+}
+
+fn modeled_internal_write_context_error_span(expr: &Expr) -> Option<SourceSpan> {
+    match expr {
+        Expr::Call { name, span, .. }
+            if is_modeled_internal_function_name(name)
+                && !modeled_internal_has_by_ref_parameter(name) =>
+        {
+            Some(*span)
+        }
+        Expr::Grouped { expr, .. } => modeled_internal_write_context_error_span(expr),
+        _ => None,
     }
 }
 

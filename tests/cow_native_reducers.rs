@@ -421,6 +421,23 @@ echo array_shift($b), \":\", count($a), \":\", count($b), \":\", $a[0], \":\", $
             expected_stdout: "1:3:2:1:2\n",
         },
         CowReducerCase {
+            name: "array_shift_reference_result_is_temporary_copy",
+            oracle: "ext/standard/tests/array/array_shift_variation8.phpt",
+            source: "<?php\n\
+$a = 1;\n\
+$array = [&$a];\n\
+$b =& array_shift($array);\n\
+$b = 2;\n\
+echo \"copy:$a:$b\\n\";\n\
+$a = 1;\n\
+$array = [&$a];\n\
+$b =& $array[0];\n\
+array_shift($array);\n\
+$b = 2;\n\
+echo \"kept:$a:$b\\n\";",
+            expected_stdout: "\nNotice: Only variables should be assigned by reference in {source_path} on line 4\ncopy:1:2\nkept:2:2\n",
+        },
+        CowReducerCase {
             name: "array_unshift_shared_alias",
             oracle: "ext/standard/tests/array/array_unshift_basic1.phpt",
             source: "<?php\n\
@@ -584,7 +601,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 39, "COW reducer pass count changed");
+    assert_eq!(passed, 40, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 

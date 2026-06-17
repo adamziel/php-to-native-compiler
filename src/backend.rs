@@ -4291,20 +4291,11 @@ fn emit_class_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
     );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)class_name;\n");
+    out.push_str("    (void)filter_present;\n");
+    out.push_str("    (void)filter;\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
-    if classes.is_empty() {
-        out.push_str("    (void)class_name;\n");
-    }
-    if classes
-        .iter()
-        .all(|class| class_constant_lookup_chain(class, classes).is_empty())
-    {
-        out.push_str("    (void)runtime;\n");
-    }
-    if classes.is_empty() {
-        out.push_str("    (void)filter_present;\n");
-        out.push_str("    (void)filter;\n");
-    }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
@@ -4342,15 +4333,13 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
         );
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)filter_present;\n");
+        out.push_str("    (void)filter;\n");
         out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
         out.push_str("    int64_t index = 0;\n");
-        if classes.is_empty() {
-            out.push_str("    (void)runtime;\n");
-            out.push_str("    (void)class_name;\n");
-            out.push_str("    (void)filter_present;\n");
-            out.push_str("    (void)filter;\n");
-            out.push_str("    (void)index;\n");
-        }
+        out.push_str("    (void)index;\n");
         for class in classes {
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
@@ -4378,10 +4367,8 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name) {\n",
         );
-        if classes.is_empty() {
-            out.push_str("    (void)class_name;\n");
-            out.push_str("    (void)constant_name;\n");
-        }
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)constant_name;\n");
         for class in classes {
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
@@ -4407,10 +4394,8 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name) {\n",
         );
-        if classes.is_empty() {
-            out.push_str("    (void)class_name;\n");
-            out.push_str("    (void)constant_name;\n");
-        }
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)constant_name;\n");
         for class in classes {
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
@@ -7079,10 +7064,13 @@ fn emit_method_dispatch(
     out.push_str("        exit(255);\n");
     out.push_str("    }\n");
     out.push_str("    if (resolved.type != PTN_OBJECT) {\n");
-    out.push_str(
-        "        fputs(\"Fatal error: call to a member function on non-object\\n\", stderr);\n",
-    );
-    out.push_str("        exit(255);\n");
+    out.push_str("        char message[256];\n");
+    out.push_str("        int written = snprintf(message, sizeof(message), \"Call to a member function %s() on %s\", method_name, ptn_offset_container_type_name(resolved));\n");
+    out.push_str("        if (written < 0 || (size_t)written >= sizeof(message)) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, line);\n");
+    out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
     out.push_str("    if (ptn_object_is_generator(resolved.as.object)) {\n");
