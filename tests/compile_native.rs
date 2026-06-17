@@ -9541,6 +9541,36 @@ foreach (notice_gen() as $v) {
 }
 
 #[test]
+fn compile_by_reference_generator_bare_yield_return_to_native_binary() {
+    let root = temp_dir("ptn-native-generator-by-ref-bare-yield-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("generator-by-ref-bare-yield-return.php");
+    let output = root.join("generator-by-ref-bare-yield-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function &gen() {
+    yield;
+    $arr = [42];
+    return $arr[0];
+}
+function gen2() {
+    var_dump(yield from gen());
+}
+gen2()->next();
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(42)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_generator_call_unpack_to_native_binary() {
     let root = temp_dir("ptn-native-generator-call-unpack");
     fs::create_dir_all(&root).unwrap();

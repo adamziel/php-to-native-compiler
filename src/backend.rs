@@ -24018,6 +24018,8 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(key_temp.as_deref().unwrap_or("ptn_null()"));
         out.push_str(", ");
+        out.push_str(if value.is_some() { "1" } else { "0" });
+        out.push_str(", ");
         out.push_str(&value_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());

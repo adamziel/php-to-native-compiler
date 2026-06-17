@@ -3872,6 +3872,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
     PtnRuntime *runtime,
     int has_key,
     PtnValue key_value,
+    int has_value,
     PtnValue value,
     size_t line
 ) {
@@ -3892,7 +3893,9 @@ static PTN_UNUSED PtnValue ptn_generator_yield(
             stored = ptn_value_clone(value);
         } else {
             stored = ptn_value_clone_deref(value);
-            reference_notice_line = ptn_int((int64_t)line);
+            if (has_value) {
+                reference_notice_line = ptn_int((int64_t)line);
+            }
         }
     } else {
         stored = ptn_value_clone_deref(value);
@@ -5367,7 +5370,7 @@ static PTN_UNUSED PtnValue ptn_generator_yield_from(
         int64_t saved_next_auto_key = generator == NULL ? 0 : generator->next_auto_key;
         PtnValue key = ptn_array_iterator_current_key(&iterator);
         PtnValue value = ptn_array_iterator_current_value(&iterator);
-        PtnValue yielded = ptn_generator_yield(runtime, 1, key, value, line);
+        PtnValue yielded = ptn_generator_yield(runtime, 1, key, 1, value, line);
         if (generator != NULL) {
             generator->next_auto_key = saved_next_auto_key;
         }

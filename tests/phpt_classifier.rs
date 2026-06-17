@@ -1108,15 +1108,14 @@ fn phpt_classifier_allows_supported_generator_reference_frontier_rows() {
 }
 
 #[test]
-fn phpt_classifier_keeps_return_from_by_ref_generator_blocked() {
+fn phpt_classifier_keeps_return_from_by_ref_generator_runnable() {
     let classification = classify_at_relative_path(
         "--TEST--\nreturn from by ref generator\n--FILE--\n<?php\nfunction &gen() {\n    yield;\n    $arr = [42];\n    return $arr[0];\n}\nfunction gen2() {\n    var_dump(yield from gen());\n}\ngen2()->next();\n--EXPECT--\nint(42)\n",
         "Zend/tests/generators/return_from_by_ref_generator.phpt",
     );
 
     assert!(
-        classification.starts_with("unsupported-generator-runtime\t")
-            && classification.contains("by-reference generator bare-yield return boundary"),
+        classification.starts_with("runnable\t"),
         "{classification:?}"
     );
 }
