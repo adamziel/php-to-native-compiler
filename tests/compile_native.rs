@@ -10043,6 +10043,52 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_file_path_arguments_validate_like_php_to_native_binary() {
+    let root = temp_dir("ptn-native-file-path-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-path-validation.php");
+    let output = root.join("file-path-validation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { file(\"\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file(chr(0)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file([]); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { readfile(\"\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { readfile(chr(0)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { readfile([]); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_get_contents(\"\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_get_contents(chr(0)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_get_contents([]); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_put_contents(\"\", \"x\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_put_contents(chr(0), \"x\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { file_put_contents([], \"x\"); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Path must not be empty\n\
+file(): Argument #1 ($filename) must not contain any null bytes\n\
+file(): Argument #1 ($filename) must be of type string, array given\n\
+Path must not be empty\n\
+readfile(): Argument #1 ($filename) must not contain any null bytes\n\
+readfile(): Argument #1 ($filename) must be of type string, array given\n\
+Path must not be empty\n\
+file_get_contents(): Argument #1 ($filename) must not contain any null bytes\n\
+file_get_contents(): Argument #1 ($filename) must be of type string, array given\n\
+Path must not be empty\n\
+file_put_contents(): Argument #1 ($filename) must not contain any null bytes\n\
+file_put_contents(): Argument #1 ($filename) must be of type string, array given\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_get_meta_tags_file_scan_to_native_binary() {
     let root = temp_dir("ptn-native-get-meta-tags");
     fs::create_dir_all(&root).unwrap();

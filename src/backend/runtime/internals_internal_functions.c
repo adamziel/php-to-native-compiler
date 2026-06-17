@@ -23668,6 +23668,49 @@ static char *ptn_path_operand_to_c_string(PtnStringOperand path) {
     return ptn_duplicate_string_len(path.data, path.len);
 }
 
+static char *ptn_internal_expect_path_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnStringOperand path_operand = ptn_internal_expect_string_arg(
+        runtime,
+        function_name,
+        position,
+        argument_name,
+        value,
+        line
+    );
+    if (path_operand.len == 0) {
+        ptn_string_operand_free(path_operand);
+        ptn_throw_exception(runtime, "ValueError", "Path must not be empty");
+        return NULL;
+    }
+
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($%s) must not contain any null bytes",
+            function_name,
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return NULL;
+    }
+    return path;
+}
+
 static void ptn_emit_file_warning(
     PtnRuntime *runtime,
     const char *function_name,
@@ -25416,18 +25459,7 @@ static void ptn_file_array_append_line(
 }
 
 static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
-    if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "file(): Filename contains null byte", line);
-        return ptn_bool(0);
-    }
-    if (path[0] == '\0') {
-        free(path);
-        ptn_throw_exception(runtime, "ValueError", "Path must not be empty");
-        return ptn_null();
-    }
+    char *path = ptn_internal_expect_path_arg(runtime, "file", 1, "filename", args[0], line);
 
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     int use_include_path = (flags & PTN_FILE_USE_INCLUDE_PATH) != 0;
@@ -25477,18 +25509,7 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
 }
 
 static PtnValue ptn_internal_readfile(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
-    if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "readfile(): Filename contains null byte", line);
-        return ptn_bool(0);
-    }
-    if (path[0] == '\0') {
-        free(path);
-        ptn_throw_exception(runtime, "ValueError", "Path must not be empty");
-        return ptn_null();
-    }
+    char *path = ptn_internal_expect_path_arg(runtime, "readfile", 1, "filename", args[0], line);
 
     int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
     unsigned char *data = NULL;
@@ -25891,13 +25912,7 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
 
 static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
-    if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "file_put_contents(): Filename contains null byte", line);
-        return ptn_bool(0);
-    }
+    char *path = ptn_internal_expect_path_arg(runtime, "file_put_contents", 1, "filename", args[0], line);
 
     PtnStringOperand data = ptn_value_to_string_operand(args[1]);
     FILE *stream = fopen(path, "wb");
@@ -25947,13 +25962,7 @@ static int64_t ptn_internal_expect_integer_arg(
 );
 
 static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
-    char *path = ptn_path_operand_to_c_string(path_operand);
-    ptn_string_operand_free(path_operand);
-    if (path == NULL) {
-        ptn_emit_warning(&runtime->diagnostics, "file_get_contents(): Filename contains null byte", line);
-        return ptn_bool(0);
-    }
+    char *path = ptn_internal_expect_path_arg(runtime, "file_get_contents", 1, "filename", args[0], line);
 
     int use_include_path = argc >= 2 && ptn_is_truthy(args[1]);
     int64_t offset = argc >= 4
