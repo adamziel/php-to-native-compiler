@@ -923,6 +923,21 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
         return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
     }
+    if (ptn_internal_class_name_is_directory_iterator(lookup_class_name)) {
+        return ptn_directory_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_filesystem_iterator(lookup_class_name)) {
+        return ptn_filesystem_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_recursive_directory_iterator(lookup_class_name)) {
+        return ptn_recursive_directory_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_glob_iterator(lookup_class_name)) {
+        return ptn_glob_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_recursive_iterator_iterator(lookup_class_name)) {
+        return ptn_recursive_iterator_iterator_new(runtime, argc, args, line);
+    }
 #endif
     const char *exception_class_name = ptn_builtin_exception_class_name(lookup_class_name);
     if (exception_class_name != NULL) {
@@ -6180,6 +6195,19 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
                 path,
                 line
             );
+        }
+        if (
+            ptn_object_implements_builtin_interface(value->as.object, "Iterator") ||
+            ptn_object_implements_builtin_interface(value->as.object, "IteratorAggregate")
+        ) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "An iterator cannot be used with foreach by reference",
+                path,
+                line
+            );
+            return iterator;
         }
         return ptn_array_iterator_from_traversable_object(runtime, *value, access_scope, path, line, 0);
     }
