@@ -33890,6 +33890,26 @@ fn compile_exit_construct_forms_to_native_binary() {
         );
         assert_eq!(String::from_utf8(execution.stderr).unwrap(), "", "{name}");
     }
+
+    let invalid_input = root.join("exit-array.php");
+    let invalid_output = root.join("exit-array-bin");
+    fs::write(&invalid_input, "<?php\nexit([]);\necho \"after\\n\";").unwrap();
+
+    compile_file(
+        &invalid_input,
+        &invalid_output,
+        CompileOptions { emit_c: false },
+    )
+    .unwrap();
+
+    let execution = Command::new(&invalid_output).output().unwrap();
+    assert!(!execution.status.success(), "exit-array.php should fail");
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("exit(): Argument #1 ($status) must be of type string|int, array given"),
+        "{stderr}"
+    );
 }
 
 #[test]
