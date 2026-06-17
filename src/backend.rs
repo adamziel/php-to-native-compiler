@@ -8775,7 +8775,6 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "infiniteiterator" => Some("InfiniteIterator"),
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
-        "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "recursivedirectoryiterator" => Some("RecursiveDirectoryIterator"),
         "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
