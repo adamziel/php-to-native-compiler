@@ -18013,10 +18013,18 @@ impl ValueEmitter {
         let path = emit_array_path_segments(out, self, dimensions);
         let value_temp = self.emit_materialized_value(out, value);
 
-        let current_temp = self.next_temp();
+        let base_temp = self.next_temp();
+        let container_temp = self.next_temp();
+        let split_temp = self.next_temp();
         out.push_str("    PtnValue ");
-        out.push_str(&current_temp);
-        out.push_str(" = ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
+        out.push_str(&base_temp);
+        out.push_str(";\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&container_temp);
+        out.push_str(";\n");
+        out.push_str("    int ");
+        out.push_str(&split_temp);
+        out.push_str(" = ptn_runtime_array_path_read_overloaded_base_for_assign_op(&runtime, \"");
         out.push_str(&c_string(array));
         out.push_str("\", ");
         out.push_str(&path.name);
@@ -18024,12 +18032,50 @@ impl ValueEmitter {
         out.push_str(&path.len.to_string());
         out.push_str(", ");
         out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(&base_temp);
+        out.push_str(", &");
+        out.push_str(&container_temp);
+        out.push_str(");\n");
+
+        let current_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&current_temp);
+        out.push_str(" = ");
+        out.push_str(&split_temp);
+        out.push_str(" ? ptn_value_array_path_read_for_assign_op(&runtime, ");
+        out.push_str(&base_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(" + 1, ");
+        out.push_str(&(path.len.saturating_sub(1)).to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(") : ptn_value_clone(");
+        out.push_str(&base_temp);
         out.push_str(");\n");
 
         let result_temp =
             self.emit_compound_binary_value(out, &current_temp, &value_temp, line, op);
 
-        out.push_str("    ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
+        out.push_str("    if (");
+        out.push_str(&split_temp);
+        out.push_str(") {\n");
+        out.push_str("        ptn_value_array_path_set_from_overloaded_assign_op(&runtime, &");
+        out.push_str(&base_temp);
+        out.push_str(", ");
+        out.push_str(&container_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(" + 1, ");
+        out.push_str(&(path.len.saturating_sub(1)).to_string());
+        out.push_str(", ");
+        out.push_str(&result_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        out.push_str("        ptn_runtime_array_path_set_from_assign_op(&runtime, \"");
         out.push_str(&c_string(array));
         out.push_str("\", ");
         out.push_str(&path.name);
@@ -18040,9 +18086,12 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        out.push_str("    }\n");
 
         emit_value_cleanup(out, "    ", &current_temp);
         emit_value_cleanup(out, "    ", &value_temp);
+        emit_value_cleanup(out, "    ", &base_temp);
+        emit_value_cleanup(out, "    ", &container_temp);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }

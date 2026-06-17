@@ -6826,7 +6826,13 @@ static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_emit_array_runtime_diagnostic(runtime, "Notice", message, line);
+    ptn_emit_array_runtime_diagnostic_at_path(
+        runtime,
+        "Notice",
+        message,
+        runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "ptn",
+        line
+    );
 }
 
 static PTN_UNUSED int ptn_arrayaccess_nested_write_should_apply(
@@ -8491,6 +8497,39 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
     return ptn_null();
 }
 
+static PTN_UNUSED int ptn_runtime_array_path_read_overloaded_base_for_assign_op(
+    PtnRuntime *runtime,
+    const char *name,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line,
+    PtnValue *base_out,
+    PtnValue *container_out
+) {
+    *container_out = ptn_null();
+    if (segment_count > 1 && !ptn_runtime_is_globals_name(name)) {
+        PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+        if (slot != NULL) {
+            PtnValue slot_value = ptn_value_deref(*slot);
+            if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
+                PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
+                *container_out = ptn_value_clone(slot_value);
+                *base_out = ptn_arrayaccess_read(runtime, slot_value, key, line);
+                return 1;
+            }
+        }
+    }
+
+    *base_out = ptn_runtime_array_path_read_for_assign_op(
+        runtime,
+        name,
+        segments,
+        segment_count,
+        line
+    );
+    return 0;
+}
+
 static PTN_UNUSED void ptn_value_array_path_set_impl(
     PtnRuntime *runtime,
     PtnValue *target,
@@ -8700,6 +8739,23 @@ static PTN_UNUSED void ptn_value_array_path_set_from_assign_op(
     ptn_value_array_path_set_impl(runtime, target, segments, segment_count, value, line, 0);
 }
 
+static PTN_UNUSED void ptn_value_array_path_set_from_overloaded_assign_op(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    PtnValue container,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue value,
+    size_t line
+) {
+    if (target == NULL) {
+        return;
+    }
+    if (ptn_arrayaccess_nested_write_should_apply(runtime, container, *target, line)) {
+        ptn_value_array_path_set_from_assign_op(runtime, target, segments, segment_count, value, line);
+    }
+}
+
 static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec(
     PtnRuntime *runtime,
     PtnValue *target,
@@ -8847,6 +8903,15 @@ static PTN_UNUSED void ptn_value_array_path_unset(
             return;
         }
         ptn_arrayaccess_unset(runtime, *value, segments[0].value, line);
+        return;
+    }
+    if (segment_count > 1 && ptn_arrayaccess_can_dispatch(runtime, *value, "offsetGet")) {
+        PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
+        PtnValue nested = ptn_arrayaccess_read(runtime, *value, key, line);
+        if (ptn_arrayaccess_nested_write_should_apply(runtime, *value, nested, line)) {
+            ptn_value_array_path_unset(runtime, &nested, segments + 1, segment_count - 1, line);
+        }
+        ptn_value_destroy(&nested);
         return;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
@@ -9095,6 +9160,10 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
         ptn_arrayaccess_unset(runtime, *value, segments[0].value, line);
         return;
     }
+    if (segment_count > 1 && ptn_arrayaccess_can_dispatch(runtime, *value, "offsetGet")) {
+        ptn_value_array_path_unset(runtime, value, segments, segment_count, line);
+        return;
+    }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
         ptn_throw_cannot_use_object_as_array(runtime, *value, line);
         return;
@@ -9218,6 +9287,10 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
             return;
         }
         ptn_arrayaccess_unset(runtime, *value, segments[0].value, line);
+        return;
+    }
+    if (segment_count > 1 && ptn_arrayaccess_can_dispatch(runtime, *value, "offsetGet")) {
+        ptn_value_array_path_unset(runtime, value, segments, segment_count, line);
         return;
     }
     if (ptn_value_is_plain_object_for_array_offset(runtime, *value)) {
