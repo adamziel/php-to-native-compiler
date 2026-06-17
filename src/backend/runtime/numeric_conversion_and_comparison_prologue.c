@@ -2826,6 +2826,74 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionMethod")) {
+        if (strcmp(constant, "IS_PUBLIC") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PROTECTED") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PRIVATE") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "IS_STATIC") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "IS_FINAL") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "IS_ABSTRACT") == 0) {
+            *out = ptn_int(64);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionProperty")) {
+        if (strcmp(constant, "IS_PUBLIC") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PROTECTED") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PRIVATE") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "IS_STATIC") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "IS_READONLY") == 0) {
+            *out = ptn_int(128);
+            return 1;
+        }
+        if (strcmp(constant, "IS_ABSTRACT") == 0) {
+            *out = ptn_int(64);
+            return 1;
+        }
+        if (strcmp(constant, "IS_FINAL") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "IS_VIRTUAL") == 0) {
+            *out = ptn_int(512);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PROTECTED_SET") == 0) {
+            *out = ptn_int(2048);
+            return 1;
+        }
+        if (strcmp(constant, "IS_PRIVATE_SET") == 0) {
+            *out = ptn_int(4096);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DateTimeZone")) {
         if (strcmp(constant, "AFRICA") == 0) {
             *out = ptn_int(1);
