@@ -1365,6 +1365,7 @@ impl Parser<'_> {
         let is_readonly = readonly_span.is_some();
 
         let (class_name, _) = self.parse_declaration_name("expected class name")?;
+        self.reject_tight_class_clause_keyword_name("extends")?;
         let parent_name = if !is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
             let (parent_name, parent_span) =
@@ -1375,6 +1376,7 @@ impl Parser<'_> {
             None
         };
         let mut interfaces = Vec::new();
+        self.reject_tight_class_clause_keyword_name("extends")?;
         if is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
             let (interface_name, interface_span) =
@@ -1389,6 +1391,7 @@ impl Parser<'_> {
                 interfaces.push(interface_name);
             }
         }
+        self.reject_tight_class_clause_keyword_name("implements")?;
         if !is_interface && token_is_identifier_named(self.peek(), "implements") {
             self.advance();
             let (interface_name, interface_span) =
@@ -1460,6 +1463,31 @@ impl Parser<'_> {
             methods,
             span,
         })
+    }
+
+    fn reject_tight_class_clause_keyword_name(&self, keyword: &str) -> Result<()> {
+        if !token_is_identifier_named(self.peek(), keyword)
+            || !matches!(self.peek_next().kind, TokenKind::Backslash)
+            || name_segment_from_token(&self.peek_n(2).kind).is_none()
+            || self.has_namespace_separator_whitespace(
+                self.peek().span,
+                self.peek_next().span,
+                self.peek_n(2).span,
+            )
+        {
+            return Ok(());
+        }
+
+        let start = self.peek().span;
+        let end = self.peek_n(2).span;
+        let text = self
+            .source
+            .get(start.byte_start..end.byte_end)
+            .unwrap_or(keyword);
+        Err(Diagnostic::parse_error(
+            format!("syntax error, unexpected namespaced name \"{text}\", expecting \"{{\""),
+            Some(start),
+        ))
     }
 
     fn parse_enum_decl(&mut self, attributes: ParsedAttributes) -> Result<ClassDecl> {
@@ -2199,6 +2227,12 @@ impl Parser<'_> {
                 Some(token.span),
             ));
         };
+        if name.eq_ignore_ascii_case("class") {
+            return Err(Diagnostic::new(
+                "A class constant must not be called 'class'; it is reserved for class name fetching",
+                Some(token.span),
+            ));
+        }
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
         if const_expr_contains_new_object(&value) {
@@ -3021,6 +3055,9 @@ impl Parser<'_> {
         } else {
             false
         };
+        if !matches!(self.peek().kind, TokenKind::Identifier(_)) {
+            return Err(syntax_error_unexpected(self.peek(), Some("\"(\"")));
+        }
         if let TokenKind::Identifier(name) = &self.peek().kind {
             if is_exit_construct_name(name) {
                 return Err(exit_reserved_name_syntax_error(self.peek(), "\"(\""));
@@ -4048,6 +4085,9 @@ impl Parser<'_> {
         &mut self,
         attributes: ParsedAttributes,
     ) -> Result<ConstDeclaration> {
+        if !matches!(self.peek().kind, TokenKind::Identifier(_)) {
+            return Err(syntax_error_unexpected(self.peek(), Some("identifier")));
+        }
         if let TokenKind::Identifier(name) = &self.peek().kind {
             if is_exit_construct_name(name) {
                 return Err(exit_reserved_name_syntax_error(self.peek(), "identifier"));
@@ -6868,7 +6908,7 @@ impl Parser<'_> {
                 });
                 continue;
             }
-            elements.push(self.parse_array_element()?);
+            elements.push(self.parse_array_element(&terminator)?);
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
@@ -6893,8 +6933,16 @@ impl Parser<'_> {
         )
     }
 
-    fn parse_array_element(&mut self) -> Result<ArrayElement> {
+    fn parse_array_element(&mut self, terminator: &TokenKind) -> Result<ArrayElement> {
         let line = self.peek().span.line;
+        if token_is_statement_only_keyword(&self.peek().kind) {
+            let expecting = match terminator {
+                TokenKind::RightBracket => "\"]\"",
+                TokenKind::RightParen => "\")\"",
+                _ => unreachable!("array literal terminators are brackets or parentheses"),
+            };
+            return Err(syntax_error_unexpected(self.peek(), Some(expecting)));
+        }
         if matches!(self.peek().kind, TokenKind::Ellipsis) {
             self.advance();
             let value = self.parse_expr()?;
@@ -7357,13 +7405,13 @@ impl Parser<'_> {
         ) {
             index += 1;
         }
-        matches!(
-            self.tokens.get(index).map(|token| &token.kind),
-            Some(TokenKind::Identifier(_))
-        ) && matches!(
-            self.tokens.get(index + 1).map(|token| &token.kind),
-            Some(TokenKind::LeftParen)
-        )
+        self.tokens
+            .get(index)
+            .is_some_and(|token| name_segment_from_token(&token.kind).is_some())
+            && matches!(
+                self.tokens.get(index + 1).map(|token| &token.kind),
+                Some(TokenKind::LeftParen)
+            )
     }
 
     fn peek_next_is_colon(&self) -> bool {
@@ -9558,6 +9606,32 @@ fn default_set_visibility(
 
 fn token_is_identifier_named(token: &Token, expected: &str) -> bool {
     matches!(&token.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case(expected))
+}
+
+fn token_is_statement_only_keyword(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Echo
+            | TokenKind::If
+            | TokenKind::Elseif
+            | TokenKind::Else
+            | TokenKind::Do
+            | TokenKind::While
+            | TokenKind::For
+            | TokenKind::Foreach
+            | TokenKind::As
+            | TokenKind::Switch
+            | TokenKind::Case
+            | TokenKind::Default
+            | TokenKind::Break
+            | TokenKind::Continue
+            | TokenKind::Return
+            | TokenKind::Try
+            | TokenKind::Catch
+            | TokenKind::Goto
+            | TokenKind::Const
+            | TokenKind::Global
+    )
 }
 
 fn is_exit_construct_name(name: &str) -> bool {

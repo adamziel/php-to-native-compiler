@@ -1500,10 +1500,7 @@ impl<'a> Lexer<'a> {
             return Ok(());
         }
         if !is_ident_start(first) {
-            return Err(Diagnostic::new(
-                "expected variable name after `$`",
-                Some(self.current_span(1)),
-            ));
+            return Err(self.invalid_variable_start_diagnostic(self.current_span(1)));
         }
         let mut name = String::new();
         while let Some(ch) = self.peek_char() {
@@ -1519,6 +1516,63 @@ impl<'a> Lexer<'a> {
             span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
         });
         Ok(())
+    }
+
+    fn invalid_variable_start_diagnostic(&self, span: SourceSpan) -> Diagnostic {
+        if matches!(self.peek_char(), Some('"')) {
+            if let Some(value) = self.peek_quoted_string_value('"') {
+                return Diagnostic::parse_error(
+                    format!(
+                        "syntax error, unexpected double-quoted string \"{}\", expecting variable or \"{{\" or \"$\"",
+                        escape_token_text(&value)
+                    ),
+                    Some(span),
+                );
+            }
+        }
+
+        Diagnostic::parse_error(
+            "syntax error, unexpected token, expecting variable or \"{\" or \"$\"",
+            Some(span),
+        )
+    }
+
+    fn peek_quoted_string_value(&self, quote: char) -> Option<String> {
+        let mut chars = self.rest().chars();
+        if chars.next()? != quote {
+            return None;
+        }
+
+        let mut value = String::new();
+        let mut escaped = false;
+        for ch in chars {
+            if escaped {
+                match ch {
+                    'n' if quote == '"' => value.push('\n'),
+                    'r' if quote == '"' => value.push('\r'),
+                    't' if quote == '"' => value.push('\t'),
+                    '\\' => value.push('\\'),
+                    '\'' if quote == '\'' => value.push('\''),
+                    '"' if quote == '"' => value.push('"'),
+                    other => {
+                        value.push('\\');
+                        value.push(other);
+                    }
+                }
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == quote {
+                return Some(value);
+            }
+            value.push(ch);
+        }
+
+        None
     }
 
     fn lex_word(&mut self) -> Result<()> {
@@ -1742,6 +1796,20 @@ fn canonical_interpolation_array_int_index(text: &str) -> Option<i64> {
         return None;
     }
     text.parse::<i64>().ok()
+}
+
+fn escape_token_text(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|ch| match ch {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\n' => "\\n".chars().collect::<Vec<_>>(),
+            '\r' => "\\r".chars().collect::<Vec<_>>(),
+            '\t' => "\\t".chars().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .collect()
 }
 
 fn push_php_string_byte(value: &mut String, byte: u8) {
