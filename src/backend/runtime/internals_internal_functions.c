@@ -406,6 +406,7 @@ static int ptn_declared_class_method_exists(const char *class_name, const char *
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
 static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_scope, const char *declaring_class, int visibility);
 static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
+static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -38347,7 +38348,7 @@ static PtnValue ptn_internal_reflection_get_modifier_names(
 
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
-static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, size_t line);
+static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, int reject_magic_static, size_t line);
 static PtnValue ptn_internal_reflection_get_modifier_names(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -39336,7 +39337,7 @@ static int ptn_first_class_callable_declared_class_exists(const char *class_name
         || ptn_declared_trait_exists(class_name);
 }
 
-static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, size_t line) {
+static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, int reject_magic_static, size_t line) {
     PtnValue resolved = ptn_value_deref(callable);
     if (resolved.type == PTN_CLOSURE) {
         return ptn_first_class_callable_wrap(runtime, resolved);
@@ -39417,6 +39418,16 @@ static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, 
             PtnValue result = ptn_first_class_callable_wrap(runtime, resolved);
             free(name);
             return result;
+        }
+
+        if (reject_magic_static && ptn_declared_class_has_static_call_magic(class_name)) {
+            ptn_first_class_callable_throw_error(
+                runtime,
+                line,
+                "Creating a callable for the magic __callStatic() method is not supported in constant expressions"
+            );
+            free(name);
+            return ptn_null();
         }
 
         if (ptn_callable_is_valid(runtime, resolved, 0)) {
