@@ -23733,6 +23733,37 @@ var_dump(function_exists(\"in_array\"), function_exists(\"IN_ARRAY\"));",
 }
 
 #[test]
+fn compile_in_array_suppresses_enum_case_number_notices_to_native_binary() {
+    let root = temp_dir("ptn-native-in-array-enum-number-comparison");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("in-array-enum-number-comparison.php");
+    let output = root.join("in-array-enum-number-comparison-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+enum Sample { case A; }\n\
+class Plain {}\n\
+var_dump(in_array(Sample::A, [0, 1.0]));\n\
+var_dump(in_array(new Plain, [0]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(!stdout.contains("Object of class Sample could not be converted"));
+    assert!(stdout.contains("Notice: Object of class Plain could not be converted to int"));
+    let semantic_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with("Notice:"))
+        .collect();
+    assert_eq!(semantic_lines, ["bool(false)", "bool(false)"]);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_search_returns_first_matching_key_to_native_binary() {
     let root = temp_dir("ptn-native-array-search");
     fs::create_dir_all(&root).unwrap();
@@ -27632,6 +27663,7 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
     parser::parse("<?php $items = [3, 2, 1]; array_multisort($items);").unwrap();
     parser::parse("<?php array_multisort([1, 3, 2]);").unwrap();
     parser::parse("<?php array_multisort([]);").unwrap();
+    parser::parse("<?php array_multisort(array_column($data, 'bb'), SORT_DESC, $data);").unwrap();
     parser::parse(
         "<?php $left = [2, 1]; $right = [\"b\", \"a\"]; array_multisort($left, SORT_ASC, SORT_REGULAR, $right, SORT_DESC, SORT_STRING);",
     )
@@ -27639,6 +27671,12 @@ fn parser_accepts_sort_flags_and_rejects_unsupported_sort_family_mutation_target
     parser::parse("<?php $items = [3, 2, 1]; usort($items, \"cmp\");").unwrap();
     parser::parse("<?php $items = [3, 2, 1]; uasort($items, \"cmp\");").unwrap();
     parser::parse("<?php $items = [3 => \"c\", 1 => \"a\"]; uksort($items, \"cmp\");").unwrap();
+    parser::parse("<?php $object->items = [3, 2, 1]; usort($object->items, \"cmp\");").unwrap();
+    parser::parse("<?php $object->items = [3, 2, 1]; uasort($object->items, \"cmp\");").unwrap();
+    parser::parse(
+        "<?php $object->items = [3 => \"c\", 1 => \"a\"]; uksort($object->items, \"cmp\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -27664,6 +27702,7 @@ array_multisort($copy);\n\
 var_dump($copy, $alias);\n\
 var_dump(array_multisort([1, 3, 2, 4]));\n\
 var_dump(array_multisort([]));\n\
+try { $data = [[\"aa\" => \"bb\"], [\"aa\" => \"bb\"]]; array_multisort(array_column($data, \"bb\"), SORT_DESC, $data); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { $a = [1]; array_multisort($a, SORT_ASC, SORT_ASC); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { $a = [1, 2]; $b = [1]; array_multisort($a, $b); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists(\"array_multisort\"));",
@@ -27744,6 +27783,7 @@ var_dump(function_exists(\"array_multisort\"));",
             "}\n",
             "bool(true)\n",
             "bool(true)\n",
+            "Array sizes are inconsistent\n",
             "array_multisort(): Argument #3 must be an array or a sort flag that has not already been specified\n",
             "Array sizes are inconsistent\n",
             "bool(true)\n",
@@ -28449,6 +28489,45 @@ var_dump(function_exists(\"usort\"), function_exists(\"uasort\"), function_exist
     assert!(c_source.contains("ptn_runtime_array_uasort_variable"));
     assert!(c_source.contains("ptn_runtime_array_uksort_variable"));
     assert!(c_source.contains("ptn_array_user_sort_entries"));
+}
+
+#[test]
+fn compile_user_comparator_sort_mutates_property_to_native_binary() {
+    let root = temp_dir("ptn-native-user-comparator-sort-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-comparator-sort-property.php");
+    let output = root.join("user-comparator-sort-property-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class SortBox {\n\
+    private $items = [\"foo-test\" => [1], \"-\" => [2], \"bar-test\" => [3]];\n\
+    private function compare($x, $y) {\n\
+        if (!isset($this->items[$x])) { throw new Exception(\"missing x\"); }\n\
+        if (!isset($this->items[$y])) { throw new Exception(\"missing y\"); }\n\
+        return $x <=> $y;\n\
+    }\n\
+    public function run() {\n\
+        var_dump(uksort($this->items, [$this, \"compare\"]));\n\
+        foreach ($this->items as $key => $value) { echo $key, \"=\", $value[0], \"\\n\"; }\n\
+    }\n\
+}\n\
+(new SortBox())->run();",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n-=2\nbar-test=3\nfoo-test=1\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_uksort_property"));
 }
 
 #[test]
@@ -29251,6 +29330,34 @@ try { array_merge([], 0); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_array_merge"));
     assert!(c_source.contains("ptn_array_merge_into"));
+}
+
+#[test]
+fn compile_array_merge_unwraps_single_reference_and_preserves_literal_string_to_native_binary() {
+    let root = temp_dir("ptn-native-array-merge-reference-unwrapped");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-merge-reference-unwrapped.php");
+    let output = root.join("array-merge-reference-unwrapped-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$x = \"xxx\";\n\
+$right = [\"test\" => &$x];\n\
+unset($x);\n\
+$merged = array_merge([\"test\" => \"yyy\"], $right);\n\
+debug_zval_dump($merged);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) refcount(2){\n  [\"test\"]=>\n  string(3) \"xxx\" interned\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

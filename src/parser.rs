@@ -15818,6 +15818,7 @@ fn is_array_path_mutation_name(name: &str) -> bool {
 fn is_array_multisort_argument(expr: &Expr) -> bool {
     match expr {
         Expr::Variable(_, _) => true,
+        Expr::Call { .. } | Expr::DynamicCall { .. } | Expr::MethodCall { .. } => true,
         Expr::Array { .. } => true,
         Expr::Grouped { expr, .. } => is_array_multisort_argument(expr),
         Expr::Int(_, _) => true,
@@ -15860,6 +15861,14 @@ fn is_variable_array_access_argument(expr: &Expr) -> bool {
             _ => false,
         },
         Expr::Grouped { expr, .. } => is_variable_array_access_argument(expr),
+        _ => false,
+    }
+}
+
+fn is_property_array_argument(expr: &Expr) -> bool {
+    match expr {
+        Expr::PropertyFetch { .. } | Expr::DynamicPropertyFetch { .. } => true,
+        Expr::Grouped { expr, .. } => is_property_array_argument(expr),
         _ => false,
     }
 }
@@ -15925,6 +15934,13 @@ fn validate_mutating_array_internal_call(
         return Ok(());
     }
     if is_array_path_mutation_name(name) && is_variable_array_access_argument(&arguments[0]) {
+        return Ok(());
+    }
+    if matches!(
+        name.to_ascii_lowercase().as_str(),
+        "uasort" | "uksort" | "usort"
+    ) && is_property_array_argument(&arguments[0])
+    {
         return Ok(());
     }
     if (name.eq_ignore_ascii_case("array_pop") || name.eq_ignore_ascii_case("array_shift"))

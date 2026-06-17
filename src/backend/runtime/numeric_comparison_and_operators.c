@@ -163,6 +163,11 @@ static PTN_UNUSED const char *ptn_comparison_object_class_name(PtnValue value) {
     return ptn_offset_container_type_name(value);
 }
 
+static PTN_UNUSED int ptn_value_is_enum_case_object(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT && value.as.object->enum_case_name != NULL;
+}
+
 static PTN_UNUSED void ptn_emit_object_to_number_notice(
     PtnRuntime *runtime,
     PtnValue object,
@@ -194,12 +199,20 @@ static PTN_UNUSED int ptn_compare_object_and_number(
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (ptn_value_is_comparison_object(left) && ptn_is_number_type(right)) {
+        if (ptn_value_is_enum_case_object(left)) {
+            *compared = PTN_COMPARE_GREATER;
+            return 1;
+        }
         double right_number = right.type == PTN_INT ? (double)right.as.integer : right.as.floating;
         ptn_emit_object_to_number_notice(runtime, left, right.type == PTN_INT ? "int" : "float", line);
         *compared = ptn_compare_numbers(1.0, right_number);
         return 1;
     }
     if (ptn_is_number_type(left) && ptn_value_is_comparison_object(right)) {
+        if (ptn_value_is_enum_case_object(right)) {
+            *compared = PTN_COMPARE_LESS;
+            return 1;
+        }
         double left_number = left.type == PTN_INT ? (double)left.as.integer : left.as.floating;
         ptn_emit_object_to_number_notice(runtime, right, left.type == PTN_INT ? "int" : "float", line);
         *compared = ptn_compare_numbers(left_number, 1.0);
