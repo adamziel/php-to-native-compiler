@@ -348,6 +348,109 @@ foreach ($method->getParameters() as $parameter) {{ echo $parameter->getName(), 
 }
 
 #[test]
+fn compile_spl_directory_iterators_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-directory-iterators");
+    let fixture = root.join("fixture");
+    fs::create_dir_all(fixture.join("child")).unwrap();
+    fs::write(fixture.join("alpha.txt"), "a").unwrap();
+    fs::write(fixture.join("beta.log"), "b").unwrap();
+    fs::write(fixture.join("child").join("gamma.dat"), "g").unwrap();
+    let input = root.join("spl-directory-iterators.php");
+    let output = root.join("spl-directory-iterators-bin");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+$root = {};\n\
+var_dump(FilesystemIterator::SKIP_DOTS, RecursiveDirectoryIterator::KEY_AS_FILENAME, GlobIterator::CURRENT_AS_PATHNAME);\n\
+$names = [];\n\
+foreach (new DirectoryIterator($root) as $entry) {{\n\
+    if (!$entry->isDot() && $entry->isFile()) {{\n\
+        $names[] = $entry->getBasename('.txt') . ':' . $entry->getExtension();\n\
+    }}\n\
+}}\n\
+sort($names);\n\
+var_dump($names);\n\
+$rit = new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS | FilesystemIterator::KEY_AS_FILENAME);\n\
+$rootSeen = [];\n\
+foreach ($rit as $key => $entry) {{\n\
+    $rootSeen[] = $key . ':' . ($rit->hasChildren() ? 'dir' : 'leaf');\n\
+}}\n\
+sort($rootSeen);\n\
+var_dump($rootSeen);\n\
+$sub = [];\n\
+$rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS | FilesystemIterator::KEY_AS_FILENAME));\n\
+foreach ($rii as $entry) {{\n\
+    $sub[] = $rii->getSubPathname();\n\
+}}\n\
+sort($sub);\n\
+var_dump($sub);\n\
+$riiArray = new RecursiveIteratorIterator(new RecursiveArrayIterator([1]));\n\
+foreach ($riiArray as $value) {{ var_dump($value); }}\n\
+$glob = new GlobIterator($root . '/*.none');\n\
+var_dump(count($glob), $glob->getFilename(), $glob->getRealPath() !== false);\n\
+$uninitDirectory = (new ReflectionClass('DirectoryIterator'))->newInstanceWithoutConstructor();\n\
+try {{ $uninitDirectory->key(); }} catch (Error $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+class MyDirectoryIterator extends DirectoryIterator {{ public function __construct() {{}} }}\n\
+$subDirectory = new MyDirectoryIterator;\n\
+try {{ $subDirectory->key(); }} catch (Error $e) {{ echo $e->getMessage(), \"\\n\"; }}\n\
+$uninitRecursive = (new ReflectionClass('RecursiveIteratorIterator'))->newInstanceWithoutConstructor();\n\
+try {{ $uninitRecursive->valid(); }} catch (Error $e) {{ echo $e->getMessage(), \"\\n\"; }}\n",
+            php_string_literal(&fixture)
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(4096)\n",
+            "int(256)\n",
+            "int(32)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(9) \"alpha:txt\"\n",
+            "  [1]=>\n",
+            "  string(12) \"beta.log:log\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(14) \"alpha.txt:leaf\"\n",
+            "  [1]=>\n",
+            "  string(13) \"beta.log:leaf\"\n",
+            "  [2]=>\n",
+            "  string(9) \"child:dir\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(9) \"alpha.txt\"\n",
+            "  [1]=>\n",
+            "  string(8) \"beta.log\"\n",
+            "  [2]=>\n",
+            "  string(15) \"child/gamma.dat\"\n",
+            "}\n",
+            "int(1)\n",
+            "int(0)\n",
+            "string(0) \"\"\n",
+            "bool(true)\n",
+            "Object not initialized\n",
+            "Object not initialized\n",
+            "Object is not initialized\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_class_and_method_source_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-source-metadata");
     fs::create_dir_all(&root).unwrap();

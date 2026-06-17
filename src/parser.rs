@@ -9661,11 +9661,16 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
         "arrayiterator"
             | "arrayobject"
             | "callbackfilteriterator"
+            | "directoryiterator"
             | "filteriterator"
+            | "filesystemiterator"
+            | "globiterator"
             | "infiniteiterator"
             | "iteratoriterator"
             | "limititerator"
             | "recursivearrayiterator"
+            | "recursivedirectoryiterator"
+            | "recursiveiteratoriterator"
             | "spldoublylinkedlist"
             | "splfileinfo"
             | "splfileobject"
@@ -10995,14 +11000,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
     is_modeled_builtin_interface_name(name)
         || name.eq_ignore_ascii_case("stdClass")
         || name.eq_ignore_ascii_case("Closure")
-        || name.eq_ignore_ascii_case("ArrayIterator")
-        || name.eq_ignore_ascii_case("IteratorIterator")
-        || name.eq_ignore_ascii_case("ArrayObject")
-        || name.eq_ignore_ascii_case("SplDoublyLinkedList")
-        || name.eq_ignore_ascii_case("SplQueue")
-        || name.eq_ignore_ascii_case("SplStack")
-        || name.eq_ignore_ascii_case("SplFileInfo")
-        || name.eq_ignore_ascii_case("SplFileObject")
+        || is_modeled_spl_iterator_class_name(name)
         || name.eq_ignore_ascii_case("Generator")
         || is_modeled_builtin_date_class_name(name)
         || is_modeled_builtin_enum_class_name(name)
@@ -11401,6 +11399,21 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
             "SeekableIterator",
             "Traversable",
         ][..]
+    } else if candidate_name.eq_ignore_ascii_case("DirectoryIterator")
+        || candidate_name.eq_ignore_ascii_case("FilesystemIterator")
+    {
+        &["Iterator", "SeekableIterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("RecursiveDirectoryIterator") {
+        &[
+            "Iterator",
+            "RecursiveIterator",
+            "SeekableIterator",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("GlobIterator") {
+        &["Countable", "Iterator", "SeekableIterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("RecursiveIteratorIterator") {
+        &["Iterator", "OuterIterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("Generator") {
         &["Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("DateTime")

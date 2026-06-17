@@ -4625,13 +4625,6 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_object_is_internal_or_descendant(receiver, "SplFileInfo")
-        && ptn_internal_class_method_exists("SplFileInfo", name)
-    ) {
-        return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
-    }
-    if (
-        receiver.type == PTN_OBJECT
         && (ptn_object_is_internal_or_descendant(receiver, "DirectoryIterator") ||
             ptn_object_is_internal_or_descendant(receiver, "FilesystemIterator") ||
             ptn_object_is_internal_or_descendant(receiver, "RecursiveDirectoryIterator") ||
@@ -4639,6 +4632,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("DirectoryIterator", name)
     ) {
         return ptn_directory_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SplFileInfo")
+        && ptn_internal_class_method_exists("SplFileInfo", name)
+    ) {
+        return ptn_spl_file_info_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

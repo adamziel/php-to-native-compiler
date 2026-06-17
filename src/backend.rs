@@ -9713,6 +9713,61 @@ fn emit_method_dispatch(
     out.push_str("        while (ptn_modeled_parent != NULL) {\n");
     out.push_str("            if (ptn_internal_class_exists_name(ptn_modeled_parent) && ptn_internal_class_method_exists(ptn_modeled_parent, method_name)) {\n");
     out.push_str(
+        "                if (ptn_ascii_case_equal(ptn_modeled_parent, \"ArrayIterator\") ||\n",
+    );
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"RecursiveArrayIterator\") ||\n");
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"ArrayObject\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"SplFixedArray\") ||\n",
+    );
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"SplDoublyLinkedList\") ||\n");
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"SplQueue\") ||\n");
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"SplStack\") ||\n");
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"SplFileInfo\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"SplFileObject\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"DirectoryIterator\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"FilesystemIterator\") ||\n",
+    );
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"RecursiveDirectoryIterator\") ||\n");
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"GlobIterator\") ||\n",
+    );
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"RecursiveIteratorIterator\") ||\n");
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"CallbackFilterIterator\") ||\n");
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"FilterIterator\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"InfiniteIterator\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"IteratorIterator\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"LimitIterator\") ||\n",
+    );
+    out.push_str("                    ptn_ascii_case_equal(ptn_modeled_parent, \"DateTime\") ||\n");
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"DateTimeImmutable\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"DateTimeZone\") ||\n",
+    );
+    out.push_str(
+        "                    ptn_ascii_case_equal(ptn_modeled_parent, \"DateInterval\")) {\n",
+    );
+    out.push_str("                    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("                }\n");
+    out.push_str(
         "                char *ptn_original_class_name = resolved.as.object->class_name;\n",
     );
     out.push_str("                resolved.as.object->class_name = (char *)ptn_modeled_parent;\n");

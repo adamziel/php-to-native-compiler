@@ -54430,6 +54430,7 @@ static int ptn_directory_iterator_load_directory(
     ptn_emit_directory_open_warning(runtime, "DirectoryIterator", path, "directory iterators are unsupported on this platform", line);
     return 0;
 #else
+    (void)line;
     DIR *directory = opendir(path);
     if (directory == NULL) {
         char message[512];
