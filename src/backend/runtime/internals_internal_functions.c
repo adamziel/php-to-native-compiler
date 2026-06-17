@@ -22974,6 +22974,54 @@ static char *ptn_pcre_pattern_to_posix(
         }
 
         char byte = pattern.data[i];
+        if (
+            !in_char_class &&
+            byte == '.' &&
+            i + 2 < end &&
+            pattern.data[i + 1] == '*' &&
+            pattern.data[i + 2] == '?' &&
+            !ptn_regex_is_escaped(pattern.data, i + 1) &&
+            !ptn_regex_is_escaped(pattern.data, i + 2)
+        ) {
+            size_t stop_index = i + 3;
+            int has_stop = 0;
+            char stop = '\0';
+            if (stop_index < end && pattern.data[stop_index] == ')' && !ptn_regex_is_escaped(pattern.data, stop_index)) {
+                stop_index++;
+            }
+            if (stop_index < end && pattern.data[stop_index] == '\\' && stop_index + 1 < end) {
+                char escaped = pattern.data[stop_index + 1];
+                switch (escaped) {
+                    case 'd':
+                    case 'D':
+                    case 's':
+                    case 'S':
+                    case 'w':
+                    case 'W':
+                    case 'b':
+                    case 'z':
+                    case 'Z':
+                        break;
+                    default:
+                        stop = escaped;
+                        has_stop = 1;
+                        break;
+                }
+            } else if (stop_index < end && !ptn_regex_char_is_posix_special(pattern.data[stop_index])) {
+                stop = pattern.data[stop_index];
+                has_stop = 1;
+            }
+            if (has_stop) {
+                ptn_string_buffer_append(&output, "[^");
+                if (stop == '\\' || stop == ']' || stop == '^' || stop == '-') {
+                    ptn_string_buffer_append_char(&output, '\\');
+                }
+                ptn_string_buffer_append_char(&output, stop);
+                ptn_string_buffer_append(&output, "]*");
+                i += 2;
+                continue;
+            }
+        }
         if (byte == '\\' && i + 1 < end) {
             char next = pattern.data[++i];
             switch (next) {
@@ -23063,6 +23111,13 @@ static char *ptn_pcre_pattern_to_posix(
             continue;
         }
 
+        if (!in_char_class && byte == '?' && i > 1 && !ptn_regex_is_escaped(pattern.data, i)) {
+            char previous = pattern.data[i - 1];
+            if (previous == '*' || previous == '+' || previous == '?' || previous == '}') {
+                continue;
+            }
+        }
+
         if (!in_char_class && byte == '(') {
             posix_group_index++;
             if (i + 2 < end && pattern.data[i + 1] == '?' && pattern.data[i + 2] == ':') {
@@ -23085,6 +23140,72 @@ static char *ptn_pcre_pattern_to_posix(
     *capture_map_out = capture_map;
     *capture_count_out = capture_count;
     return output.data;
+}
+
+static PtnRuntime *ptn_pcre_state_root(PtnRuntime *runtime) {
+    if (runtime == NULL || runtime->lifecycle_root == NULL) {
+        return runtime;
+    }
+    return runtime->lifecycle_root;
+}
+
+static void ptn_pcre_set_last_error(PtnRuntime *runtime, int error) {
+    PtnRuntime *root = ptn_pcre_state_root(runtime);
+    if (root != NULL) {
+        root->pcre_last_error = error;
+    }
+}
+
+static int ptn_pcre_last_error(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_pcre_state_root(runtime);
+    return root == NULL ? PTN_PREG_NO_ERROR : root->pcre_last_error;
+}
+
+static const char *ptn_pcre_error_message(int error) {
+    switch (error) {
+        case PTN_PREG_NO_ERROR:
+            return "No error";
+        case PTN_PREG_INTERNAL_ERROR:
+            return "Internal error";
+        case PTN_PREG_BACKTRACK_LIMIT_ERROR:
+            return "Backtrack limit exhausted";
+        case PTN_PREG_RECURSION_LIMIT_ERROR:
+            return "Recursion limit exhausted";
+        case PTN_PREG_BAD_UTF8_ERROR:
+            return "Malformed UTF-8 characters, possibly incorrectly encoded";
+        case PTN_PREG_BAD_UTF8_OFFSET_ERROR:
+            return "The offset did not correspond to the beginning of a valid UTF-8 code point";
+        case PTN_PREG_JIT_STACKLIMIT_ERROR:
+            return "JIT stack limit exhausted";
+        default:
+            return "Unknown error";
+    }
+}
+
+static int ptn_pcre_pattern_has_modifier(PtnStringOperand pattern, char modifier) {
+    size_t end = 0;
+    if (!ptn_regex_delimiter_end(pattern, &end)) {
+        return 0;
+    }
+    for (size_t i = end + 1; i < pattern.len; i++) {
+        if (pattern.data[i] == modifier) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_pcre_string_is_valid_utf8(PtnStringOperand input) {
+    size_t offset = 0;
+    while (offset < input.len) {
+        uint32_t codepoint = 0;
+        size_t consumed = 0;
+        if (!ptn_json_utf8_decode((const unsigned char *)input.data + offset, input.len - offset, &codepoint, &consumed)) {
+            return 0;
+        }
+        offset += consumed;
+    }
+    return 1;
 }
 
 static void ptn_preg_match_assign_matches(
@@ -23157,6 +23278,7 @@ static int ptn_preg_compile_posix(
     int regex_flags = 0;
     char *posix_pattern = ptn_pcre_pattern_to_posix(pattern, &regex_flags, capture_map, capture_count);
     if (posix_pattern == NULL) {
+        ptn_pcre_set_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
         char message[128];
         int written = snprintf(message, sizeof(message), "%s(): Compilation failed", function_name);
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -23181,6 +23303,7 @@ static int ptn_preg_compile_posix(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
+    ptn_pcre_set_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
     ptn_emit_warning(&runtime->diagnostics, message, line);
     return 0;
 #else
@@ -23190,6 +23313,7 @@ static int ptn_preg_compile_posix(
         free(*capture_map);
         *capture_map = NULL;
         *capture_count = 0;
+        ptn_pcre_set_last_error(runtime, PTN_PREG_INTERNAL_ERROR);
         char message[128];
         int written = snprintf(message, sizeof(message), "%s(): Compilation failed", function_name);
         if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -23199,44 +23323,59 @@ static int ptn_preg_compile_posix(
         return 0;
     }
     *match_count = regex->re_nsub + 1;
+    ptn_pcre_set_last_error(runtime, PTN_PREG_NO_ERROR);
     return 1;
 #endif
 }
 
 static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand pattern = ptn_value_to_string_operand(args[0]);
-    PtnStringOperand subject = ptn_value_to_string_operand(args[1]);
-    int regex_flags = 0;
-    size_t *capture_map = NULL;
-    size_t capture_count = 0;
-    char *posix_pattern = ptn_pcre_pattern_to_posix(pattern, &regex_flags, &capture_map, &capture_count);
-    if (posix_pattern == NULL) {
+    PtnStringOperand pattern = ptn_internal_expect_string_arg(runtime, "preg_match", 1, "pattern", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_bool(0);
+    }
+    PtnStringOperand subject = ptn_internal_expect_string_arg(runtime, "preg_match", 2, "subject", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
-        ptn_emit_warning(&runtime->diagnostics, "preg_match(): Compilation failed", line);
+        return ptn_bool(0);
+    }
+    int utf8_mode = ptn_pcre_pattern_has_modifier(pattern, 'u');
+    regex_t regex;
+    size_t *capture_map = NULL;
+    size_t capture_count = 0;
+    size_t match_count = 0;
+    if (!ptn_preg_compile_posix(
+            runtime,
+            "preg_match",
+            pattern,
+            &regex,
+            &capture_map,
+            &capture_count,
+            &match_count,
+            line
+        )) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
         return ptn_bool(0);
     }
 
 #if defined(_WIN32)
-    free(posix_pattern);
+    (void)regex;
+    (void)match_count;
     free(capture_map);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
-    ptn_emit_warning(&runtime->diagnostics, "preg_match(): regex matching is unsupported on this platform", line);
     return ptn_bool(0);
 #else
-    regex_t regex;
-    int compile_result = regcomp(&regex, posix_pattern, regex_flags);
-    free(posix_pattern);
-    if (compile_result != 0) {
+    if (utf8_mode && !ptn_pcre_string_is_valid_utf8(subject)) {
+        ptn_pcre_set_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
         free(capture_map);
+        regfree(&regex);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
-        ptn_emit_warning(&runtime->diagnostics, "preg_match(): Compilation failed", line);
         return ptn_bool(0);
     }
-
-    size_t match_count = regex.re_nsub + 1;
     regmatch_t *matches = calloc(match_count, sizeof(regmatch_t));
     if (matches == NULL) {
         regfree(&regex);
@@ -23247,6 +23386,7 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
     char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
     int exec_result = regexec(&regex, subject_c, match_count, matches, 0);
     int matched = exec_result == 0;
+    ptn_pcre_set_last_error(runtime, PTN_PREG_NO_ERROR);
     if (argc >= 3) {
         if (matched) {
             ptn_preg_match_assign_matches(runtime, args[2], subject_c, matches, capture_map, capture_count);
@@ -23334,6 +23474,518 @@ static PtnValue ptn_internal_preg_quote(PtnRuntime *runtime, size_t argc, const 
     ptn_string_operand_free(input);
     ptn_string_operand_free(delimiter);
     return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_preg_capture_result_value(
+    const char *subject,
+    size_t subject_len,
+    regmatch_t *matches,
+    size_t match_index,
+    size_t base_offset,
+    int offset_capture,
+    int unmatched_as_null
+) {
+    PtnValue value;
+    int64_t offset = -1;
+    if (matches[match_index].rm_so < 0 || matches[match_index].rm_eo < matches[match_index].rm_so) {
+        value = unmatched_as_null ? ptn_null() : ptn_string("");
+    } else {
+        size_t relative_start = (size_t)matches[match_index].rm_so;
+        size_t relative_end = (size_t)matches[match_index].rm_eo;
+        size_t start = base_offset + relative_start;
+        size_t end = base_offset + relative_end;
+        if (start > subject_len || end > subject_len || end < start || start > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        value = ptn_owned_string_len(ptn_duplicate_string_len(subject + start, end - start), end - start);
+        offset = (int64_t)start;
+    }
+
+    if (!offset_capture) {
+        return value;
+    }
+
+    PtnValue pair = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(pair.as.array, ptn_array_int_key(0), value);
+    ptn_array_set_entry(pair.as.array, ptn_array_int_key(1), ptn_int(offset));
+    return pair;
+}
+
+static PtnValue ptn_preg_capture_group_result_value(
+    const char *subject,
+    size_t subject_len,
+    regmatch_t *matches,
+    size_t *capture_map,
+    size_t group_index,
+    size_t base_offset,
+    int offset_capture,
+    int unmatched_as_null
+) {
+    size_t match_index = group_index == 0 ? 0 : capture_map[group_index - 1];
+    return ptn_preg_capture_result_value(
+        subject,
+        subject_len,
+        matches,
+        match_index,
+        base_offset,
+        offset_capture,
+        unmatched_as_null
+    );
+}
+
+static void ptn_preg_append_split_value(
+    PtnValue result,
+    const char *subject,
+    size_t subject_len,
+    size_t start,
+    size_t len,
+    int flags,
+    size_t *next_index
+) {
+    if ((flags & PTN_PREG_SPLIT_NO_EMPTY) != 0 && len == 0) {
+        return;
+    }
+    if (start > subject_len || len > subject_len - start || *next_index > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnValue value = ptn_owned_string_len(ptn_duplicate_string_len(subject + start, len), len);
+    if ((flags & PTN_PREG_SPLIT_OFFSET_CAPTURE) != 0) {
+        PtnValue pair = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(pair.as.array, ptn_array_int_key(0), value);
+        ptn_array_set_entry(pair.as.array, ptn_array_int_key(1), ptn_int((int64_t)start));
+        value = pair;
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)(*next_index)), value);
+    (*next_index)++;
+}
+
+static PtnValue ptn_internal_preg_match_all(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand pattern = ptn_internal_expect_string_arg(runtime, "preg_match_all", 1, "pattern", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_bool(0);
+    }
+    PtnStringOperand subject = ptn_internal_expect_string_arg(runtime, "preg_match_all", 2, "subject", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+    int64_t flags_arg = argc >= 4
+        ? ptn_internal_expect_integer_arg(runtime, "preg_match_all", 4, "flags", args[3], line)
+        : PTN_PREG_PATTERN_ORDER;
+    int64_t offset_arg = argc >= 5
+        ? ptn_internal_expect_integer_arg(runtime, "preg_match_all", 5, "offset", args[4], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+
+    int flags = (int)flags_arg;
+    int offset_capture = (flags & PTN_PREG_OFFSET_CAPTURE) != 0;
+    int unmatched_as_null = (flags & PTN_PREG_UNMATCHED_AS_NULL) != 0;
+    int set_order = (flags & PTN_PREG_SET_ORDER) != 0;
+    int utf8_mode = ptn_pcre_pattern_has_modifier(pattern, 'u');
+    regex_t regex;
+    size_t *capture_map = NULL;
+    size_t capture_count = 0;
+    size_t match_count = 0;
+    if (!ptn_preg_compile_posix(
+            runtime,
+            "preg_match_all",
+            pattern,
+            &regex,
+            &capture_map,
+            &capture_count,
+            &match_count,
+            line
+        )) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    (void)regex;
+    (void)match_count;
+    free(capture_map);
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(subject);
+    return ptn_bool(0);
+#else
+    if (utf8_mode && !ptn_pcre_string_is_valid_utf8(subject)) {
+        ptn_pcre_set_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
+        free(capture_map);
+        regfree(&regex);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+
+    size_t search_offset = 0;
+    if (offset_arg < 0) {
+        int64_t adjusted = (int64_t)subject.len + offset_arg;
+        search_offset = adjusted <= 0 ? 0 : (size_t)adjusted;
+    } else {
+        search_offset = (size_t)offset_arg;
+        if (search_offset > subject.len) {
+            search_offset = subject.len + 1;
+        }
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (!set_order) {
+        for (size_t i = 0; i <= capture_count; i++) {
+            if (i > (size_t)INT64_MAX) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_array_from_literal_entries(0, NULL));
+        }
+    }
+
+    regmatch_t *matches = calloc(match_count, sizeof(regmatch_t));
+    if (matches == NULL) {
+        ptn_value_destroy(&result);
+        free(capture_map);
+        regfree(&regex);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        ptn_abort_out_of_memory();
+    }
+    char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
+    size_t found = 0;
+    while (search_offset <= subject.len) {
+        int exec_result = regexec(&regex, subject_c + search_offset, match_count, matches, 0);
+        if (exec_result != 0 || matches[0].rm_so < 0 || matches[0].rm_eo < matches[0].rm_so) {
+            break;
+        }
+        size_t start = search_offset + (size_t)matches[0].rm_so;
+        size_t end = search_offset + (size_t)matches[0].rm_eo;
+        if (start > subject.len || end > subject.len || end < start || found > (size_t)INT64_MAX) {
+            break;
+        }
+
+        if (set_order) {
+            PtnValue row = ptn_array_from_literal_entries(0, NULL);
+            for (size_t group = 0; group <= capture_count; group++) {
+                if (group > (size_t)INT64_MAX) {
+                    ptn_abort_out_of_memory();
+                }
+                PtnValue value = ptn_preg_capture_group_result_value(
+                    subject_c,
+                    subject.len,
+                    matches,
+                    capture_map,
+                    group,
+                    search_offset,
+                    offset_capture,
+                    unmatched_as_null
+                );
+                ptn_array_set_entry(row.as.array, ptn_array_int_key((int64_t)group), value);
+            }
+            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)found), row);
+        } else {
+            for (size_t group = 0; group <= capture_count; group++) {
+                PtnValue group_array = result.as.array->entries[group].value;
+                PtnValue value = ptn_preg_capture_group_result_value(
+                    subject_c,
+                    subject.len,
+                    matches,
+                    capture_map,
+                    group,
+                    search_offset,
+                    offset_capture,
+                    unmatched_as_null
+                );
+                ptn_array_set_entry(group_array.as.array, ptn_array_int_key((int64_t)found), value);
+            }
+        }
+
+        found++;
+        if (end == start) {
+            if (end >= subject.len) {
+                break;
+            }
+            search_offset = end + 1;
+        } else {
+            search_offset = end;
+        }
+    }
+    ptn_pcre_set_last_error(runtime, PTN_PREG_NO_ERROR);
+    if (argc >= 3 && args[2].type == PTN_REFERENCE) {
+        ptn_reference_assign(runtime, args[2].as.reference, result);
+    }
+
+    free(subject_c);
+    free(matches);
+    free(capture_map);
+    regfree(&regex);
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(subject);
+    ptn_value_destroy(&result);
+    return ptn_int((int64_t)found);
+#endif
+}
+
+static PtnValue ptn_internal_preg_split(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand pattern = ptn_internal_expect_string_arg(runtime, "preg_split", 1, "pattern", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_bool(0);
+    }
+    PtnStringOperand subject = ptn_internal_expect_string_arg(runtime, "preg_split", 2, "subject", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+    int64_t limit = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "preg_split", 3, "limit", args[2], line)
+        : -1;
+    int64_t flags_arg = argc >= 4
+        ? ptn_internal_expect_integer_arg(runtime, "preg_split", 4, "flags", args[3], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+    if (limit == 0) {
+        limit = -1;
+    }
+
+    int flags = (int)flags_arg;
+    int utf8_mode = ptn_pcre_pattern_has_modifier(pattern, 'u');
+    regex_t regex;
+    size_t *capture_map = NULL;
+    size_t capture_count = 0;
+    size_t match_count = 0;
+    if (!ptn_preg_compile_posix(
+            runtime,
+            "preg_split",
+            pattern,
+            &regex,
+            &capture_map,
+            &capture_count,
+            &match_count,
+            line
+        )) {
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    (void)regex;
+    (void)match_count;
+    free(capture_map);
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(subject);
+    return ptn_bool(0);
+#else
+    if (utf8_mode && !ptn_pcre_string_is_valid_utf8(subject)) {
+        ptn_pcre_set_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
+        free(capture_map);
+        regfree(&regex);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return ptn_bool(0);
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t next_index = 0;
+    if (limit == 1) {
+        ptn_preg_append_split_value(result, subject.data, subject.len, 0, subject.len, flags, &next_index);
+        free(capture_map);
+        regfree(&regex);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        ptn_pcre_set_last_error(runtime, PTN_PREG_NO_ERROR);
+        return result;
+    }
+
+    regmatch_t *matches = calloc(match_count, sizeof(regmatch_t));
+    if (matches == NULL) {
+        ptn_value_destroy(&result);
+        free(capture_map);
+        regfree(&regex);
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        ptn_abort_out_of_memory();
+    }
+    char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
+    size_t search_offset = 0;
+    while (search_offset <= subject.len && (limit < 0 || (int64_t)next_index < limit - 1)) {
+        int exec_result = regexec(&regex, subject_c + search_offset, match_count, matches, 0);
+        if (exec_result != 0 || matches[0].rm_so < 0 || matches[0].rm_eo < matches[0].rm_so) {
+            break;
+        }
+        size_t start = search_offset + (size_t)matches[0].rm_so;
+        size_t end = search_offset + (size_t)matches[0].rm_eo;
+        if (start > subject.len || end > subject.len || end < start) {
+            break;
+        }
+        ptn_preg_append_split_value(result, subject_c, subject.len, search_offset, start - search_offset, flags, &next_index);
+        if ((flags & PTN_PREG_SPLIT_DELIM_CAPTURE) != 0) {
+            for (size_t group = 1; group <= capture_count; group++) {
+                size_t match_index = capture_map[group - 1];
+                if (matches[match_index].rm_so < 0 || matches[match_index].rm_eo < matches[match_index].rm_so) {
+                    continue;
+                }
+                size_t capture_start = search_offset + (size_t)matches[match_index].rm_so;
+                size_t capture_end = search_offset + (size_t)matches[match_index].rm_eo;
+                ptn_preg_append_split_value(
+                    result,
+                    subject_c,
+                    subject.len,
+                    capture_start,
+                    capture_end - capture_start,
+                    flags,
+                    &next_index
+                );
+            }
+        }
+        if (end == start) {
+            if (end >= subject.len) {
+                search_offset = end;
+                break;
+            }
+            search_offset = end + 1;
+        } else {
+            search_offset = end;
+        }
+    }
+    ptn_preg_append_split_value(result, subject_c, subject.len, search_offset, subject.len - search_offset, flags, &next_index);
+    ptn_pcre_set_last_error(runtime, PTN_PREG_NO_ERROR);
+
+    free(subject_c);
+    free(matches);
+    free(capture_map);
+    regfree(&regex);
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(subject);
+    return result;
+#endif
+}
+
+static PtnValue ptn_internal_preg_grep(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand pattern = ptn_internal_expect_string_arg(runtime, "preg_grep", 1, "pattern", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_bool(0);
+    }
+    PtnArray *input = ptn_internal_expect_array_arg(runtime, "preg_grep", 2, "array", args[1]);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_null();
+    }
+    int64_t flags_arg = argc >= 3
+        ? ptn_internal_expect_integer_arg(runtime, "preg_grep", 3, "flags", args[2], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(pattern);
+        return ptn_null();
+    }
+
+    int invert = ((int)flags_arg & PTN_PREG_GREP_INVERT) != 0;
+    int utf8_mode = ptn_pcre_pattern_has_modifier(pattern, 'u');
+    regex_t regex;
+    size_t *capture_map = NULL;
+    size_t capture_count = 0;
+    size_t match_count = 0;
+    if (!ptn_preg_compile_posix(
+            runtime,
+            "preg_grep",
+            pattern,
+            &regex,
+            &capture_map,
+            &capture_count,
+            &match_count,
+            line
+        )) {
+        ptn_string_operand_free(pattern);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    (void)regex;
+    (void)capture_count;
+    (void)match_count;
+    free(capture_map);
+    ptn_string_operand_free(pattern);
+    return ptn_bool(0);
+#else
+    (void)capture_count;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    regmatch_t *matches = calloc(match_count, sizeof(regmatch_t));
+    if (matches == NULL) {
+        ptn_value_destroy(&result);
+        free(capture_map);
+        regfree(&regex);
+        ptn_string_operand_free(pattern);
+        ptn_abort_out_of_memory();
+    }
+
+    for (size_t i = 0; i < input->len; i++) {
+        PtnArrayEntry *entry = &input->entries[i];
+        PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(subject);
+            ptn_value_destroy(&result);
+            free(matches);
+            free(capture_map);
+            regfree(&regex);
+            ptn_string_operand_free(pattern);
+            return ptn_null();
+        }
+        if (utf8_mode && !ptn_pcre_string_is_valid_utf8(subject)) {
+            ptn_string_operand_free(subject);
+            ptn_value_destroy(&result);
+            free(matches);
+            free(capture_map);
+            regfree(&regex);
+            ptn_string_operand_free(pattern);
+            ptn_pcre_set_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
+            return ptn_bool(0);
+        }
+        char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
+        int exec_result = regexec(&regex, subject_c, match_count, matches, 0);
+        int matched = exec_result == 0;
+        free(subject_c);
+        ptn_string_operand_free(subject);
+        if (matched != invert) {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_key_clone(entry->key),
+                ptn_value_clone_deref(entry->value)
+            );
+        }
+    }
+    ptn_pcre_set_last_error(runtime, PTN_PREG_NO_ERROR);
+
+    free(matches);
+    free(capture_map);
+    regfree(&regex);
+    ptn_string_operand_free(pattern);
+    return result;
+#endif
+}
+
+static PtnValue ptn_internal_preg_last_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(ptn_pcre_last_error(runtime));
+}
+
+static PtnValue ptn_internal_preg_last_error_msg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_string(ptn_pcre_error_message(ptn_pcre_last_error(runtime)));
 }
 
 static void ptn_preg_append_capture_replacement(
@@ -38846,10 +39498,15 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pi", 0, 0, ptn_internal_pi },
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
         { "pow", 2, 2, ptn_internal_pow },
+        { "preg_grep", 2, 3, ptn_internal_preg_grep },
+        { "preg_last_error", 0, 0, ptn_internal_preg_last_error },
+        { "preg_last_error_msg", 0, 0, ptn_internal_preg_last_error_msg },
         { "preg_match", 2, 5, ptn_internal_preg_match },
+        { "preg_match_all", 2, 5, ptn_internal_preg_match_all },
         { "preg_quote", 1, 2, ptn_internal_preg_quote },
         { "preg_replace", 3, 5, ptn_internal_preg_replace },
         { "preg_replace_callback", 3, 6, ptn_internal_preg_replace_callback },
+        { "preg_split", 2, 4, ptn_internal_preg_split },
         { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },
         { "printf", 1, PTN_VARIADIC_ARGS, ptn_internal_printf },

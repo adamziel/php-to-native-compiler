@@ -44433,6 +44433,156 @@ echo http_build_query(["name" => "main page"], "", ini_get("arg_separator.output
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_pcre_collection_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-pcre-collection-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pcre-collection-helpers.php");
+    let output = root.join("pcre-collection-helpers-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(preg_match_all('/a(\d)/', 'a1 a2', $patternOrder));
+var_dump($patternOrder);
+var_dump(preg_match_all('/a(\d)/', 'a1 a2', $setOrder, PREG_SET_ORDER | PREG_OFFSET_CAPTURE));
+var_dump($setOrder);
+var_dump(preg_match_all('/[tT]his is a(.*?)\./', 'This is a test. This is another test.', $lazy, PREG_SET_ORDER));
+var_dump($lazy);
+var_dump(preg_split('/[:,]/', 'a:b,c', -1, PREG_SPLIT_NO_EMPTY));
+var_dump(preg_split('/([:,])/', 'a:b,c', -1, PREG_SPLIT_DELIM_CAPTURE));
+var_dump(preg_grep('/^a/', ['first' => 'ab', 'second' => 'cd', 'third' => 'aa']));
+var_dump(preg_grep('/^a/', ['first' => 'ab', 'second' => 'cd'], PREG_GREP_INVERT));
+var_dump(preg_match('/.*/u', hex2bin('ff')));
+var_dump(preg_last_error(), preg_last_error_msg());
+var_dump(preg_grep('/.*/u', ['ok', hex2bin('ff')]));
+var_dump(preg_last_error() === PREG_BAD_UTF8_ERROR);
+?>"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(2) \"a1\"\n",
+            "    [1]=>\n",
+            "    string(2) \"a2\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(1) \"1\"\n",
+            "    [1]=>\n",
+            "    string(1) \"2\"\n",
+            "  }\n",
+            "}\n",
+            "int(2)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    array(2) {\n",
+            "      [0]=>\n",
+            "      string(2) \"a1\"\n",
+            "      [1]=>\n",
+            "      int(0)\n",
+            "    }\n",
+            "    [1]=>\n",
+            "    array(2) {\n",
+            "      [0]=>\n",
+            "      string(1) \"1\"\n",
+            "      [1]=>\n",
+            "      int(1)\n",
+            "    }\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    array(2) {\n",
+            "      [0]=>\n",
+            "      string(2) \"a2\"\n",
+            "      [1]=>\n",
+            "      int(3)\n",
+            "    }\n",
+            "    [1]=>\n",
+            "    array(2) {\n",
+            "      [0]=>\n",
+            "      string(1) \"2\"\n",
+            "      [1]=>\n",
+            "      int(4)\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+            "int(2)\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(15) \"This is a test.\"\n",
+            "    [1]=>\n",
+            "    string(5) \" test\"\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  array(2) {\n",
+            "    [0]=>\n",
+            "    string(21) \"This is another test.\"\n",
+            "    [1]=>\n",
+            "    string(11) \"nother test\"\n",
+            "  }\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(1) \"c\"\n",
+            "}\n",
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \":\"\n",
+            "  [2]=>\n",
+            "  string(1) \"b\"\n",
+            "  [3]=>\n",
+            "  string(1) \",\"\n",
+            "  [4]=>\n",
+            "  string(1) \"c\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"first\"]=>\n",
+            "  string(2) \"ab\"\n",
+            "  [\"third\"]=>\n",
+            "  string(2) \"aa\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [\"second\"]=>\n",
+            "  string(2) \"cd\"\n",
+            "}\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "string(56) \"Malformed UTF-8 characters, possibly incorrectly encoded\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
