@@ -1211,7 +1211,7 @@ fn parser_accepts_by_reference_foreach_value_binding() {
 #[test]
 fn parser_accepts_foreach_list_destructuring_bindings() {
     let program = parser::parse(
-        "<?php foreach ($items as [$value, \"name\" => $named, [&$ref]]) { echo $value; }",
+        "<?php foreach ($items as [$value, $named, [&$ref]]) { echo $value; } foreach ($rows as list($first, $second)) { echo $first; }",
     )
     .unwrap();
 
@@ -1231,7 +1231,7 @@ fn parser_accepts_foreach_list_destructuring_bindings() {
         panic!("expected foreach destructuring target");
     };
     assert_eq!(target.elements.len(), 3);
-    assert!(target.elements[0].key.is_none());
+    assert!(matches!(target.elements[0].key, Some(Expr::Int(0, _))));
     assert!(matches!(
         &target.elements[0].target,
         ListAssignmentElementTarget::Value(target)
@@ -1252,6 +1252,19 @@ fn parser_accepts_foreach_list_destructuring_bindings() {
         &nested.elements[0].target,
         ListAssignmentElementTarget::Reference(ReferenceTarget::Variable { name, .. })
             if name == "ref"
+    ));
+
+    let Statement::Foreach { value, .. } = &program.statements[1] else {
+        panic!("expected second foreach statement");
+    };
+    let AssignmentTarget::List(target) = value else {
+        panic!("expected long-list foreach destructuring target");
+    };
+    assert_eq!(target.elements.len(), 2);
+    assert!(matches!(
+        &target.elements[0].target,
+        ListAssignmentElementTarget::Value(target)
+            if matches!(target.as_ref(), AssignmentTarget::Variable { name, .. } if name == "first")
     ));
 }
 
@@ -1275,6 +1288,12 @@ fn parser_rejects_unsupported_foreach_bindings() {
         destructuring.message,
         "foreach destructuring is unsupported"
     );
+
+    let this_destructuring =
+        parser::parse("<?php foreach ($items as list($this)) { echo \"never\"; }").unwrap_err();
+    assert_eq!(this_destructuring.kind, DiagnosticKind::Fatal);
+    assert_eq!(this_destructuring.message, "Cannot re-assign $this");
+    assert_eq!(this_destructuring.span.unwrap().line, 1);
 }
 
 #[test]
