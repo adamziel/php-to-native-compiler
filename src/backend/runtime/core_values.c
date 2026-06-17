@@ -916,6 +916,7 @@ struct PtnRuntime {
     PtnMagicPropertyReadHandler magic_property_read;
     PtnMagicPropertyIssetHandler magic_property_isset;
     int *declared_user_functions;
+    int *declared_user_classes;
     PtnMagicPropertyGetHandler magic_property_get;
     PtnMagicPropertyGetExistsHandler magic_property_get_exists;
     PtnMagicPropertySetHandler magic_property_set;
@@ -1031,6 +1032,8 @@ static PTN_UNUSED char *ptn_duplicate_string(const char *string);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
+static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
+static PTN_UNUSED int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED const char *ptn_declared_class_canonical_name(const char *name);
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);

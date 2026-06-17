@@ -230,6 +230,19 @@ pub fn emit_c(module: &Module) -> String {
         out.push_str(" };\n");
         out.push_str("    runtime.declared_user_functions = ptn_declared_user_functions;\n");
     }
+    if !module.classes.is_empty() {
+        out.push_str("    static int ptn_declared_user_classes[");
+        out.push_str(&module.classes.len().to_string());
+        out.push_str("] = { ");
+        for (index, class) in module.classes.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(if class.initially_declared { "1" } else { "0" });
+        }
+        out.push_str(" };\n");
+        out.push_str("    runtime.declared_user_classes = ptn_declared_user_classes;\n");
+    }
     if module.strict_types {
         out.push_str("    runtime.strict_types = 1;\n");
     }
@@ -3862,6 +3875,9 @@ fn emit_class_metadata_helpers(
     instructions: &[Instruction],
     emit_reflection_helpers: bool,
 ) {
+    let has_user_classes = classes.iter().any(|class| !class.is_interface);
+    let has_user_interfaces = classes.iter().any(|class| class.is_interface);
+
     out.push_str(
         "\nstatic PTN_UNUSED const char *ptn_declared_private_property_class(const char *class_name, const char *property_name) {\n",
     );
@@ -4009,6 +4025,60 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_runtime_class_slot_available(PtnRuntime *runtime, size_t index) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)index;\n");
+        out.push_str("    return 0;\n");
+    } else {
+        out.push_str("    if (runtime == NULL || runtime->declared_user_classes == NULL) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    return runtime->declared_user_classes[index];\n");
+    }
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name) {\n");
+    if !has_user_classes {
+        out.push_str("    (void)runtime;\n");
+    }
+    out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    for (index, class) in classes.iter().enumerate() {
+        if class.is_interface {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&index.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_interface_exists(const char *name) {\n");
     for builtin in [
         "ArrayAccess",
@@ -4040,6 +4110,47 @@ fn emit_class_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name) {\n");
+    if !has_user_interfaces {
+        out.push_str("    (void)runtime;\n");
+    }
+    for builtin in [
+        "ArrayAccess",
+        "Iterator",
+        "IteratorAggregate",
+        "OuterIterator",
+        "RecursiveIterator",
+        "SeekableIterator",
+        "SplObserver",
+        "SplSubject",
+        "Traversable",
+        "Stringable",
+        "Throwable",
+        "DateTimeInterface",
+        "Countable",
+        "Serializable",
+    ] {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(builtin);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    for (index, class) in classes.iter().enumerate() {
+        if !class.is_interface {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&index.to_string());
+        out.push_str(");\n");
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
@@ -4079,7 +4190,9 @@ fn emit_class_metadata_helpers(
     out.push_str("        const char *target_name = ptn_runtime_resolve_class_alias(runtime, (const char *)target_value.as.string.data);\n");
     out.push_str("        int include = 0;\n");
     out.push_str("        if (kind == 0) {\n");
-    out.push_str("            include = ptn_declared_class_exists(target_name);\n");
+    out.push_str(
+        "            include = ptn_declared_runtime_class_exists(runtime, target_name);\n",
+    );
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("            if (!include && include_internal) {\n");
     out.push_str("                include = ptn_internal_class_exists_name(target_name);\n");
@@ -4088,7 +4201,9 @@ fn emit_class_metadata_helpers(
     out.push_str("            (void)include_internal;\n");
     out.push_str("#endif\n");
     out.push_str("        } else if (kind == 1) {\n");
-    out.push_str("            include = ptn_declared_interface_exists(target_name);\n");
+    out.push_str(
+        "            include = ptn_declared_runtime_interface_exists(runtime, target_name);\n",
+    );
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("            if (!include) {\n");
     out.push_str("                include = ptn_internal_interface_exists_name(target_name);\n");
@@ -4169,15 +4284,19 @@ fn emit_class_metadata_helpers(
         out.push_str("\"));\n");
     }
     out.push_str("    }\n");
-    for class in classes {
+    for (class_index, class) in classes.iter().enumerate() {
         if class.is_interface {
             continue;
         }
+        out.push_str("    if (ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         out.push_str(
-            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+            "        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
         );
         out.push_str(&c_string(&class.name));
         out.push_str("\"));\n");
+        out.push_str("    }\n");
     }
     out.push_str(
         "    ptn_append_declared_alias_names(runtime, result, &index, 0, include_internal);\n",
@@ -4212,15 +4331,19 @@ fn emit_class_metadata_helpers(
         out.push_str(builtin);
         out.push_str("\"));\n");
     }
-    for class in classes {
+    for (class_index, class) in classes.iter().enumerate() {
         if !class.is_interface {
             continue;
         }
+        out.push_str("    if (ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&class_index.to_string());
+        out.push_str(")) {\n");
         out.push_str(
-            "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
+            "        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
         );
         out.push_str(&c_string(&class.name));
         out.push_str("\"));\n");
+        out.push_str("    }\n");
     }
     out.push_str("    ptn_append_declared_alias_names(runtime, result, &index, 1, 1);\n");
     out.push_str("    return result;\n");
@@ -10128,6 +10251,33 @@ fn emit_instruction(
             out.push_str("] = 1;\n");
             out.push_str("    }\n");
         }
+        Instruction::DeclareClass { class_index, line } => {
+            let class = &values.classes[*class_index];
+            out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
+            out.push_str("        if (runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("]) {\n");
+            out.push_str("            char message[1024];\n");
+            out.push_str(
+                "            snprintf(message, sizeof(message), \"Cannot redeclare class ",
+            );
+            out.push_str(&c_string(&class.name));
+            out.push_str(" (previously declared in %s:%zu)\", \"");
+            out.push_str(&c_string(&class.source_file));
+            out.push_str("\", (size_t)");
+            out.push_str(&class.line.to_string());
+            out.push_str(");\n");
+            out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        }\n");
+            out.push_str("        runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("] = 1;\n");
+            out.push_str("    }\n");
+        }
         Instruction::UnsetArrayDim {
             array,
             dimensions,
@@ -12475,6 +12625,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::DeclareClass { .. }
         | Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
@@ -13000,7 +13151,7 @@ fn collect_instruction_runtime_requirements(
             requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
         }
-        Instruction::DeclareFunction { .. } => {}
+        Instruction::DeclareFunction { .. } | Instruction::DeclareClass { .. } => {}
         Instruction::UnsetDynamicVariable { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
         }
@@ -15235,6 +15386,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::DeclareClass { .. }
         | Instruction::Label { .. }
         | Instruction::Goto { .. } => None,
     }
@@ -15830,6 +15982,7 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::DeclareClass { .. }
         | Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }

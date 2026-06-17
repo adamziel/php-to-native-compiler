@@ -72,6 +72,7 @@ fn parse_with_options(
         index: 0,
         block_depth: 0,
         function_depth: 0,
+        method_depth: 0,
         current_namespace: None,
         seen_namespace_declaration: false,
         namespace_declaration_style: None,
@@ -104,6 +105,7 @@ struct Parser<'a> {
     index: usize,
     block_depth: usize,
     function_depth: usize,
+    method_depth: usize,
     current_namespace: Option<String>,
     seen_namespace_declaration: bool,
     namespace_declaration_style: Option<NamespaceDeclarationStyle>,
@@ -1456,6 +1458,7 @@ impl Parser<'_> {
             interfaces,
             trait_uses,
             attributes,
+            is_conditionally_declared: false,
             is_abstract: is_abstract || is_interface,
             is_final,
             is_interface,
@@ -1632,6 +1635,7 @@ impl Parser<'_> {
             interfaces,
             trait_uses,
             attributes,
+            is_conditionally_declared: false,
             is_abstract: false,
             is_final: true,
             is_interface: false,
@@ -2996,7 +3000,9 @@ impl Parser<'_> {
             }
             self.return_by_ref_stack.push(return_by_ref);
             self.function_depth += 1;
+            self.method_depth += 1;
             let body = self.parse_block();
+            self.method_depth -= 1;
             self.function_depth -= 1;
             self.return_by_ref_stack.pop();
             (body?, self.previous_span())
@@ -3138,13 +3144,15 @@ impl Parser<'_> {
         &mut self,
         attributes: ParsedAttributes,
     ) -> Result<Statement> {
-        if self.function_depth != 0 {
+        if self.method_depth != 0 {
             return Err(Diagnostic::new(
                 "Class declarations may not be nested",
                 Some(self.peek().span),
             ));
         }
-        let class = self.parse_class_decl(attributes)?;
+        let mut class = self.parse_class_decl(attributes)?;
+        class.is_conditionally_declared = self.block_depth != 0 || self.function_depth != 0;
+        let name = class.name.clone();
         let span = class.span;
         let source = self
             .source
@@ -3152,7 +3160,7 @@ impl Parser<'_> {
             .unwrap_or("")
             .to_string();
         self.anonymous_classes.push(class);
-        Ok(Statement::ClassDeclaration { source, span })
+        Ok(Statement::ClassDeclaration { name, source, span })
     }
 
     fn parse_nested_function_decl_statement(
@@ -6926,6 +6934,7 @@ impl Parser<'_> {
             interfaces,
             trait_uses,
             attributes,
+            is_conditionally_declared: false,
             is_abstract: false,
             is_final: false,
             is_interface: false,
@@ -10083,6 +10092,7 @@ fn import_trait_method_into_method_list(
         interfaces: Vec::new(),
         trait_uses: Vec::new(),
         attributes: AttributeMetadata::default(),
+        is_conditionally_declared: false,
         is_abstract: false,
         is_final: false,
         is_interface: false,

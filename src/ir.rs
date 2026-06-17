@@ -77,6 +77,7 @@ pub struct ClassDecl {
     pub attributes: AttributeMetadata,
     pub line: usize,
     pub end_line: usize,
+    pub initially_declared: bool,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_interface: bool,
@@ -313,6 +314,10 @@ pub enum Instruction {
     },
     DeclareFunction {
         function_index: usize,
+    },
+    DeclareClass {
+        class_index: usize,
+        line: usize,
     },
     BindStatic {
         name: String,
@@ -908,6 +913,7 @@ pub fn lower_with_source_and_includes(
         include_resolutions,
     );
     let include_function_ranges = context.declare_include_functions(&include_sources);
+    context.declare_include_class_names(&include_sources);
     for (index, function) in program.functions.iter().enumerate() {
         let previous_function_display_name = std::mem::replace(
             &mut context.current_function_display_name,
@@ -960,6 +966,7 @@ struct LoweringContext<'a> {
     source_dir: String,
     strict_types: bool,
     include_resolutions: &'a IncludeResolutionMap,
+    class_names: Vec<String>,
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
     current_function_display_name: Option<String>,
@@ -1028,6 +1035,11 @@ impl<'a> LoweringContext<'a> {
             source_dir,
             strict_types: program.strict_types,
             include_resolutions,
+            class_names: program
+                .classes
+                .iter()
+                .map(|class| class.name.clone())
+                .collect(),
             current_class_name: None,
             current_trait_name: None,
             current_function_display_name: None,
@@ -1036,6 +1048,18 @@ impl<'a> LoweringContext<'a> {
             context.declare_function(function);
         }
         context
+    }
+
+    fn declare_include_class_names(&mut self, include_sources: &[IncludeSource]) {
+        for include in include_sources {
+            self.class_names.extend(
+                include
+                    .program
+                    .classes
+                    .iter()
+                    .map(|class| class.name.clone()),
+            );
+        }
     }
 
     fn declare_include_functions(&mut self, include_sources: &[IncludeSource]) -> Vec<usize> {
@@ -1157,6 +1181,12 @@ impl<'a> LoweringContext<'a> {
                 && !function.is_anonymous
                 && function.name.eq_ignore_ascii_case(name)
         })
+    }
+
+    fn class_index_by_name(&self, name: &str) -> Option<usize> {
+        self.class_names
+            .iter()
+            .position(|class_name| class_name.eq_ignore_ascii_case(name))
     }
 
     fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
@@ -1653,6 +1683,7 @@ impl<'a> LoweringContext<'a> {
             attributes: class_attributes,
             line: class.span.line,
             end_line: class.span.end_line,
+            initially_declared: !class.is_conditionally_declared,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
             is_interface: class.is_interface,
@@ -1670,7 +1701,15 @@ impl<'a> LoweringContext<'a> {
         let mut instructions = Vec::new();
         for statement in statements {
             match statement {
-                Statement::Empty { .. } | Statement::ClassDeclaration { .. } => {}
+                Statement::Empty { .. } => {}
+                Statement::ClassDeclaration { name, span, .. } => {
+                    if let Some(class_index) = self.class_index_by_name(name) {
+                        instructions.push(Instruction::DeclareClass {
+                            class_index,
+                            line: span.line,
+                        });
+                    }
+                }
                 Statement::FunctionDeclaration { name, .. } => {
                     if let Some(function_index) = self.function_index_by_name(name) {
                         instructions.push(Instruction::DeclareFunction { function_index });
@@ -4071,7 +4110,7 @@ fn assertion_anonymous_function_text(function: &AstAnonymousFunction) -> String 
 
 fn assertion_statement_text(statement: &Statement, indent: &str) -> Option<String> {
     match statement {
-        Statement::ClassDeclaration { source, span } => Some(format!(
+        Statement::ClassDeclaration { source, span, .. } => Some(format!(
             "{}\n",
             assertion_source_block_text(source, span.column, indent)
         )),

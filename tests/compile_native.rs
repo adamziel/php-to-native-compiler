@@ -2505,6 +2505,38 @@ fn parser_accepts_nested_named_function_declarations() {
 }
 
 #[test]
+fn parser_accepts_function_local_class_declarations() {
+    let program = parser::parse(
+        "<?php function outer() { class FunctionLocalClass {} } \
+         $closure = function () { class ClosureLocalClass {} };",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes.len(), 2);
+    assert_eq!(program.classes[0].name, "FunctionLocalClass");
+    assert_eq!(program.classes[1].name, "ClosureLocalClass");
+    assert!(program
+        .classes
+        .iter()
+        .all(|class| class.is_conditionally_declared));
+    assert!(matches!(
+        &program.functions[0].body[0],
+        Statement::ClassDeclaration { name, .. } if name == "FunctionLocalClass"
+    ));
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert!(matches!(
+        &closure.body[0],
+        Statement::ClassDeclaration { name, .. } if name == "ClosureLocalClass"
+    ));
+}
+
+#[test]
 fn parser_accepts_void_return_type_but_not_void_parameters() {
     let program = parser::parse("<?php function test(): void { return; } test();").unwrap();
     assert_eq!(program.functions[0].return_type, Some(TypeHint::Void));
@@ -16647,6 +16679,167 @@ try {
     assert!(c_source.contains("ptn_declared_class_method_exists_from_class_name"));
     assert!(c_source.contains("ptn_internal_get_declared_classes"));
     assert!(c_source.contains("ptn_internal_is_a"));
+}
+
+#[test]
+fn compile_conditional_class_metadata_visibility_to_native_binary() {
+    let root = temp_dir("ptn-native-conditional-class-metadata-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("conditional-class-metadata-visibility.php");
+    let output = root.join("conditional-class-metadata-visibility-bin");
+    fs::write(
+        &input,
+        "<?php
+function declare_local_class() {
+    var_dump(class_exists('FunctionLocalClass', false));
+    class FunctionLocalClass {
+        public static function value() {
+            return 'fn';
+        }
+    }
+    var_dump(class_exists('FunctionLocalClass', false));
+}
+
+$closure = function () {
+    interface ClosureLocalContract {}
+    class ClosureLocalClass implements ClosureLocalContract {}
+};
+
+var_dump(class_exists('FunctionLocalClass', false));
+var_dump(in_array('FunctionLocalClass', get_declared_classes()));
+declare_local_class();
+var_dump(in_array('FunctionLocalClass', get_declared_classes()));
+var_dump(FunctionLocalClass::value());
+var_dump(interface_exists('ClosureLocalContract', false));
+var_dump(in_array('ClosureLocalContract', get_declared_interfaces()));
+$closure();
+var_dump(interface_exists('ClosureLocalContract', false));
+var_dump(class_exists('ClosureLocalClass', false));
+var_dump(in_array('ClosureLocalContract', get_declared_interfaces()));
+var_dump(in_array('ClosureLocalClass', get_declared_classes()));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(2) \"fn\"\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_runtime_class_exists"));
+    assert!(c_source.contains("ptn_declared_runtime_interface_exists"));
+    assert!(c_source.contains("ptn_declared_user_classes"));
+}
+
+#[test]
+fn compile_function_local_class_redeclaration_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-function-local-class-redeclaration");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-local-class-redeclaration.php");
+    let output = root.join("function-local-class-redeclaration-bin");
+    fs::write(
+        &input,
+        "<?php
+function define_twice() {
+    class Twice {}
+}
+
+define_twice();
+define_twice();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot redeclare class Twice (previously declared in {}:3) in {} on line 3\n",
+            input.display(),
+            input.display()
+        )
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot redeclare class Twice"));
+    assert!(c_source.contains("ptn_emit_fatal_error_at"));
+}
+
+#[test]
+fn compile_autoload_declares_function_local_class_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-function-local-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-function-local-class.php");
+    let output = root.join("autoload-function-local-class-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function($className) {
+    if ($className == 'PrivateStatic') {
+        class PrivateStatic
+        {
+            const SOME_CONST = 13;
+            private static $privateStaticVarArray = ['a', 'b', 'c'];
+            private static $otherStatic;
+            public static function init()
+            {
+                self::$otherStatic = self::$privateStaticVarArray;
+            }
+        }
+        PrivateStatic::init();
+    }
+});
+
+class OtherClass
+{
+    const MY_CONST = PrivateStatic::SOME_CONST;
+    public static $prop = 'my property';
+}
+
+$reflectionClass = new ReflectionClass('OtherClass');
+$reflectionProperty = $reflectionClass->getProperty('prop');
+$value = $reflectionProperty->getValue();
+echo \"Value is $value\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Value is my property\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PrivateStatic"));
+    assert!(c_source.contains("ptn_declared_runtime_class_exists"));
 }
 
 #[test]

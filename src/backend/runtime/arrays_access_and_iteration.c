@@ -786,7 +786,7 @@ static PTN_UNUSED PtnValue ptn_new_object(
         runtime,
         ptn_symbol_name_without_leading_slash(class_name)
     );
-    if (!ptn_declared_class_exists(lookup_class_name)) {
+    if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (!ptn_internal_class_exists_name(lookup_class_name)) {
             ptn_runtime_autoload_class(runtime, lookup_class_name, line);

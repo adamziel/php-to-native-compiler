@@ -31,6 +31,7 @@ pub struct ClassDecl {
     pub interfaces: Vec<String>,
     pub trait_uses: Vec<TraitUseDecl>,
     pub attributes: AttributeMetadata,
+    pub is_conditionally_declared: bool,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_interface: bool,
@@ -352,6 +353,7 @@ pub enum Statement {
         span: SourceSpan,
     },
     ClassDeclaration {
+        name: String,
         source: String,
         span: SourceSpan,
     },

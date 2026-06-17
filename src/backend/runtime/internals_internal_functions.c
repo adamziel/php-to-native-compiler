@@ -400,6 +400,8 @@ static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syn
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
+static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
+static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
@@ -38691,6 +38693,8 @@ static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syn
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_interface_exists(const char *name);
+static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
+static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_class_is_abstract(const char *name);
 static int ptn_declared_class_is_final(const char *name);
@@ -40075,7 +40079,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
 
 static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name) {
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
-    if (ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name)) {
+    if (ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_internal_class_exists_name(resolved_name)) {
         return 1;
     }
     ptn_runtime_autoload_class(runtime, resolved_name, runtime->call_site_line);
@@ -40083,18 +40087,18 @@ static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *
         return 0;
     }
     resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
-    return ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name);
+    return ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_internal_class_exists_name(resolved_name);
 }
 
 static PTN_UNUSED int ptn_runtime_interface_exists(PtnRuntime *runtime, const char *interface_name) {
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, interface_name);
-    return ptn_declared_interface_exists(resolved_name) || ptn_internal_interface_exists_name(resolved_name);
+    return ptn_declared_runtime_interface_exists(runtime, resolved_name) || ptn_internal_interface_exists_name(resolved_name);
 }
 
 static PTN_UNUSED int ptn_runtime_class_or_interface_exists(PtnRuntime *runtime, const char *class_name) {
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
-    return ptn_declared_class_exists(resolved_name)
-        || ptn_declared_interface_exists(resolved_name)
+    return ptn_declared_runtime_class_exists(runtime, resolved_name)
+        || ptn_declared_runtime_interface_exists(runtime, resolved_name)
         || ptn_internal_class_exists_name(resolved_name)
         || ptn_internal_interface_exists_name(resolved_name);
 }
@@ -52610,7 +52614,7 @@ static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, cons
         exists = ptn_runtime_class_exists(runtime, lookup_name);
     } else {
         const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
-        exists = ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name);
+        exists = ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_internal_class_exists_name(resolved_name);
     }
     free(name);
     return ptn_bool(exists);
