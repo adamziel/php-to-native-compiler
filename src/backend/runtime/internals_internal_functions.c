@@ -34571,6 +34571,19 @@ static void ptn_get_defined_constants_add_int(PtnValue table, const char *name, 
     ptn_array_set_entry(table.as.array, ptn_array_string_key(name), ptn_int(value));
 }
 
+static int ptn_constant_name_matches_any(
+    const char *name,
+    const char *const *names,
+    size_t count
+) {
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(name, names[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_defined_constants_core_table(void) {
     PtnValue table = ptn_array_from_literal_entries(0, NULL);
     ptn_get_defined_constants_add_int(table, "PHP_URL_SCHEME", PTN_PHP_URL_SCHEME);
@@ -34594,6 +34607,44 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "LOCK_EX", PTN_LOCK_EX);
     ptn_get_defined_constants_add_int(table, "LOCK_UN", PTN_LOCK_UN);
     ptn_get_defined_constants_add_int(table, "LOCK_NB", PTN_LOCK_NB);
+    return table;
+}
+
+static void ptn_defined_constants_add_json(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_NONE", PTN_JSON_ERROR_NONE);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_DEPTH", PTN_JSON_ERROR_DEPTH);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_STATE_MISMATCH", PTN_JSON_ERROR_STATE_MISMATCH);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_CTRL_CHAR", PTN_JSON_ERROR_CTRL_CHAR);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_SYNTAX", PTN_JSON_ERROR_SYNTAX);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_UTF8", PTN_JSON_ERROR_UTF8);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_RECURSION", PTN_JSON_ERROR_RECURSION);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_INF_OR_NAN", PTN_JSON_ERROR_INF_OR_NAN);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_UNSUPPORTED_TYPE", PTN_JSON_ERROR_UNSUPPORTED_TYPE);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_INVALID_PROPERTY_NAME", PTN_JSON_ERROR_INVALID_PROPERTY_NAME);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_UTF16", PTN_JSON_ERROR_UTF16);
+    ptn_get_defined_constants_add_int(table, "JSON_ERROR_NON_BACKED_ENUM", PTN_JSON_ERROR_NON_BACKED_ENUM);
+    ptn_get_defined_constants_add_int(table, "JSON_OBJECT_AS_ARRAY", PTN_JSON_OBJECT_AS_ARRAY);
+    ptn_get_defined_constants_add_int(table, "JSON_BIGINT_AS_STRING", PTN_JSON_BIGINT_AS_STRING);
+    ptn_get_defined_constants_add_int(table, "JSON_HEX_TAG", PTN_JSON_HEX_TAG);
+    ptn_get_defined_constants_add_int(table, "JSON_HEX_AMP", PTN_JSON_HEX_AMP);
+    ptn_get_defined_constants_add_int(table, "JSON_HEX_APOS", PTN_JSON_HEX_APOS);
+    ptn_get_defined_constants_add_int(table, "JSON_HEX_QUOT", PTN_JSON_HEX_QUOT);
+    ptn_get_defined_constants_add_int(table, "JSON_FORCE_OBJECT", PTN_JSON_FORCE_OBJECT);
+    ptn_get_defined_constants_add_int(table, "JSON_NUMERIC_CHECK", PTN_JSON_NUMERIC_CHECK);
+    ptn_get_defined_constants_add_int(table, "JSON_UNESCAPED_SLASHES", PTN_JSON_UNESCAPED_SLASHES);
+    ptn_get_defined_constants_add_int(table, "JSON_PRETTY_PRINT", PTN_JSON_PRETTY_PRINT);
+    ptn_get_defined_constants_add_int(table, "JSON_UNESCAPED_UNICODE", PTN_JSON_UNESCAPED_UNICODE);
+    ptn_get_defined_constants_add_int(table, "JSON_PARTIAL_OUTPUT_ON_ERROR", PTN_JSON_PARTIAL_OUTPUT_ON_ERROR);
+    ptn_get_defined_constants_add_int(table, "JSON_PRESERVE_ZERO_FRACTION", PTN_JSON_PRESERVE_ZERO_FRACTION);
+    ptn_get_defined_constants_add_int(table, "JSON_UNESCAPED_LINE_TERMINATORS", PTN_JSON_UNESCAPED_LINE_TERMINATORS);
+    ptn_get_defined_constants_add_int(table, "JSON_INVALID_UTF8_IGNORE", PTN_JSON_INVALID_UTF8_IGNORE);
+    ptn_get_defined_constants_add_int(table, "JSON_INVALID_UTF8_SUBSTITUTE", PTN_JSON_INVALID_UTF8_SUBSTITUTE);
+    ptn_get_defined_constants_add_int(table, "JSON_THROW_ON_ERROR", PTN_JSON_THROW_ON_ERROR);
+}
+
+static PtnValue ptn_defined_constants_json_table(void) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_defined_constants_add_json(table);
     return table;
 }
 
@@ -34621,6 +34672,209 @@ static PtnValue ptn_defined_constants_pcre_table(void) {
     return table;
 }
 
+static void ptn_defined_constants_add_standard(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "CONNECTION_NORMAL", 0);
+    ptn_get_defined_constants_add_int(table, "CONNECTION_ABORTED", 1);
+    ptn_get_defined_constants_add_int(table, "CONNECTION_TIMEOUT", 2);
+    ptn_get_defined_constants_add_int(table, "CASE_LOWER", 0);
+    ptn_get_defined_constants_add_int(table, "CASE_UPPER", 1);
+    ptn_get_defined_constants_add_int(table, "SORT_REGULAR", PTN_SORT_REGULAR);
+    ptn_get_defined_constants_add_int(table, "SORT_NUMERIC", PTN_SORT_NUMERIC);
+    ptn_get_defined_constants_add_int(table, "SORT_STRING", PTN_SORT_STRING);
+    ptn_get_defined_constants_add_int(table, "SORT_DESC", PTN_SORT_DESC);
+    ptn_get_defined_constants_add_int(table, "SORT_ASC", PTN_SORT_ASC);
+    ptn_get_defined_constants_add_int(table, "SORT_LOCALE_STRING", PTN_SORT_LOCALE_STRING);
+    ptn_get_defined_constants_add_int(table, "SORT_NATURAL", PTN_SORT_NATURAL);
+    ptn_get_defined_constants_add_int(table, "SORT_FLAG_CASE", PTN_SORT_FLAG_CASE);
+    ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_BOTH", PTN_ARRAY_FILTER_USE_BOTH);
+    ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_KEY", PTN_ARRAY_FILTER_USE_KEY);
+    ptn_get_defined_constants_add_int(table, "FNM_NOESCAPE", PTN_FNM_NOESCAPE);
+    ptn_get_defined_constants_add_int(table, "FNM_PATHNAME", PTN_FNM_PATHNAME);
+    ptn_get_defined_constants_add_int(table, "FNM_PERIOD", PTN_FNM_PERIOD);
+    ptn_get_defined_constants_add_int(table, "FNM_CASEFOLD", PTN_FNM_CASEFOLD);
+    ptn_get_defined_constants_add_int(table, "GLOB_MARK", PTN_GLOB_MARK);
+    ptn_get_defined_constants_add_int(table, "GLOB_NOSORT", PTN_GLOB_NOSORT);
+    ptn_get_defined_constants_add_int(table, "GLOB_NOCHECK", PTN_GLOB_NOCHECK);
+    ptn_get_defined_constants_add_int(table, "GLOB_NOESCAPE", PTN_GLOB_NOESCAPE);
+    ptn_get_defined_constants_add_int(table, "GLOB_BRACE", PTN_GLOB_BRACE);
+    ptn_get_defined_constants_add_int(table, "GLOB_ONLYDIR", PTN_GLOB_ONLYDIR);
+    ptn_get_defined_constants_add_int(table, "GLOB_ERR", PTN_GLOB_ERR);
+    ptn_get_defined_constants_add_int(table, "STR_PAD_LEFT", PTN_STR_PAD_LEFT);
+    ptn_get_defined_constants_add_int(table, "STR_PAD_RIGHT", PTN_STR_PAD_RIGHT);
+    ptn_get_defined_constants_add_int(table, "STR_PAD_BOTH", PTN_STR_PAD_BOTH);
+    ptn_get_defined_constants_add_int(table, "HTML_SPECIALCHARS", PTN_HTML_SPECIALCHARS);
+    ptn_get_defined_constants_add_int(table, "HTML_ENTITIES", PTN_HTML_ENTITIES);
+    ptn_get_defined_constants_add_int(table, "ENT_NOQUOTES", PTN_ENT_NOQUOTES);
+    ptn_get_defined_constants_add_int(table, "ENT_COMPAT", PTN_ENT_COMPAT);
+    ptn_get_defined_constants_add_int(table, "ENT_QUOTES", PTN_ENT_QUOTES);
+    ptn_get_defined_constants_add_int(table, "ENT_IGNORE", PTN_ENT_IGNORE);
+    ptn_get_defined_constants_add_int(table, "ENT_SUBSTITUTE", PTN_ENT_SUBSTITUTE);
+    ptn_get_defined_constants_add_int(table, "ENT_DISALLOWED", PTN_ENT_DISALLOWED);
+    ptn_get_defined_constants_add_int(table, "ENT_HTML401", PTN_ENT_HTML401);
+    ptn_get_defined_constants_add_int(table, "ENT_XML1", PTN_ENT_XML1);
+    ptn_get_defined_constants_add_int(table, "ENT_XHTML", PTN_ENT_XHTML);
+    ptn_get_defined_constants_add_int(table, "ENT_HTML5", PTN_ENT_HTML5);
+    ptn_get_defined_constants_add_int(table, "COUNT_NORMAL", PTN_COUNT_NORMAL);
+    ptn_get_defined_constants_add_int(table, "COUNT_RECURSIVE", PTN_COUNT_RECURSIVE);
+    ptn_get_defined_constants_add_int(table, "PATHINFO_DIRNAME", PTN_PATHINFO_DIRNAME);
+    ptn_get_defined_constants_add_int(table, "PATHINFO_BASENAME", PTN_PATHINFO_BASENAME);
+    ptn_get_defined_constants_add_int(table, "PATHINFO_EXTENSION", PTN_PATHINFO_EXTENSION);
+    ptn_get_defined_constants_add_int(table, "PATHINFO_FILENAME", PTN_PATHINFO_FILENAME);
+    ptn_get_defined_constants_add_int(table, "PATHINFO_ALL", PTN_PATHINFO_ALL);
+    ptn_get_defined_constants_add_int(table, "FILE_USE_INCLUDE_PATH", PTN_FILE_USE_INCLUDE_PATH);
+    ptn_get_defined_constants_add_int(table, "FILE_IGNORE_NEW_LINES", PTN_FILE_IGNORE_NEW_LINES);
+    ptn_get_defined_constants_add_int(table, "FILE_SKIP_EMPTY_LINES", PTN_FILE_SKIP_EMPTY_LINES);
+    ptn_get_defined_constants_add_int(table, "SEEK_SET", PTN_SEEK_SET);
+    ptn_get_defined_constants_add_int(table, "SEEK_CUR", PTN_SEEK_CUR);
+    ptn_get_defined_constants_add_int(table, "SEEK_END", PTN_SEEK_END);
+    ptn_get_defined_constants_add_int(table, "STREAM_FILTER_READ", PTN_STREAM_FILTER_READ);
+    ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
+    ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
+}
+
+static PtnValue ptn_defined_constants_standard_table(void) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_defined_constants_add_standard(table);
+    return table;
+}
+
+static int ptn_reflection_constant_is_json(const char *name) {
+    static const char *const names[] = {
+        "JSON_ERROR_NONE",
+        "JSON_ERROR_DEPTH",
+        "JSON_ERROR_STATE_MISMATCH",
+        "JSON_ERROR_CTRL_CHAR",
+        "JSON_ERROR_SYNTAX",
+        "JSON_ERROR_UTF8",
+        "JSON_ERROR_RECURSION",
+        "JSON_ERROR_INF_OR_NAN",
+        "JSON_ERROR_UNSUPPORTED_TYPE",
+        "JSON_ERROR_INVALID_PROPERTY_NAME",
+        "JSON_ERROR_UTF16",
+        "JSON_ERROR_NON_BACKED_ENUM",
+        "JSON_OBJECT_AS_ARRAY",
+        "JSON_BIGINT_AS_STRING",
+        "JSON_HEX_TAG",
+        "JSON_HEX_AMP",
+        "JSON_HEX_APOS",
+        "JSON_HEX_QUOT",
+        "JSON_FORCE_OBJECT",
+        "JSON_NUMERIC_CHECK",
+        "JSON_UNESCAPED_SLASHES",
+        "JSON_PRETTY_PRINT",
+        "JSON_UNESCAPED_UNICODE",
+        "JSON_PARTIAL_OUTPUT_ON_ERROR",
+        "JSON_PRESERVE_ZERO_FRACTION",
+        "JSON_UNESCAPED_LINE_TERMINATORS",
+        "JSON_INVALID_UTF8_IGNORE",
+        "JSON_INVALID_UTF8_SUBSTITUTE",
+        "JSON_THROW_ON_ERROR",
+    };
+    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
+}
+
+static int ptn_reflection_constant_is_pcre(const char *name) {
+    static const char *const names[] = {
+        "PREG_PATTERN_ORDER",
+        "PREG_SET_ORDER",
+        "PREG_OFFSET_CAPTURE",
+        "PREG_UNMATCHED_AS_NULL",
+        "PREG_SPLIT_NO_EMPTY",
+        "PREG_SPLIT_DELIM_CAPTURE",
+        "PREG_SPLIT_OFFSET_CAPTURE",
+        "PREG_GREP_INVERT",
+        "PREG_NO_ERROR",
+        "PREG_INTERNAL_ERROR",
+        "PREG_BACKTRACK_LIMIT_ERROR",
+        "PREG_RECURSION_LIMIT_ERROR",
+        "PREG_BAD_UTF8_ERROR",
+        "PREG_BAD_UTF8_OFFSET_ERROR",
+        "PREG_JIT_STACKLIMIT_ERROR",
+    };
+    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
+}
+
+static int ptn_reflection_constant_is_standard(const char *name) {
+    static const char *const names[] = {
+        "CONNECTION_NORMAL",
+        "CONNECTION_ABORTED",
+        "CONNECTION_TIMEOUT",
+        "CASE_LOWER",
+        "CASE_UPPER",
+        "SORT_REGULAR",
+        "SORT_NUMERIC",
+        "SORT_STRING",
+        "SORT_DESC",
+        "SORT_ASC",
+        "SORT_LOCALE_STRING",
+        "SORT_NATURAL",
+        "SORT_FLAG_CASE",
+        "ARRAY_FILTER_USE_BOTH",
+        "ARRAY_FILTER_USE_KEY",
+        "FNM_NOESCAPE",
+        "FNM_PATHNAME",
+        "FNM_PERIOD",
+        "FNM_CASEFOLD",
+        "GLOB_MARK",
+        "GLOB_NOSORT",
+        "GLOB_NOCHECK",
+        "GLOB_NOESCAPE",
+        "GLOB_BRACE",
+        "GLOB_ONLYDIR",
+        "GLOB_ERR",
+        "STR_PAD_LEFT",
+        "STR_PAD_RIGHT",
+        "STR_PAD_BOTH",
+        "HTML_SPECIALCHARS",
+        "HTML_ENTITIES",
+        "ENT_NOQUOTES",
+        "ENT_COMPAT",
+        "ENT_QUOTES",
+        "ENT_IGNORE",
+        "ENT_SUBSTITUTE",
+        "ENT_DISALLOWED",
+        "ENT_HTML401",
+        "ENT_XML1",
+        "ENT_XHTML",
+        "ENT_HTML5",
+        "COUNT_NORMAL",
+        "COUNT_RECURSIVE",
+        "PATHINFO_DIRNAME",
+        "PATHINFO_BASENAME",
+        "PATHINFO_EXTENSION",
+        "PATHINFO_FILENAME",
+        "PATHINFO_ALL",
+        "FILE_USE_INCLUDE_PATH",
+        "FILE_IGNORE_NEW_LINES",
+        "FILE_SKIP_EMPTY_LINES",
+        "SEEK_SET",
+        "SEEK_CUR",
+        "SEEK_END",
+        "STREAM_FILTER_READ",
+        "STREAM_FILTER_WRITE",
+        "STREAM_FILTER_ALL",
+    };
+    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
+}
+
+static const char *ptn_reflection_constant_extension_name(const char *name) {
+    if (ptn_reflection_constant_is_json(name)) {
+        return "json";
+    }
+    if (ptn_reflection_constant_is_pcre(name)) {
+        return "pcre";
+    }
+    if (ptn_reflection_constant_is_standard(name)) {
+        return "standard";
+    }
+    PtnValue value;
+    if (ptn_builtin_constant_value(name, &value)) {
+        ptn_value_destroy(&value);
+        return "Core";
+    }
+    return NULL;
+}
+
 static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)line;
@@ -34628,10 +34882,14 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
     if (argc >= 1 && ptn_is_truthy(args[0])) {
         PtnValue categorized = ptn_array_from_literal_entries(0, NULL);
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("Core"), core);
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("json"), ptn_defined_constants_json_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("pcre"), ptn_defined_constants_pcre_table());
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("standard"), ptn_defined_constants_standard_table());
         return categorized;
     }
+    ptn_defined_constants_add_json(core);
     ptn_defined_constants_add_pcre(core);
+    ptn_defined_constants_add_standard(core);
     return core;
 }
 
@@ -37896,6 +38154,53 @@ static PtnValue ptn_internal_timezone_version_get(PtnRuntime *runtime, size_t ar
     return ptn_string("2026.1");
 }
 
+static void ptn_reflection_modifier_names_append(PtnValue result, int64_t *index, const char *name) {
+    ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), ptn_string(name));
+}
+
+static PtnValue ptn_reflection_modifier_names(int64_t modifiers) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    if ((modifiers & 64) != 0) {
+        ptn_reflection_modifier_names_append(result, &index, "abstract");
+    }
+    if ((modifiers & 32) != 0) {
+        ptn_reflection_modifier_names_append(result, &index, "final");
+    }
+    if ((modifiers & 512) != 0) {
+        ptn_reflection_modifier_names_append(result, &index, "virtual");
+    }
+
+    switch (modifiers & 7) {
+        case 1:
+            ptn_reflection_modifier_names_append(result, &index, "public");
+            break;
+        case 2:
+            ptn_reflection_modifier_names_append(result, &index, "protected");
+            break;
+        case 4:
+            ptn_reflection_modifier_names_append(result, &index, "private");
+            break;
+    }
+
+    switch (modifiers & 7168) {
+        case 2048:
+            ptn_reflection_modifier_names_append(result, &index, "protected(set)");
+            break;
+        case 4096:
+            ptn_reflection_modifier_names_append(result, &index, "private(set)");
+            break;
+    }
+
+    if ((modifiers & 16) != 0) {
+        ptn_reflection_modifier_names_append(result, &index, "static");
+    }
+    if ((modifiers & 128) != 0 || (modifiers & 65536) != 0) {
+        ptn_reflection_modifier_names_append(result, &index, "readonly");
+    }
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
     const char *class_name,
@@ -37904,6 +38209,30 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     const PtnValue *args,
     size_t line
 ) {
+    if (ptn_ascii_case_equal(class_name, "Reflection")) {
+        if (ptn_ascii_case_equal(name, "getModifierNames")) {
+            if (argc != 1) {
+                char message[128];
+                int written = snprintf(message, sizeof(message), "Reflection::getModifierNames() expects exactly 1 argument, %zu given", argc);
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "ArgumentCountError", message);
+                return ptn_null();
+            }
+            int64_t modifiers = ptn_internal_expect_integer_arg(
+                runtime,
+                "Reflection::getModifierNames",
+                1,
+                "modifiers",
+                args[0],
+                line
+            );
+            return runtime->exceptions->active_exception != NULL
+                ? ptn_null()
+                : ptn_reflection_modifier_names(modifiers);
+        }
+    }
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
         if (ptn_ascii_case_equal(name, "listIdentifiers")) {
             int64_t group = 2047;
@@ -37932,8 +38261,18 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     return ptn_null();
 }
 
+static PtnValue ptn_internal_reflection_get_modifier_names(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "Reflection", "getModifierNames", argc, args, line);
+}
+
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_reflection_get_modifier_names(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -38463,6 +38802,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "realpath_cache_size", 0, 0, ptn_internal_realpath_cache_size },
         { "realpath", 1, 1, ptn_internal_realpath },
         { "rename", 2, 3, ptn_internal_rename },
+        { "Reflection::getModifierNames", 1, 1, ptn_internal_reflection_get_modifier_names },
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
@@ -38627,6 +38967,87 @@ static PtnValue ptn_internal_function_names(void) {
         ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_string(name));
     }
     return result;
+}
+
+static int ptn_internal_function_name_has_prefix(const char *name, const char *prefix) {
+    return strncmp(name, prefix, strlen(prefix)) == 0;
+}
+
+static const char *ptn_internal_function_extension_name(const char *name) {
+    if (strstr(name, "::") != NULL) {
+        if (ptn_internal_function_name_has_prefix(name, "Reflection")) {
+            return "Reflection";
+        }
+        if (ptn_internal_function_name_has_prefix(name, "DateTimeZone::")) {
+            return "date";
+        }
+        return "Core";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "ctype_")) {
+        return "ctype";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "json_")) {
+        return "json";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "preg_")) {
+        return "pcre";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "timezone_") ||
+        ptn_internal_function_name_has_prefix(name, "date_") ||
+        ptn_ascii_case_equal(name, "checkdate") ||
+        ptn_ascii_case_equal(name, "date") ||
+        ptn_ascii_case_equal(name, "gmdate") ||
+        ptn_ascii_case_equal(name, "gmmktime") ||
+        ptn_ascii_case_equal(name, "getdate") ||
+        ptn_ascii_case_equal(name, "idate") ||
+        ptn_ascii_case_equal(name, "localtime") ||
+        ptn_ascii_case_equal(name, "microtime") ||
+        ptn_ascii_case_equal(name, "mktime") ||
+        ptn_ascii_case_equal(name, "time")) {
+        return "date";
+    }
+    if (ptn_ascii_case_equal(name, "assert") ||
+        ptn_ascii_case_equal(name, "class_alias") ||
+        ptn_ascii_case_equal(name, "class_exists") ||
+        ptn_ascii_case_equal(name, "constant") ||
+        ptn_ascii_case_equal(name, "define") ||
+        ptn_ascii_case_equal(name, "defined") ||
+        ptn_ascii_case_equal(name, "extension_loaded") ||
+        ptn_ascii_case_equal(name, "function_exists") ||
+        ptn_ascii_case_equal(name, "gc_collect_cycles") ||
+        ptn_ascii_case_equal(name, "get_called_class") ||
+        ptn_ascii_case_equal(name, "get_cfg_var") ||
+        ptn_ascii_case_equal(name, "get_class") ||
+        ptn_ascii_case_equal(name, "get_class_methods") ||
+        ptn_ascii_case_equal(name, "get_class_vars") ||
+        ptn_ascii_case_equal(name, "get_declared_classes") ||
+        ptn_ascii_case_equal(name, "get_declared_interfaces") ||
+        ptn_ascii_case_equal(name, "get_declared_traits") ||
+        ptn_ascii_case_equal(name, "get_defined_constants") ||
+        ptn_ascii_case_equal(name, "get_defined_functions") ||
+        ptn_ascii_case_equal(name, "get_defined_vars") ||
+        ptn_ascii_case_equal(name, "get_include_path") ||
+        ptn_ascii_case_equal(name, "get_loaded_extensions") ||
+        ptn_ascii_case_equal(name, "get_parent_class") ||
+        ptn_ascii_case_equal(name, "ini_get") ||
+        ptn_ascii_case_equal(name, "ini_parse_quantity") ||
+        ptn_ascii_case_equal(name, "ini_restore") ||
+        ptn_ascii_case_equal(name, "ini_set") ||
+        ptn_ascii_case_equal(name, "interface_exists") ||
+        ptn_ascii_case_equal(name, "is_a") ||
+        ptn_ascii_case_equal(name, "is_subclass_of") ||
+        ptn_ascii_case_equal(name, "method_exists") ||
+        ptn_ascii_case_equal(name, "php_ini_scanned_files") ||
+        ptn_ascii_case_equal(name, "php_sapi_name") ||
+        ptn_ascii_case_equal(name, "php_uname") ||
+        ptn_ascii_case_equal(name, "phpversion") ||
+        ptn_ascii_case_equal(name, "property_exists") ||
+        ptn_ascii_case_equal(name, "set_include_path") ||
+        ptn_ascii_case_equal(name, "trait_exists") ||
+        ptn_ascii_case_equal(name, "zend_version")) {
+        return "Core";
+    }
+    return "standard";
 }
 
 static PtnValue ptn_internal_get_defined_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -38809,8 +39230,14 @@ static int ptn_internal_reflection_metadata_class_exists(const char *class_name)
         || ptn_ascii_case_equal(class_name, "ReflectionClass")
         || ptn_ascii_case_equal(class_name, "ReflectionClassConstant")
         || ptn_ascii_case_equal(class_name, "ReflectionConstant")
+        || ptn_ascii_case_equal(class_name, "ReflectionEnum")
+        || ptn_ascii_case_equal(class_name, "ReflectionEnumBackedCase")
+        || ptn_ascii_case_equal(class_name, "ReflectionEnumUnitCase")
         || ptn_ascii_case_equal(class_name, "ReflectionExtension")
+        || ptn_ascii_case_equal(class_name, "ReflectionFiber")
         || ptn_ascii_case_equal(class_name, "ReflectionFunction")
+        || ptn_ascii_case_equal(class_name, "ReflectionFunctionAbstract")
+        || ptn_ascii_case_equal(class_name, "ReflectionGenerator")
         || ptn_ascii_case_equal(class_name, "ReflectionMethod")
         || ptn_ascii_case_equal(class_name, "ReflectionObject")
         || ptn_ascii_case_equal(class_name, "ReflectionParameter")
@@ -38820,7 +39247,10 @@ static int ptn_internal_reflection_metadata_class_exists(const char *class_name)
         || ptn_ascii_case_equal(class_name, "ReflectionNamedType")
         || ptn_ascii_case_equal(class_name, "ReflectionUnionType")
         || ptn_ascii_case_equal(class_name, "ReflectionIntersectionType")
-        || ptn_ascii_case_equal(class_name, "ReflectionException");
+        || ptn_ascii_case_equal(class_name, "ReflectionException")
+        || ptn_ascii_case_equal(class_name, "ReflectionZendExtension")
+        || ptn_ascii_case_equal(class_name, "Reflector")
+        || ptn_ascii_case_equal(class_name, "PropertyHookType");
 }
 
 static int ptn_internal_class_name_is_stdclass_name(const char *class_name) {
@@ -39546,6 +39976,8 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getClosure")
         || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getEndLine")
+        || ptn_ascii_case_equal(method_name, "getExtension")
+        || ptn_ascii_case_equal(method_name, "getExtensionName")
         || ptn_ascii_case_equal(method_name, "getFileName")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getNamespaceName")
@@ -39567,8 +39999,17 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
 static int ptn_reflection_extension_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getClassNames")
+        || ptn_ascii_case_equal(method_name, "getClasses")
+        || ptn_ascii_case_equal(method_name, "getConstants")
+        || ptn_ascii_case_equal(method_name, "getDependencies")
+        || ptn_ascii_case_equal(method_name, "getFunctions")
         || ptn_ascii_case_equal(method_name, "getINIEntries")
-        || ptn_ascii_case_equal(method_name, "getName");
+        || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getVersion")
+        || ptn_ascii_case_equal(method_name, "info")
+        || ptn_ascii_case_equal(method_name, "isPersistent")
+        || ptn_ascii_case_equal(method_name, "isTemporary");
 }
 
 static int ptn_reflection_class_constant_method_exists(const char *method_name) {
@@ -39668,6 +40109,8 @@ static int ptn_reflection_reference_method_exists(const char *method_name) {
 
 static int ptn_reflection_constant_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "getAttributes")
+        || ptn_ascii_case_equal(method_name, "getExtension")
+        || ptn_ascii_case_equal(method_name, "getExtensionName")
         || ptn_ascii_case_equal(method_name, "getName");
 }
 
@@ -39795,6 +40238,9 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
 }
 
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name) {
+    if (ptn_ascii_case_equal(class_name, "Reflection")) {
+        return ptn_ascii_case_equal(method_name, "getModifierNames");
+    }
     if (ptn_internal_class_name_is_reflection_class(class_name) ||
         ptn_internal_class_name_is_reflection_object(class_name)) {
         return ptn_reflection_class_method_exists(method_name);
@@ -39889,6 +40335,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
 }
 
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name) {
+    if (ptn_ascii_case_equal(class_name, "Reflection")) {
+        return ptn_ascii_case_equal(method_name, "getModifierNames");
+    }
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
         return ptn_ascii_case_equal(method_name, "listAbbreviations")
             || ptn_ascii_case_equal(method_name, "listIdentifiers");
@@ -39915,6 +40364,10 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     (void)runtime;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     int64_t index = 0;
+    if (ptn_ascii_case_equal(class_name, "Reflection")) {
+        ptn_append_method_name(result, &index, "getModifierNames");
+        return result;
+    }
     if (ptn_internal_class_name_is_reflection_class(class_name) ||
         ptn_internal_class_name_is_reflection_object(class_name)) {
         static const char *const names[] = {
@@ -39971,13 +40424,21 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         static const char *const names[] = {
+            "__toString",
             "getAttributes",
             "getClosureScopeClass",
             "getClosure",
+            "getDocComment",
+            "getEndLine",
+            "getExtension",
+            "getExtensionName",
+            "getFileName",
             "getName",
             "getNamespaceName",
             "getParameters",
             "getReturnType",
+            "getStartLine",
+            "getStaticVariables",
             "invoke",
             "invokeArgs",
             "getNumberOfParameters",
@@ -39995,8 +40456,17 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         static const char *const names[] = {
             "__construct",
             "__toString",
+            "getClassNames",
+            "getClasses",
+            "getConstants",
+            "getDependencies",
+            "getFunctions",
             "getINIEntries",
             "getName",
+            "getVersion",
+            "info",
+            "isPersistent",
+            "isTemporary",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -40020,7 +40490,12 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         return result;
     }
     if (ptn_internal_class_name_is_reflection_constant(class_name)) {
-        static const char *const names[] = { "getAttributes", "getName" };
+        static const char *const names[] = {
+            "getAttributes",
+            "getExtension",
+            "getExtensionName",
+            "getName",
+        };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -41044,6 +41519,8 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_new(
     return object;
 }
 
+static PtnValue ptn_reflection_extension_object_from_name(PtnRuntime *runtime, const char *name);
+
 static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -41063,6 +41540,24 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
             : ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getExtensionName")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "getExtensionName", argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *extension_name = ptn_reflection_constant_extension_name(data->name);
+        return extension_name == NULL ? ptn_bool(0) : ptn_string(extension_name);
+    }
+    if (ptn_ascii_case_equal(name, "getExtension")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "getExtension", argc, 0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *extension_name = ptn_reflection_constant_extension_name(data->name);
+        return extension_name == NULL
+            ? ptn_null()
+            : ptn_reflection_extension_object_from_name(runtime, extension_name);
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
         return ptn_declared_constant_attributes(runtime, data->name, argc, args, line);
@@ -44207,18 +44702,18 @@ static void ptn_reflection_class_throw_missing_static_property_set(
     ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
 }
 
-static PtnValue ptn_reflection_class_extension_name(const char *class_name) {
+static const char *ptn_reflection_class_extension_name_cstr(const char *class_name) {
     if (ptn_reflection_class_is_user_defined_name(class_name)) {
-        return ptn_bool(0);
+        return NULL;
     }
     if (ptn_internal_reflection_metadata_class_exists(class_name)) {
-        return ptn_string("Reflection");
+        return "Reflection";
     }
     if (ptn_ascii_case_equal(class_name, "DateTime") ||
         ptn_internal_class_name_is_datetime_immutable(class_name) ||
         ptn_internal_class_name_is_datetime_zone(class_name) ||
         ptn_ascii_case_equal(class_name, "DateTimeInterface")) {
-        return ptn_string("date");
+        return "date";
     }
     if (ptn_internal_class_name_is_array_iterator(class_name) ||
         ptn_internal_class_name_is_recursive_array_iterator(class_name) ||
@@ -44228,9 +44723,21 @@ static PtnValue ptn_reflection_class_extension_name(const char *class_name) {
         ptn_internal_class_name_is_infinite_iterator(class_name) ||
         ptn_internal_class_name_is_iterator_iterator(class_name) ||
         ptn_internal_class_name_is_limit_iterator(class_name)) {
-        return ptn_string("SPL");
+        return "SPL";
     }
-    return ptn_string("Core");
+    return "Core";
+}
+
+static PtnValue ptn_reflection_class_extension_name(const char *class_name) {
+    const char *extension_name = ptn_reflection_class_extension_name_cstr(class_name);
+    return extension_name == NULL ? ptn_bool(0) : ptn_string(extension_name);
+}
+
+static PtnValue ptn_reflection_class_extension(PtnRuntime *runtime, const char *class_name) {
+    const char *extension_name = ptn_reflection_class_extension_name_cstr(class_name);
+    return extension_name == NULL
+        ? ptn_null()
+        : ptn_reflection_extension_object_from_name(runtime, extension_name);
 }
 
 static void ptn_reflection_class_append_builtin_constants(PtnValue result, const char *class_name) {
@@ -44251,6 +44758,28 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PROTECTED"), ptn_int(2));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PRIVATE"), ptn_int(4));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_FINAL"), ptn_int(32));
+        return;
+    }
+    if (ptn_ascii_case_equal(class_name, "ReflectionMethod")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PUBLIC"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PROTECTED"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PRIVATE"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_STATIC"), ptn_int(16));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_FINAL"), ptn_int(32));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_ABSTRACT"), ptn_int(64));
+        return;
+    }
+    if (ptn_ascii_case_equal(class_name, "ReflectionProperty")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PUBLIC"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PROTECTED"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PRIVATE"), ptn_int(4));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_STATIC"), ptn_int(16));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_FINAL"), ptn_int(32));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_ABSTRACT"), ptn_int(64));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_READONLY"), ptn_int(128));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_VIRTUAL"), ptn_int(512));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PROTECTED_SET"), ptn_int(2048));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PRIVATE_SET"), ptn_int(4096));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionAttribute")) {
@@ -44398,7 +44927,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     }
     if (ptn_ascii_case_equal(name, "getExtension")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
-        return ptn_null();
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_class_extension(runtime, class_name);
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
         ptn_reflection_class_check_at_most_arguments(runtime, name, argc, 2);
@@ -45530,7 +46061,7 @@ static const char *ptn_reflection_function_extension_name(PtnFunctionMetadata me
     if (!metadata.is_internal) {
         return NULL;
     }
-    return "standard";
+    return ptn_internal_function_extension_name(metadata.name);
 }
 
 static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) {
@@ -45620,6 +46151,29 @@ static PtnValue ptn_reflection_named_type_object_from_metadata(
         ptn_array_string_key("name"),
         ptn_owned_string(ptn_duplicate_string(name))
     );
+    return object;
+}
+
+static PtnValue ptn_reflection_function_object_from_metadata(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata
+) {
+    PtnReflectionFunctionData *data = malloc(sizeof(PtnReflectionFunctionData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->metadata = metadata;
+    data->closure_scope_class_name = NULL;
+    data->has_closure_this = 0;
+    data->closure_this = ptn_null();
+    data->has_closure = 0;
+    data->closure = ptn_null();
+    data->has_closure_function_index = 0;
+    data->closure_function_index = 0;
+
+    PtnValue object = ptn_object_new_shell(runtime, "ReflectionFunction");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_reflection_function_data_free;
     return object;
 }
 
@@ -45884,6 +46438,192 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
     return result;
 }
 
+static PtnValue ptn_reflection_extension_constants(const char *extension_name) {
+    if (ptn_ascii_case_equal(extension_name, "Core")) {
+        return ptn_defined_constants_core_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "json")) {
+        return ptn_defined_constants_json_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "pcre")) {
+        return ptn_defined_constants_pcre_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "standard")) {
+        return ptn_defined_constants_standard_table();
+    }
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static PtnValue ptn_reflection_extension_functions(PtnRuntime *runtime, const char *extension_name) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t count = 0;
+    const PtnInternalFunction *functions = ptn_internal_functions(&count);
+    for (size_t i = 0; i < count; i++) {
+        const char *name = functions[i].name;
+        if (strncmp(name, "_ptn_", 5) == 0 || strstr(name, "::") != NULL) {
+            continue;
+        }
+        if (!ptn_ascii_case_equal(ptn_internal_function_extension_name(name), extension_name)) {
+            continue;
+        }
+        PtnFunctionMetadata metadata = ptn_internal_function_metadata(&functions[i]);
+        if (!metadata.found) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(name),
+            ptn_reflection_function_object_from_metadata(runtime, metadata)
+        );
+    }
+    return result;
+}
+
+static void ptn_reflection_extension_add_class(
+    PtnRuntime *runtime,
+    PtnValue result,
+    int64_t *index,
+    const char *class_name,
+    int objects
+) {
+    if (objects) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(class_name),
+            ptn_reflection_class_object_from_name(runtime, class_name)
+        );
+        return;
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), ptn_string(class_name));
+}
+
+static void ptn_reflection_extension_add_enum(
+    PtnRuntime *runtime,
+    PtnValue result,
+    int64_t *index,
+    const char *enum_name,
+    int objects
+) {
+    if (objects) {
+        PtnValue object = ptn_object_new_shell(runtime, "ReflectionEnum");
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key("name"),
+            ptn_owned_string(ptn_duplicate_string(enum_name))
+        );
+        ptn_array_set_entry(result.as.array, ptn_array_string_key(enum_name), object);
+        return;
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), ptn_string(enum_name));
+}
+
+static PtnValue ptn_reflection_extension_classes(
+    PtnRuntime *runtime,
+    const char *extension_name,
+    int objects
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    if (ptn_ascii_case_equal(extension_name, "Core")) {
+        static const char *const names[] = {
+            "stdClass",
+            "Closure",
+            "Generator",
+            "SensitiveParameter",
+            "SensitiveParameterValue",
+            "Attribute",
+            "Deprecated",
+            "NoDiscard",
+            "Exception",
+            "Error",
+            "ErrorException",
+            "RuntimeException",
+            "InvalidArgumentException",
+            "UnexpectedValueException",
+            "OutOfBoundsException",
+            "OutOfRangeException",
+            "AssertionError",
+        };
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
+        }
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "date")) {
+        static const char *const names[] = {
+            "DateTime",
+            "DateTimeImmutable",
+            "DateTimeZone",
+        };
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
+        }
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "Reflection")) {
+        static const char *const names[] = {
+            "ReflectionException",
+            "Reflection",
+            "Reflector",
+            "ReflectionFunctionAbstract",
+            "ReflectionFunction",
+            "ReflectionGenerator",
+            "ReflectionParameter",
+            "ReflectionType",
+            "ReflectionNamedType",
+            "ReflectionUnionType",
+            "ReflectionIntersectionType",
+            "ReflectionMethod",
+            "ReflectionClass",
+            "ReflectionObject",
+            "ReflectionProperty",
+            "ReflectionClassConstant",
+            "ReflectionExtension",
+            "ReflectionZendExtension",
+            "ReflectionReference",
+            "ReflectionAttribute",
+            "ReflectionEnum",
+            "ReflectionEnumUnitCase",
+            "ReflectionEnumBackedCase",
+            "ReflectionFiber",
+            "ReflectionConstant",
+        };
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
+        }
+        ptn_reflection_extension_add_enum(runtime, result, &index, "PropertyHookType", objects);
+    }
+    return result;
+}
+
+static PtnValue ptn_reflection_extension_dependencies(void) {
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static PtnValue ptn_reflection_extension_info(PtnRuntime *runtime, const char *extension_name) {
+    if (ptn_ascii_case_equal(extension_name, "Reflection")) {
+        ptn_output_write_cstr(runtime, "Reflection\n\nReflection => enabled\n");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(extension_name, "date")) {
+        ptn_output_write_cstr(
+            runtime,
+            "date\n\n"
+            "date/time support => enabled\n"
+            "timelib version => 2026.1\n"
+            "\"Olson\" Timezone Database Version => 2026.1\n"
+            "Timezone Database => internal\n"
+            "Default timezone => UTC\n"
+        );
+        return ptn_null();
+    }
+    ptn_output_write_cstr(runtime, extension_name);
+    ptn_output_write_cstr(runtime, "\n\n");
+    ptn_output_write_cstr(runtime, extension_name);
+    ptn_output_write_cstr(runtime, " => enabled\n");
+    return ptn_null();
+}
+
 static PtnValue ptn_reflection_extension_object_from_name(PtnRuntime *runtime, const char *name) {
     PtnReflectionExtensionData *data = malloc(sizeof(PtnReflectionExtensionData));
     if (data == NULL) {
@@ -46000,8 +46740,35 @@ static PTN_UNUSED PtnValue ptn_reflection_extension_call_method(
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(data->name));
     }
+    if (ptn_ascii_case_equal(name, "getVersion")) {
+        return ptn_string(PTN_PHP_VERSION);
+    }
     if (ptn_ascii_case_equal(name, "getINIEntries")) {
         return ptn_reflection_extension_ini_entries(runtime, data->name);
+    }
+    if (ptn_ascii_case_equal(name, "getFunctions")) {
+        return ptn_reflection_extension_functions(runtime, data->name);
+    }
+    if (ptn_ascii_case_equal(name, "getConstants")) {
+        return ptn_reflection_extension_constants(data->name);
+    }
+    if (ptn_ascii_case_equal(name, "getClasses")) {
+        return ptn_reflection_extension_classes(runtime, data->name, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getClassNames")) {
+        return ptn_reflection_extension_classes(runtime, data->name, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getDependencies")) {
+        return ptn_reflection_extension_dependencies();
+    }
+    if (ptn_ascii_case_equal(name, "isPersistent")) {
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "isTemporary")) {
+        return ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "info")) {
+        return ptn_reflection_extension_info(runtime, data->name);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -47452,6 +48219,16 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(metadata.name));
+    }
+    if (ptn_ascii_case_equal(name, "getExtensionName")) {
+        const char *extension_name = ptn_reflection_function_extension_name(metadata);
+        return extension_name == NULL ? ptn_bool(0) : ptn_string(extension_name);
+    }
+    if (ptn_ascii_case_equal(name, "getExtension")) {
+        const char *extension_name = ptn_reflection_function_extension_name(metadata);
+        return extension_name == NULL
+            ? ptn_null()
+            : ptn_reflection_extension_object_from_name(runtime, extension_name);
     }
     if (ptn_ascii_case_equal(name, "getNamespaceName")) {
         return ptn_reflection_function_string_before_last_namespace_separator(metadata.name);

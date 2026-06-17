@@ -17020,6 +17020,108 @@ var_dump(method_exists('ReflectionFunction', '__toString'));
 }
 
 #[test]
+fn compile_reflection_extension_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-extension-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-extension-metadata.php");
+    let output = root.join("reflection-extension-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+const EXT_USER_CONST = 9;
+
+$standard = new ReflectionExtension(\"standard\");
+$functions = $standard->getFunctions();
+var_dump(
+    method_exists(\"ReflectionExtension\", \"getFunctions\"),
+    isset($functions[\"sleep\"]),
+    $functions[\"sleep\"]->getName(),
+    $functions[\"sleep\"]->getExtensionName(),
+    $functions[\"sleep\"]->getExtension()->getName()
+);
+
+$constants = $standard->getConstants();
+var_dump($constants[\"CONNECTION_NORMAL\"], $constants[\"CASE_LOWER\"], defined(\"CONNECTION_NORMAL\"), constant(\"CONNECTION_TIMEOUT\"));
+
+$reflection = new ReflectionExtension(\"reflection\");
+$classes = $reflection->getClasses();
+$classNames = $reflection->getClassNames();
+var_dump(
+    $reflection->getName(),
+    is_string($reflection->getVersion()),
+    isset($classes[\"ReflectionException\"]),
+    $classes[\"ReflectionException\"]->getName(),
+    in_array(\"ReflectionClass\", $classNames, true)
+);
+var_dump($reflection->getFunctions(), $reflection->getConstants(), $reflection->getDependencies());
+
+$rc = new ReflectionClass(\"ReflectionClass\");
+var_dump($rc->getExtensionName(), $rc->getExtension()->getName());
+
+class UserExtProbe {}
+$user = new ReflectionClass(\"UserExtProbe\");
+var_dump($user->getExtensionName(), $user->getExtension());
+
+$constant = new ReflectionConstant(\"CONNECTION_NORMAL\");
+var_dump($constant->getExtensionName(), $constant->getExtension()->getName());
+
+$jsonConstant = new ReflectionConstant(\"JSON_ERROR_NONE\");
+var_dump($jsonConstant->getExtensionName(), $jsonConstant->getExtension()->getName());
+
+$userConstant = new ReflectionConstant(\"EXT_USER_CONST\");
+var_dump($userConstant->getExtensionName(), $userConstant->getExtension());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(5) \"sleep\"\n",
+            "string(8) \"standard\"\n",
+            "string(8) \"standard\"\n",
+            "int(0)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "string(10) \"Reflection\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(19) \"ReflectionException\"\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "array(0) {\n",
+            "}\n",
+            "string(10) \"Reflection\"\n",
+            "string(10) \"Reflection\"\n",
+            "bool(false)\n",
+            "NULL\n",
+            "string(8) \"standard\"\n",
+            "string(8) \"standard\"\n",
+            "string(4) \"json\"\n",
+            "string(4) \"json\"\n",
+            "bool(false)\n",
+            "NULL\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_extension_functions"));
+    assert!(c_source.contains("ptn_reflection_extension_constants"));
+    assert!(c_source.contains("ptn_reflection_class_extension"));
+}
+
+#[test]
 fn compile_reflection_parameter_type_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-parameter-type-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -17209,6 +17311,9 @@ var_dump($static->isConstructor());
 $private = new ReflectionMethod(\"ReflectMethodSubject\", \"hidden\");
 var_dump($private->isPrivate());
 var_dump($private->getModifiers());
+var_dump(Reflection::getModifierNames($private->getModifiers()));
+var_dump(Reflection::getModifierNames(ReflectionMethod::IS_FINAL | ReflectionMethod::IS_PROTECTED));
+var_dump(method_exists(\"Reflection\", \"getModifierNames\"));
 
 $ctor = new ReflectionMethod(\"ReflectMethodSubject\", \"__construct\");
 var_dump($ctor->isConstructor());
@@ -17240,6 +17345,17 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
             "bool(false)\n",
             "bool(true)\n",
             "int(4)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(7) \"private\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(5) \"final\"\n",
+            "  [1]=>\n",
+            "  string(9) \"protected\"\n",
+            "}\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
