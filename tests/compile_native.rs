@@ -30872,6 +30872,43 @@ var_dump(function_exists(\"array_slice\"), function_exists(\"ARRAY_SLICE\"));",
 }
 
 #[test]
+fn compile_array_slice_dereferences_reference_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-array-slice-deref-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-slice-deref-references.php");
+    let output = root.join("array-slice-deref-references-bin");
+    fs::write(
+        &input,
+        "<?php
+function takes_ref(&$ref) {
+    var_dump($ref);
+}
+
+$object = new stdClass();
+$args = [&$object];
+$slice = array_slice($args, 0, 1);
+call_user_func_array('takes_ref', $slice);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("takes_ref(): Argument #1 ($ref) must be passed by reference, value given"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("object(stdClass)#1 (0)"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_clone_deref(source->value)"));
+}
+
+#[test]
 fn compile_array_keys_filter_edges_to_native_binary() {
     let root = temp_dir("ptn-native-array-keys-filter-edges");
     fs::create_dir_all(&root).unwrap();
@@ -41604,6 +41641,84 @@ var_dump($box->value);
     assert!(c_source.contains("ptn_value_array_path_set_from_assign_op(&runtime"));
     assert!(c_source.contains("ptn_value_array_path_read_for_assign_op(&runtime"));
     assert!(c_source.contains("ptn_value_array_path_unset("));
+}
+
+#[test]
+fn compile_arrayaccess_by_value_indirect_writes_to_native_binary() {
+    let root = temp_dir("ptn-native-arrayaccess-by-value-indirect-writes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrayaccess-by-value-indirect-writes.php");
+    let output = root.join("arrayaccess-by-value-indirect-writes-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box implements ArrayAccess {
+    public $items = [
+        0 => ['name' => 'Foo'],
+        1 => 1,
+    ];
+
+    public function offsetExists($offset): bool {
+        return array_key_exists($offset, $this->items);
+    }
+
+    public function offsetGet($offset): mixed {
+        return $this->items[$offset];
+    }
+
+    public function offsetSet($offset, $value): void {
+        echo \"offsetSet($offset)\\n\";
+        $this->items[$offset] = $value;
+    }
+
+    public function offsetUnset($offset): void {
+        echo \"offsetUnset($offset)\\n\";
+        unset($this->items[$offset]);
+    }
+}
+
+$box = new Box();
+$box[0]['name'] = 'Bar';
+$box[0]['name'] .= 'Baz';
+var_dump($box[0]['name']);
+$box[1]++;
+var_dump($box[1]);
+$ref = 'ref';
+try {
+    $box[0]['name'] =& $ref;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($box[0]['name']);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Indirect modification of overloaded element of Box has no effect")
+            .count(),
+        4,
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign by reference to an array dimension of an object"),
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("string(3) \"Foo\"").count(), 2, "{stdout}");
+    assert!(stdout.contains("int(1)"), "{stdout}");
+    assert!(!stdout.contains("offsetSet"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_path_set_from_inc_dec"));
+    assert!(c_source.contains("ptn_runtime_bind_array_path_reference"));
+    assert!(c_source.contains("ptn_arrayaccess_nested_write_should_apply"));
 }
 
 #[test]
