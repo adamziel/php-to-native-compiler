@@ -16356,6 +16356,7 @@ fn modeled_internal_has_by_ref_parameter(name: &str) -> bool {
             | "ksort"
             | "mb_ereg"
             | "mb_convert_variables"
+            | "mb_parse_str"
             | "natcasesort"
             | "natsort"
             | "next"

@@ -1439,6 +1439,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
