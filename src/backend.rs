@@ -268,6 +268,9 @@ pub fn emit_c(module: &Module) -> String {
     }
     out.push_str("    runtime.class_scope_allows = ptn_declared_class_scope_allows;\n");
     out.push_str("    runtime.declared_class_is_readonly = ptn_declared_class_is_readonly;\n");
+    out.push_str(
+        "    runtime.declared_class_allows_dynamic_properties = ptn_declared_class_allows_dynamic_properties;\n",
+    );
     if !module.classes.is_empty() {
         out.push_str(
             "    runtime.new_instance_without_constructor = ptn_declared_class_new_instance_without_constructor;\n",
@@ -4018,6 +4021,25 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_allows_dynamic_properties(const char *name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if class_allows_dynamic_properties(class, classes) {
+            out.push_str("        return 1;\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_user_class_or_interface_exists(const char *name) {\n",
     );
     if classes.is_empty() {
@@ -6506,6 +6528,30 @@ fn class_by_name<'a>(classes: &'a [ClassDecl], name: &str) -> Option<&'a ClassDe
     classes
         .iter()
         .find(|class| class.name.eq_ignore_ascii_case(name))
+}
+
+fn class_allows_dynamic_properties(class: &ClassDecl, classes: &[ClassDecl]) -> bool {
+    if class.attributes.has_allow_dynamic_properties {
+        return true;
+    }
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if name.eq_ignore_ascii_case("stdClass") {
+            return true;
+        }
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if parent.attributes.has_allow_dynamic_properties {
+            return true;
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    false
 }
 
 fn builtin_exception_parent_name(name: &str) -> Option<&'static str> {

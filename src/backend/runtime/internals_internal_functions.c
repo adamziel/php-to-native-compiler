@@ -38845,6 +38845,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getDefaultValue")
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getRawValue")
         || ptn_ascii_case_equal(method_name, "getValue")
         || ptn_ascii_case_equal(method_name, "hasDefaultValue")
         || ptn_ascii_case_equal(method_name, "isDefault")
@@ -38857,6 +38858,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isStatic")
         || ptn_ascii_case_equal(method_name, "isVirtual")
         || ptn_ascii_case_equal(method_name, "isWritable")
+        || ptn_ascii_case_equal(method_name, "setRawValue")
         || ptn_ascii_case_equal(method_name, "setValue");
 }
 
@@ -41984,7 +41986,8 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         }
         return ptn_reflection_property_default_value(runtime, data->class_name, data->name);
     }
-    if (ptn_ascii_case_equal(name, "getValue")) {
+    if (ptn_ascii_case_equal(name, "getValue") || ptn_ascii_case_equal(name, "getRawValue")) {
+        int raw_value = ptn_ascii_case_equal(name, "getRawValue");
         ptn_reflection_property_check_at_most_arguments(runtime, name, argc, 1);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
@@ -42002,11 +42005,17 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                 : ptn_reflection_property_default_value(runtime, data->class_name, data->name);
         }
         if (argc != 1) {
-            ptn_throw_exception(
-                runtime,
-                "ArgumentCountError",
-                "ReflectionProperty::getValue() expects exactly 1 argument, 0 given"
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionProperty::%s() expects exactly 1 argument, 0 given",
+                name
             );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
             return ptn_null();
         }
         PtnValue target = ptn_value_deref(args[0]);
@@ -42015,7 +42024,8 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             int written = snprintf(
                 message,
                 sizeof(message),
-                "ReflectionProperty::getValue(): Argument #1 ($object) must be of type object, %s given",
+                "ReflectionProperty::%s(): Argument #1 ($object) must be of type object, %s given",
+                name,
                 ptn_offset_container_type_name(target)
             );
             if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -42034,6 +42044,15 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             PtnSensitiveParameterValueData *sensitive_data =
                 ptn_sensitive_parameter_value_data(runtime, target);
             return sensitive_data == NULL ? ptn_null() : ptn_value_clone_deref(sensitive_data->value);
+        }
+        if (raw_value) {
+            return ptn_object_read_property(
+                runtime,
+                target,
+                data->name,
+                data->class_name,
+                line
+            );
         }
         PtnLookupResult lookup = ptn_object_property_lookup_quiet(
             runtime,
@@ -42065,17 +42084,23 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         PtnValue target = argc >= 2 ? ptn_value_deref(args[1]) : ptn_null();
         return ptn_bool(is_static || target.type == PTN_OBJECT);
     }
-    if (ptn_ascii_case_equal(name, "setValue")) {
+    if (ptn_ascii_case_equal(name, "setValue") || ptn_ascii_case_equal(name, "setRawValue")) {
         ptn_reflection_property_check_at_most_arguments(runtime, name, argc, 2);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
         if (argc == 0) {
-            ptn_throw_exception(
-                runtime,
-                "ArgumentCountError",
-                "ReflectionProperty::setValue() expects at least 1 argument, 0 given"
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionProperty::%s() expects at least 1 argument, 0 given",
+                name
             );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
             return ptn_null();
         }
         if (is_static) {
@@ -42090,11 +42115,17 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             );
         }
         if (argc != 2) {
-            ptn_throw_exception(
-                runtime,
-                "ArgumentCountError",
-                "ReflectionProperty::setValue() expects exactly 2 arguments, 1 given"
+            char message[96];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionProperty::%s() expects exactly 2 arguments, 1 given",
+                name
             );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
             return ptn_null();
         }
         PtnValue target = ptn_value_deref(args[0]);
@@ -42103,7 +42134,8 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             int written = snprintf(
                 message,
                 sizeof(message),
-                "ReflectionProperty::setValue(): Argument #1 ($object) must be of type object, %s given",
+                "ReflectionProperty::%s(): Argument #1 ($object) must be of type object, %s given",
+                name,
                 ptn_offset_container_type_name(target)
             );
             if (written < 0 || (size_t)written >= sizeof(message)) {

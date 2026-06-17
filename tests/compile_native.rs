@@ -4788,6 +4788,8 @@ class Book extends ParentBook {
     .unwrap();
 
     assert!(program.classes[0].properties[0].has_hooks);
+    assert!(program.classes[0].properties[0].hook_has_get);
+    assert!(!program.classes[0].properties[0].hook_get_is_abstract);
     assert!(matches!(
         program.classes[0].properties[0].hook_get_value.as_ref(),
         Some(Expr::String(value, _)) if value == "fallback"
@@ -4797,6 +4799,30 @@ class Book extends ParentBook {
         program.classes[1].properties[0].set_visibility,
         PropertyVisibility::Protected
     );
+}
+
+#[test]
+fn parser_accepts_interface_property_hook_contract_metadata() {
+    let program = parser::parse(
+        "<?php
+interface Contract {
+    public int $value { get; set; }
+}
+class Box implements Contract {
+    public int $value;
+}
+",
+    )
+    .unwrap();
+
+    let property = &program.classes[0].properties[0];
+    assert!(program.classes[0].is_interface);
+    assert!(property.is_abstract);
+    assert!(property.has_hooks);
+    assert!(property.hook_has_get);
+    assert!(property.hook_has_set);
+    assert!(property.hook_get_is_abstract);
+    assert!(property.hook_set_is_abstract);
 }
 
 #[test]
@@ -5846,6 +5872,109 @@ class StringChild extends StringParent {
 ",
     )
     .unwrap();
+}
+
+#[test]
+fn parser_rejects_invalid_property_hook_contracts() {
+    let cases = [
+        (
+            "<?php class C { abstract public $prop; }",
+            "Only hooked properties may be declared abstract",
+        ),
+        (
+            "<?php class C { public abstract $prop { final get; } }",
+            "Property hook cannot be both abstract and final",
+        ),
+        (
+            "<?php class C { private abstract $prop { get; } }",
+            "Property hook cannot be both abstract and private",
+        ),
+        (
+            "<?php class C { private $prop { final get; } }",
+            "Property hook cannot be both final and private",
+        ),
+        (
+            "<?php class C { public $prop {} }",
+            "Property hook list must not be empty",
+        ),
+        (
+            "<?php class C { public readonly int $prop { get; set; } }",
+            "Hooked properties cannot be readonly",
+        ),
+        (
+            "<?php class C { public static $prop { get; set; } }",
+            "Cannot declare hooks for static property",
+        ),
+        (
+            "<?php interface I { abstract public $prop { get; } }",
+            "Property in interface cannot be explicitly abstract. All interface members are implicitly abstract",
+        ),
+        (
+            "<?php interface I { protected $prop { get; } }",
+            "Property in interface cannot be protected or private",
+        ),
+        (
+            "<?php interface I { final public $prop { get; } }",
+            "Property in interface cannot be final",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+    }
+}
+
+#[test]
+fn parser_rejects_missing_abstract_property_hook_implementations() {
+    let cases = [
+        (
+            "<?php class A { abstract public $prop { get; set; } }",
+            "Class A contains 2 abstract methods and must therefore be declared abstract or implement the remaining methods (A::$prop::get, A::$prop::set)",
+        ),
+        (
+            "<?php abstract class A { public abstract $prop { get; } } class B extends A {}",
+            "Class B contains 1 abstract method and must therefore be declared abstract or implement the remaining method (A::$prop::get)",
+        ),
+        (
+            "<?php interface I { public $prop { get; set; } } class C implements I {}",
+            "Class C contains 2 abstract methods and must therefore be declared abstract or implement the remaining methods (I::$prop::get, I::$prop::set)",
+        ),
+        (
+            "<?php interface I { public int $prop { get; set; } } class C implements I { public function __construct(public readonly int $prop) {} }",
+            "Set access level of C::$prop must be omitted (as in class I)",
+        ),
+        (
+            "<?php var_dump(parent::$prop::get());",
+            "Cannot use \"parent\" when no class scope is active",
+        ),
+        (
+            "<?php class C { public function test() { return parent::$prop::get(); } }",
+            "Must not use parent::$prop::get() outside a property hook",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+    }
+}
+
+#[test]
+fn parser_rejects_final_promoted_property_override() {
+    let error = parser::parse(
+        "<?php
+class A {
+    public function __construct(final $prop) {}
+}
+class B extends A {
+    public $prop;
+}
+",
+    )
+    .unwrap_err();
+
+    assert_eq!(error.message, "Cannot override final property A::$prop");
 }
 
 #[test]
@@ -36597,13 +36726,16 @@ var_dump($holder->columns);
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "\nNotice: Only variables should be passed by reference in ptn on line 10\n",
-            "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 10\n",
-            "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 10\n",
-            "bool(true)\n",
-            "array(0) {\n",
-            "}\n",
+        format!(
+            concat!(
+                "\nNotice: Only variables should be passed by reference in {} on line 10\n",
+                "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 10\n",
+                "\nWarning: needs_userdata_ref(): Argument #3 ($userdata) must be passed by reference, value given in ptn on line 10\n",
+                "bool(true)\n",
+                "array(0) {{\n",
+                "}}\n",
+            ),
+            input.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -36880,7 +37012,8 @@ var_dump($object->value);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_new_object(&runtime, \"stdClass\""));
+    assert!(c_source.contains("ptn_runtime_resolve_class_alias(&runtime, \"stdClass\")"));
+    assert!(c_source.contains("ptn_new_object(&runtime"));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
 }
@@ -36936,6 +37069,49 @@ $example::$dynamicStatic();
     assert!(c_source.contains("ptn_dynamic_property_name(&runtime"));
     assert!(c_source.contains("ptn_object_write_property(&runtime"));
     assert!(c_source.contains("ptn_object_read_property(&runtime"));
+}
+
+#[test]
+fn compile_user_dynamic_property_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-user-dynamic-property-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-dynamic-property-deprecation.php");
+    let output = root.join("user-dynamic-property-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php
+class Plain {}
+#[AllowDynamicProperties]
+class Bag {}
+class Child extends Bag {}
+$plain = new Plain;
+$plain->dyn = 1;
+$bag = new Bag;
+$bag->dyn = 2;
+echo $bag->dyn, \"\\n\";
+$child = new Child;
+$child->dyn = 3;
+echo $child->dyn, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nDeprecated: Creation of dynamic property Plain::$dyn is deprecated in {} on line 7\n2\n3\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_allows_dynamic_properties"));
+    assert!(c_source.contains("ptn_emit_dynamic_property_deprecation"));
 }
 
 #[test]
@@ -37761,6 +37937,7 @@ class Base {
     }
 }
 
+#[AllowDynamicProperties]
 class Child extends Base {
     private $childPrivate = 5;
     public $visible = 6;
@@ -37885,6 +38062,11 @@ var_dump($prop->isDynamic());
 var_dump($prop->getValue($object));
 $prop->setValue($object, \"updated\");
 var_dump($object->name);
+var_dump(method_exists(\"ReflectionProperty\", \"getRawValue\"));
+var_dump(method_exists(\"ReflectionProperty\", \"setRawValue\"));
+var_dump($prop->getRawValue($object));
+$prop->setRawValue($object, \"raw\");
+var_dump($object->name);
 
 $static = new ReflectionProperty(\"ReflectPropChild\", \"count\");
 var_dump($static->isPrivate());
@@ -37963,6 +38145,10 @@ try {
             "bool(false)\n",
             "NULL\n",
             "string(7) \"updated\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(7) \"updated\"\n",
+            "string(3) \"raw\"\n",
             "bool(true)\n",
             "bool(true)\n",
             "int(20)\n",
@@ -38409,7 +38595,7 @@ var_dump($box->value);
     assert!(c_source.contains("ptn_value_array_path_set(&runtime"));
     assert!(c_source.contains("ptn_value_array_path_set_from_assign_op(&runtime"));
     assert!(c_source.contains("ptn_value_array_path_read_for_assign_op(&runtime"));
-    assert!(c_source.contains("ptn_value_array_path_unset(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_unset("));
 }
 
 #[test]
