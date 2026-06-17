@@ -1770,22 +1770,14 @@ fn emit_user_argument_count_check(
     out.push_str("    if (argc < ");
     out.push_str(&required_parameter_count.to_string());
     out.push_str(") {\n");
-    out.push_str("        if (caller_runtime->throw_argument_count_errors) {\n");
-    out.push_str("            ptn_throw_user_argument_count_error(caller_runtime, \"");
+    out.push_str("        ptn_throw_user_argument_count_error(caller_runtime, \"");
     out.push_str(&c_string(&function.display_name));
     out.push_str("\", ");
     out.push_str(&required_parameter_count.to_string());
     out.push_str(", argc, ");
     out.push_str(if arity_error_is_exact { "1" } else { "0" });
     out.push_str(", line);\n");
-    out.push_str("            return ptn_null();\n");
-    out.push_str("        }\n");
-    out.push_str("        ptn_emit_argument_count_error(&caller_runtime->diagnostics, \"");
-    out.push_str(&c_string(&function.display_name));
-    out.push_str("\", ");
-    out.push_str(&required_parameter_count.to_string());
-    out.push_str(", argc);\n");
-    out.push_str("        exit(255);\n");
+    out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
 }
 
@@ -19185,8 +19177,8 @@ impl ValueEmitter {
                         }
                         CastKind::Int | CastKind::Float | CastKind::Bool => {
                             out.push_str(match kind {
-                                CastKind::Int => "ptn_cast_int",
-                                CastKind::Float => "ptn_cast_float",
+                                CastKind::Int => "ptn_cast_int_with_runtime",
+                                CastKind::Float => "ptn_cast_float_with_runtime",
                                 CastKind::Bool => "ptn_cast_bool",
                                 CastKind::String
                                 | CastKind::Array
@@ -19202,7 +19194,14 @@ impl ValueEmitter {
                                 }
                             });
                             out.push('(');
+                            if matches!(kind, CastKind::Int | CastKind::Float) {
+                                out.push_str("&runtime, ");
+                            }
                             out.push_str(&expr_temp);
+                            if matches!(kind, CastKind::Int | CastKind::Float) {
+                                out.push_str(", ");
+                                out.push_str(&line.to_string());
+                            }
                             out.push_str(");\n");
                         }
                         CastKind::Integer

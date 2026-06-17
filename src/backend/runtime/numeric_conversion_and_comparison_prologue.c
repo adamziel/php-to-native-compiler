@@ -4609,6 +4609,61 @@ static PTN_UNUSED PtnValue ptn_cast_int(PtnValue value) {
     return ptn_int(number.integer);
 }
 
+static PTN_UNUSED const char *ptn_numeric_cast_object_class_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_RESOURCE:
+        case PTN_ARRAY:
+        case PTN_REFERENCE:
+            return NULL;
+    }
+    return NULL;
+}
+
+static PTN_UNUSED void ptn_emit_object_numeric_cast_warning(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *target_type,
+    size_t line
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    const char *class_name = ptn_numeric_cast_object_class_name(value);
+    if (class_name == NULL) {
+        return;
+    }
+
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Object of class %s could not be converted to %s",
+        class_name,
+        target_type
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+}
+
+static PTN_UNUSED PtnValue ptn_cast_int_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_object_numeric_cast_warning(runtime, value, "int", line);
+    return ptn_cast_int(value);
+}
+
 static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
     value = ptn_value_deref(value);
     double fast_number = 0.0;
@@ -4618,6 +4673,11 @@ static PTN_UNUSED PtnValue ptn_cast_float(PtnValue value) {
 
     PtnNumber number = ptn_to_number(value);
     return ptn_float(number.floating);
+}
+
+static PTN_UNUSED PtnValue ptn_cast_float_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
+    ptn_emit_object_numeric_cast_warning(runtime, value, "float", line);
+    return ptn_cast_float(value);
 }
 
 static PTN_UNUSED void ptn_abort_arithmetic_error(const char *message) {

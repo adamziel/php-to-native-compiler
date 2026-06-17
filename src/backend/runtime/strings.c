@@ -872,14 +872,19 @@ typedef enum {
     PTN_CAST_TARGET_BOOL
 } PtnCastTarget;
 
-static PTN_UNUSED PtnValue ptn_cast_target(PtnValue value, PtnCastTarget target) {
+static PTN_UNUSED PtnValue ptn_cast_target(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnCastTarget target,
+    size_t line
+) {
     switch (target) {
         case PTN_CAST_TARGET_INT:
-            return ptn_cast_int(value);
+            return ptn_cast_int_with_runtime(runtime, value, line);
         case PTN_CAST_TARGET_FLOAT:
-            return ptn_cast_float(value);
+            return ptn_cast_float_with_runtime(runtime, value, line);
         case PTN_CAST_TARGET_STRING:
-            return ptn_cast_string(value);
+            return ptn_cast_string_with_runtime(runtime, value, line);
         case PTN_CAST_TARGET_BOOL:
             return ptn_cast_bool(value);
     }
@@ -906,7 +911,7 @@ static PTN_UNUSED PtnValue ptn_cast_noncanonical(
         ptn_abort_out_of_memory();
     }
     ptn_emit_deprecation(&runtime->diagnostics, message, line);
-    return ptn_cast_target(value, target);
+    return ptn_cast_target(runtime, value, target, line);
 }
 
 static PTN_UNUSED PtnValue ptn_gettype_value(PtnValue value) {

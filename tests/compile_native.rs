@@ -14878,19 +14878,37 @@ fn compile_user_function_default_argument_too_few_to_native_binary() {
     let output = root.join("user-function-default-argument-too-few-bin");
     fs::write(
         &input,
-        "<?php function required_then_optional($required, $optional = 2) { return $required; } required_then_optional();",
+        "<?php
+function required_then_optional($required, $optional = 2) { return $required; }
+class RequiresArgument {
+    public function method($required, $optional = 2) { return $required; }
+}
+try {
+    required_then_optional();
+} catch (ArgumentCountError $e) {
+    echo \"function: \", $e->getMessage(), \"\\n\";
+}
+try {
+    (new RequiresArgument())->method();
+} catch (ArgumentCountError $e) {
+    echo \"method: \", $e->getMessage(), \"\\n\";
+}
+",
     )
     .unwrap();
 
     compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
-    assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert!(execution.status.success());
+    let input_path = input.display();
     assert_eq!(
-        String::from_utf8(execution.stderr).unwrap(),
-        "Fatal error: required_then_optional() expects at least 1 argument, 0 given\n"
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "function: Too few arguments to function required_then_optional(), 0 passed in {input_path} on line 7 and at least 1 expected\nmethod: Too few arguments to function RequiresArgument::method(), 0 passed in {input_path} on line 12 and at least 1 expected\n"
+        )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -21906,6 +21924,37 @@ echo ((new stdClass) >= (new Test)) ? "bad\n" : "unordered-ge\n";
 }
 
 #[test]
+fn compile_object_scalar_cast_warnings_to_native_binary() {
+    let root = temp_dir("ptn-native-object-scalar-cast-warnings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-scalar-cast-warnings.php");
+    let output = root.join("object-scalar-cast-warnings-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {}
+$foo = new Foo;
+var_dump((int)$foo);
+var_dump((float)$foo);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nWarning: Object of class Foo could not be converted to int in ptn on line 4\n\
+int(1)\n\
+\nWarning: Object of class Foo could not be converted to float in ptn on line 5\n\
+float(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_boolean_short_circuit_ops_to_native_binary() {
     let root = temp_dir("ptn-native-boolean-short-circuit");
     fs::create_dir_all(&root).unwrap();
@@ -26716,6 +26765,37 @@ var_dump(defined(\"E_WARNING\"), defined(\"E_ALL\"));",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(32767)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 3\narray(1) {\n  [\"shown\"]=>\n  int(1)\n}\nint(32767)\nint(1)\narray(1) {\n  [\"hidden\"]=>\n  int(1)\n}\nbool(true)\nint(1)\nint(1)\nint(32767)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 10\narray(1) {\n  [\"shown-again\"]=>\n  int(1)\n}\nWarning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 11\nbool(true)\nint(2)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_error_reporting_reflects_nested_error_suppression_to_native_binary() {
+    let root = temp_dir("ptn-native-error-reporting-suppression");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-reporting-suppression.php");
+    let output = root.join("error-reporting-suppression-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function foo($a, $b, $c) { echo \"foo: \", error_reporting(), \"\\n\"; }\n\
+function bar() { echo \"bar: \", error_reporting(), \"\\n\"; }\n\
+error_reporting(E_WARNING);\n\
+echo \"before: \", error_reporting(), \"\\n\";\n\
+@foo(1, @bar(), 3);\n\
+echo \"after: \", error_reporting(), \"\\n\";\n\
+echo \"set: \", @error_reporting(E_ALL), \"\\n\";\n\
+echo \"final: \", error_reporting(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "before: 2\nbar: 0\nfoo: 0\nafter: 2\nset: 0\nfinal: 32767\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -34130,6 +34210,12 @@ fn compile_exit_construct_forms_to_native_binary() {
             "<?php echo \"before\\n\"; die; echo \"after\\n\";",
             Some(0),
             "before\n",
+        ),
+        (
+            "die-parenthesized-string.php",
+            "<?php if (false) { die(\"bad\\n\"); } echo \"ok\\n\";",
+            Some(0),
+            "ok\n",
         ),
         (
             "exit-int.php",
