@@ -395,11 +395,17 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
+static int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out);
 static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only);
 static int ptn_declared_class_exists(const char *name);
+static int ptn_declared_interface_exists(const char *name);
+static int ptn_declared_trait_exists(const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
+static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
+static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_scope, const char *declaring_class, int visibility);
+static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -38347,6 +38353,7 @@ static PtnValue ptn_internal_reflection_get_modifier_names(
 
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, size_t line);
 static PtnValue ptn_internal_reflection_get_modifier_names(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -39285,6 +39292,186 @@ static PtnFunctionMetadata ptn_find_function_metadata(const char *name) {
         return metadata;
     }
     return ptn_internal_function_metadata(ptn_find_internal_function(name));
+}
+
+static PTN_UNUSED PtnValue ptn_first_class_callable_wrap(PtnRuntime *runtime, PtnValue callable) {
+    PtnValue resolved = ptn_value_deref(callable);
+    if (resolved.type == PTN_CLOSURE) {
+        return ptn_value_clone(resolved);
+    }
+    char *name = ptn_callable_output_name(callable);
+    PtnFunctionMetadata metadata = ptn_find_function_metadata(name);
+    free(name);
+    return ptn_closure_wrap_callable(runtime, callable, metadata);
+}
+
+static void ptn_first_class_callable_throw_error(PtnRuntime *runtime, size_t line, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    va_list copy;
+    va_copy(copy, args);
+    int needed = vsnprintf(NULL, 0, format, copy);
+    va_end(copy);
+    if (needed < 0) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    vsnprintf(message, (size_t)needed + 1, format, args);
+    va_end(args);
+    ptn_throw_exception_owned_message_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static const char *ptn_first_class_callable_visibility_name(int visibility) {
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        return "private";
+    }
+    if (visibility == PTN_PROPERTY_PROTECTED) {
+        return "protected";
+    }
+    return "public";
+}
+
+static int ptn_first_class_callable_declared_class_exists(const char *class_name) {
+    return ptn_declared_class_exists(class_name)
+        || ptn_declared_interface_exists(class_name)
+        || ptn_declared_trait_exists(class_name);
+}
+
+static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, size_t line) {
+    PtnValue resolved = ptn_value_deref(callable);
+    if (resolved.type == PTN_CLOSURE) {
+        return ptn_first_class_callable_wrap(runtime, resolved);
+    }
+
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        char *separator = strstr(name, "::");
+        if (separator == NULL) {
+            if (ptn_callable_is_valid(runtime, resolved, 0)) {
+                PtnValue result = ptn_first_class_callable_wrap(runtime, resolved);
+                free(name);
+                return result;
+            }
+            ptn_first_class_callable_throw_error(
+                runtime,
+                line,
+                "Call to undefined function %s()",
+                name
+            );
+            free(name);
+            return ptn_null();
+        }
+
+        *separator = '\0';
+        const char *class_name = name;
+        const char *method_name = separator + 2;
+        if (
+            !ptn_first_class_callable_declared_class_exists(class_name) &&
+            !ptn_internal_class_exists_name(class_name)
+        ) {
+            ptn_first_class_callable_throw_error(runtime, line, "Class \"%s\" not found", class_name);
+            free(name);
+            return ptn_null();
+        }
+
+        int is_static = 0;
+        int visibility = PTN_PROPERTY_PUBLIC;
+        int is_abstract = 0;
+        if (ptn_declared_class_reflection_method_metadata(class_name, method_name, &is_static, &visibility, &is_abstract)) {
+            if (is_abstract) {
+                ptn_first_class_callable_throw_error(
+                    runtime,
+                    line,
+                    "Cannot call abstract method %s::%s()",
+                    class_name,
+                    method_name
+                );
+                free(name);
+                return ptn_null();
+            }
+            if (!is_static) {
+                ptn_first_class_callable_throw_error(
+                    runtime,
+                    line,
+                    "Non-static method %s::%s() cannot be called statically",
+                    class_name,
+                    method_name
+                );
+                free(name);
+                return ptn_null();
+            }
+            if (!ptn_declared_method_visibility_allows(
+                runtime == NULL ? NULL : runtime->current_class_name,
+                class_name,
+                visibility
+            )) {
+                ptn_throw_declared_method_visibility_error(
+                    runtime,
+                    ptn_first_class_callable_visibility_name(visibility),
+                    class_name,
+                    method_name,
+                    line
+                );
+                free(name);
+                return ptn_null();
+            }
+            PtnValue result = ptn_first_class_callable_wrap(runtime, resolved);
+            free(name);
+            return result;
+        }
+
+        if (ptn_callable_is_valid(runtime, resolved, 0)) {
+            PtnValue result = ptn_first_class_callable_wrap(runtime, resolved);
+            free(name);
+            return result;
+        }
+
+        ptn_first_class_callable_throw_error(
+            runtime,
+            line,
+            "Call to undefined method %s::%s()",
+            class_name,
+            method_name
+        );
+        free(name);
+        return ptn_null();
+    }
+
+    if (resolved.type == PTN_ARRAY) {
+        if (ptn_callable_is_valid(runtime, resolved, 0)) {
+            return ptn_first_class_callable_wrap(runtime, resolved);
+        }
+        PtnValue scope;
+        PtnValue method;
+        if (ptn_callable_array_parts(resolved, &scope, &method) && method.type == PTN_STRING) {
+            char *callable_name = ptn_callable_output_name(resolved);
+            ptn_first_class_callable_throw_error(
+                runtime,
+                line,
+                "Call to undefined method %s()",
+                callable_name
+            );
+            free(callable_name);
+            return ptn_null();
+        }
+    }
+
+    if (ptn_callable_is_valid(runtime, resolved, 0)) {
+        return ptn_first_class_callable_wrap(runtime, resolved);
+    }
+
+    ptn_first_class_callable_throw_error(
+        runtime,
+        line,
+        "Value of type %s is not callable",
+        ptn_offset_container_type_name(resolved)
+    );
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

@@ -15579,27 +15579,34 @@ var_dump($name);
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let closure_name = format!("{{closure:{}:16}}", input.to_string_lossy());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "bool(true)\n",
-            "string(6) \"strlen\"\n",
-            "bool(false)\n",
-            "string(16) \"missing_function\"\n",
-            "bool(true)\n",
-            "string(17) \"Closure::__invoke\"\n",
-            "bool(true)\n",
-            "string(29) \"CallableNameWorker::inherited\"\n",
-            "bool(false)\n",
-            "string(27) \"CallableNameWorker::missing\"\n",
-            "bool(true)\n",
-            "string(24) \"CallableNameWorker::stat\"\n",
-            "bool(false)\n",
-            "string(23) \"CallableNameWorker::own\"\n",
-            "bool(false)\n",
-            "string(5) \"Array\"\n",
-            "bool(true)\n",
-            "string(16) \"missing_function\"\n",
+        format!(
+            "{}string({}) \"{}\"\n{}",
+            concat!(
+                "bool(true)\n",
+                "string(6) \"strlen\"\n",
+                "bool(false)\n",
+                "string(16) \"missing_function\"\n",
+                "bool(true)\n",
+            ),
+            closure_name.len(),
+            closure_name,
+            concat!(
+                "bool(true)\n",
+                "string(29) \"CallableNameWorker::inherited\"\n",
+                "bool(false)\n",
+                "string(27) \"CallableNameWorker::missing\"\n",
+                "bool(true)\n",
+                "string(24) \"CallableNameWorker::stat\"\n",
+                "bool(false)\n",
+                "string(23) \"CallableNameWorker::own\"\n",
+                "bool(false)\n",
+                "string(5) \"Array\"\n",
+                "bool(true)\n",
+                "string(16) \"missing_function\"\n",
+            )
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -37636,9 +37643,164 @@ var_dump($staticReflection->getNumberOfParameters());
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_internal_closure_from_callable"));
+    assert!(c_source.contains("ptn_first_class_callable_create"));
     assert!(c_source.contains("ptn_closure_wrap_callable"));
     assert!(c_source.contains("FccConst::twice"));
+}
+
+#[test]
+fn compile_constexpr_closure_and_fcc_initializer_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-constexpr-closure-fcc-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("constexpr-closure-fcc-scope.php");
+    let output = root.join("constexpr-closure-fcc-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class ConstexprClosureBox {
+    public const C = static function ($value) {
+        return $value . \"-const\";
+    };
+    public static $S = static function ($value) {
+        return strtoupper($value);
+    };
+    public $p = static function ($value) {
+        return $value + 2;
+    };
+}
+
+class FccPrivateInitializer {
+    private static function secret($value) {
+        return $value + 10;
+    }
+
+    public const C = self::secret(...);
+    public static $S = self::secret(...);
+    public $p = self::secret(...);
+}
+
+const TOP_CLOSURE = static function () {
+    return \"top\";
+};
+
+$box = new ConstexprClosureBox();
+$closure = ConstexprClosureBox::C;
+var_dump($closure(\"ok\"));
+$static = ConstexprClosureBox::$S;
+var_dump($static(\"ab\"));
+$property = $box->p;
+var_dump($property(5));
+var_dump((TOP_CLOSURE)());
+
+$private = new FccPrivateInitializer();
+$privateProperty = $private->p;
+var_dump($privateProperty(1));
+$privateStatic = FccPrivateInitializer::$S;
+var_dump($privateStatic(2));
+var_dump((FccPrivateInitializer::C)(3));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(8) \"ok-const\"\n",
+            "string(2) \"AB\"\n",
+            "int(7)\n",
+            "string(3) \"top\"\n",
+            "int(11)\n",
+            "int(12)\n",
+            "int(13)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_first_class_callable_create"));
+    assert!(c_source.contains("ptn_closure_set_scope"));
+}
+
+#[test]
+fn compile_first_class_callable_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-first-class-callable-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("first-class-callable-diagnostics.php");
+    let output = root.join("first-class-callable-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php
+class FccErrorTest {
+    private static function privateMethod() {}
+
+    public function instanceMethod() {}
+}
+
+try {
+    $fn = 123;
+    $callable = $fn(...);
+} catch (Error $e) {
+    print $e->getMessage() . \"\\n\";
+}
+try {
+    $callable = does_not_exist(...);
+} catch (Error $e) {
+    print $e->getMessage() . \"\\n\";
+}
+try {
+    $callable = stdClass::doesNotExist(...);
+} catch (Error $e) {
+    print $e->getMessage() . \"\\n\";
+}
+try {
+    $callable = (new stdClass)->doesNotExist(...);
+} catch (Error $e) {
+    print $e->getMessage() . \"\\n\";
+}
+try {
+    $callable = [new stdClass, \"doesNotExist\"](...);
+} catch (Error $e) {
+    print $e->getMessage() . \"\\n\";
+}
+try {
+    $callable = FccErrorTest::privateMethod(...);
+} catch (Error $e) {
+    print $e->getMessage() . \"\\n\";
+}
+try {
+    $callable = FccErrorTest::instanceMethod(...);
+} catch (Error $e) {
+    print $e->getMessage() . \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Value of type int is not callable\n",
+            "Call to undefined function does_not_exist()\n",
+            "Call to undefined method stdClass::doesNotExist()\n",
+            "Call to undefined method stdClass::doesNotExist()\n",
+            "Call to undefined method stdClass::doesNotExist()\n",
+            "Call to private method FccErrorTest::privateMethod() from global scope\n",
+            "Non-static method FccErrorTest::instanceMethod() cannot be called statically\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_first_class_callable_create"));
+    assert!(c_source.contains("ptn_first_class_callable_throw_error"));
 }
 
 #[test]
