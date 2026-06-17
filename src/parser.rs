@@ -14167,6 +14167,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "unpack"
             | "count_chars"
             | "copy"
+            | "crypt"
             | "crc32"
             | "disk_free_space"
             | "disk_total_space"

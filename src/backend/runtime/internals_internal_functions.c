@@ -23464,6 +23464,39 @@ static PtnValue ptn_internal_crc32(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_int((int64_t)checksum);
 }
 
+static PtnValue ptn_internal_crypt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "crypt", 1, "string", args[0], line);
+    PtnStringOperand salt_input = ptn_internal_expect_string_arg(runtime, "crypt", 2, "salt", args[1], line);
+
+    char *password = ptn_duplicate_string_len(string.data, string.len);
+    char salt[PTN_CRYPT_MAX_SALT_LEN + 1];
+    memset(salt, '$', sizeof(salt));
+    salt[PTN_CRYPT_MAX_SALT_LEN] = '\0';
+    size_t salt_len = salt_input.len < PTN_CRYPT_MAX_SALT_LEN
+        ? salt_input.len
+        : PTN_CRYPT_MAX_SALT_LEN;
+    if (salt_len != 0) {
+        memcpy(salt, salt_input.data, salt_len);
+    }
+    salt[salt_len] = '\0';
+
+    char output[PTN_CRYPT_OUTPUT_SIZE];
+    memset(output, 0, sizeof(output));
+    char *crypted = ptn_php_crypt_port(password, salt, output, sizeof(output));
+    PtnValue result = ptn_null();
+    if (crypted == NULL) {
+        result = ptn_string(salt[0] == '*' && salt[1] == '0' ? "*1" : "*0");
+    } else {
+        result = ptn_owned_string(ptn_duplicate_string(crypted));
+    }
+
+    free(password);
+    ptn_string_operand_free(string);
+    ptn_string_operand_free(salt_input);
+    return result;
+}
+
 static void ptn_sha1_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[20]) {
     size_t padded_len = input_len + 1;
     while ((padded_len % 64) != 56) {
@@ -33121,6 +33154,13 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "PHP_URL_PATH", PTN_PHP_URL_PATH);
     ptn_get_defined_constants_add_int(table, "PHP_URL_QUERY", PTN_PHP_URL_QUERY);
     ptn_get_defined_constants_add_int(table, "PHP_URL_FRAGMENT", PTN_PHP_URL_FRAGMENT);
+    ptn_get_defined_constants_add_int(table, "CRYPT_SALT_LENGTH", PTN_CRYPT_SALT_LENGTH);
+    ptn_get_defined_constants_add_int(table, "CRYPT_STD_DES", PTN_CRYPT_STD_DES);
+    ptn_get_defined_constants_add_int(table, "CRYPT_EXT_DES", PTN_CRYPT_EXT_DES);
+    ptn_get_defined_constants_add_int(table, "CRYPT_MD5", PTN_CRYPT_MD5);
+    ptn_get_defined_constants_add_int(table, "CRYPT_BLOWFISH", PTN_CRYPT_BLOWFISH);
+    ptn_get_defined_constants_add_int(table, "CRYPT_SHA256", PTN_CRYPT_SHA256);
+    ptn_get_defined_constants_add_int(table, "CRYPT_SHA512", PTN_CRYPT_SHA512);
     return table;
 }
 
@@ -35679,6 +35719,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "cosh", 1, 1, ptn_internal_cosh },
         { "count", 1, 2, ptn_internal_count },
         { "count_chars", 1, 2, ptn_internal_count_chars },
+        { "crypt", 2, 2, ptn_internal_crypt },
         { "crc32", 1, 1, ptn_internal_crc32 },
         { "ctype_alnum", 1, 1, ptn_internal_ctype_alnum },
         { "ctype_alpha", 1, 1, ptn_internal_ctype_alpha },

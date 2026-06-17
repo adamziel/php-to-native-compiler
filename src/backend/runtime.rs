@@ -18,6 +18,7 @@ static RUNTIME_C: OnceLock<String> = OnceLock::new();
 // - internals: runtime symbol tables plus optional internal-function handlers and dispatch.
 pub(super) fn runtime_c() -> &'static str {
     RUNTIME_C.get_or_init(|| {
+        let internal_functions_c = internals::internal_functions_c();
         let chunks = [
             core_values::C,
             arrays::STORAGE_C,
@@ -27,13 +28,14 @@ pub(super) fn runtime_c() -> &'static str {
             arrays::ACCESS_AND_ITERATION_C,
             numeric_comparison::COMPARISON_AND_OPERATORS_C,
             strings::C,
-            internals::INTERNAL_FUNCTIONS_C,
         ];
-        let len = chunks.iter().map(|chunk| chunk.len()).sum();
+        let len =
+            chunks.iter().map(|chunk| chunk.len()).sum::<usize>() + internal_functions_c.len();
         let mut runtime = String::with_capacity(len);
         for chunk in chunks {
             runtime.push_str(chunk);
         }
+        runtime.push_str(&internal_functions_c);
         runtime
     })
 }
