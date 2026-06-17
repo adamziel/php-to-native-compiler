@@ -8457,9 +8457,6 @@ static void ptn_array_aggregate_warn_unsupported(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    if (ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
-        fputc('\n', stdout);
-    }
     ptn_emit_warning(&runtime->diagnostics, message, line);
 }
 
@@ -11202,7 +11199,7 @@ static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const
         ptn_array_set_entry(
             result.as.array,
             key,
-            ptn_value_clone_deref(source->value)
+            ptn_value_clone(source->value)
         );
     }
 
