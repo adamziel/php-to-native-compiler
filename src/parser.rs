@@ -4085,15 +4085,7 @@ impl Parser<'_> {
         &mut self,
         attributes: ParsedAttributes,
     ) -> Result<ConstDeclaration> {
-        if !matches!(self.peek().kind, TokenKind::Identifier(_)) {
-            return Err(syntax_error_unexpected(self.peek(), Some("identifier")));
-        }
-        if let TokenKind::Identifier(name) = &self.peek().kind {
-            if is_exit_construct_name(name) {
-                return Err(exit_reserved_name_syntax_error(self.peek(), "identifier"));
-            }
-        }
-        let (name, token_span) = self.parse_declaration_name("expected constant name")?;
+        let (name, token_span) = self.parse_const_declaration_name()?;
         if is_reserved_compile_time_constant_declaration_name(&name) {
             let source_name = self
                 .source
@@ -4120,6 +4112,37 @@ impl Parser<'_> {
             value,
             span: token_span,
         })
+    }
+
+    fn parse_const_declaration_name(&mut self) -> Result<(String, SourceSpan)> {
+        let token = self.peek().clone();
+        let first_segment = match &token.kind {
+            TokenKind::Identifier(name) => {
+                if is_exit_construct_name(name) {
+                    return Err(exit_reserved_name_syntax_error(&token, "identifier"));
+                }
+                name.clone()
+            }
+            TokenKind::True | TokenKind::False | TokenKind::Null => {
+                token_text(&token.kind).to_string()
+            }
+            _ => {
+                return Err(syntax_error_unexpected(self.peek(), Some("identifier")));
+            }
+        };
+        self.advance();
+        let parsed =
+            self.parse_name_from_first(first_segment, token.span, None, "expected constant name")?;
+        match parsed.resolution {
+            NameResolution::Unqualified => {
+                let name = self.qualify_current_namespace(&parsed.name);
+                Ok((name, parsed.span))
+            }
+            _ => Err(Diagnostic::new(
+                "declarations must use unqualified names",
+                Some(parsed.span),
+            )),
+        }
     }
 
     fn parse_if(&mut self) -> Result<Statement> {
@@ -4312,7 +4335,11 @@ impl Parser<'_> {
             by_ref = true;
             span = self.advance().span;
         }
-        let target_expr = self.parse_expr_allowing_append_array_read()?;
+        let previous_allow_standalone_list = self.allow_standalone_list_array_element;
+        self.allow_standalone_list_array_element = true;
+        let target_expr = self.parse_expr_allowing_append_array_read();
+        self.allow_standalone_list_array_element = previous_allow_standalone_list;
+        let target_expr = target_expr?;
         let target_span = target_expr.span();
         let target = assignment_target_from_expr(target_expr).map_err(|diagnostic| {
             if diagnostic.message == "Cannot use empty list" {
