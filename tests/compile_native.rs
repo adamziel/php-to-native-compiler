@@ -11942,6 +11942,59 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_date_interval_diff_and_format_to_native_binary() {
+    let root = temp_dir("ptn-native-date-interval-diff-format");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-interval-diff-format.php");
+    let output = root.join("date-interval-diff-format-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set(\"UTC\");\n\
+$start = new DateTime(\"2000-01-01 00:00:00\");\n\
+$end = new DateTime(\"2001-03-04 04:05:06\");\n\
+$interval = $start->diff($end);\n\
+echo $interval->format(\"Y=%Y M=%M D=%D H=%H I=%I S=%S R=%R r=%r a=%a\"), \"\\n\";\n\
+$reverse = $end->diff($start);\n\
+echo $reverse->format(\"R=%R r=%r\"), \"\\n\";\n\
+$constructed = new DateInterval(\"P2Y4DT6H8M\");\n\
+var_dump($constructed->y, $constructed->m, $constructed->d, $constructed->h, $constructed->i, $constructed->s, $constructed->f, $constructed->invert, $constructed->days, $constructed->from_string);\n\
+$f = 0.5;\n\
+var_dump($constructed->f = $f, $f);\n\
+echo $constructed->format(\"p=%Y-%M-%D %H:%I:%S %a\"), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Y=01 M=02 D=03 H=04 I=05 S=06 R=+ r= a=428\n\
+R=- r=-\n\
+int(2)\n\
+int(0)\n\
+int(4)\n\
+int(6)\n\
+int(8)\n\
+int(0)\n\
+float(0)\n\
+int(0)\n\
+bool(false)\n\
+bool(false)\n\
+float(0.5)\n\
+float(0.5)\n\
+p=02-00-04 06:08:00 (unknown)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_datetime_diff_interval"));
+    assert!(c_source.contains("ptn_date_interval_call_method"));
+}
+
+#[test]
 fn compile_sleep_usleep_internals_to_native_binary() {
     let root = temp_dir("ptn-native-sleep-usleep-internals");
     fs::create_dir_all(&root).unwrap();

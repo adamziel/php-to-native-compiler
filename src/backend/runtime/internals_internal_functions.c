@@ -38679,6 +38679,20 @@ typedef struct {
 } PtnDateTimeData;
 
 typedef struct {
+    int64_t years;
+    int64_t months;
+    int64_t days;
+    int64_t hours;
+    int64_t minutes;
+    int64_t seconds;
+    double fraction;
+    int invert;
+    int has_total_days;
+    int64_t total_days;
+    int from_string;
+} PtnDateIntervalData;
+
+typedef struct {
     const char *name;
     int group;
     int backward_compatible;
@@ -38716,6 +38730,10 @@ static void ptn_datetime_data_free(void *data) {
     }
     free(datetime->timezone);
     free(datetime);
+}
+
+static void ptn_date_interval_data_free(void *data) {
+    free(data);
 }
 
 static int ptn_timezone_parse_offset_literal(const char *name, int *offset_out) {
@@ -39025,6 +39043,16 @@ static PtnDateTimeData *ptn_datetime_data_from_value(PtnValue value) {
     return (PtnDateTimeData *)value.as.object->native_data;
 }
 
+static PtnDateIntervalData *ptn_date_interval_data_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "DateInterval") ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnDateIntervalData *)value.as.object->native_data;
+}
+
 static void ptn_date_throw_type_error(
     PtnRuntime *runtime,
     const char *function_name,
@@ -39201,6 +39229,175 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_new(
     return result;
 }
 
+static void ptn_date_interval_declare_int_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *name,
+    int64_t value,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        name,
+        "DateInterval",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        ptn_int(value),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static void ptn_date_interval_sync_properties(PtnRuntime *runtime, PtnValue object, size_t line) {
+    if (object.type != PTN_OBJECT || object.as.object->native_data == NULL) {
+        return;
+    }
+    PtnDateIntervalData *data = (PtnDateIntervalData *)object.as.object->native_data;
+    ptn_date_interval_declare_int_property(runtime, object, "y", data->years, line);
+    ptn_date_interval_declare_int_property(runtime, object, "m", data->months, line);
+    ptn_date_interval_declare_int_property(runtime, object, "d", data->days, line);
+    ptn_date_interval_declare_int_property(runtime, object, "h", data->hours, line);
+    ptn_date_interval_declare_int_property(runtime, object, "i", data->minutes, line);
+    ptn_date_interval_declare_int_property(runtime, object, "s", data->seconds, line);
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "f",
+        "DateInterval",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        ptn_float(data->fraction),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_date_interval_declare_int_property(runtime, object, "invert", data->invert, line);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "days",
+        "DateInterval",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        data->has_total_days ? ptn_int(data->total_days) : ptn_bool(0),
+        line
+    );
+    ptn_value_destroy(&assigned);
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "from_string",
+        "DateInterval",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        ptn_bool(data->from_string),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static int ptn_date_interval_parse_number(const char **cursor, int64_t *out) {
+    const char *start = *cursor;
+    int64_t value = 0;
+    if (!isdigit((unsigned char)*start)) {
+        return 0;
+    }
+    while (isdigit((unsigned char)**cursor)) {
+        int digit = **cursor - '0';
+        if (value > (INT64_MAX - digit) / 10) {
+            return 0;
+        }
+        value = value * 10 + digit;
+        (*cursor)++;
+    }
+    *out = value;
+    return *cursor != start;
+}
+
+static int ptn_date_interval_parse_iso_spec(const char *spec, PtnDateIntervalData *data) {
+    memset(data, 0, sizeof(*data));
+    data->has_total_days = 0;
+    if (spec == NULL || spec[0] != 'P') {
+        return 0;
+    }
+    const char *cursor = spec + 1;
+    int in_time = 0;
+    int saw_component = 0;
+    while (*cursor != '\0') {
+        if (*cursor == 'T') {
+            in_time = 1;
+            cursor++;
+            continue;
+        }
+        int64_t value = 0;
+        if (!ptn_date_interval_parse_number(&cursor, &value) || *cursor == '\0') {
+            return 0;
+        }
+        char designator = *cursor++;
+        switch (designator) {
+            case 'Y':
+                if (in_time) {
+                    return 0;
+                }
+                data->years = value;
+                break;
+            case 'M':
+                if (in_time) {
+                    data->minutes = value;
+                } else {
+                    data->months = value;
+                }
+                break;
+            case 'D':
+                if (in_time) {
+                    return 0;
+                }
+                data->days = value;
+                break;
+            case 'H':
+                if (!in_time) {
+                    return 0;
+                }
+                data->hours = value;
+                break;
+            case 'S':
+                if (!in_time) {
+                    return 0;
+                }
+                data->seconds = value;
+                break;
+            default:
+                return 0;
+        }
+        saw_component = 1;
+    }
+    return saw_component;
+}
+
 static PTN_UNUSED PtnValue ptn_date_interval_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -39225,24 +39422,36 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    char *spec_string = ptn_duplicate_string_len(spec.data, spec.len);
+    PtnDateIntervalData parsed;
+    if (!ptn_date_interval_parse_iso_spec(spec_string, &parsed)) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            spec.len == 0 ? "Unknown or bad format (%s)" : "Failed to parse interval (%s)",
+            spec_string
+        );
+        free(spec_string);
+        ptn_string_operand_free(spec);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Exception", message);
+        return ptn_null();
+    }
     PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
-    PtnValue assigned = ptn_object_declare_property(
-        runtime,
-        object,
-        "date_string",
-        "DateInterval",
-        PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_NONE,
-        NULL,
-        NULL,
-        0,
-        1,
-        ptn_owned_string_len(ptn_duplicate_string_len(spec.data, spec.len), spec.len),
-        line
-    );
-    ptn_value_destroy(&assigned);
+    PtnDateIntervalData *data = malloc(sizeof(PtnDateIntervalData));
+    if (data == NULL) {
+        free(spec_string);
+        ptn_string_operand_free(spec);
+        ptn_abort_out_of_memory();
+    }
+    *data = parsed;
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_date_interval_data_free;
+    ptn_date_interval_sync_properties(runtime, object, line);
+    free(spec_string);
     ptn_string_operand_free(spec);
     return object;
 }
@@ -39343,6 +39552,105 @@ static void ptn_datetime_set_timezone_data(PtnRuntime *runtime, PtnValue datetim
     ptn_datetime_sync_properties(runtime, object, object.as.object->class_name, line);
 }
 
+static int64_t ptn_date_floor_days_between(time_t start, time_t end) {
+    double seconds = difftime(end, start);
+    if (seconds < 0) {
+        seconds = -seconds;
+    }
+    return (int64_t)floor(seconds / 86400.0);
+}
+
+static PtnValue ptn_datetime_diff_interval(PtnRuntime *runtime, PtnValue left, PtnValue right, int absolute, size_t line) {
+    PtnDateTimeData *left_data = ptn_datetime_data_from_value(left);
+    PtnDateTimeData *right_data = ptn_datetime_data_from_value(right);
+    if (left_data == NULL || right_data == NULL) {
+        ptn_date_throw_type_error(runtime, "DateTimeInterface::diff", 1, "targetObject", "DateTimeInterface", right);
+        return ptn_null();
+    }
+
+    time_t start_timestamp = left_data->timestamp;
+    time_t end_timestamp = right_data->timestamp;
+    int invert = difftime(end_timestamp, start_timestamp) < 0 ? 1 : 0;
+    if (invert) {
+        time_t tmp = start_timestamp;
+        start_timestamp = end_timestamp;
+        end_timestamp = tmp;
+    }
+
+    struct tm start_parts_storage;
+    struct tm end_parts_storage;
+    struct tm *start_parts = gmtime(&start_timestamp);
+    if (start_parts == NULL) {
+        ptn_throw_exception(runtime, "Exception", "Failed to compute DateTime diff");
+        return ptn_null();
+    }
+    start_parts_storage = *start_parts;
+    struct tm *end_parts = gmtime(&end_timestamp);
+    if (end_parts == NULL) {
+        ptn_throw_exception(runtime, "Exception", "Failed to compute DateTime diff");
+        return ptn_null();
+    }
+    end_parts_storage = *end_parts;
+    start_parts = &start_parts_storage;
+    end_parts = &end_parts_storage;
+
+    int years = end_parts->tm_year - start_parts->tm_year;
+    int months = end_parts->tm_mon - start_parts->tm_mon;
+    int days = end_parts->tm_mday - start_parts->tm_mday;
+    int hours = end_parts->tm_hour - start_parts->tm_hour;
+    int minutes = end_parts->tm_min - start_parts->tm_min;
+    int seconds = end_parts->tm_sec - start_parts->tm_sec;
+
+    if (seconds < 0) {
+        seconds += 60;
+        minutes--;
+    }
+    if (minutes < 0) {
+        minutes += 60;
+        hours--;
+    }
+    if (hours < 0) {
+        hours += 24;
+        days--;
+    }
+    if (days < 0) {
+        months--;
+        int borrow_year = end_parts->tm_year + 1900;
+        int borrow_month = end_parts->tm_mon;
+        if (borrow_month == 0) {
+            borrow_month = 12;
+            borrow_year--;
+        }
+        days += ptn_date_days_in_month(borrow_year, borrow_month);
+    }
+    if (months < 0) {
+        months += 12;
+        years--;
+    }
+
+    PtnDateIntervalData *interval = malloc(sizeof(PtnDateIntervalData));
+    if (interval == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    interval->years = years;
+    interval->months = months;
+    interval->days = days;
+    interval->hours = hours;
+    interval->minutes = minutes;
+    interval->seconds = seconds;
+    interval->fraction = 0.0;
+    interval->invert = absolute ? 0 : invert;
+    interval->has_total_days = 1;
+    interval->total_days = ptn_date_floor_days_between(left_data->timestamp, right_data->timestamp);
+    interval->from_string = 0;
+
+    PtnValue object = ptn_object_new_shell(runtime, "DateInterval");
+    object.as.object->native_data = interval;
+    object.as.object->native_data_free = ptn_date_interval_data_free;
+    ptn_date_interval_sync_properties(runtime, object, line);
+    return object;
+}
+
 static PTN_UNUSED PtnValue ptn_datetime_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -39413,6 +39721,134 @@ static PTN_UNUSED PtnValue ptn_datetime_call_method(
         data->timestamp = (time_t)timestamp;
         ptn_datetime_sync_properties(runtime, target, target.as.object->class_name, line);
         return immutable ? target : ptn_value_clone(target);
+    }
+    if (ptn_ascii_case_equal(name, "diff")) {
+        if (argc < 1 || argc > 2) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "%s::diff() expects at most 2 arguments, %zu given", class_name, argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnDateTimeData *target = ptn_datetime_data_from_value(args[0]);
+        if (target == NULL) {
+            ptn_date_throw_type_error(runtime, immutable ? "DateTimeImmutable::diff" : "DateTime::diff", 1, "targetObject", "DateTimeInterface", args[0]);
+            return ptn_null();
+        }
+        (void)target;
+        int absolute = argc >= 2 && ptn_is_truthy(args[1]);
+        return ptn_datetime_diff_interval(runtime, receiver, args[0], absolute, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static void ptn_date_interval_append_padded(PtnStringBuffer *buffer, int64_t value) {
+    ptn_string_buffer_append_format(buffer, "%02lld", (long long)value);
+}
+
+static PTN_UNUSED PtnValue ptn_date_interval_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    PtnDateIntervalData *interval = ptn_date_interval_data_from_value(receiver);
+    if (interval == NULL) {
+        ptn_throw_exception(runtime, "Error", "The DateInterval object has not been correctly initialized by its constructor");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "format")) {
+        if (argc != 1) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "DateInterval::format() expects exactly 1 argument, %zu given", argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnStringOperand format = ptn_internal_expect_string_arg(runtime, "DateInterval::format", 1, "format", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnStringBuffer buffer;
+        ptn_string_buffer_init(&buffer);
+        for (size_t i = 0; i < format.len; i++) {
+            char ch = format.data[i];
+            if (ch != '%' || i + 1 >= format.len) {
+                ptn_string_buffer_append_char(&buffer, ch);
+                continue;
+            }
+            char token = format.data[++i];
+            switch (token) {
+                case '%':
+                    ptn_string_buffer_append_char(&buffer, '%');
+                    break;
+                case 'Y':
+                    ptn_date_interval_append_padded(&buffer, interval->years);
+                    break;
+                case 'y':
+                    ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->years);
+                    break;
+                case 'M':
+                    ptn_date_interval_append_padded(&buffer, interval->months);
+                    break;
+                case 'm':
+                    ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->months);
+                    break;
+                case 'D':
+                    ptn_date_interval_append_padded(&buffer, interval->days);
+                    break;
+                case 'd':
+                    ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->days);
+                    break;
+                case 'H':
+                    ptn_date_interval_append_padded(&buffer, interval->hours);
+                    break;
+                case 'h':
+                    ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->hours);
+                    break;
+                case 'I':
+                    ptn_date_interval_append_padded(&buffer, interval->minutes);
+                    break;
+                case 'i':
+                    ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->minutes);
+                    break;
+                case 'S':
+                    ptn_date_interval_append_padded(&buffer, interval->seconds);
+                    break;
+                case 's':
+                    ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->seconds);
+                    break;
+                case 'R':
+                    ptn_string_buffer_append_char(&buffer, interval->invert ? '-' : '+');
+                    break;
+                case 'r':
+                    if (interval->invert) {
+                        ptn_string_buffer_append_char(&buffer, '-');
+                    }
+                    break;
+                case 'a':
+                    if (interval->has_total_days) {
+                        ptn_string_buffer_append_format(&buffer, "%lld", (long long)interval->total_days);
+                    } else {
+                        ptn_string_buffer_append(&buffer, "(unknown)");
+                    }
+                    break;
+                default:
+                    ptn_string_buffer_append_char(&buffer, '%');
+                    ptn_string_buffer_append_char(&buffer, token);
+                    break;
+            }
+        }
+        ptn_string_operand_free(format);
+        return ptn_owned_string_len(buffer.data, buffer.len);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -42426,6 +42862,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_ascii_case_equal(class_name, "DateTime") ||
         ptn_internal_class_name_is_datetime_immutable(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "diff")
             || ptn_ascii_case_equal(method_name, "getTimezone")
             || ptn_ascii_case_equal(method_name, "setTimezone")
             || ptn_ascii_case_equal(method_name, "setTimestamp");
@@ -42438,7 +42875,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "listIdentifiers");
     }
     if (ptn_internal_class_name_is_date_interval(class_name)) {
-        return ptn_ascii_case_equal(method_name, "__construct");
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "format");
     }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
         return ptn_exception_method_exists(method_name);
@@ -42976,6 +43414,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_ascii_case_equal(class_name, "DateTime")) {
         ptn_append_method_name(result, &index, "__construct");
+        ptn_append_method_name(result, &index, "diff");
         ptn_append_method_name(result, &index, "getTimezone");
         ptn_append_method_name(result, &index, "setTimezone");
         ptn_append_method_name(result, &index, "setTimestamp");
@@ -42983,6 +43422,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_datetime_immutable(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
+        ptn_append_method_name(result, &index, "diff");
         ptn_append_method_name(result, &index, "getTimezone");
         ptn_append_method_name(result, &index, "setTimezone");
         ptn_append_method_name(result, &index, "setTimestamp");
@@ -42998,6 +43438,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_date_interval(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
+        ptn_append_method_name(result, &index, "format");
         return result;
     }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {

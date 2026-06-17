@@ -1749,6 +1749,14 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_date_interval_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
     const char *class_name,
