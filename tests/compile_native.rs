@@ -30223,6 +30223,47 @@ var_dump(function_exists(\"array_unshift\"), function_exists(\"ARRAY_UNSHIFT\"))
 }
 
 #[test]
+fn compile_array_push_unshift_dereference_inserted_values_to_native_binary() {
+    let root = temp_dir("ptn-native-array-push-unshift-deref-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-push-unshift-deref-values.php");
+    let output = root.join("array-push-unshift-deref-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [];\n\
+$value = 1;\n\
+$alias =& $value;\n\
+array_unshift($items, $value);\n\
+array_push($items, $value);\n\
+$value = 2;\n\
+var_dump($items);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(1)\n",
+            "}\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_array_unshift_variable"));
+    assert!(c_source.contains("ptn_runtime_array_push_variable"));
+}
+
+#[test]
 fn compile_array_reverse_and_reindexing_internals_to_native_binary() {
     let root = temp_dir("ptn-native-array-reverse-reindexing-internals");
     fs::create_dir_all(&root).unwrap();

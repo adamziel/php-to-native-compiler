@@ -9255,7 +9255,7 @@ static PTN_UNUSED int64_t ptn_array_unshift_values(PtnArray *array, size_t argc,
     int64_t next_integer_key = 0;
     for (size_t i = 0; i < argc; i++) {
         new_entries[out].key = ptn_array_int_key(next_integer_key);
-        new_entries[out].value = ptn_value_clone(values[i]);
+        new_entries[out].value = ptn_value_clone_deref(values[i]);
         out++;
         if (next_integer_key < INT64_MAX) {
             next_integer_key++;
@@ -10153,7 +10153,7 @@ static PTN_UNUSED int64_t ptn_array_push_values(PtnRuntime *runtime, PtnArray *a
             }
         }
         PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
-        ptn_array_set_entry(array, key, ptn_value_clone(values[i]));
+        ptn_array_set_entry(array, key, ptn_value_clone_deref(values[i]));
     }
 
     array->current_index = 0;
