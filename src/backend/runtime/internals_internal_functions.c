@@ -37215,6 +37215,7 @@ static PtnValue ptn_declared_class_property_reflection_attributes(PtnRuntime *ru
 static PtnValue ptn_declared_class_constant_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *constant_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_function_reflection_attributes(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_function_parameter_reflection_attributes(PtnRuntime *runtime, const char *function_name, size_t parameter_index, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_declared_constant_attributes(PtnRuntime *runtime, const char *constant_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name);
@@ -39476,6 +39477,7 @@ static void ptn_reflection_class_data_free(void *data) {
 static int ptn_reflection_class_symbol_exists(const char *name) {
     return ptn_declared_class_exists(name)
         || ptn_declared_interface_exists(name)
+        || ptn_declared_trait_exists(name)
         || ptn_internal_class_exists_name(name)
         || ptn_internal_interface_exists_name(name);
 }
@@ -39485,7 +39487,8 @@ static int ptn_reflection_class_is_interface_name(const char *name) {
 }
 
 static int ptn_reflection_class_is_user_defined_name(const char *name) {
-    return ptn_declared_user_class_or_interface_exists(name);
+    return ptn_declared_user_class_or_interface_exists(name)
+        || ptn_declared_trait_exists(name);
 }
 
 static int ptn_reflection_class_is_internal_name(const char *name) {
@@ -39620,6 +39623,8 @@ static PtnValue ptn_reflection_class_object_from_name(PtnRuntime *runtime, const
 typedef struct {
     char *name;
     PtnValue arguments;
+    char *arguments_error_class;
+    char *arguments_error_message;
     int target;
     int is_repeated;
 } PtnReflectionAttributeData;
@@ -39631,6 +39636,8 @@ static void ptn_reflection_attribute_data_free(void *data) {
     }
     free(attribute_data->name);
     ptn_value_destroy(&attribute_data->arguments);
+    free(attribute_data->arguments_error_class);
+    free(attribute_data->arguments_error_message);
     free(attribute_data);
 }
 
@@ -39650,6 +39657,16 @@ static PtnReflectionAttributeData *ptn_reflection_attribute_data(
     return (PtnReflectionAttributeData *)receiver.as.object->native_data;
 }
 
+static PtnValue ptn_reflection_attribute_object_from_name_with_arguments_error(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue arguments,
+    int target,
+    int is_repeated,
+    const char *error_class,
+    const char *error_message
+);
+
 static PtnValue ptn_reflection_attribute_object_from_name(
     PtnRuntime *runtime,
     const char *name,
@@ -39657,12 +39674,34 @@ static PtnValue ptn_reflection_attribute_object_from_name(
     int target,
     int is_repeated
 ) {
+    return ptn_reflection_attribute_object_from_name_with_arguments_error(
+        runtime,
+        name,
+        arguments,
+        target,
+        is_repeated,
+        NULL,
+        NULL
+    );
+}
+
+static PtnValue ptn_reflection_attribute_object_from_name_with_arguments_error(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue arguments,
+    int target,
+    int is_repeated,
+    const char *error_class,
+    const char *error_message
+) {
     PtnReflectionAttributeData *data = malloc(sizeof(PtnReflectionAttributeData));
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
     data->name = ptn_duplicate_string(name);
     data->arguments = ptn_value_clone_deref(arguments);
+    data->arguments_error_class = error_class == NULL ? NULL : ptn_duplicate_string(error_class);
+    data->arguments_error_message = error_message == NULL ? NULL : ptn_duplicate_string(error_message);
     data->target = target;
     data->is_repeated = is_repeated;
 
@@ -39738,9 +39777,18 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
     }
     if (ptn_ascii_case_equal(name, "getArguments")) {
         ptn_reflection_attribute_check_exact_arguments(runtime, "getArguments", argc, 0);
-        return runtime->exceptions->active_exception != NULL
-            ? ptn_null()
-            : ptn_value_clone_deref(data->arguments);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->arguments_error_message != NULL) {
+            ptn_throw_exception(
+                runtime,
+                data->arguments_error_class == NULL ? "Error" : data->arguments_error_class,
+                data->arguments_error_message
+            );
+            return ptn_null();
+        }
+        return ptn_value_clone_deref(data->arguments);
     }
     if (ptn_ascii_case_equal(name, "getTarget")) {
         ptn_reflection_attribute_check_exact_arguments(runtime, "getTarget", argc, 0);
@@ -39893,10 +39941,7 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
             : ptn_owned_string(ptn_duplicate_string(data->name));
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
-        ptn_reflection_class_check_exact_arguments(runtime, "getAttributes", argc, 0);
-        return runtime->exceptions->active_exception != NULL
-            ? ptn_null()
-            : ptn_array_from_literal_entries(0, NULL);
+        return ptn_declared_constant_attributes(runtime, data->name, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -40234,6 +40279,9 @@ static int ptn_reflection_class_modifiers(const char *class_name) {
 
 static int ptn_reflection_class_is_instantiable(const char *class_name) {
     if (ptn_reflection_class_is_interface_name(class_name)) {
+        return 0;
+    }
+    if (ptn_declared_trait_exists(class_name)) {
         return 0;
     }
     if (ptn_declared_class_is_abstract(class_name)) {
@@ -40850,7 +40898,7 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
     return metadata;
 }
 
-static PtnValue ptn_reflection_empty_attributes(
+static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(
     PtnRuntime *runtime,
     const char *class_name,
     const char *method_name,
@@ -40871,7 +40919,8 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     if (data == NULL) {
         return ptn_null();
     }
-    int is_internal = !ptn_declared_user_class_or_interface_exists(data->class_name);
+    int is_internal = !(ptn_declared_user_class_or_interface_exists(data->class_name)
+        || ptn_declared_trait_exists(data->class_name));
     int is_static = 0;
     int visibility = PTN_PROPERTY_PUBLIC;
     int is_abstract = 0;
@@ -42251,7 +42300,7 @@ static int ptn_reflection_attributes_name_filter_allows(
     return allowed;
 }
 
-static PtnValue ptn_reflection_empty_attributes(
+static PTN_UNUSED PtnValue ptn_reflection_empty_attributes(
     PtnRuntime *runtime,
     const char *class_name,
     const char *method_name,

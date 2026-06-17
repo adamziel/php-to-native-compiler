@@ -2106,17 +2106,11 @@ impl Parser<'_> {
             attributes.clone(),
         )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
-            if attributes.total_count > 0 {
-                return Err(Diagnostic::new(
-                    "Cannot apply attributes to multiple constants at once",
-                    Some(self.peek().span),
-                ));
-            }
             self.advance();
             constants.push(self.parse_class_constant_declaration(
                 visibility,
                 is_final,
-                AttributeMetadata::default(),
+                attributes.clone(),
             )?);
         }
         validate_builtin_attributes_for_target(
@@ -6264,9 +6258,9 @@ impl Parser<'_> {
     }
 
     fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
-        let _ = self.parse_attribute_groups()?;
+        let attributes = self.parse_attribute_groups()?;
         if token_is_identifier_named(self.peek(), "class") {
-            return self.parse_anonymous_class_expr(start_span);
+            return self.parse_anonymous_class_expr(start_span, attributes);
         }
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
             let token = self.advance().clone();
@@ -6340,7 +6334,11 @@ impl Parser<'_> {
         self.parse_resolved_class_name_with_source("expected class name")
     }
 
-    fn parse_anonymous_class_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
+    fn parse_anonymous_class_expr(
+        &mut self,
+        start_span: SourceSpan,
+        attributes: ParsedAttributes,
+    ) -> Result<Expr> {
         let class_span = self.advance().span;
         let (arguments, argument_names, argument_unpacks) =
             if matches!(self.peek().kind, TokenKind::LeftParen) {
@@ -6418,7 +6416,7 @@ impl Parser<'_> {
             parent_name,
             interfaces,
             trait_uses,
-            attributes: AttributeMetadata::default(),
+            attributes,
             is_abstract: false,
             is_final: false,
             is_interface: false,

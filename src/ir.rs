@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
-    AssignmentTarget as AstAssignmentTarget, AttributeConstantReference, AttributeMetadata,
-    BinaryOp as AstBinaryOp, CastKind as AstCastKind, CatchClause as AstCatchClause,
-    ClassDecl as AstClassDecl, ClosureUseCapture as AstClosureUseCapture,
-    CompileWarning as AstCompileWarning, CompileWarningKind as AstCompileWarningKind, Expr,
-    FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter,
-    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
+    AssignmentTarget as AstAssignmentTarget, AttributeArgumentKind, AttributeConstantReference,
+    AttributeMetadata, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
+    CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
+    ClosureUseCapture as AstClosureUseCapture, CompileWarning as AstCompileWarning,
+    CompileWarningKind as AstCompileWarningKind, Expr, FunctionDecl as AstFunctionDecl,
+    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
+    IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     IncludeKind as AstIncludeKind, InstanceOfTarget as AstInstanceOfTarget,
     ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
@@ -91,11 +92,22 @@ pub struct TraitDecl {
     pub deprecated_message: Option<String>,
     pub deprecated_since: Option<String>,
     pub line: usize,
+    pub methods: Vec<TraitMethodDecl>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitUseDecl {
     pub name: String,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraitMethodDecl {
+    pub name: String,
+    pub visibility: PropertyVisibility,
+    pub attributes: AttributeMetadata,
+    pub is_static: bool,
+    pub is_abstract: bool,
     pub line: usize,
 }
 
@@ -311,6 +323,7 @@ pub enum Instruction {
     },
     DefineConstant {
         name: String,
+        attributes: AttributeMetadata,
         value: ValueExpr,
         deprecated_message: Option<String>,
         deprecated_since: Option<String>,
@@ -1387,6 +1400,9 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_class(&mut self, class: &AstClassDecl) -> ClassDecl {
+        let parent_name = class.parent_name.as_deref();
+        let class_attributes =
+            resolve_attribute_metadata_for_class_scope(&class.attributes, &class.name, parent_name);
         let properties = class
             .properties
             .iter()
@@ -1403,7 +1419,11 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|value| self.lower_expr(value)),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: property.attributes.clone(),
+                attributes: resolve_attribute_metadata_for_class_scope(
+                    &property.attributes,
+                    &class.name,
+                    parent_name,
+                ),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
             })
@@ -1417,7 +1437,11 @@ impl<'a> LoweringContext<'a> {
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_final: property.is_final,
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: property.attributes.clone(),
+                attributes: resolve_attribute_metadata_for_class_scope(
+                    &property.attributes,
+                    &class.name,
+                    parent_name,
+                ),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
             })
             .collect();
@@ -1432,8 +1456,13 @@ impl<'a> LoweringContext<'a> {
             .constants
             .iter()
             .map(|constant| {
-                let metadata = self.class_deprecated_metadata(
+                let attributes = resolve_attribute_metadata_for_class_scope(
                     &constant.attributes,
+                    &class.name,
+                    parent_name,
+                );
+                let metadata = self.class_deprecated_metadata(
+                    &attributes,
                     &class.name,
                     &constant.name,
                     &class_constant_values,
@@ -1442,7 +1471,7 @@ impl<'a> LoweringContext<'a> {
                 ClassConstantDecl {
                     name: constant.name.clone(),
                     visibility: lower_property_visibility(constant.visibility),
-                    attributes: constant.attributes.clone(),
+                    attributes,
                     deprecated_message: metadata.message,
                     deprecated_since: metadata.since,
                     deprecated_message_dependency: metadata.message_dependency,
@@ -1458,13 +1487,20 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|method| {
                 let function_index = self.functions.len();
+                let method_attributes = resolve_attribute_metadata_for_class_scope(
+                    &method.attributes,
+                    &class.name,
+                    parent_name,
+                );
                 let parameters = method
                     .parameters
                     .iter()
-                    .map(|parameter| self.lower_parameter(parameter))
+                    .map(|parameter| {
+                        self.lower_parameter_for_class_scope(parameter, &class.name, parent_name)
+                    })
                     .collect();
                 let deprecated_metadata = self.function_deprecated_metadata(
-                    &method.attributes,
+                    &method_attributes,
                     Some(&class.name),
                     class.parent_name.as_deref(),
                     Some(&class_constant_values),
@@ -1480,8 +1516,8 @@ impl<'a> LoweringContext<'a> {
                     deprecated_since: deprecated_metadata.since,
                     deprecated_message_runtime_reference: deprecated_metadata
                         .message_runtime_reference,
-                    no_discard_message: method.attributes.no_discard_message.clone(),
-                    attributes: method.attributes.clone(),
+                    no_discard_message: method_attributes.no_discard_message.clone(),
+                    attributes: method_attributes.clone(),
                     is_static: method.is_static,
                     line: method.span.line,
                     parameters,
@@ -1504,7 +1540,7 @@ impl<'a> LoweringContext<'a> {
                     name: method.name.clone(),
                     function_index,
                     visibility: lower_property_visibility(method.visibility),
-                    attributes: method.attributes.clone(),
+                    attributes: method_attributes,
                     is_static: method.is_static,
                     is_abstract: method.is_abstract,
                     line: method.span.line,
@@ -1516,7 +1552,7 @@ impl<'a> LoweringContext<'a> {
             parent_name: class.parent_name.clone(),
             interfaces: class.interfaces.clone(),
             trait_uses: lower_trait_uses(&class.trait_uses),
-            attributes: class.attributes.clone(),
+            attributes: class_attributes,
             line: class.span.line,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
@@ -1624,6 +1660,7 @@ impl<'a> LoweringContext<'a> {
                             .global_deprecated_metadata(&declaration.attributes, &declaration.name);
                         instructions.push(Instruction::DefineConstant {
                             name: declaration.name.clone(),
+                            attributes: declaration.attributes.clone(),
                             value: self.lower_expr(&declaration.value),
                             deprecated_message: metadata.message,
                             deprecated_since: metadata.since,
@@ -1858,6 +1895,90 @@ impl<'a> LoweringContext<'a> {
                 .map(|value| self.lower_expr(value)),
         }
     }
+
+    fn lower_parameter_for_class_scope(
+        &mut self,
+        parameter: &AstFunctionParameter,
+        current_class: &str,
+        current_parent: Option<&str>,
+    ) -> FunctionParameter {
+        let mut lowered = self.lower_parameter(parameter);
+        lowered.attributes = resolve_attribute_metadata_for_class_scope(
+            &parameter.attributes,
+            current_class,
+            current_parent,
+        );
+        lowered
+    }
+}
+
+fn resolve_attribute_metadata_for_class_scope(
+    metadata: &AttributeMetadata,
+    current_class: &str,
+    current_parent: Option<&str>,
+) -> AttributeMetadata {
+    let mut resolved = metadata.clone();
+    if let Some(reference) = &mut resolved.deprecated_message_constant {
+        resolve_attribute_constant_reference_for_class_scope(
+            reference,
+            current_class,
+            current_parent,
+        );
+    }
+    for instance in &mut resolved.instances {
+        for argument in &mut instance.arguments {
+            let Some(AttributeConstantReference::ClassConstant { class_name, name }) =
+                &mut argument.value.constant_reference
+            else {
+                continue;
+            };
+            let Some(resolved_class) =
+                resolve_attribute_class_scope_name(class_name, current_class, current_parent)
+            else {
+                continue;
+            };
+            *class_name = resolved_class.clone();
+            match &mut argument.value.kind {
+                AttributeArgumentKind::String if name.eq_ignore_ascii_case("class") => {
+                    argument.value.text = resolved_class;
+                }
+                AttributeArgumentKind::NativeEnumCase { class_name, .. } => {
+                    *class_name = resolved_class.trim_start_matches('\\').to_string();
+                }
+                _ => {}
+            }
+        }
+    }
+    resolved
+}
+
+fn resolve_attribute_constant_reference_for_class_scope(
+    reference: &mut AttributeConstantReference,
+    current_class: &str,
+    current_parent: Option<&str>,
+) {
+    let AttributeConstantReference::ClassConstant { class_name, .. } = reference else {
+        return;
+    };
+    if let Some(resolved_class) =
+        resolve_attribute_class_scope_name(class_name, current_class, current_parent)
+    {
+        *class_name = resolved_class;
+    }
+}
+
+fn resolve_attribute_class_scope_name(
+    class_name: &str,
+    current_class: &str,
+    current_parent: Option<&str>,
+) -> Option<String> {
+    if class_name.eq_ignore_ascii_case("self") || class_name.eq_ignore_ascii_case("static") {
+        Some(current_class.to_string())
+    } else if class_name.eq_ignore_ascii_case("parent") {
+        current_parent.map(ToString::to_string)
+    } else {
+        None
+    }
 }
 
 fn lower_trait(trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
@@ -1867,6 +1988,18 @@ fn lower_trait(trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
         deprecated_message: trait_decl.attributes.deprecated_message.clone(),
         deprecated_since: trait_decl.attributes.deprecated_since.clone(),
         line: trait_decl.span.line,
+        methods: trait_decl
+            .methods
+            .iter()
+            .map(|method| TraitMethodDecl {
+                name: method.name.clone(),
+                visibility: lower_property_visibility(method.visibility),
+                attributes: method.attributes.clone(),
+                is_static: method.is_static,
+                is_abstract: method.is_abstract,
+                line: method.span.line,
+            })
+            .collect(),
     }
 }
 

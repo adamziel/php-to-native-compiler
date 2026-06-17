@@ -50,6 +50,9 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
     let mut runtime_requirements = module_runtime_requirements(module);
+    if module_has_attribute_metadata(module) {
+        runtime_requirements.internal_function_dispatch = true;
+    }
     if runtime_requirements.request_context {
         runtime_requirements.internal_function_dispatch = true;
     }
@@ -143,6 +146,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.classes,
         &module.functions,
         &module.traits,
+        &module.instructions,
         runtime_requirements.internal_function_dispatch,
     );
     if has_declared_class_constants {
@@ -346,6 +350,53 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    ptn_runtime_free(&runtime);\n");
     out.push_str("    return 0;\n}\n");
     out
+}
+
+fn module_has_attribute_metadata(module: &Module) -> bool {
+    module.classes.iter().any(class_has_attribute_metadata)
+        || module.functions.iter().any(function_has_attribute_metadata)
+        || module
+            .instructions
+            .iter()
+            .any(instruction_has_attribute_metadata)
+        || module.includes.iter().any(|include| {
+            include
+                .instructions
+                .iter()
+                .any(instruction_has_attribute_metadata)
+        })
+}
+
+fn class_has_attribute_metadata(class: &ClassDecl) -> bool {
+    !class.attributes.instances.is_empty()
+        || class
+            .constants
+            .iter()
+            .any(|constant| !constant.attributes.instances.is_empty())
+        || class
+            .properties
+            .iter()
+            .any(|property| !property.attributes.instances.is_empty())
+        || class
+            .static_properties
+            .iter()
+            .any(|property| !property.attributes.instances.is_empty())
+        || class
+            .methods
+            .iter()
+            .any(|method| !method.attributes.instances.is_empty())
+}
+
+fn function_has_attribute_metadata(function: &FunctionDecl) -> bool {
+    !function.attributes.instances.is_empty()
+        || function
+            .parameters
+            .iter()
+            .any(|parameter| !parameter.attributes.instances.is_empty())
+}
+
+fn instruction_has_attribute_metadata(instruction: &Instruction) -> bool {
+    matches!(instruction, Instruction::DefineConstant { attributes, .. } if !attributes.instances.is_empty())
 }
 
 fn emit_include_prototypes(out: &mut String, includes: &[IncludeFile]) {
@@ -3577,6 +3628,7 @@ fn emit_class_metadata_helpers(
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
     traits: &[TraitDecl],
+    instructions: &[Instruction],
     emit_reflection_helpers: bool,
 ) {
     out.push_str(
@@ -4680,7 +4732,7 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     if emit_reflection_helpers {
-        emit_class_reflection_metadata_helpers(out, classes, functions);
+        emit_class_reflection_metadata_helpers(out, classes, functions, traits, instructions);
     }
 
     out.push_str(
@@ -5131,14 +5183,17 @@ fn emit_class_metadata_helpers(
 fn emit_reflection_attribute_metadata_helpers(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
+    instructions: &[Instruction],
 ) {
     emit_declared_class_reflection_attributes(out, classes);
-    emit_declared_class_method_reflection_attributes(out, classes);
+    emit_declared_class_method_reflection_attributes(out, classes, traits);
     emit_declared_class_property_reflection_attributes(out, classes);
     emit_declared_class_constant_reflection_attributes(out, classes);
     emit_declared_function_reflection_attributes(out, functions);
     emit_declared_function_parameter_reflection_attributes(out, functions);
+    emit_declared_constant_attributes(out, instructions);
 }
 
 fn emit_declared_class_reflection_attributes(out: &mut String, classes: &[ClassDecl]) {
@@ -5169,7 +5224,11 @@ fn emit_declared_class_reflection_attributes(out: &mut String, classes: &[ClassD
     out.push_str("}\n");
 }
 
-fn emit_declared_class_method_reflection_attributes(out: &mut String, classes: &[ClassDecl]) {
+fn emit_declared_class_method_reflection_attributes(
+    out: &mut String,
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_method_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *method_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -5177,6 +5236,11 @@ fn emit_declared_class_method_reflection_attributes(out: &mut String, classes: &
     out.push_str("    (void)method_name;\n");
     let has_method_attributes = classes.iter().any(|class| {
         class
+            .methods
+            .iter()
+            .any(|method| !method.attributes.instances.is_empty())
+    }) || traits.iter().any(|trait_decl| {
+        trait_decl
             .methods
             .iter()
             .any(|method| !method.attributes.instances.is_empty())
@@ -5192,6 +5256,26 @@ fn emit_declared_class_method_reflection_attributes(out: &mut String, classes: &
             }
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
+            out.push_str("\") && ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            emit_declared_attribute_result(
+                out,
+                "ReflectionMethod",
+                "ReflectionMethod::getAttributes",
+                &method.attributes,
+                4,
+            );
+            out.push_str("    }\n");
+        }
+    }
+    for trait_decl in traits {
+        for method in &trait_decl.methods {
+            if method.attributes.instances.is_empty() {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
             out.push_str("\") && ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
@@ -5394,6 +5478,45 @@ fn emit_declared_function_parameter_reflection_attributes(
     out.push_str("}\n");
 }
 
+fn emit_declared_constant_attributes(out: &mut String, instructions: &[Instruction]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_constant_attributes(PtnRuntime *runtime, const char *constant_name, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    if instructions.iter().all(|instruction| {
+        !matches!(
+            instruction,
+            Instruction::DefineConstant { attributes, .. } if !attributes.instances.is_empty()
+        )
+    }) {
+        out.push_str("    (void)constant_name;\n");
+    }
+    for instruction in instructions {
+        let Instruction::DefineConstant {
+            name, attributes, ..
+        } = instruction
+        else {
+            continue;
+        };
+        out.push_str("    if (strcmp(constant_name, \"");
+        out.push_str(&c_string(name));
+        out.push_str("\") == 0) {\n");
+        if attributes.instances.is_empty() {
+            out.push_str("        return ptn_reflection_empty_attributes(runtime, \"ReflectionConstant\", \"getAttributes\", argc, args, line);\n");
+        } else {
+            emit_declared_attribute_result(
+                out,
+                "ReflectionConstant",
+                "ReflectionConstant::getAttributes",
+                attributes,
+                64,
+            );
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionConstant\", \"getAttributes\", argc, args, line);\n");
+    out.push_str("}\n");
+}
+
 fn emit_declared_attribute_result(
     out: &mut String,
     _reflector_class: &str,
@@ -5427,56 +5550,92 @@ fn emit_declared_attribute_result(
         out.push_str("            PtnValue attribute_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
-        let mut positional_index = 0usize;
-        for (argument_index, argument) in instance.arguments.iter().enumerate() {
-            out.push_str("            PtnValue attribute_arg_");
+        if let Some(error_message) = reflection_attribute_arguments_error(instance) {
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name_with_arguments_error(runtime, \"");
+            out.push_str(&c_string(&instance.name));
+            out.push_str("\", attribute_args_");
             out.push_str(&attribute_index.to_string());
-            out.push('_');
-            out.push_str(&argument_index.to_string());
-            out.push_str(" = ");
-            out.push_str(&c_attribute_argument_value(&argument.value));
-            out.push_str(";\n");
-            out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
-            out.push_str("                ptn_value_destroy(&attribute_args_");
-            out.push_str(&attribute_index.to_string());
-            out.push_str(");\n");
-            out.push_str("                ptn_value_destroy(&result);\n");
-            out.push_str("                return ptn_null();\n");
-            out.push_str("            }\n");
-            out.push_str("            ptn_array_set_entry(attribute_args_");
-            out.push_str(&attribute_index.to_string());
-            out.push_str(".as.array, ");
-            if let Some(name) = &argument.name {
-                out.push_str("ptn_array_string_key(\"");
-                out.push_str(&c_string(name));
-                out.push_str("\")");
-            } else {
-                out.push_str("ptn_array_int_key(");
-                out.push_str(&positional_index.to_string());
-                out.push(')');
-                positional_index += 1;
+            out.push_str(", ");
+            out.push_str(&target.to_string());
+            out.push_str(", ");
+            out.push_str(if repeated { "1" } else { "0" });
+            out.push_str(", \"Error\", \"");
+            out.push_str(&c_string(&error_message));
+            out.push_str("\"));\n");
+        } else {
+            let mut positional_index = 0usize;
+            for (argument_index, argument) in instance.arguments.iter().enumerate() {
+                out.push_str("            PtnValue attribute_arg_");
+                out.push_str(&attribute_index.to_string());
+                out.push('_');
+                out.push_str(&argument_index.to_string());
+                out.push_str(" = ");
+                out.push_str(&c_attribute_argument_value(&argument.value));
+                out.push_str(";\n");
+                out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
+                out.push_str("                ptn_value_destroy(&attribute_args_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(");\n");
+                out.push_str("                ptn_value_destroy(&result);\n");
+                out.push_str("                return ptn_null();\n");
+                out.push_str("            }\n");
+                out.push_str("            ptn_array_set_entry(attribute_args_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(".as.array, ");
+                if let Some(name) = &argument.name {
+                    out.push_str("ptn_array_string_key(\"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\")");
+                } else {
+                    out.push_str("ptn_array_int_key(");
+                    out.push_str(&positional_index.to_string());
+                    out.push(')');
+                    positional_index += 1;
+                }
+                out.push_str(", attribute_arg_");
+                out.push_str(&attribute_index.to_string());
+                out.push('_');
+                out.push_str(&argument_index.to_string());
+                out.push_str(");\n");
             }
-            out.push_str(", attribute_arg_");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name(runtime, \"");
+            out.push_str(&c_string(&instance.name));
+            out.push_str("\", attribute_args_");
             out.push_str(&attribute_index.to_string());
-            out.push('_');
-            out.push_str(&argument_index.to_string());
-            out.push_str(");\n");
+            out.push_str(", ");
+            out.push_str(&target.to_string());
+            out.push_str(", ");
+            out.push_str(if repeated { "1" } else { "0" });
+            out.push_str("));\n");
         }
-        out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name(runtime, \"");
-        out.push_str(&c_string(&instance.name));
-        out.push_str("\", attribute_args_");
-        out.push_str(&attribute_index.to_string());
-        out.push_str(", ");
-        out.push_str(&target.to_string());
-        out.push_str(", ");
-        out.push_str(if repeated { "1" } else { "0" });
-        out.push_str("));\n");
         out.push_str("            ptn_value_destroy(&attribute_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(");\n");
         out.push_str("        }\n");
     }
     out.push_str("        return result;\n");
+}
+
+fn reflection_attribute_arguments_error(
+    instance: &crate::ast::AttributeInstance,
+) -> Option<String> {
+    instance.arguments.iter().find_map(|argument| {
+        let AttributeConstantReference::ClassConstant { class_name, name } =
+            argument.value.constant_reference.as_ref()?
+        else {
+            return None;
+        };
+        if !matches!(
+            argument.value.kind,
+            AttributeArgumentKind::ClassConstant | AttributeArgumentKind::NativeEnumCase { .. }
+        ) {
+            return None;
+        }
+        (class_name.eq_ignore_ascii_case("self")
+            || class_name.eq_ignore_ascii_case("static")
+            || class_name.eq_ignore_ascii_case("parent"))
+        .then(|| format!("Undefined constant {class_name}::{name}"))
+    })
 }
 
 fn c_attribute_argument_value(value: &AttributeArgumentValue) -> String {
@@ -5528,8 +5687,10 @@ fn emit_class_reflection_metadata_helpers(
     out: &mut String,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    traits: &[TraitDecl],
+    instructions: &[Instruction],
 ) {
-    emit_reflection_attribute_metadata_helpers(out, classes, functions);
+    emit_reflection_attribute_metadata_helpers(out, classes, traits, functions, instructions);
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_reflection_method_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
     );
@@ -5553,12 +5714,15 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name) {\n",
     );
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     if classes
         .iter()
         .all(|class| class_method_lookup_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_decl.methods.is_empty())
     {
         out.push_str("    (void)method_name;\n");
         out.push_str("    (void)runtime;\n");
@@ -5574,6 +5738,24 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("\")) {\n");
             out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
             out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for method in &trait_decl.methods {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str(&c_string(&trait_decl.name));
             out.push_str("\", \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\");\n");
@@ -5608,12 +5790,15 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract) {\n",
     );
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     if classes
         .iter()
         .all(|class| class_method_lookup_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_decl.methods.is_empty())
     {
         out.push_str("    (void)method_name;\n");
         out.push_str("    (void)is_static;\n");
@@ -5644,6 +5829,29 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for method in &trait_decl.methods {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            *is_static = ");
+            out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            *visibility = ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            *is_abstract = ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
@@ -5652,12 +5860,15 @@ fn emit_class_reflection_metadata_helpers(
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     if classes
         .iter()
         .all(|class| class_method_lookup_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_decl.methods.is_empty())
     {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)filter_present;\n");
@@ -5682,6 +5893,26 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(", filter_present, filter)) {\n");
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_method_object_from_name(runtime, \"");
             out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\"));\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for method in &trait_decl.methods {
+            out.push_str("        if (ptn_reflection_method_matches_filter(");
+            out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(", filter_present, filter)) {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str(&c_string(&trait_decl.name));
             out.push_str("\", \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\"));\n");
