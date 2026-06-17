@@ -10208,6 +10208,7 @@ var_dump(str_pad(\"pad\", 8, \"01\", STR_PAD_BOTH));\n\
 var_dump(bin2hex(str_pad(\"A\" . chr(0) . \"B\", 6, chr(255), STR_PAD_BOTH)));\n\
 try { str_pad(\"pad\", 6, \"\"); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { str_pad(\"pad\", 6, \".\", 99); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { str_pad(\"pad\", PHP_INT_MAX * 5); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(function_exists(\"str_pad\"), function_exists(\"STR_PAD\"));",
     )
     .unwrap();
@@ -10226,9 +10227,40 @@ string(8) \"01pad010\"\n\
 string(12) \"ff410042ffff\"\n\
 str_pad(): Argument #3 ($pad_string) must not be empty\n\
 str_pad(): Argument #4 ($pad_type) must be STR_PAD_LEFT, STR_PAD_RIGHT, or STR_PAD_BOTH\n\
+str_pad(): Argument #2 ($length) must be of type int, float given\n\
 bool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_str_pad_obeys_memory_limit_to_native_binary() {
+    let root = temp_dir("ptn-native-str-pad-memory-limit");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-pad-memory-limit.php");
+    let output = root.join("str-pad-memory-limit-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo \"before\\n\";\n\
+str_pad(\"x\", 2048);\n\
+echo \"after\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_MEMORY_LIMIT", "1K")
+        .output()
+        .unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\n");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.starts_with("\nFatal error: Allowed memory size of 1024 bytes exhausted"));
+    assert!(stderr.contains("Fatal error: Allowed memory size of 1024 bytes exhausted"));
+    assert!(stderr.contains("tried to allocate 2049 bytes"));
+    assert!(stderr.contains("str-pad-memory-limit.php on line 3"));
 }
 
 #[test]
@@ -33853,6 +33885,12 @@ fn compile_exit_construct_forms_to_native_binary() {
             "<?php echo \"before\\n\"; exit \"bye\\n\"; echo \"after\\n\";",
             Some(0),
             "before\nbye\n",
+        ),
+        (
+            "exit-string-in-branch.php",
+            "<?php if (false) { exit(\"failed\\n\"); } echo \"kept\\n\";",
+            Some(0),
+            "kept\n",
         ),
         (
             "exit-named-status.php",

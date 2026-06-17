@@ -21876,7 +21876,7 @@ static void ptn_string_buffer_append_repeated_pattern(PtnStringBuffer *buffer, P
 
 static PtnValue ptn_internal_str_pad(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "str_pad", 1, "string", args[0], line);
-    int64_t length = ptn_value_to_integer(args[1]);
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "str_pad", 2, "length", args[1], line);
     PtnStringOperand pad_string = argc >= 3
         ? ptn_internal_expect_string_arg(runtime, "str_pad", 3, "pad_string", args[2], line)
         : ptn_string_operand_borrowed(" ");
@@ -21892,7 +21892,9 @@ static PtnValue ptn_internal_str_pad(PtnRuntime *runtime, size_t argc, const Ptn
         return ptn_null();
     }
 
-    int64_t pad_type = argc >= 4 ? ptn_value_to_integer(args[3]) : PTN_STR_PAD_RIGHT;
+    int64_t pad_type = argc >= 4
+        ? ptn_internal_expect_integer_arg(runtime, "str_pad", 4, "pad_type", args[3], line)
+        : PTN_STR_PAD_RIGHT;
     if (pad_type != PTN_STR_PAD_LEFT &&
         pad_type != PTN_STR_PAD_RIGHT &&
         pad_type != PTN_STR_PAD_BOTH) {
@@ -21914,7 +21916,36 @@ static PtnValue ptn_internal_str_pad(PtnRuntime *runtime, size_t argc, const Ptn
         return ptn_owned_string_len(copy, copy_len);
     }
 
-    size_t target_len = (size_t)length;
+    uint64_t requested_len = (uint64_t)length;
+    if (requested_len > (uint64_t)SIZE_MAX - 1U) {
+        ptn_emit_memory_allocation_overflow_error(runtime, (size_t)requested_len, 1, 1, line);
+    }
+
+    size_t target_len = (size_t)requested_len;
+    size_t allocation_len = target_len + 1;
+    size_t memory_limit = 0;
+    if (ptn_runtime_memory_limit_bytes(runtime, &memory_limit) &&
+        memory_limit != 0 &&
+        allocation_len > memory_limit) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Allowed memory size of %zu bytes exhausted (tried to allocate %zu bytes)",
+            memory_limit,
+            allocation_len
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        if (runtime->diagnostics.display_errors) {
+            FILE *stream = runtime->diagnostics.stream == NULL ? stderr : runtime->diagnostics.stream;
+            fflush(stdout);
+            fputc('\n', stream);
+        }
+        ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
+    }
+
     size_t pad_len = target_len - input.len;
     size_t left_len = 0;
     size_t right_len = 0;
