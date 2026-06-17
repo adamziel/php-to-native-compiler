@@ -1690,7 +1690,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return line ~ /->[[:space:]]*(getdoccomment|getfilename|getstartline|getendline|getstaticvariables)[[:space:]]*\(/
         }
         function ptn_supported_internal_attribute_metadata_row() {
-            return ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
+            return ptn_path ~ /Zend\/tests\/attributes\/(001_placement|005_objects|006_filter|013_class_scope|014_class_const_group|020_userland_attribute_validation|031_backtrace|gh8421)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/constants\/(allow_named_parameters|constant_redefined_(addition|change|removal)|multiple_attributes_(grouped|ungrouped)|oss_fuzz_428053935|repeatable-userland|target_all_targets_const-(default|explicit))[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/002_rfcexample[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/004_name_resolution[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/015_property_group[.]phpt$/ ||
@@ -1698,7 +1700,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/028_grouped[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/029_reflect_internal_symbols[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/032_attribute_validation_scope[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/attributes\/constants\/constant_redefined_addition[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/034_target_values[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/deprecated\/property_readonly_00[123][.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/property_readonly_00[12][.]phpt$/

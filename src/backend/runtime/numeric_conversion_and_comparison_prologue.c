@@ -886,9 +886,15 @@ static PTN_UNUSED PtnValue ptn_trace_frame_arg_value(PtnTraceFrame *frame, size_
         if (ptn_symbols_get(&frame->runtime->symbols, frame->parameter_names[position], &value)) {
             return ptn_trace_value_snapshot(value);
         }
+        if (position < frame->argc) {
+            return ptn_trace_value_snapshot(frame->args[position]);
+        }
         return ptn_null();
     }
-    return ptn_trace_value_snapshot(frame->args[position]);
+    if (position < frame->argc) {
+        return ptn_trace_value_snapshot(frame->args[position]);
+    }
+    return ptn_null();
 }
 
 static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
@@ -905,6 +911,8 @@ static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
     }
     return args;
 }
+
+static const char *ptn_trace_frame_method_separator(const char *function_name);
 
 static PTN_UNUSED PtnValue ptn_trace_frame_array(PtnTraceFrame *frame) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
@@ -924,11 +932,32 @@ static PTN_UNUSED PtnValue ptn_trace_frame_array(PtnTraceFrame *frame) {
         );
     }
     if (frame->function_name != NULL) {
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_string_key("function"),
-            ptn_owned_string(ptn_duplicate_string(frame->function_name))
-        );
+        const char *separator = ptn_trace_frame_method_separator(frame->function_name);
+        if (separator != NULL && separator != frame->function_name && separator[2] != '\0') {
+            size_t class_len = (size_t)(separator - frame->function_name);
+            const char *method_name = separator + 2;
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("function"),
+                ptn_owned_string(ptn_duplicate_string(method_name))
+            );
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("class"),
+                ptn_owned_string_len(ptn_duplicate_string_len(frame->function_name, class_len), class_len)
+            );
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("type"),
+                ptn_string(separator[0] == '-' ? "->" : "::")
+            );
+        } else {
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_array_string_key("function"),
+                ptn_owned_string(ptn_duplicate_string(frame->function_name))
+            );
+        }
     }
     ptn_array_set_entry(
         result.as.array,

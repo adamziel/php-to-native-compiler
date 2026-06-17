@@ -5126,6 +5126,7 @@ impl Parser<'_> {
                         &resolved_name,
                         &arguments,
                         self.strict_types,
+                        start.line,
                     )?;
                     name_segments.clear();
                     leading_attribute_backslash = false;
@@ -5152,6 +5153,7 @@ impl Parser<'_> {
                             &resolved_name,
                             &arguments,
                             self.strict_types,
+                            start.line,
                         )?;
                     }
                     bracket_depth -= 1;
@@ -9130,6 +9132,7 @@ fn apply_parsed_attribute(
     resolved_name: &str,
     arguments: &ParsedAttributeArguments,
     strict_types: bool,
+    line: usize,
 ) -> Result<()> {
     attributes.instances.push(AttributeInstance {
         name: resolved_name.to_string(),
@@ -9141,6 +9144,9 @@ fn apply_parsed_attribute(
                 value: parsed_attribute_argument_value_to_ast(&argument.value),
             })
             .collect(),
+        source_file: String::new(),
+        line,
+        strict_types,
     });
     if name_segments.len() != 1 {
         attributes.total_count = attributes.total_count.saturating_add(1);

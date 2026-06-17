@@ -258,6 +258,9 @@ pub struct AttributeMetadata {
 pub struct AttributeInstance {
     pub name: String,
     pub arguments: Vec<AttributeArgument>,
+    pub source_file: String,
+    pub line: usize,
+    pub strict_types: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

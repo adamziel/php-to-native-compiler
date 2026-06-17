@@ -17683,6 +17683,72 @@ var_dump(in_array(\"Attribute\", get_declared_classes()));
 }
 
 #[test]
+fn compile_reflection_attribute_new_instance_uses_attribute_site_strict_types() {
+    let root = temp_dir("ptn-native-reflection-attribute-strict-use-site");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-attribute-strict-use-site.php");
+    let include = root.join("strict.inc");
+    let output = root.join("reflection-attribute-strict-use-site-bin");
+    fs::write(
+        &input,
+        r#"<?php
+#[Attribute]
+class MyAttribute {
+    public function __construct(public int $value) {}
+}
+
+#[MyAttribute("42")]
+class TestWeak {}
+
+require __DIR__ . '/strict.inc';
+
+$weak = (new ReflectionClass(TestWeak::class))->getAttributes()[0]->newInstance();
+echo "weak=", get_class($weak), ":", $weak->value, "\n";
+
+(new ReflectionClass(TestStrict::class))->getAttributes()[0]->newInstance();
+echo "unreachable\n";
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &include,
+        r#"<?php
+declare(strict_types=1);
+
+#[MyAttribute("42")]
+class TestStrict {}
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "weak=MyAttribute:42\n"
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "MyAttribute::__construct(): Argument #1 ($value) must be of type int, string given"
+        ),
+        "{stderr}"
+    );
+    assert!(stderr.contains("called in "), "{stderr}");
+    assert!(stderr.contains("strict.inc on line 4"), "{stderr}");
+    assert!(stderr.contains("and defined in "), "{stderr}");
+    assert!(
+        stderr.contains("ReflectionAttribute->newInstance()"),
+        "{stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_attribute_object_from_name"));
+}
+
+#[test]
 fn compile_internal_attribute_object_readonly_properties_to_native_binary() {
     let root = temp_dir("ptn-native-internal-attribute-readonly");
     fs::create_dir_all(&root).unwrap();

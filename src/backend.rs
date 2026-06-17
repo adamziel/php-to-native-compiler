@@ -7,7 +7,7 @@ use std::process::Command;
 
 use crate::ast::{
     AssignmentOp, AttributeArgumentKind, AttributeArgumentValue, AttributeConstantReference,
-    AttributeMetadata, IncludeKind,
+    AttributeInstance, AttributeMetadata, IncludeKind,
 };
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
@@ -695,7 +695,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED void ptn_throw_user_parameter_class_type_error(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_class_name, PtnValue value, size_t line) {\n",
+        "\nstatic PTN_UNUSED void ptn_throw_user_parameter_class_type_error(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_class_name, PtnValue value, size_t line, const char *declaration_path, size_t declaration_line) {\n",
     );
     out.push_str("    const char *given = ptn_user_type_hint_given_name(value);\n");
     out.push_str(
@@ -704,9 +704,16 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "    const char *path = runtime->source_path != NULL ? runtime->source_path : \"ptn\";\n",
     );
+    out.push_str("    const char *throw_path = declaration_path != NULL ? declaration_path : runtime->source_path;\n");
+    out.push_str("    size_t throw_line = declaration_line != 0 ? declaration_line : line;\n");
+    out.push_str("    int include_definition = runtime->exceptions->try_frame == NULL && throw_path != NULL && throw_line != 0;\n");
     out.push_str("    int needed;\n");
-    out.push_str("    if (line != 0 && has_parameter_name) {\n");
+    out.push_str("    if (line != 0 && has_parameter_name && include_definition) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu and defined in %s:%zu\", function_name, position, parameter_name, expected_class_name, given, path, line, throw_path != NULL ? throw_path : \"ptn\", throw_line);\n");
+    out.push_str("    } else if (line != 0 && has_parameter_name) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
+    out.push_str("    } else if (line != 0 && include_definition) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu and defined in %s:%zu\", function_name, position, expected_class_name, given, path, line, throw_path != NULL ? throw_path : \"ptn\", throw_line);\n");
     out.push_str("    } else if (line != 0) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, path, line);\n");
     out.push_str("    } else if (has_parameter_name) {\n");
@@ -721,8 +728,12 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    if (line != 0 && has_parameter_name) {\n");
+    out.push_str("    if (line != 0 && has_parameter_name && include_definition) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu and defined in %s:%zu\", function_name, position, parameter_name, expected_class_name, given, path, line, throw_path != NULL ? throw_path : \"ptn\", throw_line);\n");
+    out.push_str("    } else if (line != 0 && has_parameter_name) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
+    out.push_str("    } else if (line != 0 && include_definition) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu and defined in %s:%zu\", function_name, position, expected_class_name, given, path, line, throw_path != NULL ? throw_path : \"ptn\", throw_line);\n");
     out.push_str("    } else if (line != 0) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given, called in %s on line %zu\", function_name, position, expected_class_name, given, path, line);\n");
     out.push_str("    } else if (has_parameter_name) {\n");
@@ -730,7 +741,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given\", function_name, position, expected_class_name, given);\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, runtime->source_path, line);\n");
+    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, throw_path, throw_line);\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_user_parameter_string_is_numeric(PtnString string, double *number) {\n");
@@ -742,7 +753,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    return is_numeric;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_int(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_int(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, const char *declaration_path, size_t declaration_line, PtnValue *out) {\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
     out.push_str("    if (resolved.type == PTN_INT) {\n");
     out.push_str("        *out = ptn_value_clone(resolved);\n");
@@ -763,11 +774,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line, declaration_path, declaration_line);\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_float(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_float(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, const char *declaration_path, size_t declaration_line, PtnValue *out) {\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
     out.push_str("    if (resolved.type == PTN_FLOAT) {\n");
     out.push_str("        *out = ptn_value_clone(resolved);\n");
@@ -792,11 +803,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line, declaration_path, declaration_line);\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_string(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_string(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, const char *declaration_path, size_t declaration_line, PtnValue *out) {\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
     out.push_str("    if (resolved.type == PTN_STRING) {\n");
     out.push_str("        *out = ptn_value_clone(resolved);\n");
@@ -806,11 +817,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        *out = ptn_cast_string(resolved);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line, declaration_path, declaration_line);\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_bool(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, PtnValue *out) {\n");
+    out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_bool(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, const char *declaration_path, size_t declaration_line, PtnValue *out) {\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
     out.push_str("    if (resolved.type == PTN_BOOL) {\n");
     out.push_str("        *out = ptn_value_clone(resolved);\n");
@@ -820,7 +831,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        *out = ptn_bool(ptn_is_truthy(resolved));\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line);\n");
+    out.push_str("    ptn_throw_user_parameter_class_type_error(runtime, function_name, position, parameter_name, expected_type_name, value, line, declaration_path, declaration_line);\n");
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
@@ -1123,10 +1134,13 @@ fn emit_declared_class_new_instance_without_constructor(
         if let Some(constructor) = class_constructor_method(declared_class, classes) {
             if constructor.visibility != PropertyVisibility::Public {
                 out.push_str("        ptn_value_destroy(&result);\n");
-                out.push_str("        ptn_throw_exception(runtime, \"ReflectionException\", \"Access to non-public constructor of class ");
-                out.push_str(&c_string(&declared_class.name));
-                out.push_str("\");\n");
-                out.push_str("        return ptn_null();\n");
+                out.push_str("        return ptn_throw_method_visibility_error(runtime, \"");
+                out.push_str(&c_string(constructor.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constructor.name));
+                out.push_str("\", ");
+                out.push_str(c_property_visibility(constructor.visibility));
+                out.push_str(", line);\n");
             }
             out.push_str("        result.as.object->destructor_enabled = 0;\n");
             out.push_str("        int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;\n");
@@ -1134,7 +1148,7 @@ fn emit_declared_class_new_instance_without_constructor(
             out.push_str("        runtime->warn_by_ref_argument_mismatch = 1;\n");
             out.push_str("        runtime->throw_argument_count_errors = 1;\n");
             out.push_str(
-                "        PtnValue constructor_result = ptn_call_declared_method(runtime, result, \"__construct\", argc, args, 0);\n",
+                "        PtnValue constructor_result = ptn_call_declared_method(runtime, result, \"__construct\", argc, args, line);\n",
             );
             out.push_str("        runtime->throw_argument_count_errors = previous_throw_argument_count_errors;\n");
             out.push_str("        runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;\n");
@@ -1454,7 +1468,9 @@ fn emit_user_functions(
                     out.push_str(&c_string(&type_hint_label(type_hint)));
                     out.push_str("\", ");
                     out.push_str(&parameter_source);
-                    out.push_str(", line);\n");
+                    out.push_str(", line");
+                    emit_user_function_declaration_location_args(out, function);
+                    out.push_str(");\n");
                     out.push_str("        return ptn_null();\n");
                     out.push_str("    }\n");
                     None
@@ -1475,7 +1491,9 @@ fn emit_user_functions(
                         out.push_str(&c_string(&type_hint_label(type_hint)));
                         out.push_str("\", ");
                         out.push_str(&parameter_source);
-                        out.push_str(", line);\n");
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(");\n");
                         out.push_str("        return ptn_null();\n");
                         out.push_str("    }\n");
                     }
@@ -1501,7 +1519,9 @@ fn emit_user_functions(
                         out.push_str(&c_string(&type_hint_label(type_hint)));
                         out.push_str("\", ");
                         out.push_str(&parameter_source);
-                        out.push_str(", line);\n");
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(");\n");
                         out.push_str("        return ptn_null();\n");
                         out.push_str("    }\n");
                     }
@@ -1529,7 +1549,9 @@ fn emit_user_functions(
                         out.push_str(&c_string(&type_hint_label(type_hint)));
                         out.push_str("\", ");
                         out.push_str(&parameter_source);
-                        out.push_str(", line);\n");
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(");\n");
                         out.push_str("        return ptn_null();\n");
                         out.push_str("    }\n");
                     }
@@ -1560,7 +1582,9 @@ fn emit_user_functions(
                             out.push_str(&c_string(&type_hint_label(type_hint)));
                             out.push_str("\", ");
                             out.push_str(&parameter_source);
-                            out.push_str(", line, &");
+                            out.push_str(", line");
+                            emit_user_function_declaration_location_args(out, function);
+                            out.push_str(", &");
                             out.push_str(&temp);
                             out.push_str(")) {\n");
                             out.push_str("            return ptn_null();\n");
@@ -1579,7 +1603,9 @@ fn emit_user_functions(
                             out.push_str(&c_string(&type_hint_label(type_hint)));
                             out.push_str("\", ");
                             out.push_str(&parameter_source);
-                            out.push_str(", line, &");
+                            out.push_str(", line");
+                            emit_user_function_declaration_location_args(out, function);
+                            out.push_str(", &");
                             out.push_str(&temp);
                             out.push_str(")) {\n");
                             out.push_str("        return ptn_null();\n");
@@ -1764,6 +1790,13 @@ fn function_call_frame_parameter_count(function: &FunctionDecl) -> usize {
         .unwrap_or(function.parameters.len())
 }
 
+fn emit_user_function_declaration_location_args(out: &mut String, function: &FunctionDecl) {
+    out.push_str(", \"");
+    out.push_str(&c_string(&function.source_file));
+    out.push_str("\", ");
+    out.push_str(&function.line.to_string());
+}
+
 fn instance_method_trace_display_name(function: &FunctionDecl) -> Option<String> {
     if function.is_static {
         return None;
@@ -1906,7 +1939,9 @@ fn emit_variadic_parameter_binding(
             out.push_str(&c_string(&type_hint_label(type_hint)));
             out.push_str("\", args[");
             out.push_str(&index_temp);
-            out.push_str("], line);\n");
+            out.push_str("], line");
+            emit_user_function_declaration_location_args(out, function);
+            out.push_str(");\n");
             out.push_str("            return ptn_null();\n");
             out.push_str("        }\n");
         }
@@ -1931,7 +1966,9 @@ fn emit_variadic_parameter_binding(
         )));
         out.push_str("\", args[");
         out.push_str(&index_temp);
-        out.push_str("], line);\n");
+        out.push_str("], line");
+        emit_user_function_declaration_location_args(out, function);
+        out.push_str(");\n");
         out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }
@@ -1960,7 +1997,9 @@ fn emit_variadic_parameter_binding(
         )));
         out.push_str("\", args[");
         out.push_str(&index_temp);
-        out.push_str("], line);\n");
+        out.push_str("], line");
+        emit_user_function_declaration_location_args(out, function);
+        out.push_str(");\n");
         out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }
@@ -1991,7 +2030,9 @@ fn emit_variadic_parameter_binding(
         )));
         out.push_str("\", args[");
         out.push_str(&index_temp);
-        out.push_str("], line);\n");
+        out.push_str("], line");
+        emit_user_function_declaration_location_args(out, function);
+        out.push_str(");\n");
         out.push_str("            return ptn_null();\n");
         out.push_str("        }\n");
     }
@@ -2023,7 +2064,9 @@ fn emit_variadic_parameter_binding(
             )));
             out.push_str("\", args[");
             out.push_str(&index_temp);
-            out.push_str("], line, &");
+            out.push_str("], line");
+            emit_user_function_declaration_location_args(out, function);
+            out.push_str(", &");
             out.push_str(&value_temp);
             out.push_str(")) {\n");
             out.push_str("                ptn_value_drop(&");
@@ -2045,7 +2088,9 @@ fn emit_variadic_parameter_binding(
             )));
             out.push_str("\", args[");
             out.push_str(&index_temp);
-            out.push_str("], line, &");
+            out.push_str("], line");
+            emit_user_function_declaration_location_args(out, function);
+            out.push_str(", &");
             out.push_str(&value_temp);
             out.push_str(")) {\n");
             out.push_str("            ptn_value_drop(&");
@@ -4914,9 +4959,17 @@ fn emit_class_metadata_helpers(
     );
     out.push_str("    const char *visibility_name = ptn_method_visibility_name(visibility);\n");
     out.push_str("    const char *scope = runtime->current_class_name;\n");
-    out.push_str("    int needed = scope == NULL ?\n");
-    out.push_str("        snprintf(NULL, 0, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name) :\n");
-    out.push_str("        snprintf(NULL, 0, \"Call to %s method %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
+    out.push_str("    int is_constructor = ptn_ascii_case_equal(method_name, \"__construct\");\n");
+    out.push_str("    int needed;\n");
+    out.push_str("    if (is_constructor && scope == NULL) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Call to %s %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (is_constructor) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Call to %s %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
+    out.push_str("    } else if (scope == NULL) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Call to %s method %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
+    out.push_str("    }\n");
     out.push_str("    if (needed < 0) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
@@ -4924,7 +4977,11 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    if (scope == NULL) {\n");
+    out.push_str("    if (is_constructor && scope == NULL) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (is_constructor) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
+    out.push_str("    } else if (scope == NULL) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from scope %s\", visibility_name, declaring_class, method_name, scope);\n");
@@ -5232,16 +5289,21 @@ fn emit_reflection_attribute_metadata_helpers(
     functions: &[FunctionDecl],
     instructions: &[Instruction],
 ) {
-    emit_declared_class_reflection_attributes(out, classes);
-    emit_declared_class_method_reflection_attributes(out, classes, traits);
-    emit_declared_class_property_reflection_attributes(out, classes);
-    emit_declared_class_constant_reflection_attributes(out, classes);
-    emit_declared_function_reflection_attributes(out, functions);
-    emit_declared_function_parameter_reflection_attributes(out, functions);
-    emit_declared_constant_attributes(out, instructions);
+    emit_declared_class_reflection_attributes(out, classes, functions);
+    emit_declared_class_method_reflection_attributes(out, classes, traits, functions);
+    emit_declared_class_property_reflection_attributes(out, classes, functions);
+    emit_declared_class_constant_reflection_attributes(out, classes, functions);
+    emit_declared_function_reflection_attributes(out, classes, functions);
+    emit_declared_function_parameter_reflection_attributes(out, classes, functions);
+    emit_declared_constant_attributes(out, classes, functions, instructions);
+    emit_declared_attribute_class_flags(out, classes);
 }
 
-fn emit_declared_class_reflection_attributes(out: &mut String, classes: &[ClassDecl]) {
+fn emit_declared_class_reflection_attributes(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_attributes(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -5262,6 +5324,8 @@ fn emit_declared_class_reflection_attributes(out: &mut String, classes: &[ClassD
             "ReflectionClass::getAttributes",
             &class.attributes,
             1,
+            classes,
+            functions,
         );
         out.push_str("    }\n");
     }
@@ -5273,6 +5337,7 @@ fn emit_declared_class_method_reflection_attributes(
     out: &mut String,
     classes: &[ClassDecl],
     traits: &[TraitDecl],
+    functions: &[FunctionDecl],
 ) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_method_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *method_name, size_t argc, const PtnValue *args, size_t line) {\n",
@@ -5310,6 +5375,8 @@ fn emit_declared_class_method_reflection_attributes(
                 "ReflectionMethod::getAttributes",
                 &method.attributes,
                 4,
+                classes,
+                functions,
             );
             out.push_str("    }\n");
         }
@@ -5330,6 +5397,8 @@ fn emit_declared_class_method_reflection_attributes(
                 "ReflectionMethod::getAttributes",
                 &method.attributes,
                 4,
+                classes,
+                functions,
             );
             out.push_str("    }\n");
         }
@@ -5338,7 +5407,11 @@ fn emit_declared_class_method_reflection_attributes(
     out.push_str("}\n");
 }
 
-fn emit_declared_class_property_reflection_attributes(out: &mut String, classes: &[ClassDecl]) {
+fn emit_declared_class_property_reflection_attributes(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_property_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *property_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -5374,6 +5447,8 @@ fn emit_declared_class_property_reflection_attributes(out: &mut String, classes:
                 "ReflectionProperty::getAttributes",
                 &property.attributes,
                 8,
+                classes,
+                functions,
             );
             out.push_str("    }\n");
         }
@@ -5392,6 +5467,8 @@ fn emit_declared_class_property_reflection_attributes(out: &mut String, classes:
                 "ReflectionProperty::getAttributes",
                 &property.attributes,
                 8,
+                classes,
+                functions,
             );
             out.push_str("    }\n");
         }
@@ -5400,7 +5477,11 @@ fn emit_declared_class_property_reflection_attributes(out: &mut String, classes:
     out.push_str("}\n");
 }
 
-fn emit_declared_class_constant_reflection_attributes(out: &mut String, classes: &[ClassDecl]) {
+fn emit_declared_class_constant_reflection_attributes(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_constant_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *constant_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -5432,6 +5513,8 @@ fn emit_declared_class_constant_reflection_attributes(out: &mut String, classes:
                 "ReflectionClassConstant::getAttributes",
                 &constant.attributes,
                 16,
+                classes,
+                functions,
             );
             out.push_str("    }\n");
         }
@@ -5440,7 +5523,11 @@ fn emit_declared_class_constant_reflection_attributes(out: &mut String, classes:
     out.push_str("}\n");
 }
 
-fn emit_declared_function_reflection_attributes(out: &mut String, functions: &[FunctionDecl]) {
+fn emit_declared_function_reflection_attributes(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_function_reflection_attributes(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -5469,6 +5556,38 @@ fn emit_declared_function_reflection_attributes(out: &mut String, functions: &[F
             "ReflectionFunction::getAttributes",
             &function.attributes,
             2,
+            classes,
+            functions,
+        );
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionFunction\", \"getAttributes\", argc, args, line);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_closure_reflection_attributes(PtnRuntime *runtime, size_t function_index, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    let has_closure_attributes = functions
+        .iter()
+        .any(|function| function.is_anonymous && !function.attributes.instances.is_empty());
+    if !has_closure_attributes {
+        out.push_str("    (void)function_index;\n");
+    }
+    for (index, function) in functions.iter().enumerate() {
+        if !function.is_anonymous || function.attributes.instances.is_empty() {
+            continue;
+        }
+        out.push_str("    if (function_index == ");
+        out.push_str(&index.to_string());
+        out.push_str(") {\n");
+        emit_declared_attribute_result(
+            out,
+            "ReflectionFunction",
+            "ReflectionFunction::getAttributes",
+            &function.attributes,
+            2,
+            classes,
+            functions,
         );
         out.push_str("    }\n");
     }
@@ -5476,8 +5595,82 @@ fn emit_declared_function_reflection_attributes(out: &mut String, functions: &[F
     out.push_str("}\n");
 }
 
+fn emit_declared_attribute_class_flags(out: &mut String, classes: &[ClassDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_attribute_class_flags(const char *class_name, int *found_out) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    out.push_str("    *found_out = 1;\n");
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ");
+        out.push_str(
+            &class_attribute_flags(&class.attributes)
+                .unwrap_or(0)
+                .to_string(),
+        );
+        out.push_str(";\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    *found_out = 0;\n");
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+}
+
+fn class_attribute_flags(attributes: &AttributeMetadata) -> Option<i64> {
+    let attribute = attributes.instances.iter().find(|instance| {
+        instance
+            .name
+            .trim_start_matches('\\')
+            .eq_ignore_ascii_case("Attribute")
+    })?;
+    if attribute.arguments.is_empty() {
+        return Some(127);
+    }
+    let flags = attribute
+        .arguments
+        .iter()
+        .filter_map(|argument| attribute_flag_value(&argument.value))
+        .fold(0, |flags, value| flags | value);
+    Some(flags)
+}
+
+fn attribute_flag_value(value: &AttributeArgumentValue) -> Option<i64> {
+    if matches!(value.kind, AttributeArgumentKind::Int) {
+        return value.text.parse::<i64>().ok();
+    }
+    let AttributeConstantReference::ClassConstant { class_name, name } =
+        value.constant_reference.as_ref()?
+    else {
+        return None;
+    };
+    if !class_name
+        .trim_start_matches('\\')
+        .eq_ignore_ascii_case("Attribute")
+    {
+        return None;
+    }
+    match name.to_ascii_uppercase().as_str() {
+        "TARGET_CLASS" => Some(1),
+        "TARGET_FUNCTION" => Some(2),
+        "TARGET_METHOD" => Some(4),
+        "TARGET_PROPERTY" => Some(8),
+        "TARGET_CLASS_CONSTANT" => Some(16),
+        "TARGET_PARAMETER" => Some(32),
+        "TARGET_CONSTANT" => Some(64),
+        "TARGET_ALL" => Some(127),
+        "IS_REPEATABLE" => Some(128),
+        _ => None,
+    }
+}
+
 fn emit_declared_function_parameter_reflection_attributes(
     out: &mut String,
+    classes: &[ClassDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str(
@@ -5515,6 +5708,8 @@ fn emit_declared_function_parameter_reflection_attributes(
                 "ReflectionParameter::getAttributes",
                 &parameter.attributes,
                 32,
+                classes,
+                functions,
             );
             out.push_str("    }\n");
         }
@@ -5523,7 +5718,12 @@ fn emit_declared_function_parameter_reflection_attributes(
     out.push_str("}\n");
 }
 
-fn emit_declared_constant_attributes(out: &mut String, instructions: &[Instruction]) {
+fn emit_declared_constant_attributes(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    instructions: &[Instruction],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_constant_attributes(PtnRuntime *runtime, const char *constant_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
@@ -5554,6 +5754,8 @@ fn emit_declared_constant_attributes(out: &mut String, instructions: &[Instructi
                 "ReflectionConstant::getAttributes",
                 attributes,
                 64,
+                classes,
+                functions,
             );
         }
         out.push_str("    }\n");
@@ -5562,12 +5764,49 @@ fn emit_declared_constant_attributes(out: &mut String, instructions: &[Instructi
     out.push_str("}\n");
 }
 
+fn attribute_constructor_argument_order(
+    instance: &AttributeInstance,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> Option<Vec<usize>> {
+    if !instance
+        .arguments
+        .iter()
+        .any(|argument| argument.name.is_some())
+    {
+        return None;
+    }
+    let class = class_by_name(classes, &instance.name)?;
+    let constructor = class_constructor_method(class, classes)?;
+    let function = functions.get(constructor.function_index)?;
+    let argument_names = instance
+        .arguments
+        .iter()
+        .map(|argument| argument.name.clone())
+        .collect::<Vec<_>>();
+    let slots = bind_named_call_arguments(&function.parameters, &argument_names).ok()?;
+    let max_slot = slots.iter().copied().max()?;
+    if max_slot >= function.parameters.len() {
+        return None;
+    }
+    let mut ordered = vec![None; max_slot + 1];
+    for (argument_index, slot) in slots.into_iter().enumerate() {
+        if ordered[slot].is_some() {
+            return None;
+        }
+        ordered[slot] = Some(argument_index);
+    }
+    ordered.into_iter().collect()
+}
+
 fn emit_declared_attribute_result(
     out: &mut String,
     _reflector_class: &str,
     filter_function_name: &str,
     metadata: &AttributeMetadata,
     target: i32,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
 ) {
     out.push_str("        PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("        int64_t index = 0;\n");
@@ -5596,14 +5835,25 @@ fn emit_declared_attribute_result(
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
         if let Some(error_message) = reflection_attribute_arguments_error(instance) {
+            out.push_str("            PtnValue constructor_args_");
+            out.push_str(&attribute_index.to_string());
+            out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name_with_arguments_error(runtime, \"");
             out.push_str(&c_string(&instance.name));
             out.push_str("\", attribute_args_");
+            out.push_str(&attribute_index.to_string());
+            out.push_str(", constructor_args_");
             out.push_str(&attribute_index.to_string());
             out.push_str(", ");
             out.push_str(&target.to_string());
             out.push_str(", ");
             out.push_str(if repeated { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(&c_attribute_source_file(instance));
+            out.push_str(", ");
+            out.push_str(&instance.line.to_string());
+            out.push_str(", ");
+            out.push_str(if instance.strict_types { "1" } else { "0" });
             out.push_str(", \"Error\", \"");
             out.push_str(&c_string(&error_message));
             out.push_str("\"));\n");
@@ -5643,22 +5893,65 @@ fn emit_declared_attribute_result(
                 out.push_str(&argument_index.to_string());
                 out.push_str(");\n");
             }
+            if let Some(constructor_order) =
+                attribute_constructor_argument_order(instance, classes, functions)
+            {
+                out.push_str("            PtnValue constructor_args_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+                for (constructor_index, argument_index) in constructor_order.iter().enumerate() {
+                    out.push_str("            ptn_array_set_entry(constructor_args_");
+                    out.push_str(&attribute_index.to_string());
+                    out.push_str(".as.array, ptn_array_int_key(");
+                    out.push_str(&constructor_index.to_string());
+                    out.push_str("), ptn_value_clone_deref(attribute_args_");
+                    out.push_str(&attribute_index.to_string());
+                    out.push_str(".as.array->entries[");
+                    out.push_str(&argument_index.to_string());
+                    out.push_str("].value));\n");
+                }
+            } else {
+                out.push_str("            PtnValue constructor_args_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(" = ptn_value_clone_deref(attribute_args_");
+                out.push_str(&attribute_index.to_string());
+                out.push_str(");\n");
+            }
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name(runtime, \"");
             out.push_str(&c_string(&instance.name));
             out.push_str("\", attribute_args_");
+            out.push_str(&attribute_index.to_string());
+            out.push_str(", constructor_args_");
             out.push_str(&attribute_index.to_string());
             out.push_str(", ");
             out.push_str(&target.to_string());
             out.push_str(", ");
             out.push_str(if repeated { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(&c_attribute_source_file(instance));
+            out.push_str(", ");
+            out.push_str(&instance.line.to_string());
+            out.push_str(", ");
+            out.push_str(if instance.strict_types { "1" } else { "0" });
             out.push_str("));\n");
         }
+        out.push_str("            ptn_value_destroy(&constructor_args_");
+        out.push_str(&attribute_index.to_string());
+        out.push_str(");\n");
         out.push_str("            ptn_value_destroy(&attribute_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(");\n");
         out.push_str("        }\n");
     }
     out.push_str("        return result;\n");
+}
+
+fn c_attribute_source_file(instance: &crate::ast::AttributeInstance) -> String {
+    if instance.source_file.is_empty() {
+        "NULL".to_string()
+    } else {
+        format!("\"{}\"", c_string(&instance.source_file))
+    }
 }
 
 fn reflection_attribute_arguments_error(
@@ -10013,7 +10306,7 @@ fn emit_exit_instruction(
     out.push_str(" = 0;\n");
     out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"exit\", 1, \"status\", \"string|int\", ");
     out.push_str(&resolved_temp);
-    out.push_str(", 0);\n");
+    out.push_str(", 0, runtime.source_path, line);\n");
     out.push_str("            break;\n");
     out.push_str("    }\n");
     emit_value_cleanup(out, "    ", &value_temp);

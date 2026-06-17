@@ -206,6 +206,7 @@ pub struct MethodDecl {
 pub struct FunctionDecl {
     pub name: String,
     pub display_name: String,
+    pub source_file: String,
     pub class_name: Option<String>,
     pub trait_name: Option<String>,
     pub trait_method_name: Option<String>,
@@ -909,10 +910,14 @@ pub fn lower_with_source_and_includes(
         .iter()
         .map(|class| context.lower_class(class))
         .collect();
-    let mut traits: Vec<_> = program.traits.iter().map(lower_trait).collect();
+    let mut traits: Vec<_> = program
+        .traits
+        .iter()
+        .map(|trait_decl| context.lower_trait(trait_decl))
+        .collect();
     for include in &include_sources {
         classes.extend(context.lower_include_classes(include));
-        traits.extend(include.program.traits.iter().map(lower_trait));
+        traits.extend(context.lower_include_traits(include));
     }
     let includes = include_sources
         .iter()
@@ -938,6 +943,7 @@ struct LoweringContext<'a> {
     constant_values: HashMap<String, String>,
     source_file: String,
     source_dir: String,
+    strict_types: bool,
     include_resolutions: &'a IncludeResolutionMap,
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
@@ -1004,6 +1010,7 @@ impl<'a> LoweringContext<'a> {
             constant_values,
             source_file,
             source_dir,
+            strict_types: program.strict_types,
             include_resolutions,
             current_class_name: None,
             current_trait_name: None,
@@ -1021,12 +1028,15 @@ impl<'a> LoweringContext<'a> {
                 std::mem::replace(&mut self.source_file, include.source_file.clone());
             let previous_source_dir =
                 std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+            let previous_strict_types =
+                std::mem::replace(&mut self.strict_types, include.program.strict_types);
             starts.push(self.functions.len());
             for function in &include.program.functions {
                 self.declare_function(function);
             }
             self.source_file = previous_source_file;
             self.source_dir = previous_source_dir;
+            self.strict_types = previous_strict_types;
         }
         starts
     }
@@ -1036,12 +1046,15 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_file, include.source_file.clone());
         let previous_source_dir =
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        let previous_strict_types =
+            std::mem::replace(&mut self.strict_types, include.program.strict_types);
         for (offset, function) in include.program.functions.iter().enumerate() {
             let body = self.lower_statements(&function.body);
             self.functions[start_index + offset].body = body;
         }
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
+        self.strict_types = previous_strict_types;
     }
 
     fn lower_include_classes(&mut self, include: &IncludeSource) -> Vec<ClassDecl> {
@@ -1049,6 +1062,8 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_file, include.source_file.clone());
         let previous_source_dir =
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        let previous_strict_types =
+            std::mem::replace(&mut self.strict_types, include.program.strict_types);
         let classes = include
             .program
             .classes
@@ -1057,7 +1072,27 @@ impl<'a> LoweringContext<'a> {
             .collect();
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
+        self.strict_types = previous_strict_types;
         classes
+    }
+
+    fn lower_include_traits(&mut self, include: &IncludeSource) -> Vec<TraitDecl> {
+        let previous_source_file =
+            std::mem::replace(&mut self.source_file, include.source_file.clone());
+        let previous_source_dir =
+            std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        let previous_strict_types =
+            std::mem::replace(&mut self.strict_types, include.program.strict_types);
+        let traits = include
+            .program
+            .traits
+            .iter()
+            .map(|trait_decl| self.lower_trait(trait_decl))
+            .collect();
+        self.source_file = previous_source_file;
+        self.source_dir = previous_source_dir;
+        self.strict_types = previous_strict_types;
+        traits
     }
 
     fn declare_function(&mut self, function: &AstFunctionDecl) {
@@ -1066,11 +1101,12 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|parameter| self.lower_parameter(parameter))
             .collect();
-        let deprecated_metadata =
-            self.function_deprecated_metadata(&function.attributes, None, None, None);
+        let attributes = self.annotate_attribute_metadata(&function.attributes);
+        let deprecated_metadata = self.function_deprecated_metadata(&attributes, None, None, None);
         self.functions.push(FunctionDecl {
             name: function.name.clone(),
             display_name: function.name.clone(),
+            source_file: self.source_file.clone(),
             class_name: None,
             trait_name: None,
             trait_method_name: None,
@@ -1078,8 +1114,8 @@ impl<'a> LoweringContext<'a> {
             deprecated_message: deprecated_metadata.message,
             deprecated_since: deprecated_metadata.since,
             deprecated_message_runtime_reference: deprecated_metadata.message_runtime_reference,
-            no_discard_message: function.attributes.no_discard_message.clone(),
-            attributes: function.attributes.clone(),
+            no_discard_message: attributes.no_discard_message.clone(),
+            attributes,
             is_static: false,
             line: function.span.line,
             parameters,
@@ -1105,6 +1141,8 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_file, include.source_file.clone());
         let previous_source_dir =
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
+        let previous_strict_types =
+            std::mem::replace(&mut self.strict_types, include.program.strict_types);
         let include_constant_values = collect_constant_values(&include.program);
         let include_constant_deprecations =
             collect_constant_deprecations(&include.program, &include_constant_values);
@@ -1119,6 +1157,7 @@ impl<'a> LoweringContext<'a> {
         self.constant_values = previous_constant_values;
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
+        self.strict_types = previous_strict_types;
         IncludeFile {
             source_file: include.source_file.clone(),
             source_dir: include.source_dir.clone(),
@@ -1370,11 +1409,12 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|parameter| self.lower_parameter(parameter))
             .collect();
-        let deprecated_metadata =
-            self.function_deprecated_metadata(&function.attributes, None, None, None);
+        let attributes = self.annotate_attribute_metadata(&function.attributes);
+        let deprecated_metadata = self.function_deprecated_metadata(&attributes, None, None, None);
         self.functions.push(FunctionDecl {
             name: "{closure}".to_string(),
             display_name: format!("{{closure:{}:{}}}", self.source_file, function.span.line),
+            source_file: self.source_file.clone(),
             class_name: self.current_class_name.clone(),
             trait_name: self.current_trait_name.clone(),
             trait_method_name: None,
@@ -1382,8 +1422,8 @@ impl<'a> LoweringContext<'a> {
             deprecated_message: deprecated_metadata.message,
             deprecated_since: deprecated_metadata.since,
             deprecated_message_runtime_reference: deprecated_metadata.message_runtime_reference,
-            no_discard_message: function.attributes.no_discard_message.clone(),
-            attributes: function.attributes.clone(),
+            no_discard_message: attributes.no_discard_message.clone(),
+            attributes,
             is_static: function.is_static,
             line: function.span.line,
             parameters,
@@ -1410,7 +1450,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_class(&mut self, class: &AstClassDecl) -> ClassDecl {
         let parent_name = class.parent_name.as_deref();
         let class_attributes =
-            resolve_attribute_metadata_for_class_scope(&class.attributes, &class.name, parent_name);
+            self.lower_class_scoped_attribute_metadata(&class.attributes, &class.name, parent_name);
         let properties = class
             .properties
             .iter()
@@ -1427,7 +1467,7 @@ impl<'a> LoweringContext<'a> {
                     .as_ref()
                     .map(|value| self.lower_expr(value)),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: resolve_attribute_metadata_for_class_scope(
+                attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,
                     &class.name,
                     parent_name,
@@ -1445,7 +1485,7 @@ impl<'a> LoweringContext<'a> {
                 set_visibility: lower_property_visibility(property.set_visibility),
                 is_final: property.is_final,
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
-                attributes: resolve_attribute_metadata_for_class_scope(
+                attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,
                     &class.name,
                     parent_name,
@@ -1464,7 +1504,7 @@ impl<'a> LoweringContext<'a> {
             .constants
             .iter()
             .map(|constant| {
-                let attributes = resolve_attribute_metadata_for_class_scope(
+                let attributes = self.lower_class_scoped_attribute_metadata(
                     &constant.attributes,
                     &class.name,
                     parent_name,
@@ -1495,7 +1535,7 @@ impl<'a> LoweringContext<'a> {
             .iter()
             .map(|method| {
                 let function_index = self.functions.len();
-                let method_attributes = resolve_attribute_metadata_for_class_scope(
+                let method_attributes = self.lower_class_scoped_attribute_metadata(
                     &method.attributes,
                     &class.name,
                     parent_name,
@@ -1516,6 +1556,7 @@ impl<'a> LoweringContext<'a> {
                 self.functions.push(FunctionDecl {
                     name: format!("{}::{}", class.name, method.name),
                     display_name: format!("{}::{}", class.name, method.name),
+                    source_file: self.source_file.clone(),
                     class_name: Some(class.name.clone()),
                     trait_name: method.trait_name.clone(),
                     trait_method_name: method.trait_method_name.clone(),
@@ -1678,11 +1719,12 @@ impl<'a> LoweringContext<'a> {
                 }
                 Statement::Const { declarations, .. } => {
                     for declaration in declarations {
-                        let metadata = self
-                            .global_deprecated_metadata(&declaration.attributes, &declaration.name);
+                        let attributes = self.annotate_attribute_metadata(&declaration.attributes);
+                        let metadata =
+                            self.global_deprecated_metadata(&attributes, &declaration.name);
                         instructions.push(Instruction::DefineConstant {
                             name: declaration.name.clone(),
-                            attributes: declaration.attributes.clone(),
+                            attributes,
                             value: self.lower_expr(&declaration.value),
                             deprecated_message: metadata.message,
                             deprecated_since: metadata.since,
@@ -1907,7 +1949,7 @@ impl<'a> LoweringContext<'a> {
     fn lower_parameter(&mut self, parameter: &AstFunctionParameter) -> FunctionParameter {
         FunctionParameter {
             name: parameter.name.clone(),
-            attributes: parameter.attributes.clone(),
+            attributes: self.annotate_attribute_metadata(&parameter.attributes),
             type_hint: parameter.type_hint.clone().map(lower_type_hint),
             by_ref: parameter.by_ref,
             is_variadic: parameter.is_variadic,
@@ -1925,12 +1967,54 @@ impl<'a> LoweringContext<'a> {
         current_parent: Option<&str>,
     ) -> FunctionParameter {
         let mut lowered = self.lower_parameter(parameter);
-        lowered.attributes = resolve_attribute_metadata_for_class_scope(
+        lowered.attributes = self.lower_class_scoped_attribute_metadata(
             &parameter.attributes,
             current_class,
             current_parent,
         );
         lowered
+    }
+
+    fn lower_class_scoped_attribute_metadata(
+        &self,
+        metadata: &AttributeMetadata,
+        current_class: &str,
+        current_parent: Option<&str>,
+    ) -> AttributeMetadata {
+        let resolved =
+            resolve_attribute_metadata_for_class_scope(metadata, current_class, current_parent);
+        self.annotate_attribute_metadata(&resolved)
+    }
+
+    fn annotate_attribute_metadata(&self, metadata: &AttributeMetadata) -> AttributeMetadata {
+        let mut annotated = metadata.clone();
+        for instance in &mut annotated.instances {
+            instance.source_file = self.source_file.clone();
+            instance.strict_types = self.strict_types;
+        }
+        annotated
+    }
+
+    fn lower_trait(&self, trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
+        TraitDecl {
+            name: trait_decl.name.clone(),
+            trait_uses: lower_trait_uses(&trait_decl.trait_uses),
+            deprecated_message: trait_decl.attributes.deprecated_message.clone(),
+            deprecated_since: trait_decl.attributes.deprecated_since.clone(),
+            line: trait_decl.span.line,
+            methods: trait_decl
+                .methods
+                .iter()
+                .map(|method| TraitMethodDecl {
+                    name: method.name.clone(),
+                    visibility: lower_property_visibility(method.visibility),
+                    attributes: self.annotate_attribute_metadata(&method.attributes),
+                    is_static: method.is_static,
+                    is_abstract: method.is_abstract,
+                    line: method.span.line,
+                })
+                .collect(),
+        }
     }
 }
 
@@ -2000,28 +2084,6 @@ fn resolve_attribute_class_scope_name(
         current_parent.map(ToString::to_string)
     } else {
         None
-    }
-}
-
-fn lower_trait(trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
-    TraitDecl {
-        name: trait_decl.name.clone(),
-        trait_uses: lower_trait_uses(&trait_decl.trait_uses),
-        deprecated_message: trait_decl.attributes.deprecated_message.clone(),
-        deprecated_since: trait_decl.attributes.deprecated_since.clone(),
-        line: trait_decl.span.line,
-        methods: trait_decl
-            .methods
-            .iter()
-            .map(|method| TraitMethodDecl {
-                name: method.name.clone(),
-                visibility: lower_property_visibility(method.visibility),
-                attributes: method.attributes.clone(),
-                is_static: method.is_static,
-                is_abstract: method.is_abstract,
-                line: method.span.line,
-            })
-            .collect(),
     }
 }
 
