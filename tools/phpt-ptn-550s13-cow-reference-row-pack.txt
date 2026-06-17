@@ -1,0 +1,5 @@
+ext/standard/tests/array/sort/array_multisort_variation7.phpt
+ext/standard/tests/array/sort/array_multisort_variation9.phpt
+Zend/tests/list/list_reference_004.phpt
+Zend/tests/list/list_reference_006.phpt
+Zend/tests/list/list_reference_007.phpt
