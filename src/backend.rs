@@ -3819,6 +3819,13 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_magic_method = ptn_static_magic_separator + 2;\n");
     out.push_str("        const char *ptn_static_magic_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_magic_class);\n");
     out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("        if (!ptn_static_magic_class_exists && ptn_internal_class_exists_name(ptn_static_magic_resolved_class)) {\n");
+    out.push_str("            free(ptn_static_magic_name);\n");
+    out.push_str("            *found = 0;\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
+    out.push_str("#endif\n");
     out.push_str("        if (!ptn_static_magic_class_exists) {\n");
     out.push_str("            char ptn_class_not_found_message[512];\n");
     out.push_str("            int ptn_class_not_found_written = snprintf(ptn_class_not_found_message, sizeof(ptn_class_not_found_message), \"Class \\\"%s\\\" not found\", ptn_static_magic_class);\n");

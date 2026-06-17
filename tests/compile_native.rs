@@ -38627,6 +38627,41 @@ var_dump(method_exists(\"Closure\", \"fromCallable\"));
 }
 
 #[test]
+fn compile_closure_static_bind_uses_internal_class_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-static-bind");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-static-bind.php");
+    let output = root.join("closure-static-bind-bin");
+    fs::write(
+        &input,
+        "<?php
+$class = new class {};
+$fn = function () {
+    return $this;
+};
+$bound = Closure::bind($fn, $class, $class);
+var_dump($bound() === $class);
+var_dump(method_exists(\"Closure\", \"bind\"));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_closure_bind"));
+    assert!(c_source.contains("ptn_internal_class_exists_name(ptn_static_magic_resolved_class)"));
+}
+
+#[test]
 fn compile_closure_bindto_scope_controls_asymmetric_property_visibility_to_native_binary() {
     let root = temp_dir("ptn-native-closure-bindto-asymmetric-scope");
     fs::create_dir_all(&root).unwrap();
