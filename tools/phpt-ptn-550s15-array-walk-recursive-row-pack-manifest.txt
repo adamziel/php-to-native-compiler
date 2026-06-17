@@ -1,0 +1,14 @@
+ext/standard/tests/array/array_walk/array_walk_recursive.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive1.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_basic1.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_basic2.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_error2.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_object1.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_object2.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation3.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation4.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation5.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation6.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation7.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation8.phpt
+ext/standard/tests/array/array_walk/array_walk_recursive_variation9.phpt
