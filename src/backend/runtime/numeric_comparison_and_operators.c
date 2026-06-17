@@ -69,6 +69,18 @@ static PTN_UNUSED int ptn_compare_objects_equal(
     PtnObject *right,
     size_t line
 ) {
+    if (left != NULL && left->lazy_uninitialized) {
+        PtnValue value = ptn_value_borrow(ptn_object(left));
+        if (!ptn_lazy_object_initialize(runtime, value, line)) {
+            return 0;
+        }
+    }
+    if (right != NULL && right->lazy_uninitialized) {
+        PtnValue value = ptn_value_borrow(ptn_object(right));
+        if (!ptn_lazy_object_initialize(runtime, value, line)) {
+            return 0;
+        }
+    }
     if (left == right) {
         return 1;
     }
@@ -125,6 +137,18 @@ static PTN_UNUSED int ptn_compare_objects_order(
     PtnObject *right,
     size_t line
 ) {
+    if (left != NULL && left->lazy_uninitialized) {
+        PtnValue value = ptn_value_borrow(ptn_object(left));
+        if (!ptn_lazy_object_initialize(runtime, value, line)) {
+            return PTN_COMPARE_UNORDERED;
+        }
+    }
+    if (right != NULL && right->lazy_uninitialized) {
+        PtnValue value = ptn_value_borrow(ptn_object(right));
+        if (!ptn_lazy_object_initialize(runtime, value, line)) {
+            return PTN_COMPARE_UNORDERED;
+        }
+    }
     if (left == right) {
         return PTN_COMPARE_EQUAL;
     }

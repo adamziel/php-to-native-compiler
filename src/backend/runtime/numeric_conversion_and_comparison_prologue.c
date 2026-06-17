@@ -2891,6 +2891,14 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(65536);
             return 1;
         }
+        if (strcmp(constant, "SKIP_INITIALIZATION_ON_SERIALIZE") == 0) {
+            *out = ptn_int(PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE);
+            return 1;
+        }
+        if (strcmp(constant, "SKIP_DESTRUCTOR") == 0) {
+            *out = ptn_int(PTN_LAZY_OBJECT_SKIP_DESTRUCTOR);
+            return 1;
+        }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionMethod")) {
         if (strcmp(constant, "IS_PUBLIC") == 0) {

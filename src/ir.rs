@@ -557,6 +557,7 @@ pub enum ValueExpr {
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        nullsafe: bool,
         line: usize,
     },
     DynamicMethodCall {
@@ -3428,6 +3429,7 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                nullsafe,
                 span,
             } => ValueExpr::MethodCall {
                 receiver: Box::new(self.lower_expr(receiver)),
@@ -3438,6 +3440,7 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 argument_names: argument_names.clone(),
                 argument_unpacks: argument_unpacks.clone(),
+                nullsafe: *nullsafe,
                 line: span.line,
             },
             Expr::DynamicMethodCall {
@@ -3747,6 +3750,7 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
                 arguments: Vec::new(),
                 argument_names: Vec::new(),
                 argument_unpacks: Vec::new(),
+                nullsafe: false,
                 line,
             }),
             line,
@@ -3899,10 +3903,12 @@ fn assertion_expr_text(expr: &Expr) -> String {
             receiver,
             name,
             arguments,
+            nullsafe,
             ..
         } => format!(
-            "{}->{}({})",
+            "{}{}{}({})",
             assertion_expr_text(receiver),
+            if *nullsafe { "?->" } else { "->" },
             name,
             assertion_argument_list_text(arguments)
         ),

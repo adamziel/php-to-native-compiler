@@ -835,6 +835,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        nullsafe: bool,
         span: SourceSpan,
     },
     DynamicMethodCall {

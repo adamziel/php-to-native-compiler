@@ -3229,6 +3229,11 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return ptn_null();
+        }
+    }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     PtnValue array_object_value = ptn_null();
     if (ptn_internal_array_object_property_read(
@@ -3347,6 +3352,11 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return ptn_null();
+        }
+    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -3445,6 +3455,11 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
     if (receiver.type != PTN_OBJECT) {
         ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         return ptn_null();
+    }
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return ptn_null();
+        }
     }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 0);
@@ -3619,6 +3634,11 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return ptn_lookup_missing();
+        }
+    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -3668,6 +3688,11 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return ptn_lookup_missing();
+        }
+    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -3716,6 +3741,11 @@ static PTN_UNUSED int ptn_object_property_is_set(
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         return 0;
+    }
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return 0;
+        }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     int array_object_isset = 0;
@@ -3781,6 +3811,11 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
             ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         }
         return ptn_null();
+    }
+    if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+            return ptn_null();
+        }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (!indirect_write) {
@@ -3888,6 +3923,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     } else {
         ptn_array_set_entry_publish_first(receiver.as.object->properties, key, stored);
     }
+    ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
     free(storage_key);
     return result;
 }
@@ -6038,6 +6074,11 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (value.type != PTN_ARRAY) {
         if (value.type == PTN_OBJECT) {
+            if (value.as.object->lazy_uninitialized && !value.as.object->lazy_initializing) {
+                if (!ptn_lazy_object_initialize(runtime, value, line)) {
+                    return iterator;
+                }
+            }
             if (ptn_object_is_generator(value.as.object)) {
                 return ptn_array_iterator_from_generator(
                     runtime,
@@ -6119,6 +6160,11 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
 
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
     if (value->type == PTN_OBJECT) {
+        if (value->as.object->lazy_uninitialized && !value->as.object->lazy_initializing) {
+            if (!ptn_lazy_object_initialize(runtime, *value, line)) {
+                return iterator;
+            }
+        }
         if (ptn_object_is_generator(value->as.object)) {
             return ptn_array_iterator_from_generator(
                 runtime,

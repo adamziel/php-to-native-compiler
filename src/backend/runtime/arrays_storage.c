@@ -27,6 +27,7 @@ static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *re
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
+static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source);
 static PTN_UNUSED void ptn_array_free(PtnArray *array);
 static PTN_UNUSED void ptn_object_retain(PtnObject *object);
 static PTN_UNUSED void ptn_object_release(PtnObject *object);
@@ -716,8 +717,237 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->lifecycle_runtime = root;
     object->destructor_enabled = 1;
     object->destructor_called = 0;
+    object->lazy_uninitialized = 0;
+    object->lazy_is_proxy = 0;
+    object->lazy_options = 0;
+    object->lazy_initializing = 0;
+    object->lazy_initializer = ptn_null();
+    object->lazy_proxy_instance = ptn_null();
     ptn_runtime_register_object(root, object);
     return ptn_object(object);
+}
+
+static PTN_UNUSED int ptn_lazy_object_is_uninitialized(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        value.as.object != NULL &&
+        value.as.object->lazy_uninitialized;
+}
+
+static PTN_UNUSED void ptn_lazy_object_mark(
+    PtnValue value,
+    PtnValue initializer,
+    int is_proxy,
+    int options
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || value.as.object == NULL) {
+        return;
+    }
+    PtnObject *object = value.as.object;
+    ptn_value_destroy(&object->lazy_initializer);
+    ptn_value_destroy(&object->lazy_proxy_instance);
+    object->lazy_uninitialized = 1;
+    object->lazy_is_proxy = is_proxy ? 1 : 0;
+    object->lazy_options = options;
+    object->lazy_initializing = 0;
+    object->lazy_initializer = ptn_value_clone_deref(initializer);
+    object->lazy_proxy_instance = ptn_null();
+}
+
+static PTN_UNUSED void ptn_lazy_object_copy_properties_from_instance(
+    PtnObject *target,
+    PtnObject *source
+) {
+    if (target == NULL || source == NULL || source->properties == NULL) {
+        return;
+    }
+    PtnArray *copied = ptn_array_clone(source->properties);
+    ptn_array_free(target->properties);
+    target->properties = copied;
+}
+
+static PTN_UNUSED void ptn_lazy_object_sync_proxy_instance_properties(PtnObject *proxy) {
+    if (proxy == NULL || proxy->lazy_uninitialized || !proxy->lazy_is_proxy) {
+        return;
+    }
+    PtnValue real = ptn_value_deref(proxy->lazy_proxy_instance);
+    if (real.type != PTN_OBJECT || real.as.object == NULL) {
+        return;
+    }
+    ptn_lazy_object_copy_properties_from_instance(real.as.object, proxy);
+}
+
+static PTN_UNUSED int ptn_lazy_object_real_instance_compatible(
+    PtnRuntime *runtime,
+    PtnObject *proxy,
+    PtnValue real
+) {
+    (void)runtime;
+    real = ptn_value_deref(real);
+    if (proxy == NULL || real.type != PTN_OBJECT || real.as.object == NULL) {
+        return 0;
+    }
+    if (!ptn_declared_class_is_same_or_descendant(proxy->class_name, real.as.object->class_name)) {
+        return 0;
+    }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (!ptn_ascii_case_equal(proxy->class_name, real.as.object->class_name) &&
+        (ptn_declared_class_direct_non_private_method_exists(proxy->class_name, "__destruct") ||
+         ptn_declared_class_direct_non_private_method_exists(proxy->class_name, "__clone"))) {
+        return 0;
+    }
+#endif
+    return 1;
+}
+
+static PTN_UNUSED const char *ptn_lazy_object_initializer_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            return "null";
+        case PTN_BOOL:
+            return "bool";
+        case PTN_INT:
+            return "int";
+        case PTN_FLOAT:
+            return "float";
+        case PTN_STRING:
+            return "string";
+        case PTN_RESOURCE:
+            return "resource";
+        case PTN_ARRAY:
+            return "array";
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_REFERENCE:
+            return "reference";
+    }
+    return "unknown";
+}
+
+static PTN_UNUSED int ptn_lazy_object_initialize(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    (void)line;
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || value.as.object == NULL) {
+        return 1;
+    }
+    PtnObject *object = value.as.object;
+    if (!object->lazy_uninitialized) {
+        return 1;
+    }
+    if (object->lazy_initializing) {
+        return 1;
+    }
+    object->lazy_initializing = 1;
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue initializer = ptn_value_clone_deref(object->lazy_initializer);
+    PtnValue arg = ptn_value_borrow(ptn_object(object));
+    PtnValue result = ptn_null();
+    PtnTryFrame initializer_frame;
+    int initializer_frame_active = 0;
+    if (runtime != NULL && runtime->exceptions != NULL) {
+        ptn_try_frame_push(runtime, &initializer_frame);
+        initializer_frame_active = 1;
+        if (setjmp(initializer_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &initializer_frame);
+            object->lazy_initializing = 0;
+            ptn_value_destroy(&initializer);
+            ptn_value_destroy(&result);
+            ptn_rethrow_exception(runtime);
+            return 0;
+        }
+    }
+    result = ptn_call_callable(runtime, initializer, 1, &arg, line);
+    if (initializer_frame_active) {
+        ptn_try_frame_pop(runtime, &initializer_frame);
+    }
+    ptn_value_destroy(&initializer);
+    if (runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL) {
+        object->lazy_initializing = 0;
+        ptn_value_destroy(&result);
+        return 0;
+    }
+    if (object->lazy_is_proxy) {
+        PtnValue real = ptn_value_deref(result);
+        if (real.type != PTN_OBJECT) {
+            char message[256];
+            const char *type_name = ptn_lazy_object_initializer_type_name(real);
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Lazy proxy factory must return an instance of a class compatible with %s, %s returned",
+                object->class_name,
+                type_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            object->lazy_initializing = 0;
+            ptn_value_destroy(&result);
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        if (real.as.object == object) {
+            object->lazy_initializing = 0;
+            ptn_value_destroy(&result);
+            ptn_throw_exception(runtime, "Error", "Lazy proxy factory must return a non-lazy object");
+            return 0;
+        }
+        if (!ptn_lazy_object_real_instance_compatible(runtime, object, real)) {
+            char message[512];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "The real instance class %s is not compatible with the proxy class %s. The proxy must be a instance of the same class as the real instance, or a sub-class with no additional properties, and no overrides of the __destructor or __clone methods.",
+                real.as.object->class_name,
+                object->class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            object->lazy_initializing = 0;
+            ptn_value_destroy(&result);
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        ptn_value_destroy(&object->lazy_proxy_instance);
+        object->lazy_proxy_instance = ptn_value_clone_deref(real);
+        ptn_lazy_object_copy_properties_from_instance(object, real.as.object);
+    } else {
+        PtnValue returned = ptn_value_deref(result);
+        if (returned.type != PTN_NULL) {
+            object->lazy_initializing = 0;
+            ptn_value_destroy(&result);
+            ptn_throw_exception(
+                runtime,
+                "TypeError",
+                "Lazy object initializer must return NULL or no value"
+            );
+            return 0;
+        }
+    }
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&object->lazy_initializer);
+    object->lazy_initializer = ptn_null();
+    object->lazy_uninitialized = 0;
+    object->lazy_initializing = 0;
+    return 1;
+#else
+    object->lazy_initializing = 0;
+    ptn_throw_exception(runtime, "Error", "Lazy object initializer dispatch is unavailable");
+    return 0;
+#endif
 }
 
 static PTN_UNUSED PtnValue ptn_enum_case_with_backing(
@@ -1004,6 +1234,8 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     if (object->native_data_free != NULL) {
         object->native_data_free(object->native_data);
     }
+    ptn_value_destroy(&object->lazy_initializer);
+    ptn_value_destroy(&object->lazy_proxy_instance);
     free(object->class_name);
     free(object->enum_case_name);
     for (size_t i = 0; i < object->property_metadata_len; i++) {

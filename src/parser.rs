@@ -6027,15 +6027,9 @@ impl Parser<'_> {
                         };
                         continue;
                     }
-                    if nullsafe {
-                        if self.peek_is_first_class_callable_arguments() {
-                            return Err(Diagnostic::new(
-                                "Cannot combine nullsafe operator with Closure creation",
-                                Some(member_span),
-                            ));
-                        }
+                    if nullsafe && self.peek_is_first_class_callable_arguments() {
                         return Err(Diagnostic::new(
-                            "nullsafe method calls are unsupported",
+                            "Cannot combine nullsafe operator with Closure creation",
                             Some(member_span),
                         ));
                     }
@@ -6077,9 +6071,16 @@ impl Parser<'_> {
                             arguments,
                             argument_names,
                             argument_unpacks,
+                            nullsafe,
                             span,
                         }
                     } else {
+                        if nullsafe {
+                            return Err(Diagnostic::new(
+                                "dynamic nullsafe method calls are unsupported",
+                                Some(member_span),
+                            ));
+                        }
                         Expr::DynamicMethodCall {
                             receiver: Box::new(expr),
                             name: Box::new(dynamic_name.expect("dynamic member expression")),

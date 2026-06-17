@@ -1298,6 +1298,12 @@ static int ptn_object_property_metadata_dumps_uninitialized(
     if (object == NULL || metadata == NULL) {
         return 0;
     }
+    if (object->lazy_uninitialized &&
+        !object->lazy_initializing &&
+        ptn_property_type_is_declared(metadata->type_kind) &&
+        metadata->type_text != NULL) {
+        return 1;
+    }
     if (ptn_object_property_storage_initialized(object, metadata->storage_name)) {
         return 0;
     }
@@ -1305,13 +1311,31 @@ static int ptn_object_property_metadata_dumps_uninitialized(
         (ptn_property_type_is_declared(metadata->type_kind) && metadata->type_text != NULL);
 }
 
-static size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
+static PTN_UNUSED size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
     size_t count = 0;
     for (size_t i = 0; i < object->property_metadata_len; i++) {
         PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
         if (ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
             count++;
         }
+    }
+    return count;
+}
+
+static size_t ptn_object_initialized_property_dump_count(PtnObject *object) {
+    if (object == NULL || object->properties == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_array_object_storage(metadata)) {
+            continue;
+        }
+        count++;
     }
     return count;
 }
@@ -1334,6 +1358,7 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
+static size_t ptn_class_name_dump_len(const char *class_name);
 
 static int ptn_debug_array_is_packed(PtnArray *array) {
     for (size_t i = 0; i < array->len; i++) {
@@ -1456,6 +1481,81 @@ static void ptn_debug_zval_dump_object_initialized_properties(
         ptn_var_dump_object_property_metadata_key(metadata);
         ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
     }
+}
+
+static size_t ptn_var_dump_object_visible_property_count(PtnObject *object) {
+    if (object == NULL) {
+        return 0;
+    }
+    if (object->lazy_uninitialized && !object->lazy_initializing) {
+        return 0;
+    }
+    if (object->lazy_is_proxy &&
+        ptn_value_deref(object->lazy_proxy_instance).type == PTN_OBJECT) {
+        return 1;
+    }
+    return ptn_object_initialized_property_dump_count(object);
+}
+
+static void ptn_var_dump_object_header(
+    PtnObject *object,
+    size_t property_count,
+    int debug
+) {
+    size_t class_name_len = ptn_class_name_dump_len(object->class_name);
+    int display_lazy = object->lazy_uninitialized && !object->lazy_initializing;
+    const char *prefix = display_lazy
+        ? (object->lazy_is_proxy ? "lazy proxy object" : "lazy ghost object")
+        : (object->lazy_is_proxy ? "lazy proxy object" : "object");
+    if (debug) {
+        printf(
+            "%s(%.*s)#%zu (%zu) refcount(%zu){\n",
+            prefix,
+            (int)class_name_len,
+            object->class_name,
+            object->object_id,
+            property_count,
+            object->refcount
+        );
+    } else {
+        printf(
+            "%s(%.*s)#%zu (%zu) {\n",
+            prefix,
+            (int)class_name_len,
+            object->class_name,
+            object->object_id,
+            property_count
+        );
+    }
+}
+
+static int ptn_var_dump_object_proxy_instance(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    int debug
+) {
+    if (object == NULL || !object->lazy_is_proxy || object->lazy_uninitialized) {
+        return 0;
+    }
+    PtnValue instance = ptn_value_deref(object->lazy_proxy_instance);
+    if (instance.type != PTN_OBJECT) {
+        return 0;
+    }
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"instance\"]=>\n", stdout);
+    if (debug) {
+        if (instance.type == PTN_OBJECT) {
+            instance.as.object->refcount++;
+        }
+        ptn_debug_zval_dump_value_indented(instance, indent + 1, seen);
+        if (instance.type == PTN_OBJECT) {
+            instance.as.object->refcount--;
+        }
+    } else {
+        ptn_var_dump_value_indented(instance, indent + 1, seen);
+    }
+    return 1;
 }
 
 static int ptn_internal_function_first_parameter_is_array_reference(const char *name) {
@@ -1986,17 +2086,16 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 printf("enum(%s::%s)\n", object->class_name, object->enum_case_name);
                 break;
             }
-            PtnArray *properties = object->properties;
-            size_t class_name_len = ptn_class_name_dump_len(object->class_name);
-            printf(
-                "object(%.*s)#%zu (%zu) {\n",
-                (int)class_name_len,
-                object->class_name,
-                object->object_id,
-                properties->len
+            ptn_var_dump_object_header(
+                object,
+                ptn_var_dump_object_visible_property_count(object),
+                0
             );
             ptn_dump_seen_objects_push(seen, object);
-            ptn_var_dump_object_initialized_properties(object, indent, seen);
+            if ((!object->lazy_uninitialized || object->lazy_initializing) &&
+                !ptn_var_dump_object_proxy_instance(object, indent, seen, 0)) {
+                ptn_var_dump_object_initialized_properties(object, indent, seen);
+            }
             ptn_var_dump_object_uninitialized_properties(object, indent);
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
@@ -2051,14 +2150,7 @@ static int ptn_var_dump_magic_debug_info(
     }
     PtnObject *object = resolved.as.object;
     PtnArray *properties = debug_value.as.array;
-    size_t class_name_len = ptn_class_name_dump_len(object->class_name);
-    printf(
-        "object(%.*s)#%zu (%zu) {\n",
-        (int)class_name_len,
-        object->class_name,
-        object->object_id,
-        properties->len
-    );
+    ptn_var_dump_object_header(object, properties->len, 0);
     ptn_dump_seen_objects_push(seen, object);
     for (size_t i = 0; i < properties->len; i++) {
         ptn_var_dump_indent(1);
@@ -2144,21 +2236,17 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 fputs("*RECURSION*\n", stdout);
                 break;
             }
-            PtnArray *properties = object->properties;
-            size_t class_name_len = ptn_class_name_dump_len(object->class_name);
-            printf(
-                "object(%.*s)#%zu (%zu) refcount(%zu){\n",
-                (int)class_name_len,
-                object->class_name,
-                object->object_id,
-                properties->len,
-                object->refcount
+            ptn_var_dump_object_header(
+                object,
+                ptn_var_dump_object_visible_property_count(object),
+                1
             );
             ptn_dump_seen_objects_push(seen, object);
-            ptn_debug_zval_dump_object_initialized_properties(object, indent, seen);
-            if (ptn_object_uninitialized_property_dump_count(object) != 0) {
-                ptn_var_dump_object_uninitialized_properties(object, indent);
+            if ((!object->lazy_uninitialized || object->lazy_initializing) &&
+                !ptn_var_dump_object_proxy_instance(object, indent, seen, 1)) {
+                ptn_debug_zval_dump_object_initialized_properties(object, indent, seen);
             }
+            ptn_var_dump_object_uninitialized_properties(object, indent);
             ptn_dump_seen_objects_pop(seen);
             ptn_var_dump_indent(indent);
             fputs("}\n", stdout);
@@ -2803,6 +2891,15 @@ static int ptn_serialize_append_serializable_object(
 }
 
 static void ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
+    if (object != NULL &&
+        object->lazy_uninitialized &&
+        (object->lazy_options & PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE) == 0) {
+        PtnValue value = ptn_value_borrow(ptn_object(object));
+        if (!ptn_lazy_object_initialize(state == NULL ? NULL : state->runtime, value, state == NULL ? 0 : state->line)) {
+            ptn_string_buffer_append(buffer, "N;");
+            return;
+        }
+    }
     if (ptn_serialize_object_is_spl_array_backed(object)) {
         ptn_serialize_append_spl_array_backed_object(buffer, object, state);
         return;
@@ -4206,6 +4303,12 @@ static void ptn_var_export_append_object(
     PtnObject *object,
     size_t indent
 ) {
+    if (object != NULL && object->lazy_uninitialized) {
+        PtnValue value = ptn_value_borrow(ptn_object(object));
+        if (!ptn_lazy_object_initialize(runtime, value, 0)) {
+            return;
+        }
+    }
     if (strcmp(object->class_name, "stdClass") == 0) {
         ptn_string_buffer_append(buffer, "(object) ");
     } else {
@@ -4741,6 +4844,12 @@ static int ptn_json_encode_append_object(
     int64_t flags,
     int *error
 ) {
+    if (object != NULL && object->lazy_uninitialized) {
+        PtnValue value = ptn_value_borrow(ptn_object(object));
+        if (!ptn_lazy_object_initialize(ptn_var_dump_active_runtime, value, 0)) {
+            return 0;
+        }
+    }
     if (depth == 0) {
         ptn_json_note_error(error, PTN_JSON_ERROR_DEPTH);
         return 0;
@@ -4876,6 +4985,8 @@ static int ptn_json_encode_append_value(
 
 static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
+    PtnRuntime *previous_dump_runtime = ptn_var_dump_active_runtime;
+    ptn_var_dump_active_runtime = runtime;
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     size_t depth = 512;
     if (argc >= 3) {
@@ -4898,6 +5009,7 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
     int error = PTN_JSON_ERROR_NONE;
     int ok = ptn_json_encode_append_value(&buffer, args[0], &seen, depth, flags, &error);
     ptn_dump_seen_arrays_free(&seen);
+    ptn_var_dump_active_runtime = previous_dump_runtime;
     if (!ok) {
         free(buffer.data);
         if ((flags & PTN_JSON_THROW_ON_ERROR) != 0 &&
@@ -41275,6 +41387,7 @@ static PtnValue ptn_internal_get_declared_interfaces(PtnRuntime *runtime, size_t
 static PtnValue ptn_internal_get_declared_traits(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_defined_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -41573,6 +41686,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_include_path", 0, 0, ptn_internal_get_include_path },
         { "get_loaded_extensions", 0, 1, ptn_internal_get_loaded_extensions },
         { "get_meta_tags", 1, 1, ptn_internal_get_meta_tags },
+        { "get_mangled_object_vars", 1, 1, ptn_internal_get_mangled_object_vars },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
         { "gethostname", 0, 0, ptn_internal_gethostname },
@@ -43318,9 +43432,16 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isIterable")
         || ptn_ascii_case_equal(method_name, "isIterateable")
         || ptn_ascii_case_equal(method_name, "isReadOnly")
+        || ptn_ascii_case_equal(method_name, "initializeLazyObject")
+        || ptn_ascii_case_equal(method_name, "isLazy")
+        || ptn_ascii_case_equal(method_name, "isUninitializedLazyObject")
         || ptn_ascii_case_equal(method_name, "newInstance")
         || ptn_ascii_case_equal(method_name, "newInstanceArgs")
         || ptn_ascii_case_equal(method_name, "newInstanceWithoutConstructor")
+        || ptn_ascii_case_equal(method_name, "newLazyGhost")
+        || ptn_ascii_case_equal(method_name, "newLazyProxy")
+        || ptn_ascii_case_equal(method_name, "resetAsLazyGhost")
+        || ptn_ascii_case_equal(method_name, "resetAsLazyProxy")
         || ptn_ascii_case_equal(method_name, "isSubclassOf")
         || ptn_ascii_case_equal(method_name, "isUserDefined")
         || ptn_ascii_case_equal(method_name, "setStaticPropertyValue");
@@ -44577,8 +44698,15 @@ static const char *ptn_reflection_class_canonical_method_name(const char *method
     if (ptn_ascii_case_equal(method_name, "isIterable")) return "isIterable";
     if (ptn_ascii_case_equal(method_name, "isIterateable")) return "isIterateable";
     if (ptn_ascii_case_equal(method_name, "isReadOnly")) return "isReadOnly";
+    if (ptn_ascii_case_equal(method_name, "initializeLazyObject")) return "initializeLazyObject";
+    if (ptn_ascii_case_equal(method_name, "isLazy")) return "isLazy";
+    if (ptn_ascii_case_equal(method_name, "isUninitializedLazyObject")) return "isUninitializedLazyObject";
     if (ptn_ascii_case_equal(method_name, "newInstance")) return "newInstance";
     if (ptn_ascii_case_equal(method_name, "newInstanceArgs")) return "newInstanceArgs";
+    if (ptn_ascii_case_equal(method_name, "newLazyGhost")) return "newLazyGhost";
+    if (ptn_ascii_case_equal(method_name, "newLazyProxy")) return "newLazyProxy";
+    if (ptn_ascii_case_equal(method_name, "resetAsLazyGhost")) return "resetAsLazyGhost";
+    if (ptn_ascii_case_equal(method_name, "resetAsLazyProxy")) return "resetAsLazyProxy";
     if (ptn_ascii_case_equal(method_name, "isSubclassOf")) return "isSubclassOf";
     if (ptn_ascii_case_equal(method_name, "isUserDefined")) return "isUserDefined";
     if (ptn_ascii_case_equal(method_name, "setStaticPropertyValue")) return "setStaticPropertyValue";
@@ -48723,6 +48851,8 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_EXPLICIT_ABSTRACT"), ptn_int(64));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_FINAL"), ptn_int(32));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_READONLY"), ptn_int(65536));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_INITIALIZATION_ON_SERIALIZE"), ptn_int(PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_DESTRUCTOR"), ptn_int(PTN_LAZY_OBJECT_SKIP_DESTRUCTOR));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionClassConstant")) {
@@ -48815,6 +48945,148 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
     }
 }
 
+static int ptn_reflection_class_lazy_options(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argument_position,
+    const char *parameter_name,
+    PtnValue value,
+    int is_reset,
+    int *options_out
+) {
+    int64_t options = ptn_value_to_integer(value);
+    if ((options & ~PTN_LAZY_OBJECT_USER_MASK) != 0) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionClass::%s(): Argument #%zu ($%s) contains invalid flags",
+            ptn_reflection_class_canonical_method_name(method_name),
+            argument_position,
+            parameter_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return 0;
+    }
+    if (!is_reset && (options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) != 0) {
+        char message[224];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionClass::%s(): Argument #%zu ($%s) does not accept ReflectionClass::SKIP_DESTRUCTOR",
+            ptn_reflection_class_canonical_method_name(method_name),
+            argument_position,
+            parameter_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return 0;
+    }
+    *options_out = (int)options;
+    return 1;
+}
+
+static PtnValue ptn_reflection_class_lazy_object_arg(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argument_position,
+    const char *parameter_name,
+    PtnValue value
+) {
+    PtnValue object = ptn_value_deref(value);
+    if (object.type == PTN_OBJECT) {
+        return object;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionClass::%s(): Argument #%zu ($%s) must be of type object, %s given",
+        ptn_reflection_class_canonical_method_name(method_name),
+        argument_position,
+        parameter_name,
+        ptn_offset_container_type_name(object)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return ptn_null();
+}
+
+static PtnValue ptn_reflection_class_create_lazy_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue initializer,
+    int is_proxy,
+    int options,
+    size_t line
+) {
+    if (ptn_reflection_class_is_interface_name(class_name) || ptn_declared_class_is_abstract(class_name)) {
+        char message[256];
+        int written = snprintf(message, sizeof(message), "Class %s is not instantiable", class_name);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    PtnValue object = ptn_null();
+    if (ptn_declared_class_exists(class_name) && runtime->new_instance_without_constructor != NULL) {
+        object = runtime->new_instance_without_constructor(runtime, class_name, line);
+    } else if (ptn_internal_class_name_is_stdclass_name(class_name)) {
+        object = ptn_object_new_shell(runtime, "stdClass");
+    } else {
+        ptn_throw_exception(runtime, "ReflectionException", "Cannot instantiate internal class without constructor");
+        return ptn_null();
+    }
+    if (runtime->exceptions->active_exception != NULL || ptn_value_deref(object).type != PTN_OBJECT) {
+        return object;
+    }
+    ptn_lazy_object_mark(object, initializer, is_proxy, options);
+    return object;
+}
+
+static PtnValue ptn_reflection_class_reset_lazy_object(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    PtnValue object,
+    PtnValue initializer,
+    int is_proxy,
+    int options
+) {
+    object = ptn_reflection_class_lazy_object_arg(runtime, method_name, 1, "object", object);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_value_satisfies_class_type_hint(runtime, object, class_name)) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Object of class %s is not an instance of class %s",
+            object.as.object->class_name,
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
+        ptn_object_run_destructor(object.as.object);
+    }
+    ptn_lazy_object_mark(object, initializer, is_proxy, options);
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -48843,6 +49115,105 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         return ptn_null();
     }
     const char *class_name = data->name;
+
+    if (ptn_ascii_case_equal(name, "newLazyGhost") || ptn_ascii_case_equal(name, "newLazyProxy")) {
+        ptn_reflection_class_check_at_least_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_reflection_class_check_at_most_arguments(runtime, name, argc, 2);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        int options = 0;
+        if (argc >= 2 &&
+            !ptn_reflection_class_lazy_options(runtime, name, 2, "options", args[1], 0, &options)) {
+            return ptn_null();
+        }
+        return ptn_reflection_class_create_lazy_object(
+            runtime,
+            class_name,
+            args[0],
+            ptn_ascii_case_equal(name, "newLazyProxy"),
+            options,
+            line
+        );
+    }
+    if (ptn_ascii_case_equal(name, "resetAsLazyGhost") || ptn_ascii_case_equal(name, "resetAsLazyProxy")) {
+        ptn_reflection_class_check_at_least_arguments(runtime, name, argc, 2);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_reflection_class_check_at_most_arguments(runtime, name, argc, 3);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        int options = 0;
+        if (argc >= 3 &&
+            !ptn_reflection_class_lazy_options(runtime, name, 3, "options", args[2], 1, &options)) {
+            return ptn_null();
+        }
+        return ptn_reflection_class_reset_lazy_object(
+            runtime,
+            class_name,
+            name,
+            args[0],
+            args[1],
+            ptn_ascii_case_equal(name, "resetAsLazyProxy"),
+            options
+        );
+    }
+    if (ptn_ascii_case_equal(name, "initializeLazyObject")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object = ptn_reflection_class_lazy_object_arg(runtime, name, 1, "object", args[0]);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (object.as.object->lazy_uninitialized) {
+            if (!ptn_lazy_object_initialize(runtime, object, line)) {
+                return ptn_null();
+            }
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
+        if (object.as.object->lazy_is_proxy) {
+            PtnValue real = ptn_value_deref(object.as.object->lazy_proxy_instance);
+            if (real.type == PTN_OBJECT) {
+                return ptn_value_clone_deref(real);
+            }
+        }
+        return ptn_value_clone_deref(object);
+    }
+    if (ptn_ascii_case_equal(name, "isUninitializedLazyObject")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object = ptn_reflection_class_lazy_object_arg(runtime, name, 1, "object", args[0]);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_bool(ptn_lazy_object_is_uninitialized(object));
+    }
+    if (ptn_ascii_case_equal(name, "isLazy")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object = ptn_reflection_class_lazy_object_arg(runtime, name, 1, "object", args[0]);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_bool(
+            object.type == PTN_OBJECT &&
+            object.as.object != NULL &&
+            (object.as.object->lazy_uninitialized || object.as.object->lazy_is_proxy)
+        );
+    }
 
     if (ptn_ascii_case_equal(name, "getAttributes")) {
         return ptn_reflection_class_get_attributes(runtime, class_name, argc, args, line);
@@ -56349,7 +56720,6 @@ static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, 
 
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
     PtnValue target = ptn_value_deref(args[0]);
     if (target.type != PTN_OBJECT) {
         char message[192];
@@ -56367,6 +56737,11 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
     }
 
     PtnObject *object = target.as.object;
+    if (object->lazy_uninitialized) {
+        if (!ptn_lazy_object_initialize(runtime, target, line)) {
+            return ptn_null();
+        }
+    }
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     for (size_t i = 0; i < object->properties->len; i++) {
@@ -56384,6 +56759,41 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
             }
         }
         ptn_array_set_entry(result.as.array, result_key, ptn_value_clone_deref(entry->value));
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue target = ptn_value_deref(args[0]);
+    if (target.type != PTN_OBJECT) {
+        char message[208];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "get_mangled_object_vars(): Argument #1 ($object) must be of type object, %s given",
+            ptn_offset_container_type_name(target)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnObject *object = target.as.object;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (object->lazy_uninitialized && !object->lazy_initializing) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
     }
     return result;
 }

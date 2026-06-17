@@ -301,6 +301,10 @@ typedef struct {
 #define PTN_JSON_INVALID_UTF8_IGNORE 1048576
 #define PTN_JSON_INVALID_UTF8_SUBSTITUTE 2097152
 #define PTN_JSON_THROW_ON_ERROR 4194304
+#define PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE 8
+#define PTN_LAZY_OBJECT_SKIP_DESTRUCTOR 16
+#define PTN_LAZY_OBJECT_USER_MASK \
+    (PTN_LAZY_OBJECT_SKIP_INITIALIZATION_ON_SERIALIZE | PTN_LAZY_OBJECT_SKIP_DESTRUCTOR)
 #define PTN_PREG_PATTERN_ORDER 1
 #define PTN_PREG_SET_ORDER 2
 #define PTN_PREG_OFFSET_CAPTURE 256
@@ -619,6 +623,12 @@ struct PtnObject {
     PtnRuntime *lifecycle_runtime;
     int destructor_enabled;
     int destructor_called;
+    int lazy_uninitialized;
+    int lazy_is_proxy;
+    int lazy_options;
+    int lazy_initializing;
+    PtnValue lazy_initializer;
+    PtnValue lazy_proxy_instance;
 };
 
 typedef struct {
@@ -1070,6 +1080,7 @@ static PTN_UNUSED void ptn_try_frame_push(PtnRuntime *runtime, PtnTryFrame *fram
 static PTN_UNUSED void ptn_try_frame_pop(PtnRuntime *runtime, PtnTryFrame *frame);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED int ptn_declared_class_direct_non_private_method_exists(const char *class_name, const char *method_name);
 #endif
 static void ptn_symbols_free(PtnSymbolTable *symbols);
 static PTN_UNUSED void ptn_cow_debug_note_string_alloc(void);

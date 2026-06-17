@@ -16892,19 +16892,33 @@ impl ValueEmitter {
             arguments,
             argument_names,
             argument_unpacks,
+            nullsafe,
             line,
         } = value
         {
-            let emitted_value = self.emit_method_call(
-                out,
-                receiver,
-                name,
-                arguments,
-                argument_names,
-                argument_unpacks,
-                *line,
-                true,
-            );
+            let emitted_value = if *nullsafe {
+                self.emit_nullsafe_method_call(
+                    out,
+                    receiver,
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    *line,
+                    true,
+                )
+            } else {
+                self.emit_method_call(
+                    out,
+                    receiver,
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    *line,
+                    true,
+                )
+            };
             self.emit_no_discard_warning(out, value);
             return emitted_value;
         }
@@ -20592,17 +20606,33 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                nullsafe,
                 line,
-            } => self.emit_method_call(
-                out,
-                receiver,
-                name,
-                arguments,
-                argument_names,
-                argument_unpacks,
-                *line,
-                false,
-            ),
+            } => {
+                if *nullsafe {
+                    self.emit_nullsafe_method_call(
+                        out,
+                        receiver,
+                        name,
+                        arguments,
+                        argument_names,
+                        argument_unpacks,
+                        *line,
+                        false,
+                    )
+                } else {
+                    self.emit_method_call(
+                        out,
+                        receiver,
+                        name,
+                        arguments,
+                        argument_names,
+                        argument_unpacks,
+                        *line,
+                        false,
+                    )
+                }
+            }
             ValueExpr::DynamicMethodCall {
                 receiver,
                 name,
@@ -27154,6 +27184,216 @@ impl ValueEmitter {
         for temp in temps {
             emit_value_cleanup(out, "    ", &temp);
         }
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_nullsafe_method_call(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
+        line: usize,
+        discarded: bool,
+    ) -> String {
+        if argument_names.iter().any(Option::is_some)
+            && argument_unpacks.iter().all(|unpack| !*unpack)
+        {
+            if let Some(binding) =
+                bind_named_internal_method_call_arguments(name, arguments, argument_names)
+            {
+                return match binding {
+                    Ok(normalized_arguments) => {
+                        let normalized_argument_names = vec![None; normalized_arguments.len()];
+                        self.emit_nullsafe_method_call(
+                            out,
+                            receiver,
+                            name,
+                            &normalized_arguments,
+                            &normalized_argument_names,
+                            &vec![false; normalized_arguments.len()],
+                            line,
+                            discarded,
+                        )
+                    }
+                    Err(error) => {
+                        let result_temp = self.next_temp();
+                        self.emit_fatal_value(out, &result_temp, &error.message());
+                        result_temp
+                    }
+                };
+            }
+        }
+        if argument_names.iter().any(Option::is_some) {
+            let result_temp = self.next_temp();
+            self.emit_fatal_value(
+                out,
+                &result_temp,
+                "named arguments currently support user-defined functions",
+            );
+            return result_temp;
+        }
+
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let result_temp = self.next_temp();
+        let declared_signature =
+            self.declared_instance_method_signature_for_receiver(receiver, name);
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (ptn_value_deref(");
+        out.push_str(&receiver_temp);
+        out.push_str(").type != PTN_NULL) {\n");
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            let direct_parameters = declared_signature
+                .as_ref()
+                .map(|(_, parameters)| parameters.as_slice());
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                name,
+                arguments,
+                argument_unpacks,
+                line,
+                declared_signature.is_none(),
+                direct_parameters,
+            );
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            if discarded {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    line,
+                );
+            }
+            out.push_str("        ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+        } else if arguments.is_empty() {
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            if discarded {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    line,
+                );
+            }
+        } else {
+            let mut temps = Vec::with_capacity(arguments.len());
+            let mut unwrap_array_dim_reference_temps = Vec::new();
+            for (argument_index, argument) in arguments.iter().enumerate() {
+                let by_ref_parameter = declared_signature.as_ref().and_then(|(_, parameters)| {
+                    by_ref_parameter_for_argument(parameters, argument_index)
+                });
+                let temp = if let Some(parameter) = by_ref_parameter {
+                    let display_name = declared_signature
+                        .as_ref()
+                        .map(|(display_name, _)| display_name.as_str())
+                        .unwrap_or(name);
+                    let parameter_name = if parameter.is_variadic {
+                        ""
+                    } else {
+                        &parameter.name
+                    };
+                    self.emit_by_ref_call_argument(
+                        out,
+                        argument,
+                        display_name,
+                        argument_index,
+                        parameter_name,
+                        line,
+                        true,
+                        true,
+                    )
+                } else if declared_signature.is_some() {
+                    self.emit_call_argument(out, name, argument_index, argument)
+                } else {
+                    self.emit_runtime_declared_method_call_argument(
+                        out,
+                        &receiver_temp,
+                        name,
+                        argument_index,
+                        argument,
+                        line,
+                    )
+                };
+                if by_ref_parameter.is_some() && value_is_array_dim_reference_target(argument) {
+                    unwrap_array_dim_reference_temps.push(temp.clone());
+                }
+                temps.push(temp);
+            }
+            let args_temp = self.next_temp();
+            out.push_str("        PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            for (index, temp) in temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
+            out.push_str(" };\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_declared_method(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            if discarded {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    line,
+                );
+            }
+            for temp in &unwrap_array_dim_reference_temps {
+                emit_unwrap_array_dim_reference_call_argument(out, "        ", temp);
+            }
+            for index in 0..temps.len() {
+                emit_value_cleanup(out, "        ", &format!("{args_temp}[{index}]"));
+            }
+            for temp in temps {
+                emit_value_cleanup(out, "        ", &temp);
+            }
+        }
+        out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
