@@ -641,6 +641,13 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"SeekableIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"IntlBreakIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"IntlRuleBasedBreakIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"IntlCodePointBreakIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"IntlPartsIterator\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str(
         "    if (ptn_ascii_case_equal(class_name, \"DateTime\") || ptn_ascii_case_equal(class_name, \"DateTimeImmutable\")) {\n",
     );
@@ -3869,14 +3876,7 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_magic_class = ptn_static_magic_name;\n");
     out.push_str("        const char *ptn_static_magic_method = ptn_static_magic_separator + 2;\n");
     out.push_str("        const char *ptn_static_magic_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_magic_class);\n");
-    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class);\n");
-    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("        if (!ptn_static_magic_class_exists && ptn_internal_class_exists_name(ptn_static_magic_resolved_class)) {\n");
-    out.push_str("            free(ptn_static_magic_name);\n");
-    out.push_str("            *found = 0;\n");
-    out.push_str("            return ptn_null();\n");
-    out.push_str("        }\n");
-    out.push_str("#endif\n");
+    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
     out.push_str("        if (!ptn_static_magic_class_exists) {\n");
     out.push_str("            char ptn_class_not_found_message[512];\n");
     out.push_str("            int ptn_class_not_found_written = snprintf(ptn_class_not_found_message, sizeof(ptn_class_not_found_message), \"Class \\\"%s\\\" not found\", ptn_static_magic_class);\n");
@@ -4105,6 +4105,11 @@ fn emit_class_metadata_helpers(
         "ZipArchive",
         "SoapClient",
         "SoapServer",
+        "IntlBreakIterator",
+        "IntlRuleBasedBreakIterator",
+        "IntlCodePointBreakIterator",
+        "IntlPartsIterator",
+        "IntlCalendar",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -4467,6 +4472,11 @@ fn emit_class_metadata_helpers(
         "ZipArchive",
         "SoapClient",
         "SoapServer",
+        "IntlBreakIterator",
+        "IntlRuleBasedBreakIterator",
+        "IntlCodePointBreakIterator",
+        "IntlPartsIterator",
+        "IntlCalendar",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);
@@ -4709,6 +4719,8 @@ fn emit_class_metadata_helpers(
         ("SplFileObject", "SplFileInfo"),
         ("SplQueue", "SplDoublyLinkedList"),
         ("SplStack", "SplDoublyLinkedList"),
+        ("IntlRuleBasedBreakIterator", "IntlBreakIterator"),
+        ("IntlCodePointBreakIterator", "IntlBreakIterator"),
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -8776,6 +8788,17 @@ fn modeled_reflection_internal_class_name(name: &str) -> Option<&'static str> {
     }
 }
 
+fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "intlbreakiterator" => Some("IntlBreakIterator"),
+        "intlrulebasedbreakiterator" => Some("IntlRuleBasedBreakIterator"),
+        "intlcodepointbreakiterator" => Some("IntlCodePointBreakIterator"),
+        "intlpartsiterator" => Some("IntlPartsIterator"),
+        "intlcalendar" => Some("IntlCalendar"),
+        _ => None,
+    }
+}
+
 fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
     modeled_spl_internal_class_name(name)
         .or_else(|| modeled_reflection_internal_class_name(name))
@@ -8787,6 +8810,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 _ => None,
             },
         )
+        .or_else(|| modeled_intl_internal_class_name(name))
 }
 
 fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: &str) {
@@ -14293,6 +14317,11 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DateTime")
                 || class_name.eq_ignore_ascii_case("DateTimeImmutable")
                 || class_name.eq_ignore_ascii_case("DateInterval")
+                || class_name.eq_ignore_ascii_case("IntlBreakIterator")
+                || class_name.eq_ignore_ascii_case("IntlRuleBasedBreakIterator")
+                || class_name.eq_ignore_ascii_case("IntlCodePointBreakIterator")
+                || class_name.eq_ignore_ascii_case("IntlPartsIterator")
+                || class_name.eq_ignore_ascii_case("IntlCalendar")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;

@@ -3206,7 +3206,11 @@ static PTN_UNUSED const char *ptn_runtime_maybe_autoload_static_member_class(
 ) {
     const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
     const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
-    if (!ptn_declared_runtime_class_exists(runtime, resolved_class_name)) {
+    if (!ptn_declared_runtime_class_exists(runtime, resolved_class_name)
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        && !ptn_internal_class_exists_name(resolved_class_name)
+#endif
+    ) {
         ptn_runtime_autoload_class(runtime, resolved_class_name, line);
         if (runtime->exceptions->active_exception != NULL) {
             return resolved_class_name;
@@ -3371,7 +3375,12 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     int written;
     if (!ptn_declared_runtime_class_exists(runtime, class_name) &&
         !ptn_declared_runtime_interface_exists(runtime, class_name) &&
-        !ptn_declared_trait_exists(class_name)) {
+        !ptn_declared_trait_exists(class_name)
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        && !ptn_internal_class_exists_name(class_name)
+        && !ptn_internal_interface_exists_name(class_name)
+#endif
+    ) {
         written = snprintf(message, sizeof(message), "Class \"%s\" not found", class_name);
     } else {
         written = snprintf(

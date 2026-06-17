@@ -40225,6 +40225,82 @@ static PtnValue ptn_internal_sizeof(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_count_value(runtime, "sizeof", args[0], mode, line);
 }
 
+static int ptn_iterator_to_array_key(
+    PtnRuntime *runtime,
+    PtnValue key_value,
+    size_t line,
+    PtnArrayKey *key_out
+) {
+    PtnValue key = ptn_value_deref(key_value);
+    if (key.type == PTN_INT || key.type == PTN_STRING) {
+        *key_out = ptn_array_key_from_value(key);
+        return 1;
+    }
+    char message[160];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Illegal offset type %s",
+        ptn_offset_container_type_name(key)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+    return 0;
+}
+
+static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue source = ptn_value_deref(args[0]);
+    int preserve_keys = argc < 2 || ptn_is_truthy(args[1]);
+    if (source.type != PTN_ARRAY && !(source.type == PTN_OBJECT && ptn_value_is_unpack_traversable(source))) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "iterator_to_array(): Argument #1 ($iterator) must be of type Traversable|array, %s given",
+            ptn_count_operand_type_name(source)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+        return ptn_null();
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnArrayIterator iterator = ptn_array_iterator_from_value(
+        runtime,
+        source,
+        NULL,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    while (iterator.valid) {
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+        PtnValue key_value = ptn_array_iterator_current_key(&iterator);
+        PtnValue value = ptn_array_iterator_current_value(&iterator);
+        PtnArrayKey target_key;
+        if (preserve_keys) {
+            if (!ptn_iterator_to_array_key(runtime, key_value, line, &target_key)) {
+                ptn_value_destroy(&key_value);
+                ptn_value_destroy(&value);
+                break;
+            }
+        } else {
+            target_key = ptn_array_int_key(result.as.array->next_auto_key);
+        }
+        ptn_array_set_entry(result.as.array, target_key, ptn_value_clone_deref(value));
+        ptn_value_destroy(&key_value);
+        ptn_value_destroy(&value);
+        ptn_array_iterator_advance(&iterator);
+    }
+    ptn_array_iterator_destroy(&iterator);
+    return runtime != NULL && runtime->exceptions->active_exception != NULL ? ptn_null() : result;
+}
+
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
     int64_t previous_level = runtime->diagnostics.suppressed > 0
@@ -43537,10 +43613,80 @@ static PTN_UNUSED PtnValue ptn_soap_client_new(
     return ptn_object_new_shell(runtime, class_name);
 }
 
+static PtnValue ptn_internal_intl_break_iterator_create_word_instance(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "IntlBreakIterator", "createWordInstance", argc, args, line);
+}
+
+static PtnValue ptn_internal_intl_break_iterator_create_line_instance(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "IntlBreakIterator", "createLineInstance", argc, args, line);
+}
+
+static PtnValue ptn_internal_intl_break_iterator_create_character_instance(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "IntlBreakIterator", "createCharacterInstance", argc, args, line);
+}
+
+static PtnValue ptn_internal_intl_break_iterator_create_sentence_instance(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "IntlBreakIterator", "createSentenceInstance", argc, args, line);
+}
+
+static PtnValue ptn_internal_intl_break_iterator_create_title_instance(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "IntlBreakIterator", "createTitleInstance", argc, args, line);
+}
+
+static PtnValue ptn_internal_intl_break_iterator_create_code_point_instance(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "IntlBreakIterator", "createCodePointInstance", argc, args, line);
+}
+
+static PtnValue ptn_internal_intl_calendar_get_keyword_values_for_locale(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_class_static_call_method(runtime, "IntlCalendar", "getKeywordValuesForLocale", argc, args, line);
+}
+
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, PtnValue callable, int reject_magic_static, size_t line);
 static PtnValue ptn_internal_reflection_get_modifier_names(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_intl_break_iterator_create_word_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_intl_break_iterator_create_line_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_intl_break_iterator_create_character_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_intl_break_iterator_create_sentence_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_intl_break_iterator_create_title_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_intl_break_iterator_create_code_point_instance(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_intl_calendar_get_keyword_values_for_locale(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_class_is_iterateable_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_method_create_from_method_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -43638,6 +43784,7 @@ static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_gmmktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_idate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_a(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_is_subclass_of(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -43973,6 +44120,14 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "intdiv", 2, 2, ptn_internal_intdiv },
         { "intval", 1, 2, ptn_internal_intval },
         { "interface_exists", 1, 2, ptn_internal_interface_exists },
+        { "IntlBreakIterator::createCharacterInstance", 0, 1, ptn_internal_intl_break_iterator_create_character_instance },
+        { "IntlBreakIterator::createCodePointInstance", 0, 1, ptn_internal_intl_break_iterator_create_code_point_instance },
+        { "IntlBreakIterator::createLineInstance", 0, 1, ptn_internal_intl_break_iterator_create_line_instance },
+        { "IntlBreakIterator::createSentenceInstance", 0, 1, ptn_internal_intl_break_iterator_create_sentence_instance },
+        { "IntlBreakIterator::createTitleInstance", 0, 1, ptn_internal_intl_break_iterator_create_title_instance },
+        { "IntlBreakIterator::createWordInstance", 0, 1, ptn_internal_intl_break_iterator_create_word_instance },
+        { "IntlCalendar::getKeywordValuesForLocale", 3, 3, ptn_internal_intl_calendar_get_keyword_values_for_locale },
+        { "iterator_to_array", 1, 2, ptn_internal_iterator_to_array },
         { "is_array", 1, 1, ptn_internal_is_array },
         { "is_a", 2, 3, ptn_internal_is_a },
         { "is_bool", 1, 1, ptn_internal_is_bool },
@@ -53532,6 +53687,7 @@ static PtnValue ptn_reflection_extension_classes(
         }
         return result;
     }
+<<<<<<< HEAD
     if (ptn_ascii_case_equal(extension_name, "SPL")) {
         static const char *const names[] = {
             "ArrayIterator",
@@ -53568,6 +53724,16 @@ static PtnValue ptn_reflection_extension_classes(
             "SoapClient",
             "SoapServer",
             "SoapFault",
+=======
+    if (ptn_ascii_case_equal(extension_name, "intl")) {
+        static const char *const names[] = {
+            "IntlBreakIterator",
+            "IntlRuleBasedBreakIterator",
+            "IntlCodePointBreakIterator",
+            "IntlPartsIterator",
+            "IntlCalendar",
+            "IntlException",
+>>>>>>> 8f343b71e (WIP: checkpoint (auto))
         };
         for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
             ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
