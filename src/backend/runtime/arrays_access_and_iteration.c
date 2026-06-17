@@ -869,6 +869,12 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_return_type_will_change(lookup_class_name)) {
         return ptn_return_type_will_change_new(runtime, argc, args, line);
     }
+    if (ptn_ascii_case_equal(lookup_class_name, "IntlBreakIterator") ||
+        ptn_ascii_case_equal(lookup_class_name, "IntlRuleBasedBreakIterator") ||
+        ptn_ascii_case_equal(lookup_class_name, "IntlCodePointBreakIterator") ||
+        ptn_ascii_case_equal(lookup_class_name, "IntlPartsIterator")) {
+        return ptn_intl_break_iterator_new(runtime, lookup_class_name, argc, args, line);
+    }
     if (ptn_internal_class_name_is_reflection_property(lookup_class_name)) {
         return ptn_reflection_property_new(runtime, argc, args, line);
     }
@@ -1023,6 +1029,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "ArrayIterator") ||
         ptn_declared_class_is_same_or_descendant(source->class_name, "RecursiveArrayIterator")) {
         return ptn_array_iterator_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "IntlBreakIterator")) {
+        return ptn_intl_break_iterator_clone(runtime, resolved, line);
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplDoublyLinkedList")) {
         return ptn_spl_doubly_linked_list_clone(runtime, resolved, line);

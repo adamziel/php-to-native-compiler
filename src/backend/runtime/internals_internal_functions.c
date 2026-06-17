@@ -34528,6 +34528,846 @@ static PtnValue ptn_internal_mb_strimwidth(PtnRuntime *runtime, size_t argc, con
     return ptn_owned_string_buffer_value(&output);
 }
 
+enum {
+    PTN_INTL_BREAK_KIND_WORD = 0,
+    PTN_INTL_BREAK_KIND_CODEPOINT = 1,
+    PTN_INTL_BREAK_KIND_RULE = 2
+};
+
+typedef struct {
+    char *locale;
+    char *text;
+    size_t text_len;
+    int has_text;
+    char *rules;
+    int kind;
+    size_t index;
+    int64_t last_codepoint;
+} PtnIntlBreakIteratorData;
+
+typedef struct {
+    PtnValue break_iterator;
+    int key_type;
+    size_t index;
+} PtnIntlPartsIteratorData;
+
+typedef struct {
+    int64_t *boundaries;
+    int *statuses;
+    size_t len;
+    size_t cap;
+} PtnIntlBoundaryList;
+
+static int ptn_intl_cycle_collection_pending = 0;
+
+static int ptn_intl_class_name_is_break_iterator_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlBreakIterator") ||
+        ptn_ascii_case_equal(class_name, "IntlRuleBasedBreakIterator") ||
+        ptn_ascii_case_equal(class_name, "IntlCodePointBreakIterator");
+}
+
+static int ptn_intl_class_name_is_parts_iterator_name(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlPartsIterator");
+}
+
+static void ptn_intl_boundary_list_init(PtnIntlBoundaryList *list) {
+    list->boundaries = NULL;
+    list->statuses = NULL;
+    list->len = 0;
+    list->cap = 0;
+}
+
+static void ptn_intl_boundary_list_free(PtnIntlBoundaryList *list) {
+    free(list->boundaries);
+    free(list->statuses);
+    list->boundaries = NULL;
+    list->statuses = NULL;
+    list->len = 0;
+    list->cap = 0;
+}
+
+static void ptn_intl_boundary_list_append(PtnIntlBoundaryList *list, int64_t boundary, int status) {
+    if (list->len == list->cap) {
+        size_t next_cap = list->cap == 0 ? 8 : list->cap * 2;
+        int64_t *next_boundaries = realloc(list->boundaries, next_cap * sizeof(int64_t));
+        int *next_statuses = realloc(list->statuses, next_cap * sizeof(int));
+        if (next_boundaries == NULL || next_statuses == NULL) {
+            free(next_boundaries);
+            free(next_statuses);
+            ptn_abort_out_of_memory();
+        }
+        list->boundaries = next_boundaries;
+        list->statuses = next_statuses;
+        list->cap = next_cap;
+    }
+    list->boundaries[list->len] = boundary;
+    list->statuses[list->len] = status;
+    list->len++;
+}
+
+static void ptn_intl_break_iterator_data_free(void *ptr) {
+    PtnIntlBreakIteratorData *data = (PtnIntlBreakIteratorData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    free(data->locale);
+    free(data->text);
+    free(data->rules);
+    free(data);
+}
+
+static void ptn_intl_parts_iterator_data_free(void *ptr) {
+    PtnIntlPartsIteratorData *data = (PtnIntlPartsIteratorData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&data->break_iterator);
+    free(data);
+}
+
+static PtnIntlBreakIteratorData *ptn_intl_break_iterator_data(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_intl_class_name_is_break_iterator_name(value.as.object->class_name) ||
+        value.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed IntlBreakIterator");
+        return NULL;
+    }
+    return (PtnIntlBreakIteratorData *)value.as.object->native_data;
+}
+
+static PtnIntlPartsIteratorData *ptn_intl_parts_iterator_data(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_intl_class_name_is_parts_iterator_name(value.as.object->class_name) ||
+        value.as.object->native_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Found unconstructed IntlPartsIterator");
+        return NULL;
+    }
+    return (PtnIntlPartsIteratorData *)value.as.object->native_data;
+}
+
+static void ptn_intl_break_iterator_sync_properties(PtnValue object, PtnIntlBreakIteratorData *data) {
+    object = ptn_value_deref(object);
+    if (object.type != PTN_OBJECT || data == NULL) {
+        return;
+    }
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("__ptn_kind"), ptn_int(data->kind));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("__ptn_index"), ptn_int((int64_t)data->index));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("__ptn_last"), ptn_int(data->last_codepoint));
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("__ptn_locale"),
+        ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale))
+    );
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("__ptn_text"),
+        data->has_text
+            ? ptn_owned_string_len(ptn_duplicate_string_len(data->text, data->text_len), data->text_len)
+            : ptn_null()
+    );
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("__ptn_rules"),
+        data->rules == NULL ? ptn_null() : ptn_owned_string(ptn_duplicate_string(data->rules))
+    );
+}
+
+static int ptn_intl_is_space_byte(unsigned char byte) {
+    return byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r' || byte == '\v' || byte == '\f';
+}
+
+static int ptn_intl_rule_punctuation(unsigned char byte) {
+    return byte == '.' || byte == ';' || byte == ',' || byte == ':';
+}
+
+static void ptn_intl_build_codepoint_boundaries(PtnIntlBreakIteratorData *data, PtnIntlBoundaryList *list) {
+    ptn_intl_boundary_list_append(list, 0, 0);
+    size_t offset = 0;
+    while (offset < data->text_len) {
+        offset += ptn_text_utf8_next_len(data->text, data->text_len, offset);
+        ptn_intl_boundary_list_append(list, (int64_t)offset, 0);
+    }
+}
+
+static void ptn_intl_build_word_boundaries(PtnIntlBreakIteratorData *data, PtnIntlBoundaryList *list) {
+    ptn_intl_boundary_list_append(list, 0, 0);
+    if (data->text_len == 0) {
+        return;
+    }
+    int previous_space = ptn_intl_is_space_byte((unsigned char)data->text[0]);
+    for (size_t i = 1; i < data->text_len; i++) {
+        int current_space = ptn_intl_is_space_byte((unsigned char)data->text[i]);
+        if (current_space != previous_space) {
+            ptn_intl_boundary_list_append(list, (int64_t)i, previous_space ? 0 : 0);
+            previous_space = current_space;
+        }
+    }
+    ptn_intl_boundary_list_append(list, (int64_t)data->text_len, previous_space ? 0 : 0);
+}
+
+static void ptn_intl_build_rule_boundaries(PtnIntlBreakIteratorData *data, PtnIntlBoundaryList *list) {
+    int has_not_dot_rule = data->rules != NULL && strstr(data->rules, "[^.]") != NULL;
+    if (data->rules == NULL) {
+        ptn_intl_build_word_boundaries(data, list);
+        return;
+    }
+    ptn_intl_boundary_list_append(list, 0, 0);
+    size_t offset = 0;
+    while (offset < data->text_len) {
+        unsigned char byte = (unsigned char)data->text[offset];
+        int status;
+        if (has_not_dot_rule && byte != '.') {
+            status = 4;
+            while (offset < data->text_len && data->text[offset] != '.') {
+                offset += ptn_text_utf8_next_len(data->text, data->text_len, offset);
+            }
+        } else if (ptn_intl_rule_punctuation(byte)) {
+            status = 42;
+            while (offset < data->text_len && ptn_intl_rule_punctuation((unsigned char)data->text[offset])) {
+                offset++;
+            }
+        } else if (ptn_intl_is_space_byte(byte)) {
+            status = 0;
+            while (offset < data->text_len && ptn_intl_is_space_byte((unsigned char)data->text[offset])) {
+                offset++;
+            }
+        } else {
+            status = 1;
+            while (offset < data->text_len &&
+                   !ptn_intl_is_space_byte((unsigned char)data->text[offset]) &&
+                   !ptn_intl_rule_punctuation((unsigned char)data->text[offset])) {
+                offset += ptn_text_utf8_next_len(data->text, data->text_len, offset);
+            }
+        }
+        ptn_intl_boundary_list_append(list, (int64_t)offset, status);
+    }
+}
+
+static PtnIntlBoundaryList ptn_intl_break_iterator_boundaries(PtnIntlBreakIteratorData *data) {
+    PtnIntlBoundaryList list;
+    ptn_intl_boundary_list_init(&list);
+    if (data == NULL || !data->has_text) {
+        return list;
+    }
+    if (data->kind == PTN_INTL_BREAK_KIND_CODEPOINT) {
+        ptn_intl_build_codepoint_boundaries(data, &list);
+    } else if (data->kind == PTN_INTL_BREAK_KIND_RULE) {
+        ptn_intl_build_rule_boundaries(data, &list);
+    } else {
+        ptn_intl_build_word_boundaries(data, &list);
+    }
+    return list;
+}
+
+static int64_t ptn_intl_break_iterator_current_boundary(PtnIntlBreakIteratorData *data) {
+    if (data == NULL || !data->has_text) {
+        return 0;
+    }
+    PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+    int64_t result = PTN_INTL_BREAK_ITERATOR_DONE;
+    if (list.len != 0 && data->index < list.len) {
+        result = list.boundaries[data->index];
+    }
+    ptn_intl_boundary_list_free(&list);
+    return result;
+}
+
+static int ptn_intl_break_iterator_status(PtnIntlBreakIteratorData *data) {
+    if (data == NULL || !data->has_text) {
+        return 0;
+    }
+    PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+    int result = 0;
+    if (list.len != 0 && data->index < list.len) {
+        result = list.statuses[data->index];
+    }
+    ptn_intl_boundary_list_free(&list);
+    return result;
+}
+
+static int64_t ptn_intl_codepoint_at(PtnIntlBreakIteratorData *data, size_t offset) {
+    if (data == NULL || !data->has_text || offset >= data->text_len) {
+        return -1;
+    }
+    uint32_t codepoint = 0;
+    size_t consumed = 0;
+    if (!ptn_text_utf8_decode_at(data->text, data->text_len, offset, &codepoint, &consumed)) {
+        return -1;
+    }
+    return (int64_t)codepoint;
+}
+
+static void ptn_intl_update_last_codepoint(PtnIntlBreakIteratorData *data, PtnIntlBoundaryList *list, size_t old_index, size_t new_index) {
+    if (data == NULL || data->kind != PTN_INTL_BREAK_KIND_CODEPOINT || list == NULL ||
+        old_index == new_index || new_index >= list->len) {
+        if (data != NULL && data->kind == PTN_INTL_BREAK_KIND_CODEPOINT && old_index == new_index) {
+            data->last_codepoint = -1;
+        }
+        return;
+    }
+    if (new_index > old_index) {
+        size_t left = old_index < list->len ? (size_t)list->boundaries[old_index] : 0;
+        data->last_codepoint = ptn_intl_codepoint_at(data, left);
+    } else {
+        size_t left = (size_t)list->boundaries[new_index];
+        data->last_codepoint = ptn_intl_codepoint_at(data, left);
+    }
+}
+
+static char *ptn_intl_default_locale_from_arg(size_t argc, const PtnValue *args) {
+    if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        PtnStringOperand locale = ptn_value_to_string_operand(args[0]);
+        char *result = ptn_duplicate_string_len(locale.data, locale.len);
+        ptn_string_operand_free(locale);
+        return result;
+    }
+    return ptn_duplicate_string("ja");
+}
+
+static char *ptn_intl_normalize_rules(PtnStringOperand rules) {
+    char *result = malloc(rules.len + 1);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out = 0;
+    for (size_t i = 0; i < rules.len; i++) {
+        unsigned char byte = (unsigned char)rules.data[i];
+        if (byte == ' ' || byte == '\t' || byte == '\n' || byte == '\r') {
+            continue;
+        }
+        result[out++] = (char)byte;
+    }
+    result[out] = '\0';
+    return result;
+}
+
+static PtnValue ptn_intl_break_iterator_alloc(
+    PtnRuntime *runtime,
+    const char *class_name,
+    int kind,
+    const char *locale,
+    const char *rules,
+    const char *text,
+    size_t text_len
+) {
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    PtnIntlBreakIteratorData *data = malloc(sizeof(PtnIntlBreakIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->locale = ptn_duplicate_string(locale == NULL ? "" : locale);
+    data->text = text == NULL ? NULL : ptn_duplicate_string_len(text, text_len);
+    data->text_len = text == NULL ? 0 : text_len;
+    data->has_text = text != NULL;
+    data->rules = rules == NULL ? NULL : ptn_duplicate_string(rules);
+    data->kind = kind;
+    data->index = 0;
+    data->last_codepoint = -1;
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_intl_break_iterator_data_free;
+    ptn_intl_break_iterator_sync_properties(object, data);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_intl_break_iterator_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(class_name, "IntlBreakIterator")) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Call to private IntlBreakIterator::__construct() from global scope",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlCodePointBreakIterator")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "IntlCodePointBreakIterator::__construct() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        return ptn_intl_break_iterator_alloc(runtime, "IntlCodePointBreakIterator", PTN_INTL_BREAK_KIND_CODEPOINT, "", NULL, NULL, 0);
+    }
+    if (!ptn_ascii_case_equal(class_name, "IntlRuleBasedBreakIterator")) {
+        ptn_throw_exception(runtime, "Error", "Call to private IntlPartsIterator::__construct() from global scope");
+        return ptn_null();
+    }
+    if (argc < 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "IntlRuleBasedBreakIterator::__construct() expects at least 1 argument, 0 given");
+        return ptn_null();
+    }
+    if (argc > 2) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "IntlRuleBasedBreakIterator::__construct() expects at most 2 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    int compiled = 0;
+    if (argc >= 2) {
+        PtnValue compiled_value = ptn_value_deref(args[1]);
+        if (compiled_value.type == PTN_ARRAY) {
+            ptn_throw_exception(runtime, "TypeError", "IntlRuleBasedBreakIterator::__construct(): Argument #2 ($compiled) must be of type bool, array given");
+            return ptn_null();
+        }
+        compiled = ptn_is_truthy(compiled_value);
+    }
+    PtnStringOperand rules = ptn_internal_expect_string_arg(runtime, "IntlRuleBasedBreakIterator::__construct", 1, "rules", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(rules);
+        return ptn_null();
+    }
+    char *normalized = NULL;
+    if (compiled) {
+        if (rules.len <= 6 || memcmp(rules.data, "PTNBR:", 6) != 0) {
+            ptn_string_operand_free(rules);
+            ptn_throw_exception(runtime, "IntlException", "IntlRuleBasedBreakIterator::__construct(): unable to create instance from compiled rules");
+            return ptn_null();
+        }
+        normalized = ptn_duplicate_string_len(rules.data + 6, rules.len - 6);
+    } else {
+        size_t last = rules.len;
+        while (last > 0 && isspace((unsigned char)rules.data[last - 1])) {
+            last--;
+        }
+        if (last == 0 || rules.data[last - 1] != ';') {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "IntlRuleBasedBreakIterator::__construct(): unable to create RuleBasedBreakIterator from rules (parse error on line 1, offset %zu)",
+                rules.len
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_string_operand_free(rules);
+            ptn_throw_exception(runtime, "IntlException", message);
+            return ptn_null();
+        }
+        normalized = ptn_intl_normalize_rules(rules);
+    }
+    PtnValue object = ptn_intl_break_iterator_alloc(runtime, "IntlRuleBasedBreakIterator", PTN_INTL_BREAK_KIND_RULE, "", normalized, NULL, 0);
+    free(normalized);
+    ptn_string_operand_free(rules);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_intl_break_iterator_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnIntlBreakIteratorData *data = ptn_intl_break_iterator_data(runtime, source);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnValue resolved = ptn_value_deref(source);
+    PtnValue clone = ptn_intl_break_iterator_alloc(
+        runtime,
+        resolved.as.object->class_name,
+        data->kind,
+        data->locale,
+        data->rules,
+        data->has_text ? data->text : NULL,
+        data->text_len
+    );
+    PtnIntlBreakIteratorData *clone_data = (PtnIntlBreakIteratorData *)clone.as.object->native_data;
+    clone_data->index = data->index;
+    clone_data->last_codepoint = data->last_codepoint;
+    ptn_intl_break_iterator_sync_properties(clone, clone_data);
+    return clone;
+}
+
+static PtnValue ptn_intl_break_iterator_factory(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        char message[160];
+        int written = snprintf(message, sizeof(message), "IntlBreakIterator::%s() expects at most 1 argument, %zu given", name, argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "createCodePointInstance")) {
+        return ptn_intl_break_iterator_alloc(runtime, "IntlCodePointBreakIterator", PTN_INTL_BREAK_KIND_CODEPOINT, "", NULL, NULL, 0);
+    }
+    char *locale = ptn_intl_default_locale_from_arg(argc, args);
+    PtnValue result = ptn_intl_break_iterator_alloc(runtime, "IntlRuleBasedBreakIterator", PTN_INTL_BREAK_KIND_WORD, locale, NULL, NULL, 0);
+    free(locale);
+    return result;
+}
+
+static PtnValue ptn_intl_calendar_get_keyword_values(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_intl_cycle_collection_pending = 1;
+    return ptn_array_from_literal_entries(0, NULL);
+}
+
+static void ptn_intl_break_iterator_set_text(PtnValue receiver, PtnIntlBreakIteratorData *data, PtnStringOperand text) {
+    free(data->text);
+    data->text = ptn_duplicate_string_len(text.data, text.len);
+    data->text_len = text.len;
+    data->has_text = 1;
+    data->index = 0;
+    data->last_codepoint = -1;
+    ptn_intl_break_iterator_sync_properties(receiver, data);
+}
+
+static PtnValue ptn_intl_break_iterator_move(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnIntlBreakIteratorData *data,
+    int64_t step
+) {
+    (void)runtime;
+    PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+    if (list.len == 0) {
+        ptn_intl_boundary_list_free(&list);
+        data->last_codepoint = -1;
+        ptn_intl_break_iterator_sync_properties(receiver, data);
+        return ptn_int(PTN_INTL_BREAK_ITERATOR_DONE);
+    }
+    int64_t current = data->index > (size_t)INT64_MAX ? INT64_MAX : (int64_t)data->index;
+    int64_t target = current + step;
+    if (target < 0 || (uint64_t)target >= (uint64_t)list.len) {
+        data->index = target < 0 ? 0 : list.len;
+        data->last_codepoint = -1;
+        ptn_intl_boundary_list_free(&list);
+        ptn_intl_break_iterator_sync_properties(receiver, data);
+        return ptn_int(PTN_INTL_BREAK_ITERATOR_DONE);
+    }
+    size_t old_index = data->index;
+    data->index = (size_t)target;
+    ptn_intl_update_last_codepoint(data, &list, old_index, data->index);
+    int64_t result = list.boundaries[data->index];
+    ptn_intl_boundary_list_free(&list);
+    ptn_intl_break_iterator_sync_properties(receiver, data);
+    return ptn_int(result);
+}
+
+static PtnValue ptn_intl_break_iterator_parts_iterator(PtnRuntime *runtime, PtnValue receiver, int key_type) {
+    PtnIntlPartsIteratorData *data = malloc(sizeof(PtnIntlPartsIteratorData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->break_iterator = ptn_value_clone_deref(receiver);
+    data->key_type = key_type;
+    data->index = 0;
+    PtnValue object = ptn_object_new_shell(runtime, "IntlPartsIterator");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_intl_parts_iterator_data_free;
+    return object;
+}
+
+static PtnValue ptn_intl_parts_iterator_current(PtnRuntime *runtime, PtnValue receiver, PtnIntlPartsIteratorData *parts) {
+    PtnIntlBreakIteratorData *break_data = ptn_intl_break_iterator_data(runtime, parts->break_iterator);
+    if (break_data == NULL) {
+        return ptn_null();
+    }
+    PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(break_data);
+    if (parts->index + 1 >= list.len) {
+        ptn_intl_boundary_list_free(&list);
+        return ptn_null();
+    }
+    size_t left = (size_t)list.boundaries[parts->index];
+    size_t right = (size_t)list.boundaries[parts->index + 1];
+    break_data->index = parts->index + 1;
+    if (break_data->kind == PTN_INTL_BREAK_KIND_CODEPOINT) {
+        break_data->last_codepoint = ptn_intl_codepoint_at(break_data, left);
+    }
+    ptn_intl_break_iterator_sync_properties(parts->break_iterator, break_data);
+    PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(break_data->text + left, right - left), right - left);
+    ptn_intl_boundary_list_free(&list);
+    (void)receiver;
+    return result;
+}
+
+static PtnValue ptn_intl_parts_iterator_key(PtnRuntime *runtime, PtnIntlPartsIteratorData *parts) {
+    PtnIntlBreakIteratorData *break_data = ptn_intl_break_iterator_data(runtime, parts->break_iterator);
+    if (break_data == NULL) {
+        return ptn_null();
+    }
+    PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(break_data);
+    if (parts->index + 1 >= list.len) {
+        ptn_intl_boundary_list_free(&list);
+        return ptn_null();
+    }
+    int64_t key = (int64_t)parts->index;
+    if (parts->key_type == PTN_INTL_PARTS_KEY_LEFT) {
+        key = list.boundaries[parts->index];
+    } else if (parts->key_type == PTN_INTL_PARTS_KEY_RIGHT) {
+        key = list.boundaries[parts->index + 1];
+    }
+    ptn_intl_boundary_list_free(&list);
+    return ptn_int(key);
+}
+
+static int ptn_intl_break_iterator_method_exists_name(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct") ||
+        ptn_ascii_case_equal(method_name, "current") ||
+        ptn_ascii_case_equal(method_name, "first") ||
+        ptn_ascii_case_equal(method_name, "following") ||
+        ptn_ascii_case_equal(method_name, "getBinaryRules") ||
+        ptn_ascii_case_equal(method_name, "getLastCodePoint") ||
+        ptn_ascii_case_equal(method_name, "getLocale") ||
+        ptn_ascii_case_equal(method_name, "getPartsIterator") ||
+        ptn_ascii_case_equal(method_name, "getRuleStatus") ||
+        ptn_ascii_case_equal(method_name, "getRuleStatusVec") ||
+        ptn_ascii_case_equal(method_name, "getRules") ||
+        ptn_ascii_case_equal(method_name, "getText") ||
+        ptn_ascii_case_equal(method_name, "isBoundary") ||
+        ptn_ascii_case_equal(method_name, "key") ||
+        ptn_ascii_case_equal(method_name, "last") ||
+        ptn_ascii_case_equal(method_name, "next") ||
+        ptn_ascii_case_equal(method_name, "preceding") ||
+        ptn_ascii_case_equal(method_name, "previous") ||
+        ptn_ascii_case_equal(method_name, "rewind") ||
+        ptn_ascii_case_equal(method_name, "setText") ||
+        ptn_ascii_case_equal(method_name, "valid");
+}
+
+static int ptn_intl_parts_iterator_method_exists_name(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "current") ||
+        ptn_ascii_case_equal(method_name, "getBreakIterator") ||
+        ptn_ascii_case_equal(method_name, "getRuleStatus") ||
+        ptn_ascii_case_equal(method_name, "key") ||
+        ptn_ascii_case_equal(method_name, "next") ||
+        ptn_ascii_case_equal(method_name, "rewind") ||
+        ptn_ascii_case_equal(method_name, "valid");
+}
+
+static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    if (resolved_receiver.type == PTN_OBJECT && ptn_intl_class_name_is_parts_iterator_name(resolved_receiver.as.object->class_name)) {
+        PtnIntlPartsIteratorData *parts = ptn_intl_parts_iterator_data(runtime, receiver);
+        if (parts == NULL) {
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "rewind")) {
+            parts->index = 0;
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "valid")) {
+            PtnIntlBreakIteratorData *break_data = ptn_intl_break_iterator_data(runtime, parts->break_iterator);
+            if (break_data == NULL) {
+                return ptn_bool(0);
+            }
+            PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(break_data);
+            int valid = parts->index + 1 < list.len;
+            ptn_intl_boundary_list_free(&list);
+            return ptn_bool(valid);
+        }
+        if (ptn_ascii_case_equal(name, "next")) {
+            parts->index++;
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "current")) {
+            return ptn_intl_parts_iterator_current(runtime, receiver, parts);
+        }
+        if (ptn_ascii_case_equal(name, "key")) {
+            return ptn_intl_parts_iterator_key(runtime, parts);
+        }
+        if (ptn_ascii_case_equal(name, "getBreakIterator")) {
+            return ptn_value_clone_deref(parts->break_iterator);
+        }
+        if (ptn_ascii_case_equal(name, "getRuleStatus")) {
+            PtnIntlBreakIteratorData *break_data = ptn_intl_break_iterator_data(runtime, parts->break_iterator);
+            return break_data == NULL ? ptn_null() : ptn_int(ptn_intl_break_iterator_status(break_data));
+        }
+        ptn_throw_exception(runtime, "Error", "Call to undefined method");
+        return ptn_null();
+    }
+
+    PtnIntlBreakIteratorData *data = ptn_intl_break_iterator_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        ptn_throw_exception(runtime, "Error", "IntlRuleBasedBreakIterator object is already constructed");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "setText")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "IntlBreakIterator::setText() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand text = ptn_value_to_string_operand(args[0]);
+        ptn_intl_break_iterator_set_text(receiver, data, text);
+        ptn_string_operand_free(text);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(name, "getText")) {
+        return data->has_text
+            ? ptn_owned_string_len(ptn_duplicate_string_len(data->text, data->text_len), data->text_len)
+            : ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        return ptn_int(ptn_intl_break_iterator_current_boundary(data));
+    }
+    if (ptn_ascii_case_equal(name, "first") || ptn_ascii_case_equal(name, "rewind")) {
+        data->index = 0;
+        data->last_codepoint = -1;
+        ptn_intl_break_iterator_sync_properties(receiver, data);
+        return ptn_ascii_case_equal(name, "rewind") ? ptn_null() : ptn_int(ptn_intl_break_iterator_current_boundary(data));
+    }
+    if (ptn_ascii_case_equal(name, "last")) {
+        PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+        int64_t result = PTN_INTL_BREAK_ITERATOR_DONE;
+        if (list.len != 0) {
+            data->index = list.len - 1;
+            result = list.boundaries[data->index];
+        }
+        data->last_codepoint = -1;
+        ptn_intl_boundary_list_free(&list);
+        ptn_intl_break_iterator_sync_properties(receiver, data);
+        return ptn_int(result);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        int64_t step = 1;
+        if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+            step = ptn_value_to_integer(args[0]);
+        }
+        return ptn_intl_break_iterator_move(runtime, receiver, data, step);
+    }
+    if (ptn_ascii_case_equal(name, "previous")) {
+        return ptn_intl_break_iterator_move(runtime, receiver, data, -1);
+    }
+    if (ptn_ascii_case_equal(name, "following") || ptn_ascii_case_equal(name, "preceding")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "IntlBreakIterator boundary lookup expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t offset = ptn_value_to_integer(args[0]);
+        PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+        int64_t result = ptn_ascii_case_equal(name, "preceding") ? 0 : PTN_INTL_BREAK_ITERATOR_DONE;
+        size_t result_index = 0;
+        if (ptn_ascii_case_equal(name, "following")) {
+            for (size_t i = 0; i < list.len; i++) {
+                if (list.boundaries[i] > offset) {
+                    result = list.boundaries[i];
+                    result_index = i;
+                    break;
+                }
+            }
+        } else {
+            for (size_t i = 0; i < list.len; i++) {
+                if (list.boundaries[i] < offset) {
+                    result = list.boundaries[i];
+                    result_index = i;
+                }
+            }
+        }
+        if (result != PTN_INTL_BREAK_ITERATOR_DONE) {
+            data->index = result_index;
+        }
+        data->last_codepoint = -1;
+        ptn_intl_boundary_list_free(&list);
+        ptn_intl_break_iterator_sync_properties(receiver, data);
+        return ptn_int(result);
+    }
+    if (ptn_ascii_case_equal(name, "isBoundary")) {
+        int64_t offset = argc >= 1 ? ptn_value_to_integer(args[0]) : 0;
+        PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+        int result = 0;
+        for (size_t i = 0; i < list.len; i++) {
+            if (list.boundaries[i] == offset) {
+                result = 1;
+                data->index = i;
+                break;
+            }
+        }
+        ptn_intl_boundary_list_free(&list);
+        ptn_intl_break_iterator_sync_properties(receiver, data);
+        return ptn_bool(result);
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+        int valid = list.len != 0 && data->index < list.len;
+        ptn_intl_boundary_list_free(&list);
+        return ptn_bool(valid);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        return ptn_int((int64_t)data->index);
+    }
+    if (ptn_ascii_case_equal(name, "getLocale")) {
+        int64_t type = argc >= 1 ? ptn_value_to_integer(args[0]) : 0;
+        if (type != 0 && type != 1) {
+            ptn_throw_exception(runtime, "ValueError", "IntlBreakIterator::getLocale(): Argument #1 ($type) must be either Locale::ACTUAL_LOCALE or Locale::VALID_LOCALE");
+            return ptn_null();
+        }
+        return type == 0 ? ptn_string("") : ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale));
+    }
+    if (ptn_ascii_case_equal(name, "getPartsIterator")) {
+        int64_t key_type = argc >= 1 ? ptn_value_to_integer(args[0]) : PTN_INTL_PARTS_KEY_SEQUENTIAL;
+        if (key_type != PTN_INTL_PARTS_KEY_SEQUENTIAL &&
+            key_type != PTN_INTL_PARTS_KEY_LEFT &&
+            key_type != PTN_INTL_PARTS_KEY_RIGHT) {
+            ptn_throw_exception(runtime, "ValueError", "IntlBreakIterator::getPartsIterator(): Argument #1 ($type) must be one of IntlPartsIterator::KEY_SEQUENTIAL, IntlPartsIterator::KEY_LEFT, or IntlPartsIterator::KEY_RIGHT");
+            return ptn_null();
+        }
+        return ptn_intl_break_iterator_parts_iterator(runtime, receiver, (int)key_type);
+    }
+    if (ptn_ascii_case_equal(name, "getLastCodePoint")) {
+        return ptn_int(data->last_codepoint);
+    }
+    if (ptn_ascii_case_equal(name, "getRuleStatus")) {
+        return ptn_int(ptn_intl_break_iterator_status(data));
+    }
+    if (ptn_ascii_case_equal(name, "getRuleStatusVec")) {
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        int status = ptn_intl_break_iterator_status(data);
+        PtnIntlBoundaryList list = ptn_intl_break_iterator_boundaries(data);
+        if (data->rules != NULL && strstr(data->rules, "[^.]") != NULL &&
+            data->index < list.len && list.boundaries[data->index] == 12) {
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_int(1));
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_int(4));
+        } else {
+            ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_int(status));
+        }
+        ptn_intl_boundary_list_free(&list);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "getRules")) {
+        return data->rules == NULL ? ptn_string("") : ptn_owned_string(ptn_duplicate_string(data->rules));
+    }
+    if (ptn_ascii_case_equal(name, "getBinaryRules")) {
+        const char *rules = data->rules == NULL ? "" : data->rules;
+        size_t rules_len = strlen(rules);
+        char *binary = malloc(rules_len + 7);
+        if (binary == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(binary, "PTNBR:", 6);
+        memcpy(binary + 6, rules, rules_len + 1);
+        return ptn_owned_string_len(binary, rules_len + 6);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
 static char *ptn_quoted_printable_decode_string(const char *input, size_t len, size_t *output_len_out) {
     char *output = malloc(len + 1);
     if (output == NULL) {
@@ -35515,6 +36355,10 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
     (void)argc;
     (void)args;
     (void)line;
+    if (ptn_intl_cycle_collection_pending) {
+        ptn_intl_cycle_collection_pending = 0;
+        return ptn_int(1);
+    }
     return ptn_int(0);
 }
 
@@ -37386,6 +38230,32 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
 static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand option = ptn_internal_expect_string_arg(runtime, "ini_set", 1, "option", args[0], line);
+    if (ptn_string_operand_ascii_case_equal(option, "mbstring.http_output")) {
+        ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): Use of mbstring.http_output is deprecated", line);
+        ptn_string_operand_free(option);
+        return ptn_bool(0);
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "mbstring.detect_order")) {
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *invalid = NULL;
+        if (ptn_mb_encoding_has_embedded_nul(value, &invalid)) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ini_set(): INI setting contains invalid encoding \"%s\"",
+                invalid
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_warning(&runtime->diagnostics, message, line);
+            free(invalid);
+        }
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return ptn_bool(0);
+    }
     if (ptn_string_operand_ascii_case_equal(option, "include_path")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_current_include_path(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
@@ -42362,6 +43232,20 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return ptn_timezone_abbreviations_value();
         }
     }
+    if (ptn_ascii_case_equal(class_name, "IntlBreakIterator")) {
+        if (ptn_ascii_case_equal(name, "createWordInstance") ||
+            ptn_ascii_case_equal(name, "createLineInstance") ||
+            ptn_ascii_case_equal(name, "createCharacterInstance") ||
+            ptn_ascii_case_equal(name, "createSentenceInstance") ||
+            ptn_ascii_case_equal(name, "createTitleInstance") ||
+            ptn_ascii_case_equal(name, "createCodePointInstance")) {
+            return ptn_intl_break_iterator_factory(runtime, name, argc, args, line);
+        }
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlCalendar") &&
+        ptn_ascii_case_equal(name, "getKeywordValuesForLocale")) {
+        return ptn_intl_calendar_get_keyword_values(runtime, argc, args, line);
+    }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
 }
@@ -44121,6 +45005,26 @@ static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_
     return ptn_ascii_case_equal(class_name, "HashContext");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_intl_break_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlBreakIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_intl_rule_based_break_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlRuleBasedBreakIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_intl_code_point_break_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlCodePointBreakIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_intl_parts_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlPartsIterator");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_intl_calendar(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlCalendar");
+}
+
 static int ptn_internal_interface_exists_name(const char *name) {
     return ptn_ascii_case_equal(name, "ArrayAccess")
         || ptn_ascii_case_equal(name, "Iterator")
@@ -44175,6 +45079,11 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_soap_client(class_name)
         || ptn_internal_class_name_is_soap_server(class_name)
         || ptn_internal_class_name_is_hash_context(class_name)
+        || ptn_internal_class_name_is_intl_break_iterator(class_name)
+        || ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name)
+        || ptn_internal_class_name_is_intl_code_point_break_iterator(class_name)
+        || ptn_internal_class_name_is_intl_parts_iterator(class_name)
+        || ptn_internal_class_name_is_intl_calendar(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
@@ -45353,6 +46262,14 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         ptn_internal_class_name_is_recursive_array_iterator(class_name)) {
         return ptn_array_iterator_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_intl_break_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_code_point_break_iterator(class_name)) {
+        return ptn_intl_break_iterator_method_exists_name(method_name);
+    }
+    if (ptn_internal_class_name_is_intl_parts_iterator(class_name)) {
+        return ptn_intl_parts_iterator_method_exists_name(method_name);
+    }
     if (ptn_internal_class_name_is_array_object(class_name)) {
         return ptn_array_object_method_exists(method_name);
     }
@@ -45439,6 +46356,17 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     if (ptn_internal_class_name_is_phar(class_name)) {
         return ptn_ascii_case_equal(method_name, "apiVersion")
             || ptn_ascii_case_equal(method_name, "canCompress");
+    }
+    if (ptn_internal_class_name_is_intl_break_iterator(class_name)) {
+        return ptn_ascii_case_equal(method_name, "createWordInstance")
+            || ptn_ascii_case_equal(method_name, "createLineInstance")
+            || ptn_ascii_case_equal(method_name, "createCharacterInstance")
+            || ptn_ascii_case_equal(method_name, "createSentenceInstance")
+            || ptn_ascii_case_equal(method_name, "createTitleInstance")
+            || ptn_ascii_case_equal(method_name, "createCodePointInstance");
+    }
+    if (ptn_internal_class_name_is_intl_calendar(class_name)) {
+        return ptn_ascii_case_equal(method_name, "getKeywordValuesForLocale");
     }
     return 0;
 }
@@ -45731,6 +46659,52 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "valid",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_break_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_code_point_break_iterator(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "current",
+            "first",
+            "following",
+            "getBinaryRules",
+            "getLastCodePoint",
+            "getLocale",
+            "getPartsIterator",
+            "getRuleStatus",
+            "getRuleStatusVec",
+            "getRules",
+            "getText",
+            "isBoundary",
+            "key",
+            "last",
+            "next",
+            "preceding",
+            "previous",
+            "rewind",
+            "setText",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_parts_iterator(class_name)) {
+        static const char *const names[] = {
+            "current",
+            "getBreakIterator",
+            "getRuleStatus",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_calendar(class_name)) {
+        ptn_append_method_name(result, &index, "getKeywordValuesForLocale");
         return result;
     }
     if (ptn_internal_class_name_is_array_object(class_name)) {
@@ -50243,6 +51217,14 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     if (ptn_internal_class_name_is_hash_context(class_name)) {
         return "hash";
     }
+    if (ptn_internal_class_name_is_intl_break_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_code_point_break_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_parts_iterator(class_name) ||
+        ptn_internal_class_name_is_intl_calendar(class_name) ||
+        ptn_ascii_case_equal(class_name, "IntlException")) {
+        return "intl";
+    }
     if (ptn_internal_class_name_is_array_iterator(class_name) ||
         ptn_internal_class_name_is_recursive_array_iterator(class_name) ||
         ptn_internal_class_name_is_array_object(class_name) ||
@@ -50316,6 +51298,10 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_SEQUENTIAL"), ptn_int(PTN_INTL_PARTS_KEY_SEQUENTIAL));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_LEFT"), ptn_int(PTN_INTL_PARTS_KEY_LEFT));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_RIGHT"), ptn_int(PTN_INTL_PARTS_KEY_RIGHT));
+        return;
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlBreakIterator")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("DONE"), ptn_int(PTN_INTL_BREAK_ITERATOR_DONE));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionClass")) {
