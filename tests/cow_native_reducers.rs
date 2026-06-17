@@ -642,7 +642,10 @@ usort($array, function($a, $b) use (&$array, &$ref) {\n\
     if ($a == $b) { return 0; }\n\
     return $a < $b ? -1 : 1;\n\
 });\n\
-var_dump($array);",
+var_dump($array);\n\
+if ($array !== [\"entry_1\", \"entry_2\", \"entry_3\", \"entry_4\", \"entry_5\"]) {\n\
+    die(\"Array not sorted\\n\");\n\
+}",
     )
     .unwrap();
 
@@ -654,6 +657,51 @@ var_dump($array);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!("{expected_array}{expected_array}")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_bool_comparator_false_result_retries_swapped_operands_to_native_binary() {
+    let root = temp_dir("ptn-native-bool-comparator-retry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("bool-comparator-retry.php");
+    let output = root.join("bool-comparator-retry-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function bool_cmp($left, $right) {\n\
+    global $calls;\n\
+    $calls[] = $left . \":\" . $right;\n\
+    return $left > $right;\n\
+}\n\
+$values = [0, 1];\n\
+$calls = [];\n\
+usort($values, \"bool_cmp\");\n\
+var_dump($values);\n\
+foreach ($calls as $call) {\n\
+    echo $call, \"\\n\";\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: usort(): Returning bool from comparison function is deprecated, return an integer less than, equal to, or greater than zero in ptn on line 9\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(0)\n",
+            "  [1]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "0:1\n",
+            "1:0\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

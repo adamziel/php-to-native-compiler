@@ -924,6 +924,7 @@ static int ptn_array_user_compare_for_sort(
     };
     PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 2, callback_args, line);
     PtnValue resolved_result = ptn_value_deref(callback_result);
+    int retry_swapped = resolved_result.type == PTN_BOOL && !resolved_result.as.boolean;
     if (
         resolved_result.type == PTN_BOOL &&
         (bool_deprecation_emitted == NULL || !*bool_deprecation_emitted)
@@ -942,6 +943,28 @@ static int ptn_array_user_compare_for_sort(
         if (bool_deprecation_emitted != NULL) {
             *bool_deprecation_emitted = 1;
         }
+    }
+    if (retry_swapped) {
+        ptn_value_destroy(&callback_args[0]);
+        ptn_value_destroy(&callback_args[1]);
+        ptn_value_destroy(&callback_result);
+
+        PtnValue swapped_args[2] = {
+            ptn_value_clone_deref(right),
+            ptn_value_clone_deref(left)
+        };
+        PtnValue swapped_result = ptn_internal_call_callback(runtime, callback, 2, swapped_args, line);
+        int64_t swapped_compared = ptn_value_to_integer(swapped_result);
+        ptn_value_destroy(&swapped_args[0]);
+        ptn_value_destroy(&swapped_args[1]);
+        ptn_value_destroy(&swapped_result);
+        if (swapped_compared < 0) {
+            return 1;
+        }
+        if (swapped_compared > 0) {
+            return -1;
+        }
+        return 0;
     }
     int64_t compared = ptn_value_to_integer(callback_result);
     ptn_value_destroy(&callback_args[0]);
