@@ -35530,8 +35530,23 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "date")) {
         return "date";
     }
+    if (ptn_string_operand_ascii_case_equal(extension, "filter")) {
+        return "filter";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "hash")) {
+        return "hash";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "iconv")) {
+        return "iconv";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "intl")) {
+        return "intl";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "json")) {
         return "json";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "mbstring")) {
+        return "mbstring";
     }
     if (ptn_string_operand_ascii_case_equal(extension, "pcre")) {
         return "pcre";
@@ -35558,11 +35573,16 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "standard")) {
         return "standard";
     }
+<<<<<<< HEAD
     if (ptn_string_operand_ascii_case_equal(extension, "zip")) {
         return "zip";
     }
     if (ptn_string_operand_ascii_case_equal(extension, "zlib")) {
         return "zlib";
+=======
+    if (ptn_string_operand_ascii_case_equal(extension, "tokenizer")) {
+        return "tokenizer";
+>>>>>>> 827cb7175 (WIP: checkpoint (auto))
     }
     return NULL;
 }
@@ -36492,6 +36512,7 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     }
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("ctype"));
+<<<<<<< HEAD
     ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("curl"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("date"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("json"));
@@ -36505,6 +36526,19 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("standard"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(13), ptn_string("zip"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(14), ptn_string("zlib"));
+=======
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("date"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("filter"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("hash"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("iconv"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(6), ptn_string("intl"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(7), ptn_string("json"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(8), ptn_string("mbstring"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(9), ptn_string("pcre"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(10), ptn_string("Reflection"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(11), ptn_string("standard"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("tokenizer"));
+>>>>>>> 827cb7175 (WIP: checkpoint (auto))
     return result;
 }
 
@@ -42028,8 +42062,13 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         if (ptn_internal_function_name_has_prefix(name, "DateTimeZone::")) {
             return "date";
         }
+<<<<<<< HEAD
         if (ptn_internal_function_name_has_prefix(name, "Phar::")) {
             return "Phar";
+=======
+        if (ptn_internal_function_name_has_prefix(name, "Intl")) {
+            return "intl";
+>>>>>>> 827cb7175 (WIP: checkpoint (auto))
         }
         return "Core";
     }
@@ -42048,6 +42087,19 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "ctype_")) {
         return "ctype";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "hash") ||
+        ptn_ascii_case_equal(name, "hash")) {
+        return "hash";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "iconv")) {
+        return "iconv";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "mb_")) {
+        return "mbstring";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "token_")) {
+        return "tokenizer";
     }
     if (ptn_internal_function_name_has_prefix(name, "json_")) {
         return "json";
@@ -48897,6 +48949,12 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("READ_AHEAD"), ptn_int(2));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_EMPTY"), ptn_int(4));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("READ_CSV"), ptn_int(8));
+        return;
+    }
+    if (ptn_ascii_case_equal(class_name, "IntlPartsIterator")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_SEQUENTIAL"), ptn_int(PTN_INTL_PARTS_KEY_SEQUENTIAL));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_LEFT"), ptn_int(PTN_INTL_PARTS_KEY_LEFT));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("KEY_RIGHT"), ptn_int(PTN_INTL_PARTS_KEY_RIGHT));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionClass")) {

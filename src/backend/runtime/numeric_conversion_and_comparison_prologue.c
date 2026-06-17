@@ -1535,6 +1535,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "JsonException")) {
         return "JsonException";
     }
+    if (ptn_exception_name_equal(class_name, "IntlException")) {
+        return "IntlException";
+    }
     if (ptn_exception_name_equal(class_name, "RuntimeException")) {
         return "RuntimeException";
     }
@@ -2895,6 +2898,20 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
         if (strcmp(constant, "READ_CSV") == 0) {
             *out = ptn_int(8);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlPartsIterator")) {
+        if (strcmp(constant, "KEY_SEQUENTIAL") == 0) {
+            *out = ptn_int(PTN_INTL_PARTS_KEY_SEQUENTIAL);
+            return 1;
+        }
+        if (strcmp(constant, "KEY_LEFT") == 0) {
+            *out = ptn_int(PTN_INTL_PARTS_KEY_LEFT);
+            return 1;
+        }
+        if (strcmp(constant, "KEY_RIGHT") == 0) {
+            *out = ptn_int(PTN_INTL_PARTS_KEY_RIGHT);
             return 1;
         }
     }

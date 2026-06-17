@@ -35,6 +35,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
     ("SoapFault", "Exception"),
+    ("IntlException", "Exception"),
     ("RuntimeException", "Exception"),
     ("InvalidArgumentException", "RuntimeException"),
     ("UnexpectedValueException", "RuntimeException"),

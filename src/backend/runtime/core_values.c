@@ -320,6 +320,129 @@ typedef struct {
 #define PTN_PREG_BAD_UTF8_ERROR 4
 #define PTN_PREG_BAD_UTF8_OFFSET_ERROR 5
 #define PTN_PREG_JIT_STACKLIMIT_ERROR 6
+#define PTN_HASH_HMAC 1
+#define PTN_INTL_ICU_VERSION "73.2"
+#define PTN_INTL_PARTS_KEY_SEQUENTIAL 0
+#define PTN_INTL_PARTS_KEY_LEFT 1
+#define PTN_INTL_PARTS_KEY_RIGHT 2
+#define PTN_T_INCLUDE 1000
+#define PTN_T_INCLUDE_ONCE 1001
+#define PTN_T_EVAL 1002
+#define PTN_T_REQUIRE 1003
+#define PTN_T_REQUIRE_ONCE 1004
+#define PTN_T_LOGICAL_OR 1005
+#define PTN_T_LOGICAL_XOR 1006
+#define PTN_T_LOGICAL_AND 1007
+#define PTN_T_PRINT 1008
+#define PTN_T_PLUS_EQUAL 1009
+#define PTN_T_MINUS_EQUAL 1010
+#define PTN_T_MUL_EQUAL 1011
+#define PTN_T_DIV_EQUAL 1012
+#define PTN_T_CONCAT_EQUAL 1013
+#define PTN_T_MOD_EQUAL 1014
+#define PTN_T_AND_EQUAL 1015
+#define PTN_T_OR_EQUAL 1016
+#define PTN_T_XOR_EQUAL 1017
+#define PTN_T_SL_EQUAL 1018
+#define PTN_T_SR_EQUAL 1019
+#define PTN_T_BOOLEAN_OR 1020
+#define PTN_T_BOOLEAN_AND 1021
+#define PTN_T_IS_EQUAL 1022
+#define PTN_T_IS_NOT_EQUAL 1023
+#define PTN_T_IS_IDENTICAL 1024
+#define PTN_T_IS_NOT_IDENTICAL 1025
+#define PTN_T_IS_SMALLER_OR_EQUAL 1026
+#define PTN_T_IS_GREATER_OR_EQUAL 1027
+#define PTN_T_SL 1028
+#define PTN_T_SR 1029
+#define PTN_T_INC 1030
+#define PTN_T_DEC 1031
+#define PTN_T_INT_CAST 1032
+#define PTN_T_DOUBLE_CAST 1033
+#define PTN_T_STRING_CAST 1034
+#define PTN_T_ARRAY_CAST 1035
+#define PTN_T_OBJECT_CAST 1036
+#define PTN_T_BOOL_CAST 1037
+#define PTN_T_UNSET_CAST 1038
+#define PTN_T_NEW 1039
+#define PTN_T_EXIT 1040
+#define PTN_T_IF 1041
+#define PTN_T_ELSEIF 1042
+#define PTN_T_ELSE 1043
+#define PTN_T_ENDIF 1044
+#define PTN_T_LNUMBER 1045
+#define PTN_T_DNUMBER 1046
+#define PTN_T_STRING 1047
+#define PTN_T_STRING_VARNAME 1048
+#define PTN_T_VARIABLE 1049
+#define PTN_T_NUM_STRING 1050
+#define PTN_T_INLINE_HTML 1051
+#define PTN_T_ENCAPSED_AND_WHITESPACE 1052
+#define PTN_T_CONSTANT_ENCAPSED_STRING 1053
+#define PTN_T_ECHO 1054
+#define PTN_T_DO 1055
+#define PTN_T_WHILE 1056
+#define PTN_T_ENDWHILE 1057
+#define PTN_T_FOR 1058
+#define PTN_T_ENDFOR 1059
+#define PTN_T_FOREACH 1060
+#define PTN_T_ENDFOREACH 1061
+#define PTN_T_DECLARE 1062
+#define PTN_T_ENDDECLARE 1063
+#define PTN_T_AS 1064
+#define PTN_T_SWITCH 1065
+#define PTN_T_ENDSWITCH 1066
+#define PTN_T_CASE 1067
+#define PTN_T_DEFAULT 1068
+#define PTN_T_BREAK 1069
+#define PTN_T_CONTINUE 1070
+#define PTN_T_FUNCTION 1071
+#define PTN_T_CONST 1072
+#define PTN_T_RETURN 1073
+#define PTN_T_USE 1074
+#define PTN_T_GLOBAL 1075
+#define PTN_T_STATIC 1076
+#define PTN_T_VAR 1077
+#define PTN_T_UNSET 1078
+#define PTN_T_ISSET 1079
+#define PTN_T_EMPTY 1080
+#define PTN_T_CLASS 1081
+#define PTN_T_EXTENDS 1082
+#define PTN_T_INTERFACE 1083
+#define PTN_T_IMPLEMENTS 1084
+#define PTN_T_OBJECT_OPERATOR 1085
+#define PTN_T_DOUBLE_ARROW 1086
+#define PTN_T_LIST 1087
+#define PTN_T_ARRAY 1088
+#define PTN_T_CLASS_C 1089
+#define PTN_T_FUNC_C 1090
+#define PTN_T_PROPERTY_C 1091
+#define PTN_T_METHOD_C 1092
+#define PTN_T_LINE 1093
+#define PTN_T_FILE 1094
+#define PTN_T_COMMENT 1095
+#define PTN_T_DOC_COMMENT 1096
+#define PTN_T_OPEN_TAG 1097
+#define PTN_T_OPEN_TAG_WITH_ECHO 1098
+#define PTN_T_CLOSE_TAG 1099
+#define PTN_T_WHITESPACE 1100
+#define PTN_T_START_HEREDOC 1101
+#define PTN_T_END_HEREDOC 1102
+#define PTN_T_DOLLAR_OPEN_CURLY_BRACES 1103
+#define PTN_T_CURLY_OPEN 1104
+#define PTN_T_DOUBLE_COLON 1105
+#define PTN_T_PAAMAYIM_NEKUDOTAYIM PTN_T_DOUBLE_COLON
+#define PTN_T_ABSTRACT 1106
+#define PTN_T_CATCH 1107
+#define PTN_T_FINAL 1108
+#define PTN_T_INSTANCEOF 1109
+#define PTN_T_PRIVATE 1110
+#define PTN_T_PROTECTED 1111
+#define PTN_T_PUBLIC 1112
+#define PTN_T_THROW 1113
+#define PTN_T_TRY 1114
+#define PTN_T_CLONE 1115
+#define PTN_T_HALT_COMPILER 1116
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
@@ -1767,6 +1890,7 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
     const PtnValue *args,
     size_t line
 );
+<<<<<<< HEAD
 static PTN_UNUSED PtnValue ptn_zip_archive_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1774,12 +1898,19 @@ static PTN_UNUSED PtnValue ptn_zip_archive_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_soap_client_new(
+=======
+static PTN_UNUSED PtnValue ptn_intl_break_iterator_new(
+>>>>>>> 827cb7175 (WIP: checkpoint (auto))
     PtnRuntime *runtime,
     const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line
 );
+<<<<<<< HEAD
+=======
+static PTN_UNUSED PtnValue ptn_intl_break_iterator_clone(PtnRuntime *runtime, PtnValue source, size_t line);
+>>>>>>> 827cb7175 (WIP: checkpoint (auto))
 static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_call_method(
@@ -1799,6 +1930,14 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_date_interval_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
