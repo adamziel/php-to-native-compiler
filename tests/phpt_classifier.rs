@@ -1712,6 +1712,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let xmlwriter_extension = classify(
+        "--TEST--\nxmlwriter extension\n--EXTENSIONS--\nxmlwriter\n--FILE--\n<?php\n$xw = xmlwriter_open_memory();\nxmlwriter_start_element($xw, 'root');\nxmlwriter_end_element($xw);\necho xmlwriter_flush($xw);\n--EXPECT--\n<root/>\n",
+    );
+    assert_eq!(
+        xmlwriter_extension.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let serialize_precision = classify(
         "--TEST--\nserialize precision ini\n--INI--\nserialize_precision=-1\n--FILE--\n<?php\necho ini_get('serialize_precision'), \"\\n\";\n--EXPECT--\n-1\n",
     );

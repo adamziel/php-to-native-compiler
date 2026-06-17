@@ -26150,6 +26150,19 @@ static int ptn_try_open_php_input_stream(PtnRuntime *runtime, const char *path, 
     return 1;
 }
 
+static int ptn_try_open_php_standard_stream(const char *path, PtnValue *out) {
+    if (ptn_ascii_case_equal(path, "php://output") ||
+        ptn_ascii_case_equal(path, "php://stdout")) {
+        *out = ptn_standard_stream_resource_value(2);
+        return 1;
+    }
+    if (ptn_ascii_case_equal(path, "php://stderr")) {
+        *out = ptn_standard_stream_resource_value(3);
+        return 1;
+    }
+    return 0;
+}
+
 static char *ptn_fopen_c_mode(const char *mode) {
     if (mode[0] != 'x') {
         return ptn_duplicate_string(mode);
@@ -26216,6 +26229,11 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
 
     PtnValue php_stream;
     if (ptn_try_open_php_input_stream(runtime, path, &php_stream)) {
+        free(mode);
+        free(path);
+        return php_stream;
+    }
+    if (ptn_try_open_php_standard_stream(path, &php_stream)) {
         free(mode);
         free(path);
         return php_stream;
@@ -38022,6 +38040,9 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "tokenizer")) {
         return "tokenizer";
     }
+    if (ptn_string_operand_ascii_case_equal(extension, "xmlwriter")) {
+        return "xmlwriter";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "zip")) {
         return "zip";
     }
@@ -39105,8 +39126,9 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     ptn_array_set_entry(result.as.array, ptn_array_int_key(16), ptn_string("SPL"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(17), ptn_string("standard"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(18), ptn_string("tokenizer"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(19), ptn_string("zip"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(20), ptn_string("zlib"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(19), ptn_string("xmlwriter"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(20), ptn_string("zip"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(21), ptn_string("zlib"));
     return result;
 }
 
@@ -43616,6 +43638,1420 @@ static PtnValue ptn_internal_phar_can_compress(PtnRuntime *runtime, size_t argc,
     return ptn_bool(0);
 }
 
+typedef enum {
+    PTN_XMLWRITER_TARGET_NONE,
+    PTN_XMLWRITER_TARGET_MEMORY,
+    PTN_XMLWRITER_TARGET_URI,
+    PTN_XMLWRITER_TARGET_STREAM
+} PtnXmlWriterTarget;
+
+typedef enum {
+    PTN_XMLWRITER_CONTEXT_NONE,
+    PTN_XMLWRITER_CONTEXT_ATTRIBUTE,
+    PTN_XMLWRITER_CONTEXT_COMMENT,
+    PTN_XMLWRITER_CONTEXT_PI,
+    PTN_XMLWRITER_CONTEXT_CDATA,
+    PTN_XMLWRITER_CONTEXT_DTD,
+    PTN_XMLWRITER_CONTEXT_DTD_ENTITY,
+    PTN_XMLWRITER_CONTEXT_DTD_ELEMENT,
+    PTN_XMLWRITER_CONTEXT_DTD_ATTLIST
+} PtnXmlWriterContext;
+
+typedef struct {
+    char *name;
+    int open_start;
+    int has_children;
+    int has_text;
+    char *namespace_prefix;
+    char *namespace_uri;
+} PtnXmlWriterFrame;
+
+typedef struct {
+    PtnStringBuffer buffer;
+    PtnXmlWriterFrame *frames;
+    size_t depth;
+    size_t capacity;
+    PtnXmlWriterContext context_kind;
+    PtnStringBuffer context_buffer;
+    char *context_name;
+    int context_param_entity;
+    PtnXmlWriterTarget target;
+    char *uri;
+    PtnResource *stream;
+    int indent;
+    char *indent_string;
+    size_t indent_string_len;
+    int document_started;
+    int document_finished;
+} PtnXmlWriterData;
+
+static int ptn_xmlwriter_buffer_ends_with(PtnStringBuffer *buffer, char ch) {
+    return buffer->len > 0 && buffer->data[buffer->len - 1] == ch;
+}
+
+static void ptn_xmlwriter_buffer_clear(PtnStringBuffer *buffer) {
+    buffer->len = 0;
+    if (buffer->data != NULL) {
+        buffer->data[0] = '\0';
+    }
+}
+
+static void ptn_xmlwriter_frame_free(PtnXmlWriterFrame *frame) {
+    if (frame == NULL) {
+        return;
+    }
+    free(frame->name);
+    free(frame->namespace_prefix);
+    free(frame->namespace_uri);
+    frame->name = NULL;
+    frame->namespace_prefix = NULL;
+    frame->namespace_uri = NULL;
+}
+
+static void ptn_xmlwriter_ensure_frame_capacity(PtnXmlWriterData *data) {
+    if (data->depth < data->capacity) {
+        return;
+    }
+    size_t new_capacity = data->capacity == 0 ? 8 : data->capacity * 2;
+    if (new_capacity < data->capacity || new_capacity > SIZE_MAX / sizeof(PtnXmlWriterFrame)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnXmlWriterFrame *frames = realloc(data->frames, new_capacity * sizeof(PtnXmlWriterFrame));
+    if (frames == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->frames = frames;
+    data->capacity = new_capacity;
+}
+
+static void ptn_xmlwriter_append_escaped(PtnStringBuffer *buffer, const char *text, size_t len, int escape_quote) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)text[i];
+        if (ch == '&') {
+            ptn_string_buffer_append(buffer, "&amp;");
+        } else if (ch == '<') {
+            ptn_string_buffer_append(buffer, "&lt;");
+        } else if (ch == '>') {
+            ptn_string_buffer_append(buffer, "&gt;");
+        } else if (ch == '"' && escape_quote) {
+            ptn_string_buffer_append(buffer, "&quot;");
+        } else {
+            ptn_string_buffer_append_char(buffer, (char)ch);
+        }
+    }
+}
+
+static int ptn_xmlwriter_is_name_start(unsigned char ch) {
+    return isalpha(ch) || ch == '_' || ch == ':';
+}
+
+static int ptn_xmlwriter_is_name_char(unsigned char ch) {
+    return ptn_xmlwriter_is_name_start(ch) || isdigit(ch) || ch == '-' || ch == '.';
+}
+
+static int ptn_xmlwriter_valid_name(PtnStringOperand name) {
+    if (name.len == 0 || !ptn_xmlwriter_is_name_start((unsigned char)name.data[0])) {
+        return 0;
+    }
+    for (size_t i = 1; i < name.len; i++) {
+        if (!ptn_xmlwriter_is_name_char((unsigned char)name.data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_xmlwriter_throw_invalid_name(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    const char *kind,
+    PtnStringOperand value
+) {
+    char *name = ptn_duplicate_string_len(value.data, value.len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Argument #%zu ($%s) must be a valid %s name, \"%s\" given",
+        function_name,
+        position,
+        argument_name,
+        kind,
+        name
+    );
+    if (needed < 0) {
+        free(name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(name);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Argument #%zu ($%s) must be a valid %s name, \"%s\" given",
+        function_name,
+        position,
+        argument_name,
+        kind,
+        name
+    );
+    free(name);
+    ptn_throw_exception_owned_message(runtime, "ValueError", message);
+}
+
+static void ptn_xmlwriter_throw_empty_uri(PtnRuntime *runtime, const char *function_name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #1 ($uri) must not be empty",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_xmlwriter_append_indent(PtnXmlWriterData *data, size_t depth) {
+    for (size_t i = 0; i < depth; i++) {
+        ptn_string_buffer_append_len(&data->buffer, data->indent_string, data->indent_string_len);
+    }
+}
+
+static PtnXmlWriterFrame *ptn_xmlwriter_top_frame(PtnXmlWriterData *data) {
+    return data->depth == 0 ? NULL : &data->frames[data->depth - 1];
+}
+
+static void ptn_xmlwriter_append_pending_namespace(PtnXmlWriterData *data, PtnXmlWriterFrame *frame) {
+    if (frame == NULL || frame->namespace_uri == NULL) {
+        return;
+    }
+    ptn_string_buffer_append(&data->buffer, " ");
+    if (frame->namespace_prefix != NULL && frame->namespace_prefix[0] != '\0') {
+        ptn_string_buffer_append(&data->buffer, "xmlns:");
+        ptn_string_buffer_append(&data->buffer, frame->namespace_prefix);
+    } else {
+        ptn_string_buffer_append(&data->buffer, "xmlns");
+    }
+    ptn_string_buffer_append(&data->buffer, "=\"");
+    ptn_xmlwriter_append_escaped(&data->buffer, frame->namespace_uri, strlen(frame->namespace_uri), 1);
+    ptn_string_buffer_append_char(&data->buffer, '"');
+    free(frame->namespace_prefix);
+    free(frame->namespace_uri);
+    frame->namespace_prefix = NULL;
+    frame->namespace_uri = NULL;
+}
+
+static void ptn_xmlwriter_prepare_child(PtnXmlWriterData *data, int block_child) {
+    PtnXmlWriterFrame *parent = ptn_xmlwriter_top_frame(data);
+    if (parent == NULL) {
+        return;
+    }
+    if (parent->open_start) {
+        ptn_xmlwriter_append_pending_namespace(data, parent);
+        ptn_string_buffer_append_char(&data->buffer, '>');
+        parent->open_start = 0;
+        if (block_child && data->indent) {
+            ptn_string_buffer_append_char(&data->buffer, '\n');
+            ptn_xmlwriter_append_indent(data, data->depth);
+        }
+    } else if (
+        block_child &&
+        data->indent &&
+        parent->has_children &&
+        !parent->has_text &&
+        !ptn_xmlwriter_buffer_ends_with(&data->buffer, '\n')
+    ) {
+        ptn_string_buffer_append_char(&data->buffer, '\n');
+        ptn_xmlwriter_append_indent(data, data->depth);
+    }
+    parent->has_children = 1;
+    if (!block_child) {
+        parent->has_text = 1;
+    }
+}
+
+static void ptn_xmlwriter_push_frame(
+    PtnXmlWriterData *data,
+    const char *name,
+    size_t name_len,
+    const char *prefix,
+    size_t prefix_len,
+    const char *uri,
+    size_t uri_len
+) {
+    ptn_xmlwriter_ensure_frame_capacity(data);
+    PtnXmlWriterFrame *frame = &data->frames[data->depth++];
+    frame->name = ptn_duplicate_string_len(name, name_len);
+    frame->open_start = 1;
+    frame->has_children = 0;
+    frame->has_text = 0;
+    frame->namespace_prefix = prefix == NULL ? NULL : ptn_duplicate_string_len(prefix, prefix_len);
+    frame->namespace_uri = uri == NULL ? NULL : ptn_duplicate_string_len(uri, uri_len);
+}
+
+static void ptn_xmlwriter_pop_frame(PtnXmlWriterData *data) {
+    if (data->depth == 0) {
+        return;
+    }
+    data->depth--;
+    ptn_xmlwriter_frame_free(&data->frames[data->depth]);
+}
+
+static PtnXmlWriterData *ptn_xmlwriter_data_new(void) {
+    PtnXmlWriterData *data = malloc(sizeof(PtnXmlWriterData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_string_buffer_init(&data->buffer);
+    data->frames = NULL;
+    data->depth = 0;
+    data->capacity = 0;
+    data->context_kind = PTN_XMLWRITER_CONTEXT_NONE;
+    ptn_string_buffer_init(&data->context_buffer);
+    data->context_name = NULL;
+    data->context_param_entity = 0;
+    data->target = PTN_XMLWRITER_TARGET_NONE;
+    data->uri = NULL;
+    data->stream = NULL;
+    data->indent = 0;
+    data->indent_string = ptn_duplicate_string(" ");
+    data->indent_string_len = 1;
+    data->document_started = 0;
+    data->document_finished = 0;
+    return data;
+}
+
+static void ptn_xmlwriter_close_context(PtnXmlWriterData *data) {
+    switch (data->context_kind) {
+        case PTN_XMLWRITER_CONTEXT_ATTRIBUTE:
+            ptn_string_buffer_append_char(&data->buffer, '"');
+            break;
+        case PTN_XMLWRITER_CONTEXT_COMMENT:
+            ptn_string_buffer_append(&data->buffer, "-->");
+            break;
+        case PTN_XMLWRITER_CONTEXT_PI:
+            ptn_string_buffer_append(&data->buffer, "?>");
+            break;
+        case PTN_XMLWRITER_CONTEXT_CDATA:
+            ptn_string_buffer_append(&data->buffer, "]]>");
+            break;
+        case PTN_XMLWRITER_CONTEXT_DTD:
+            ptn_string_buffer_append_char(&data->buffer, '>');
+            break;
+        case PTN_XMLWRITER_CONTEXT_DTD_ENTITY:
+            ptn_string_buffer_append(&data->buffer, "<!ENTITY ");
+            if (data->context_param_entity) {
+                ptn_string_buffer_append(&data->buffer, "% ");
+            }
+            ptn_string_buffer_append(&data->buffer, data->context_name == NULL ? "" : data->context_name);
+            ptn_string_buffer_append(&data->buffer, " \"");
+            ptn_string_buffer_append_len(&data->buffer, data->context_buffer.data, data->context_buffer.len);
+            ptn_string_buffer_append(&data->buffer, "\">\n");
+            break;
+        case PTN_XMLWRITER_CONTEXT_DTD_ELEMENT:
+            ptn_string_buffer_append(&data->buffer, "<!ELEMENT ");
+            ptn_string_buffer_append(&data->buffer, data->context_name == NULL ? "" : data->context_name);
+            ptn_string_buffer_append_char(&data->buffer, ' ');
+            ptn_string_buffer_append_len(&data->buffer, data->context_buffer.data, data->context_buffer.len);
+            ptn_string_buffer_append(&data->buffer, ">\n");
+            break;
+        case PTN_XMLWRITER_CONTEXT_DTD_ATTLIST:
+            ptn_string_buffer_append(&data->buffer, "<!ATTLIST ");
+            ptn_string_buffer_append(&data->buffer, data->context_name == NULL ? "" : data->context_name);
+            ptn_string_buffer_append_char(&data->buffer, ' ');
+            ptn_string_buffer_append_len(&data->buffer, data->context_buffer.data, data->context_buffer.len);
+            ptn_string_buffer_append(&data->buffer, ">\n");
+            break;
+        case PTN_XMLWRITER_CONTEXT_NONE:
+            break;
+    }
+    data->context_kind = PTN_XMLWRITER_CONTEXT_NONE;
+    ptn_xmlwriter_buffer_clear(&data->context_buffer);
+    free(data->context_name);
+    data->context_name = NULL;
+    data->context_param_entity = 0;
+}
+
+static void ptn_xmlwriter_end_element_data(PtnXmlWriterData *data, int full_end) {
+    PtnXmlWriterFrame *frame = ptn_xmlwriter_top_frame(data);
+    if (frame == NULL) {
+        return;
+    }
+    if (frame->open_start && !full_end) {
+        ptn_xmlwriter_append_pending_namespace(data, frame);
+        ptn_string_buffer_append(&data->buffer, "/>");
+        ptn_xmlwriter_pop_frame(data);
+        return;
+    }
+    if (frame->open_start) {
+        ptn_xmlwriter_append_pending_namespace(data, frame);
+        ptn_string_buffer_append_char(&data->buffer, '>');
+        frame->open_start = 0;
+    } else if (data->indent && frame->has_children && !frame->has_text) {
+        ptn_string_buffer_append_char(&data->buffer, '\n');
+        ptn_xmlwriter_append_indent(data, data->depth - 1);
+    }
+    ptn_string_buffer_append(&data->buffer, "</");
+    ptn_string_buffer_append(&data->buffer, frame->name);
+    ptn_string_buffer_append_char(&data->buffer, '>');
+    ptn_xmlwriter_pop_frame(data);
+}
+
+static void ptn_xmlwriter_finish_document(PtnXmlWriterData *data) {
+    if (data == NULL || data->document_finished) {
+        return;
+    }
+    ptn_xmlwriter_close_context(data);
+    while (data->depth > 0) {
+        ptn_xmlwriter_end_element_data(data, 0);
+    }
+    if (data->document_started && !ptn_xmlwriter_buffer_ends_with(&data->buffer, '\n')) {
+        ptn_string_buffer_append_char(&data->buffer, '\n');
+    }
+    data->document_finished = 1;
+}
+
+static size_t ptn_xmlwriter_write_target(PtnXmlWriterData *data, int empty) {
+    size_t len = data->buffer.len;
+    size_t written = len;
+    if (data->target == PTN_XMLWRITER_TARGET_URI && data->uri != NULL) {
+        FILE *file = fopen(data->uri, "wb");
+        if (file == NULL) {
+            written = 0;
+        } else {
+            written = fwrite(data->buffer.data, 1, len, file);
+            fclose(file);
+        }
+    } else if (data->target == PTN_XMLWRITER_TARGET_STREAM && data->stream != NULL) {
+        written = ptn_stream_write_bytes(data->stream, data->buffer.data, len);
+    }
+    if (empty) {
+        ptn_xmlwriter_buffer_clear(&data->buffer);
+    }
+    return written;
+}
+
+static void ptn_xmlwriter_data_free(void *ptr) {
+    PtnXmlWriterData *data = (PtnXmlWriterData *)ptr;
+    if (data == NULL) {
+        return;
+    }
+    ptn_xmlwriter_finish_document(data);
+    if (data->target == PTN_XMLWRITER_TARGET_URI || data->target == PTN_XMLWRITER_TARGET_STREAM) {
+        (void)ptn_xmlwriter_write_target(data, 1);
+    }
+    for (size_t i = 0; i < data->depth; i++) {
+        ptn_xmlwriter_frame_free(&data->frames[i]);
+    }
+    free(data->frames);
+    free(data->buffer.data);
+    free(data->context_buffer.data);
+    free(data->context_name);
+    free(data->uri);
+    free(data->indent_string);
+    if (data->stream != NULL) {
+        ptn_resource_release(data->stream);
+    }
+    free(data);
+}
+
+static PtnXmlWriterData *ptn_xmlwriter_data_from_value(PtnRuntime *runtime, const char *function_name, PtnValue value) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT ||
+        !ptn_object_is_internal_or_descendant(resolved, "XMLWriter")) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($writer) must be of type XMLWriter, %s given",
+            function_name,
+            ptn_offset_container_type_name(resolved)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    if (resolved.as.object->native_data == NULL) {
+        resolved.as.object->native_data = ptn_xmlwriter_data_new();
+        resolved.as.object->native_data_free = ptn_xmlwriter_data_free;
+    }
+    return (PtnXmlWriterData *)resolved.as.object->native_data;
+}
+
+static PtnValue ptn_xmlwriter_object_with_data(PtnRuntime *runtime, PtnXmlWriterData *data) {
+    PtnValue object = ptn_object_new_shell(runtime, "XMLWriter");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_xmlwriter_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_xmlwriter_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "XMLWriter::__construct() expects exactly 0 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    return ptn_xmlwriter_object_with_data(runtime, ptn_xmlwriter_data_new());
+}
+
+static void ptn_xmlwriter_set_target_memory(PtnXmlWriterData *data) {
+    data->target = PTN_XMLWRITER_TARGET_MEMORY;
+    free(data->uri);
+    data->uri = NULL;
+    if (data->stream != NULL) {
+        ptn_resource_release(data->stream);
+        data->stream = NULL;
+    }
+    ptn_xmlwriter_buffer_clear(&data->buffer);
+}
+
+static void ptn_xmlwriter_set_target_uri(PtnXmlWriterData *data, PtnStringOperand uri) {
+    data->target = PTN_XMLWRITER_TARGET_URI;
+    free(data->uri);
+    data->uri = ptn_duplicate_string_len(uri.data, uri.len);
+    if (data->stream != NULL) {
+        ptn_resource_release(data->stream);
+        data->stream = NULL;
+    }
+    ptn_xmlwriter_buffer_clear(&data->buffer);
+}
+
+static void ptn_xmlwriter_set_target_stream(PtnXmlWriterData *data, PtnResource *stream) {
+    data->target = PTN_XMLWRITER_TARGET_STREAM;
+    free(data->uri);
+    data->uri = NULL;
+    if (data->stream != NULL) {
+        ptn_resource_release(data->stream);
+    }
+    data->stream = stream;
+    ptn_resource_retain(stream);
+    ptn_xmlwriter_buffer_clear(&data->buffer);
+}
+
+static void ptn_xmlwriter_append_name(PtnStringBuffer *buffer, PtnStringOperand prefix, PtnStringOperand name) {
+    if (prefix.len != 0) {
+        ptn_string_buffer_append_len(buffer, prefix.data, prefix.len);
+        ptn_string_buffer_append_char(buffer, ':');
+    }
+    ptn_string_buffer_append_len(buffer, name.data, name.len);
+}
+
+static PtnValue ptn_xmlwriter_start_element_data(
+    PtnRuntime *runtime,
+    PtnXmlWriterData *data,
+    const char *function_name,
+    size_t name_position,
+    PtnStringOperand prefix,
+    PtnStringOperand name,
+    PtnStringOperand uri
+) {
+    if (!ptn_xmlwriter_valid_name(name)) {
+        ptn_xmlwriter_throw_invalid_name(runtime, function_name, name_position, "name", "element", name);
+        return ptn_null();
+    }
+    ptn_xmlwriter_close_context(data);
+    ptn_xmlwriter_prepare_child(data, 1);
+    PtnStringBuffer full_name;
+    ptn_string_buffer_init(&full_name);
+    ptn_xmlwriter_append_name(&full_name, prefix, name);
+    ptn_string_buffer_append_char(&data->buffer, '<');
+    ptn_string_buffer_append_len(&data->buffer, full_name.data, full_name.len);
+    ptn_xmlwriter_push_frame(
+        data,
+        full_name.data,
+        full_name.len,
+        prefix.len == 0 ? NULL : prefix.data,
+        prefix.len,
+        uri.len == 0 ? NULL : uri.data,
+        uri.len
+    );
+    free(full_name.data);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_xmlwriter_start_attribute_data(
+    PtnRuntime *runtime,
+    PtnXmlWriterData *data,
+    const char *function_name,
+    size_t name_position,
+    PtnStringOperand prefix,
+    PtnStringOperand name,
+    PtnStringOperand uri
+) {
+    (void)uri;
+    PtnXmlWriterFrame *frame = ptn_xmlwriter_top_frame(data);
+    if (frame == NULL || !frame->open_start || data->context_kind != PTN_XMLWRITER_CONTEXT_NONE) {
+        return ptn_bool(0);
+    }
+    if (!ptn_xmlwriter_valid_name(name)) {
+        ptn_xmlwriter_throw_invalid_name(runtime, function_name, name_position, "name", "attribute", name);
+        return ptn_null();
+    }
+    ptn_string_buffer_append_char(&data->buffer, ' ');
+    ptn_xmlwriter_append_name(&data->buffer, prefix, name);
+    ptn_string_buffer_append(&data->buffer, "=\"");
+    data->context_kind = PTN_XMLWRITER_CONTEXT_ATTRIBUTE;
+    return ptn_bool(1);
+}
+
+static void ptn_xmlwriter_append_text_data(PtnXmlWriterData *data, PtnStringOperand text) {
+    if (data->context_kind == PTN_XMLWRITER_CONTEXT_ATTRIBUTE) {
+        ptn_xmlwriter_append_escaped(&data->buffer, text.data, text.len, 1);
+        return;
+    }
+    if (data->context_kind == PTN_XMLWRITER_CONTEXT_COMMENT ||
+        data->context_kind == PTN_XMLWRITER_CONTEXT_CDATA) {
+        ptn_string_buffer_append_len(&data->buffer, text.data, text.len);
+        return;
+    }
+    if (data->context_kind == PTN_XMLWRITER_CONTEXT_PI) {
+        if (!ptn_xmlwriter_buffer_ends_with(&data->buffer, ' ') &&
+            !ptn_xmlwriter_buffer_ends_with(&data->buffer, '?')) {
+            ptn_string_buffer_append_char(&data->buffer, ' ');
+        }
+        ptn_string_buffer_append_len(&data->buffer, text.data, text.len);
+        return;
+    }
+    if (data->context_kind == PTN_XMLWRITER_CONTEXT_DTD_ENTITY ||
+        data->context_kind == PTN_XMLWRITER_CONTEXT_DTD_ELEMENT ||
+        data->context_kind == PTN_XMLWRITER_CONTEXT_DTD_ATTLIST) {
+        ptn_string_buffer_append_len(&data->context_buffer, text.data, text.len);
+        return;
+    }
+    ptn_xmlwriter_prepare_child(data, 0);
+    ptn_xmlwriter_append_escaped(&data->buffer, text.data, text.len, 1);
+}
+
+static PtnValue ptn_xmlwriter_flush_data(PtnXmlWriterData *data, int empty) {
+    if (data->target == PTN_XMLWRITER_TARGET_URI || data->target == PTN_XMLWRITER_TARGET_STREAM) {
+        return ptn_int((int64_t)ptn_xmlwriter_write_target(data, empty));
+    }
+    PtnValue result = ptn_owned_string_len(
+        ptn_duplicate_string_len(data->buffer.data, data->buffer.len),
+        data->buffer.len
+    );
+    if (empty) {
+        ptn_xmlwriter_buffer_clear(&data->buffer);
+    }
+    return result;
+}
+
+static PtnValue ptn_xmlwriter_dispatch(
+    PtnRuntime *runtime,
+    PtnXmlWriterData *data,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    const char *function_name,
+    size_t position_offset
+) {
+    if (ptn_ascii_case_equal(method_name, "__construct")) {
+        if (argc != 0) {
+            char message[128];
+            int written = snprintf(message, sizeof(message), "%s() expects exactly 0 arguments, %zu given", function_name, argc);
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(method_name, "openMemory")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "XMLWriter::openMemory() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        ptn_xmlwriter_set_target_memory(data);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "openUri")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "XMLWriter::openUri() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "uri", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(uri);
+            return ptn_null();
+        }
+        if (uri.len == 0) {
+            ptn_string_operand_free(uri);
+            ptn_xmlwriter_throw_empty_uri(runtime, function_name);
+            return ptn_null();
+        }
+        ptn_xmlwriter_set_target_uri(data, uri);
+        ptn_string_operand_free(uri);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "setIndent")) {
+        data->indent = argc >= 1 && ptn_is_truthy(args[0]);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "setIndentString")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "XMLWriter::setIndentString() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand indent = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "indentation", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(indent);
+            return ptn_null();
+        }
+        free(data->indent_string);
+        data->indent_string = ptn_duplicate_string_len(indent.data, indent.len);
+        data->indent_string_len = indent.len;
+        ptn_string_operand_free(indent);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "startDocument")) {
+        PtnValue null_value = ptn_null();
+        PtnValue version_value = argc >= 1 ? args[0] : null_value;
+        PtnValue encoding_value = argc >= 2 ? args[1] : null_value;
+        PtnValue standalone_value = argc >= 3 ? args[2] : null_value;
+        PtnValue version_resolved = ptn_value_deref(version_value);
+        PtnValue encoding_resolved = ptn_value_deref(encoding_value);
+        PtnValue standalone_resolved = ptn_value_deref(standalone_value);
+        PtnStringOperand version = version_resolved.type == PTN_NULL
+            ? ptn_string_operand_borrowed("1.0")
+            : ptn_value_to_string_operand_with_runtime(runtime, version_value, line);
+        PtnStringOperand encoding = encoding_resolved.type == PTN_NULL
+            ? ptn_string_operand_borrowed("")
+            : ptn_value_to_string_operand_with_runtime(runtime, encoding_value, line);
+        PtnStringOperand standalone = standalone_resolved.type == PTN_NULL
+            ? ptn_string_operand_borrowed("")
+            : ptn_value_to_string_operand_with_runtime(runtime, standalone_value, line);
+        ptn_string_buffer_append(&data->buffer, "<?xml version=\"");
+        ptn_string_buffer_append_len(&data->buffer, version.data, version.len);
+        ptn_string_buffer_append_char(&data->buffer, '"');
+        if (encoding.len != 0) {
+            ptn_string_buffer_append(&data->buffer, " encoding=\"");
+            ptn_string_buffer_append_len(&data->buffer, encoding.data, encoding.len);
+            ptn_string_buffer_append_char(&data->buffer, '"');
+        }
+        if (standalone.len != 0) {
+            ptn_string_buffer_append(&data->buffer, " standalone=\"");
+            ptn_string_buffer_append_len(&data->buffer, standalone.data, standalone.len);
+            ptn_string_buffer_append_char(&data->buffer, '"');
+        }
+        ptn_string_buffer_append(&data->buffer, "?>\n");
+        data->document_started = 1;
+        data->document_finished = 0;
+        ptn_string_operand_free(version);
+        ptn_string_operand_free(encoding);
+        ptn_string_operand_free(standalone);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "endDocument")) {
+        ptn_xmlwriter_finish_document(data);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "startElement")) {
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "name", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(name);
+            return ptn_null();
+        }
+        PtnValue result = ptn_xmlwriter_start_element_data(
+            runtime,
+            data,
+            function_name,
+            position_offset + 1,
+            ptn_string_operand_borrowed(""),
+            name,
+            ptn_string_operand_borrowed("")
+        );
+        ptn_string_operand_free(name);
+        return result;
+    }
+    if (ptn_ascii_case_equal(method_name, "startElementNs")) {
+        PtnStringOperand prefix = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "prefix", args[0], line);
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 2, "name", args[1], line);
+        PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 3, "namespace", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(prefix);
+            ptn_string_operand_free(name);
+            ptn_string_operand_free(uri);
+            return ptn_null();
+        }
+        PtnValue result = ptn_xmlwriter_start_element_data(runtime, data, function_name, position_offset + 2, prefix, name, uri);
+        ptn_string_operand_free(prefix);
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(uri);
+        return result;
+    }
+    if (ptn_ascii_case_equal(method_name, "endElement") || ptn_ascii_case_equal(method_name, "fullEndElement")) {
+        ptn_xmlwriter_close_context(data);
+        ptn_xmlwriter_end_element_data(data, ptn_ascii_case_equal(method_name, "fullEndElement"));
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "startAttribute")) {
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "name", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(name);
+            return ptn_null();
+        }
+        PtnValue result = ptn_xmlwriter_start_attribute_data(
+            runtime,
+            data,
+            function_name,
+            position_offset + 1,
+            ptn_string_operand_borrowed(""),
+            name,
+            ptn_string_operand_borrowed("")
+        );
+        ptn_string_operand_free(name);
+        return result;
+    }
+    if (ptn_ascii_case_equal(method_name, "startAttributeNs")) {
+        PtnStringOperand prefix = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "prefix", args[0], line);
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 2, "name", args[1], line);
+        PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 3, "namespace", args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(prefix);
+            ptn_string_operand_free(name);
+            ptn_string_operand_free(uri);
+            return ptn_null();
+        }
+        PtnValue result = ptn_xmlwriter_start_attribute_data(runtime, data, function_name, position_offset + 2, prefix, name, uri);
+        ptn_string_operand_free(prefix);
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(uri);
+        return result;
+    }
+    if (ptn_ascii_case_equal(method_name, "endAttribute")) {
+        if (data->context_kind != PTN_XMLWRITER_CONTEXT_ATTRIBUTE) {
+            return ptn_bool(0);
+        }
+        ptn_xmlwriter_close_context(data);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "text") || ptn_ascii_case_equal(method_name, "writeRaw")) {
+        PtnStringOperand text = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(text);
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(method_name, "writeRaw") &&
+            data->context_kind == PTN_XMLWRITER_CONTEXT_NONE) {
+            ptn_xmlwriter_prepare_child(data, 0);
+            ptn_string_buffer_append_len(&data->buffer, text.data, text.len);
+        } else {
+            ptn_xmlwriter_append_text_data(data, text);
+        }
+        ptn_string_operand_free(text);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "writeAttribute") || ptn_ascii_case_equal(method_name, "writeAttributeNs")) {
+        size_t name_index = ptn_ascii_case_equal(method_name, "writeAttribute") ? 0 : 1;
+        size_t value_index = ptn_ascii_case_equal(method_name, "writeAttribute") ? 1 : 3;
+        PtnValue start_result;
+        if (ptn_ascii_case_equal(method_name, "writeAttribute")) {
+            PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "name", args[name_index], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(name);
+                return ptn_null();
+            }
+            start_result = ptn_xmlwriter_start_attribute_data(
+                runtime,
+                data,
+                function_name,
+                position_offset + 1,
+                ptn_string_operand_borrowed(""),
+                name,
+                ptn_string_operand_borrowed("")
+            );
+            ptn_string_operand_free(name);
+        } else {
+            PtnStringOperand prefix = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "prefix", args[0], line);
+            PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 2, "name", args[1], line);
+            PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 3, "namespace", args[2], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(prefix);
+                ptn_string_operand_free(name);
+                ptn_string_operand_free(uri);
+                return ptn_null();
+            }
+            start_result = ptn_xmlwriter_start_attribute_data(runtime, data, function_name, position_offset + 2, prefix, name, uri);
+            ptn_string_operand_free(prefix);
+            ptn_string_operand_free(name);
+            ptn_string_operand_free(uri);
+        }
+        if (runtime->exceptions->active_exception != NULL || !ptn_is_truthy(start_result)) {
+            return start_result;
+        }
+        PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, args[value_index], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(value);
+            return ptn_null();
+        }
+        ptn_xmlwriter_append_text_data(data, value);
+        ptn_string_operand_free(value);
+        ptn_xmlwriter_close_context(data);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "writeElement") || ptn_ascii_case_equal(method_name, "writeElementNs")) {
+        if (ptn_ascii_case_equal(method_name, "writeElement")) {
+            PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "name", args[0], line);
+            PtnStringOperand content = argc >= 2 ? ptn_value_to_string_operand_with_runtime(runtime, args[1], line) : ptn_string_operand_borrowed("");
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(name);
+                ptn_string_operand_free(content);
+                return ptn_null();
+            }
+            PtnValue result = ptn_xmlwriter_start_element_data(runtime, data, function_name, position_offset + 1, ptn_string_operand_borrowed(""), name, ptn_string_operand_borrowed(""));
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_xmlwriter_append_text_data(data, content);
+                ptn_xmlwriter_end_element_data(data, 0);
+            }
+            ptn_string_operand_free(name);
+            ptn_string_operand_free(content);
+            return result;
+        }
+        PtnStringOperand prefix = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "prefix", args[0], line);
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 2, "name", args[1], line);
+        PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 3, "namespace", args[2], line);
+        PtnStringOperand content = argc >= 4 ? ptn_value_to_string_operand_with_runtime(runtime, args[3], line) : ptn_string_operand_borrowed("");
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(prefix);
+            ptn_string_operand_free(name);
+            ptn_string_operand_free(uri);
+            ptn_string_operand_free(content);
+            return ptn_null();
+        }
+        PtnValue result = ptn_xmlwriter_start_element_data(runtime, data, function_name, position_offset + 2, prefix, name, uri);
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_xmlwriter_append_text_data(data, content);
+            ptn_xmlwriter_end_element_data(data, 0);
+        }
+        ptn_string_operand_free(prefix);
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(uri);
+        ptn_string_operand_free(content);
+        return result;
+    }
+    if (ptn_ascii_case_equal(method_name, "startComment")) {
+        ptn_xmlwriter_close_context(data);
+        ptn_xmlwriter_prepare_child(data, 1);
+        ptn_string_buffer_append(&data->buffer, "<!--");
+        data->context_kind = PTN_XMLWRITER_CONTEXT_COMMENT;
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "endComment")) {
+        if (data->context_kind == PTN_XMLWRITER_CONTEXT_COMMENT) {
+            ptn_xmlwriter_close_context(data);
+        }
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "writeComment")) {
+        PtnStringOperand text = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(text);
+            return ptn_null();
+        }
+        ptn_xmlwriter_close_context(data);
+        ptn_xmlwriter_prepare_child(data, 1);
+        ptn_string_buffer_append(&data->buffer, "<!--");
+        ptn_string_buffer_append_len(&data->buffer, text.data, text.len);
+        ptn_string_buffer_append(&data->buffer, "-->");
+        ptn_string_operand_free(text);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "startCdata")) {
+        ptn_xmlwriter_close_context(data);
+        ptn_xmlwriter_prepare_child(data, 0);
+        ptn_string_buffer_append(&data->buffer, "<![CDATA[");
+        data->context_kind = PTN_XMLWRITER_CONTEXT_CDATA;
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "endCdata")) {
+        if (data->context_kind == PTN_XMLWRITER_CONTEXT_CDATA) {
+            ptn_xmlwriter_close_context(data);
+        }
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "writeCdata")) {
+        PtnStringOperand text = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(text);
+            return ptn_null();
+        }
+        ptn_xmlwriter_close_context(data);
+        ptn_xmlwriter_prepare_child(data, 0);
+        ptn_string_buffer_append(&data->buffer, "<![CDATA[");
+        ptn_string_buffer_append_len(&data->buffer, text.data, text.len);
+        ptn_string_buffer_append(&data->buffer, "]]>");
+        ptn_string_operand_free(text);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "startPi")) {
+        PtnStringOperand target = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "target", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(target);
+            return ptn_null();
+        }
+        ptn_xmlwriter_close_context(data);
+        ptn_xmlwriter_prepare_child(data, 0);
+        ptn_string_buffer_append(&data->buffer, "<?");
+        ptn_string_buffer_append_len(&data->buffer, target.data, target.len);
+        data->context_kind = PTN_XMLWRITER_CONTEXT_PI;
+        ptn_string_operand_free(target);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "endPi")) {
+        if (data->context_kind == PTN_XMLWRITER_CONTEXT_PI) {
+            ptn_xmlwriter_close_context(data);
+        }
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "writePi")) {
+        PtnValue start_args[1] = { args[0] };
+        PtnValue start = ptn_xmlwriter_dispatch(runtime, data, "startPi", 1, start_args, line, function_name, position_offset);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_value_destroy(&start);
+        PtnStringOperand text = ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(text);
+            return ptn_null();
+        }
+        ptn_xmlwriter_append_text_data(data, text);
+        ptn_string_operand_free(text);
+        ptn_xmlwriter_close_context(data);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "startDtd")) {
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "qualifiedName", args[0], line);
+        PtnValue public_value = argc >= 2 ? ptn_value_deref(args[1]) : ptn_null();
+        PtnValue system_value = argc >= 3 ? ptn_value_deref(args[2]) : ptn_null();
+        PtnStringOperand public_id = public_value.type == PTN_NULL ? ptn_string_operand_borrowed("") : ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+        PtnStringOperand system_id = system_value.type == PTN_NULL ? ptn_string_operand_borrowed("") : ptn_value_to_string_operand_with_runtime(runtime, args[2], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(name);
+            ptn_string_operand_free(public_id);
+            ptn_string_operand_free(system_id);
+            return ptn_null();
+        }
+        ptn_xmlwriter_close_context(data);
+        ptn_string_buffer_append(&data->buffer, "<!DOCTYPE ");
+        ptn_string_buffer_append_len(&data->buffer, name.data, name.len);
+        if (public_id.len != 0) {
+            ptn_string_buffer_append(&data->buffer, " PUBLIC \"");
+            ptn_string_buffer_append_len(&data->buffer, public_id.data, public_id.len);
+            ptn_string_buffer_append_char(&data->buffer, '"');
+            if (system_id.len != 0) {
+                ptn_string_buffer_append(&data->buffer, " \"");
+                ptn_string_buffer_append_len(&data->buffer, system_id.data, system_id.len);
+                ptn_string_buffer_append_char(&data->buffer, '"');
+            }
+        } else if (system_id.len != 0) {
+            ptn_string_buffer_append(&data->buffer, " SYSTEM \"");
+            ptn_string_buffer_append_len(&data->buffer, system_id.data, system_id.len);
+            ptn_string_buffer_append_char(&data->buffer, '"');
+        }
+        data->context_kind = PTN_XMLWRITER_CONTEXT_DTD;
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(public_id);
+        ptn_string_operand_free(system_id);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "endDtd")) {
+        if (data->context_kind == PTN_XMLWRITER_CONTEXT_DTD) {
+            ptn_xmlwriter_close_context(data);
+        }
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "startDtdEntity") ||
+        ptn_ascii_case_equal(method_name, "startDtdElement") ||
+        ptn_ascii_case_equal(method_name, "startDtdAttlist")) {
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, function_name, position_offset + 1, "name", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(name);
+            return ptn_null();
+        }
+        ptn_xmlwriter_close_context(data);
+        data->context_name = ptn_duplicate_string_len(name.data, name.len);
+        data->context_param_entity = ptn_ascii_case_equal(method_name, "startDtdEntity") && argc >= 2 && ptn_is_truthy(args[1]);
+        data->context_kind = ptn_ascii_case_equal(method_name, "startDtdEntity")
+            ? PTN_XMLWRITER_CONTEXT_DTD_ENTITY
+            : (ptn_ascii_case_equal(method_name, "startDtdElement") ? PTN_XMLWRITER_CONTEXT_DTD_ELEMENT : PTN_XMLWRITER_CONTEXT_DTD_ATTLIST);
+        ptn_xmlwriter_buffer_clear(&data->context_buffer);
+        ptn_string_operand_free(name);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "endDtdEntity") ||
+        ptn_ascii_case_equal(method_name, "endDtdElement") ||
+        ptn_ascii_case_equal(method_name, "endDtdAttlist")) {
+        ptn_xmlwriter_close_context(data);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "writeDtdEntity") ||
+        ptn_ascii_case_equal(method_name, "writeDtdElement") ||
+        ptn_ascii_case_equal(method_name, "writeDtdAttlist")) {
+        const char *start_name = ptn_ascii_case_equal(method_name, "writeDtdEntity")
+            ? "startDtdEntity"
+            : (ptn_ascii_case_equal(method_name, "writeDtdElement") ? "startDtdElement" : "startDtdAttlist");
+        const char *end_name = ptn_ascii_case_equal(method_name, "writeDtdEntity")
+            ? "endDtdEntity"
+            : (ptn_ascii_case_equal(method_name, "writeDtdElement") ? "endDtdElement" : "endDtdAttlist");
+        PtnValue start = ptn_xmlwriter_dispatch(runtime, data, start_name, 1, args, line, function_name, position_offset);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_value_destroy(&start);
+        PtnStringOperand content = ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(content);
+            return ptn_null();
+        }
+        ptn_string_buffer_append_len(&data->context_buffer, content.data, content.len);
+        ptn_string_operand_free(content);
+        return ptn_xmlwriter_dispatch(runtime, data, end_name, 0, NULL, line, function_name, position_offset);
+    }
+    if (ptn_ascii_case_equal(method_name, "writeDtd")) {
+        PtnValue start = ptn_xmlwriter_dispatch(runtime, data, "startDtd", argc, args, line, function_name, position_offset);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_value_destroy(&start);
+        ptn_xmlwriter_close_context(data);
+        return ptn_bool(1);
+    }
+    if (ptn_ascii_case_equal(method_name, "flush") || ptn_ascii_case_equal(method_name, "outputMemory")) {
+        int empty = argc == 0 || ptn_is_truthy(args[0]);
+        return ptn_xmlwriter_flush_data(data, empty);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_xmlwriter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnXmlWriterData *data = ptn_xmlwriter_data_from_value(runtime, "XMLWriter", receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    char display[96];
+    int written = snprintf(display, sizeof(display), "XMLWriter::%s", name);
+    const char *function_name = written < 0 || (size_t)written >= sizeof(display) ? "XMLWriter" : display;
+    return ptn_xmlwriter_dispatch(runtime, data, name, argc, args, line, function_name, 0);
+}
+
+static PtnValue ptn_xmlwriter_static_to_memory(PtnRuntime *runtime) {
+    PtnXmlWriterData *data = ptn_xmlwriter_data_new();
+    ptn_xmlwriter_set_target_memory(data);
+    return ptn_xmlwriter_object_with_data(runtime, data);
+}
+
+static PtnValue ptn_xmlwriter_static_to_uri(PtnRuntime *runtime, PtnStringOperand uri) {
+    PtnXmlWriterData *data = ptn_xmlwriter_data_new();
+    ptn_xmlwriter_set_target_uri(data, uri);
+    return ptn_xmlwriter_object_with_data(runtime, data);
+}
+
+static PtnValue ptn_xmlwriter_static_to_stream(PtnRuntime *runtime, PtnResource *stream) {
+    PtnXmlWriterData *data = ptn_xmlwriter_data_new();
+    ptn_xmlwriter_set_target_stream(data, stream);
+    return ptn_xmlwriter_object_with_data(runtime, data);
+}
+
+static PtnValue ptn_xmlwriter_static_call_method(
+    PtnRuntime *runtime,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "toMemory")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "XMLWriter::toMemory() expects exactly 0 arguments");
+            return ptn_null();
+        }
+        return ptn_xmlwriter_static_to_memory(runtime);
+    }
+    if (ptn_ascii_case_equal(name, "toUri")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "XMLWriter::toUri() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, "XMLWriter::toUri", 1, "uri", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(uri);
+            return ptn_null();
+        }
+        if (uri.len == 0) {
+            ptn_string_operand_free(uri);
+            ptn_xmlwriter_throw_empty_uri(runtime, "XMLWriter::toUri");
+            return ptn_null();
+        }
+        PtnValue object = ptn_xmlwriter_static_to_uri(runtime, uri);
+        ptn_string_operand_free(uri);
+        return object;
+    }
+    if (ptn_ascii_case_equal(name, "toStream")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "XMLWriter::toStream() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnValue stream_value = ptn_value_deref(args[0]);
+        if (stream_value.type != PTN_RESOURCE || !ptn_stream_resource_is_open(stream_value.as.resource)) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "XMLWriter::toStream(): Argument #1 ($stream) must be of type resource, %s given",
+                ptn_offset_container_type_name(stream_value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        return ptn_xmlwriter_static_to_stream(runtime, stream_value.as.resource);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_xmlwriter_open_memory(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_xmlwriter_static_to_memory(runtime);
+}
+
+static PtnValue ptn_internal_xmlwriter_open_uri(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, "xmlwriter_open_uri", 1, "uri", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(uri);
+        return ptn_null();
+    }
+    if (uri.len == 0) {
+        ptn_string_operand_free(uri);
+        ptn_xmlwriter_throw_empty_uri(runtime, "xmlwriter_open_uri");
+        return ptn_null();
+    }
+    PtnValue object = ptn_xmlwriter_static_to_uri(runtime, uri);
+    ptn_string_operand_free(uri);
+    return object;
+}
+
+static PtnValue ptn_internal_xmlwriter_to_memory_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    return ptn_xmlwriter_static_call_method(runtime, "toMemory", argc, args, line);
+}
+
+static PtnValue ptn_internal_xmlwriter_to_uri_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_xmlwriter_static_call_method(runtime, "toUri", argc, args, line);
+}
+
+static PtnValue ptn_internal_xmlwriter_to_stream_static(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_xmlwriter_static_call_method(runtime, "toStream", argc, args, line);
+}
+
+static PtnValue ptn_internal_xmlwriter_procedural(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *method_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnXmlWriterData *data = ptn_xmlwriter_data_from_value(runtime, function_name, args[0]);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    return ptn_xmlwriter_dispatch(runtime, data, method_name, argc - 1, args + 1, line, function_name, 1);
+}
+
+#define PTN_XMLWRITER_PROC(c_name, php_name, method_name) \
+static PtnValue c_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) { \
+    return ptn_internal_xmlwriter_procedural(runtime, php_name, method_name, argc, args, line); \
+}
+
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_attribute, "xmlwriter_end_attribute", "endAttribute")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_cdata, "xmlwriter_end_cdata", "endCdata")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_comment, "xmlwriter_end_comment", "endComment")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_document, "xmlwriter_end_document", "endDocument")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_dtd, "xmlwriter_end_dtd", "endDtd")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_dtd_attlist, "xmlwriter_end_dtd_attlist", "endDtdAttlist")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_dtd_element, "xmlwriter_end_dtd_element", "endDtdElement")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_dtd_entity, "xmlwriter_end_dtd_entity", "endDtdEntity")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_element, "xmlwriter_end_element", "endElement")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_end_pi, "xmlwriter_end_pi", "endPi")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_flush, "xmlwriter_flush", "flush")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_full_end_element, "xmlwriter_full_end_element", "fullEndElement")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_output_memory, "xmlwriter_output_memory", "outputMemory")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_set_indent, "xmlwriter_set_indent", "setIndent")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_set_indent_string, "xmlwriter_set_indent_string", "setIndentString")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_attribute, "xmlwriter_start_attribute", "startAttribute")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_attribute_ns, "xmlwriter_start_attribute_ns", "startAttributeNs")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_cdata, "xmlwriter_start_cdata", "startCdata")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_comment, "xmlwriter_start_comment", "startComment")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_document, "xmlwriter_start_document", "startDocument")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_dtd, "xmlwriter_start_dtd", "startDtd")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_dtd_attlist, "xmlwriter_start_dtd_attlist", "startDtdAttlist")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_dtd_element, "xmlwriter_start_dtd_element", "startDtdElement")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_dtd_entity, "xmlwriter_start_dtd_entity", "startDtdEntity")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_element, "xmlwriter_start_element", "startElement")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_element_ns, "xmlwriter_start_element_ns", "startElementNs")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_start_pi, "xmlwriter_start_pi", "startPi")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_text, "xmlwriter_text", "text")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_attribute, "xmlwriter_write_attribute", "writeAttribute")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_attribute_ns, "xmlwriter_write_attribute_ns", "writeAttributeNs")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_cdata, "xmlwriter_write_cdata", "writeCdata")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_comment, "xmlwriter_write_comment", "writeComment")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_dtd, "xmlwriter_write_dtd", "writeDtd")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_dtd_attlist, "xmlwriter_write_dtd_attlist", "writeDtdAttlist")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_dtd_element, "xmlwriter_write_dtd_element", "writeDtdElement")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_dtd_entity, "xmlwriter_write_dtd_entity", "writeDtdEntity")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_element, "xmlwriter_write_element", "writeElement")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_element_ns, "xmlwriter_write_element_ns", "writeElementNs")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_pi, "xmlwriter_write_pi", "writePi")
+PTN_XMLWRITER_PROC(ptn_internal_xmlwriter_write_raw, "xmlwriter_write_raw", "writeRaw")
+
+#undef PTN_XMLWRITER_PROC
+
+static int ptn_xmlwriter_method_exists(const char *method_name) {
+    static const char *const names[] = {
+        "__construct",
+        "endAttribute",
+        "endCdata",
+        "endComment",
+        "endDocument",
+        "endDtd",
+        "endDtdAttlist",
+        "endDtdElement",
+        "endDtdEntity",
+        "endElement",
+        "endPi",
+        "flush",
+        "fullEndElement",
+        "openMemory",
+        "openUri",
+        "outputMemory",
+        "setIndent",
+        "setIndentString",
+        "startAttribute",
+        "startAttributeNs",
+        "startCdata",
+        "startComment",
+        "startDocument",
+        "startDtd",
+        "startDtdAttlist",
+        "startDtdElement",
+        "startDtdEntity",
+        "startElement",
+        "startElementNs",
+        "startPi",
+        "text",
+        "toMemory",
+        "toStream",
+        "toUri",
+        "writeAttribute",
+        "writeAttributeNs",
+        "writeCdata",
+        "writeComment",
+        "writeDtd",
+        "writeDtdAttlist",
+        "writeDtdElement",
+        "writeDtdEntity",
+        "writeElement",
+        "writeElementNs",
+        "writePi",
+        "writeRaw",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (ptn_ascii_case_equal(method_name, names[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_xmlwriter_append_method_names(PtnValue result, int64_t *index) {
+    static const char *const names[] = {
+        "__construct",
+        "openMemory",
+        "openUri",
+        "toMemory",
+        "toUri",
+        "toStream",
+        "startDocument",
+        "endDocument",
+        "startElement",
+        "startElementNs",
+        "endElement",
+        "fullEndElement",
+        "startAttribute",
+        "startAttributeNs",
+        "endAttribute",
+        "writeAttribute",
+        "writeAttributeNs",
+        "text",
+        "writeRaw",
+        "writeElement",
+        "writeElementNs",
+        "startComment",
+        "endComment",
+        "writeComment",
+        "startCdata",
+        "endCdata",
+        "writeCdata",
+        "startPi",
+        "endPi",
+        "writePi",
+        "startDtd",
+        "endDtd",
+        "writeDtd",
+        "startDtdElement",
+        "endDtdElement",
+        "writeDtdElement",
+        "startDtdAttlist",
+        "endDtdAttlist",
+        "writeDtdAttlist",
+        "startDtdEntity",
+        "endDtdEntity",
+        "writeDtdEntity",
+        "setIndent",
+        "setIndentString",
+        "flush",
+        "outputMemory",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((*index)++), ptn_string(names[i]));
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
     const char *class_name,
@@ -43693,6 +45129,9 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     if (ptn_ascii_case_equal(class_name, "IntlCalendar") &&
         ptn_ascii_case_equal(name, "getKeywordValuesForLocale")) {
         return ptn_intl_calendar_get_keyword_values(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_xml_writer(class_name)) {
+        return ptn_xmlwriter_static_call_method(runtime, name, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -44790,6 +46229,51 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "vprintf", 2, 2, ptn_internal_vprintf },
         { "vsprintf", 2, 2, ptn_internal_vsprintf },
         { "wordwrap", 1, 4, ptn_internal_wordwrap },
+        { "XMLWriter::toMemory", 0, 0, ptn_internal_xmlwriter_to_memory_static },
+        { "XMLWriter::toStream", 1, 1, ptn_internal_xmlwriter_to_stream_static },
+        { "XMLWriter::toUri", 1, 1, ptn_internal_xmlwriter_to_uri_static },
+        { "xmlwriter_end_attribute", 1, 1, ptn_internal_xmlwriter_end_attribute },
+        { "xmlwriter_end_cdata", 1, 1, ptn_internal_xmlwriter_end_cdata },
+        { "xmlwriter_end_comment", 1, 1, ptn_internal_xmlwriter_end_comment },
+        { "xmlwriter_end_document", 1, 1, ptn_internal_xmlwriter_end_document },
+        { "xmlwriter_end_dtd", 1, 1, ptn_internal_xmlwriter_end_dtd },
+        { "xmlwriter_end_dtd_attlist", 1, 1, ptn_internal_xmlwriter_end_dtd_attlist },
+        { "xmlwriter_end_dtd_element", 1, 1, ptn_internal_xmlwriter_end_dtd_element },
+        { "xmlwriter_end_dtd_entity", 1, 1, ptn_internal_xmlwriter_end_dtd_entity },
+        { "xmlwriter_end_element", 1, 1, ptn_internal_xmlwriter_end_element },
+        { "xmlwriter_end_pi", 1, 1, ptn_internal_xmlwriter_end_pi },
+        { "xmlwriter_flush", 1, 2, ptn_internal_xmlwriter_flush },
+        { "xmlwriter_full_end_element", 1, 1, ptn_internal_xmlwriter_full_end_element },
+        { "xmlwriter_open_memory", 0, 0, ptn_internal_xmlwriter_open_memory },
+        { "xmlwriter_open_uri", 1, 1, ptn_internal_xmlwriter_open_uri },
+        { "xmlwriter_output_memory", 1, 2, ptn_internal_xmlwriter_output_memory },
+        { "xmlwriter_set_indent", 2, 2, ptn_internal_xmlwriter_set_indent },
+        { "xmlwriter_set_indent_string", 2, 2, ptn_internal_xmlwriter_set_indent_string },
+        { "xmlwriter_start_attribute", 2, 2, ptn_internal_xmlwriter_start_attribute },
+        { "xmlwriter_start_attribute_ns", 4, 4, ptn_internal_xmlwriter_start_attribute_ns },
+        { "xmlwriter_start_cdata", 1, 1, ptn_internal_xmlwriter_start_cdata },
+        { "xmlwriter_start_comment", 1, 1, ptn_internal_xmlwriter_start_comment },
+        { "xmlwriter_start_document", 1, 4, ptn_internal_xmlwriter_start_document },
+        { "xmlwriter_start_dtd", 2, 4, ptn_internal_xmlwriter_start_dtd },
+        { "xmlwriter_start_dtd_attlist", 2, 2, ptn_internal_xmlwriter_start_dtd_attlist },
+        { "xmlwriter_start_dtd_element", 2, 2, ptn_internal_xmlwriter_start_dtd_element },
+        { "xmlwriter_start_dtd_entity", 2, 3, ptn_internal_xmlwriter_start_dtd_entity },
+        { "xmlwriter_start_element", 2, 2, ptn_internal_xmlwriter_start_element },
+        { "xmlwriter_start_element_ns", 4, 4, ptn_internal_xmlwriter_start_element_ns },
+        { "xmlwriter_start_pi", 2, 2, ptn_internal_xmlwriter_start_pi },
+        { "xmlwriter_text", 2, 2, ptn_internal_xmlwriter_text },
+        { "xmlwriter_write_attribute", 3, 3, ptn_internal_xmlwriter_write_attribute },
+        { "xmlwriter_write_attribute_ns", 5, 5, ptn_internal_xmlwriter_write_attribute_ns },
+        { "xmlwriter_write_cdata", 2, 2, ptn_internal_xmlwriter_write_cdata },
+        { "xmlwriter_write_comment", 2, 2, ptn_internal_xmlwriter_write_comment },
+        { "xmlwriter_write_dtd", 2, 5, ptn_internal_xmlwriter_write_dtd },
+        { "xmlwriter_write_dtd_attlist", 3, 3, ptn_internal_xmlwriter_write_dtd_attlist },
+        { "xmlwriter_write_dtd_element", 3, 3, ptn_internal_xmlwriter_write_dtd_element },
+        { "xmlwriter_write_dtd_entity", 3, 5, ptn_internal_xmlwriter_write_dtd_entity },
+        { "xmlwriter_write_element", 2, 3, ptn_internal_xmlwriter_write_element },
+        { "xmlwriter_write_element_ns", 4, 5, ptn_internal_xmlwriter_write_element_ns },
+        { "xmlwriter_write_pi", 3, 3, ptn_internal_xmlwriter_write_pi },
+        { "xmlwriter_write_raw", 2, 2, ptn_internal_xmlwriter_write_raw },
         { "zend_version", 0, 0, ptn_internal_zend_version },
     };
     *count = sizeof(functions) / sizeof(functions[0]);
@@ -44840,6 +46324,9 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         if (ptn_internal_function_name_has_prefix(name, "Intl")) {
             return "intl";
         }
+        if (ptn_internal_function_name_has_prefix(name, "XMLWriter::")) {
+            return "xmlwriter";
+        }
         return "Core";
     }
     if (ptn_internal_function_name_has_prefix(name, "curl_")) {
@@ -44876,6 +46363,9 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "preg_")) {
         return "pcre";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "xmlwriter_")) {
+        return "xmlwriter";
     }
     if (ptn_internal_function_name_has_prefix(name, "timezone_") ||
         ptn_internal_function_name_has_prefix(name, "date_") ||
@@ -45587,6 +47077,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_intl_calendar(const char *class
     return ptn_ascii_case_equal(class_name, "IntlCalendar");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "XMLWriter");
+}
+
 static int ptn_internal_interface_exists_name(const char *name) {
     return ptn_ascii_case_equal(name, "ArrayAccess")
         || ptn_ascii_case_equal(name, "Iterator")
@@ -45646,6 +47140,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_intl_code_point_break_iterator(class_name)
         || ptn_internal_class_name_is_intl_parts_iterator(class_name)
         || ptn_internal_class_name_is_intl_calendar(class_name)
+        || ptn_internal_class_name_is_xml_writer(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
@@ -46901,6 +48396,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         ptn_internal_class_name_is_zip_archive(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct");
     }
+    if (ptn_internal_class_name_is_xml_writer(class_name)) {
+        return ptn_xmlwriter_method_exists(method_name);
+    }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
         return ptn_exception_method_exists(method_name);
     }
@@ -46929,6 +48427,11 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_intl_calendar(class_name)) {
         return ptn_ascii_case_equal(method_name, "getKeywordValuesForLocale");
+    }
+    if (ptn_internal_class_name_is_xml_writer(class_name)) {
+        return ptn_ascii_case_equal(method_name, "toMemory")
+            || ptn_ascii_case_equal(method_name, "toStream")
+            || ptn_ascii_case_equal(method_name, "toUri");
     }
     return 0;
 }
@@ -47535,6 +49038,10 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_internal_class_name_is_soap_server(class_name) ||
         ptn_internal_class_name_is_zip_archive(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
+        return result;
+    }
+    if (ptn_internal_class_name_is_xml_writer(class_name)) {
+        ptn_xmlwriter_append_method_names(result, &index);
         return result;
     }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
@@ -51814,6 +53321,9 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_exception_name_equal(class_name, "SoapFault")) {
         return "soap";
     }
+    if (ptn_internal_class_name_is_xml_writer(class_name)) {
+        return "xmlwriter";
+    }
     return "Core";
 }
 
@@ -54148,6 +55658,10 @@ static PtnValue ptn_reflection_extension_classes(
         for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
             ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
         }
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "xmlwriter")) {
+        ptn_reflection_extension_add_class(runtime, result, &index, "XMLWriter", objects);
         return result;
     }
     if (ptn_ascii_case_equal(extension_name, "Reflection")) {

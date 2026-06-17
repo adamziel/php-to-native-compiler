@@ -9711,7 +9711,7 @@ fn is_modeled_builtin_reflection_class_name(name: &str) -> bool {
 fn is_modeled_archive_network_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
-        "phar" | "ziparchive" | "soapclient" | "soapserver"
+        "phar" | "ziparchive" | "soapclient" | "soapserver" | "xmlwriter"
     )
 }
 
@@ -15969,6 +15969,48 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "spl_autoload_unregister"
             | "spl_object_hash"
             | "spl_object_id"
+            | "xmlwriter_end_attribute"
+            | "xmlwriter_end_cdata"
+            | "xmlwriter_end_comment"
+            | "xmlwriter_end_document"
+            | "xmlwriter_end_dtd"
+            | "xmlwriter_end_dtd_attlist"
+            | "xmlwriter_end_dtd_element"
+            | "xmlwriter_end_dtd_entity"
+            | "xmlwriter_end_element"
+            | "xmlwriter_end_pi"
+            | "xmlwriter_flush"
+            | "xmlwriter_full_end_element"
+            | "xmlwriter_open_memory"
+            | "xmlwriter_open_uri"
+            | "xmlwriter_output_memory"
+            | "xmlwriter_set_indent"
+            | "xmlwriter_set_indent_string"
+            | "xmlwriter_start_attribute"
+            | "xmlwriter_start_attribute_ns"
+            | "xmlwriter_start_cdata"
+            | "xmlwriter_start_comment"
+            | "xmlwriter_start_document"
+            | "xmlwriter_start_dtd"
+            | "xmlwriter_start_dtd_attlist"
+            | "xmlwriter_start_dtd_element"
+            | "xmlwriter_start_dtd_entity"
+            | "xmlwriter_start_element"
+            | "xmlwriter_start_element_ns"
+            | "xmlwriter_start_pi"
+            | "xmlwriter_text"
+            | "xmlwriter_write_attribute"
+            | "xmlwriter_write_attribute_ns"
+            | "xmlwriter_write_cdata"
+            | "xmlwriter_write_comment"
+            | "xmlwriter_write_dtd"
+            | "xmlwriter_write_dtd_attlist"
+            | "xmlwriter_write_dtd_element"
+            | "xmlwriter_write_dtd_entity"
+            | "xmlwriter_write_element"
+            | "xmlwriter_write_element_ns"
+            | "xmlwriter_write_pi"
+            | "xmlwriter_write_raw"
     )
 }
 

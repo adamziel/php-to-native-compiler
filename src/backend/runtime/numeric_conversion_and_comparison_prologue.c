@@ -4696,6 +4696,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
     ) {
         return ptn_date_interval_call_method(runtime, receiver, name, argc, args, line);
     }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "XMLWriter")
+        && ptn_internal_class_method_exists("XMLWriter", name)
+    ) {
+        return ptn_xmlwriter_call_method(runtime, receiver, name, argc, args, line);
+    }
 #endif
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

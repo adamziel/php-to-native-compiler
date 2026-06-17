@@ -972,6 +972,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_soap_server(lookup_class_name)) {
         return ptn_soap_client_new(runtime, "SoapServer", argc, args, line);
     }
+    if (ptn_internal_class_name_is_xml_writer(lookup_class_name)) {
+        return ptn_xmlwriter_new(runtime, argc, args, line);
+    }
 #endif
     if (ptn_class_name_is_generator(lookup_class_name)) {
         ptn_throw_exception_at(

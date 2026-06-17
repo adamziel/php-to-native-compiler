@@ -27,8 +27,13 @@ const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
-const ARCHIVE_NETWORK_INTERNAL_CLASS_NAMES: &[&str] =
-    &["Phar", "ZipArchive", "SoapClient", "SoapServer"];
+const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
+    "Phar",
+    "ZipArchive",
+    "SoapClient",
+    "SoapServer",
+    "XMLWriter",
+];
 const SERIALIZABLE_DEPRECATION_SUFFIX: &str =
     " implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)";
 const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
@@ -4119,6 +4124,7 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "XMLWriter",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -4179,7 +4185,7 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
-    for class_name in ARCHIVE_NETWORK_INTERNAL_CLASS_NAMES {
+    for class_name in MODELED_EXTENSION_INTERNAL_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
         out.push_str("\")) {\n");
@@ -4238,7 +4244,7 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
-    for class_name in ARCHIVE_NETWORK_INTERNAL_CLASS_NAMES {
+    for class_name in MODELED_EXTENSION_INTERNAL_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
         out.push_str("\")) {\n");
@@ -4486,6 +4492,7 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "XMLWriter",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);
@@ -8815,6 +8822,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
             || match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
                 "soapclient" => Some("SoapClient"),
                 "soapserver" => Some("SoapServer"),
+                "xmlwriter" => Some("XMLWriter"),
                 "ziparchive" => Some("ZipArchive"),
                 _ => None,
             },
@@ -14632,6 +14640,34 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::String("\\")),
         },
     ];
+    static XMLWRITER_FLUSH_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "writer",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "empty",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static XMLWRITER_START_DOCUMENT_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "writer",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "version",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "standalone",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
@@ -14643,6 +14679,12 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&FPUTCSV_PARAMETERS)
     } else if name.eq_ignore_ascii_case("str_getcsv") {
         Some(&STR_GETCSV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("xmlwriter_flush")
+        || name.eq_ignore_ascii_case("xmlwriter_output_memory")
+    {
+        Some(&XMLWRITER_FLUSH_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("xmlwriter_start_document") {
+        Some(&XMLWRITER_START_DOCUMENT_PARAMETERS)
     } else {
         None
     }
@@ -14699,6 +14741,24 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             default: Some(InternalParameterDefault::String("\\")),
         },
     ];
+    static XMLWRITER_FLUSH_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "empty",
+        default: Some(InternalParameterDefault::Int(1)),
+    }];
+    static XMLWRITER_START_DOCUMENT_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "version",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "standalone",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("fgetcsv") {
         Some(&SPL_FILE_OBJECT_FGETCSV_PARAMETERS)
@@ -14706,6 +14766,10 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         Some(&SPL_FILE_OBJECT_FPUTCSV_PARAMETERS)
     } else if name.eq_ignore_ascii_case("setCsvControl") {
         Some(&SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("flush") || name.eq_ignore_ascii_case("outputMemory") {
+        Some(&XMLWRITER_FLUSH_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("startDocument") {
+        Some(&XMLWRITER_START_DOCUMENT_PARAMETERS)
     } else {
         None
     }

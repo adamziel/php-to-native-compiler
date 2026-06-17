@@ -21487,9 +21487,80 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,curl,date,json,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,zip,zlib\narray(0) {\n}\n"
+            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,curl,date,filter,hash,iconv,intl,json,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xmlwriter,zip,zlib\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_xmlwriter_extension_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlwriter-extension-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlwriter-extension-surface.php");
+    let output = root.join("xmlwriter-extension-surface-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(
+    extension_loaded('xmlwriter'),
+    class_exists('XMLWriter'),
+    method_exists('XMLWriter', 'toMemory'),
+    function_exists('xmlwriter_open_memory')
+);
+
+$reflection = new ReflectionExtension('xmlwriter');
+$class = new ReflectionClass('XMLWriter');
+var_dump(
+    $reflection->getName(),
+    in_array('XMLWriter', $reflection->getClassNames(), true),
+    isset($reflection->getFunctions()['xmlwriter_open_memory']),
+    $class->getExtensionName()
+);
+
+$writer = XMLWriter::toMemory();
+$writer->startDocument(encoding: 'UTF-8');
+$writer->startElement('root');
+$writer->writeAttribute('align', 'left');
+$writer->writeComment('hello');
+$writer->endElement();
+$writer->endDocument();
+echo $writer->flush();
+
+$xw = xmlwriter_open_memory();
+xmlwriter_start_element($xw, 'tag');
+xmlwriter_write_attribute($xw, 'attr', 'value');
+xmlwriter_text($xw, 'text & < \"');
+xmlwriter_end_element($xw);
+echo xmlwriter_flush($xw);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(9) \"xmlwriter\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(9) \"xmlwriter\"\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<root align=\"left\"><!--hello--></root>\n",
+            "<tag attr=\"value\">text &amp; &lt; &quot;</tag>",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_xmlwriter_open_memory"));
+    assert!(c_source.contains("ptn_xmlwriter_call_method"));
 }
 
 #[test]

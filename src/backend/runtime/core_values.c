@@ -1442,6 +1442,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_n
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -1913,6 +1914,12 @@ static PTN_UNUSED PtnValue ptn_intl_break_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_xmlwriter_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_intl_break_iterator_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line);
@@ -1941,6 +1948,14 @@ static PTN_UNUSED PtnValue ptn_date_interval_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_xmlwriter_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

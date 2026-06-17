@@ -1,0 +1,29 @@
+# Focused XMLWriter PHPT tranche for ptn-w17z.148.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Run:
+#   tools/run-phpt-manifest.sh tools/phpt-ptn-w17z148-xmlwriter-tranche.txt
+
+# bucket: procedural XMLWriter basics rows=10
+ext/xmlwriter/tests/001.phpt
+ext/xmlwriter/tests/002.phpt
+ext/xmlwriter/tests/003.phpt
+ext/xmlwriter/tests/004.phpt
+ext/xmlwriter/tests/005.phpt
+ext/xmlwriter/tests/006.phpt
+ext/xmlwriter/tests/007.phpt
+ext/xmlwriter/tests/008.phpt
+ext/xmlwriter/tests/009.phpt
+ext/xmlwriter/tests/010.phpt
+
+# bucket: object XMLWriter basics rows=3
+ext/xmlwriter/tests/OO_001.phpt
+ext/xmlwriter/tests/OO_002.phpt
+ext/xmlwriter/tests/OO_003.phpt
+
+# bucket: static constructors and stream targets rows=5
+ext/xmlwriter/tests/xmlwriter_toMemory_normal_usage.phpt
+ext/xmlwriter/tests/xmlwriter_toMemory_flush_combinations.phpt
+ext/xmlwriter/tests/xmlwriter_toStream_normal_usage.phpt
+ext/xmlwriter/tests/xmlwriter_toStream_encoding_utf8.phpt
+ext/xmlwriter/tests/xmlwriter_open_uri_error_001.phpt
