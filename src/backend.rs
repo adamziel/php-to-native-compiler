@@ -24592,6 +24592,42 @@ impl ValueEmitter {
                 return Some(result_temp);
             }
 
+            if let ValueExpr::PropertyFetch {
+                receiver,
+                name: property_name,
+                line: property_line,
+            } = first_argument
+            {
+                let property_helper = if name.eq_ignore_ascii_case("uasort") {
+                    "ptn_runtime_array_uasort_property"
+                } else if name.eq_ignore_ascii_case("uksort") {
+                    "ptn_runtime_array_uksort_property"
+                } else {
+                    "ptn_runtime_array_usort_property"
+                };
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let callback_temp = self.emit_materialized_value(out, &arguments[1]);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(property_helper);
+                out.push_str("(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(property_name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&callback_temp);
+                out.push_str(", ");
+                out.push_str(&property_line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &callback_temp);
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                return Some(result_temp);
+            }
+
             return None;
         }
 
