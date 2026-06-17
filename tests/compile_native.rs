@@ -21127,6 +21127,7 @@ try {
     assert(function () {
         class Foo {
             public private(set) string $bar;
+            public protected(set) string $baz;
         }
     } && false);
 } catch (Error $e) {
@@ -21146,6 +21147,7 @@ try {
             "assert(function () {\n",
             "    class Foo {\n",
             "        public private(set) string $bar;\n",
+            "        public protected(set) string $baz;\n",
             "    }\n",
             "\n",
             "} && false)\n",
