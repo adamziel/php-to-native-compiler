@@ -160,6 +160,9 @@ struct RuntimeIni {
     error_reporting: Option<i64>,
     output_handler: Option<String>,
     filter_default: Option<String>,
+    pcre_backtrack_limit: Option<String>,
+    pcre_jit: Option<String>,
+    opcache_save_comments: Option<String>,
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
     output_encoding: Option<String>,
@@ -176,6 +179,7 @@ struct RuntimeIni {
     always_populate_raw_post_data: Option<String>,
     upload_tmp_dir: Option<String>,
     expose_php: Option<String>,
+    user_agent: Option<String>,
     exception_ignore_args: Option<String>,
     exception_string_param_max_len: Option<String>,
 }
@@ -310,6 +314,12 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.arg_separator_input = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("filter.default") {
         ini.filter_default = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("pcre.backtrack_limit") {
+        ini.pcre_backtrack_limit = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("pcre.jit") {
+        ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("opcache.save_comments") {
+        ini.opcache_save_comments = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_handler") {
         ini.output_handler = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("internal_encoding") {
@@ -352,6 +362,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.upload_tmp_dir = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("expose_php") {
         ini.expose_php = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("user_agent") {
+        ini.user_agent = Some(normalize_ini_scalar(raw_value));
     }
 }
 
@@ -629,6 +641,9 @@ fn compile_and_run(
         error_reporting: ini.error_reporting,
         output_handler: ini.output_handler.clone(),
         filter_default: ini.filter_default.clone(),
+        pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
+        pcre_jit: ini.pcre_jit.clone(),
+        opcache_save_comments: ini.opcache_save_comments.clone(),
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
         output_encoding: ini.output_encoding.clone(),
@@ -645,6 +660,7 @@ fn compile_and_run(
         always_populate_raw_post_data: ini.always_populate_raw_post_data.clone(),
         upload_tmp_dir: ini.upload_tmp_dir.clone(),
         expose_php: ini.expose_php.clone(),
+        user_agent: ini.user_agent.clone(),
         exception_ignore_args: ini.exception_ignore_args.clone(),
         exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
     };
@@ -690,6 +706,15 @@ fn compile_and_run(
     }
     if let Some(filter_default) = &ini.filter_default {
         command.env("PTN_FILTER_DEFAULT", filter_default);
+    }
+    if let Some(pcre_backtrack_limit) = &ini.pcre_backtrack_limit {
+        command.env("PTN_PCRE_BACKTRACK_LIMIT", pcre_backtrack_limit);
+    }
+    if let Some(pcre_jit) = &ini.pcre_jit {
+        command.env("PTN_PCRE_JIT", pcre_jit);
+    }
+    if let Some(opcache_save_comments) = &ini.opcache_save_comments {
+        command.env("PTN_OPCACHE_SAVE_COMMENTS", opcache_save_comments);
     }
     if let Some(internal_encoding) = &ini.internal_encoding {
         command.env("PTN_INTERNAL_ENCODING", internal_encoding);
@@ -750,6 +775,9 @@ fn compile_and_run(
     }
     if let Some(expose_php) = &ini.expose_php {
         command.env("PTN_EXPOSE_PHP", expose_php);
+    }
+    if let Some(user_agent) = &ini.user_agent {
+        command.env("PTN_USER_AGENT", user_agent);
     }
     if sapi == Sapi::Cgi {
         command.env("PTN_REQUEST_MODE", "cgi");

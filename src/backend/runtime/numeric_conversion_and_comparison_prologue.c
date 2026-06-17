@@ -415,6 +415,12 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_handler = NULL;
         free(runtime->filter_default);
         runtime->filter_default = NULL;
+        free(runtime->pcre_backtrack_limit);
+        runtime->pcre_backtrack_limit = NULL;
+        free(runtime->pcre_jit);
+        runtime->pcre_jit = NULL;
+        free(runtime->opcache_save_comments);
+        runtime->opcache_save_comments = NULL;
         free(runtime->internal_encoding);
         runtime->internal_encoding = NULL;
         free(runtime->input_encoding);
@@ -441,6 +447,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->upload_tmp_dir = NULL;
         free(runtime->expose_php);
         runtime->expose_php = NULL;
+        free(runtime->user_agent);
+        runtime->user_agent = NULL;
         free(runtime->request_body);
         runtime->request_body = NULL;
         runtime->request_body_len = 0;
@@ -3997,6 +4005,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_reflection_function_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_reflection_extension(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_extension_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

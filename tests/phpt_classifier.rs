@@ -1241,6 +1241,18 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "requires ReflectionFunction closure binding metadata",
         ),
         (
+            "reflection function source metadata",
+            "--TEST--\nreflection\n--INI--\nopcache.save_comments=1\n--FILE--\n<?php\nfunction test() {}\n$r = new ReflectionFunction('test');\nvar_dump($r->getFilename());\n--EXPECT--\n",
+            "unsupported-internal-reflection-metadata\t",
+            "requires reflection source/doc/static-variable metadata",
+        ),
+        (
+            "reflection method doc comments",
+            "--TEST--\nreflection\n--INI--\nopcache.save_comments=1\n--FILE--\n<?php\nclass A { /** doc */ function run() {} }\n$r = new ReflectionClass('A');\nforeach ($r->getMethods() as $m) { var_dump($m->getDocComment()); }\n--EXPECT--\n",
+            "unsupported-internal-reflection-metadata\t",
+            "requires reflection source/doc/static-variable metadata",
+        ),
+        (
             "readonly static property",
             "--TEST--\nreadonly static\n--FILE--\n<?php\nclass Bag { public static readonly int $value; }\n--EXPECT--\n",
             "unsupported-readonly-property-metadata\t",
@@ -1599,6 +1611,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let residual_extension_ini = classify(
+        "--TEST--\nresidual extension ini\n--INI--\npcre.jit=0\nopcache.save_comments=1\nuser_agent=php\n--FILE--\n<?php\nvar_dump(ini_get('pcre.jit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n--EXPECT--\n",
+    );
+    assert_eq!(
+        residual_extension_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let exception_string_param_max_len = classify(
         "--TEST--\nexception trace ini\n--INI--\nzend.exception_string_param_max_len=23\n--FILE--\n<?php\nthrow new Exception();\n--EXPECTF--\nFatal error: Uncaught Exception in %s\n",
     );
@@ -1649,6 +1669,22 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
     assert_eq!(
         namespace_assert.trim_end(),
         "runnable\tselected for PTN semantic measurement"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_unmodeled_pcre_array_pattern_rows() {
+    let classification = classify(
+        "--TEST--\npcre array pattern\n--INI--\npcre.jit=0\n--FILE--\n<?php\nvar_dump(preg_replace(array('#x#'), '', 'x'));\n--EXPECT--\n",
+    );
+
+    assert!(
+        classification.starts_with("unsupported-internal-pcre\t"),
+        "{classification:?}"
+    );
+    assert!(
+        classification.contains("preg replacement array-pattern dispatch"),
+        "{classification:?}"
     );
 }
 

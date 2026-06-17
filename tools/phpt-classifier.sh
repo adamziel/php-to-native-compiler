@@ -11,7 +11,7 @@
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,ctype,date,json,pcre,SPL,standard,Reflection"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.exception,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,max_input_nesting_level,max_input_vars,max_memory_limit,memory_limit,output_encoding,output_handler,pcre.backtrack_limit,post_max_size,precision,register_argc_argv,upload_tmp_dir,variables_order,zend.assertions,zend.exception_string_param_max_len"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.exception,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,max_input_nesting_level,max_input_vars,max_memory_limit,memory_limit,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,post_max_size,precision,register_argc_argv,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT=""
@@ -1681,6 +1681,14 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 object_string_unsupported_reason = reason
             }
         }
+        function ptn_track_reflection_metadata_var(assignment) {
+            sub(/^[$]/, "", assignment)
+            sub(/[[:space:]]*=.*/, "", assignment)
+            reflection_metadata_vars[assignment] = 1
+        }
+        function ptn_has_reflection_source_metadata_method(line) {
+            return line ~ /->[[:space:]]*(getdoccomment|getfilename|getstartline|getendline|getstaticvariables)[[:space:]]*\(/
+        }
         function ptn_supported_internal_attribute_metadata_row() {
             return ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/002_rfcexample[.]phpt$/ ||
@@ -1787,6 +1795,30 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             if (line ~ /->[[:space:]]*getclosurethis[[:space:]]*\(/) {
                 print "unsupported-reflection-metadata\trequires ReflectionFunction closure binding metadata (`getClosureThis()`), outside PTN modeled reflection metadata"
+                found = 1
+                exit
+            }
+            if (match(line, /[$][a-z_][a-z0-9_]*[[:space:]]*=[^;]*new[[:space:]]+\\?reflection(class|function|method)[[:space:]]*\(/)) {
+                ptn_track_reflection_metadata_var(substr(line, RSTART, RLENGTH))
+            }
+            if (match(line, /[$][a-z_][a-z0-9_]*[[:space:]]*=[^;]*\\?reflectionmethod[[:space:]]*::[[:space:]]*createfrommethodname[[:space:]]*\(/)) {
+                ptn_track_reflection_metadata_var(substr(line, RSTART, RLENGTH))
+            }
+            if (match(line, /foreach[[:space:]]*\([^)]*->[[:space:]]*getmethods[[:space:]]*\([^)]*\)[[:space:]]+as[[:space:]]*[$][a-z_][a-z0-9_]*/)) {
+                reflection_method_foreach_var = substr(line, RSTART, RLENGTH)
+                sub(/^.*[[:space:]]as[[:space:]]*[$]/, "", reflection_method_foreach_var)
+                reflection_metadata_vars[reflection_method_foreach_var] = 1
+            }
+            for (reflection_metadata_var in reflection_metadata_vars) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_metadata_var "[[:space:]]*->[[:space:]]*(getdoccomment|getfilename|getstartline|getendline|getstaticvariables)[[:space:]]*\\(")) {
+                    print "unsupported-internal-reflection-metadata\trequires reflection source/doc/static-variable metadata beyond PTN modeled reflection invocation and shape metadata"
+                    found = 1
+                    exit
+                }
+            }
+            if (line ~ /new[[:space:]]+\\?reflection(class|function|method)[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(getdoccomment|getfilename|getstartline|getendline|getstaticvariables)[[:space:]]*\(/ ||
+                ptn_has_reflection_source_metadata_method(line) && line ~ /(^|[^[:alnum:]_$\\])reflection(class|function|method)([^[:alnum:]_]|$)/) {
+                print "unsupported-internal-reflection-metadata\trequires reflection source/doc/static-variable metadata beyond PTN modeled reflection invocation and shape metadata"
                 found = 1
                 exit
             }
@@ -2060,6 +2092,11 @@ ptn_phpt_first_unsupported_internal_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])stream_wrapper_(register|unregister|restore)[[:space:]]*\(/) {
                 print "unsupported-internal\trequires user stream wrapper registration and stream callback dispatch, outside PTN modeled stream/resource runtime"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$\\])preg_(filter|replace|replace_callback)[[:space:]]*\([[:space:]]*(array[[:space:]]*\(|\[)/) {
+                print "unsupported-internal-pcre\trequires preg replacement array-pattern dispatch, outside PTN modeled single-pattern PCRE runtime"
                 found = 1
                 exit
             }

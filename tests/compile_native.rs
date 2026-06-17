@@ -32447,6 +32447,57 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
 }
 
 #[test]
+fn phpc_residual_extension_ini_values_are_runtime_visible() {
+    let root = temp_dir("ptn-phpc-residual-extension-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("residual-extension-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('pcre.backtrack_limit'), ini_get('pcre.jit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n\
+var_dump(ini_set('pcre.jit', '1'), ini_get('pcre.jit'));\n\
+ini_restore('pcre.jit');\n\
+ini_restore('user_agent');\n\
+var_dump(ini_get('pcre.jit'), ini_get('user_agent'));\n\
+$ext = new ReflectionExtension('standard');\n\
+$inis = $ext->getINIEntries();\n\
+var_dump($ext->getName(), $inis['user_agent']);",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("pcre.backtrack_limit=100000")
+        .arg("-d")
+        .arg("pcre.jit=0")
+        .arg("-d")
+        .arg("opcache.save_comments=0")
+        .arg("-d")
+        .arg("user_agent=php")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(6) \"100000\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(3) \"php\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(0) \"\"\n",
+            "string(8) \"standard\"\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_string_ini_controls_default_charset_and_parse_str_separator() {
     let root = temp_dir("ptn-phpc-string-ini");
     fs::create_dir_all(&root).unwrap();

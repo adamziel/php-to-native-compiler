@@ -1549,6 +1549,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_arg_separator_output = getenv("PTN_ARG_SEPARATOR_OUTPUT");
     const char *configured_output_handler = getenv("PTN_OUTPUT_HANDLER");
     const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
+    const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
+    const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
+    const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
     const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
     const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
@@ -1563,6 +1566,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         getenv("PTN_ALWAYS_POPULATE_RAW_POST_DATA");
     const char *configured_upload_tmp_dir = getenv("PTN_UPLOAD_TMP_DIR");
     const char *configured_expose_php = getenv("PTN_EXPOSE_PHP");
+    const char *configured_user_agent = getenv("PTN_USER_AGENT");
     runtime->default_charset = ptn_duplicate_string(
         configured_default_charset == NULL ? "UTF-8" : configured_default_charset
     );
@@ -1577,6 +1581,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->filter_default = ptn_duplicate_string(
         configured_filter_default == NULL ? "unsafe_raw" : configured_filter_default
+    );
+    runtime->pcre_backtrack_limit = ptn_duplicate_string(
+        configured_pcre_backtrack_limit == NULL ? "1000000" : configured_pcre_backtrack_limit
+    );
+    runtime->pcre_jit = ptn_duplicate_string(
+        configured_pcre_jit == NULL ? "1" : configured_pcre_jit
+    );
+    runtime->opcache_save_comments = ptn_duplicate_string(
+        configured_opcache_save_comments == NULL ? "1" : configured_opcache_save_comments
     );
     runtime->internal_encoding = ptn_duplicate_string(
         configured_internal_encoding == NULL ? "" : configured_internal_encoding
@@ -1616,6 +1629,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->expose_php = ptn_duplicate_string(
         configured_expose_php == NULL ? "1" : configured_expose_php
+    );
+    runtime->user_agent = ptn_duplicate_string(
+        configured_user_agent == NULL ? "" : configured_user_agent
     );
     runtime->request_body = NULL;
     runtime->request_body_len = 0;

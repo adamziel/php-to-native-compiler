@@ -946,6 +946,9 @@ struct PtnRuntime {
     char *arg_separator_output;
     char *output_handler;
     char *filter_default;
+    char *pcre_backtrack_limit;
+    char *pcre_jit;
+    char *opcache_save_comments;
     char *internal_encoding;
     char *input_encoding;
     char *output_encoding;
@@ -959,6 +962,7 @@ struct PtnRuntime {
     char *always_populate_raw_post_data;
     char *upload_tmp_dir;
     char *expose_php;
+    char *user_agent;
     char *request_body;
     size_t request_body_len;
     int exception_ignore_args;
@@ -1194,6 +1198,7 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_attribute(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_extension(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class_constant(const char *class_name);
@@ -1237,6 +1242,12 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_object_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_extension_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -1380,6 +1391,14 @@ static PTN_UNUSED PtnValue ptn_reflection_reference_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_extension_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

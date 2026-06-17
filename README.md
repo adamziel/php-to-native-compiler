@@ -193,7 +193,10 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `putenv()` set/unset plus embedded-NUL/invalid-assignment diagnostics, and
   bounded `get_include_path()`/`set_include_path()`/`ini_set()`/
   `ini_restore()` state for include-path, assertion configuration, and
-  exception string parameter length.
+  bounded runtime INI values including `pcre.backtrack_limit`, `pcre.jit`,
+  `opcache.save_comments`, `user_agent`, and exception string parameter
+  length; `ReflectionExtension::getINIEntries()` reports modeled extension INI
+  entries.
 - Bounded PHPT telemetry uses `PHP_SRC_PHPT`, `/home/claude/php-src-phpt`, or
   `.runtime/php-src-phpt`.
 - PHPT runners preclassify broad rows before execution and write selected,
@@ -201,7 +204,8 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
   `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
   (`assert.exception`, `date.timezone`, `display_errors`, `error_reporting`,
-  `extension_dir`, `include_path`, `pcre.backtrack_limit`, `precision`,
+  `extension_dir`, `include_path`, `opcache.save_comments`,
+  `pcre.backtrack_limit`, `pcre.jit`, `precision`, `user_agent`,
   `zend.assertions`, and `zend.exception_string_param_max_len`); child-process
   control rows are classified until PTN has a native process boundary. Harness
   cleanup, environment setup, unsupported

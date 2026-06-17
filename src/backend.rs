@@ -3696,6 +3696,7 @@ fn emit_class_metadata_helpers(
         "ReflectionClass",
         "ReflectionClassConstant",
         "ReflectionConstant",
+        "ReflectionExtension",
         "ReflectionFunction",
         "ReflectionMethod",
         "ReflectionObject",
@@ -12390,6 +12391,7 @@ fn collect_value_runtime_requirements(
             }
             if class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionConstant")
+                || class_name.eq_ignore_ascii_case("ReflectionExtension")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
                 || class_name.eq_ignore_ascii_case("ReflectionAttribute")

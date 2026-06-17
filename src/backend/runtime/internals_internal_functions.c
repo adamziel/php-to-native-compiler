@@ -33161,6 +33161,30 @@ static const char *ptn_runtime_filter_default(PtnRuntime *runtime) {
     return root->filter_default;
 }
 
+static const char *ptn_runtime_pcre_backtrack_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->pcre_backtrack_limit == NULL) {
+        return "1000000";
+    }
+    return root->pcre_backtrack_limit;
+}
+
+static const char *ptn_runtime_pcre_jit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->pcre_jit == NULL) {
+        return "1";
+    }
+    return root->pcre_jit;
+}
+
+static const char *ptn_runtime_opcache_save_comments(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->opcache_save_comments == NULL) {
+        return "1";
+    }
+    return root->opcache_save_comments;
+}
+
 static const char *ptn_runtime_internal_encoding(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->internal_encoding == NULL) {
@@ -33263,6 +33287,14 @@ static const char *ptn_runtime_expose_php(PtnRuntime *runtime) {
         return "1";
     }
     return root->expose_php;
+}
+
+static const char *ptn_runtime_user_agent(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->user_agent == NULL) {
+        return "";
+    }
+    return root->user_agent;
 }
 
 static int ptn_runtime_ini_bool(const char *value, int default_value) {
@@ -33491,14 +33523,33 @@ static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requ
     }
 }
 
+static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extension) {
+    if (ptn_string_operand_ascii_case_equal(extension, "Core")) {
+        return "Core";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "ctype")) {
+        return "ctype";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "date")) {
+        return "date";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "json")) {
+        return "json";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "pcre")) {
+        return "pcre";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "Reflection")) {
+        return "Reflection";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "standard")) {
+        return "standard";
+    }
+    return NULL;
+}
+
 static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
-    return ptn_string_operand_ascii_case_equal(extension, "Core") ||
-        ptn_string_operand_ascii_case_equal(extension, "ctype") ||
-        ptn_string_operand_ascii_case_equal(extension, "date") ||
-        ptn_string_operand_ascii_case_equal(extension, "json") ||
-        ptn_string_operand_ascii_case_equal(extension, "pcre") ||
-        ptn_string_operand_ascii_case_equal(extension, "Reflection") ||
-        ptn_string_operand_ascii_case_equal(extension, "standard");
+    return ptn_modeled_extension_canonical_name(extension) != NULL;
 }
 
 static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue *out) {
@@ -33561,7 +33612,15 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
-        *out = ptn_string("1000000");
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_backtrack_limit(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.jit")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_jit(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_save_comments(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
@@ -33614,6 +33673,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "expose_php")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_expose_php(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_user_agent(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
@@ -33688,6 +33751,21 @@ static void ptn_runtime_set_filter_default(PtnRuntime *runtime, const char *valu
     ptn_runtime_set_ini_string(&root->filter_default, value);
 }
 
+static void ptn_runtime_set_pcre_backtrack_limit(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->pcre_backtrack_limit, value);
+}
+
+static void ptn_runtime_set_pcre_jit(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->pcre_jit, value);
+}
+
+static void ptn_runtime_set_opcache_save_comments(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->opcache_save_comments, value);
+}
+
 static void ptn_runtime_set_internal_encoding(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->internal_encoding, value);
@@ -33701,6 +33779,11 @@ static void ptn_runtime_set_input_encoding(PtnRuntime *runtime, const char *valu
 static void ptn_runtime_set_output_encoding(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->output_encoding, value);
+}
+
+static void ptn_runtime_set_user_agent(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->user_agent, value);
 }
 
 static int ptn_environment_put_owned(char *assignment) {
@@ -33805,6 +33888,21 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
+        ptn_runtime_set_pcre_backtrack_limit(runtime, "1000000");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.jit")) {
+        ptn_runtime_set_pcre_jit(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
+        ptn_runtime_set_opcache_save_comments(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
         ptn_runtime_set_output_handler(runtime, "");
         ptn_string_operand_free(option);
@@ -33843,6 +33941,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_string_param_max_len")) {
         ptn_runtime_set_exception_string_param_max_len(runtime, 15);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
+        ptn_runtime_set_user_agent(runtime, "");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -33913,6 +34016,36 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_filter_default(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_backtrack_limit(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_pcre_backtrack_limit(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.jit")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_jit(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_pcre_jit(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_save_comments(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_opcache_save_comments(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -33994,6 +34127,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         char *requested = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_apply_memory_limit(runtime, requested, line);
         free(requested);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_user_agent(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_user_agent(runtime, next);
+        free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
         return previous;
@@ -38434,6 +38577,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *c
     return ptn_ascii_case_equal(class_name, "ReflectionObject");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_extension(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionExtension");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionFunction");
 }
@@ -39215,6 +39362,13 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isVariadic");
 }
 
+static int ptn_reflection_extension_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getINIEntries")
+        || ptn_ascii_case_equal(method_name, "getName");
+}
+
 static int ptn_reflection_class_constant_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
         || ptn_ascii_case_equal(method_name, "__toString")
@@ -39435,6 +39589,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_reflection_function(class_name)) {
         return ptn_reflection_function_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_reflection_extension(class_name)) {
+        return ptn_reflection_extension_method_exists(method_name);
+    }
     if (ptn_internal_class_name_is_reflection_class_constant(class_name)) {
         return ptn_reflection_class_constant_method_exists(method_name);
     }
@@ -39612,6 +39769,16 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isInternal",
             "isUserDefined",
             "isVariadic",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_extension(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "getINIEntries",
+            "getName",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -43780,6 +43947,10 @@ typedef struct {
 } PtnReflectionFunctionData;
 
 typedef struct {
+    char *name;
+} PtnReflectionExtensionData;
+
+typedef struct {
     PtnFunctionMetadata metadata;
     size_t index;
 } PtnReflectionParameterData;
@@ -43828,6 +43999,15 @@ static void ptn_reflection_function_data_free(void *data) {
     }
     free(function_data->closure_scope_class_name);
     free(data);
+}
+
+static void ptn_reflection_extension_data_free(void *data) {
+    PtnReflectionExtensionData *extension_data = (PtnReflectionExtensionData *)data;
+    if (extension_data == NULL) {
+        return;
+    }
+    free(extension_data->name);
+    free(extension_data);
 }
 
 static void ptn_reflection_parameter_data_free(void *data) {
@@ -43912,6 +44092,19 @@ static PtnReflectionFunctionData *ptn_reflection_function_data(PtnRuntime *runti
         return NULL;
     }
     return (PtnReflectionFunctionData *)receiver.as.object->native_data;
+}
+
+static PtnReflectionExtensionData *ptn_reflection_extension_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_extension(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionExtension object");
+        return NULL;
+    }
+    return (PtnReflectionExtensionData *)receiver.as.object->native_data;
 }
 
 static PtnReflectionParameterData *ptn_reflection_parameter_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -44370,6 +44563,170 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_function_data_free;
     return object;
+}
+
+static void ptn_extension_ini_set_entry(PtnRuntime *runtime, PtnValue result, const char *name) {
+    PtnValue value;
+    if (!ptn_ini_value(runtime, ptn_string_operand_borrowed(name), &value)) {
+        return;
+    }
+    ptn_array_set_entry(result.as.array, ptn_array_string_key(name), value);
+}
+
+static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const char *extension_name) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (ptn_ascii_case_equal(extension_name, "Core")) {
+        ptn_extension_ini_set_entry(runtime, result, "display_errors");
+        ptn_extension_ini_set_entry(runtime, result, "error_reporting");
+        ptn_extension_ini_set_entry(runtime, result, "include_path");
+        ptn_extension_ini_set_entry(runtime, result, "memory_limit");
+        ptn_extension_ini_set_entry(runtime, result, "max_memory_limit");
+        ptn_extension_ini_set_entry(runtime, result, "zend.assertions");
+        ptn_extension_ini_set_entry(runtime, result, "zend.exception_ignore_args");
+        ptn_extension_ini_set_entry(runtime, result, "zend.exception_string_param_max_len");
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "date")) {
+        ptn_extension_ini_set_entry(runtime, result, "date.timezone");
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "pcre")) {
+        ptn_extension_ini_set_entry(runtime, result, "pcre.backtrack_limit");
+        ptn_extension_ini_set_entry(runtime, result, "pcre.jit");
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "standard")) {
+        ptn_extension_ini_set_entry(runtime, result, "arg_separator.input");
+        ptn_extension_ini_set_entry(runtime, result, "arg_separator.output");
+        ptn_extension_ini_set_entry(runtime, result, "default_charset");
+        ptn_extension_ini_set_entry(runtime, result, "filter.default");
+        ptn_extension_ini_set_entry(runtime, result, "user_agent");
+        return result;
+    }
+    return result;
+}
+
+static PtnValue ptn_reflection_extension_object_from_name(PtnRuntime *runtime, const char *name) {
+    PtnReflectionExtensionData *data = malloc(sizeof(PtnReflectionExtensionData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->name = ptn_duplicate_string(name);
+
+    PtnValue object = ptn_object_new_shell(runtime, "ReflectionExtension");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_reflection_extension_data_free;
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("name"),
+        ptn_owned_string(ptn_duplicate_string(name))
+    );
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_extension_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 1) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionExtension::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand extension = ptn_value_to_string_operand(args[0]);
+    const char *canonical = ptn_modeled_extension_canonical_name(extension);
+    if (canonical == NULL) {
+        char *name = ptn_duplicate_string_len(extension.data, extension.len);
+        ptn_string_operand_free(extension);
+        int needed = snprintf(NULL, 0, "Extension \"%s\" does not exist", name);
+        if (needed < 0) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, (size_t)needed + 1, "Extension \"%s\" does not exist", name);
+        free(name);
+        ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+        return ptn_null();
+    }
+    PtnValue object = ptn_reflection_extension_object_from_name(runtime, canonical);
+    ptn_string_operand_free(extension);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_extension_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_reflection_extension_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnReflectionExtensionData *new_data = (PtnReflectionExtensionData *)replacement.as.object->native_data;
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (resolved_receiver.type == PTN_OBJECT) {
+            if (resolved_receiver.as.object->native_data != NULL &&
+                resolved_receiver.as.object->native_data_free != NULL) {
+                resolved_receiver.as.object->native_data_free(resolved_receiver.as.object->native_data);
+            }
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_reflection_extension_data_free;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_array_set_entry(
+                resolved_receiver.as.object->properties,
+                ptn_array_string_key("name"),
+                ptn_owned_string(ptn_duplicate_string(new_data->name))
+            );
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+
+    PtnReflectionExtensionData *data = ptn_reflection_extension_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    ptn_reflection_check_no_arguments(runtime, "ReflectionExtension", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        PtnStringBuffer buffer;
+        ptn_string_buffer_init(&buffer);
+        ptn_string_buffer_append_format(&buffer, "Extension [ <persistent> extension #%d %s version %s ] {\n}\n", 0, data->name, PTN_PHP_VERSION);
+        return ptn_owned_string_len(buffer.data, buffer.len);
+    }
+    if (ptn_ascii_case_equal(name, "getName")) {
+        return ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getINIEntries")) {
+        return ptn_reflection_extension_ini_entries(runtime, data->name);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
