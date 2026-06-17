@@ -465,6 +465,14 @@ ptn_phpt_php_truthy() {
     [[ -n "$value" && "$value" != "0" ]]
 }
 
+ptn_phpt_run_slow_tests() {
+    ptn_phpt_php_truthy "${PTN_PHPT_RUN_SLOW_TESTS:-0}"
+}
+
+ptn_phpt_run_perf_sensitive_tests() {
+    ptn_phpt_php_truthy "${PTN_PHPT_RUN_PERF_SENSITIVE:-0}"
+}
+
 ptn_phpt_php_constant_defined() {
     local constant=$1
 
@@ -614,7 +622,13 @@ ptn_phpt_modeled_skipif_precondition() {
         while IFS= read -r env_var; do
             env_var=$(printf '%s\n' "$env_var" | sed -E "s/.*['\"]([^'\"]+)['\"].*/\\1/")
             case "$env_var" in
-                SKIP_ASAN|SKIP_MSAN|SKIP_UBSAN|SKIP_PERF_SENSITIVE)
+                SKIP_ASAN|SKIP_MSAN|SKIP_UBSAN)
+                    ;;
+                SKIP_PERF_SENSITIVE)
+                    env_family="resource-limit"
+                    ;;
+                SKIP_SLOW_TESTS)
+                    env_family="resource-limit"
                     ;;
                 SKIP_*|USE_ZEND_ALLOC|USE_TRACKED_ALLOC|RUN_RESOURCE_HEAVY_TESTS|STACK_LIMIT_DEFAULTS_CHECK|CIRRUS_CI)
                     env_family="environment"
@@ -626,6 +640,21 @@ ptn_phpt_modeled_skipif_precondition() {
             parsed_env_count=$((parsed_env_count + 1))
             local env_value=${!env_var:-}
             local env_is_truthy=0
+            local env_is_modeled_resource_limit=0
+            case "$env_var" in
+                SKIP_PERF_SENSITIVE)
+                    if ! ptn_phpt_run_perf_sensitive_tests; then
+                        env_is_truthy=1
+                        env_is_modeled_resource_limit=1
+                    fi
+                    ;;
+                SKIP_SLOW_TESTS)
+                    if ! ptn_phpt_run_slow_tests; then
+                        env_is_truthy=1
+                        env_is_modeled_resource_limit=1
+                    fi
+                    ;;
+            esac
             if ptn_phpt_php_truthy "$env_value"; then
                 env_is_truthy=1
             fi
@@ -635,6 +664,10 @@ ptn_phpt_modeled_skipif_precondition() {
                     return 0
                 fi
             elif [[ "$env_is_truthy" -eq 1 ]]; then
+                if [[ "$env_is_modeled_resource_limit" -eq 1 ]]; then
+                    printf 'skipif-precondition\tmodeled static --SKIPIF-- resource-limit gate keeps %s rows out of default PTN sweeps; set PTN_PHPT_RUN_SLOW_TESTS=1 or PTN_PHPT_RUN_PERF_SENSITIVE=1 to opt in\n' "$env_var"
+                    return 0
+                fi
                 printf 'skipif-precondition\tmodeled static --SKIPIF-- environment gate requires %s unset; current environment sets it\n' "$env_var"
                 return 0
             fi
@@ -1062,6 +1095,25 @@ ptn_phpt_has_process_boundary() {
             next
         }
         active && /(^|[^[:alnum:]_\$])(proc_open|proc_close|proc_get_status|proc_terminate|proc_nice|popen|pclose|exec|system|passthru|shell_exec)[[:space:]]*\(/ {
+            found = 1
+            exit
+        }
+        END { exit found ? 0 : 1 }
+    ' "$path"
+}
+
+ptn_phpt_has_resource_limit_expectation() {
+    local path=$1
+
+    awk '
+        /^--[A-Z0-9_]+--[[:space:]]*$/ {
+            section = $0
+            sub(/^--/, "", section)
+            sub(/--[[:space:]]*$/, "", section)
+            active = section == "EXPECT" || section == "EXPECTF" || section == "EXPECTREGEX"
+            next
+        }
+        active && /(Allowed memory size|Failed to set memory limit)/ {
             found = 1
             exit
         }
@@ -2143,6 +2195,11 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
+            if (line ~ /(^|[^[:alnum:]_$])memory_(get_peak_usage|reset_peak_usage)[[:space:]]*\(/) {
+                print "unsupported-resource-limit\trequires Zend memory manager peak-usage accounting APIs, outside PTN safe PHPT execution bounds"
+                found = 1
+                exit
+            }
             if (line ~ /(^|[^[:alnum:]_$])global[[:space:]]+\$/ || line ~ /\$globals[[:space:]]*\[/) {
                 global_state_seen = 1
             }
@@ -2239,6 +2296,11 @@ ptn_phpt_classify_row() {
         else
             unmodeled_skipif=1
         fi
+    fi
+
+    if ptn_phpt_has_resource_limit_expectation "$path"; then
+        printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'
+        return 0
     fi
 
     if value=$(ptn_phpt_first_section_in_sections_csv "$sections" "$(ptn_phpt_unsupported_sections)"); then

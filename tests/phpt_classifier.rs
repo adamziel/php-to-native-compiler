@@ -107,6 +107,8 @@ fn classify_with_options(
         "PTN_PHPT_PHP_ZTS",
         "PTN_PHPT_EFFECTIVE_UID",
         "PTN_PHPT_DEFINED_CONSTANTS",
+        "PTN_PHPT_RUN_SLOW_TESTS",
+        "PTN_PHPT_RUN_PERF_SENSITIVE",
         "SKIP_ASAN",
         "SKIP_MSAN",
         "SKIP_UBSAN",
@@ -370,14 +372,38 @@ fn phpt_classifier_models_common_environment_skipif_preconditions() {
     let slow = "--TEST--\nslow\n--SKIPIF--\n<?php if (getenv('SKIP_SLOW_TESTS')) die('skip slow test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
     let classification = classify_with_harness_programs(slow, true);
     assert!(
-        classification.starts_with("runnable\t") && classification.contains("environment"),
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("resource-limit gate keeps SKIP_SLOW_TESTS rows"),
         "{classification:?}"
     );
     let classification =
-        classify_with_harness_programs_and_env(slow, true, &[("SKIP_SLOW_TESTS", "1")]);
+        classify_with_harness_programs_and_env(slow, true, &[("PTN_PHPT_RUN_SLOW_TESTS", "1")]);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("resource-limit"),
+        "{classification:?}"
+    );
+    let classification = classify_with_harness_programs_and_env(
+        slow,
+        true,
+        &[("PTN_PHPT_RUN_SLOW_TESTS", "1"), ("SKIP_SLOW_TESTS", "1")],
+    );
     assert!(
         classification.starts_with("skipif-precondition\t")
             && classification.contains("SKIP_SLOW_TESTS unset"),
+        "{classification:?}"
+    );
+
+    let perf = "--TEST--\nperf\n--SKIPIF--\n<?php if (getenv('SKIP_PERF_SENSITIVE')) die('skip performance sensitive test'); ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
+    let classification = classify_with_harness_programs(perf, true);
+    assert!(
+        classification.starts_with("skipif-precondition\t")
+            && classification.contains("resource-limit gate keeps SKIP_PERF_SENSITIVE rows"),
+        "{classification:?}"
+    );
+    let classification =
+        classify_with_harness_programs_and_env(perf, true, &[("PTN_PHPT_RUN_PERF_SENSITIVE", "1")]);
+    assert!(
+        classification.starts_with("runnable\t") && classification.contains("resource-limit"),
         "{classification:?}"
     );
 
@@ -1659,6 +1685,40 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
 }
 
 #[test]
+fn phpt_classifier_excludes_memory_resource_limit_expectations() {
+    let cases = [
+        (
+            "allocation fatal",
+            "--TEST--\nallocation fatal\n--INI--\nmemory_limit=2M\n--FILE--\n<?php\n$items = [];\nwhile (true) { $items[] = new stdClass(); }\n--EXPECTF--\nFatal error: Allowed memory size of %d bytes exhausted%s\n",
+        ),
+        (
+            "runtime lowering warning",
+            "--TEST--\nruntime lowering\n--FILE--\n<?php\n$a = str_repeat('0', 5 * 1024 * 1024);\nini_set('memory_limit', '3M');\n--EXPECTF--\nWarning: Failed to set memory limit to 3145728 bytes (Current memory usage is %d bytes) in %s on line %d\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("unsupported-resource-limit-ini\t"),
+            "{name}: {classification:?}"
+        );
+        assert!(
+            classification.contains("memory manager allocation-failure"),
+            "{name}: {classification:?}"
+        );
+    }
+
+    let memory_limit_read = classify(
+        "--TEST--\nmemory ini read\n--INI--\nmemory_limit=128M\n--FILE--\n<?php\necho ini_get('memory_limit'), \"\\n\";\n--EXPECT--\n128M\n",
+    );
+    assert!(
+        memory_limit_read.starts_with("runnable\t"),
+        "{memory_limit_read:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
     let cases = [
         (
@@ -1976,6 +2036,11 @@ fn phpt_classifier_excludes_huge_array_allocation_rows() {
             "spread-expanded max elements",
             "--TEST--\nspread max elements\n--FILE--\n<?php\n$power = 20;\n$arr = range(0, 2**$power);\narray_diff(...array_fill(0, 2**(32-$power), $arr));\n--EXPECTF--\n",
             "max-array-size/resource-limit diagnostics",
+        ),
+        (
+            "peak memory accounting",
+            "--TEST--\npeak memory\n--FILE--\n<?php\nvar_dump(memory_get_peak_usage());\nmemory_reset_peak_usage();\n--EXPECTF--\n",
+            "memory manager peak-usage accounting",
         ),
     ];
 
