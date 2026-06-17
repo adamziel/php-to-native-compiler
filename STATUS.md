@@ -2,8 +2,8 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-17T00:42:17Z |
-| source commit | `54e98315dd1e` |
+| last refresh | 2026-06-17T01:00:09Z |
+| source commit | `ec6a5dfbe985` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
 | evidence source | `tools/status-dashboard-features.tsv` |
@@ -13,17 +13,17 @@
 
 | metric | tests |
 | --- | ---: |
-| ported tests | 1235 |
-| passed tests | 922 |
+| ported tests | 1242 |
+| passed tests | 929 |
 | upstream tests | 21867 |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-17T00:00Z) | 106 |
-| last 24 hours (2026-06-16T01:00Z - 2026-06-17T00:00Z) | 231 |
-| last 7 days (2026-06-10T01:00Z - 2026-06-17T00:00Z) | 666 |
+| latest hour (2026-06-17T00:00Z) | 113 |
+| last 24 hours (2026-06-16T01:00Z - 2026-06-17T00:00Z) | 238 |
+| last 7 days (2026-06-10T01:00Z - 2026-06-17T00:00Z) | 673 |
 
 ## Feature Table
 
@@ -33,6 +33,7 @@
 | ptn-w17z.58 ArrayObject iterator class serialization row | 1 | 1 | 1 |
 | ptn-t9pt return/type declaration rows | 213 | 195 | 213 |
 | ptn-mq0f class constant reflection rows | 16 | 16 | 16 |
+| ptn-r48u string INI rows | 7 | 7 | 7 |
 | ptn-cl81 ArrayObject flipped-green PHPT rows | 31 | 31 | 31 |
 | ptn-6rea html entity charset rows | 5 | 5 | 5 |
 | ptn-2ey0 sparse reference call rows | 7 | 7 | 7 |
@@ -84,7 +85,7 @@
 | ptn-w17z.18 numeric/math/conversions row pack | 35 | 35 | 35 |
 | ptn-w17z.16.3 exception formatting row pack | 12 | 12 | 13 |
 | ptn-kia6 by-ref/reference-boundary row pack | 107 | 75 | 126 |
-| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18380 |
+| unported/unmeasured upstream PHPT corpus | 0 | 0 | 18373 |
 
 ## Last 7 Days
 
@@ -257,4 +258,4 @@
 | 2026-06-16T21:00Z | 47 | 738 |
 | 2026-06-16T22:00Z | 34 | 772 |
 | 2026-06-16T23:00Z | 44 | 816 |
-| 2026-06-17T00:00Z | 106 | 922 |
+| 2026-06-17T00:00Z | 113 | 929 |
