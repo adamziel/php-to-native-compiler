@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-17T19:28:37Z |
+| last refresh | 2026-06-17T19:32:55Z |
 | source commit | `6248c978d6ee` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -13,23 +13,23 @@
 
 | metric | tests |
 | --- | ---: |
-| ported tests | 16634 |
-| passed tests | 5058 |
+| ported tests | 16660 |
+| passed tests | 5069 |
 | upstream tests | 21867 |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-17T19:00Z) | 39 |
-| last 24 hours (2026-06-16T20:00Z - 2026-06-17T19:00Z) | 39 |
-| last 7 days (2026-06-10T20:00Z - 2026-06-17T19:00Z) | 39 |
+| latest hour (2026-06-17T19:00Z) | 50 |
+| last 24 hours (2026-06-16T20:00Z - 2026-06-17T19:00Z) | 50 |
+| last 7 days (2026-06-10T20:00Z - 2026-06-17T19:00Z) | 50 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
-| full PHPT corpus sharded partial snapshot | 16634 | 5058 | 21867 |
+| full PHPT corpus sharded partial snapshot | 16660 | 5069 | 21867 |
 
 ## Last 7 Days
 
@@ -202,4 +202,4 @@
 | 2026-06-17T16:00Z | 0 | 5019 |
 | 2026-06-17T17:00Z | 0 | 5019 |
 | 2026-06-17T18:00Z | 0 | 5019 |
-| 2026-06-17T19:00Z | 39 | 5058 |
+| 2026-06-17T19:00Z | 50 | 5069 |
