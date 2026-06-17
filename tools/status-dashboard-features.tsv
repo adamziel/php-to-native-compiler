@@ -1,5 +1,5 @@
-# refreshed_at_utc=2026-06-17T00:40:40Z
-# source_commit=1d8a3ad0c2ec
+# refreshed_at_utc=2026-06-17T01:00:09Z
+# source_commit=ec6a5dfbe985
 # php_src_revision=8c63ec400ce8e07c57a8d9499317b96a8beafb8b
 # window_start_utc=2026-06-10T01:00Z
 # window_hours=168
@@ -8,6 +8,7 @@ ptn-2xzl JSON encode/error rows	14	14	14	2026-06-17T00:00Z	14	.runtime/phpt-prog
 ptn-w17z.58 ArrayObject iterator class serialization row	1	1	1	2026-06-17T00:00Z	1	.runtime/phpt-progress/run-20260617T002750Z.log
 ptn-t9pt return/type declaration rows	213	195	213	2026-06-17T00:00Z	75	.runtime/phpt-progress/run-20260617T003154Z.log
 ptn-mq0f class constant reflection rows	16	16	16	2026-06-17T00:00Z	16	.runtime/phpt-progress/run-20260617T003800Z-manifest.log
+ptn-r48u string INI rows	7	7	7	2026-06-17T00:00Z	7	.runtime/phpt-progress/run-20260617T005742Z.log
 ptn-cl81 ArrayObject flipped-green PHPT rows	31	31	31	2026-06-16T21:00Z	31	git:f220b355
 ptn-6rea html entity charset rows	5	5	5	2026-06-16T21:00Z	5	mail:hq-wisp-2o5aqg
 ptn-2ey0 sparse reference call rows	7	7	7	2026-06-16T21:00Z	2	.runtime/phpt-progress/run-20260616T213415Z-manifest.log
