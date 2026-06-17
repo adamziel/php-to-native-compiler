@@ -6189,7 +6189,18 @@ impl Parser<'_> {
         let mut trait_uses = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             match self.parse_class_member(false, false, &class_name)? {
-                ParsedClassMember::Method(method) => methods.push(method),
+                ParsedClassMember::Method(method) => {
+                    if method.is_abstract {
+                        return Err(Diagnostic::new(
+                            format!(
+                                "Anonymous class method {}() must not be abstract",
+                                method.name
+                            ),
+                            Some(method.span),
+                        ));
+                    }
+                    methods.push(method);
+                }
                 ParsedClassMember::Properties(parsed_properties) => {
                     properties.extend(parsed_properties);
                 }
@@ -11279,8 +11290,78 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
                 Some(class.span),
             ));
         }
+        if let Some(required_method) = inherited_unsatisfied_abstract_method(class, classes) {
+            return Err(Diagnostic::new(
+                format!(
+                    "Class {} must implement 1 abstract method ({}::{})",
+                    class.name, required_method.declaring_class, required_method.method_name
+                ),
+                Some(class.span),
+            ));
+        }
     }
     Ok(())
+}
+
+struct RequiredAbstractMethod {
+    declaring_class: String,
+    method_name: String,
+}
+
+fn inherited_unsatisfied_abstract_method(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Option<RequiredAbstractMethod> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        for method in &parent.methods {
+            if !method.is_abstract || method.trait_name.is_some() {
+                continue;
+            }
+            if concrete_method_exists_in_class_or_ancestors(class, &method.name, classes) {
+                continue;
+            }
+            return Some(RequiredAbstractMethod {
+                declaring_class: parent.name.clone(),
+                method_name: method.name.clone(),
+            });
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn concrete_method_exists_in_class_or_ancestors(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut current = Some(class);
+    let mut seen = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        if candidate
+            .methods
+            .iter()
+            .any(|method| method_can_satisfy_override(method, method_name) && !method.is_abstract)
+        {
+            return true;
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+    false
 }
 
 fn parent_concrete_method_exists(

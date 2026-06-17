@@ -2539,6 +2539,76 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Attribute")) {
+        if (strcmp(constant, "TARGET_CLASS") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "TARGET_FUNCTION") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "TARGET_METHOD") == 0) {
+            *out = ptn_int(4);
+            return 1;
+        }
+        if (strcmp(constant, "TARGET_PROPERTY") == 0) {
+            *out = ptn_int(8);
+            return 1;
+        }
+        if (strcmp(constant, "TARGET_CLASS_CONSTANT") == 0) {
+            *out = ptn_int(16);
+            return 1;
+        }
+        if (strcmp(constant, "TARGET_PARAMETER") == 0) {
+            *out = ptn_int(32);
+            return 1;
+        }
+        if (strcmp(constant, "TARGET_CONSTANT") == 0) {
+            *out = ptn_int(64);
+            return 1;
+        }
+        if (strcmp(constant, "TARGET_ALL") == 0) {
+            *out = ptn_int(127);
+            return 1;
+        }
+        if (strcmp(constant, "IS_REPEATABLE") == 0) {
+            *out = ptn_int(128);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "DateTime") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "DateTimeImmutable") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "DateTimeInterface")) {
+        if (strcmp(constant, "ATOM") == 0 || strcmp(constant, "RFC3339") == 0 || strcmp(constant, "W3C") == 0) {
+            *out = ptn_string("Y-m-d\\TH:i:sP");
+            return 1;
+        }
+        if (strcmp(constant, "COOKIE") == 0) {
+            *out = ptn_string("l, d-M-Y H:i:s T");
+            return 1;
+        }
+        if (strcmp(constant, "ISO8601") == 0) {
+            *out = ptn_string("Y-m-d\\TH:i:sO");
+            return 1;
+        }
+        if (strcmp(constant, "RFC3339_EXTENDED") == 0) {
+            *out = ptn_string("Y-m-d\\TH:i:s.vP");
+            return 1;
+        }
+        if (strcmp(constant, "RFC822") == 0) {
+            *out = ptn_string("D, d M y H:i:s O");
+            return 1;
+        }
+        if (strcmp(constant, "RFC850") == 0) {
+            *out = ptn_string("l, d-M-y H:i:s T");
+            return 1;
+        }
+        if (strcmp(constant, "RFC1036") == 0 || strcmp(constant, "RFC1123") == 0 || strcmp(constant, "RFC2822") == 0 || strcmp(constant, "RSS") == 0) {
+            *out = ptn_string("D, d M Y H:i:s O");
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -3665,6 +3735,20 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_ascii_case_equal(receiver.as.object->class_name, "ReflectionConstant")
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_constant_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_ascii_case_equal(receiver.as.object->class_name, "ReflectionAttribute")
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_reflection_attribute_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_internal_class_name_is_reflection_parameter(receiver.as.object->class_name)
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
@@ -3718,6 +3802,15 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_sensitive_parameter_value_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && (ptn_internal_class_name_is_attribute(receiver.as.object->class_name) ||
+            ptn_internal_class_name_is_deprecated(receiver.as.object->class_name) ||
+            ptn_internal_class_name_is_no_discard(receiver.as.object->class_name))
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_attribute_metadata_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

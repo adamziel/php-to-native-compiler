@@ -1132,6 +1132,7 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_attribute(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
@@ -1139,6 +1140,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_class_constant(const
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_named_type(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_constant(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_reference(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
@@ -1150,6 +1152,9 @@ static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *clas
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_deprecated(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_no_discard(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
@@ -1193,6 +1198,12 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_reflection_constant_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_sensitive_parameter_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1206,6 +1217,24 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_property_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_attribute_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_deprecated_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_no_discard_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
@@ -1225,6 +1254,22 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
@@ -1281,6 +1326,14 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_attribute_metadata_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

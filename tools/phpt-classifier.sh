@@ -1295,6 +1295,18 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_(call|extensions|functions|unregister))?[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
+        function ptn_supported_anonymous_get_class_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/
+        }
+        function ptn_supported_anonymous_inherited_abstract_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/gh15994[.]phpt$/
+        }
+        function ptn_supported_anonymous_abstract_method_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/gh16067[.]phpt$/
+        }
+        function ptn_supported_anonymous_dynamic_static_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/008[.]phpt$/
+        }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
             for (i = 1; i <= length(line); i++) {
@@ -1433,12 +1445,12 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+class([^[:alnum:]_]|$)/) {
                 saw_anonymous_class = 1
-                if (saw_abstract_class) {
+                if (saw_abstract_class && !ptn_supported_anonymous_inherited_abstract_row()) {
                     print "unsupported-anonymous-class\trequires anonymous class abstract parent implementation diagnostics, outside PTN modeled anonymous class subset"
                     found = 1
                     exit
                 }
-                if (saw_get_class) {
+                if (saw_get_class && !ptn_supported_anonymous_get_class_row()) {
                     print "unsupported-anonymous-class\trequires PHP hidden-suffix anonymous class generated names, outside PTN modeled anonymous class subset"
                     found = 1
                     exit
@@ -1459,17 +1471,17 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])get_class[[:space:]]*[(]/) {
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])get_class[[:space:]]*[(]/ && !ptn_supported_anonymous_get_class_row()) {
                 print "unsupported-anonymous-class\trequires PHP hidden-suffix anonymous class generated names, outside PTN modeled anonymous class subset"
                 found = 1
                 exit
             }
-            if (saw_anonymous_class && line ~ /[$][A-Za-z_][A-Za-z0-9_]*[[:space:]]*::/) {
+            if (saw_anonymous_class && line ~ /[$][A-Za-z_][A-Za-z0-9_]*[[:space:]]*::/ && !ptn_supported_anonymous_dynamic_static_row()) {
                 print "unsupported-anonymous-class\trequires dynamic static member access through anonymous class objects, outside PTN modeled anonymous class subset"
                 found = 1
                 exit
             }
-            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+(public|protected|private|static|function)/) {
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])abstract[[:space:]]+(public|protected|private|static|function)/ && !ptn_supported_anonymous_abstract_method_row()) {
                 print "unsupported-anonymous-class\trequires anonymous class abstract method diagnostics, outside PTN modeled anonymous class subset"
                 found = 1
                 exit
@@ -1637,6 +1649,13 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 object_string_unsupported_reason = reason
             }
         }
+        function ptn_supported_internal_attribute_metadata_row() {
+            return ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/029_reflect_internal_symbols[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/034_target_values[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/deprecated\/property_readonly_00[123][.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/property_readonly_00[12][.]phpt$/
+        }
         {
             line = ptn_php_code_line($0)
             if (implemented_modifier_diagnostic_seen) {
@@ -1734,22 +1753,31 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 reflection_property_vars[reflection_property_assignment] = 1
             }
             for (reflection_property_var in reflection_property_vars) {
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\\(") &&
+                    !ptn_supported_internal_attribute_metadata_row()) {
+                    print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
+                    found = 1
+                    exit
+                }
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gettype|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
                     print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                     found = 1
                     exit
                 }
             }
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
-                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getattributes|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
+                    !ptn_supported_internal_attribute_metadata_row()) ||
+                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|getdoccomment|getmangledname|gethook|setaccessible|isreadonly|isinitialized|isvirtual|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_|export|setaccessible|getmodifiernames)/) {
                 print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                 found = 1
                 exit
             }
-            if (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ ||
-                line ~ /(^|[^[:alnum:]_$\\])attribute[[:space:]]*::/ ||
-                line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/) {
+            if (!ptn_supported_internal_attribute_metadata_row() &&
+                (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ ||
+                    line ~ /(^|[^[:alnum:]_$\\])attribute[[:space:]]*::/ ||
+                    line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/)) {
                 print "unsupported-internal-attribute-metadata\trequires internal attribute/reflection metadata such as Reflection*::getAttributes(), Attribute constants, Deprecated, or NoDiscard"
                 found = 1
                 exit

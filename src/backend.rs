@@ -3505,6 +3505,9 @@ fn emit_class_metadata_helpers(
     for class_name in [
         "stdClass",
         "Generator",
+        "Attribute",
+        "Deprecated",
+        "NoDiscard",
         "ArrayObject",
         "ArrayIterator",
         "RecursiveArrayIterator",
@@ -3513,8 +3516,16 @@ fn emit_class_metadata_helpers(
         "CallbackFilterIterator",
         "InfiniteIterator",
         "LimitIterator",
+        "ReflectionAttribute",
         "ReflectionClass",
+        "ReflectionClassConstant",
+        "ReflectionConstant",
+        "ReflectionFunction",
+        "ReflectionMethod",
         "ReflectionObject",
+        "ReflectionProperty",
+        "SensitiveParameter",
+        "SensitiveParameterValue",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -3695,6 +3706,7 @@ fn emit_class_metadata_helpers(
         "ReflectionAttribute",
         "ReflectionClass",
         "ReflectionClassConstant",
+        "ReflectionConstant",
         "ReflectionExtension",
         "ReflectionFunction",
         "ReflectionMethod",
@@ -3707,6 +3719,9 @@ fn emit_class_metadata_helpers(
         "ReflectionUnionType",
         "ReflectionIntersectionType",
         "ReflectionException",
+        "Attribute",
+        "Deprecated",
+        "NoDiscard",
         "SensitiveParameter",
         "SensitiveParameterValue",
         "ArrayIterator",
@@ -4291,11 +4306,15 @@ fn emit_class_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
     );
-    out.push_str("    (void)runtime;\n");
-    out.push_str("    (void)class_name;\n");
-    out.push_str("    (void)filter_present;\n");
-    out.push_str("    (void)filter;\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if !has_class_constant_lookup_entries {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)filter_present;\n");
+        out.push_str("    (void)filter;\n");
+    }
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
@@ -4333,13 +4352,17 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter) {\n",
         );
-        out.push_str("    (void)runtime;\n");
-        out.push_str("    (void)class_name;\n");
-        out.push_str("    (void)filter_present;\n");
-        out.push_str("    (void)filter;\n");
         out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
         out.push_str("    int64_t index = 0;\n");
-        out.push_str("    (void)index;\n");
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_class_constant_lookup_entries {
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    (void)filter_present;\n");
+            out.push_str("    (void)filter;\n");
+            out.push_str("    (void)index;\n");
+        }
         for class in classes {
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
@@ -4367,8 +4390,12 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name) {\n",
         );
-        out.push_str("    (void)class_name;\n");
-        out.push_str("    (void)constant_name;\n");
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_class_constant_lookup_entries {
+            out.push_str("    (void)constant_name;\n");
+        }
         for class in classes {
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
@@ -4394,8 +4421,12 @@ fn emit_class_metadata_helpers(
         out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name) {\n",
         );
-        out.push_str("    (void)class_name;\n");
-        out.push_str("    (void)constant_name;\n");
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_class_constant_lookup_entries {
+            out.push_str("    (void)constant_name;\n");
+        }
         for class in classes {
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
@@ -11511,10 +11542,14 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
             if class_name.eq_ignore_ascii_case("ReflectionClass")
+                || class_name.eq_ignore_ascii_case("ReflectionConstant")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
                 || class_name.eq_ignore_ascii_case("SensitiveParameter")
                 || class_name.eq_ignore_ascii_case("SensitiveParameterValue")
+                || class_name.eq_ignore_ascii_case("Attribute")
+                || class_name.eq_ignore_ascii_case("Deprecated")
+                || class_name.eq_ignore_ascii_case("NoDiscard")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")

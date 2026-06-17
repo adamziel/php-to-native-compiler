@@ -780,11 +780,23 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_class_constant(lookup_class_name)) {
         return ptn_reflection_class_constant_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_constant(lookup_class_name)) {
+        return ptn_reflection_constant_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_sensitive_parameter(lookup_class_name)) {
         return ptn_sensitive_parameter_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_sensitive_parameter_value(lookup_class_name)) {
         return ptn_sensitive_parameter_value_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_attribute(lookup_class_name)) {
+        return ptn_attribute_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_deprecated(lookup_class_name)) {
+        return ptn_deprecated_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_no_discard(lookup_class_name)) {
+        return ptn_no_discard_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_reflection_property(lookup_class_name)) {
         return ptn_reflection_property_new(runtime, argc, args, line);
@@ -1790,7 +1802,8 @@ static PTN_UNUSED void ptn_throw_overloaded_property_reference_error(
 static PTN_UNUSED void ptn_throw_readonly_property_error(
     PtnRuntime *runtime,
     const char *declaring_class,
-    const char *property
+    const char *property,
+    size_t line
 ) {
     char message[256];
     int written = snprintf(
@@ -1803,7 +1816,7 @@ static PTN_UNUSED void ptn_throw_readonly_property_error(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED void ptn_throw_readonly_property_initialize_error(
@@ -2885,7 +2898,8 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         ptn_throw_readonly_property_error(
             runtime,
             metadata->declaring_class,
-            metadata->display_name
+            metadata->display_name,
+            line
         );
         return ptn_null();
     }
@@ -3026,7 +3040,8 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
         ptn_throw_readonly_property_error(
             runtime,
             metadata->declaring_class,
-            metadata->display_name
+            metadata->display_name,
+            line
         );
         return;
     }
@@ -3157,7 +3172,8 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         ptn_throw_readonly_property_error(
             runtime,
             metadata->declaring_class,
-            metadata->display_name
+            metadata->display_name,
+            line
         );
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
