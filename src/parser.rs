@@ -2235,6 +2235,7 @@ impl Parser<'_> {
         }
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
+        validate_constant_expression_closures(&value)?;
         if const_expr_contains_new_object(&value) {
             return Err(Diagnostic::new(
                 "New expressions are not supported in this context",
@@ -2512,6 +2513,7 @@ impl Parser<'_> {
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
+            validate_constant_expression_closures(&value)?;
             if !is_supported_property_default_expr(&value) {
                 return Err(Diagnostic::new(
                     "property default value must be a supported constant expression",
@@ -2579,6 +2581,7 @@ impl Parser<'_> {
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
+            validate_constant_expression_closures(&value)?;
             if !is_supported_property_default_expr(&value) {
                 return Err(Diagnostic::new(
                     "static property default value must be a supported constant expression",
@@ -3335,6 +3338,7 @@ impl Parser<'_> {
         let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
+            validate_constant_expression_closures(&value)?;
             if !is_supported_parameter_default_expr(&value) {
                 return Err(Diagnostic::new(
                     "function parameter default value must be a supported constant expression",
@@ -4100,6 +4104,7 @@ impl Parser<'_> {
         self.declared_constants.insert(name.to_ascii_lowercase());
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
+        validate_constant_expression_closures(&value)?;
         if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "constant expression contains invalid operation",
@@ -5882,6 +5887,12 @@ impl Parser<'_> {
                         continue;
                     }
                     if nullsafe {
+                        if self.peek_is_first_class_callable_arguments() {
+                            return Err(Diagnostic::new(
+                                "Cannot combine nullsafe operator with Closure creation",
+                                Some(member_span),
+                            ));
+                        }
                         return Err(Diagnostic::new(
                             "nullsafe method calls are unsupported",
                             Some(member_span),
@@ -17923,6 +17934,7 @@ fn is_supported_global_const_expr_with_options(
                 allow_array_access,
             )
         }
+        Expr::AnonymousFunction(function) => is_supported_constant_closure(function),
         Expr::FirstClassCallable { callable, .. } => {
             is_supported_first_class_callable_const_target(callable)
         }
@@ -17966,7 +17978,6 @@ fn is_supported_global_const_expr_with_options(
         | Expr::Throw { .. }
         | Expr::Yield { .. }
         | Expr::YieldFrom { .. }
-        | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
@@ -18071,9 +18082,98 @@ fn reference_target_contains_new_object(target: &ReferenceTarget) -> bool {
 
 fn is_supported_property_default_expr(expr: &Expr) -> bool {
     match expr {
-        Expr::FirstClassCallable { .. } => false,
         Expr::Grouped { expr, .. } => is_supported_property_default_expr(expr),
         _ => is_supported_global_const_expr(expr),
+    }
+}
+
+fn is_supported_constant_closure(function: &AnonymousFunction) -> bool {
+    function.is_static && function.captures.is_empty()
+}
+
+fn validate_constant_expression_closures(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::AnonymousFunction(function) => {
+            if !function.is_static {
+                return Err(Diagnostic::new(
+                    "Closures in constant expressions must be static",
+                    Some(function.span),
+                ));
+            }
+            if !function.captures.is_empty() {
+                return Err(Diagnostic::new(
+                    "Cannot use(...) variables in constant expression",
+                    Some(function.span),
+                ));
+            }
+            Ok(())
+        }
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    validate_constant_expression_closures(key)?;
+                }
+                match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        validate_constant_expression_closures(value)?;
+                    }
+                    ArrayElementValue::Hole(_) | ArrayElementValue::Reference(_) => {}
+                }
+            }
+            Ok(())
+        }
+        Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Grouped { expr, .. }
+        | Expr::ArrayAccess {
+            array: expr,
+            index: None,
+            ..
+        } => validate_constant_expression_closures(expr),
+        Expr::ArrayAccess {
+            array,
+            index: Some(index),
+            ..
+        } => {
+            validate_constant_expression_closures(array)?;
+            validate_constant_expression_closures(index)
+        }
+        Expr::Binary { left, right, .. } => {
+            validate_constant_expression_closures(left)?;
+            validate_constant_expression_closures(right)
+        }
+        Expr::FirstClassCallable { callable, .. } => {
+            validate_constant_expression_closures(callable)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            validate_constant_expression_closures(condition)?;
+            if let Some(if_true) = if_true {
+                validate_constant_expression_closures(if_true)?;
+            }
+            validate_constant_expression_closures(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            validate_constant_expression_closures(subject)?;
+            for arm in arms {
+                for condition in &arm.conditions {
+                    validate_constant_expression_closures(condition)?;
+                }
+                validate_constant_expression_closures(&arm.value)?;
+            }
+            Ok(())
+        }
+        Expr::NewObject { arguments, .. } | Expr::DynamicNewObject { arguments, .. } => {
+            for argument in arguments {
+                validate_constant_expression_closures(argument)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -18135,6 +18235,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         } => {
             is_supported_parameter_default_expr(array) && is_supported_parameter_default_expr(index)
         }
+        Expr::AnonymousFunction(function) => is_supported_constant_closure(function),
         Expr::FirstClassCallable { callable, .. } => {
             is_supported_first_class_callable_const_target(callable)
         }
@@ -18157,7 +18258,6 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::Throw { .. }
         | Expr::Yield { .. }
         | Expr::YieldFrom { .. }
-        | Expr::AnonymousFunction(_)
         | Expr::Call { .. }
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
