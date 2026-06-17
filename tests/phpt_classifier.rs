@@ -1189,6 +1189,18 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "ext/reflection/tests/property_hooks/ReflectionClass_getMethods.phpt",
             "--TEST--\nreflection class methods\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } }\nvar_dump((new ReflectionClass(Test::class))->getMethods());\n--EXPECT--\n",
         ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_Override_okay.phpt",
+            "--TEST--\ndelayed override hook okay\n--FILE--\n<?php\nclass Base { public string $hooked { get => $this->hooked; set => $value; } }\nclass Demo extends Base { public string $hooked { #[DelayedTargetValidation] #[Override] get => $this->hooked; #[DelayedTargetValidation] #[Override] set => $value; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_Override_error_get.phpt",
+            "--TEST--\ndelayed override hook get error\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Override] get => $this->hooked; set => $value; } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_Override_error_set.phpt",
+            "--TEST--\ndelayed override hook set error\n--FILE--\n<?php\nclass Demo { public string $hooked { get => $this->hooked; #[DelayedTargetValidation] #[Override] set => $value; } }\n--EXPECTF--\n",
+        ),
     ];
 
     for (path, phpt) in cases {

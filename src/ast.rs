@@ -111,6 +111,8 @@ pub struct PropertyDecl {
     pub hook_has_set: bool,
     pub hook_get_is_abstract: bool,
     pub hook_set_is_abstract: bool,
+    pub hook_get_override_span: Option<SourceSpan>,
+    pub hook_set_override_span: Option<SourceSpan>,
     pub hook_get_value: Option<Expr>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,

@@ -1766,6 +1766,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         }
         function ptn_supported_property_hook_metadata_row() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/with_Override_(okay|error_get|error_set)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/abstract_hook[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/abstract_prop_hooks[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/syntax[.]phpt$/ ||

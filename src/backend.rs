@@ -8129,7 +8129,7 @@ fn class_property_initialization_chain(
             }
         }
         properties.extend(class.properties.iter().cloned().filter_map(|property| {
-            if property.has_hooks {
+            if property.has_hooks && property.is_virtual {
                 return None;
             }
             let hook_get_value = inherited_hook_property(class, &property.name, classes)

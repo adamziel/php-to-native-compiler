@@ -279,6 +279,8 @@ struct ParsedPropertyHookBlock {
     has_set: bool,
     get_is_abstract: bool,
     set_is_abstract: bool,
+    get_override_span: Option<SourceSpan>,
+    set_override_span: Option<SourceSpan>,
     get_value: Option<Expr>,
 }
 
@@ -2584,6 +2586,8 @@ impl Parser<'_> {
                     hook_has_set: hooks.has_set,
                     hook_get_is_abstract: hooks.get_is_abstract,
                     hook_set_is_abstract: hooks.set_is_abstract,
+                    hook_get_override_span: hooks.get_override_span,
+                    hook_set_override_span: hooks.set_override_span,
                     hook_get_value: hooks.get_value,
                     type_hint,
                     attributes: attributes.clone(),
@@ -2634,6 +2638,8 @@ impl Parser<'_> {
                 hook_has_set: false,
                 hook_get_is_abstract: false,
                 hook_set_is_abstract: false,
+                hook_get_override_span: None,
+                hook_set_override_span: None,
                 hook_get_value: None,
                 type_hint,
                 attributes: attributes.clone(),
@@ -2712,6 +2718,7 @@ impl Parser<'_> {
             ..ParsedPropertyHookBlock::default()
         };
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            let hook_attributes = self.parse_attribute_groups()?;
             let mut hook_is_final = false;
             let mut hook_is_abstract = false;
             let mut hook_visibility = property_visibility;
@@ -2751,10 +2758,19 @@ impl Parser<'_> {
             let token = self.advance().clone();
             match token.kind {
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("get") => {
+                    validate_builtin_attributes_for_target(
+                        &hook_attributes,
+                        AttributeTarget::Method,
+                        token.span,
+                    )?;
+                    if hook_attributes.has_override {
+                        hooks.get_override_span = Some(token.span);
+                    }
                     if matches!(self.peek().kind, TokenKind::DoubleArrow) {
                         self.advance();
                         let value = self.parse_expr()?;
-                        if !is_supported_property_default_expr(&value) {
+                        let uses_backing_property = expr_uses_this_property(&value, property_name);
+                        if !uses_backing_property && !is_supported_property_default_expr(&value) {
                             return Err(Diagnostic::new(
                                 "property hook get expression must be a supported constant expression",
                                 Some(value.span()),
@@ -2762,7 +2778,11 @@ impl Parser<'_> {
                         }
                         self.expect_semicolon()?;
                         hooks.has_get = true;
-                        hooks.get_value = Some(value);
+                        if uses_backing_property {
+                            hooks.is_virtual = false;
+                        } else {
+                            hooks.get_value = Some(value);
+                        }
                     } else {
                         let is_abstract_hook =
                             hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
@@ -2780,6 +2800,14 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set") => {
+                    validate_builtin_attributes_for_target(
+                        &hook_attributes,
+                        AttributeTarget::Method,
+                        token.span,
+                    )?;
+                    if hook_attributes.has_override {
+                        hooks.set_override_span = Some(token.span);
+                    }
                     let is_abstract_hook =
                         hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
                     validate_property_hook_modifiers(
@@ -9696,6 +9724,8 @@ fn promoted_properties_from_constructor(
                 hook_has_set: false,
                 hook_get_is_abstract: false,
                 hook_set_is_abstract: false,
+                hook_get_override_span: None,
+                hook_set_override_span: None,
                 hook_get_value: None,
                 type_hint: parameter
                     .type_hint
@@ -11500,6 +11530,30 @@ fn validate_override_attributes(classes: &[ClassDecl], traits: &[TraitDecl]) -> 
                 Some(property.span),
             ));
         }
+        for property in &class.properties {
+            if let Some(span) = property.hook_get_override_span {
+                if !property_hook_override_target_exists(class, &property.name, "get", classes) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "{}::${}::get() has #[\\Override] attribute, but no matching parent method exists",
+                            class.name, property.name
+                        ),
+                        Some(span),
+                    ));
+                }
+            }
+            if let Some(span) = property.hook_set_override_span {
+                if !property_hook_override_target_exists(class, &property.name, "set", classes) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "{}::${}::set() has #[\\Override] attribute, but no matching parent method exists",
+                            class.name, property.name
+                        ),
+                        Some(span),
+                    ));
+                }
+            }
+        }
         for property in &class.static_properties {
             if !property.has_override_attribute {
                 continue;
@@ -11661,6 +11715,99 @@ fn property_override_target_exists(
 ) -> bool {
     parent_property_override_target_exists(class, property_name, is_static, classes)
         || class_interface_property_exists(class, property_name, is_static, classes)
+}
+
+fn property_hook_override_target_exists(
+    class: &ClassDecl,
+    property_name: &str,
+    hook_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    parent_property_hook_override_target_exists(class, property_name, hook_name, classes)
+        || class_interface_property_hook_exists(class, property_name, hook_name, classes)
+}
+
+fn parent_property_hook_override_target_exists(
+    class: &ClassDecl,
+    property_name: &str,
+    hook_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        if parent.properties.iter().any(|property| {
+            property.visibility != PropertyVisibility::Private
+                && property.name == property_name
+                && property_satisfies_hook(property, hook_name)
+        }) {
+            return true;
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    false
+}
+
+fn class_interface_property_hook_exists(
+    class: &ClassDecl,
+    property_name: &str,
+    hook_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        if candidate.interfaces.iter().any(|interface_name| {
+            interface_property_hook_exists(
+                interface_name,
+                property_name,
+                hook_name,
+                classes,
+                &mut seen_interfaces,
+            )
+        }) {
+            return true;
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+    false
+}
+
+fn interface_property_hook_exists(
+    interface_name: &str,
+    property_name: &str,
+    hook_name: &str,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+) -> bool {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return false;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return false;
+    };
+    if !interface.is_interface {
+        return false;
+    }
+    interface.properties.iter().any(|property| {
+        property.name == property_name && property_satisfies_hook(property, hook_name)
+    }) || interface.interfaces.iter().any(|parent_name| {
+        interface_property_hook_exists(parent_name, property_name, hook_name, classes, seen)
+    })
 }
 
 fn parent_property_override_target_exists(
@@ -18287,6 +18434,367 @@ fn token_string_parts_use_this_property(parts: &[TokenStringPart], property_name
         }
         _ => false,
     })
+}
+
+fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
+    match expr {
+        Expr::PropertyFetch { receiver, name, .. }
+        | Expr::NullsafePropertyFetch { receiver, name, .. } => {
+            name == property_name
+                && matches!(receiver.as_ref(), Expr::Variable(variable, _) if variable.eq_ignore_ascii_case("this"))
+                || expr_uses_this_property(receiver, property_name)
+        }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
+        }
+        Expr::InterpolatedString(parts, _) => string_parts_use_this_property(parts, property_name),
+        Expr::DynamicVariable { name, .. }
+        | Expr::FirstClassCallable { callable: name, .. }
+        | Expr::DynamicNewObject {
+            class_name: name, ..
+        }
+        | Expr::Clone { expr: name, .. }
+        | Expr::DynamicClassNameFetch { receiver: name, .. }
+        | Expr::Empty { target: name, .. }
+        | Expr::Print {
+            expression: name, ..
+        }
+        | Expr::Include { path: name, .. }
+        | Expr::Throw { value: name, .. }
+        | Expr::YieldFrom { expr: name, .. }
+        | Expr::Unary { expr: name, .. }
+        | Expr::Cast { expr: name, .. }
+        | Expr::Grouped { expr: name, .. }
+        | Expr::PipeValue { expr: name, .. } => expr_uses_this_property(name, property_name),
+        Expr::Assign { target, value, .. } => {
+            assignment_target_uses_this_property(target, property_name)
+                || expr_uses_this_property(value, property_name)
+        }
+        Expr::AssignRef { target, source, .. } => {
+            assignment_target_uses_this_property(target, property_name)
+                || expr_uses_this_property(source, property_name)
+        }
+        Expr::IncDec { target, .. } => inc_dec_target_uses_this_property(target, property_name),
+        Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => arguments
+            .iter()
+            .any(|argument| expr_uses_this_property(argument, property_name)),
+        Expr::DynamicCall {
+            callee, arguments, ..
+        } => {
+            expr_uses_this_property(callee, property_name)
+                || arguments
+                    .iter()
+                    .any(|argument| expr_uses_this_property(argument, property_name))
+        }
+        Expr::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            expr_uses_this_property(receiver, property_name)
+                || arguments
+                    .iter()
+                    .any(|argument| expr_uses_this_property(argument, property_name))
+        }
+        Expr::DynamicMethodCall {
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
+                || arguments
+                    .iter()
+                    .any(|argument| expr_uses_this_property(argument, property_name))
+        }
+        Expr::InstanceOf { expr, target, .. } => {
+            expr_uses_this_property(expr, property_name)
+                || matches!(target, InstanceOfTarget::Expr(target) if expr_uses_this_property(target, property_name))
+        }
+        Expr::Match { subject, arms, .. } => {
+            expr_uses_this_property(subject, property_name)
+                || arms.iter().any(|arm| {
+                    arm.conditions
+                        .iter()
+                        .any(|condition| expr_uses_this_property(condition, property_name))
+                        || expr_uses_this_property(&arm.value, property_name)
+                })
+        }
+        Expr::Array { elements, .. } => elements
+            .iter()
+            .any(|element| array_element_uses_this_property(element, property_name)),
+        Expr::List(list) => list
+            .elements
+            .iter()
+            .any(|element| list_expr_element_uses_this_property(element, property_name)),
+        Expr::ArrayAccess { array, index, .. } => {
+            expr_uses_this_property(array, property_name)
+                || index
+                    .as_ref()
+                    .is_some_and(|index| expr_uses_this_property(index, property_name))
+        }
+        Expr::Isset { targets, .. } => targets
+            .iter()
+            .any(|target| expr_uses_this_property(target, property_name)),
+        Expr::Yield { key, value, .. } => {
+            key.as_ref()
+                .is_some_and(|key| expr_uses_this_property(key, property_name))
+                || value
+                    .as_ref()
+                    .is_some_and(|value| expr_uses_this_property(value, property_name))
+        }
+        Expr::Binary { left, right, .. } => {
+            expr_uses_this_property(left, property_name)
+                || expr_uses_this_property(right, property_name)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            expr_uses_this_property(condition, property_name)
+                || if_true
+                    .as_ref()
+                    .is_some_and(|value| expr_uses_this_property(value, property_name))
+                || expr_uses_this_property(if_false, property_name)
+        }
+        Expr::String(_, _)
+        | Expr::ShellExec { .. }
+        | Expr::Int(_, _)
+        | Expr::Float(_, _)
+        | Expr::Bool(_, _)
+        | Expr::Null(_)
+        | Expr::Variable(_, _)
+        | Expr::AnonymousFunction(_)
+        | Expr::Constant(_, _)
+        | Expr::MagicConstant(_, _)
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyFetch { .. }
+        | Expr::ClassConstantFetch { .. } => false,
+    }
+}
+
+fn string_parts_use_this_property(parts: &[StringPart], property_name: &str) -> bool {
+    parts.iter().any(|part| match part {
+        StringPart::PropertyFetch { variable, property } => {
+            variable.eq_ignore_ascii_case("this") && property == property_name
+        }
+        StringPart::PropertyChain {
+            variable,
+            properties,
+        } => {
+            variable.eq_ignore_ascii_case("this")
+                && properties
+                    .first()
+                    .is_some_and(|property| property == property_name)
+        }
+        _ => false,
+    })
+}
+
+fn array_element_uses_this_property(element: &ArrayElement, property_name: &str) -> bool {
+    element
+        .key
+        .as_ref()
+        .is_some_and(|key| expr_uses_this_property(key, property_name))
+        || match &element.value {
+            ArrayElementValue::Hole(_) => false,
+            ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                expr_uses_this_property(value, property_name)
+            }
+            ArrayElementValue::Reference(target) => {
+                reference_target_uses_this_property(target, property_name)
+            }
+        }
+}
+
+fn assignment_target_uses_this_property(target: &AssignmentTarget, property_name: &str) -> bool {
+    match target {
+        AssignmentTarget::Property { receiver, name, .. } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+        }
+        AssignmentTarget::DynamicProperty { receiver, name, .. } => {
+            expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
+        }
+        AssignmentTarget::DynamicVariable { name, .. } => {
+            expr_uses_this_property(name, property_name)
+        }
+        AssignmentTarget::ArrayDim(target) => {
+            array_dim_target_uses_this_property(target, property_name)
+        }
+        AssignmentTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            expr_uses_this_property(name, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        AssignmentTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => dimensions
+            .iter()
+            .flatten()
+            .any(|dimension| expr_uses_this_property(dimension, property_name)),
+        AssignmentTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            expr_uses_this_property(array, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        AssignmentTarget::List(list) => {
+            list_assignment_target_uses_this_property(list, property_name)
+        }
+        AssignmentTarget::Variable { .. }
+        | AssignmentTarget::StaticProperty { .. }
+        | AssignmentTarget::DynamicStaticProperty { .. } => false,
+    }
+}
+
+fn inc_dec_target_uses_this_property(target: &IncDecTarget, property_name: &str) -> bool {
+    match target {
+        IncDecTarget::Property { receiver, name, .. } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+        }
+        IncDecTarget::DynamicVariable { name, .. } => expr_uses_this_property(name, property_name),
+        IncDecTarget::ArrayDim(target) => {
+            array_dim_target_uses_this_property(target, property_name)
+        }
+        IncDecTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            expr_uses_this_property(name, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        IncDecTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => false,
+    }
+}
+
+fn reference_target_uses_this_property(target: &ReferenceTarget, property_name: &str) -> bool {
+    match target {
+        ReferenceTarget::Property { receiver, name, .. } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+        }
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
+        }
+        ReferenceTarget::DynamicVariable { name, .. } => {
+            expr_uses_this_property(name, property_name)
+        }
+        ReferenceTarget::ArrayDim(target) => {
+            array_dim_target_uses_this_property(target, property_name)
+        }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        ReferenceTarget::Variable { .. } => false,
+    }
+}
+
+fn receiver_is_this_property(receiver: &Expr, name: &str, property_name: &str) -> bool {
+    name == property_name
+        && matches!(receiver, Expr::Variable(variable, _) if variable.eq_ignore_ascii_case("this"))
+}
+
+fn list_expr_element_uses_this_property(element: &ListExprElement, property_name: &str) -> bool {
+    element
+        .key
+        .as_ref()
+        .is_some_and(|key| expr_uses_this_property(key, property_name))
+        || element.target.as_ref().is_some_and(|target| match target {
+            ListExprElementTarget::Value(value) => expr_uses_this_property(value, property_name),
+            ListExprElementTarget::Reference(target) => {
+                reference_target_uses_this_property(target, property_name)
+            }
+        })
+}
+
+fn list_assignment_target_uses_this_property(
+    list: &ListAssignmentTarget,
+    property_name: &str,
+) -> bool {
+    list.elements.iter().any(|element| {
+        element
+            .key
+            .as_ref()
+            .is_some_and(|key| expr_uses_this_property(key, property_name))
+            || match &element.target {
+                ListAssignmentElementTarget::Value(target) => {
+                    assignment_target_uses_this_property(target, property_name)
+                }
+                ListAssignmentElementTarget::Reference(target) => {
+                    reference_target_uses_this_property(target, property_name)
+                }
+            }
+    })
+}
+
+fn array_dim_target_uses_this_property(target: &ArrayDimTarget, property_name: &str) -> bool {
+    target
+        .dimensions
+        .iter()
+        .flatten()
+        .any(|dimension| expr_uses_this_property(dimension, property_name))
 }
 
 fn is_supported_first_class_callable_const_target(callable: &Expr) -> bool {

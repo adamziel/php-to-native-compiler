@@ -5210,6 +5210,46 @@ class Box implements Contract {
 }
 
 #[test]
+fn parser_tracks_backed_property_hook_get_and_hook_override_attributes() {
+    let program = parser::parse(
+        "<?php
+class Base {
+    public string $hooked { get => $this->hooked; set => $value; }
+}
+class Demo extends Base {
+    public string $hooked {
+        #[DelayedTargetValidation]
+        #[Override]
+        get => $this->hooked;
+        #[DelayedTargetValidation]
+        #[Override]
+        set => $value;
+    }
+}
+",
+    )
+    .unwrap();
+
+    let property = &program.classes[1].properties[0];
+    assert!(property.has_hooks);
+    assert!(!property.is_virtual);
+    assert!(property.hook_has_get);
+    assert!(property.hook_has_set);
+    assert!(property.hook_get_value.is_none());
+    assert!(property.hook_get_override_span.is_some());
+    assert!(property.hook_set_override_span.is_some());
+
+    let program = parser::parse(
+        "<?php class Bag { public array $items { get => $this->items[0]; set => $value; } }",
+    )
+    .unwrap();
+    let property = &program.classes[0].properties[0];
+    assert!(property.has_hooks);
+    assert!(!property.is_virtual);
+    assert!(property.hook_get_value.is_none());
+}
+
+#[test]
 fn parser_lowers_asymmetric_constructor_promoted_properties() {
     let program = parser::parse(
         "<?php
@@ -5978,6 +6018,14 @@ fn parser_rejects_unmatched_override_attributes() {
         (
             "<?php trait T { public function t() {} } class C { use T; #[\\Override] public function t() {} }",
             "C::t() has #[\\Override] attribute, but no matching parent method exists",
+        ),
+        (
+            "<?php class C { public string $p { #[\\Override] get => $this->p; set => $value; } }",
+            "C::$p::get() has #[\\Override] attribute, but no matching parent method exists",
+        ),
+        (
+            "<?php class C { public string $p { get => $this->p; #[\\Override] set => $value; } }",
+            "C::$p::set() has #[\\Override] attribute, but no matching parent method exists",
         ),
     ];
 
@@ -42203,6 +42251,40 @@ var_dump(C2::foo(new C1));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_object_declare_property(&runtime"));
     assert!(c_source.contains("\"P\""));
+}
+
+#[test]
+fn compile_backed_property_hook_get_expression_storage_to_native_binary() {
+    let root = temp_dir("ptn-native-backed-property-hook-storage");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("backed-property-hook-storage.php");
+    let output = root.join("backed-property-hook-storage-bin");
+    fs::write(
+        &input,
+        "<?php
+class Bag {
+    public string $hooked {
+        get => $this->hooked;
+        set => $value;
+    }
+}
+
+$bag = new Bag();
+$bag->hooked = 'foo';
+var_dump($bag->hooked);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"foo\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
