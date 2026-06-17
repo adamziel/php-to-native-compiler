@@ -897,8 +897,14 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_spl_fixed_array(lookup_class_name)) {
         return ptn_spl_fixed_array_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_append_iterator(lookup_class_name)) {
+        return ptn_append_iterator_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_callback_filter_iterator(lookup_class_name)) {
         return ptn_callback_filter_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_recursive_callback_filter_iterator(lookup_class_name)) {
+        return ptn_recursive_callback_filter_iterator_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_filter_iterator(lookup_class_name)) {
         return ptn_filter_iterator_new(runtime, argc, args, line);
@@ -908,6 +914,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_iterator_iterator(lookup_class_name)) {
         return ptn_iterator_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_no_rewind_iterator(lookup_class_name)) {
+        return ptn_no_rewind_iterator_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_recursive_iterator_iterator(lookup_class_name)) {
         return ptn_recursive_iterator_iterator_new(runtime, argc, args, line);

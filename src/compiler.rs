@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     ArrayDimTarget, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CatchClause, Expr,
     GlobalTarget, IncDecTarget, InstanceOfTarget, ListAssignmentElementTarget, MagicConstantKind,
-    Program, ReferenceTarget, Statement, StringPart, SwitchCase, UnsetTarget,
+    Program, ReferenceTarget, Statement, StringPart, SwitchCase, UnaryOp, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
@@ -286,6 +286,14 @@ impl IncludeCollector {
                 ..
             } => {
                 self.collect_expr(condition, source_file, source_dir)?;
+                if let Some(value) = compile_time_condition_truth(condition) {
+                    if value {
+                        self.collect_statements(then_body, source_file, source_dir)?;
+                    } else {
+                        self.collect_statements(else_body, source_file, source_dir)?;
+                    }
+                    return Ok(());
+                }
                 let before = self.path_env.clone();
                 self.path_env = before.clone();
                 self.collect_statements(then_body, source_file, source_dir)?;
@@ -1236,6 +1244,98 @@ fn bounded_static_include_paths(
         }
         _ => None,
     }
+}
+
+fn compile_time_condition_truth(expr: &Expr) -> Option<bool> {
+    match expr {
+        Expr::Bool(value, _) => Some(*value),
+        Expr::Null(_) => Some(false),
+        Expr::Int(value, _) => Some(*value != 0),
+        Expr::Float(value, _) => Some(*value != 0.0),
+        Expr::String(value, _) => Some(!value.is_empty() && value != "0"),
+        Expr::Grouped { expr, .. } => compile_time_condition_truth(expr),
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+            ..
+        } => compile_time_condition_truth(expr).map(|value| !value),
+        Expr::Call {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } if name.eq_ignore_ascii_case("class_exists")
+            && arguments.len() <= 2
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !unpack) =>
+        {
+            let class_name = compile_time_string_literal(arguments.first()?)?;
+            if include_collection_known_internal_class(class_name) {
+                Some(true)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn compile_time_string_literal(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::String(value, _) => Some(value),
+        Expr::Grouped { expr, .. } => compile_time_string_literal(expr),
+        _ => None,
+    }
+}
+
+fn include_collection_known_internal_class(class_name: &str) -> bool {
+    let name = class_name.trim_start_matches('\\');
+    [
+        "AppendIterator",
+        "ArrayIterator",
+        "ArrayObject",
+        "Attribute",
+        "CallbackFilterIterator",
+        "Closure",
+        "DateInterval",
+        "DateTime",
+        "DateTimeImmutable",
+        "DateTimeZone",
+        "DelayedTargetValidation",
+        "Deprecated",
+        "FilterIterator",
+        "Generator",
+        "InfiniteIterator",
+        "IteratorIterator",
+        "LimitIterator",
+        "NoDiscard",
+        "NoRewindIterator",
+        "RecursiveArrayIterator",
+        "RecursiveCallbackFilterIterator",
+        "RecursiveIteratorIterator",
+        "ReflectionClass",
+        "ReflectionConstant",
+        "ReflectionExtension",
+        "ReflectionFunction",
+        "ReflectionMethod",
+        "ReflectionObject",
+        "ReflectionParameter",
+        "ReflectionProperty",
+        "ReturnTypeWillChange",
+        "SensitiveParameter",
+        "SensitiveParameterValue",
+        "SplDoublyLinkedList",
+        "SplFileInfo",
+        "SplFileObject",
+        "SplFixedArray",
+        "SplObjectStorage",
+        "SplQueue",
+        "SplStack",
+        "stdClass",
+    ]
+    .iter()
+    .any(|known| known.eq_ignore_ascii_case(name))
 }
 
 fn bounded_dynamic_include_paths(

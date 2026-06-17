@@ -4651,6 +4651,7 @@ static PTN_UNUSED PtnValue ptn_call_method(
         receiver.type == PTN_OBJECT
         && (ptn_object_is_internal_or_descendant(receiver, "FilterIterator") ||
             ptn_object_is_internal_or_descendant(receiver, "InfiniteIterator") ||
+            ptn_object_is_internal_or_descendant(receiver, "NoRewindIterator") ||
             ptn_object_is_internal_or_descendant(receiver, "IteratorIterator"))
         && ptn_internal_class_method_exists("IteratorIterator", name)
     ) {

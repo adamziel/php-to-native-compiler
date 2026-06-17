@@ -576,6 +576,98 @@ var_dump($ref->implementsInterface("OuterIterator"));
 }
 
 #[test]
+fn compile_spl_iterator_materialization_and_recursive_filter_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-iterator-materialization-filter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-iterator-materialization-filter.php");
+    let output = root.join("spl-iterator-materialization-filter-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() {
+    yield "a" => 1;
+    yield "b" => 2;
+}
+
+function keep_recursive($value, $key, $inner) {
+    if ($inner->hasChildren()) {
+        return true;
+    }
+    echo "cb:$value/$key\n";
+    return $value === 1 || $value === 4;
+}
+
+$wrapped = new IteratorIterator(gen());
+var_dump(iterator_to_array($wrapped, false));
+var_dump(iterator_to_array(["x" => 3, 4], true));
+var_dump(iterator_count(new ArrayIterator([1, 2, 3])));
+
+$base = new ArrayIterator(["zero", "one", "two"]);
+$base->next();
+foreach (new NoRewindIterator($base) as $key => $value) {
+    echo "nr:$key=$value\n";
+}
+
+$nested = [[1], [2]];
+foreach (new RecursiveIteratorIterator(new RecursiveArrayIterator($nested, RecursiveArrayIterator::CHILD_ARRAYS_ONLY)) as $value) {
+    echo "rai:$value\n";
+}
+
+$filter = new RecursiveCallbackFilterIterator(
+    new RecursiveArrayIterator([1, [2, 3], [4, 5]]),
+    "keep_recursive"
+);
+var_dump(iterator_to_array(new RecursiveIteratorIterator($filter), false));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [\"x\"]=>\n",
+            "  int(3)\n",
+            "  [0]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "int(3)\n",
+            "nr:1=one\n",
+            "nr:2=two\n",
+            "rai:1\n",
+            "rai:2\n",
+            "cb:1/0\n",
+            "cb:2/0\n",
+            "cb:3/1\n",
+            "cb:4/0\n",
+            "cb:5/1\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(4)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_recursive_iterator_iterator_array_surface_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-iterator-iterator-array-surface");
     fs::create_dir_all(&root).unwrap();
@@ -36299,6 +36391,40 @@ fn compile_include_exports_include_path_variable_to_native_binary() {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_include_file_0(&runtime)"));
     assert!(c_source.contains("ptn_include_file_1(&runtime)"));
+}
+
+#[test]
+fn compile_internal_class_exists_prunes_fallback_include_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-class-exists-fallback-include");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("internal-class-exists-fallback-include-bin");
+    fs::write(
+        &input,
+        "<?php
+if (!class_exists('NoRewindIterator', false)) {
+    require_once __DIR__ . '/missing-norewinditerator.inc';
+}
+$it = new ArrayIterator([0 => 'zero', 1 => 'one', 2 => 'two']);
+$it->next();
+foreach (new NoRewindIterator($it) as $key => $value) {
+    echo \"$key=>$value\\n\";
+}",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "1=>one\n2=>two\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("missing-norewinditerator.inc"));
 }
 
 #[test]

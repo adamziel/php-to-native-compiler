@@ -1871,6 +1871,14 @@ impl<'a> LoweringContext<'a> {
                     else_body,
                     ..
                 } => {
+                    if let Some(value) = ast_compile_time_condition_truth(condition) {
+                        if value {
+                            instructions.extend(self.lower_statements(then_body));
+                        } else {
+                            instructions.extend(self.lower_statements(else_body));
+                        }
+                        continue;
+                    }
                     instructions.push(Instruction::Branch {
                         condition: self.lower_expr(condition),
                         then_body: self.lower_statements(then_body),
@@ -2354,6 +2362,98 @@ fn string_constant_value(
         }
         _ => None,
     }
+}
+
+fn ast_compile_time_condition_truth(expr: &Expr) -> Option<bool> {
+    match expr {
+        Expr::Bool(value, _) => Some(*value),
+        Expr::Null(_) => Some(false),
+        Expr::Int(value, _) => Some(*value != 0),
+        Expr::Float(value, _) => Some(*value != 0.0),
+        Expr::String(value, _) => Some(!value.is_empty() && value != "0"),
+        Expr::Grouped { expr, .. } => ast_compile_time_condition_truth(expr),
+        Expr::Unary {
+            op: AstUnaryOp::Not,
+            expr,
+            ..
+        } => ast_compile_time_condition_truth(expr).map(|value| !value),
+        Expr::Call {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } if name.eq_ignore_ascii_case("class_exists")
+            && arguments.len() <= 2
+            && argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !unpack) =>
+        {
+            let class_name = ast_compile_time_string_literal(arguments.first()?)?;
+            if ast_known_internal_class(class_name) {
+                Some(true)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn ast_compile_time_string_literal(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::String(value, _) => Some(value),
+        Expr::Grouped { expr, .. } => ast_compile_time_string_literal(expr),
+        _ => None,
+    }
+}
+
+fn ast_known_internal_class(class_name: &str) -> bool {
+    let name = class_name.trim_start_matches('\\');
+    [
+        "AppendIterator",
+        "ArrayIterator",
+        "ArrayObject",
+        "Attribute",
+        "CallbackFilterIterator",
+        "Closure",
+        "DateInterval",
+        "DateTime",
+        "DateTimeImmutable",
+        "DateTimeZone",
+        "DelayedTargetValidation",
+        "Deprecated",
+        "FilterIterator",
+        "Generator",
+        "InfiniteIterator",
+        "IteratorIterator",
+        "LimitIterator",
+        "NoDiscard",
+        "NoRewindIterator",
+        "RecursiveArrayIterator",
+        "RecursiveCallbackFilterIterator",
+        "RecursiveIteratorIterator",
+        "ReflectionClass",
+        "ReflectionConstant",
+        "ReflectionExtension",
+        "ReflectionFunction",
+        "ReflectionMethod",
+        "ReflectionObject",
+        "ReflectionParameter",
+        "ReflectionProperty",
+        "ReturnTypeWillChange",
+        "SensitiveParameter",
+        "SensitiveParameterValue",
+        "SplDoublyLinkedList",
+        "SplFileInfo",
+        "SplFileObject",
+        "SplFixedArray",
+        "SplObjectStorage",
+        "SplQueue",
+        "SplStack",
+        "stdClass",
+    ]
+    .iter()
+    .any(|known| known.eq_ignore_ascii_case(name))
 }
 
 fn lower_compile_warnings(warnings: &[AstCompileWarning]) -> Vec<CompileWarning> {

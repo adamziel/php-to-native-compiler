@@ -607,14 +607,24 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_ascii_case_equal(class_name, \"IteratorIterator\") ||\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"AppendIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"IteratorIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"FilterIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"CallbackFilterIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"InfiniteIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"LimitIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"NoRewindIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"RecursiveIteratorIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    if (ptn_ascii_case_equal(class_name, \"RecursiveCallbackFilterIterator\")) {\n",
+    );
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"OuterIterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"RecursiveIterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayObject\")) {\n");
@@ -4119,12 +4129,15 @@ fn emit_class_metadata_helpers(
         "ArrayIterator",
         "RecursiveArrayIterator",
         "SplFixedArray",
+        "AppendIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
         "FilterIterator",
         "CallbackFilterIterator",
+        "RecursiveCallbackFilterIterator",
         "InfiniteIterator",
         "LimitIterator",
+        "NoRewindIterator",
         "SplDoublyLinkedList",
         "SplQueue",
         "SplStack",
@@ -4507,13 +4520,16 @@ fn emit_class_metadata_helpers(
         "RecursiveArrayIterator",
         "ArrayObject",
         "SplFixedArray",
+        "AppendIterator",
         "CallbackFilterIterator",
+        "RecursiveCallbackFilterIterator",
         "FilterIterator",
         "InfiniteIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
         "SplObjectStorage",
         "LimitIterator",
+        "NoRewindIterator",
         "SplDoublyLinkedList",
         "SplQueue",
         "SplStack",
@@ -4780,10 +4796,13 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     for (class_name, parent_name) in [
+        ("AppendIterator", "IteratorIterator"),
         ("CallbackFilterIterator", "FilterIterator"),
         ("FilterIterator", "IteratorIterator"),
         ("InfiniteIterator", "IteratorIterator"),
         ("LimitIterator", "IteratorIterator"),
+        ("NoRewindIterator", "IteratorIterator"),
+        ("RecursiveCallbackFilterIterator", "CallbackFilterIterator"),
         ("RecursiveArrayIterator", "ArrayIterator"),
         ("ReflectionFunction", "ReflectionFunctionAbstract"),
         ("ReflectionMethod", "ReflectionFunctionAbstract"),
@@ -8824,6 +8843,7 @@ fn class_constructor_method<'a>(
 
 fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
     match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "appenditerator" => Some("AppendIterator"),
         "arrayiterator" => Some("ArrayIterator"),
         "arrayobject" => Some("ArrayObject"),
         "callbackfilteriterator" => Some("CallbackFilterIterator"),
@@ -8831,6 +8851,8 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "infiniteiterator" => Some("InfiniteIterator"),
         "iteratoriterator" => Some("IteratorIterator"),
         "limititerator" => Some("LimitIterator"),
+        "norewinditerator" => Some("NoRewindIterator"),
+        "recursivecallbackfilteriterator" => Some("RecursiveCallbackFilterIterator"),
         "recursiveiteratoriterator" => Some("RecursiveIteratorIterator"),
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
@@ -14400,6 +14422,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Deprecated")
                 || class_name.eq_ignore_ascii_case("NoDiscard")
                 || class_name.eq_ignore_ascii_case("ReturnTypeWillChange")
+                || class_name.eq_ignore_ascii_case("AppendIterator")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
@@ -14407,6 +14430,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("InfiniteIterator")
                 || class_name.eq_ignore_ascii_case("IteratorIterator")
                 || class_name.eq_ignore_ascii_case("LimitIterator")
+                || class_name.eq_ignore_ascii_case("NoRewindIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveIteratorIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
                 || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
@@ -14441,7 +14466,9 @@ fn collect_value_runtime_requirements(
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
             }
-            if class_name.eq_ignore_ascii_case("CallbackFilterIterator") {
+            if class_name.eq_ignore_ascii_case("CallbackFilterIterator")
+                || class_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator")
+            {
                 requirements.dynamic_function_dispatch = true;
             }
         }
@@ -14487,7 +14514,12 @@ fn collect_value_runtime_requirements(
                 collect_value_runtime_requirements(target, functions, requirements);
             }
         }
-        ValueExpr::StaticPropertyFetch { .. } | ValueExpr::ClassConstantFetch { .. } => {}
+        ValueExpr::StaticPropertyFetch { .. } => {}
+        ValueExpr::ClassConstantFetch { class_name, .. } => {
+            if modeled_internal_class_name(class_name).is_some() {
+                requirements.internal_function_dispatch = true;
+            }
+        }
         ValueExpr::Unary { expr, .. }
         | ValueExpr::Cast { expr, .. }
         | ValueExpr::PipeValue { expr, .. } => {

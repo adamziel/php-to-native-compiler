@@ -1413,10 +1413,13 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_reference(const char
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_append_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_recursive_callback_filter_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_filter_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_infinite_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_iterator_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_no_rewind_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_iterator_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
@@ -1815,6 +1818,18 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_append_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_no_rewind_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -1838,6 +1853,12 @@ static PTN_UNUSED PtnValue ptn_recursive_iterator_iterator_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_callback_filter_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_recursive_callback_filter_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
