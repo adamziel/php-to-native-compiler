@@ -1367,28 +1367,40 @@ impl Parser<'_> {
         let (class_name, _) = self.parse_declaration_name("expected class name")?;
         let parent_name = if !is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
-            Some(
-                self.parse_resolved_class_name("expected parent class name")?
-                    .0,
-            )
+            let (parent_name, parent_span) =
+                self.parse_resolved_class_name("expected parent class name")?;
+            reject_reserved_parent_class_name(&parent_name, parent_span)?;
+            Some(parent_name)
         } else {
             None
         };
         let mut interfaces = Vec::new();
         if is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
-            interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            let (interface_name, interface_span) =
+                self.parse_resolved_class_name("expected interface name")?;
+            reject_reserved_interface_name(&interface_name, interface_span)?;
+            interfaces.push(interface_name);
             while matches!(self.peek().kind, TokenKind::Comma) {
                 self.advance();
-                interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+                let (interface_name, interface_span) =
+                    self.parse_resolved_class_name("expected interface name")?;
+                reject_reserved_interface_name(&interface_name, interface_span)?;
+                interfaces.push(interface_name);
             }
         }
         if !is_interface && token_is_identifier_named(self.peek(), "implements") {
             self.advance();
-            interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+            let (interface_name, interface_span) =
+                self.parse_resolved_class_name("expected interface name")?;
+            reject_reserved_interface_name(&interface_name, interface_span)?;
+            interfaces.push(interface_name);
             while matches!(self.peek().kind, TokenKind::Comma) {
                 self.advance();
-                interfaces.push(self.parse_resolved_class_name("expected interface name")?.0);
+                let (interface_name, interface_span) =
+                    self.parse_resolved_class_name("expected interface name")?;
+                reject_reserved_interface_name(&interface_name, interface_span)?;
+                interfaces.push(interface_name);
             }
         }
 
@@ -2765,6 +2777,22 @@ impl Parser<'_> {
         let name = method_name_from_token(&name_token.kind)
             .ok_or_else(|| Diagnostic::new("expected method name", Some(name_token.span)))?;
         let allow_promoted_properties = name.eq_ignore_ascii_case("__construct");
+        if modifiers.is_abstract && matches!(modifiers.visibility, PropertyVisibility::Private) {
+            return Err(Diagnostic::new(
+                format!("Abstract function {class_name}::{name}() cannot be declared private"),
+                modifiers.abstract_span.or(modifiers.visibility_span),
+            ));
+        }
+        if modifiers.is_static
+            && (name.eq_ignore_ascii_case("__construct")
+                || name.eq_ignore_ascii_case("__destruct")
+                || name.eq_ignore_ascii_case("__clone"))
+        {
+            return Err(Diagnostic::new(
+                format!("Method {class_name}::{name}() cannot be static"),
+                modifiers.static_span.or(Some(name_token.span)),
+            ));
+        }
         let parameters = self.parse_function_parameters_with_promotions(
             if allow_promoted_properties {
                 Some(class_name)
@@ -2773,6 +2801,14 @@ impl Parser<'_> {
             },
             class_is_readonly,
         )?;
+        if (name.eq_ignore_ascii_case("__destruct") || name.eq_ignore_ascii_case("__clone"))
+            && !parameters.is_empty()
+        {
+            return Err(Diagnostic::new(
+                format!("Method {class_name}::{name}() cannot take arguments"),
+                Some(parameters[0].span),
+            ));
+        }
         if allow_promoted_properties
             && modifiers.is_abstract
             && parameters
@@ -2797,6 +2833,12 @@ impl Parser<'_> {
             let semicolon_span = self.expect_semicolon()?;
             (Vec::new(), semicolon_span)
         } else {
+            if matches!(self.peek().kind, TokenKind::Semicolon) {
+                return Err(Diagnostic::new(
+                    format!("Non-abstract method {class_name}::{name}() must contain body"),
+                    Some(self.peek().span),
+                ));
+            }
             self.return_by_ref_stack.push(return_by_ref);
             self.function_depth += 1;
             let body = self.parse_block();
@@ -2941,6 +2983,12 @@ impl Parser<'_> {
         &mut self,
         attributes: ParsedAttributes,
     ) -> Result<Statement> {
+        if self.function_depth != 0 {
+            return Err(Diagnostic::new(
+                "Class declarations may not be nested",
+                Some(self.peek().span),
+            ));
+        }
         let class = self.parse_class_decl(attributes)?;
         let span = class.span;
         let source = self
@@ -9917,11 +9965,17 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
     let mut names = HashSet::new();
     for class in classes {
         let lookup_name = class.name.to_ascii_lowercase();
-        if is_reserved_class_name(&lookup_name) {
+        if lookup_name == "stdclass" {
+            return Err(Diagnostic::new(
+                "Cannot redeclare class stdClass",
+                Some(class.span),
+            ));
+        }
+        if let Some(reserved_name) = reserved_class_name_segment(&lookup_name) {
             return Err(Diagnostic::new(
                 format!(
                     "Cannot use \"{}\" as a class name as it is reserved",
-                    class.name
+                    reserved_name
                 ),
                 Some(class.span),
             ));
@@ -9945,8 +9999,31 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
     Ok(())
 }
 
-fn is_reserved_class_name(name: &str) -> bool {
-    name.eq_ignore_ascii_case("mixed")
+fn reserved_class_name_segment(name: &str) -> Option<&str> {
+    let segment = name.rsplit('\\').next().unwrap_or(name);
+    matches!(segment, "mixed" | "self" | "parent" | "static").then_some(segment)
+}
+
+fn reject_reserved_parent_class_name(name: &str, span: SourceSpan) -> Result<()> {
+    let lowered = name.to_ascii_lowercase();
+    let Some(reserved_name) = reserved_class_name_segment(&lowered) else {
+        return Ok(());
+    };
+    Err(Diagnostic::new(
+        format!("Cannot use \"{reserved_name}\" as class name, as it is reserved"),
+        Some(span),
+    ))
+}
+
+fn reject_reserved_interface_name(name: &str, span: SourceSpan) -> Result<()> {
+    let lowered = name.to_ascii_lowercase();
+    let Some(reserved_name) = reserved_class_name_segment(&lowered) else {
+        return Ok(());
+    };
+    Err(Diagnostic::new(
+        format!("Cannot use \"{reserved_name}\" as interface name, as it is reserved"),
+        Some(span),
+    ))
 }
 
 fn validate_trait_names(traits: &[TraitDecl]) -> Result<()> {
