@@ -1893,6 +1893,33 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
 #define PTN_PROPERTY_ACCESS_WRITE 1
 #define PTN_PROPERTY_ACCESS_INDIRECT_WRITE 2
 #define PTN_PROPERTY_ACCESS_UNSET 3
+#define PTN_ARRAY_OBJECT_ARRAY_AS_PROPS 2
+
+static PTN_UNUSED PtnValue ptn_arrayaccess_read(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line
+);
+static PTN_UNUSED void ptn_arrayaccess_write(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    PtnValue value,
+    size_t line
+);
+static PTN_UNUSED int ptn_arrayaccess_exists(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line
+);
+static PTN_UNUSED void ptn_arrayaccess_unset(
+    PtnRuntime *runtime,
+    PtnValue container,
+    PtnValue key_value,
+    size_t line
+);
 
 static PTN_UNUSED int ptn_object_static_property_visibility(
     PtnRuntime *runtime,
@@ -2313,6 +2340,89 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     return NULL;
 }
 
+static int ptn_array_object_array_as_props_enabled(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    receiver = ptn_value_deref(receiver);
+    if (
+        runtime == NULL ||
+        runtime->method_dispatch == NULL ||
+        receiver.type != PTN_OBJECT ||
+        !ptn_object_is_internal_or_descendant(receiver, "ArrayObject")
+    ) {
+        return 0;
+    }
+    PtnValue flags_value = runtime->method_dispatch(runtime, receiver, "getFlags", 0, NULL, line);
+    int active_exception = runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL;
+    PtnValue flags_resolved = ptn_value_deref(flags_value);
+    int64_t flags = (!active_exception && flags_resolved.type == PTN_INT)
+        ? flags_resolved.as.integer
+        : 0;
+    ptn_value_destroy(&flags_value);
+    return !active_exception && ((flags & PTN_ARRAY_OBJECT_ARRAY_AS_PROPS) != 0);
+#else
+    (void)runtime;
+    (void)receiver;
+    (void)line;
+    return 0;
+#endif
+}
+
+static int ptn_object_visible_property_blocks_array_access(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    const char *access_scope,
+    int access_mode,
+    size_t line
+) {
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        object,
+        property,
+        access_scope,
+        access_mode,
+        1,
+        line
+    );
+    if (storage_key == NULL) {
+        return 0;
+    }
+    PtnArrayKey key = ptn_array_string_key(storage_key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, storage_key);
+    ptn_array_key_free(key);
+    free(storage_key);
+    return entry != NULL || (metadata != NULL && !metadata->is_unset);
+}
+
+static int ptn_array_object_property_should_use_array_access(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    int access_mode,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    return ptn_array_object_array_as_props_enabled(runtime, receiver, line) &&
+        !ptn_object_visible_property_blocks_array_access(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            access_mode,
+            line
+        );
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -2324,6 +2434,19 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
+    }
+    if (ptn_array_object_property_should_use_array_access(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        line
+    )) {
+        PtnValue key = ptn_string(property);
+        PtnValue value = ptn_arrayaccess_read(runtime, receiver, key, line);
+        ptn_value_destroy(&key);
+        return value;
     }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 0);
@@ -2702,6 +2825,23 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
+    if (ptn_array_object_property_should_use_array_access(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        line
+    )) {
+        PtnValue key = ptn_string(property);
+        if (!ptn_arrayaccess_exists(runtime, receiver, key, line)) {
+            ptn_value_destroy(&key);
+            return ptn_lookup_missing();
+        }
+        PtnValue value = ptn_arrayaccess_read(runtime, receiver, key, line);
+        ptn_value_destroy(&key);
+        return ptn_lookup_found(value);
+    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -2751,6 +2891,23 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
+    if (ptn_array_object_property_should_use_array_access(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        line
+    )) {
+        PtnValue key = ptn_string(property);
+        if (!ptn_arrayaccess_exists(runtime, receiver, key, line)) {
+            ptn_value_destroy(&key);
+            return ptn_lookup_missing();
+        }
+        PtnValue value = ptn_arrayaccess_read(runtime, receiver, key, line);
+        ptn_value_destroy(&key);
+        return ptn_lookup_found(value);
+    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -2799,6 +2956,19 @@ static PTN_UNUSED int ptn_object_property_is_set(
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         return 0;
+    }
+    if (ptn_array_object_property_should_use_array_access(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        line
+    )) {
+        PtnValue key = ptn_string(property);
+        int result = ptn_arrayaccess_exists(runtime, receiver, key, line);
+        ptn_value_destroy(&key);
+        return result;
     }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
@@ -2852,6 +3022,19 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
             ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         }
         return ptn_null();
+    }
+    if (ptn_array_object_property_should_use_array_access(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        indirect_write ? PTN_PROPERTY_ACCESS_INDIRECT_WRITE : PTN_PROPERTY_ACCESS_WRITE,
+        line
+    )) {
+        PtnValue key = ptn_string(property);
+        ptn_arrayaccess_write(runtime, receiver, key, value, line);
+        ptn_value_destroy(&key);
+        return ptn_value_clone_deref(value);
     }
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
@@ -3214,6 +3397,19 @@ static PTN_UNUSED void ptn_object_unset_property(
     (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
+        return;
+    }
+    if (ptn_array_object_property_should_use_array_access(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_UNSET,
+        line
+    )) {
+        PtnValue key = ptn_string(property);
+        ptn_arrayaccess_unset(runtime, receiver, key, line);
+        ptn_value_destroy(&key);
         return;
     }
     PtnObjectPropertyMetadata *blocked_metadata =

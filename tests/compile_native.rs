@@ -169,6 +169,92 @@ foreach ($wrap as $value) {
 }
 
 #[test]
+fn compile_array_object_array_as_props_fallback_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-array-as-props");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-array-as-props.php");
+    let output = root.join("array-object-array-as-props-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MagicArrayObject extends ArrayObject {
+    public $visible = "declared";
+    private $hidden = "secret";
+
+    public function __get($name) { echo "magic-get:$name\n"; return "magic"; }
+    public function __set($name, $value) { echo "magic-set:$name=$value\n"; }
+    public function __isset($name) { echo "magic-isset:$name\n"; return false; }
+    public function __unset($name) { echo "magic-unset:$name\n"; }
+
+    public static function readHidden($box) {
+        var_dump($box->hidden);
+    }
+}
+
+$box = new MagicArrayObject(["visible" => "element", "hidden" => "shadow"], ArrayObject::ARRAY_AS_PROPS);
+var_dump($box->visible);
+MagicArrayObject::readHidden($box);
+var_dump($box->hidden);
+unset($box->visible);
+var_dump($box->visible);
+$box->visible = "changed";
+var_dump($box["visible"], isset($box->visible));
+unset($box->visible);
+var_dump(isset($box->visible));
+
+try {
+    var_dump($box[[]]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    $box[[]] = "bad";
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    var_dump(isset($box[[]]));
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    unset($box[[]]);
+} catch (TypeError $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(8) \"declared\"\n",
+            "string(6) \"secret\"\n",
+            "string(6) \"shadow\"\n",
+            "string(7) \"element\"\n",
+            "string(7) \"changed\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "Cannot access offset of type array on ArrayObject\n",
+            "Cannot access offset of type array on ArrayObject\n",
+            "Cannot access offset of type array in isset or empty\n",
+            "Cannot unset offset of type array on ArrayObject\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_broader_spl_iterator_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-spl-iterator-wrappers");
     fs::create_dir_all(&root).unwrap();

@@ -42469,6 +42469,56 @@ static PTN_UNUSED PtnValue ptn_array_object_clone(
     return clone;
 }
 
+#define PTN_SPL_OFFSET_ACCESS 0
+#define PTN_SPL_OFFSET_ISSET 1
+#define PTN_SPL_OFFSET_UNSET 2
+
+static int ptn_spl_offset_key_from_value(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnValue key_value,
+    size_t line,
+    int operation,
+    PtnArrayKey *key_out
+) {
+    key_value = ptn_value_deref(key_value);
+    if (ptn_array_offset_key_is_invalid(key_value)) {
+        const char *type_name = ptn_offset_key_type_name(key_value);
+        char message[256];
+        int written;
+        if (operation == PTN_SPL_OFFSET_UNSET) {
+            written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot unset offset of type %s on %s",
+                type_name,
+                class_name
+            );
+        } else if (operation == PTN_SPL_OFFSET_ISSET) {
+            written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot access offset of type %s in isset or empty",
+                type_name
+            );
+        } else {
+            written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot access offset of type %s on %s",
+                type_name,
+                class_name
+            );
+        }
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+        return 0;
+    }
+    return ptn_array_offset_key_from_value(runtime, key_value, line, 0, key_out);
+}
+
 static int ptn_value_object_implements_interface(PtnValue value, const char *interface_name) {
     value = ptn_value_deref(value);
     return value.type == PTN_OBJECT &&
@@ -43059,7 +43109,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_null();
         }
         PtnArrayKey key;
-        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 0, &key)) {
+        if (!ptn_spl_offset_key_from_value(runtime, "ArrayIterator", args[0], line, PTN_SPL_OFFSET_ACCESS, &key)) {
             return ptn_null();
         }
         PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
@@ -43086,7 +43136,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
         PtnArrayKey key;
         if (offset.type == PTN_NULL) {
             key = ptn_array_int_key(array->next_auto_key);
-        } else if (!ptn_array_offset_key_from_value(runtime, offset, line, 0, &key)) {
+        } else if (!ptn_spl_offset_key_from_value(runtime, "ArrayIterator", offset, line, PTN_SPL_OFFSET_ACCESS, &key)) {
             return ptn_null();
         }
         PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
@@ -43103,7 +43153,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_null();
         }
         PtnArrayKey key;
-        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+        if (!ptn_spl_offset_key_from_value(runtime, "ArrayIterator", args[0], line, PTN_SPL_OFFSET_ISSET, &key)) {
             return ptn_bool(0);
         }
         PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
@@ -43120,7 +43170,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             return ptn_null();
         }
         PtnArrayKey key;
-        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+        if (!ptn_spl_offset_key_from_value(runtime, "ArrayIterator", args[0], line, PTN_SPL_OFFSET_UNSET, &key)) {
             return ptn_null();
         }
         PtnObject *object = ptn_spl_storage_object(data->storage);
@@ -43425,7 +43475,7 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             return ptn_null();
         }
         PtnArrayKey key;
-        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 0, &key)) {
+        if (!ptn_spl_offset_key_from_value(runtime, "ArrayObject", args[0], line, PTN_SPL_OFFSET_ACCESS, &key)) {
             return ptn_null();
         }
         PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
@@ -43452,7 +43502,7 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
         PtnArrayKey key;
         if (offset.type == PTN_NULL) {
             key = ptn_array_int_key(array->next_auto_key);
-        } else if (!ptn_array_offset_key_from_value(runtime, offset, line, 0, &key)) {
+        } else if (!ptn_spl_offset_key_from_value(runtime, "ArrayObject", offset, line, PTN_SPL_OFFSET_ACCESS, &key)) {
             return ptn_null();
         }
         PtnArrayKey storage_key = object == NULL ? key : ptn_spl_object_property_key_from_array_key(key);
@@ -43469,7 +43519,7 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             return ptn_null();
         }
         PtnArrayKey key;
-        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+        if (!ptn_spl_offset_key_from_value(runtime, "ArrayObject", args[0], line, PTN_SPL_OFFSET_ISSET, &key)) {
             return ptn_bool(0);
         }
         PtnArrayEntry *entry = ptn_spl_storage_entry_for_key(runtime, data->storage, key);
@@ -43486,7 +43536,7 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             return ptn_null();
         }
         PtnArrayKey key;
-        if (!ptn_array_offset_key_from_value(runtime, ptn_value_deref(args[0]), line, 1, &key)) {
+        if (!ptn_spl_offset_key_from_value(runtime, "ArrayObject", args[0], line, PTN_SPL_OFFSET_UNSET, &key)) {
             return ptn_null();
         }
         PtnObject *object = ptn_spl_storage_object(data->storage);
