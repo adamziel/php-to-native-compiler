@@ -25,6 +25,7 @@
 #include <dirent.h>
 #include <fnmatch.h>
 #include <glob.h>
+#include <iconv.h>
 #include <langinfo.h>
 #include <pwd.h>
 #include <regex.h>
