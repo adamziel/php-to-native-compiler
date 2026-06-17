@@ -11758,6 +11758,56 @@ var_dump(preg_match('/^a$/s', \"a\\n\"));\n",
 }
 
 #[test]
+fn compile_pcre_predefined_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-pcre-predefined-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pcre-predefined-constants.php");
+    let output = root.join("pcre-predefined-constants-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(PREG_PATTERN_ORDER, PREG_SET_ORDER, PREG_OFFSET_CAPTURE, PREG_UNMATCHED_AS_NULL);\n\
+var_dump(PREG_SPLIT_NO_EMPTY, PREG_SPLIT_DELIM_CAPTURE, PREG_SPLIT_OFFSET_CAPTURE, PREG_GREP_INVERT);\n\
+var_dump(PREG_NO_ERROR, PREG_INTERNAL_ERROR, PREG_BACKTRACK_LIMIT_ERROR, PREG_RECURSION_LIMIT_ERROR, PREG_BAD_UTF8_ERROR, PREG_BAD_UTF8_OFFSET_ERROR, PREG_JIT_STACKLIMIT_ERROR);\n\
+var_dump(defined('PREG_BAD_UTF8_OFFSET_ERROR'), constant('PREG_JIT_STACKLIMIT_ERROR'));\n\
+$constants = get_defined_constants(true);\n\
+var_dump(isset($constants['pcre']), $constants['pcre']['PREG_OFFSET_CAPTURE'], get_defined_constants()['PREG_SET_ORDER']);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(2)\n",
+            "int(256)\n",
+            "int(512)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(4)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(4)\n",
+            "int(5)\n",
+            "int(6)\n",
+            "bool(true)\n",
+            "int(6)\n",
+            "bool(true)\n",
+            "int(256)\n",
+            "int(2)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_chunk_split_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
@@ -16102,9 +16152,31 @@ var_dump($reflection->hasConstant(\"MISSING\"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_declared_class_reflection_constants"));
-    assert!(c_source.contains("(void)filter_present;"));
-    assert!(c_source.contains("(void)constant_name;"));
+    let constants_body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED PtnValue ptn_declared_class_constants(",
+    );
+    assert!(constants_body.contains("(void)runtime;"));
+    assert!(constants_body.contains("(void)filter_present;"));
+    assert!(constants_body.contains("(void)filter;"));
+    let reflection_constants_body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED PtnValue ptn_declared_class_reflection_constants(",
+    );
+    assert!(reflection_constants_body.contains("(void)runtime;"));
+    assert!(reflection_constants_body.contains("(void)filter_present;"));
+    assert!(reflection_constants_body.contains("(void)filter;"));
+    assert!(reflection_constants_body.contains("(void)index;"));
+    let modifiers_body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED int ptn_declared_class_reflection_constant_modifiers(",
+    );
+    assert!(modifiers_body.contains("(void)constant_name;"));
+    let deprecation_body = generated_c_static_function_body(
+        &c_source,
+        "static PTN_UNUSED int ptn_declared_class_reflection_constant_is_deprecated(",
+    );
+    assert!(deprecation_body.contains("(void)constant_name;"));
 }
 
 #[test]

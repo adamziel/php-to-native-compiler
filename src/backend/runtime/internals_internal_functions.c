@@ -33122,6 +33122,30 @@ static PtnValue ptn_defined_constants_core_table(void) {
     return table;
 }
 
+static void ptn_defined_constants_add_pcre(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "PREG_PATTERN_ORDER", PTN_PREG_PATTERN_ORDER);
+    ptn_get_defined_constants_add_int(table, "PREG_SET_ORDER", PTN_PREG_SET_ORDER);
+    ptn_get_defined_constants_add_int(table, "PREG_OFFSET_CAPTURE", PTN_PREG_OFFSET_CAPTURE);
+    ptn_get_defined_constants_add_int(table, "PREG_UNMATCHED_AS_NULL", PTN_PREG_UNMATCHED_AS_NULL);
+    ptn_get_defined_constants_add_int(table, "PREG_SPLIT_NO_EMPTY", PTN_PREG_SPLIT_NO_EMPTY);
+    ptn_get_defined_constants_add_int(table, "PREG_SPLIT_DELIM_CAPTURE", PTN_PREG_SPLIT_DELIM_CAPTURE);
+    ptn_get_defined_constants_add_int(table, "PREG_SPLIT_OFFSET_CAPTURE", PTN_PREG_SPLIT_OFFSET_CAPTURE);
+    ptn_get_defined_constants_add_int(table, "PREG_GREP_INVERT", PTN_PREG_GREP_INVERT);
+    ptn_get_defined_constants_add_int(table, "PREG_NO_ERROR", PTN_PREG_NO_ERROR);
+    ptn_get_defined_constants_add_int(table, "PREG_INTERNAL_ERROR", PTN_PREG_INTERNAL_ERROR);
+    ptn_get_defined_constants_add_int(table, "PREG_BACKTRACK_LIMIT_ERROR", PTN_PREG_BACKTRACK_LIMIT_ERROR);
+    ptn_get_defined_constants_add_int(table, "PREG_RECURSION_LIMIT_ERROR", PTN_PREG_RECURSION_LIMIT_ERROR);
+    ptn_get_defined_constants_add_int(table, "PREG_BAD_UTF8_ERROR", PTN_PREG_BAD_UTF8_ERROR);
+    ptn_get_defined_constants_add_int(table, "PREG_BAD_UTF8_OFFSET_ERROR", PTN_PREG_BAD_UTF8_OFFSET_ERROR);
+    ptn_get_defined_constants_add_int(table, "PREG_JIT_STACKLIMIT_ERROR", PTN_PREG_JIT_STACKLIMIT_ERROR);
+}
+
+static PtnValue ptn_defined_constants_pcre_table(void) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_defined_constants_add_pcre(table);
+    return table;
+}
+
 static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)line;
@@ -33129,8 +33153,10 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
     if (argc >= 1 && ptn_is_truthy(args[0])) {
         PtnValue categorized = ptn_array_from_literal_entries(0, NULL);
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("Core"), core);
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("pcre"), ptn_defined_constants_pcre_table());
         return categorized;
     }
+    ptn_defined_constants_add_pcre(core);
     return core;
 }
 

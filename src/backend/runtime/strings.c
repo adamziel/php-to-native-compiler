@@ -1300,6 +1300,66 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_JSON_THROW_ON_ERROR);
         return 1;
     }
+    if (strcmp(name, "PREG_PATTERN_ORDER") == 0) {
+        *out = ptn_int(PTN_PREG_PATTERN_ORDER);
+        return 1;
+    }
+    if (strcmp(name, "PREG_SET_ORDER") == 0) {
+        *out = ptn_int(PTN_PREG_SET_ORDER);
+        return 1;
+    }
+    if (strcmp(name, "PREG_OFFSET_CAPTURE") == 0) {
+        *out = ptn_int(PTN_PREG_OFFSET_CAPTURE);
+        return 1;
+    }
+    if (strcmp(name, "PREG_UNMATCHED_AS_NULL") == 0) {
+        *out = ptn_int(PTN_PREG_UNMATCHED_AS_NULL);
+        return 1;
+    }
+    if (strcmp(name, "PREG_SPLIT_NO_EMPTY") == 0) {
+        *out = ptn_int(PTN_PREG_SPLIT_NO_EMPTY);
+        return 1;
+    }
+    if (strcmp(name, "PREG_SPLIT_DELIM_CAPTURE") == 0) {
+        *out = ptn_int(PTN_PREG_SPLIT_DELIM_CAPTURE);
+        return 1;
+    }
+    if (strcmp(name, "PREG_SPLIT_OFFSET_CAPTURE") == 0) {
+        *out = ptn_int(PTN_PREG_SPLIT_OFFSET_CAPTURE);
+        return 1;
+    }
+    if (strcmp(name, "PREG_GREP_INVERT") == 0) {
+        *out = ptn_int(PTN_PREG_GREP_INVERT);
+        return 1;
+    }
+    if (strcmp(name, "PREG_NO_ERROR") == 0) {
+        *out = ptn_int(PTN_PREG_NO_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PREG_INTERNAL_ERROR") == 0) {
+        *out = ptn_int(PTN_PREG_INTERNAL_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PREG_BACKTRACK_LIMIT_ERROR") == 0) {
+        *out = ptn_int(PTN_PREG_BACKTRACK_LIMIT_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PREG_RECURSION_LIMIT_ERROR") == 0) {
+        *out = ptn_int(PTN_PREG_RECURSION_LIMIT_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PREG_BAD_UTF8_ERROR") == 0) {
+        *out = ptn_int(PTN_PREG_BAD_UTF8_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PREG_BAD_UTF8_OFFSET_ERROR") == 0) {
+        *out = ptn_int(PTN_PREG_BAD_UTF8_OFFSET_ERROR);
+        return 1;
+    }
+    if (strcmp(name, "PREG_JIT_STACKLIMIT_ERROR") == 0) {
+        *out = ptn_int(PTN_PREG_JIT_STACKLIMIT_ERROR);
+        return 1;
+    }
     if (strcmp(name, "HTML_SPECIALCHARS") == 0) {
         *out = ptn_int(PTN_HTML_SPECIALCHARS);
         return 1;
