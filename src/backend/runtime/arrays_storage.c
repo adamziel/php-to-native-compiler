@@ -304,6 +304,24 @@ static PTN_UNUSED void ptn_array_index_insert(PtnArray *array, PtnArrayKey key, 
     }
 }
 
+static PTN_UNUSED void ptn_array_index_insert_appended_entry(
+    PtnArray *array,
+    PtnArrayKey key,
+    size_t entry_index
+) {
+    if (array->index_capacity == 0) {
+        if (array->len >= PTN_ARRAY_INDEX_MIN_ENTRIES) {
+            ptn_array_rebuild_index(array);
+        }
+        return;
+    }
+    if (array->len > array->index_capacity / 2) {
+        ptn_array_rebuild_index(array);
+        return;
+    }
+    ptn_array_index_insert(array, key, entry_index);
+}
+
 static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
     size_t index = ptn_array_find_key(array, key);
     ptn_array_update_next_auto_key(array, key);
@@ -330,7 +348,7 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     array->entries[entry_index].key = key;
     array->entries[entry_index].value = value;
     array->len++;
-    ptn_array_index_insert(array, key, entry_index);
+    ptn_array_index_insert_appended_entry(array, key, entry_index);
 }
 
 static PTN_UNUSED void ptn_array_set_entry_publish_first(PtnArray *array, PtnArrayKey key, PtnValue value) {
