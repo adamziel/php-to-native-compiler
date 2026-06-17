@@ -610,6 +610,12 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    DynamicClassConstantFetch {
+        class_name: Option<String>,
+        receiver: Option<Box<ValueExpr>>,
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     DynamicClassNameFetch {
         receiver: Box<ValueExpr>,
         line: usize,
@@ -2578,6 +2584,12 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. } => false,
         Expr::DynamicStaticPropertyFetch { receiver, .. } => expr_contains_yield(receiver),
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            receiver
+                .as_ref()
+                .is_some_and(|receiver| expr_contains_yield(receiver))
+                || expr_contains_yield(name)
+        }
         Expr::Assign { target, value, .. } => {
             assignment_target_contains_yield(target) || expr_contains_yield(value)
         }
@@ -3524,6 +3536,19 @@ impl<'a> LoweringContext<'a> {
                 name: name.clone(),
                 line: span.line,
             },
+            Expr::DynamicClassConstantFetch {
+                class_name,
+                receiver,
+                name,
+                span,
+            } => ValueExpr::DynamicClassConstantFetch {
+                class_name: class_name.clone(),
+                receiver: receiver
+                    .as_ref()
+                    .map(|receiver| Box::new(self.lower_expr(receiver))),
+                name: Box::new(self.lower_expr(name)),
+                line: span.line,
+            },
             Expr::DynamicClassNameFetch { receiver, span } => ValueExpr::DynamicClassNameFetch {
                 receiver: Box::new(self.lower_expr(receiver)),
                 line: span.line,
@@ -3925,6 +3950,21 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::ClassConstantFetch {
             class_name, name, ..
         } => format!("{class_name}::{name}"),
+        Expr::DynamicClassConstantFetch {
+            class_name,
+            receiver,
+            name,
+            ..
+        } => {
+            let name = assertion_expr_text(name);
+            match (class_name, receiver) {
+                (Some(class_name), _) => format!("{class_name}::{{{name}}}"),
+                (None, Some(receiver)) => {
+                    format!("{}::{{{name}}}", assertion_expr_text(receiver))
+                }
+                (None, None) => format!("::{{{name}}}"),
+            }
+        }
         Expr::DynamicClassNameFetch { receiver, .. } => {
             format!("{}::class", assertion_expr_text(receiver))
         }

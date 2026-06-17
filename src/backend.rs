@@ -12316,6 +12316,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::DynamicStaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. }
+        | ValueExpr::DynamicClassConstantFetch { .. }
         | ValueExpr::DynamicClassNameFetch { .. }
         | ValueExpr::InstanceOf { .. }
         | ValueExpr::Unary { .. }
@@ -13038,6 +13039,12 @@ fn collect_value_legacy_dollar_brace_deprecations(
         }
         ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+        }
+        ValueExpr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            }
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
         ValueExpr::Unary { expr, .. }
         | ValueExpr::Cast { expr, .. }
@@ -13816,6 +13823,12 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        ValueExpr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                collect_value_runtime_requirements(receiver, functions, requirements);
+            }
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
@@ -15337,6 +15350,16 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         | ValueExpr::DynamicClassNameFetch { receiver, .. } => {
             value_mentions_variable(receiver, name)
         }
+        ValueExpr::DynamicClassConstantFetch {
+            receiver,
+            name: constant_name,
+            ..
+        } => {
+            receiver
+                .as_ref()
+                .is_some_and(|receiver| value_mentions_variable(receiver, name))
+                || value_mentions_variable(constant_name, name)
+        }
         ValueExpr::DynamicPropertyFetch {
             receiver,
             name: property_name,
@@ -15515,6 +15538,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::StaticPropertyFetch { line, .. }
         | ValueExpr::DynamicStaticPropertyFetch { line, .. }
         | ValueExpr::ClassConstantFetch { line, .. }
+        | ValueExpr::DynamicClassConstantFetch { line, .. }
         | ValueExpr::DynamicClassNameFetch { line, .. }
         | ValueExpr::InstanceOf { line, .. }
         | ValueExpr::Unary { line, .. }
@@ -16107,6 +16131,12 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::PipeValue { expr: name, .. }
         | ValueExpr::DynamicStaticPropertyFetch { receiver: name, .. }
         | ValueExpr::DynamicClassNameFetch { receiver: name, .. } => value_expr_uses_this(name),
+        ValueExpr::DynamicClassConstantFetch { receiver, name, .. } => {
+            receiver
+                .as_ref()
+                .is_some_and(|receiver| value_expr_uses_this(receiver))
+                || value_expr_uses_this(name)
+        }
         ValueExpr::IncDec { target, .. } => inc_dec_target_uses_this(target),
         ValueExpr::Assign { target, value, .. } => {
             assignment_target_uses_this(target) || value_expr_uses_this(value)
@@ -19907,6 +19937,18 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_class_constant_fetch(out, class_name, name, *line),
+            ValueExpr::DynamicClassConstantFetch {
+                class_name,
+                receiver,
+                name,
+                line,
+            } => self.emit_dynamic_class_constant_fetch(
+                out,
+                class_name.as_deref(),
+                receiver.as_deref(),
+                name,
+                *line,
+            ),
             ValueExpr::DynamicClassNameFetch { receiver, line } => {
                 self.emit_dynamic_class_name_fetch(out, receiver, *line)
             }
@@ -22158,6 +22200,120 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_dynamic_class_constant_name(&mut self, out: &mut String, name: &ValueExpr) -> String {
+        let value_temp = self.emit_materialized_value(out, name);
+        let name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&name_temp);
+        out.push_str(" = ptn_value_to_string(");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &value_temp);
+        name_temp
+    }
+
+    fn emit_dynamic_class_constant_fetch(
+        &mut self,
+        out: &mut String,
+        class_name: Option<&str>,
+        receiver: Option<&ValueExpr>,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let name_temp = self.emit_dynamic_class_constant_name(out, name);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+
+        if let Some(class_name) = class_name {
+            if self.class_name_fetch_uses_runtime_scope(class_name) {
+                self.emit_runtime_scoped_class_name_cstr(out, &result_temp, class_name, line);
+                out.push_str("    if (");
+                out.push_str(&result_temp);
+                out.push_str("_class_name != NULL) {\n");
+                out.push_str("        if (ptn_ascii_case_equal(");
+                out.push_str(&name_temp);
+                out.push_str(", \"class\")) {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_owned_string(ptn_duplicate_string(");
+                out.push_str(&result_temp);
+                out.push_str("_class_name));\n");
+                out.push_str("        } else {\n");
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, ");
+                out.push_str(&result_temp);
+                out.push_str("_class_name, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("        }\n");
+                out.push_str("    }\n");
+            } else {
+                let resolved_class_name = self.static_member_class_name(class_name);
+                out.push_str("    if (ptn_ascii_case_equal(");
+                out.push_str(&name_temp);
+                out.push_str(", \"class\")) {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_string(\"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    }\n");
+            }
+        } else if let Some(receiver) = receiver {
+            let (class_value_temp, class_name_temp) =
+                self.emit_dynamic_class_name_cstr(out, receiver, line);
+            out.push_str("    if (ptn_ascii_case_equal(");
+            out.push_str(&name_temp);
+            out.push_str(", \"class\")) {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_owned_string(ptn_duplicate_string(");
+            out.push_str(&class_name_temp);
+            out.push_str("));\n");
+            out.push_str("    } else {\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, ");
+            out.push_str(&class_name_temp);
+            out.push_str(", ");
+            out.push_str(&name_temp);
+            out.push_str(", ");
+            self.emit_access_scope(out);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+            out.push_str("    free(");
+            out.push_str(&class_name_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &class_value_temp);
+        }
+
+        out.push_str("    free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        result_temp
+    }
+
     fn emit_runtime_scoped_class_name_fetch(
         &self,
         out: &mut String,
@@ -22265,7 +22421,16 @@ impl ValueEmitter {
         receiver: &ValueExpr,
         line: usize,
     ) -> (String, String) {
-        let class_value_temp = self.emit_dynamic_class_name_fetch(out, receiver, line);
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let class_value_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&class_value_temp);
+        out.push_str(" = ptn_runtime_fetch_dynamic_static_member_class_name(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
         let class_name_temp = self.next_temp();
         out.push_str("    char *");
         out.push_str(&class_name_temp);
@@ -23915,6 +24080,7 @@ impl ValueEmitter {
                 | ValueExpr::StaticPropertyFetch { .. }
                 | ValueExpr::DynamicStaticPropertyFetch { .. }
                 | ValueExpr::ClassConstantFetch { .. }
+                | ValueExpr::DynamicClassConstantFetch { .. }
                 | ValueExpr::DynamicClassNameFetch { .. }
                 | ValueExpr::Include { .. }
                 | ValueExpr::Throw { .. }

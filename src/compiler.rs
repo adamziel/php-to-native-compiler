@@ -737,6 +737,12 @@ impl IncludeCollector {
             Expr::DynamicClassNameFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
+            Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+                if let Some(receiver) = receiver {
+                    self.collect_expr(receiver, source_file, source_dir)?;
+                }
+                self.collect_expr(name, source_file, source_dir)
+            }
             Expr::InstanceOf { expr, target, .. } => {
                 self.collect_expr(expr, source_file, source_dir)?;
                 if let InstanceOfTarget::Expr(target) = target {

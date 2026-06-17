@@ -890,6 +890,12 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    DynamicClassConstantFetch {
+        class_name: Option<String>,
+        receiver: Option<Box<Expr>>,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     DynamicClassNameFetch {
         receiver: Box<Expr>,
         span: SourceSpan,
@@ -1133,6 +1139,7 @@ impl Expr {
             | Expr::StaticPropertyFetch { span, .. }
             | Expr::DynamicStaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
+            | Expr::DynamicClassConstantFetch { span, .. }
             | Expr::DynamicClassNameFetch { span, .. }
             | Expr::InstanceOf { span, .. }
             | Expr::Match { span, .. } => *span,

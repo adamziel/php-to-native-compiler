@@ -3227,20 +3227,34 @@ static void ptn_runtime_emit_class_constant_deprecation(
 static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     PtnRuntime *runtime,
     const char *class_name,
-    const char *constant
+    const char *constant,
+    size_t line
 ) {
     char message[256];
-    int written = snprintf(
-        message,
-        sizeof(message),
-        "Undefined constant %s::%s",
-        class_name,
-        constant
-    );
+    int written;
+    if (!ptn_declared_runtime_class_exists(runtime, class_name) &&
+        !ptn_declared_runtime_interface_exists(runtime, class_name) &&
+        !ptn_declared_trait_exists(class_name)) {
+        written = snprintf(message, sizeof(message), "Class \"%s\" not found", class_name);
+    } else {
+        written = snprintf(
+            message,
+            sizeof(message),
+            "Undefined constant %s::%s",
+            class_name,
+            constant
+        );
+    }
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
     return ptn_null();
 }
 
@@ -3349,7 +3363,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
         return builtin_value;
     }
-    return ptn_runtime_undefined_class_constant(runtime, resolved_class_name, constant);
+    return ptn_runtime_undefined_class_constant(runtime, resolved_class_name, constant, line);
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
@@ -3471,6 +3485,47 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_class_name(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Cannot use \"::class\" on value of type %s", type_name);
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "TypeError",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_static_member_class_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type == PTN_STRING) {
+        return ptn_value_clone_deref(receiver);
+    }
+    const char *class_name = NULL;
+    if (receiver.type == PTN_OBJECT) {
+        class_name = receiver.as.object->class_name;
+    } else if (receiver.type == PTN_EXCEPTION) {
+        class_name = receiver.as.exception->class_name;
+    } else if (receiver.type == PTN_CLOSURE) {
+        class_name = "Closure";
+    }
+    if (class_name != NULL) {
+        return ptn_owned_string(ptn_duplicate_string(class_name));
+    }
+
+    const char *type_name = ptn_dynamic_class_name_fetch_type_name(receiver);
+    int needed = snprintf(NULL, 0, "Class name must be a valid object or a string, %s given", type_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Class name must be a valid object or a string, %s given", type_name);
     ptn_throw_exception_owned_message_at(
         runtime,
         "TypeError",

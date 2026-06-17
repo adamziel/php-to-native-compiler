@@ -6102,69 +6102,83 @@ impl Parser<'_> {
                     let start_span = expr.span();
                     let scope_span = self.advance().span;
                     let member = self.advance().clone();
-                    let (literal_name, dynamic_name, member_span) = match member.kind {
-                        _ if name_segment_from_token(&member.kind).is_some() => {
-                            let member_name = name_segment_from_token(&member.kind)
-                                .expect("name segment checked above");
-                            if member_name.eq_ignore_ascii_case("class")
-                                && !matches!(self.peek().kind, TokenKind::LeftParen)
-                            {
-                                if let Some(type_name) =
-                                    constant_expression_class_name_fetch_error_type(&expr)
+                    let (literal_name, dynamic_name, member_span, direct_variable_member) =
+                        match member.kind {
+                            _ if name_segment_from_token(&member.kind).is_some() => {
+                                let member_name = name_segment_from_token(&member.kind)
+                                    .expect("name segment checked above");
+                                if member_name.eq_ignore_ascii_case("class")
+                                    && !matches!(self.peek().kind, TokenKind::LeftParen)
                                 {
-                                    return Err(Diagnostic::new(
-                                        format!("Cannot use \"::class\" on {type_name}"),
-                                        Some(start_span),
-                                    ));
+                                    if let Some(type_name) =
+                                        constant_expression_class_name_fetch_error_type(&expr)
+                                    {
+                                        return Err(Diagnostic::new(
+                                            format!("Cannot use \"::class\" on {type_name}"),
+                                            Some(start_span),
+                                        ));
+                                    }
+                                    if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr)
+                                    {
+                                        return Err(Diagnostic::new(
+                                            "Illegal class name",
+                                            Some(start_span),
+                                        ));
+                                    }
+                                    expr = Expr::DynamicClassNameFetch {
+                                        receiver: Box::new(expr),
+                                        span: combine_spans(start_span, member.span),
+                                    };
+                                    continue;
                                 }
-                                if dynamic_class_name_fetch_has_illegal_literal_receiver(&expr) {
-                                    return Err(Diagnostic::new(
-                                        "Illegal class name",
-                                        Some(start_span),
-                                    ));
+                                (Some(member_name), None, member.span, false)
+                            }
+                            TokenKind::Variable(name) => (
+                                None,
+                                Some(Expr::Variable(name, member.span)),
+                                member.span,
+                                true,
+                            ),
+                            TokenKind::LeftBrace => {
+                                let name_expr = self.parse_expr()?;
+                                let right_span = self.expect_right_brace()?;
+                                let member_span = combine_spans(member.span, right_span);
+                                match literal_member_name_from_expr(&name_expr) {
+                                    Some(name) => (Some(name), None, member_span, false),
+                                    None => (None, Some(name_expr), member_span, false),
                                 }
-                                expr = Expr::DynamicClassNameFetch {
+                            }
+                            _ => {
+                                return Err(Diagnostic::new(
+                                    CLASS_CONSTANT_FETCH_UNSUPPORTED,
+                                    Some(scope_span),
+                                ));
+                            }
+                        };
+                    if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                        if direct_variable_member {
+                            if let Some(Expr::Variable(property_name, property_span)) =
+                                dynamic_name.as_ref()
+                            {
+                                expr = Expr::DynamicStaticPropertyFetch {
                                     receiver: Box::new(expr),
-                                    span: combine_spans(start_span, member.span),
+                                    name: property_name.clone(),
+                                    span: combine_spans(start_span, *property_span),
                                 };
                                 continue;
                             }
-                            (Some(member_name), None, member.span)
                         }
-                        TokenKind::Variable(name) => {
-                            (None, Some(Expr::Variable(name, member.span)), member.span)
-                        }
-                        TokenKind::LeftBrace => {
-                            let name_expr = self.parse_expr()?;
-                            let right_span = self.expect_right_brace()?;
-                            let member_span = combine_spans(member.span, right_span);
-                            match literal_member_name_from_expr(&name_expr) {
-                                Some(name) => (Some(name), None, member_span),
-                                None => (None, Some(name_expr), member_span),
-                            }
-                        }
-                        _ => {
-                            return Err(Diagnostic::new(
-                                CLASS_CONSTANT_FETCH_UNSUPPORTED,
-                                Some(scope_span),
-                            ));
-                        }
-                    };
-                    if !matches!(self.peek().kind, TokenKind::LeftParen) {
-                        if let Some(Expr::Variable(property_name, property_span)) =
-                            dynamic_name.as_ref()
-                        {
-                            expr = Expr::DynamicStaticPropertyFetch {
-                                receiver: Box::new(expr),
-                                name: property_name.clone(),
-                                span: combine_spans(start_span, *property_span),
-                            };
-                            continue;
-                        }
-                        return Err(Diagnostic::new(
-                            CLASS_CONSTANT_FETCH_UNSUPPORTED,
-                            Some(scope_span),
-                        ));
+                        let name = literal_name.map_or_else(
+                            || dynamic_name.expect("dynamic class constant expression"),
+                            |name| Expr::String(name, member_span),
+                        );
+                        expr = Expr::DynamicClassConstantFetch {
+                            class_name: None,
+                            receiver: Some(Box::new(expr)),
+                            name: Box::new(name),
+                            span: combine_spans(start_span, member_span),
+                        };
+                        continue;
                     }
                     if let Expr::StaticPropertyFetch {
                         class_name,
@@ -6681,10 +6695,12 @@ impl Parser<'_> {
             let right_brace_span = self.expect_right_brace()?;
             let member_span = combine_spans(member.span, right_brace_span);
             if !matches!(self.peek().kind, TokenKind::LeftParen) {
-                return Err(Diagnostic::new(
-                    CLASS_CONSTANT_FETCH_UNSUPPORTED,
-                    Some(scope_span),
-                ));
+                return Ok(Expr::DynamicClassConstantFetch {
+                    class_name: Some(class_name),
+                    receiver: None,
+                    name: Box::new(name_expr),
+                    span: combine_spans(class_span, member_span),
+                });
             }
             if self.peek_is_first_class_callable_arguments() {
                 return Err(Diagnostic::new(
@@ -8811,6 +8827,12 @@ fn collect_arrow_captures_from_expr(
         }
         Expr::DynamicStaticPropertyFetch { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+        }
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
+            }
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
         }
         Expr::Clone { expr, .. } => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
@@ -13745,6 +13767,12 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. }
         | Expr::PipeValue { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                validate_control_transfers_in_expr(receiver)?;
+            }
+            validate_control_transfers_in_expr(name)?;
+        }
         Expr::YieldFrom { expr, .. } => validate_control_transfers_in_expr(expr)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
@@ -14168,6 +14196,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
+        | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
         | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
@@ -14765,6 +14794,12 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         Expr::PropertyFetch { receiver, .. }
         | Expr::NullsafePropertyFetch { receiver, .. }
         | Expr::DynamicStaticPropertyFetch { receiver, .. } => expr_contains_yield(receiver),
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            receiver
+                .as_ref()
+                .is_some_and(|receiver| expr_contains_yield(receiver))
+                || expr_contains_yield(name)
+        }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             expr_contains_yield(receiver) || expr_contains_yield(name)
         }
@@ -15199,6 +15234,12 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::DynamicClassNameFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
+        }
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                validate_anonymous_functions_in_expr(receiver, functions)?;
+            }
+            validate_anonymous_functions_in_expr(name, functions)?;
         }
         Expr::InstanceOf { expr, target, .. } => {
             validate_anonymous_functions_in_expr(expr, functions)?;
@@ -17530,6 +17571,12 @@ fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
         | Expr::NullsafePropertyFetch { receiver, .. }
         | Expr::DynamicStaticPropertyFetch { receiver, .. }
         | Expr::DynamicClassNameFetch { receiver, .. } => reject_standalone_list_expr(receiver)?,
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                reject_standalone_list_expr(receiver)?;
+            }
+            reject_standalone_list_expr(name)?;
+        }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             reject_standalone_list_expr(receiver)?;
             reject_standalone_list_expr(name)?;
@@ -17683,6 +17730,12 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::DynamicClassNameFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
+        }
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                reject_append_array_read(receiver)?;
+            }
+            reject_append_array_read(name)?;
         }
         Expr::InstanceOf { expr, target, .. } => {
             reject_append_array_read(expr)?;
@@ -18225,6 +18278,16 @@ fn is_supported_global_const_expr_with_options(
         Expr::FirstClassCallable { callable, .. } => {
             is_supported_first_class_callable_const_target(callable)
         }
+        Expr::DynamicClassConstantFetch {
+            class_name: Some(_),
+            receiver: None,
+            name,
+            ..
+        } => is_supported_global_const_expr_with_options(
+            name,
+            allow_const_array_unpack_error_operands,
+            allow_array_access,
+        ),
         Expr::Binary { left, right, .. } => {
             is_supported_global_const_expr_with_options(
                 left,
@@ -18277,6 +18340,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
+        | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
         | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
@@ -18492,6 +18556,12 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         }
         Expr::DynamicPropertyFetch { receiver, name, .. } => {
             expr_uses_this_property(receiver, property_name)
+                || expr_uses_this_property(name, property_name)
+        }
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            receiver
+                .as_ref()
+                .is_some_and(|receiver| expr_uses_this_property(receiver, property_name))
                 || expr_uses_this_property(name, property_name)
         }
         Expr::InterpolatedString(parts, _) => string_parts_use_this_property(parts, property_name),
@@ -18887,6 +18957,12 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         Expr::FirstClassCallable { callable, .. } => {
             is_supported_first_class_callable_const_target(callable)
         }
+        Expr::DynamicClassConstantFetch {
+            class_name: Some(_),
+            receiver: None,
+            name,
+            ..
+        } => is_supported_parameter_default_expr(name),
         Expr::Cast { .. } => false,
         Expr::Binary { left, right, .. } => {
             is_supported_parameter_default_expr(left) && is_supported_parameter_default_expr(right)
@@ -18918,6 +18994,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
+        | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
         | Expr::InstanceOf { .. }
         | Expr::ArrayAccess { .. }
@@ -19060,6 +19137,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
+        | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
         | Expr::List(_)
         | Expr::ArrayAccess { .. }

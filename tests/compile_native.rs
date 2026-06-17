@@ -4368,6 +4368,82 @@ fn parser_accepts_dynamic_class_name_fetch_syntax() {
 }
 
 #[test]
+fn parser_accepts_dynamic_class_constant_fetch_syntax() {
+    let program = parser::parse(
+        "<?php
+class Sample { const VALUE = 'value'; const NAME = 'VALUE'; }
+$name = 'VALUE';
+$class = Sample::class;
+echo Sample::{$name};
+echo $class::VALUE;
+echo $class::{$name};
+echo Sample::{Sample::NAME};",
+    )
+    .unwrap();
+
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::DynamicClassConstantFetch {
+                    class_name: Some(class_name),
+                    receiver: None,
+                    name,
+                    ..
+                } if class_name == "Sample"
+                    && matches!(name.as_ref(), Expr::Variable(name, _) if name == "name")
+            )
+    ));
+    assert!(matches!(
+        &program.statements[3],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::DynamicClassConstantFetch {
+                    class_name: None,
+                    receiver: Some(receiver),
+                    name,
+                    ..
+                } if matches!(receiver.as_ref(), Expr::Variable(name, _) if name == "class")
+                    && matches!(name.as_ref(), Expr::String(name, _) if name == "VALUE")
+            )
+    ));
+    assert!(matches!(
+        &program.statements[4],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::DynamicClassConstantFetch {
+                    class_name: None,
+                    receiver: Some(receiver),
+                    name,
+                    ..
+                } if matches!(receiver.as_ref(), Expr::Variable(name, _) if name == "class")
+                    && matches!(name.as_ref(), Expr::Variable(name, _) if name == "name")
+            )
+    ));
+    assert!(matches!(
+        &program.statements[5],
+        Statement::Echo { expressions, .. }
+            if matches!(
+                &expressions[0],
+                Expr::DynamicClassConstantFetch {
+                    class_name: Some(class_name),
+                    receiver: None,
+                    name,
+                    ..
+                } if class_name == "Sample"
+                    && matches!(
+                        name.as_ref(),
+                        Expr::ClassConstantFetch { class_name, name, .. }
+                            if class_name == "Sample" && name == "NAME"
+                    )
+            )
+    ));
+}
+
+#[test]
 fn parser_accepts_dynamic_new_array_dim_class_names() {
     let program = parser::parse("<?php $arr = [new stdClass]; $obj = new $arr[0];").unwrap();
 
@@ -4420,16 +4496,6 @@ fn parser_rejects_unsupported_class_constant_boundaries() {
             "typed",
             "<?php class Sample { public const int A = 1; }",
             "typed class constants are unsupported",
-        ),
-        (
-            "dynamic name",
-            "<?php $name = 'A'; echo Sample::{$name};",
-            "class constant fetches are unsupported; class constants and enum cases require class metadata",
-        ),
-        (
-            "dynamic constant",
-            "<?php $object = new stdClass; echo $object::CONST;",
-            "class constant fetches are unsupported; class constants and enum cases require class metadata",
         ),
         (
             "dynamic constant expression",
@@ -39340,6 +39406,47 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_define_class_constant(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_class_constant(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_class_constant_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-class-constant-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-class-constant-reads.php");
+    let output = root.join("dynamic-class-constant-reads-bin");
+    fs::write(
+        &input,
+        "<?php
+class DynParent { public const BASE = \"base\"; }
+class Dyn extends DynParent {
+    public const VALUE = \"value\";
+    public const NAME = \"VALUE\";
+}
+
+$name = \"VALUE\";
+$class = \"Dyn\";
+echo Dyn::{$name}, \"\\n\";
+echo $class::VALUE, \"\\n\";
+echo $class::{$name}, \"\\n\";
+echo Dyn::{Dyn::NAME}, \"\\n\";
+echo $class::{\"class\"}, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "value\nvalue\nvalue\nvalue\nDyn\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_fetch_dynamic_static_member_class_name(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope(&runtime"));
 }
 
 #[test]
