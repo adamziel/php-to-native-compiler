@@ -1492,6 +1492,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");
     const char *configured_arg_separator_input = getenv("PTN_ARG_SEPARATOR_INPUT");
+    const char *configured_arg_separator_output = getenv("PTN_ARG_SEPARATOR_OUTPUT");
     const char *configured_output_handler = getenv("PTN_OUTPUT_HANDLER");
     const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
@@ -1513,6 +1514,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->arg_separator_input = ptn_duplicate_string(
         configured_arg_separator_input == NULL ? "&" : configured_arg_separator_input
+    );
+    runtime->arg_separator_output = ptn_duplicate_string(
+        configured_arg_separator_output == NULL ? "&" : configured_arg_separator_output
     );
     runtime->output_handler = ptn_duplicate_string(
         configured_output_handler == NULL ? "" : configured_output_handler

@@ -188,6 +188,8 @@ typedef struct {
 #define PTN_PHP_URL_PATH 5
 #define PTN_PHP_URL_QUERY 6
 #define PTN_PHP_URL_FRAGMENT 7
+#define PTN_PHP_QUERY_RFC1738 1
+#define PTN_PHP_QUERY_RFC3986 2
 #define PTN_FILE_USE_INCLUDE_PATH 1
 #define PTN_FILE_IGNORE_NEW_LINES 2
 #define PTN_FILE_SKIP_EMPTY_LINES 4
@@ -419,6 +421,7 @@ typedef struct {
     size_t required_parameter_count;
     int is_variadic;
     const PtnParameterMetadata *parameters;
+    int return_by_ref;
     const char *return_type_name;
     const char *return_type_display_name;
     int return_type_allows_null;
@@ -920,6 +923,7 @@ struct PtnRuntime {
     char *max_memory_limit;
     char *default_charset;
     char *arg_separator_input;
+    char *arg_separator_output;
     char *output_handler;
     char *filter_default;
     char *internal_encoding;
@@ -1052,6 +1056,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.required_parameter_count = 0;
     metadata.is_variadic = 0;
     metadata.parameters = NULL;
+    metadata.return_by_ref = 0;
     metadata.return_type_name = NULL;
     metadata.return_type_display_name = NULL;
     metadata.return_type_allows_null = 0;
@@ -1066,6 +1071,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     size_t required_parameter_count,
     int is_variadic,
     const PtnParameterMetadata *parameters,
+    int return_by_ref,
     const char *return_type_name,
     const char *return_type_display_name,
     int return_type_allows_null,
@@ -1079,6 +1085,7 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.required_parameter_count = required_parameter_count;
     metadata.is_variadic = is_variadic;
     metadata.parameters = parameters;
+    metadata.return_by_ref = return_by_ref;
     metadata.return_type_name = return_type_name;
     metadata.return_type_display_name = return_type_display_name;
     metadata.return_type_allows_null = return_type_allows_null;

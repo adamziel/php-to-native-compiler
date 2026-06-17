@@ -41748,6 +41748,87 @@ new C;
     );
 }
 
+#[test]
+fn compile_reference_reflection_and_http_query_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-reflection-http-query");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-reflection-http-query.php");
+    let output = root.join("reference-reflection-http-query-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class TestClass {
+    public function &foo() {
+        static $value = 1;
+        return $value;
+    }
+    private function bar() {}
+}
+
+$methodInfo = ReflectionMethod::createFromMethodName('TestClass::foo');
+var_dump($methodInfo->returnsReference());
+$methodInfo = ReflectionMethod::createFromMethodName('TestClass::bar');
+var_dump($methodInfo->returnsReference());
+
+$ary = [0, 1, 2];
+$ref1 =& $ary[1];
+unset($ref1);
+$ref2 =& $ary[2];
+$r1 = ReflectionReference::fromArrayElement($ary, 1);
+var_dump($r1 === null);
+$r2 = ReflectionReference::fromArrayElement($ary, 2);
+var_dump($r2 instanceof ReflectionReference);
+var_dump($r2->getId() === $r2->getId());
+$self = [&$self];
+$copy = [$self];
+unset($self);
+var_dump(ReflectionReference::fromArrayElement($copy[0], 0) instanceof ReflectionReference);
+try {
+    serialize($r2);
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    unserialize('O:19:"ReflectionReference":0:{}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+$value = 'value';
+$ref =& $value;
+var_dump(http_build_query([$ref]));
+echo http_build_query(["name" => "main page"], "", ini_get("arg_separator.output"), PHP_QUERY_RFC3986), "\n";
+?>"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Serialization of 'ReflectionReference' is not allowed\n",
+            "Unserialization of 'ReflectionReference' is not allowed\n",
+            "string(7) \"0=value\"\n",
+            "name=main%20page\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

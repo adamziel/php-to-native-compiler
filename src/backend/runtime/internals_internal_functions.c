@@ -403,6 +403,7 @@ static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_na
 static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
 static const char *ptn_runtime_default_charset(PtnRuntime *runtime);
 static const char *ptn_runtime_arg_separator_input(PtnRuntime *runtime);
+static const char *ptn_runtime_arg_separator_output(PtnRuntime *runtime);
 
 static char *ptn_format_missing_class_callback_reason(const char *class_name) {
     int needed = snprintf(NULL, 0, "class \"%s\" not found", class_name);
@@ -2687,6 +2688,15 @@ static void ptn_serialize_append_value_with_id(
             ptn_serialize_append_array(buffer, value.as.array, state, existing_id != 0);
             break;
         case PTN_OBJECT: {
+            if (ptn_ascii_case_equal(value.as.object->class_name, "ReflectionReference")) {
+                ptn_throw_exception(
+                    state->runtime,
+                    "Exception",
+                    "Serialization of 'ReflectionReference' is not allowed"
+                );
+                ptn_string_buffer_append(buffer, "N;");
+                break;
+            }
             size_t object_id = 0;
             if (ptn_serialize_object_id(state, value.as.object, &object_id)) {
                 ptn_string_buffer_append_format(buffer, "r:%zu;", object_id);
@@ -3540,6 +3550,17 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
             state->pos += class_len;
+            if (ptn_ascii_case_equal(class_name, "ReflectionReference")) {
+                free(class_name);
+                ptn_throw_exception(
+                    runtime,
+                    "Exception",
+                    "Unserialization of 'ReflectionReference' is not allowed"
+                );
+                result.value = ptn_null();
+                result.id = ptn_unserialize_add_slot(state, &result.value);
+                return result;
+            }
             if (!ptn_unserialize_consume(state, '"') ||
                 !ptn_unserialize_consume(state, ':') ||
                 !ptn_unserialize_parse_unsigned_fail_at(state, value_start, &property_count) ||
@@ -11852,6 +11873,324 @@ static PtnValue ptn_internal_rawurlencode(PtnRuntime *runtime, size_t argc, cons
     PtnValue result = ptn_url_encode_value(string, 1);
     ptn_string_operand_free(string);
     return result;
+}
+
+static void ptn_http_build_query_append_encoded(
+    PtnStringBuffer *output,
+    const char *data,
+    size_t len,
+    int raw
+) {
+    PtnStringOperand operand = ptn_string_operand_borrowed_len(data, len);
+    PtnValue encoded = ptn_url_encode_value(operand, raw);
+    PtnStringOperand encoded_string = ptn_value_to_string_operand(encoded);
+    ptn_string_buffer_append_len(output, encoded_string.data, encoded_string.len);
+    ptn_string_operand_free(encoded_string);
+    ptn_value_destroy(&encoded);
+}
+
+static void ptn_http_build_query_append_key(
+    PtnStringBuffer *output,
+    const char *key,
+    size_t key_len,
+    int raw
+) {
+    ptn_http_build_query_append_encoded(output, key, key_len, raw);
+}
+
+static char *ptn_http_build_query_key_from_array_key(PtnArrayKey key, const char *numeric_prefix) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        return ptn_duplicate_string_len(key.as.string, key.string_len);
+    }
+    int needed = snprintf(NULL, 0, "%s%lld", numeric_prefix, (long long)key.as.integer);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *result = malloc((size_t)needed + 1);
+    if (result == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(result, (size_t)needed + 1, "%s%lld", numeric_prefix, (long long)key.as.integer);
+    return result;
+}
+
+static void ptn_http_build_query_append_value(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    const char *key,
+    size_t key_len,
+    PtnValue value,
+    const char *arg_separator,
+    int raw,
+    PtnObject **seen_objects,
+    size_t seen_objects_len,
+    size_t line
+);
+
+static void ptn_http_build_query_append_pair(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    const char *key,
+    size_t key_len,
+    PtnValue value,
+    const char *arg_separator,
+    int raw,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL || value.type == PTN_RESOURCE) {
+        return;
+    }
+    if (output->len > 0) {
+        ptn_string_buffer_append(output, arg_separator);
+    }
+    ptn_http_build_query_append_key(output, key, key_len, raw);
+    ptn_string_buffer_append_char(output, '=');
+    PtnStringOperand string = value.type == PTN_BOOL
+        ? ptn_string_operand_borrowed(value.as.boolean ? "1" : "0")
+        : ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    ptn_http_build_query_append_encoded(output, string.data, string.len, raw);
+    ptn_string_operand_free(string);
+}
+
+static void ptn_http_build_query_append_array(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    const char *key,
+    size_t key_len,
+    PtnArray *array,
+    const char *arg_separator,
+    int raw,
+    PtnObject **seen_objects,
+    size_t seen_objects_len,
+    size_t line
+) {
+    for (size_t i = 0; i < array->len; i++) {
+        char *child_key = ptn_http_build_query_key_from_array_key(array->entries[i].key, "");
+        size_t child_key_len = strlen(child_key);
+        int needed = snprintf(NULL, 0, "%.*s[%.*s]", (int)key_len, key, (int)child_key_len, child_key);
+        if (needed < 0) {
+            free(child_key);
+            ptn_abort_out_of_memory();
+        }
+        char *compound = malloc((size_t)needed + 1);
+        if (compound == NULL) {
+            free(child_key);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(compound, (size_t)needed + 1, "%.*s[%.*s]", (int)key_len, key, (int)child_key_len, child_key);
+        ptn_http_build_query_append_value(
+            runtime,
+            output,
+            compound,
+            (size_t)needed,
+            array->entries[i].value,
+            arg_separator,
+            raw,
+            seen_objects,
+            seen_objects_len,
+            line
+        );
+        free(compound);
+        free(child_key);
+    }
+}
+
+static int ptn_http_build_query_object_property_is_public(PtnArrayKey key) {
+    return key.type == PTN_ARRAY_KEY_STRING && (key.string_len == 0 || key.as.string[0] != '\0');
+}
+
+static void ptn_http_build_query_append_object(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    const char *key,
+    size_t key_len,
+    PtnObject *object,
+    const char *arg_separator,
+    int raw,
+    PtnObject **seen_objects,
+    size_t seen_objects_len,
+    size_t line
+) {
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (
+            !ptn_http_build_query_object_property_is_public(entry->key) ||
+            !ptn_object_property_visible_for_foreach(runtime, object, entry->key, NULL)
+        ) {
+            continue;
+        }
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, entry->key.as.string);
+        const char *property = metadata == NULL ? entry->key.as.string : metadata->display_name;
+        size_t property_len = strlen(property);
+        if (key == NULL) {
+            ptn_http_build_query_append_value(
+                runtime,
+                output,
+                property,
+                property_len,
+                entry->value,
+                arg_separator,
+                raw,
+                seen_objects,
+                seen_objects_len,
+                line
+            );
+            continue;
+        }
+        int needed = snprintf(NULL, 0, "%.*s[%.*s]", (int)key_len, key, (int)property_len, property);
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *compound = malloc((size_t)needed + 1);
+        if (compound == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(compound, (size_t)needed + 1, "%.*s[%.*s]", (int)key_len, key, (int)property_len, property);
+        ptn_http_build_query_append_value(
+            runtime,
+            output,
+            compound,
+            (size_t)needed,
+            entry->value,
+            arg_separator,
+            raw,
+            seen_objects,
+            seen_objects_len,
+            line
+        );
+        free(compound);
+    }
+}
+
+static void ptn_http_build_query_append_value(
+    PtnRuntime *runtime,
+    PtnStringBuffer *output,
+    const char *key,
+    size_t key_len,
+    PtnValue value,
+    const char *arg_separator,
+    int raw,
+    PtnObject **seen_objects,
+    size_t seen_objects_len,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_ARRAY) {
+        ptn_http_build_query_append_array(
+            runtime,
+            output,
+            key,
+            key_len,
+            resolved.as.array,
+            arg_separator,
+            raw,
+            seen_objects,
+            seen_objects_len,
+            line
+        );
+        return;
+    }
+    if (resolved.type == PTN_OBJECT) {
+        for (size_t i = 0; i < seen_objects_len; i++) {
+            if (seen_objects[i] == resolved.as.object) {
+                return;
+            }
+        }
+        PtnObject **nested_seen = malloc(sizeof(PtnObject *) * (seen_objects_len + 1));
+        if (nested_seen == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (seen_objects_len > 0) {
+            memcpy(nested_seen, seen_objects, sizeof(PtnObject *) * seen_objects_len);
+        }
+        nested_seen[seen_objects_len] = resolved.as.object;
+        ptn_http_build_query_append_object(
+            runtime,
+            output,
+            key,
+            key_len,
+            resolved.as.object,
+            arg_separator,
+            raw,
+            nested_seen,
+            seen_objects_len + 1,
+            line
+        );
+        free(nested_seen);
+        return;
+    }
+    ptn_http_build_query_append_pair(runtime, output, key, key_len, resolved, arg_separator, raw, line);
+}
+
+static PtnValue ptn_internal_http_build_query(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue data = ptn_value_deref(args[0]);
+    if (data.type != PTN_ARRAY && data.type != PTN_OBJECT) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "http_build_query(): Argument #1 ($data) must be of type array, %s given",
+            ptn_offset_container_type_name(data)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    char *numeric_prefix = argc >= 2 ? ptn_value_to_string(args[1]) : ptn_duplicate_string("");
+    char *arg_separator = NULL;
+    if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
+        arg_separator = ptn_value_to_string(args[2]);
+    } else {
+        arg_separator = ptn_duplicate_string("&");
+    }
+    int64_t encoding_type = argc >= 4
+        ? ptn_internal_expect_integer_arg(runtime, "http_build_query", 4, "encoding_type", args[3], line)
+        : 1;
+    int raw = encoding_type == 2;
+
+    PtnStringBuffer output;
+    ptn_string_buffer_init(&output);
+    if (data.type == PTN_ARRAY) {
+        for (size_t i = 0; i < data.as.array->len; i++) {
+            char *key = ptn_http_build_query_key_from_array_key(data.as.array->entries[i].key, numeric_prefix);
+            ptn_http_build_query_append_value(
+                runtime,
+                &output,
+                key,
+                strlen(key),
+                data.as.array->entries[i].value,
+                arg_separator,
+                raw,
+                NULL,
+                0,
+                line
+            );
+            free(key);
+        }
+    } else {
+        PtnObject *seen_object = data.as.object;
+        ptn_http_build_query_append_object(
+            runtime,
+            &output,
+            NULL,
+            0,
+            data.as.object,
+            arg_separator,
+            raw,
+            &seen_object,
+            1,
+            line
+        );
+    }
+
+    free(numeric_prefix);
+    free(arg_separator);
+    return ptn_owned_string_len(output.data, output.len);
 }
 
 static PtnValue ptn_url_decode_value(PtnStringOperand string, int plus_as_space) {
@@ -32295,6 +32634,14 @@ static const char *ptn_runtime_arg_separator_input(PtnRuntime *runtime) {
     return root->arg_separator_input;
 }
 
+static const char *ptn_runtime_arg_separator_output(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->arg_separator_output == NULL) {
+        return "&";
+    }
+    return root->arg_separator_output;
+}
+
 static const char *ptn_runtime_output_handler(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->output_handler == NULL) {
@@ -32669,6 +33016,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_input(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "arg_separator.output")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_output(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "default_charset")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_default_charset(runtime)));
         return 1;
@@ -32819,6 +33170,11 @@ static void ptn_runtime_set_arg_separator_input(PtnRuntime *runtime, const char 
     ptn_runtime_set_ini_string(&root->arg_separator_input, value);
 }
 
+static void ptn_runtime_set_arg_separator_output(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->arg_separator_output, value);
+}
+
 static void ptn_runtime_set_output_handler(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->output_handler, value);
@@ -32931,6 +33287,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "arg_separator.output")) {
+        ptn_runtime_set_arg_separator_output(runtime, "&");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "default_charset")) {
         ptn_runtime_set_default_charset(runtime, "UTF-8");
         ptn_string_operand_free(option);
@@ -33019,6 +33380,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_arg_separator_input(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "arg_separator.output")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_output(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_arg_separator_output(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -33385,6 +33756,8 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "CRYPT_BLOWFISH", PTN_CRYPT_BLOWFISH);
     ptn_get_defined_constants_add_int(table, "CRYPT_SHA256", PTN_CRYPT_SHA256);
     ptn_get_defined_constants_add_int(table, "CRYPT_SHA512", PTN_CRYPT_SHA512);
+    ptn_get_defined_constants_add_int(table, "PHP_QUERY_RFC1738", PTN_PHP_QUERY_RFC1738);
+    ptn_get_defined_constants_add_int(table, "PHP_QUERY_RFC3986", PTN_PHP_QUERY_RFC3986);
     return table;
 }
 
@@ -36071,6 +36444,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "htmlentities", 1, 4, ptn_internal_htmlentities },
         { "htmlspecialchars", 1, 4, ptn_internal_htmlspecialchars },
         { "htmlspecialchars_decode", 1, 2, ptn_internal_htmlspecialchars_decode },
+        { "http_build_query", 1, 4, ptn_internal_http_build_query },
         { "hypot", 2, 2, ptn_internal_hypot },
         { "idate", 1, 2, ptn_internal_idate },
         { "implode", 1, 2, ptn_internal_implode },
@@ -36381,6 +36755,7 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             0,
             PTN_INTERNAL_EXIT_PARAMETERS,
+            0,
             NULL,
             NULL,
             0,
@@ -36395,6 +36770,7 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             1,
             0,
             PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS,
+            0,
             "string",
             "string",
             0,
@@ -36410,6 +36786,7 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             0,
             PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS,
+            0,
             "array",
             "array",
             0,
@@ -36425,6 +36802,7 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         function->min_args,
         is_variadic,
         NULL,
+        0,
         NULL,
         NULL,
         0,
@@ -37291,6 +37669,7 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getReturnType")
         || ptn_ascii_case_equal(method_name, "invoke")
         || ptn_ascii_case_equal(method_name, "invokeArgs")
+        || ptn_ascii_case_equal(method_name, "returnsReference")
         || ptn_ascii_case_equal(method_name, "isAbstract")
         || ptn_ascii_case_equal(method_name, "isConstructor")
         || ptn_ascii_case_equal(method_name, "isDestructor")
@@ -39415,6 +39794,10 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             metadata.return_type_allows_null,
             metadata.return_type_is_builtin
         );
+    }
+    if (ptn_ascii_case_equal(name, "returnsReference")) {
+        PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
+        return ptn_bool(metadata.found && metadata.return_by_ref);
     }
     if (ptn_ascii_case_equal(name, "getModifiers")) {
         int modifiers = 0;
@@ -45378,6 +45761,13 @@ static void ptn_reflection_reference_throw_key_type_error(
     ptn_throw_exception(runtime, "TypeError", message);
 }
 
+static int ptn_reflection_reference_array_element_is_visible(PtnArray *array, PtnReference *reference) {
+    if (reference->refcount > 1) {
+        return 1;
+    }
+    return reference->value.type == PTN_ARRAY && reference->value.as.array == array;
+}
+
 static PtnValue ptn_internal_reflection_reference_from_array_element(
     PtnRuntime *runtime,
     size_t argc,
@@ -45388,12 +45778,18 @@ static PtnValue ptn_internal_reflection_reference_from_array_element(
     (void)line;
     PtnValue array_value = ptn_value_deref(args[0]);
     if (array_value.type != PTN_ARRAY) {
+        const char *type_name = ptn_offset_container_type_name(array_value);
+        if (array_value.type == PTN_OBJECT) {
+            type_name = array_value.as.object->class_name;
+        } else if (array_value.type == PTN_EXCEPTION) {
+            type_name = array_value.as.exception->class_name;
+        }
         char message[160];
         int written = snprintf(
             message,
             sizeof(message),
             "ReflectionReference::fromArrayElement(): Argument #1 ($array) must be of type array, %s given",
-            ptn_offset_container_type_name(array_value)
+            type_name
         );
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
@@ -45427,7 +45823,10 @@ static PtnValue ptn_internal_reflection_reference_from_array_element(
         ptn_throw_exception(runtime, "ReflectionException", "Array key not found");
         return ptn_null();
     }
-    if (entry->value.type != PTN_REFERENCE) {
+    if (
+        entry->value.type != PTN_REFERENCE ||
+        !ptn_reflection_reference_array_element_is_visible(array_value.as.array, entry->value.as.reference)
+    ) {
         return ptn_null();
     }
     return ptn_reflection_reference_object_from_reference(runtime, entry->value.as.reference);

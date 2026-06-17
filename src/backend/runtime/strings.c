@@ -1400,6 +1400,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PHP_URL_FRAGMENT);
         return 1;
     }
+    if (strcmp(name, "PHP_QUERY_RFC1738") == 0) {
+        *out = ptn_int(PTN_PHP_QUERY_RFC1738);
+        return 1;
+    }
+    if (strcmp(name, "PHP_QUERY_RFC3986") == 0) {
+        *out = ptn_int(PTN_PHP_QUERY_RFC3986);
+        return 1;
+    }
     if (strcmp(name, "ENT_NOQUOTES") == 0) {
         *out = ptn_int(PTN_ENT_NOQUOTES);
         return 1;

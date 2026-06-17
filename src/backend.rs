@@ -3221,6 +3221,8 @@ fn emit_user_function_dispatch(
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&parameters);
+        out.push_str(", ");
+        out.push_str(if function.return_by_ref { "1" } else { "0" });
         emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
         out.push_str(");\n");
         out.push_str("    }\n");
@@ -3261,6 +3263,8 @@ fn emit_user_function_dispatch(
             out.push_str(if is_variadic { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(&parameters);
+            out.push_str(", ");
+            out.push_str(if function.return_by_ref { "1" } else { "0" });
             emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
             out.push_str(");\n");
             out.push_str("    }\n");
@@ -18559,6 +18563,8 @@ impl ValueEmitter {
         out.push_str(if is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(&parameters);
+        out.push_str(", ");
+        out.push_str(if function.return_by_ref { "1" } else { "0" });
         emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
         out.push_str("), ");
         out.push_str(if function.is_static { "1" } else { "0" });
