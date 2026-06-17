@@ -2366,7 +2366,30 @@ fn emit_static_property_initializers_with_constants(
         let previous_class_name = values.current_class_name.replace(class.name.clone());
         for property in &class.static_properties {
             let value_temp = match &property.value {
-                Some(value) => values.emit_materialized_value(out, value),
+                Some(value) => {
+                    let previous_scope_temp = values.next_temp();
+                    let previous_called_scope_temp = values.next_temp();
+                    out.push_str("    const char *");
+                    out.push_str(&previous_scope_temp);
+                    out.push_str(" = runtime.current_class_name;\n");
+                    out.push_str("    const char *");
+                    out.push_str(&previous_called_scope_temp);
+                    out.push_str(" = runtime.current_called_class_name;\n");
+                    out.push_str("    runtime.current_class_name = \"");
+                    out.push_str(&c_string(&class.name));
+                    out.push_str("\";\n");
+                    out.push_str("    runtime.current_called_class_name = \"");
+                    out.push_str(&c_string(&class.name));
+                    out.push_str("\";\n");
+                    let value_temp = values.emit_materialized_value(out, value);
+                    out.push_str("    runtime.current_called_class_name = ");
+                    out.push_str(&previous_called_scope_temp);
+                    out.push_str(";\n");
+                    out.push_str("    runtime.current_class_name = ");
+                    out.push_str(&previous_scope_temp);
+                    out.push_str(";\n");
+                    value_temp
+                }
                 None => {
                     let temp = values.next_temp();
                     out.push_str("    PtnValue ");
@@ -2466,7 +2489,28 @@ fn emit_class_constant_initializer_helper(
                 }
                 value_temp
             } else {
-                values.emit_const_materialized_value(out, &constant.value)
+                let previous_scope_temp = values.next_temp();
+                let previous_called_scope_temp = values.next_temp();
+                out.push_str("            const char *");
+                out.push_str(&previous_scope_temp);
+                out.push_str(" = runtime.current_class_name;\n");
+                out.push_str("            const char *");
+                out.push_str(&previous_called_scope_temp);
+                out.push_str(" = runtime.current_called_class_name;\n");
+                out.push_str("            runtime.current_class_name = \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\";\n");
+                out.push_str("            runtime.current_called_class_name = \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\";\n");
+                let value_temp = values.emit_const_materialized_value(out, &constant.value);
+                out.push_str("            runtime.current_called_class_name = ");
+                out.push_str(&previous_called_scope_temp);
+                out.push_str(";\n");
+                out.push_str("            runtime.current_class_name = ");
+                out.push_str(&previous_scope_temp);
+                out.push_str(";\n");
+                value_temp
             };
             out.push_str("            ptn_runtime_define_class_constant(&runtime, \"");
             out.push_str(&c_string(&class.name));
@@ -9696,7 +9740,20 @@ fn emit_callable_dispatch(
     }
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
-    out.push_str("            return ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line);\n");
+    out.push_str("            const char *previous_class_name = runtime->current_class_name;\n");
+    out.push_str("            const char *previous_called_class_name = runtime->current_called_class_name;\n");
+    out.push_str("            if (resolved.as.closure->scope_class_name != NULL) {\n");
+    out.push_str(
+        "                runtime->current_class_name = resolved.as.closure->scope_class_name;\n",
+    );
+    out.push_str("            }\n");
+    out.push_str("            if (resolved.as.closure->called_class_name != NULL) {\n");
+    out.push_str("                runtime->current_called_class_name = resolved.as.closure->called_class_name;\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line);\n");
+    out.push_str("            runtime->current_called_class_name = previous_called_class_name;\n");
+    out.push_str("            runtime->current_class_name = previous_class_name;\n");
+    out.push_str("            return result;\n");
     out.push_str("        }\n");
     out.push_str("        const char *previous_class_name = runtime->current_class_name;\n");
     out.push_str("        if (resolved.as.closure->bound_scope_name != NULL) {\n");
@@ -20841,9 +20898,35 @@ impl ValueEmitter {
         for (declaring_class_name, property, hook_get_value) in
             class_property_initialization_chain(declared_class, &self.classes)
         {
+            let previous_class_name = self
+                .current_class_name
+                .replace(declaring_class_name.clone());
             let effective_value = hook_get_value.as_ref().or(property.value.as_ref());
             let value_temp = match effective_value {
-                Some(value) => self.emit_materialized_value(out, value),
+                Some(value) => {
+                    let previous_scope_temp = self.next_temp();
+                    let previous_called_scope_temp = self.next_temp();
+                    out.push_str("    const char *");
+                    out.push_str(&previous_scope_temp);
+                    out.push_str(" = runtime.current_class_name;\n");
+                    out.push_str("    const char *");
+                    out.push_str(&previous_called_scope_temp);
+                    out.push_str(" = runtime.current_called_class_name;\n");
+                    out.push_str("    runtime.current_class_name = \"");
+                    out.push_str(&c_string(&declaring_class_name));
+                    out.push_str("\";\n");
+                    out.push_str("    runtime.current_called_class_name = \"");
+                    out.push_str(&c_string(&declaring_class_name));
+                    out.push_str("\";\n");
+                    let value_temp = self.emit_materialized_value(out, value);
+                    out.push_str("    runtime.current_called_class_name = ");
+                    out.push_str(&previous_called_scope_temp);
+                    out.push_str(";\n");
+                    out.push_str("    runtime.current_class_name = ");
+                    out.push_str(&previous_scope_temp);
+                    out.push_str(";\n");
+                    value_temp
+                }
                 None => {
                     let temp = self.next_temp();
                     out.push_str("    PtnValue ");
@@ -20852,6 +20935,7 @@ impl ValueEmitter {
                     temp
                 }
             };
+            self.current_class_name = previous_class_name;
             let assigned_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&assigned_temp);
@@ -21504,9 +21588,12 @@ impl ValueEmitter {
 
     fn emit_print(&mut self, out: &mut String, expression: &ValueExpr) -> String {
         let expression_temp = self.emit_materialized_value(out, expression);
+        let line = value_expr_runtime_line(expression).unwrap_or(0);
         out.push_str("    ptn_echo(&runtime, ");
         out.push_str(&expression_temp);
-        out.push_str(", 0);\n");
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
         emit_value_cleanup(out, "    ", &expression_temp);
         "ptn_int(1)".to_string()
     }
