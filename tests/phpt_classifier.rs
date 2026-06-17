@@ -752,14 +752,20 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
         (
             "internal attribute reflection metadata",
             "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
+            "broader internal attribute reflection metadata",
+            "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(DateTime::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
             "unsupported-internal-attribute-metadata\t",
-            "requires internal attribute/reflection metadata",
+            "requires internal attribute/reflection metadata beyond modeled Attribute self-reflection",
         ),
         (
             "internal Deprecated attribute object",
             "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
             "unsupported-internal-attribute-metadata\t",
-            "requires internal attribute/reflection metadata",
+            "requires direct Deprecated/NoDiscard fatal stack parity beyond modeled caught-object behavior",
         ),
         (
             "override typed property validation",
@@ -1151,14 +1157,20 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "internal attribute reflection metadata",
             "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
+            "broader internal attribute reflection metadata",
+            "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(DateTime::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
             "unsupported-internal-attribute-metadata\t",
-            "requires internal attribute/reflection metadata",
+            "requires internal attribute/reflection metadata beyond modeled Attribute self-reflection",
         ),
         (
             "internal Deprecated attribute object",
             "--TEST--\ndeprecated attribute\n--FILE--\n<?php\n$d = new \\Deprecated(\"message\");\n$d->message = \"updated\";\n--EXPECT--\n",
             "unsupported-internal-attribute-metadata\t",
-            "requires internal attribute/reflection metadata",
+            "requires direct Deprecated/NoDiscard fatal stack parity beyond modeled caught-object behavior",
         ),
     ];
 

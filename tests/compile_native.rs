@@ -16391,6 +16391,184 @@ show_access(\"child-dynamic-protected\", function() { return ConstScopeChild::dy
 }
 
 #[test]
+fn compile_attribute_class_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-attribute-class-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-class-constants.php");
+    let output = root.join("attribute-class-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+function showFlag(string $name, int $value) {
+    $all = Attribute::TARGET_ALL;
+    $and = $all & $value;
+    echo \"Attribute::$name = $value ($all & $value === $and)\\n\";
+}
+
+showFlag(\"TARGET_CLASS\", Attribute::TARGET_CLASS);
+showFlag(\"TARGET_FUNCTION\", Attribute::TARGET_FUNCTION);
+showFlag(\"TARGET_METHOD\", Attribute::TARGET_METHOD);
+showFlag(\"TARGET_PROPERTY\", Attribute::TARGET_PROPERTY);
+showFlag(\"TARGET_CLASS_CONSTANT\", Attribute::TARGET_CLASS_CONSTANT);
+showFlag(\"TARGET_PARAMETER\", Attribute::TARGET_PARAMETER);
+showFlag(\"TARGET_CONSTANT\", Attribute::TARGET_CONSTANT);
+showFlag(\"IS_REPEATABLE\", Attribute::IS_REPEATABLE);
+
+$all = Attribute::TARGET_CLASS | Attribute::TARGET_FUNCTION
+    | Attribute::TARGET_METHOD | Attribute::TARGET_PROPERTY
+    | Attribute::TARGET_CLASS_CONSTANT | Attribute::TARGET_PARAMETER
+    | Attribute::TARGET_CONSTANT;
+var_dump($all, Attribute::TARGET_ALL, $all === Attribute::TARGET_ALL);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Attribute::TARGET_CLASS = 1 (127 & 1 === 1)\n",
+            "Attribute::TARGET_FUNCTION = 2 (127 & 2 === 2)\n",
+            "Attribute::TARGET_METHOD = 4 (127 & 4 === 4)\n",
+            "Attribute::TARGET_PROPERTY = 8 (127 & 8 === 8)\n",
+            "Attribute::TARGET_CLASS_CONSTANT = 16 (127 & 16 === 16)\n",
+            "Attribute::TARGET_PARAMETER = 32 (127 & 32 === 32)\n",
+            "Attribute::TARGET_CONSTANT = 64 (127 & 64 === 64)\n",
+            "Attribute::IS_REPEATABLE = 128 (127 & 128 === 0)\n",
+            "int(127)\n",
+            "int(127)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_builtin_class_constant_value"));
+    assert!(c_source.contains("TARGET_CLASS"));
+}
+
+#[test]
+fn compile_reflection_attribute_self_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-attribute-self");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-attribute-self.php");
+    let output = root.join("reflection-attribute-self-bin");
+    fs::write(
+        &input,
+        "<?php
+$reflection = new \\ReflectionClass(Attribute::class);
+$attributes = $reflection->getAttributes();
+
+foreach ($attributes as $attribute) {
+    var_dump($attribute->getName());
+    var_dump($attribute->getArguments());
+    var_dump($attribute->getTarget());
+    var_dump($attribute->isRepeated());
+
+    $a = $attribute->newInstance();
+    var_dump(get_class($a));
+    var_dump($a->flags == Attribute::TARGET_CLASS);
+}
+
+var_dump($reflection->getAttributes(\"Missing\"));
+var_dump(method_exists(\"ReflectionAttribute\", \"newInstance\"));
+var_dump(class_exists(\"Attribute\"));
+var_dump(in_array(\"Attribute\", get_declared_classes()));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(9) \"Attribute\"\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "string(9) \"Attribute\"\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_attribute_call_method"));
+    assert!(c_source.contains("ptn_reflection_class_get_attributes"));
+    assert!(c_source.contains("ptn_attribute_new"));
+}
+
+#[test]
+fn compile_internal_attribute_object_readonly_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-attribute-readonly");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-attribute-readonly.php");
+    let output = root.join("internal-attribute-readonly-bin");
+    fs::write(
+        &input,
+        "<?php
+$d = new \\Deprecated(\"foo\", \"1.0\");
+var_dump($d->message, $d->since);
+try {
+    $d->message = \"bar\";
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $d->__construct(\"bar\");
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$n = new \\NoDiscard(\"keep\");
+var_dump($n->message);
+try {
+    $n->__construct(\"other\");
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(3) \"foo\"\n",
+            "string(3) \"1.0\"\n",
+            "Cannot modify readonly property Deprecated::$message\n",
+            "Cannot modify readonly property Deprecated::$message\n",
+            "string(4) \"keep\"\n",
+            "Cannot modify readonly property NoDiscard::$message\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_deprecated_new"));
+    assert!(c_source.contains("ptn_no_discard_new"));
+    assert!(c_source.contains("ptn_attribute_metadata_call_method"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();
@@ -30819,6 +30997,25 @@ echo file_get_contents('php://input'), \"\\n\";\n",
         String::from_utf8(execution.stdout).unwrap(),
         "Hello Again\nHello World\na=Hello+World\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_get_without_query_string_does_not_emit_argv_deprecation() {
+    let root = temp_dir("ptn-phpc-cgi-empty-query-argv");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-empty-query-argv.php");
+    fs::write(&input, "<?php echo \"ok\\n\";").unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "GET")
+        .env_remove("QUERY_STRING")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "ok\n");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

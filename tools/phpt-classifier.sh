@@ -1770,11 +1770,16 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (!ptn_supported_internal_attribute_metadata_row() &&
-                (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ ||
-                    line ~ /(^|[^[:alnum:]_$\\])attribute[[:space:]]*::/ ||
-                    line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/)) {
-                print "unsupported-internal-attribute-metadata\trequires internal attribute/reflection metadata such as Reflection*::getAttributes(), Attribute constants, Deprecated, or NoDiscard"
+            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionclass[[:space:]]*\([[:space:]]*\\?attribute[[:space:]]*::[[:space:]]*class[[:space:]]*\)/) {
+                reflection_attribute_self_context = 1
+            }
+            if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?(deprecated|nodiscard)([^[:alnum:]_]|$)/) {
+                print "unsupported-internal-attribute-metadata\trequires direct Deprecated/NoDiscard fatal stack parity beyond modeled caught-object behavior"
+                found = 1
+                exit
+            }
+            if (line ~ /->[[:space:]]*getattributes[[:space:]]*\(/ && !reflection_attribute_self_context) {
+                print "unsupported-internal-attribute-metadata\trequires internal attribute/reflection metadata beyond modeled Attribute self-reflection"
                 found = 1
                 exit
             }
