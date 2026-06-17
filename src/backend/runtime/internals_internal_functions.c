@@ -32693,7 +32693,7 @@ static const char *ptn_runtime_variables_order(PtnRuntime *runtime) {
 static const char *ptn_runtime_register_argc_argv(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->register_argc_argv == NULL) {
-        return "1";
+        return "0";
     }
     return root->register_argc_argv;
 }

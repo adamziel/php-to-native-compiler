@@ -1569,7 +1569,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
         configured_variables_order == NULL ? "EGPCS" : configured_variables_order
     );
     runtime->register_argc_argv = ptn_duplicate_string(
-        configured_register_argc_argv == NULL ? "1" : configured_register_argc_argv
+        configured_register_argc_argv == NULL ? "0" : configured_register_argc_argv
     );
     runtime->enable_post_data_reading = ptn_duplicate_string(
         configured_enable_post_data_reading == NULL ? "1" : configured_enable_post_data_reading

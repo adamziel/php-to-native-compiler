@@ -31587,6 +31587,34 @@ fn phpc_cgi_get_without_query_string_does_not_emit_argv_deprecation() {
 }
 
 #[test]
+fn phpc_cgi_request_context_defaults_register_argc_argv_off() {
+    let root = temp_dir("ptn-phpc-cgi-request-argv-default");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-request-argv-default.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('register_argc_argv'));\n\
+var_dump(isset($_SERVER['argc']), isset($_SERVER['argv']));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "GET")
+        .env("QUERY_STRING", "alpha+beta")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(1) \"0\"\nbool(false)\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_precision_ini_controls_scalar_float_stringification() {
     let root = temp_dir("ptn-phpc-precision-ini");
     fs::create_dir_all(&root).unwrap();
