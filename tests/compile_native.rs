@@ -3399,6 +3399,48 @@ fn parser_reports_php_class_declaration_diagnostics() {
 }
 
 #[test]
+fn parser_reports_php_grammar_reserved_name_diagnostics() {
+    let cases = [
+        (
+            "<?php class Obj { const CLASS = 'class'; }",
+            "A class constant must not be called 'class'; it is reserved for class name fetching",
+            DiagnosticKind::Fatal,
+        ),
+        (
+            "<?php class Obj { function echo(){} function return(){} } function echo(){}",
+            "syntax error, unexpected token \"echo\", expecting \"(\"",
+            DiagnosticKind::ParseError,
+        ),
+        (
+            "<?php class Obj { const return = 'yep'; } const return = 'nope';",
+            "syntax error, unexpected token \"return\", expecting identifier",
+            DiagnosticKind::ParseError,
+        ),
+        (
+            "<?php interface A{} class B implements\\A {}",
+            "syntax error, unexpected namespaced name \"implements\\A\", expecting \"{\"",
+            DiagnosticKind::ParseError,
+        ),
+        (
+            "<?php class A { const A = [1, FOREACH]; }",
+            "syntax error, unexpected token \"foreach\", expecting \"]\"",
+            DiagnosticKind::ParseError,
+        ),
+        (
+            r#"<?php $"*** Testing function() :  ***\n";"#,
+            r#"syntax error, unexpected double-quoted string "*** Testing function() :  ***\n", expecting variable or "{" or "$""#,
+            DiagnosticKind::ParseError,
+        ),
+    ];
+
+    for (source, message, kind) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+        assert_eq!(error.kind, kind, "{source}");
+    }
+}
+
+#[test]
 fn parser_accepts_variable_root_array_assignment_and_unset() {
     let program = parser::parse(
         "<?php $items[null] = \"value\"; $items[] += 2; $items[0][\"nested\"] = 3; unset($items[null], $items[0][\"nested\"], $items);",
