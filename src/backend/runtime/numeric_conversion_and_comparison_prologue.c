@@ -2222,18 +2222,32 @@ static PTN_UNUSED void ptn_throw_user_argument_count_error(
     const char *function_name,
     size_t expected,
     size_t passed,
-    int exactly
+    int exactly,
+    size_t line
 ) {
     const char *mode = exactly ? "exactly" : "at least";
-    int needed = snprintf(
-        NULL,
-        0,
-        "Too few arguments to function %s(), %zu passed and %s %zu expected",
-        function_name,
-        passed,
-        mode,
-        expected
-    );
+    const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
+    int needed = line == 0
+        ? snprintf(
+            NULL,
+            0,
+            "Too few arguments to function %s(), %zu passed and %s %zu expected",
+            function_name,
+            passed,
+            mode,
+            expected
+        )
+        : snprintf(
+            NULL,
+            0,
+            "Too few arguments to function %s(), %zu passed in %s on line %zu and %s %zu expected",
+            function_name,
+            passed,
+            path,
+            line,
+            mode,
+            expected
+        );
     if (needed < 0) {
         ptn_abort_out_of_memory();
     }
@@ -2241,15 +2255,29 @@ static PTN_UNUSED void ptn_throw_user_argument_count_error(
     if (message == NULL) {
         ptn_abort_out_of_memory();
     }
-    snprintf(
-        message,
-        (size_t)needed + 1,
-        "Too few arguments to function %s(), %zu passed and %s %zu expected",
-        function_name,
-        passed,
-        mode,
-        expected
-    );
+    if (line == 0) {
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Too few arguments to function %s(), %zu passed and %s %zu expected",
+            function_name,
+            passed,
+            mode,
+            expected
+        );
+    } else {
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Too few arguments to function %s(), %zu passed in %s on line %zu and %s %zu expected",
+            function_name,
+            passed,
+            path,
+            line,
+            mode,
+            expected
+        );
+    }
     ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
 }
 

@@ -1118,28 +1118,6 @@ fn emit_user_functions(
             out.push_str("    (void)receiver;\n");
         }
         out.push_str("    (void)line;\n");
-        if required_parameter_count > 0 {
-            out.push_str("    if (argc < ");
-            out.push_str(&required_parameter_count.to_string());
-            out.push_str(") {\n");
-            out.push_str("        if (caller_runtime->throw_argument_count_errors) {\n");
-            out.push_str("            ptn_throw_user_argument_count_error(caller_runtime, \"");
-            out.push_str(&c_string(&function.display_name));
-            out.push_str("\", ");
-            out.push_str(&required_parameter_count.to_string());
-            out.push_str(", argc, ");
-            out.push_str(if arity_error_is_exact { "1" } else { "0" });
-            out.push_str(");\n");
-            out.push_str("            return ptn_null();\n");
-            out.push_str("        }\n");
-            out.push_str("        ptn_emit_argument_count_error(&caller_runtime->diagnostics, \"");
-            out.push_str(&c_string(&function.display_name));
-            out.push_str("\", ");
-            out.push_str(&required_parameter_count.to_string());
-            out.push_str(", argc);\n");
-            out.push_str("        exit(255);\n");
-            out.push_str("    }\n");
-        }
         out.push_str("    PtnRuntime runtime;\n");
         out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
         out.push_str("    runtime.current_function_name = \"");
@@ -1279,8 +1257,26 @@ fn emit_user_functions(
             function,
         );
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+            let guard_required_argument = parameter_index < required_parameter_count
+                && parameter.default_value.is_none()
+                && !parameter.is_variadic;
+            if guard_required_argument {
+                out.push_str("    if (argc > ");
+                out.push_str(&parameter_index.to_string());
+                out.push_str(" && !ptn_value_is_missing(args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("])) {\n");
+            }
             if parameter.is_variadic {
                 emit_variadic_parameter_binding(out, function, parameter_index, parameter);
+                if required_parameter_count > 0 && parameter_index + 1 == required_parameter_count {
+                    emit_user_argument_count_check(
+                        out,
+                        function,
+                        required_parameter_count,
+                        arity_error_is_exact,
+                    );
+                }
                 continue;
             }
             let (parameter_source, default_guard) =
@@ -1582,6 +1578,17 @@ fn emit_user_functions(
                 emit_value_cleanup(out, "        ", &parameter_source);
                 out.push_str("    }\n");
             }
+            if guard_required_argument {
+                out.push_str("    }\n");
+            }
+            if required_parameter_count > 0 && parameter_index + 1 == required_parameter_count {
+                emit_user_argument_count_check(
+                    out,
+                    function,
+                    required_parameter_count,
+                    arity_error_is_exact,
+                );
+            }
         }
         let mut break_targets = Vec::new();
         let mut finally_stack = Vec::new();
@@ -1638,6 +1645,34 @@ fn emit_user_functions(
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
     }
+}
+
+fn emit_user_argument_count_check(
+    out: &mut String,
+    function: &FunctionDecl,
+    required_parameter_count: usize,
+    arity_error_is_exact: bool,
+) {
+    out.push_str("    if (argc < ");
+    out.push_str(&required_parameter_count.to_string());
+    out.push_str(") {\n");
+    out.push_str("        if (caller_runtime->throw_argument_count_errors) {\n");
+    out.push_str("            ptn_throw_user_argument_count_error(caller_runtime, \"");
+    out.push_str(&c_string(&function.display_name));
+    out.push_str("\", ");
+    out.push_str(&required_parameter_count.to_string());
+    out.push_str(", argc, ");
+    out.push_str(if arity_error_is_exact { "1" } else { "0" });
+    out.push_str(", line);\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
+    out.push_str("        ptn_emit_argument_count_error(&caller_runtime->diagnostics, \"");
+    out.push_str(&c_string(&function.display_name));
+    out.push_str("\", ");
+    out.push_str(&required_parameter_count.to_string());
+    out.push_str(", argc);\n");
+    out.push_str("        exit(255);\n");
+    out.push_str("    }\n");
 }
 
 fn function_required_parameter_count(function: &FunctionDecl) -> usize {
@@ -22285,6 +22320,70 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_runtime_callable_pipe_argument(
+        &mut self,
+        out: &mut String,
+        callee_temp: &str,
+        pipe_input_temp: &str,
+        line: usize,
+    ) -> String {
+        let mode_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&mode_temp);
+        out.push_str(" = ptn_callable_argument_by_ref(&runtime, ");
+        out.push_str(callee_temp);
+        out.push_str(", 0);\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&mode_temp);
+        out.push_str(" == 1) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        let callable_name_temp = self.next_temp();
+        out.push_str("        char *");
+        out.push_str(&callable_name_temp);
+        out.push_str(" = ptn_callable_output_name(");
+        out.push_str(callee_temp);
+        out.push_str(");\n");
+        let parameter_fallback_temp = self.next_temp();
+        out.push_str("        char ");
+        out.push_str(&parameter_fallback_temp);
+        out.push_str("[64];\n");
+        let parameter_name_temp = self.next_temp();
+        out.push_str("        const char *");
+        out.push_str(&parameter_name_temp);
+        out.push_str(" = ptn_callable_argument_parameter_name(&runtime, ");
+        out.push_str(callee_temp);
+        out.push_str(", 0, ");
+        out.push_str(&parameter_fallback_temp);
+        out.push_str(", sizeof(");
+        out.push_str(&parameter_fallback_temp);
+        out.push_str("));\n");
+        out.push_str("        ptn_throw_by_reference_argument_error(&runtime, ");
+        out.push_str(&callable_name_temp);
+        out.push_str(", 1, ");
+        out.push_str(&parameter_name_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        free(");
+        out.push_str(&callable_name_temp);
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_share(");
+        out.push_str(pipe_input_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
+        result_temp
+    }
+
     fn emit_reference_source(
         &mut self,
         out: &mut String,
@@ -23335,6 +23434,50 @@ impl ValueEmitter {
                 "named arguments currently support user-defined functions",
             );
             return result_temp;
+        }
+        if argument_unpacks.iter().all(|unpack| !*unpack) {
+            if let [ValueExpr::PipeValue { expr, .. }] = arguments {
+                let pipe_input_temp = self.emit_materialized_value(out, expr);
+                let callee_temp = self.emit_materialized_value(out, callee);
+                let pipe_argument_temp = self.emit_runtime_callable_pipe_argument(
+                    out,
+                    &callee_temp,
+                    &pipe_input_temp,
+                    line,
+                );
+                let args_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&args_temp);
+                out.push_str("[] = { ptn_value_share(");
+                out.push_str(&pipe_argument_temp);
+                out.push_str(") };\n");
+                if discarded {
+                    self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
+                }
+                let saved_argument_count_errors_temp = self.next_temp();
+                out.push_str("    int ");
+                out.push_str(&saved_argument_count_errors_temp);
+                out.push_str(" = runtime.throw_argument_count_errors;\n");
+                out.push_str("    runtime.throw_argument_count_errors = 1;\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_call_callable(&runtime, ");
+                out.push_str(&callee_temp);
+                out.push_str(", 1, ");
+                out.push_str(&args_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    runtime.throw_argument_count_errors = ");
+                out.push_str(&saved_argument_count_errors_temp);
+                out.push_str(";\n");
+                emit_value_cleanup(out, "    ", &format!("{args_temp}[0]"));
+                emit_value_cleanup(out, "    ", &pipe_argument_temp);
+                emit_value_cleanup(out, "    ", &pipe_input_temp);
+                emit_value_cleanup(out, "    ", &callee_temp);
+                return result_temp;
+            }
         }
         let callee_temp = self.emit_materialized_value(out, callee);
         let result_temp = self.next_temp();
