@@ -1499,6 +1499,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->declared_method_exists = NULL;
     runtime->class_scope_allows = NULL;
     runtime->declared_class_is_readonly = NULL;
+    runtime->declared_class_allows_dynamic_properties = NULL;
     runtime->magic_property_read = NULL;
     runtime->magic_property_isset = NULL;
     runtime->declared_user_functions = NULL;

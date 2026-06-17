@@ -74,6 +74,7 @@ struct IncludeCollector {
     by_path: HashMap<PathBuf, usize>,
     resolutions: IncludeResolutionMap,
     path_env: IncludePathEnv,
+    include_effect_stack: Vec<usize>,
     runtime_class_aliases: HashMap<String, String>,
 }
 
@@ -84,6 +85,7 @@ impl IncludeCollector {
             by_path: HashMap::new(),
             resolutions: IncludeResolutionMap::new(),
             path_env: IncludePathEnv::new(),
+            include_effect_stack: Vec::new(),
             runtime_class_aliases: HashMap::new(),
         }
     }
@@ -1083,13 +1085,20 @@ impl IncludeCollector {
         let before = self.path_env.clone();
         let mut candidate_envs = Vec::with_capacity(candidates.len());
         for candidate in candidates {
+            if self.include_effect_stack.contains(candidate) {
+                candidate_envs.push(before.clone());
+                continue;
+            }
             let include = self.sources[*candidate].clone();
             self.path_env = before.clone();
-            self.collect_top_level_statements(
+            self.include_effect_stack.push(*candidate);
+            let result = self.collect_top_level_statements(
                 &include.program.statements,
                 &include.source_file,
                 &include.source_dir,
-            )?;
+            );
+            self.include_effect_stack.pop();
+            result?;
             candidate_envs.push(self.path_env.clone());
         }
         self.path_env = merge_many_include_path_envs(&candidate_envs);

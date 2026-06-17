@@ -34028,6 +34028,40 @@ var_dump($value);\n",
 }
 
 #[test]
+fn compile_self_include_file_to_native_binary() {
+    let root = temp_dir("ptn-native-self-include-file");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("self-include.php");
+    let output = root.join("self-include-bin");
+    fs::write(
+        &input,
+        "<?php
+if (defined('ptn_self_include_seen')) {
+    echo \"inner\\n\";
+} else {
+    define('ptn_self_include_seen', 1);
+    include __FILE__;
+    echo \"outer\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "inner\nouter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+}
+
+#[test]
 fn compile_file_get_contents_uses_include_path_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-include-path");
     let cwd = root.join("cwd");
@@ -37676,6 +37710,53 @@ echo $child->dyn, \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_allows_dynamic_properties"));
     assert!(c_source.contains("ptn_emit_dynamic_property_deprecation"));
+}
+
+#[test]
+fn compile_user_dynamic_property_write_in_static_method_to_native_binary() {
+    let root = temp_dir("ptn-native-user-dynamic-property-static-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("user-dynamic-property-static-method.php");
+    let output = root.join("user-dynamic-property-static-method-bin");
+    fs::write(
+        &input,
+        "<?php
+error_reporting(0);
+class Holder {
+    public static function instance() {
+        static $object = null;
+        if ($object === null) {
+            $object = new Holder;
+        }
+        return $object;
+    }
+
+    public static function fill() {
+        self::instance()->vars[] = 1;
+        self::instance()->vars[] = 2;
+        self::instance()->vars[] = 3;
+        var_dump(self::instance()->vars);
+    }
+}
+
+Holder::fill();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime->declared_class_allows_dynamic_properties ="));
+    assert!(c_source.contains("caller_runtime->declared_class_allows_dynamic_properties;"));
 }
 
 #[test]
