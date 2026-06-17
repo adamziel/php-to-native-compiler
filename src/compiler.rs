@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::{
     ArrayDimTarget, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CatchClause, Expr,
-    IncDecTarget, InstanceOfTarget, ListAssignmentElementTarget, MagicConstantKind, Program,
-    ReferenceTarget, Statement, StringPart, SwitchCase, UnsetTarget,
+    GlobalTarget, IncDecTarget, InstanceOfTarget, ListAssignmentElementTarget, MagicConstantKind,
+    Program, ReferenceTarget, Statement, StringPart, SwitchCase, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
@@ -391,9 +391,16 @@ impl IncludeCollector {
             | Statement::Label { .. }
             | Statement::Goto { .. }
             | Statement::InlineHtml { .. } => Ok(()),
-            Statement::Global { names, .. } => {
-                for name in names {
-                    self.path_env.remove(name);
+            Statement::Global { targets, .. } => {
+                for target in targets {
+                    match target {
+                        GlobalTarget::Variable { name, .. } => {
+                            self.path_env.remove(name);
+                        }
+                        GlobalTarget::DynamicVariable { name, .. } => {
+                            self.collect_expr(name, source_file, source_dir)?;
+                        }
+                    }
                 }
                 Ok(())
             }

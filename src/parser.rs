@@ -5,8 +5,8 @@ use crate::ast::{
     AssignmentTarget, AttributeArgument, AttributeArgumentKind, AttributeArgumentValue,
     AttributeConstantReference, AttributeInstance, AttributeMetadata, BinaryOp, CastKind,
     CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning,
-    CompileWarningKind, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, IncDecOp,
-    IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
+    CompileWarningKind, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, GlobalTarget,
+    IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
     ListAssignmentElementTarget, ListAssignmentTarget, ListExpr, ListExprElement,
     ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program, PromotedProperty,
     PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
@@ -3762,23 +3762,43 @@ impl Parser<'_> {
 
     fn parse_global(&mut self) -> Result<Statement> {
         let span = self.advance().span;
-        let mut names = Vec::new();
+        let mut targets = Vec::new();
         loop {
-            let token = self.advance().clone();
-            let TokenKind::Variable(name) = token.kind else {
-                return Err(Diagnostic::new(
-                    "expected global variable",
-                    Some(token.span),
-                ));
+            let token = self.peek().clone();
+            let target = match token.kind {
+                TokenKind::Variable(name) => {
+                    self.advance();
+                    GlobalTarget::Variable {
+                        name,
+                        span: token.span,
+                    }
+                }
+                TokenKind::Dollar => {
+                    let dollar_span = self.advance().span;
+                    let expr = self.parse_dynamic_variable_expr(dollar_span)?;
+                    let Expr::DynamicVariable { name, span } = expr else {
+                        return Err(Diagnostic::new(
+                            "expected global variable",
+                            Some(token.span),
+                        ));
+                    };
+                    GlobalTarget::DynamicVariable { name, span }
+                }
+                _ => {
+                    return Err(Diagnostic::new(
+                        "expected global variable",
+                        Some(token.span),
+                    ));
+                }
             };
-            names.push(name);
+            targets.push(target);
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
             self.advance();
         }
         self.expect_statement_terminator()?;
-        Ok(Statement::Global { names, span })
+        Ok(Statement::Global { targets, span })
     }
 
     fn parse_static_local(&mut self) -> Result<Statement> {
@@ -15862,6 +15882,8 @@ fn list_expr_element_target_span(target: &ListExprElementTarget) -> SourceSpan {
 fn validate_foreach_by_reference_target(target: &AssignmentTarget, span: SourceSpan) -> Result<()> {
     match target {
         AssignmentTarget::Variable { .. }
+        | AssignmentTarget::DynamicVariable { .. }
+        | AssignmentTarget::DynamicArrayDim { .. }
         | AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::StaticPropertyArrayDim { .. } => Err(Diagnostic::new(
@@ -16007,7 +16029,7 @@ fn validate_expression_assignment_target(
     }
 
     match target {
-        AssignmentTarget::Variable { .. } => Ok(()),
+        AssignmentTarget::Variable { .. } | AssignmentTarget::DynamicVariable { .. } => Ok(()),
         AssignmentTarget::ArrayDim(_)
         | AssignmentTarget::DynamicArrayDim { .. }
         | AssignmentTarget::PropertyArrayDim { .. }
@@ -16021,12 +16043,10 @@ fn validate_expression_assignment_target(
         AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
         AssignmentTarget::DynamicStaticProperty { .. } => Ok(()),
-        AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::List(_) => Err(
-            Diagnostic::new(
-                "compound assignment expressions currently support variables, array/string offsets, and properties",
-                Some(span),
-            ),
-        ),
+        AssignmentTarget::List(_) => Err(Diagnostic::new(
+            "compound assignment expressions currently support variables, array/string offsets, and properties",
+            Some(span),
+        )),
     }
 }
 
@@ -16068,18 +16088,8 @@ fn validate_reference_assignment_target_source(
 ) -> Result<()> {
     match target {
         AssignmentTarget::Variable { .. } => {}
-        AssignmentTarget::DynamicVariable { .. } => {
-            return Err(Diagnostic::new(
-                "unsupported by-reference assignment target",
-                Some(span),
-            ));
-        }
-        AssignmentTarget::DynamicArrayDim { .. } => {
-            return Err(Diagnostic::new(
-                "unsupported by-reference assignment target",
-                Some(span),
-            ));
-        }
+        AssignmentTarget::DynamicVariable { .. } => {}
+        AssignmentTarget::DynamicArrayDim { .. } => {}
         AssignmentTarget::ArrayDim(target) => {
             if reference_source_is_variable(source, &target.array) {
                 return Err(Diagnostic::new(

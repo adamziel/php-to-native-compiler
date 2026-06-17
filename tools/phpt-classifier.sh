@@ -1585,11 +1585,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /[$][{][[:space:]]*[$]/ || line ~ /(^|[;{}])[[:space:]]*global[[:space:]][^;]*[$][$]/ || line ~ /[$][$][a-z_][a-z0-9_]*([[:space:]]*\[[^]]*\])*[[:space:]]*([+*\/%.&|^-]?=|[?][?]=)/) {
-                print "unsupported-dynamic-symbol\trequires variable-variable symbol-table mutation, outside PTN modeled dynamic reads"
-                found = 1
-                exit
-            }
             if (ptn_has_named_modeled_array_internal_call(line)) {
                 print "unsupported-internal-call-binding\trequires named-argument binding for modeled array internal calls, outside PTN internal-call lowering"
                 found = 1

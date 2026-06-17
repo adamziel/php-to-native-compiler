@@ -9009,6 +9009,15 @@ fn emit_instruction(
             out.push_str(&c_string(name));
             out.push_str("\");\n");
         }
+        Instruction::BindDynamicGlobal { name, line } => {
+            let name_temp = values.emit_dynamic_variable_name(out, name, *line);
+            out.push_str("    ptn_runtime_bind_global_variable(&runtime, ");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
+            out.push_str("    free(");
+            out.push_str(&name_temp);
+            out.push_str(");\n");
+        }
         Instruction::DeclareFunction { function_index } => {
             out.push_str("    if (runtime.declared_user_functions != NULL) {\n");
             out.push_str("        runtime.declared_user_functions[");
@@ -11342,6 +11351,9 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
         | Instruction::Goto { .. } => {}
+        Instruction::BindDynamicGlobal { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
     }
 }
 
@@ -11855,6 +11867,10 @@ fn collect_instruction_runtime_requirements(
             if variable_needs_request_context(name) {
                 requirements.request_context = true;
             }
+        }
+        Instruction::BindDynamicGlobal { name, .. } => {
+            requirements.request_context = true;
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         Instruction::DeclareFunction { .. } => {}
         Instruction::UnsetDynamicVariable { name, .. } => {
@@ -13961,6 +13977,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::StoreArrayDim { line, .. }
         | Instruction::Increment { line, .. }
         | Instruction::UnsetDynamicVariable { line, .. }
+        | Instruction::BindDynamicGlobal { line, .. }
         | Instruction::BindStatic { line, .. }
         | Instruction::UnsetArrayDim { line, .. }
         | Instruction::UnsetDynamicArrayDim { line, .. }
@@ -14590,6 +14607,7 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
         | Instruction::Goto { .. } => false,
+        Instruction::BindDynamicGlobal { name, .. } => value_expr_uses_this(name),
     }
 }
 
@@ -16049,8 +16067,42 @@ impl ValueEmitter {
         }
 
         if let AssignmentTarget::DynamicVariable { name, line } = target {
-            let name_temp = self.emit_dynamic_property_name(out, name, *line);
+            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
             let value_temp = self.emit_materialized_value(out, value);
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_runtime_read_variable(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                let result_temp = self.emit_compound_binary_value(
+                    out,
+                    &current_temp,
+                    &value_temp,
+                    *line,
+                    compound_op,
+                );
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_runtime_write_variable_result(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+                emit_value_cleanup(out, "    ", &result_temp);
+                emit_value_cleanup(out, "    ", &value_temp);
+                return assigned_temp;
+            }
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
@@ -17278,11 +17330,42 @@ impl ValueEmitter {
                     reference_temp,
                 );
             }
-            AssignmentTarget::DynamicVariable { .. } => {
-                unreachable!("parser rejects by-reference assignment to dynamic variable targets");
+            AssignmentTarget::DynamicVariable { name, line } => {
+                self.emit_bind_reference_target(
+                    out,
+                    &ReferenceTarget::DynamicVariable {
+                        name: name.clone(),
+                        line: *line,
+                    },
+                    reference_temp,
+                );
             }
-            AssignmentTarget::DynamicArrayDim { .. } => {
-                unreachable!("parser rejects by-reference assignment to dynamic array targets");
+            AssignmentTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                line,
+            } => {
+                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                let path = emit_array_path_segments(out, self, dimensions);
+                out.push_str("    ptn_runtime_bind_array_path_reference(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(reference_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
             }
             AssignmentTarget::ArrayDim {
                 array,

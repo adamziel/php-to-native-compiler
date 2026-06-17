@@ -569,18 +569,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires eval runtime fallback",
         ),
         (
-            "variable-variable write",
-            "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n$$name = 1;\n--EXPECT--\n",
-            "unsupported-dynamic-symbol\t",
-            "requires variable-variable symbol-table mutation",
-        ),
-        (
-            "braced variable-variable write",
-            "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n${$name} = 1;\n--EXPECT--\n",
-            "unsupported-dynamic-symbol\t",
-            "requires variable-variable symbol-table mutation",
-        ),
-        (
             "array internal named argument",
             "--TEST--\nnamed internal\n--FILE--\n<?php\nvar_dump(array_map(callback: null, array: []));\n--EXPECT--\n",
             "unsupported-internal-call-binding\t",
@@ -596,6 +584,32 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
         );
         assert!(
             classification.contains(reason),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_allows_dynamic_symbol_runtime_rows() {
+    let cases = [
+        (
+            "variable-variable write",
+            "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n$$name = 1;\necho $value;\n--EXPECT--\n1\n",
+        ),
+        (
+            "braced variable-variable write",
+            "--TEST--\ndynamic write\n--FILE--\n<?php\n$name = 'value';\n${$name} = 1;\necho $value;\n--EXPECT--\n1\n",
+        ),
+        (
+            "dynamic global",
+            "--TEST--\ndynamic global\n--FILE--\n<?php\n$GLOBALS['value'] = 1;\nfunction f() { $name = 'value'; global $$name; $value = 2; }\nf();\necho $GLOBALS['value'];\n--EXPECT--\n2\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
             "{name}: {classification:?}"
         );
     }

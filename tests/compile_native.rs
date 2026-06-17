@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ptn::ast::{
     ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CastKind, CompileWarningKind,
-    Expr, IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget,
+    Expr, GlobalTarget, IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget,
     ListAssignmentElementTarget, MagicConstantKind, PropertyTypeKind, PropertyVisibility,
     ReferenceTarget, Statement, StringInterpolationIndex, StringPart, TypeHint, UnaryOp,
     UnsetTarget,
@@ -2231,12 +2231,32 @@ fn parser_rejects_halt_compiler_inside_block() {
 
 #[test]
 fn parser_accepts_global_variable_statements() {
-    let program = parser::parse("<?php function read_globals() { global $left, $right; }").unwrap();
+    let program =
+        parser::parse("<?php function read_globals() { global $left, $right, $$name, ${expr()}; }")
+            .unwrap();
 
-    let Statement::Global { names, .. } = &program.functions[0].body[0] else {
+    let Statement::Global { targets, .. } = &program.functions[0].body[0] else {
         panic!("expected global statement");
     };
-    assert_eq!(names, &vec!["left".to_string(), "right".to_string()]);
+    assert_eq!(targets.len(), 4);
+    assert!(matches!(
+        &targets[0],
+        GlobalTarget::Variable { name, .. } if name == "left"
+    ));
+    assert!(matches!(
+        &targets[1],
+        GlobalTarget::Variable { name, .. } if name == "right"
+    ));
+    assert!(matches!(
+        &targets[2],
+        GlobalTarget::DynamicVariable { name, .. }
+            if matches!(name.as_ref(), Expr::Variable(variable, _) if variable == "name")
+    ));
+    assert!(matches!(
+        &targets[3],
+        GlobalTarget::DynamicVariable { name, .. }
+            if matches!(name.as_ref(), Expr::Call { name, .. } if name == "expr")
+    ));
 }
 
 #[test]
@@ -39853,6 +39873,88 @@ string(3) \"abc\"\n"
     assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, ptn_tmp_"));
     assert!(c_source.contains("ptn_runtime_array_path_lookup_quiet(&runtime, ptn_tmp_"));
     assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, ptn_tmp_"));
+}
+
+#[test]
+fn compile_dynamic_symbol_reference_fallbacks_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-symbol-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-symbol-references.php");
+    let output = root.join("dynamic-symbol-references-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$name = \"target\";\n\
+$source = \"seed\";\n\
+$$name =& $source;\n\
+$target = \"changed\";\n\
+echo $source, \"\\n\";\n\
+$source = \"again\";\n\
+echo $target, \"\\n\";\n\
+\n\
+$items = [1, 2];\n\
+$slot = \"current\";\n\
+foreach ($items as &$$slot) {\n\
+    $$slot *= 10;\n\
+}\n\
+unset($current);\n\
+var_dump($items);\n\
+\n\
+$GLOBALS[\"shared\"] = \"before\";\n\
+function bind_dynamic_global() {\n\
+    $name = \"shared\";\n\
+    global $$name;\n\
+    $shared = \"after\";\n\
+}\n\
+bind_dynamic_global();\n\
+echo $GLOBALS[\"shared\"], \"\\n\";\n\
+\n\
+$ref = \"linked\";\n\
+$GLOBALS[\"via_ref\"] =& $ref;\n\
+$GLOBALS[\"via_ref\"] = \"mutated\";\n\
+echo $ref, \"\\n\";\n\
+\n\
+$rootName = \"GLOBALS\";\n\
+$ref2 = \"dyn\";\n\
+${$rootName}[\"dyn_ref\"] =& $ref2;\n\
+$GLOBALS[\"dyn_ref\"] = \"dyn-mutated\";\n\
+echo $ref2, \"\\n\";\n\
+\n\
+$arrayName = \"box\";\n\
+$box = [\"x\" => \"old\"];\n\
+$ref3 = \"new\";\n\
+${$arrayName}[\"x\"] =& $ref3;\n\
+$box[\"x\"] = \"written\";\n\
+echo $ref3, \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "changed\n",
+            "again\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  int(10)\n",
+            "  [1]=>\n",
+            "  int(20)\n",
+            "}\n",
+            "after\n",
+            "mutated\n",
+            "dyn-mutated\n",
+            "written\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_bind_global_variable(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_bind_array_path_reference(&runtime, ptn_tmp_"));
 }
 
 #[test]

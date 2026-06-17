@@ -8,7 +8,7 @@ use crate::ast::{
     CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
     ClosureUseCapture as AstClosureUseCapture, CompileWarning as AstCompileWarning,
     CompileWarningKind as AstCompileWarningKind, Expr, FunctionDecl as AstFunctionDecl,
-    FunctionParameter as AstFunctionParameter, IncDecOp as AstIncDecOp,
+    FunctionParameter as AstFunctionParameter, GlobalTarget, IncDecOp as AstIncDecOp,
     IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     IncludeKind as AstIncludeKind, InstanceOfTarget as AstInstanceOfTarget,
     ListAssignmentElement as AstListAssignmentElement,
@@ -291,6 +291,10 @@ pub enum Instruction {
     },
     BindGlobal {
         name: String,
+    },
+    BindDynamicGlobal {
+        name: ValueExpr,
+        line: usize,
     },
     DeclareFunction {
         function_index: usize,
@@ -1637,9 +1641,19 @@ impl<'a> LoweringContext<'a> {
                         instructions.push(self.lower_unset_target(target));
                     }
                 }
-                Statement::Global { names, .. } => {
-                    for name in names {
-                        instructions.push(Instruction::BindGlobal { name: name.clone() });
+                Statement::Global { targets, .. } => {
+                    for target in targets {
+                        match target {
+                            GlobalTarget::Variable { name, .. } => {
+                                instructions.push(Instruction::BindGlobal { name: name.clone() });
+                            }
+                            GlobalTarget::DynamicVariable { name, span } => {
+                                instructions.push(Instruction::BindDynamicGlobal {
+                                    name: self.lower_expr(name),
+                                    line: span.line,
+                                });
+                            }
+                        }
                     }
                 }
                 Statement::Static { declarations, .. } => {
@@ -3023,6 +3037,7 @@ impl<'a> LoweringContext<'a> {
                     self.lower_assignment_value(&name, op, value, line),
                 ),
                 AssignmentTarget::ArrayDim { .. }
+                | AssignmentTarget::DynamicVariable { .. }
                 | AssignmentTarget::DynamicArrayDim { .. }
                 | AssignmentTarget::PropertyArrayDim { .. }
                 | AssignmentTarget::StaticPropertyArrayDim { .. }
@@ -3032,7 +3047,7 @@ impl<'a> LoweringContext<'a> {
                 | AssignmentTarget::DynamicProperty { .. }
                 | AssignmentTarget::StaticProperty { .. }
                 | AssignmentTarget::DynamicStaticProperty { .. } => (op, self.lower_expr(value)),
-                AssignmentTarget::DynamicVariable { .. } | AssignmentTarget::List(_) => {
+                AssignmentTarget::List(_) => {
                     unreachable!("parser rejects compound assignment expression targets")
                 }
             },

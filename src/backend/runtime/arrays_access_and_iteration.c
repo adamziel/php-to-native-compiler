@@ -6600,6 +6600,16 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
     size_t line
 );
 
+static PTN_UNUSED void ptn_value_bind_array_path_reference(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    PtnValue reference,
+    const char *path,
+    size_t line
+);
+
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
     PtnRuntime *runtime,
     const char *name,
@@ -6739,6 +6749,38 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
 ) {
     if (reference.type != PTN_REFERENCE) {
         ptn_abort_out_of_memory();
+    }
+    if (ptn_runtime_is_globals_name(name)) {
+        if (segment_count == 0) {
+            ptn_runtime_bind_variable_reference(runtime, name, reference);
+            return;
+        }
+
+        char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+        if (global_name == NULL) {
+            return;
+        }
+        if (segment_count == 1) {
+            ptn_symbols_bind_reference(ptn_runtime_global_symbol_table(runtime), global_name, reference);
+            free(global_name);
+            return;
+        }
+
+        PtnValue *slot = ptn_runtime_global_variable_slot_for_write(runtime, global_name);
+        free(global_name);
+        if (slot == NULL) {
+            return;
+        }
+        ptn_value_bind_array_path_reference(
+            runtime,
+            slot,
+            segments + 1,
+            segment_count - 1,
+            reference,
+            path,
+            line
+        );
+        return;
     }
     if (segment_count == 0) {
         ptn_runtime_bind_variable_reference(runtime, name, reference);

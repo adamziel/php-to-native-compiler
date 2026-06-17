@@ -322,6 +322,12 @@ pub enum TypeHint {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum GlobalTarget {
+    Variable { name: String, span: SourceSpan },
+    DynamicVariable { name: Box<Expr>, span: SourceSpan },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Empty {
         span: SourceSpan,
@@ -366,7 +372,7 @@ pub enum Statement {
         span: SourceSpan,
     },
     Global {
-        names: Vec<String>,
+        targets: Vec<GlobalTarget>,
         span: SourceSpan,
     },
     Static {
