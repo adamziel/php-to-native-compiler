@@ -112,6 +112,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->included_files = NULL;
     runtime->included_files_len = 0;
     runtime->included_files_capacity = 0;
+    runtime->autoload_callbacks = NULL;
+    runtime->autoload_callbacks_len = 0;
+    runtime->autoload_callbacks_capacity = 0;
+    runtime->autoloading_class_names = NULL;
+    runtime->autoloading_class_names_len = 0;
+    runtime->autoloading_class_names_capacity = 0;
     runtime->open_basedir = NULL;
     runtime->memory_limit = NULL;
     runtime->max_memory_limit = NULL;
@@ -235,6 +241,20 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->included_files = NULL;
         runtime->included_files_len = 0;
         runtime->included_files_capacity = 0;
+        for (size_t i = 0; i < runtime->autoload_callbacks_len; i++) {
+            ptn_value_destroy(&runtime->autoload_callbacks[i]);
+        }
+        free(runtime->autoload_callbacks);
+        runtime->autoload_callbacks = NULL;
+        runtime->autoload_callbacks_len = 0;
+        runtime->autoload_callbacks_capacity = 0;
+        for (size_t i = 0; i < runtime->autoloading_class_names_len; i++) {
+            free(runtime->autoloading_class_names[i]);
+        }
+        free(runtime->autoloading_class_names);
+        runtime->autoloading_class_names = NULL;
+        runtime->autoloading_class_names_len = 0;
+        runtime->autoloading_class_names_capacity = 0;
         free(runtime->open_basedir);
         runtime->open_basedir = NULL;
         free(runtime->memory_limit);

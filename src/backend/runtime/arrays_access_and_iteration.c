@@ -653,6 +653,86 @@ static PTN_UNUSED PtnValue ptn_new_exception_object(
     ));
 }
 
+static PTN_UNUSED int ptn_runtime_autoloading_class(PtnRuntime *runtime, const char *class_name) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || class_name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < root->autoloading_class_names_len; i++) {
+        if (ptn_ascii_case_equal(root->autoloading_class_names[i], class_name)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_runtime_push_autoloading_class(PtnRuntime *runtime, const char *class_name) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || class_name == NULL) {
+        return;
+    }
+    if (root->autoloading_class_names_len == root->autoloading_class_names_capacity) {
+        size_t new_capacity = root->autoloading_class_names_capacity == 0
+            ? 4
+            : root->autoloading_class_names_capacity * 2;
+        if (new_capacity < root->autoloading_class_names_capacity ||
+            new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_names = realloc(root->autoloading_class_names, new_capacity * sizeof(char *));
+        if (new_names == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->autoloading_class_names = new_names;
+        root->autoloading_class_names_capacity = new_capacity;
+    }
+    root->autoloading_class_names[root->autoloading_class_names_len++] =
+        ptn_duplicate_string(class_name);
+}
+
+static PTN_UNUSED void ptn_runtime_pop_autoloading_class(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->autoloading_class_names_len == 0) {
+        return;
+    }
+    root->autoloading_class_names_len--;
+    free(root->autoloading_class_names[root->autoloading_class_names_len]);
+    root->autoloading_class_names[root->autoloading_class_names_len] = NULL;
+}
+
+static PTN_UNUSED void ptn_runtime_autoload_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)runtime;
+    (void)class_name;
+    (void)line;
+#else
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL ||
+        class_name == NULL ||
+        root->autoload_callbacks_len == 0 ||
+        ptn_runtime_autoloading_class(root, class_name)) {
+        return;
+    }
+
+    ptn_runtime_push_autoloading_class(root, class_name);
+    for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
+        PtnValue callback = ptn_value_clone(root->autoload_callbacks[i]);
+        PtnValue callback_args[1] = { ptn_string(class_name) };
+        PtnValue result = ptn_call_callable(runtime, callback, 1, callback_args, line);
+        ptn_value_destroy(&result);
+        ptn_value_destroy(&callback);
+        if (runtime->exceptions->active_exception != NULL) {
+            break;
+        }
+    }
+    ptn_runtime_pop_autoloading_class(root);
+#endif
+}
+
 static PTN_UNUSED PtnValue ptn_new_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -664,6 +744,26 @@ static PTN_UNUSED PtnValue ptn_new_object(
         runtime,
         ptn_symbol_name_without_leading_slash(class_name)
     );
+    if (!ptn_declared_class_exists(lookup_class_name)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (!ptn_internal_class_exists_name(lookup_class_name)) {
+            ptn_runtime_autoload_class(runtime, lookup_class_name, line);
+            lookup_class_name = ptn_runtime_resolve_class_alias(
+                runtime,
+                ptn_symbol_name_without_leading_slash(class_name)
+            );
+        }
+#else
+        ptn_runtime_autoload_class(runtime, lookup_class_name, line);
+        lookup_class_name = ptn_runtime_resolve_class_alias(
+            runtime,
+            ptn_symbol_name_without_leading_slash(class_name)
+        );
+#endif
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_internal_class_name_is_reflection_class(lookup_class_name)) {
         return ptn_reflection_class_new(runtime, argc, args, line);

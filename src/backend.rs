@@ -7808,7 +7808,11 @@ fn emit_callable_dispatch(
             "                    target_method_name = ptn_duplicate_string(separator + 2);\n",
         );
         out.push_str("                } else {\n");
-        out.push_str("                    if (ptn_ascii_case_equal(scope_name, \"parent\")) {\n");
+        out.push_str("                    if (ptn_ascii_case_equal(scope_name, \"self\")) {\n");
+        out.push_str("                        ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"self\\\" in callables is deprecated\", line);\n");
+        out.push_str(
+            "                    } else if (ptn_ascii_case_equal(scope_name, \"parent\")) {\n",
+        );
         out.push_str("                        ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"parent\\\" in callables is deprecated\", line);\n");
         out.push_str("                    }\n");
         out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, scope_name, NULL);\n");
@@ -11906,6 +11910,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
         || name.eq_ignore_ascii_case("preg_replace_callback")
+        || name.eq_ignore_ascii_case("spl_autoload_register")
 }
 
 fn collect_control_warnings_in(
@@ -13839,7 +13844,9 @@ impl ValueEmitter {
             .as_deref()
             .or(function.method_name.as_deref())
             .unwrap_or(function.name.as_str());
-        let method_magic_name = if let (Some(trait_name), Some(trait_method_name)) = (
+        let method_magic_name = if function.is_anonymous {
+            function.display_name.clone()
+        } else if let (Some(trait_name), Some(trait_method_name)) = (
             function.trait_name.as_deref(),
             function.trait_method_name.as_deref(),
         ) {

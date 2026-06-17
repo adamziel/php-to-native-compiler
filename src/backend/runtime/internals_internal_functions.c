@@ -34514,6 +34514,7 @@ static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -34949,6 +34950,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sizeof", 1, 2, ptn_internal_sizeof },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
+        { "spl_autoload_register", 0, 3, ptn_internal_spl_autoload_register },
         { "spl_object_hash", 1, 1, ptn_internal_spl_object_hash },
         { "spl_object_id", 1, 1, ptn_internal_spl_object_id },
         { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
@@ -35345,6 +35347,14 @@ static int ptn_internal_class_exists_name(const char *class_name) {
 
 static PTN_UNUSED int ptn_runtime_class_exists(PtnRuntime *runtime, const char *class_name) {
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    if (ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name)) {
+        return 1;
+    }
+    ptn_runtime_autoload_class(runtime, resolved_name, runtime->call_site_line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
     return ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name);
 }
 
@@ -42163,12 +42173,65 @@ static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const
     return ptn_bool(registered);
 }
 
-static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
+static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return ptn_bool(0);
+    }
+
+    PtnValue callback = argc == 0
+        ? ptn_string("spl_autoload")
+        : ptn_internal_expect_callback_arg(runtime, "spl_autoload_register", 1, "callback", args[0]);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    int prepend = argc >= 3 && ptn_is_truthy(args[2]);
+    if (root->autoload_callbacks_len == root->autoload_callbacks_capacity) {
+        size_t new_capacity = root->autoload_callbacks_capacity == 0
+            ? 4
+            : root->autoload_callbacks_capacity * 2;
+        if (new_capacity < root->autoload_callbacks_capacity ||
+            new_capacity > SIZE_MAX / sizeof(PtnValue)) {
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
+        PtnValue *new_callbacks = realloc(root->autoload_callbacks, new_capacity * sizeof(PtnValue));
+        if (new_callbacks == NULL) {
+            ptn_value_destroy(&callback);
+            ptn_abort_out_of_memory();
+        }
+        root->autoload_callbacks = new_callbacks;
+        root->autoload_callbacks_capacity = new_capacity;
+    }
+
+    if (prepend && root->autoload_callbacks_len > 0) {
+        memmove(
+            root->autoload_callbacks + 1,
+            root->autoload_callbacks,
+            root->autoload_callbacks_len * sizeof(PtnValue)
+        );
+        root->autoload_callbacks[0] = callback;
+    } else {
+        root->autoload_callbacks[root->autoload_callbacks_len] = callback;
+    }
+    root->autoload_callbacks_len++;
     (void)line;
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
-    int exists = ptn_runtime_class_exists(runtime, lookup_name);
+    int autoload = argc < 2 || ptn_is_truthy(args[1]);
+    int exists;
+    if (autoload) {
+        runtime->call_site_line = line;
+        exists = ptn_runtime_class_exists(runtime, lookup_name);
+    } else {
+        const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        exists = ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name);
+    }
     free(name);
     return ptn_bool(exists);
 }

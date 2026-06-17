@@ -17796,6 +17796,40 @@ mixedcase();\n\
 }
 
 #[test]
+fn compile_closure_method_magic_constant_uses_display_name_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-method-magic-constant");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-method-magic-constant.php");
+    let output = root.join("closure-method-magic-constant-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fn = function () {\n\
+    var_dump(__FUNCTION__, __METHOD__);\n\
+};\n\
+$fn();\n\
+?>",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let file = input.to_string_lossy();
+    let method = format!("{{closure:{file}:2}}");
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "string(9) \"{{closure}}\"\nstring({}) \"{}\"\n",
+            method.len(),
+            method
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_class_method_magic_constants_to_native_binary() {
     let root = temp_dir("ptn-native-class-method-magic-constants");
     fs::create_dir_all(&root).unwrap();
@@ -24268,6 +24302,38 @@ var_dump($x->doSomethingParentThis(1));
         "static PTN_UNUSED int ptn_call_declared_method_in_scope(PtnRuntime *runtime, PtnValue receiver, const char *target_class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {",
     );
     assert!(scoped_method_body.contains("(void)runtime;"));
+}
+
+#[test]
+fn compile_call_user_func_self_array_callable_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-self-array-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-self-array-callable.php");
+    let output = root.join("call-user-func-self-array-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+class St {
+    public static function e() { echo \"EHLO\\n\"; }
+    public static function e2() { call_user_func([\"self\", \"e\"]); }
+}
+St::e2();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Use of \"self\" in callables is deprecated in ptn on line 4\nEHLO\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Use of \\\"self\\\" in callables is deprecated"));
 }
 
 #[test]

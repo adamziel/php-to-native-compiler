@@ -1043,8 +1043,44 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "autoload",
             "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) {});\n--EXPECT--\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
+        ),
+        (
+            "default autoload callback",
+            "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register();\n--EXPECT--\n",
+            "unsupported-autoload-metadata\t",
+            "requires default spl_autoload callback resolution",
+        ),
+        (
+            "autoload call helper",
+            "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_call('Missing');\n--EXPECT--\n",
             "unsupported-autoload-metadata\t",
             "requires runtime class autoload symbol-table mutation",
+        ),
+        (
+            "autoload include class declaration",
+            "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) { require __DIR__ . '/missing.inc'; });\nnew Missing;\n--EXPECT--\n",
+            "unsupported-autoload-metadata\t",
+            "requires autoload callback include-driven class declaration",
+        ),
+        (
+            "autoload type declaration",
+            "--TEST--\nautoload\n--FILE--\n<?php\nfunction needs(Missing $value) {}\nspl_autoload_register(function ($class) {});\n--EXPECT--\n",
+            "unsupported-autoload-metadata\t",
+            "requires autoload/type-declaration integration",
+        ),
+        (
+            "autoload parameter default class constant",
+            "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) {});\nfunction needs($value = Missing::VALUE) {}\n--EXPECT--\n",
+            "unsupported-autoload-metadata\t",
+            "requires autoload during parameter default class-constant resolution",
+        ),
+        (
+            "autoload exception propagation",
+            "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_register(function ($class) { throw new Exception($class); });\necho Missing::$value;\n--EXPECT--\n",
+            "unsupported-autoload-metadata\t",
+            "requires autoload exception propagation",
         ),
         (
             "reflection closure binding",

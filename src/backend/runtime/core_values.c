@@ -893,6 +893,12 @@ struct PtnRuntime {
     char **included_files;
     size_t included_files_len;
     size_t included_files_capacity;
+    PtnValue *autoload_callbacks;
+    size_t autoload_callbacks_len;
+    size_t autoload_callbacks_capacity;
+    char **autoloading_class_names;
+    size_t autoloading_class_names_len;
+    size_t autoloading_class_names_capacity;
     char *open_basedir;
     char *memory_limit;
     char *max_memory_limit;
@@ -987,6 +993,11 @@ static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime);
 static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(
     PtnRuntime *runtime,
     const char *class_name
+);
+static PTN_UNUSED void ptn_runtime_autoload_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
 );
 static PtnSymbolTable *ptn_runtime_class_alias_table(PtnRuntime *runtime);
 

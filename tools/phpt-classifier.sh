@@ -1292,7 +1292,8 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_has_unmodeled_spl_function(line) {
             return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|iterator_to_array|spl_classes|class_implements|class_parents|class_uses)[[:space:]]*\(/ ||
-                line ~ /(^|[^[:alnum:]_$\\])spl_(autoload|classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
+                line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_(call|extensions|functions|unregister))?[[:space:]]*\(/ ||
+                line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
@@ -1378,13 +1379,44 @@ ptn_phpt_first_unsupported_language_surface() {
             if (!saw_anonymous_class && saw_interface && match(line, /function[[:space:]]+([a-z_][a-z0-9_]*)[[:space:]]*[(]/, method_match)) {
                 override_interface_methods[method_match[1]] = 1
             }
+            if (line ~ /function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*[a-z_\\][a-z0-9_\\]*[[:space:]]*&?[[:space:]]*[$][a-z_]/) {
+                saw_class_type_declaration = 1
+            }
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(spl_autoload_[a-z0-9_]*|__autoload)[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\([[:space:]]*\)/) {
+                print "unsupported-autoload-metadata\trequires default spl_autoload callback resolution, outside PTN modeled autoload registry"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])spl_autoload_register[[:space:]]*\(/) {
+                saw_spl_autoload_register = 1
+            }
+            if (saw_spl_autoload_register && saw_class_type_declaration) {
+                print "unsupported-autoload-metadata\trequires autoload/type-declaration integration, outside PTN modeled autoload registry"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_(call|extensions|functions|unregister))?)[[:space:]]*\(/) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
+                found = 1
+                exit
+            }
+            if (saw_spl_autoload_register && line ~ /(^|[^[:alnum:]_$])(require|include)(_once)?[[:space:]]+/) {
+                print "unsupported-autoload-metadata\trequires autoload callback include-driven class declaration, outside PTN modeled autoload registry"
+                found = 1
+                exit
+            }
+            if (saw_spl_autoload_register && line ~ /throw[[:space:]]+new[[:space:]]+exception([^[:alnum:]_]|$)/) {
+                print "unsupported-autoload-metadata\trequires autoload exception propagation through static member lookup, outside PTN modeled autoload registry"
+                found = 1
+                exit
+            }
+            if (saw_spl_autoload_register && line ~ /function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*=[^)]*[a-z_\\][a-z0-9_\\]*[[:space:]]*::/) {
+                print "unsupported-autoload-metadata\trequires autoload during parameter default class-constant resolution, outside PTN modeled autoload registry"
                 found = 1
                 exit
             }
@@ -1685,7 +1717,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(spl_autoload_[a-z0-9_]*|__autoload)[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_(call|extensions|functions|unregister))?)[[:space:]]*\(/) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
                 exit
