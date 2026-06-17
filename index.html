@@ -37,8 +37,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 <table aria-label="status metadata">
   <thead><tr><th>field</th><th>value</th></tr></thead>
   <tbody>
-    <tr><td>last refresh</td><td>2026-06-17T18:22:34Z</td></tr>
-    <tr><td>source commit</td><td><code>92e2408874a1</code></td></tr>
+    <tr><td>last refresh</td><td>2026-06-17T18:24:00Z</td></tr>
+    <tr><td>source commit</td><td><code>6248c978d6ee</code></td></tr>
     <tr><td>php-src revision</td><td><code>8c63ec400ce8e07c57a8d9499317b96a8beafb8b</code></td></tr>
     <tr><td>upstream PHPT corpus</td><td><code>php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)</code></td></tr>
     <tr><td>evidence source</td><td><code>tools/status-dashboard-features.tsv</code></td></tr>
@@ -49,8 +49,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 <table aria-label="status totals">
   <thead><tr><th>metric</th><th class="num">tests</th></tr></thead>
   <tbody>
-    <tr><td>ported tests</td><td class="num">1242</td></tr>
-    <tr><td>passed tests</td><td class="num">929</td></tr>
+    <tr><td>ported tests</td><td class="num">16325</td></tr>
+    <tr><td>passed tests</td><td class="num">4943</td></tr>
     <tr><td>upstream tests</td><td class="num">21867</td></tr>
   </tbody>
 </table>
@@ -58,240 +58,184 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 <table aria-label="recent progress">
   <thead><tr><th>window</th><th class="num">newly passed tests</th></tr></thead>
   <tbody>
-    <tr><td>latest hour (2026-06-17T18:00Z)</td><td class="num">0</td></tr>
-    <tr><td>last 24 hours (2026-06-16T19:00Z - 2026-06-17T18:00Z)</td><td class="num">238</td></tr>
-    <tr><td>last 7 days (2026-06-10T19:00Z - 2026-06-17T18:00Z)</td><td class="num">673</td></tr>
+    <tr><td>latest hour (2026-06-17T18:00Z)</td><td class="num">4014</td></tr>
+    <tr><td>last 24 hours (2026-06-16T19:00Z - 2026-06-17T18:00Z)</td><td class="num">4014</td></tr>
+    <tr><td>last 7 days (2026-06-10T19:00Z - 2026-06-17T18:00Z)</td><td class="num">4014</td></tr>
   </tbody>
 </table>
 <section class="chart-panel" aria-labelledby="passing-history-title">
   <h2 id="passing-history-title">7-Day Passing History</h2>
-  <p class="summary">929 cumulative passed tests across 168 hourly points, ending 2026-06-17T18:00Z. Newly passed: 0 in the latest hour, 238 in the last 24 hours, 673 in the last 7 days.</p>
+  <p class="summary">4943 cumulative passed tests across 168 hourly points, ending 2026-06-17T18:00Z. Newly passed: 4014 in the latest hour, 4014 in the last 24 hours, 4014 in the last 7 days.</p>
   <svg id="passing-history-chart" class="line-chart" data-history-points="168" data-corpus-total="21867" viewBox="0 0 720 152" role="img" aria-label="Cumulative passing tests by hour">
     <line class="chart-grid" x1="38" y1="14" x2="38" y2="126"></line>
     <line class="chart-grid" x1="38" y1="126" x2="694" y2="126"></line>
-    <polyline id="passing-history-line" class="chart-line" data-points="168" points="38.00,95.14 41.93,95.14 45.86,95.14 49.78,95.14 53.71,95.14 57.64,95.14 61.57,95.14 65.50,95.14 69.43,95.14 73.35,95.14 77.28,95.14 81.21,95.14 85.14,95.14 89.07,95.14 92.99,95.14 96.92,95.14 100.85,95.14 104.78,95.14 108.71,95.14 112.63,95.14 116.56,95.14 120.49,95.14 124.42,95.14 128.35,95.14 132.28,95.14 136.20,95.14 140.13,95.14 144.06,95.14 147.99,95.14 151.92,95.14 155.84,95.14 159.77,95.14 163.70,95.14 167.63,95.14 171.56,95.14 175.49,95.14 179.41,95.14 183.34,95.14 187.27,95.14 191.20,95.14 195.13,95.14 199.05,95.14 202.98,95.14 206.91,95.14 210.84,95.14 214.77,95.14 218.69,95.14 222.62,95.14 226.55,95.14 230.48,95.14 234.41,95.14 238.34,95.14 242.26,95.14 246.19,95.14 250.12,95.14 254.05,95.14 257.98,95.14 261.90,95.14 265.83,95.14 269.76,95.14 273.69,95.14 277.62,95.14 281.54,95.14 285.47,95.14 289.40,95.14 293.33,95.14 297.26,95.14 301.19,95.14 305.11,95.14 309.04,95.14 312.97,95.14 316.90,95.14 320.83,95.14 324.75,95.14 328.68,95.14 332.61,95.14 336.54,95.14 340.47,95.14 344.40,95.14 348.32,95.14 352.25,95.14 356.18,95.14 360.11,95.14 364.04,95.14 367.96,95.14 371.89,95.14 375.82,95.14 379.75,95.14 383.68,95.14 387.60,95.14 391.53,95.14 395.46,95.14 399.39,95.14 403.32,95.14 407.25,95.14 411.17,95.14 415.10,95.14 419.03,95.14 422.96,95.14 426.89,95.14 430.81,95.14 434.74,95.14 438.67,95.14 442.60,95.14 446.53,95.14 450.46,95.14 454.38,95.14 458.31,95.14 462.24,95.14 466.17,95.14 470.10,95.14 474.02,95.14 477.95,95.14 481.88,95.14 485.81,87.42 489.74,77.29 493.66,74.04 497.59,62.71 501.52,60.66 505.45,58.85 509.38,51.49 513.31,42.69 517.23,42.69 521.16,42.69 525.09,42.69 529.02,42.69 532.95,42.69 536.87,42.69 540.80,42.69 544.73,42.69 548.66,42.69 552.59,42.69 556.51,42.69 560.44,42.69 564.37,42.69 568.30,42.69 572.23,42.69 576.16,42.69 580.08,42.69 584.01,42.69 587.94,42.69 591.87,42.69 595.80,42.69 599.72,42.69 603.65,42.69 607.58,42.69 611.51,37.03 615.44,32.93 619.37,27.62 623.29,14.00 627.22,14.00 631.15,14.00 635.08,14.00 639.01,14.00 642.93,14.00 646.86,14.00 650.79,14.00 654.72,14.00 658.65,14.00 662.57,14.00 666.50,14.00 670.43,14.00 674.36,14.00 678.29,14.00 682.22,14.00 686.14,14.00 690.07,14.00 694.00,14.00"></polyline>
+    <polyline id="passing-history-line" class="chart-line" data-points="168" points="38.00,104.95 41.93,104.95 45.86,104.95 49.78,104.95 53.71,104.95 57.64,104.95 61.57,104.95 65.50,104.95 69.43,104.95 73.35,104.95 77.28,104.95 81.21,104.95 85.14,104.95 89.07,104.95 92.99,104.95 96.92,104.95 100.85,104.95 104.78,104.95 108.71,104.95 112.63,104.95 116.56,104.95 120.49,104.95 124.42,104.95 128.35,104.95 132.28,104.95 136.20,104.95 140.13,104.95 144.06,104.95 147.99,104.95 151.92,104.95 155.84,104.95 159.77,104.95 163.70,104.95 167.63,104.95 171.56,104.95 175.49,104.95 179.41,104.95 183.34,104.95 187.27,104.95 191.20,104.95 195.13,104.95 199.05,104.95 202.98,104.95 206.91,104.95 210.84,104.95 214.77,104.95 218.69,104.95 222.62,104.95 226.55,104.95 230.48,104.95 234.41,104.95 238.34,104.95 242.26,104.95 246.19,104.95 250.12,104.95 254.05,104.95 257.98,104.95 261.90,104.95 265.83,104.95 269.76,104.95 273.69,104.95 277.62,104.95 281.54,104.95 285.47,104.95 289.40,104.95 293.33,104.95 297.26,104.95 301.19,104.95 305.11,104.95 309.04,104.95 312.97,104.95 316.90,104.95 320.83,104.95 324.75,104.95 328.68,104.95 332.61,104.95 336.54,104.95 340.47,104.95 344.40,104.95 348.32,104.95 352.25,104.95 356.18,104.95 360.11,104.95 364.04,104.95 367.96,104.95 371.89,104.95 375.82,104.95 379.75,104.95 383.68,104.95 387.60,104.95 391.53,104.95 395.46,104.95 399.39,104.95 403.32,104.95 407.25,104.95 411.17,104.95 415.10,104.95 419.03,104.95 422.96,104.95 426.89,104.95 430.81,104.95 434.74,104.95 438.67,104.95 442.60,104.95 446.53,104.95 450.46,104.95 454.38,104.95 458.31,104.95 462.24,104.95 466.17,104.95 470.10,104.95 474.02,104.95 477.95,104.95 481.88,104.95 485.81,104.95 489.74,104.95 493.66,104.95 497.59,104.95 501.52,104.95 505.45,104.95 509.38,104.95 513.31,104.95 517.23,104.95 521.16,104.95 525.09,104.95 529.02,104.95 532.95,104.95 536.87,104.95 540.80,104.95 544.73,104.95 548.66,104.95 552.59,104.95 556.51,104.95 560.44,104.95 564.37,104.95 568.30,104.95 572.23,104.95 576.16,104.95 580.08,104.95 584.01,104.95 587.94,104.95 591.87,104.95 595.80,104.95 599.72,104.95 603.65,104.95 607.58,104.95 611.51,104.95 615.44,104.95 619.37,104.95 623.29,104.95 627.22,104.95 631.15,104.95 635.08,104.95 639.01,104.95 642.93,104.95 646.86,104.95 650.79,104.95 654.72,104.95 658.65,104.95 662.57,104.95 666.50,104.95 670.43,104.95 674.36,104.95 678.29,104.95 682.22,104.95 686.14,104.95 690.07,104.95 694.00,14.00"></polyline>
     <text class="chart-label" x="38" y="146">2026-06-10T19:00Z</text>
     <text class="chart-label" x="694" y="146" text-anchor="end">2026-06-17T18:00Z</text>
-    <text class="chart-label" x="44" y="24">929 passed</text>
+    <text class="chart-label" x="44" y="24">4943 passed</text>
   </svg>
 </section>
 <h2>Feature Table</h2>
 <table id="feature-table" class="sortable" aria-label="feature table">
   <thead><tr><th data-sort="text" aria-sort="none"><button type="button">feature</button></th><th class="num" data-sort="number" aria-sort="none"><button type="button">ported tests</button></th><th class="num" data-sort="number" aria-sort="none"><button type="button">passed tests</button></th><th class="num" data-sort="number" aria-sort="none"><button type="button">upstream tests</button></th></tr></thead>
   <tbody>
-    <tr><td><div class="feature-name">ptn-2xzl JSON encode/error rows</div><div class="progress" aria-label="ptn-2xzl JSON encode/error rows: 14 passed, 14 ported, 14 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="14">14</td><td class="num" data-value="14">14</td><td class="num" data-value="14">14</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.58 ArrayObject iterator class serialization row</div><div class="progress" aria-label="ptn-w17z.58 ArrayObject iterator class serialization row: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-t9pt return/type declaration rows</div><div class="progress" aria-label="ptn-t9pt return/type declaration rows: 195 passed, 213 ported, 213 upstream"><span class="progress-pass" style="width: 91.5%"></span><span class="progress-ported" style="left: 91.5%; width: 8.5%"></span></div></td><td class="num" data-value="213">213</td><td class="num" data-value="195">195</td><td class="num" data-value="213">213</td></tr>
-    <tr><td><div class="feature-name">ptn-mq0f class constant reflection rows</div><div class="progress" aria-label="ptn-mq0f class constant reflection rows: 16 passed, 16 ported, 16 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="16">16</td><td class="num" data-value="16">16</td><td class="num" data-value="16">16</td></tr>
-    <tr><td><div class="feature-name">ptn-r48u string INI rows</div><div class="progress" aria-label="ptn-r48u string INI rows: 7 passed, 7 ported, 7 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="7">7</td><td class="num" data-value="7">7</td><td class="num" data-value="7">7</td></tr>
-    <tr><td><div class="feature-name">ptn-cl81 ArrayObject flipped-green PHPT rows</div><div class="progress" aria-label="ptn-cl81 ArrayObject flipped-green PHPT rows: 31 passed, 31 ported, 31 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="31">31</td><td class="num" data-value="31">31</td><td class="num" data-value="31">31</td></tr>
-    <tr><td><div class="feature-name">ptn-6rea html entity charset rows</div><div class="progress" aria-label="ptn-6rea html entity charset rows: 5 passed, 5 ported, 5 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="5">5</td><td class="num" data-value="5">5</td><td class="num" data-value="5">5</td></tr>
-    <tr><td><div class="feature-name">ptn-2ey0 sparse reference call rows</div><div class="progress" aria-label="ptn-2ey0 sparse reference call rows: 7 passed, 7 ported, 7 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="7">7</td><td class="num" data-value="7">7</td><td class="num" data-value="7">7</td></tr>
-    <tr><td><div class="feature-name">ptn-je79 match diagnostics rows</div><div class="progress" aria-label="ptn-je79 match diagnostics rows: 2 passed, 2 ported, 2 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td></tr>
-    <tr><td><div class="feature-name">ptn-811r loose numeric string comparison row</div><div class="progress" aria-label="ptn-811r loose numeric string comparison row: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-1yvd array memory-limit row</div><div class="progress" aria-label="ptn-1yvd array memory-limit row: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-ygnm deprecated class constant metadata rows</div><div class="progress" aria-label="ptn-ygnm deprecated class constant metadata rows: 5 passed, 5 ported, 8 upstream"><span class="progress-pass" style="width: 62.5%"></span><span class="progress-ported" style="left: 62.5%; width: 0.0%"></span></div></td><td class="num" data-value="5">5</td><td class="num" data-value="5">5</td><td class="num" data-value="8">8</td></tr>
-    <tr><td><div class="feature-name">ptn-v8e5 self-extending interface diagnostic row</div><div class="progress" aria-label="ptn-v8e5 self-extending interface diagnostic row: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-pcso assertion runtime rows</div><div class="progress" aria-label="ptn-pcso assertion runtime rows: 3 passed, 3 ported, 3 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="3">3</td><td class="num" data-value="3">3</td><td class="num" data-value="3">3</td></tr>
-    <tr><td><div class="feature-name">ptn-gt9c internal by-ref warning row</div><div class="progress" aria-label="ptn-gt9c internal by-ref warning row: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-uqgj parser exit/control rows</div><div class="progress" aria-label="ptn-uqgj parser exit/control rows: 15 passed, 15 ported, 26 upstream"><span class="progress-pass" style="width: 57.7%"></span><span class="progress-ported" style="left: 57.7%; width: 0.0%"></span></div></td><td class="num" data-value="15">15</td><td class="num" data-value="15">15</td><td class="num" data-value="26">26</td></tr>
-    <tr><td><div class="feature-name">ptn-xe1e shell/process helper rows</div><div class="progress" aria-label="ptn-xe1e shell/process helper rows: 14 passed, 14 ported, 14 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="14">14</td><td class="num" data-value="14">14</td><td class="num" data-value="14">14</td></tr>
-    <tr><td><div class="feature-name">ptn-d06v builtin attribute diagnostic rows</div><div class="progress" aria-label="ptn-d06v builtin attribute diagnostic rows: 7 passed, 7 ported, 8 upstream"><span class="progress-pass" style="width: 87.5%"></span><span class="progress-ported" style="left: 87.5%; width: 0.0%"></span></div></td><td class="num" data-value="7">7</td><td class="num" data-value="7">7</td><td class="num" data-value="8">8</td></tr>
-    <tr><td><div class="feature-name">ptn-nvk4 COW reference PHPT rows</div><div class="progress" aria-label="ptn-nvk4 COW reference PHPT rows: 10 passed, 10 ported, 10 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="10">10</td><td class="num" data-value="10">10</td><td class="num" data-value="10">10</td></tr>
-    <tr><td><div class="feature-name">ptn-p4cv generator yield-from delegation rows</div><div class="progress" aria-label="ptn-p4cv generator yield-from delegation rows: 23 passed, 23 ported, 23 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="23">23</td><td class="num" data-value="23">23</td><td class="num" data-value="23">23</td></tr>
-    <tr><td><div class="feature-name">ptn-88g7 generator reference COW rows</div><div class="progress" aria-label="ptn-88g7 generator reference COW rows: 4 passed, 4 ported, 4 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="4">4</td><td class="num" data-value="4">4</td><td class="num" data-value="4">4</td></tr>
-    <tr><td><div class="feature-name">ptn-snt7 object/class metadata row pack</div><div class="progress" aria-label="ptn-snt7 object/class metadata row pack: 8 passed, 8 ported, 8 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="8">8</td><td class="num" data-value="8">8</td><td class="num" data-value="8">8</td></tr>
-    <tr><td><div class="feature-name">ptn-456b ext-standard strings row pack</div><div class="progress" aria-label="ptn-456b ext-standard strings row pack: 27 passed, 27 ported, 47 upstream"><span class="progress-pass" style="width: 57.4%"></span><span class="progress-ported" style="left: 57.4%; width: 0.0%"></span></div></td><td class="num" data-value="27">27</td><td class="num" data-value="27">27</td><td class="num" data-value="47">47</td></tr>
-    <tr><td><div class="feature-name">ptn-y4f1 COW/reference sort/object walk row pack</div><div class="progress" aria-label="ptn-y4f1 COW/reference sort/object walk row pack: 59 passed, 72 ported, 72 upstream"><span class="progress-pass" style="width: 81.9%"></span><span class="progress-ported" style="left: 81.9%; width: 18.1%"></span></div></td><td class="num" data-value="72">72</td><td class="num" data-value="59">59</td><td class="num" data-value="72">72</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.31 iterable/DNF type row pack</div><div class="progress" aria-label="ptn-w17z.31 iterable/DNF type row pack: 27 passed, 27 ported, 27 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="27">27</td><td class="num" data-value="27">27</td><td class="num" data-value="27">27</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.29 SPL iterator wrapper row pack</div><div class="progress" aria-label="ptn-w17z.29 SPL iterator wrapper row pack: 7 passed, 7 ported, 7 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="7">7</td><td class="num" data-value="7">7</td><td class="num" data-value="7">7</td></tr>
-    <tr><td><div class="feature-name">ptn-50g7 COW/reference array-walk and sort row pack</div><div class="progress" aria-label="ptn-50g7 COW/reference array-walk and sort row pack: 10 passed, 10 ported, 103 upstream"><span class="progress-pass" style="width: 9.7%"></span><span class="progress-ported" style="left: 9.7%; width: 0.0%"></span></div></td><td class="num" data-value="10">10</td><td class="num" data-value="10">10</td><td class="num" data-value="103">103</td></tr>
-    <tr><td><div class="feature-name">ptn-jrzu CSV stream parity row pack</div><div class="progress" aria-label="ptn-jrzu CSV stream parity row pack: 22 passed, 22 ported, 57 upstream"><span class="progress-pass" style="width: 38.6%"></span><span class="progress-ported" style="left: 38.6%; width: 0.0%"></span></div></td><td class="num" data-value="22">22</td><td class="num" data-value="22">22</td><td class="num" data-value="57">57</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.16.1 ErrorException severity row pack</div><div class="progress" aria-label="ptn-w17z.16.1 ErrorException severity row pack: 2 passed, 2 ported, 2 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.16.2 nested try/finally row pack</div><div class="progress" aria-label="ptn-w17z.16.2 nested try/finally row pack: 9 passed, 9 ported, 9 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="9">9</td><td class="num" data-value="9">9</td><td class="num" data-value="9">9</td></tr>
-    <tr><td><div class="feature-name">ptn-90cm compare64bit object/number diagnostics</div><div class="progress" aria-label="ptn-90cm compare64bit object/number diagnostics: 6 passed, 6 ported, 6 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="6">6</td><td class="num" data-value="6">6</td><td class="num" data-value="6">6</td></tr>
-    <tr><td><div class="feature-name">ptn-vvpn class_alias metadata slice</div><div class="progress" aria-label="ptn-vvpn class_alias metadata slice: 13 passed, 38 ported, 38 upstream"><span class="progress-pass" style="width: 34.2%"></span><span class="progress-ported" style="left: 34.2%; width: 65.8%"></span></div></td><td class="num" data-value="38">38</td><td class="num" data-value="13">13</td><td class="num" data-value="38">38</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.36 extract typed references</div><div class="progress" aria-label="ptn-w17z.36 extract typed references: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-2cij ENV/CLEAN SKIPIF preconditions</div><div class="progress" aria-label="ptn-2cij ENV/CLEAN SKIPIF preconditions: 0 passed, 33 ported, 2086 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 1.6%"></span></div></td><td class="num" data-value="33">33</td><td class="num" data-value="0">0</td><td class="num" data-value="2086">2086</td></tr>
-    <tr><td><div class="feature-name">ptn-vj4r class_alias namespace metadata</div><div class="progress" aria-label="ptn-vj4r class_alias namespace metadata: 5 passed, 5 ported, 5 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="5">5</td><td class="num" data-value="5">5</td><td class="num" data-value="5">5</td></tr>
-    <tr><td><div class="feature-name">ptn-144g parser residual row pack</div><div class="progress" aria-label="ptn-144g parser residual row pack: 2 passed, 2 ported, 2 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td></tr>
-    <tr><td><div class="feature-name">ptn-evvk stream mode diagnostics</div><div class="progress" aria-label="ptn-evvk stream mode diagnostics: 8 passed, 8 ported, 8 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="8">8</td><td class="num" data-value="8">8</td><td class="num" data-value="8">8</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.26 Serializable/SPL unserialize row pack</div><div class="progress" aria-label="ptn-w17z.26 Serializable/SPL unserialize row pack: 5 passed, 5 ported, 5 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="5">5</td><td class="num" data-value="5">5</td><td class="num" data-value="5">5</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.23 union type declaration parser row</div><div class="progress" aria-label="ptn-w17z.23 union type declaration parser row: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-utht filtered stream copy row pack</div><div class="progress" aria-label="ptn-utht filtered stream copy row pack: 4 passed, 4 ported, 4 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="4">4</td><td class="num" data-value="4">4</td><td class="num" data-value="4">4</td></tr>
-    <tr><td><div class="feature-name">ptn-vqg1 temp stream wrappers row pack</div><div class="progress" aria-label="ptn-vqg1 temp stream wrappers row pack: 3 passed, 3 ported, 3 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="3">3</td><td class="num" data-value="3">3</td><td class="num" data-value="3">3</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.30 foreach mutation visibility row pack</div><div class="progress" aria-label="ptn-w17z.30 foreach mutation visibility row pack: 7 passed, 11 ported, 11 upstream"><span class="progress-pass" style="width: 63.6%"></span><span class="progress-ported" style="left: 63.6%; width: 36.4%"></span></div></td><td class="num" data-value="11">11</td><td class="num" data-value="7">7</td><td class="num" data-value="11">11</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.2 sort flags row pack</div><div class="progress" aria-label="ptn-w17z.2 sort flags row pack: 72 passed, 78 ported, 78 upstream"><span class="progress-pass" style="width: 92.3%"></span><span class="progress-ported" style="left: 92.3%; width: 7.7%"></span></div></td><td class="num" data-value="78">78</td><td class="num" data-value="72">72</td><td class="num" data-value="78">78</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.22 compile-time include path variables</div><div class="progress" aria-label="ptn-w17z.22 compile-time include path variables: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.28 collected Generator runtime row pack</div><div class="progress" aria-label="ptn-w17z.28 collected Generator runtime row pack: 6 passed, 6 ported, 6 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="6">6</td><td class="num" data-value="6">6</td><td class="num" data-value="6">6</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.34 output-buffer compact row</div><div class="progress" aria-label="ptn-w17z.34 output-buffer compact row: 1 passed, 1 ported, 1 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td><td class="num" data-value="1">1</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.35 compact closure this row pack</div><div class="progress" aria-label="ptn-w17z.35 compact closure this row pack: 2 passed, 2 ported, 2 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td><td class="num" data-value="2">2</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.33 extract globals refs row pack</div><div class="progress" aria-label="ptn-w17z.33 extract globals refs row pack: 3 passed, 3 ported, 3 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="3">3</td><td class="num" data-value="3">3</td><td class="num" data-value="3">3</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.25 serialize/unserialize reference identity row pack</div><div class="progress" aria-label="ptn-w17z.25 serialize/unserialize reference identity row pack: 6 passed, 6 ported, 6 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="6">6</td><td class="num" data-value="6">6</td><td class="num" data-value="6">6</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.12 magic methods/lifecycle row pack</div><div class="progress" aria-label="ptn-w17z.12 magic methods/lifecycle row pack: 49 passed, 49 ported, 49 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="49">49</td><td class="num" data-value="49">49</td><td class="num" data-value="49">49</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.10 SKIPIF harness row pack</div><div class="progress" aria-label="ptn-w17z.10 SKIPIF harness row pack: 3 passed, 185 ported, 185 upstream"><span class="progress-pass" style="width: 1.6%"></span><span class="progress-ported" style="left: 1.6%; width: 98.4%"></span></div></td><td class="num" data-value="185">185</td><td class="num" data-value="3">3</td><td class="num" data-value="185">185</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.14 Override attribute row pack</div><div class="progress" aria-label="ptn-w17z.14 Override attribute row pack: 34 passed, 34 ported, 50 upstream"><span class="progress-pass" style="width: 68.0%"></span><span class="progress-ported" style="left: 68.0%; width: 0.0%"></span></div></td><td class="num" data-value="34">34</td><td class="num" data-value="34">34</td><td class="num" data-value="50">50</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.16 exception/backtrace/lifecycle row pack</div><div class="progress" aria-label="ptn-w17z.16 exception/backtrace/lifecycle row pack: 41 passed, 41 ported, 41 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="41">41</td><td class="num" data-value="41">41</td><td class="num" data-value="41">41</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.18 numeric/math/conversions row pack</div><div class="progress" aria-label="ptn-w17z.18 numeric/math/conversions row pack: 35 passed, 35 ported, 35 upstream"><span class="progress-pass" style="width: 100.0%"></span><span class="progress-ported" style="left: 100.0%; width: 0.0%"></span></div></td><td class="num" data-value="35">35</td><td class="num" data-value="35">35</td><td class="num" data-value="35">35</td></tr>
-    <tr><td><div class="feature-name">ptn-w17z.16.3 exception formatting row pack</div><div class="progress" aria-label="ptn-w17z.16.3 exception formatting row pack: 12 passed, 12 ported, 13 upstream"><span class="progress-pass" style="width: 92.3%"></span><span class="progress-ported" style="left: 92.3%; width: 0.0%"></span></div></td><td class="num" data-value="12">12</td><td class="num" data-value="12">12</td><td class="num" data-value="13">13</td></tr>
-    <tr><td><div class="feature-name">ptn-kia6 by-ref/reference-boundary row pack</div><div class="progress" aria-label="ptn-kia6 by-ref/reference-boundary row pack: 75 passed, 107 ported, 126 upstream"><span class="progress-pass" style="width: 59.5%"></span><span class="progress-ported" style="left: 59.5%; width: 25.4%"></span></div></td><td class="num" data-value="107">107</td><td class="num" data-value="75">75</td><td class="num" data-value="126">126</td></tr>
-    <tr><td><div class="feature-name">unported/unmeasured upstream PHPT corpus</div><div class="progress" aria-label="unported/unmeasured upstream PHPT corpus: 0 passed, 0 ported, 18373 upstream"><span class="progress-pass" style="width: 0.0%"></span><span class="progress-ported" style="left: 0.0%; width: 0.0%"></span></div></td><td class="num" data-value="0">0</td><td class="num" data-value="0">0</td><td class="num" data-value="18373">18373</td></tr>
+    <tr><td><div class="feature-name">full PHPT corpus sharded partial snapshot</div><div class="progress" aria-label="full PHPT corpus sharded partial snapshot: 4943 passed, 16325 ported, 21867 upstream"><span class="progress-pass" style="width: 22.6%"></span><span class="progress-ported" style="left: 22.6%; width: 52.1%"></span></div></td><td class="num" data-value="16325">16325</td><td class="num" data-value="4943">4943</td><td class="num" data-value="21867">21867</td></tr>
   </tbody>
 </table>
 <h2>Last 7 Days</h2>
 <table aria-label="last 7 days">
   <thead><tr><th>hour (UTC)</th><th class="num">newly passed tests</th><th class="num">cumulative passed tests</th></tr></thead>
   <tbody>
-    <tr><td>2026-06-10T19:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-10T20:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-10T21:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-10T22:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-10T23:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T00:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T01:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T02:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T03:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T04:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T05:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T06:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T07:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T08:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T09:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T10:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T11:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T12:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T13:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T14:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T15:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T16:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T17:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T18:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T19:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T20:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T21:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T22:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-11T23:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T00:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T01:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T02:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T03:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T04:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T05:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T06:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T07:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T08:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T09:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T10:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T11:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T12:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T13:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T14:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T15:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T16:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T17:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T18:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T19:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T20:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T21:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T22:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-12T23:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T00:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T01:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T02:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T03:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T04:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T05:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T06:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T07:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T08:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T09:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T10:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T11:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T12:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T13:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T14:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T15:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T16:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T17:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T18:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T19:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T20:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T21:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T22:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-13T23:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T00:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T01:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T02:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T03:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T04:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T05:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T06:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T07:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T08:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T09:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T10:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T11:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T12:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T13:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T14:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T15:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T16:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T17:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T18:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T19:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T20:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T21:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T22:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-14T23:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T00:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T01:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T02:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T03:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T04:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T05:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T06:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T07:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T08:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T09:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T10:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T11:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T12:00Z</td><td class="num">0</td><td class="num">256</td></tr>
-    <tr><td>2026-06-15T13:00Z</td><td class="num">64</td><td class="num">320</td></tr>
-    <tr><td>2026-06-15T14:00Z</td><td class="num">84</td><td class="num">404</td></tr>
-    <tr><td>2026-06-15T15:00Z</td><td class="num">27</td><td class="num">431</td></tr>
-    <tr><td>2026-06-15T16:00Z</td><td class="num">94</td><td class="num">525</td></tr>
-    <tr><td>2026-06-15T17:00Z</td><td class="num">17</td><td class="num">542</td></tr>
-    <tr><td>2026-06-15T18:00Z</td><td class="num">15</td><td class="num">557</td></tr>
-    <tr><td>2026-06-15T19:00Z</td><td class="num">61</td><td class="num">618</td></tr>
-    <tr><td>2026-06-15T20:00Z</td><td class="num">73</td><td class="num">691</td></tr>
-    <tr><td>2026-06-15T21:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-15T22:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-15T23:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T00:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T01:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T02:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T03:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T04:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T05:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T06:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T07:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T08:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T09:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T10:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T11:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T12:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T13:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T14:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T15:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T16:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T17:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T18:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T19:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T20:00Z</td><td class="num">0</td><td class="num">691</td></tr>
-    <tr><td>2026-06-16T21:00Z</td><td class="num">47</td><td class="num">738</td></tr>
-    <tr><td>2026-06-16T22:00Z</td><td class="num">34</td><td class="num">772</td></tr>
-    <tr><td>2026-06-16T23:00Z</td><td class="num">44</td><td class="num">816</td></tr>
-    <tr><td>2026-06-17T00:00Z</td><td class="num">113</td><td class="num">929</td></tr>
+    <tr><td>2026-06-10T19:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-10T20:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-10T21:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-10T22:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-10T23:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T00:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T01:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T02:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T03:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T04:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T05:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T06:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T07:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T08:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T09:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T10:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T11:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T12:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T13:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T14:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T15:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T16:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T17:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T18:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T19:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T20:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T21:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T22:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-11T23:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T00:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T01:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T02:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T03:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T04:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T05:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T06:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T07:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T08:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T09:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T10:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T11:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T12:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T13:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T14:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T15:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T16:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T17:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T18:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T19:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T20:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T21:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T22:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-12T23:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T00:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T01:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T02:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T03:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T04:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T05:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T06:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T07:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T08:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T09:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T10:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T11:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T12:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T13:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T14:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T15:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T16:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T17:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T18:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T19:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T20:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T21:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T22:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-13T23:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T00:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T01:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T02:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T03:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T04:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T05:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T06:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T07:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T08:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T09:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T10:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T11:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T12:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T13:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T14:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T15:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T16:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T17:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T18:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T19:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T20:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T21:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T22:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-14T23:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T00:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T01:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T02:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T03:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T04:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T05:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T06:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T07:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T08:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T09:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T10:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T11:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T12:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T13:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T14:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T15:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T16:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T17:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T18:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T19:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T20:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T21:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T22:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-15T23:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T00:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T01:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T02:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T03:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T04:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T05:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T06:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T07:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T08:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T09:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T10:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T11:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T12:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T13:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T14:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T15:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T16:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T17:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T18:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T19:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T20:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T21:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T22:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-16T23:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-17T00:00Z</td><td class="num">0</td><td class="num">929</td></tr>
     <tr><td>2026-06-17T01:00Z</td><td class="num">0</td><td class="num">929</td></tr>
     <tr><td>2026-06-17T02:00Z</td><td class="num">0</td><td class="num">929</td></tr>
     <tr><td>2026-06-17T03:00Z</td><td class="num">0</td><td class="num">929</td></tr>
@@ -309,7 +253,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     <tr><td>2026-06-17T15:00Z</td><td class="num">0</td><td class="num">929</td></tr>
     <tr><td>2026-06-17T16:00Z</td><td class="num">0</td><td class="num">929</td></tr>
     <tr><td>2026-06-17T17:00Z</td><td class="num">0</td><td class="num">929</td></tr>
-    <tr><td>2026-06-17T18:00Z</td><td class="num">0</td><td class="num">929</td></tr>
+    <tr><td>2026-06-17T18:00Z</td><td class="num">4014</td><td class="num">4943</td></tr>
   </tbody>
 </table>
 <script>
