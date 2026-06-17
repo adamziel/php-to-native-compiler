@@ -1911,6 +1911,10 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
         }
         case PTN_OBJECT: {
             PtnObject *object = value.as.object;
+            if (object->enum_case_name != NULL) {
+                printf("enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                break;
+            }
             PtnArray *properties = object->properties;
             size_t class_name_len = ptn_class_name_dump_len(object->class_name);
             printf(
@@ -39496,6 +39500,8 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "Traversable")
         || ptn_ascii_case_equal(name, "Stringable")
         || ptn_ascii_case_equal(name, "Throwable")
+        || ptn_ascii_case_equal(name, "UnitEnum")
+        || ptn_ascii_case_equal(name, "BackedEnum")
         || ptn_ascii_case_equal(name, "DateTimeInterface")
         || ptn_ascii_case_equal(name, "Serializable");
 }

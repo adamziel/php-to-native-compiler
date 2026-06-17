@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
@@ -13,7 +13,7 @@ use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
     ArrayElement as IrArrayElement, ArrayElementValue as IrArrayElementValue, AssignmentTarget,
     BinaryOp, CastKind, CatchClause as IrCatchClause, ClassConstantDecl, ClassDecl, ClosureCapture,
-    CompileWarning, CompileWarningKind, DeprecatedMessageDependency, FunctionDecl,
+    CompileWarning, CompileWarningKind, DeprecatedMessageDependency, EnumBackingType, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget,
     Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
     MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind,
@@ -2426,15 +2426,44 @@ fn emit_class_constant_initializer_helper(
             out.push_str("        if (strcmp(constant_name, \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");
+            let mut extra_cleanup_temps = Vec::new();
             let value_temp = if constant.is_enum_case {
+                if let Some(message) = enum_duplicate_message(class) {
+                    out.push_str("            ptn_throw_exception(&runtime, \"Error\", \"");
+                    out.push_str(&c_string(&message));
+                    out.push_str("\");\n");
+                    out.push_str("            return 0;\n");
+                }
                 let value_temp = values.next_temp();
-                out.push_str("            PtnValue ");
-                out.push_str(&value_temp);
-                out.push_str(" = ptn_enum_case(&runtime, \"");
-                out.push_str(&c_string(&class.name));
-                out.push_str("\", \"");
-                out.push_str(&c_string(&constant.name));
-                out.push_str("\");\n");
+                if let Some(backing_type) = class.enum_backing_type {
+                    let backing_value = constant
+                        .enum_case_value
+                        .as_ref()
+                        .unwrap_or(&ValueExpr::Null);
+                    let backing_temp = values.emit_const_materialized_value(out, backing_value);
+                    extra_cleanup_temps.push(backing_temp.clone());
+                    out.push_str("            PtnValue ");
+                    out.push_str(&value_temp);
+                    out.push_str(" = ptn_enum_case_with_backing(&runtime, \"");
+                    out.push_str(&c_string(&class.name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&constant.name));
+                    out.push_str("\", 1, ");
+                    out.push_str(c_enum_backing_property_type(backing_type));
+                    out.push_str(", \"");
+                    out.push_str(c_enum_backing_type_name(backing_type));
+                    out.push_str("\", ");
+                    out.push_str(&backing_temp);
+                    out.push_str(");\n");
+                } else {
+                    out.push_str("            PtnValue ");
+                    out.push_str(&value_temp);
+                    out.push_str(" = ptn_enum_case(&runtime, \"");
+                    out.push_str(&c_string(&class.name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&constant.name));
+                    out.push_str("\");\n");
+                }
                 value_temp
             } else {
                 values.emit_const_materialized_value(out, &constant.value)
@@ -2467,6 +2496,9 @@ fn emit_class_constant_initializer_helper(
                 out.push_str("\");\n");
             }
             emit_value_cleanup(out, "            ", &value_temp);
+            for temp in extra_cleanup_temps {
+                emit_value_cleanup(out, "            ", &temp);
+            }
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
@@ -3765,6 +3797,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
 }
 
 fn emit_method_visibility_prototypes(out: &mut String) {
+    out.push_str("static PTN_UNUSED int ptn_declared_enum_static_method(PtnRuntime *runtime, const char *class_name, const char *method_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n");
     out.push_str("static PTN_UNUSED int ptn_declared_method_visible(int visibility, const char *declaring_class, const char *target_class_name, const char *method_name, const char *access_scope);\n");
     out.push_str("static PTN_UNUSED PtnValue ptn_throw_method_visibility_error(PtnRuntime *runtime, const char *declaring_class, const char *method_name, int visibility, size_t line);\n");
     out.push_str("static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);\n");
@@ -4354,12 +4387,24 @@ fn emit_class_metadata_helpers(
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     for class in classes {
-        if class.interfaces.is_empty() {
+        if class.interfaces.is_empty() && !class.is_enum {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(interface_name, \"UnitEnum\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str(
+                    "        if (ptn_ascii_case_equal(interface_name, \"BackedEnum\")) {\n",
+                );
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         for interface in class_transitive_interfaces(class, classes) {
             out.push_str("        if (ptn_ascii_case_equal(interface_name, \"");
             out.push_str(&c_string(interface));
@@ -4710,6 +4755,8 @@ fn emit_class_metadata_helpers(
     }
     out.push_str("    return result;\n");
     out.push_str("}\n");
+
+    emit_declared_enum_static_method(out, classes);
 
     if emit_reflection_helpers {
         out.push_str(
@@ -5394,6 +5441,215 @@ fn emit_reflection_attribute_metadata_helpers(
     emit_declared_function_parameter_reflection_attributes(out, classes, functions);
     emit_declared_constant_attributes(out, classes, functions, instructions);
     emit_declared_attribute_class_flags(out, classes);
+}
+
+fn emit_declared_enum_static_method(out: &mut String, classes: &[ClassDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_enum_static_method(PtnRuntime *runtime, const char *class_name, const char *method_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)class_name;\n");
+    out.push_str("    (void)method_name;\n");
+    out.push_str("    (void)argc;\n");
+    out.push_str("    (void)args;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)result_out;\n");
+    for class in classes.iter().filter(|class| class.is_enum) {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")) {\n");
+        out.push_str("            if (argc != 0) {\n");
+        out.push_str("                char ptn_enum_message[256];\n");
+        out.push_str("                int ptn_enum_written = snprintf(ptn_enum_message, sizeof(ptn_enum_message), \"%s::cases() expects exactly 0 arguments, %zu given\", class_name, argc);\n");
+        out.push_str("                if (ptn_enum_written < 0 || (size_t)ptn_enum_written >= sizeof(ptn_enum_message)) {\n");
+        out.push_str("                    ptn_abort_out_of_memory();\n");
+        out.push_str("                }\n");
+        out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", ptn_enum_message);\n");
+        out.push_str("                *result_out = ptn_null();\n");
+        out.push_str("                return 1;\n");
+        out.push_str("            }\n");
+        out.push_str(
+            "            PtnValue ptn_enum_cases = ptn_array_from_literal_entries(0, NULL);\n",
+        );
+        out.push_str("            int64_t ptn_enum_index = 0;\n");
+        for (case_index, constant) in class
+            .constants
+            .iter()
+            .filter(|constant| constant.is_enum_case)
+            .enumerate()
+        {
+            let case_temp = format!("ptn_enum_case_value_{case_index}");
+            out.push_str("            PtnValue ");
+            out.push_str(&case_temp);
+            out.push_str(" = ptn_runtime_read_class_constant(runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\", line);\n");
+            out.push_str("            if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
+            out.push_str("                ptn_value_destroy(&ptn_enum_cases);\n");
+            out.push_str("                *result_out = ptn_null();\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            out.push_str("            ptn_array_set_entry(ptn_enum_cases.as.array, ptn_array_int_key(ptn_enum_index++), ");
+            out.push_str(&case_temp);
+            out.push_str(");\n");
+        }
+        out.push_str("            *result_out = ptn_enum_cases;\n");
+        out.push_str("            return 1;\n");
+        out.push_str("        }\n");
+
+        if let Some(backing_type) = class.enum_backing_type {
+            out.push_str(
+                "        if (ptn_ascii_case_equal(method_name, \"from\") || ptn_ascii_case_equal(method_name, \"tryFrom\")) {\n",
+            );
+            out.push_str("            int ptn_enum_try_from = ptn_ascii_case_equal(method_name, \"tryFrom\");\n");
+            out.push_str("            if (argc != 1) {\n");
+            out.push_str("                char ptn_enum_message[256];\n");
+            out.push_str("                int ptn_enum_written = snprintf(ptn_enum_message, sizeof(ptn_enum_message), \"%s::%s() expects exactly 1 argument, %zu given\", class_name, method_name, argc);\n");
+            out.push_str("                if (ptn_enum_written < 0 || (size_t)ptn_enum_written >= sizeof(ptn_enum_message)) {\n");
+            out.push_str("                    ptn_abort_out_of_memory();\n");
+            out.push_str("                }\n");
+            out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", ptn_enum_message);\n");
+            out.push_str("                *result_out = ptn_null();\n");
+            out.push_str("                return 1;\n");
+            out.push_str("            }\n");
+            out.push_str("            PtnValue ptn_enum_argument = ptn_value_deref(args[0]);\n");
+            if backing_type == EnumBackingType::Int {
+                out.push_str("            if (ptn_enum_argument.type != PTN_INT) {\n");
+                out.push_str("                char ptn_enum_message[256];\n");
+                out.push_str("                int ptn_enum_written = snprintf(ptn_enum_message, sizeof(ptn_enum_message), \"%s::%s(): Argument #1 ($value) must be of type int, %s given\", class_name, method_name, ptn_offset_container_type_name(ptn_enum_argument));\n");
+                out.push_str("                if (ptn_enum_written < 0 || (size_t)ptn_enum_written >= sizeof(ptn_enum_message)) {\n");
+                out.push_str("                    ptn_abort_out_of_memory();\n");
+                out.push_str("                }\n");
+                out.push_str("                ptn_throw_exception(runtime, \"TypeError\", ptn_enum_message);\n");
+                out.push_str("                *result_out = ptn_null();\n");
+                out.push_str("                return 1;\n");
+                out.push_str("            }\n");
+            }
+            if let Some(message) = enum_duplicate_message(class) {
+                out.push_str("            ptn_throw_exception(runtime, \"Error\", \"");
+                out.push_str(&c_string(&message));
+                out.push_str("\");\n");
+                out.push_str("            *result_out = ptn_null();\n");
+                out.push_str("            return 1;\n");
+            }
+            match backing_type {
+                EnumBackingType::Int => {
+                    for constant in class
+                        .constants
+                        .iter()
+                        .filter(|constant| constant.is_enum_case)
+                    {
+                        if let Some(EnumBackingLiteral::Int(value)) =
+                            enum_case_backing_literal(constant)
+                        {
+                            out.push_str("            if (ptn_enum_argument.as.integer == ");
+                            out.push_str(&c_i64_literal(value));
+                            out.push_str(") {\n");
+                            out.push_str("                *result_out = ptn_runtime_read_class_constant(runtime, \"");
+                            out.push_str(&c_string(&class.name));
+                            out.push_str("\", \"");
+                            out.push_str(&c_string(&constant.name));
+                            out.push_str("\", line);\n");
+                            out.push_str("                return 1;\n");
+                            out.push_str("            }\n");
+                        }
+                    }
+                    out.push_str("            if (ptn_enum_try_from) {\n");
+                    out.push_str("                *result_out = ptn_null();\n");
+                    out.push_str("                return 1;\n");
+                    out.push_str("            }\n");
+                    out.push_str("            char ptn_enum_message[256];\n");
+                    out.push_str("            int ptn_enum_written = snprintf(ptn_enum_message, sizeof(ptn_enum_message), \"%lld is not a valid backing value for enum %s\", (long long)ptn_enum_argument.as.integer, class_name);\n");
+                    out.push_str("            if (ptn_enum_written < 0 || (size_t)ptn_enum_written >= sizeof(ptn_enum_message)) {\n");
+                    out.push_str("                ptn_abort_out_of_memory();\n");
+                    out.push_str("            }\n");
+                    out.push_str("            ptn_throw_exception(runtime, \"ValueError\", ptn_enum_message);\n");
+                    out.push_str("            *result_out = ptn_null();\n");
+                    out.push_str("            return 1;\n");
+                }
+                EnumBackingType::String => {
+                    out.push_str("            char ptn_enum_int_buffer[64];\n");
+                    out.push_str("            const char *ptn_enum_string = NULL;\n");
+                    out.push_str("            size_t ptn_enum_string_len = 0;\n");
+                    out.push_str("            if (ptn_enum_argument.type == PTN_STRING) {\n");
+                    out.push_str("                ptn_enum_string = (const char *)ptn_enum_argument.as.string.data;\n");
+                    out.push_str(
+                        "                ptn_enum_string_len = ptn_enum_argument.as.string.len;\n",
+                    );
+                    out.push_str("            } else if (ptn_enum_argument.type == PTN_INT) {\n");
+                    out.push_str("                int ptn_enum_string_written = snprintf(ptn_enum_int_buffer, sizeof(ptn_enum_int_buffer), \"%lld\", (long long)ptn_enum_argument.as.integer);\n");
+                    out.push_str("                if (ptn_enum_string_written < 0 || (size_t)ptn_enum_string_written >= sizeof(ptn_enum_int_buffer)) {\n");
+                    out.push_str("                    ptn_abort_out_of_memory();\n");
+                    out.push_str("                }\n");
+                    out.push_str("                ptn_enum_string = ptn_enum_int_buffer;\n");
+                    out.push_str(
+                        "                ptn_enum_string_len = strlen(ptn_enum_int_buffer);\n",
+                    );
+                    out.push_str("            } else {\n");
+                    out.push_str("                char ptn_enum_message[256];\n");
+                    out.push_str("                int ptn_enum_written = snprintf(ptn_enum_message, sizeof(ptn_enum_message), \"%s::%s(): Argument #1 ($value) must be of type string|int, %s given\", class_name, method_name, ptn_offset_container_type_name(ptn_enum_argument));\n");
+                    out.push_str("                if (ptn_enum_written < 0 || (size_t)ptn_enum_written >= sizeof(ptn_enum_message)) {\n");
+                    out.push_str("                    ptn_abort_out_of_memory();\n");
+                    out.push_str("                }\n");
+                    out.push_str("                ptn_throw_exception(runtime, \"TypeError\", ptn_enum_message);\n");
+                    out.push_str("                *result_out = ptn_null();\n");
+                    out.push_str("                return 1;\n");
+                    out.push_str("            }\n");
+                    for constant in class
+                        .constants
+                        .iter()
+                        .filter(|constant| constant.is_enum_case)
+                    {
+                        if let Some(EnumBackingLiteral::String(value)) =
+                            enum_case_backing_literal(constant)
+                        {
+                            out.push_str("            if (ptn_enum_string_len == ");
+                            out.push_str(&value.len().to_string());
+                            out.push_str(" && memcmp(ptn_enum_string, \"");
+                            out.push_str(&c_string(&value));
+                            out.push_str("\", ");
+                            out.push_str(&value.len().to_string());
+                            out.push_str(") == 0) {\n");
+                            out.push_str("                *result_out = ptn_runtime_read_class_constant(runtime, \"");
+                            out.push_str(&c_string(&class.name));
+                            out.push_str("\", \"");
+                            out.push_str(&c_string(&constant.name));
+                            out.push_str("\", line);\n");
+                            out.push_str("                return 1;\n");
+                            out.push_str("            }\n");
+                        }
+                    }
+                    out.push_str("            if (ptn_enum_try_from) {\n");
+                    out.push_str("                *result_out = ptn_null();\n");
+                    out.push_str("                return 1;\n");
+                    out.push_str("            }\n");
+                    out.push_str("            size_t ptn_enum_message_len = ptn_enum_string_len + strlen(class_name) + 48;\n");
+                    out.push_str(
+                        "            char *ptn_enum_message = malloc(ptn_enum_message_len + 1);\n",
+                    );
+                    out.push_str("            if (ptn_enum_message == NULL) {\n");
+                    out.push_str("                ptn_abort_out_of_memory();\n");
+                    out.push_str("            }\n");
+                    out.push_str("            int ptn_enum_written = snprintf(ptn_enum_message, ptn_enum_message_len + 1, \"\\\"%.*s\\\" is not a valid backing value for enum %s\", (int)ptn_enum_string_len, ptn_enum_string, class_name);\n");
+                    out.push_str("            if (ptn_enum_written < 0 || (size_t)ptn_enum_written > ptn_enum_message_len) {\n");
+                    out.push_str("                free(ptn_enum_message);\n");
+                    out.push_str("                ptn_abort_out_of_memory();\n");
+                    out.push_str("            }\n");
+                    out.push_str("            ptn_throw_exception_owned_message(runtime, \"ValueError\", ptn_enum_message);\n");
+                    out.push_str("            *result_out = ptn_null();\n");
+                    out.push_str("            return 1;\n");
+                }
+            }
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
 }
 
 fn emit_declared_class_reflection_attributes(
@@ -11792,6 +12048,12 @@ fn magic_declaration_fatal_message(
     function: &FunctionDecl,
 ) -> Option<String> {
     let method_key = method.name.to_ascii_lowercase();
+    if class.is_enum && enum_magic_method_is_forbidden(&method_key) {
+        return Some(format!(
+            "Enum {} cannot include magic method {}",
+            class.name, method.name
+        ));
+    }
     let expected_arity = match method_key.as_str() {
         "__get" | "__isset" | "__unset" | "__set_state" => Some(1),
         "__set" | "__call" | "__callstatic" => Some(2),
@@ -11904,6 +12166,23 @@ fn magic_declaration_fatal_message(
         }
         _ => None,
     }
+}
+
+fn enum_magic_method_is_forbidden(method_key: &str) -> bool {
+    matches!(
+        method_key,
+        "__clone"
+            | "__get"
+            | "__isset"
+            | "__serialize"
+            | "__set"
+            | "__set_state"
+            | "__sleep"
+            | "__tostring"
+            | "__unserialize"
+            | "__unset"
+            | "__wakeup"
+    )
 }
 
 fn magic_return_type_is_exact_or_never(return_type: &TypeHint, expected: &TypeHint) -> bool {
@@ -15355,6 +15634,12 @@ fn static_call_receiver_class_name(call_name: &str, function: &FunctionDecl) -> 
         .split_once("::")
         .map(|(class_name, _)| class_name.to_string())
         .or_else(|| function.class_name.clone())
+}
+
+fn enum_static_method_name_is_reserved(method_name: &str) -> bool {
+    method_name.eq_ignore_ascii_case("cases")
+        || method_name.eq_ignore_ascii_case("from")
+        || method_name.eq_ignore_ascii_case("tryFrom")
 }
 
 fn positional_array_value(elements: &[IrArrayElement], index: usize) -> Option<&ValueExpr> {
@@ -24072,6 +24357,25 @@ impl ValueEmitter {
 
         let result_temp = self.next_temp();
         let resolved_name = self.resolved_function_call_name(name);
+        if !has_named_arguments && !has_unpacked_arguments {
+            if let Some((target_class_name, method_name)) =
+                self.split_static_call_name(&resolved_name)
+            {
+                if enum_static_method_name_is_reserved(method_name)
+                    && class_by_name(&self.classes, target_class_name)
+                        .is_some_and(|class| class.is_enum)
+                {
+                    return self.emit_declared_enum_static_method_call(
+                        out,
+                        &resolved_name,
+                        target_class_name,
+                        method_name,
+                        arguments,
+                        line,
+                    );
+                }
+            }
+        }
         let called_class_override = self.called_class_override_for_function_call(name);
         let direct_user = self
             .direct_user_function_by_resolved_name(&resolved_name)
@@ -24335,6 +24639,100 @@ impl ValueEmitter {
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
+    fn emit_declared_enum_static_method_call(
+        &mut self,
+        out: &mut String,
+        resolved_name: &str,
+        class_name: &str,
+        method_name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let result_temp = self.next_temp();
+        if arguments.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("    if (!ptn_declared_enum_static_method(&runtime, \"");
+            out.push_str(&c_string(class_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(method_name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(", &");
+            out.push_str(&result_temp);
+            out.push_str(")) {\n");
+            out.push_str("        ptn_value_destroy(&");
+            out.push_str(&result_temp);
+            out.push_str(");\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_call_function(&runtime, \"");
+            out.push_str(&c_string(resolved_name));
+            out.push_str("\", 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+            return result_temp;
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, resolved_name, argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (!ptn_declared_enum_static_method(&runtime, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(method_name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(", &");
+        out.push_str(&result_temp);
+        out.push_str(")) {\n");
+        out.push_str("        ptn_value_destroy(&");
+        out.push_str(&result_temp);
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_call_function(&runtime, \"");
+        out.push_str(&c_string(resolved_name));
+        out.push_str("\", ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
@@ -26075,6 +26473,70 @@ fn c_property_default_eval_int_binary(op: BinaryOp, left: i64, right: i64) -> Op
         BinaryOp::BitwiseAnd => Some(left & right),
         BinaryOp::BitwiseOr => Some(left | right),
         BinaryOp::BitwiseXor => Some(left ^ right),
+        _ => None,
+    }
+}
+
+fn c_enum_backing_property_type(backing_type: EnumBackingType) -> &'static str {
+    match backing_type {
+        EnumBackingType::Int => "PTN_PROPERTY_TYPE_INT",
+        EnumBackingType::String => "PTN_PROPERTY_TYPE_STRING",
+    }
+}
+
+fn c_enum_backing_type_name(backing_type: EnumBackingType) -> &'static str {
+    match backing_type {
+        EnumBackingType::Int => "int",
+        EnumBackingType::String => "string",
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum EnumBackingLiteral {
+    Int(i64),
+    String(String),
+}
+
+fn enum_duplicate_message(class: &ClassDecl) -> Option<String> {
+    class.enum_backing_type?;
+    let mut seen = HashMap::<EnumBackingLiteral, &str>::new();
+    for constant in class
+        .constants
+        .iter()
+        .filter(|constant| constant.is_enum_case)
+    {
+        let literal = enum_case_backing_literal(constant)?;
+        if let Some(first_case) = seen.get(&literal) {
+            return Some(format!(
+                "Duplicate value in enum {} for cases {} and {}",
+                class.name, first_case, constant.name
+            ));
+        }
+        seen.insert(literal, &constant.name);
+    }
+    None
+}
+
+fn enum_case_backing_literal(constant: &ClassConstantDecl) -> Option<EnumBackingLiteral> {
+    match constant.enum_case_value.as_ref()? {
+        ValueExpr::Int(value) => Some(EnumBackingLiteral::Int(*value)),
+        ValueExpr::String(value) => Some(EnumBackingLiteral::String(value.clone())),
+        ValueExpr::Unary {
+            op: UnaryOp::Positive,
+            expr,
+            ..
+        } => match expr.as_ref() {
+            ValueExpr::Int(value) => Some(EnumBackingLiteral::Int(*value)),
+            _ => None,
+        },
+        ValueExpr::Unary {
+            op: UnaryOp::Negate,
+            expr,
+            ..
+        } => match expr.as_ref() {
+            ValueExpr::Int(value) => value.checked_neg().map(EnumBackingLiteral::Int),
+            _ => None,
+        },
         _ => None,
     }
 }
