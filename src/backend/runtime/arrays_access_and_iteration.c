@@ -850,11 +850,20 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_attribute(lookup_class_name)) {
         return ptn_attribute_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_allow_dynamic_properties(lookup_class_name)) {
+        return ptn_allow_dynamic_properties_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_delayed_target_validation(lookup_class_name)) {
+        return ptn_delayed_target_validation_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_deprecated(lookup_class_name)) {
         return ptn_deprecated_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_no_discard(lookup_class_name)) {
         return ptn_no_discard_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_return_type_will_change(lookup_class_name)) {
+        return ptn_return_type_will_change_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_reflection_property(lookup_class_name)) {
         return ptn_reflection_property_new(runtime, argc, args, line);

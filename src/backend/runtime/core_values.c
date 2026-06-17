@@ -1266,8 +1266,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_nam
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_allow_dynamic_properties(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_delayed_target_validation(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_deprecated(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_no_discard(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_return_type_will_change(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_zone(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class_name);
@@ -1350,6 +1353,18 @@ static PTN_UNUSED PtnValue ptn_attribute_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_allow_dynamic_properties_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_delayed_target_validation_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_deprecated_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1357,6 +1372,12 @@ static PTN_UNUSED PtnValue ptn_deprecated_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_no_discard_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_return_type_will_change_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,

@@ -283,6 +283,7 @@ $rc = new ReflectionClass(\"SourceBox\");\n\
 var_dump($rc->getFileName());\n\
 var_dump($rc->getStartLine());\n\
 var_dump($rc->getEndLine());\n\
+echo str_contains((string)$rc, $rc->getFileName() . \" \" . $rc->getStartLine() . \"-\" . $rc->getEndLine()) ? \"class-string-lines\\n\" : \"missing-class-string-lines\\n\";\n\
 \n\
 $internal = new ReflectionClass(\"stdClass\");\n\
 var_dump($internal->getFileName());\n\
@@ -308,6 +309,7 @@ foreach ([[\"ChildBox\", \"multi\"], [\"ChildBox\", \"oneLine\"], [\"ReflectionP
         String::from_utf8(execution.stdout).unwrap(),
         format!(
             "{file_dump}int(2)\nint(9)\n\
+class-string-lines\n\
 bool(false)\nbool(false)\nbool(false)\n\
 {file_dump}int(4)\nint(6)\n\
 {file_dump}int(8)\nint(8)\n\
@@ -18983,6 +18985,75 @@ try {
     assert!(c_source.contains("ptn_deprecated_new"));
     assert!(c_source.contains("ptn_no_discard_new"));
     assert!(c_source.contains("ptn_attribute_metadata_call_method"));
+}
+
+#[test]
+fn compile_internal_marker_attribute_new_instance_targets_to_native_binary() {
+    let root = temp_dir("ptn-native-marker-attribute-new-instance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("marker-attribute-new-instance.php");
+    let output = root.join("marker-attribute-new-instance-bin");
+    fs::write(
+        &input,
+        "<?php
+#[DelayedTargetValidation]
+#[AllowDynamicProperties]
+class Bag {}
+
+#[DelayedTargetValidation]
+#[NoDiscard]
+class WrongNoDiscard {}
+
+#[DelayedTargetValidation]
+#[ReturnTypeWillChange]
+function wrongReturnTypeTarget() {}
+
+class Subject {
+    public function run(#[DelayedTargetValidation] #[SensitiveParameter] $secret) {}
+}
+
+$bagAttributes = (new ReflectionClass(Bag::class))->getAttributes();
+echo get_class($bagAttributes[0]->newInstance()), \"\\n\";
+echo get_class($bagAttributes[1]->newInstance()), \"\\n\";
+
+try {
+    (new ReflectionClass(WrongNoDiscard::class))->getAttributes()[1]->newInstance();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    (new ReflectionFunction('wrongReturnTypeTarget'))->getAttributes()[1]->newInstance();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$parameter = (new ReflectionMethod(Subject::class, 'run'))->getParameters()[0];
+echo get_class($parameter->getAttributes()[1]->newInstance()), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "DelayedTargetValidation\n",
+            "AllowDynamicProperties\n",
+            "Attribute \"NoDiscard\" cannot target class (allowed targets: function, method)\n",
+            "Attribute \"ReturnTypeWillChange\" cannot target function (allowed targets: method)\n",
+            "SensitiveParameter\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_attribute_class_flags"));
+    assert!(c_source.contains("ptn_allow_dynamic_properties_new"));
+    assert!(c_source.contains("ptn_return_type_will_change_new"));
 }
 
 #[test]

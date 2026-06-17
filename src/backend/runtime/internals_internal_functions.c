@@ -40591,12 +40591,24 @@ static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_nam
     return ptn_ascii_case_equal(class_name, "Attribute");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_allow_dynamic_properties(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "AllowDynamicProperties");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_delayed_target_validation(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "DelayedTargetValidation");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_deprecated(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Deprecated");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_no_discard(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "NoDiscard");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_return_type_will_change(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReturnTypeWillChange");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name) {
@@ -40649,8 +40661,11 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_sensitive_parameter(class_name)
         || ptn_internal_class_name_is_sensitive_parameter_value(class_name)
         || ptn_internal_class_name_is_attribute(class_name)
+        || ptn_internal_class_name_is_allow_dynamic_properties(class_name)
+        || ptn_internal_class_name_is_delayed_target_validation(class_name)
         || ptn_internal_class_name_is_deprecated(class_name)
         || ptn_internal_class_name_is_no_discard(class_name)
+        || ptn_internal_class_name_is_return_type_will_change(class_name)
         || ptn_internal_class_name_is_datetime_immutable(class_name)
         || ptn_internal_class_name_is_datetime_zone(class_name)
         || ptn_internal_class_name_is_date_interval(class_name)
@@ -40768,6 +40783,76 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_new(
         return ptn_null();
     }
     return ptn_object_new_shell(runtime, "SensitiveParameter");
+}
+
+static PtnValue ptn_zero_argument_internal_attribute_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    size_t line
+) {
+    (void)line;
+    if (argc != 0) {
+        char message[176];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects exactly 0 arguments, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    return ptn_object_new_shell(runtime, class_name);
+}
+
+static PTN_UNUSED PtnValue ptn_allow_dynamic_properties_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    return ptn_zero_argument_internal_attribute_new(
+        runtime,
+        "AllowDynamicProperties",
+        argc,
+        line
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_delayed_target_validation_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    return ptn_zero_argument_internal_attribute_new(
+        runtime,
+        "DelayedTargetValidation",
+        argc,
+        line
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_return_type_will_change_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    return ptn_zero_argument_internal_attribute_new(
+        runtime,
+        "ReturnTypeWillChange",
+        argc,
+        line
+    );
 }
 
 static void ptn_declare_internal_readonly_property(
@@ -42849,6 +42934,33 @@ static void ptn_reflection_attribute_allowed_targets(char *buffer, size_t buffer
     }
 }
 
+static int ptn_internal_attribute_class_flags(const char *class_name, int *found_out) {
+    *found_out = 1;
+    if (ptn_internal_class_name_is_attribute(class_name)) {
+        return 1;
+    }
+    if (ptn_internal_class_name_is_allow_dynamic_properties(class_name)) {
+        return 1;
+    }
+    if (ptn_internal_class_name_is_delayed_target_validation(class_name)) {
+        return 127;
+    }
+    if (ptn_internal_class_name_is_deprecated(class_name)) {
+        return 2 | 4 | 16 | 64;
+    }
+    if (ptn_internal_class_name_is_no_discard(class_name)) {
+        return 2 | 4;
+    }
+    if (ptn_internal_class_name_is_return_type_will_change(class_name)) {
+        return 4;
+    }
+    if (ptn_internal_class_name_is_sensitive_parameter(class_name)) {
+        return 32;
+    }
+    *found_out = 0;
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -42910,13 +43022,12 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             &attribute_flags_error_message
         );
         if (!attribute_class_found) {
-            if (ptn_internal_class_name_is_attribute(data->name)) {
+            int internal_attribute_found = 0;
+            int internal_attribute_flags =
+                ptn_internal_attribute_class_flags(data->name, &internal_attribute_found);
+            if (internal_attribute_found) {
                 attribute_class_found = 1;
-                attribute_flags = 1;
-            } else if (ptn_internal_class_name_is_deprecated(data->name) ||
-                       ptn_internal_class_name_is_no_discard(data->name)) {
-                attribute_class_found = 1;
-                attribute_flags = 127;
+                attribute_flags = internal_attribute_flags;
             } else if (ptn_internal_class_exists_name(data->name)) {
                 attribute_class_found = 1;
                 attribute_flags = 0;
@@ -48301,8 +48412,11 @@ static PtnValue ptn_reflection_extension_classes(
             "SensitiveParameter",
             "SensitiveParameterValue",
             "Attribute",
+            "AllowDynamicProperties",
+            "DelayedTargetValidation",
             "Deprecated",
             "NoDiscard",
+            "ReturnTypeWillChange",
             "Exception",
             "Error",
             "ErrorException",

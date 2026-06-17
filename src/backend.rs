@@ -3949,8 +3949,11 @@ fn emit_class_metadata_helpers(
         "stdClass",
         "Generator",
         "Attribute",
+        "AllowDynamicProperties",
+        "DelayedTargetValidation",
         "Deprecated",
         "NoDiscard",
+        "ReturnTypeWillChange",
         "ArrayObject",
         "ArrayIterator",
         "RecursiveArrayIterator",
@@ -4268,8 +4271,11 @@ fn emit_class_metadata_helpers(
         "ReflectionIntersectionType",
         "ReflectionException",
         "Attribute",
+        "AllowDynamicProperties",
+        "DelayedTargetValidation",
         "Deprecated",
         "NoDiscard",
+        "ReturnTypeWillChange",
         "SensitiveParameter",
         "SensitiveParameterValue",
         "ArrayIterator",
@@ -7429,7 +7435,13 @@ fn reflection_class_to_string(
         out.push_str(&class.interfaces.join(", "));
     }
     out.push_str(" ] {\n");
-    out.push_str("  @@ %s\n\n");
+    out.push_str("  @@ ");
+    out.push_str(&class.source_file);
+    out.push(' ');
+    out.push_str(&class.line.to_string());
+    out.push('-');
+    out.push_str(&class.end_line.to_string());
+    out.push_str("\n\n");
 
     reflection_class_constants_to_string(&mut out, class);
     reflection_class_properties_to_string(&mut out, "Static properties", &class.static_properties);
@@ -7455,7 +7467,7 @@ fn reflection_class_to_string(
     reflection_class_properties_to_string(&mut out, "Properties", &properties);
     reflection_class_methods_to_string(&mut out, "Methods", &instance_methods, functions);
 
-    out.push('}');
+    out.push_str("}\n");
     out
 }
 
@@ -13819,8 +13831,11 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("SensitiveParameter")
                 || class_name.eq_ignore_ascii_case("SensitiveParameterValue")
                 || class_name.eq_ignore_ascii_case("Attribute")
+                || class_name.eq_ignore_ascii_case("AllowDynamicProperties")
+                || class_name.eq_ignore_ascii_case("DelayedTargetValidation")
                 || class_name.eq_ignore_ascii_case("Deprecated")
                 || class_name.eq_ignore_ascii_case("NoDiscard")
+                || class_name.eq_ignore_ascii_case("ReturnTypeWillChange")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
