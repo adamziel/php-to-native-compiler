@@ -25,7 +25,10 @@ fn run() -> Result<i32, PhpcError> {
             println!("PHP 8.4.0 (ptn phpc)");
             Ok(0)
         }
-        Mode::Modules => Ok(0),
+        Mode::Modules => {
+            print_modules();
+            Ok(0)
+        }
         Mode::Script { script, args } => compile_and_run(&script, &args, &ini, sapi),
         Mode::Inline { source } => {
             let temp = TempPath::new("ptn-phpc-inline", "php");
@@ -39,6 +42,42 @@ fn run() -> Result<i32, PhpcError> {
             compile_and_run(temp.path(), &[], &ini, sapi)
         }
     }
+}
+
+fn print_modules() {
+    println!("[PHP Modules]");
+    for module in [
+        "Core",
+        "ctype",
+        "curl",
+        "date",
+        "dom",
+        "filter",
+        "hash",
+        "iconv",
+        "intl",
+        "json",
+        "libxml",
+        "mbstring",
+        "openssl",
+        "pcre",
+        "Phar",
+        "Reflection",
+        "sockets",
+        "soap",
+        "SPL",
+        "standard",
+        "tokenizer",
+        "xml",
+        "xmlreader",
+        "xmlwriter",
+        "zip",
+        "zlib",
+    ] {
+        println!("{module}");
+    }
+    println!();
+    println!("[Zend Modules]");
 }
 
 #[derive(Debug)]

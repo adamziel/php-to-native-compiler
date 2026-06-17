@@ -929,6 +929,18 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_spl_file_info(lookup_class_name)) {
         return ptn_spl_file_info_new(runtime, "SplFileInfo", argc, args, line);
     }
+    if (ptn_internal_class_name_is_dom(lookup_class_name)) {
+        return ptn_dom_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_xml_reader(lookup_class_name)) {
+        return ptn_xml_reader_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_xml_writer(lookup_class_name)) {
+        return ptn_xmlwriter_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_xml_parser(lookup_class_name)) {
+        return ptn_xml_parser_new(runtime, argc, args, line);
+    }
 #endif
     const char *exception_class_name = ptn_builtin_exception_class_name(lookup_class_name);
     if (exception_class_name != NULL) {
@@ -2805,6 +2817,21 @@ static PTN_UNUSED int ptn_internal_array_object_property_unset(
     const char *access_scope,
     size_t line
 );
+static PTN_UNUSED int ptn_internal_xml_property_read(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+);
+static PTN_UNUSED int ptn_internal_xml_property_write(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    PtnValue value,
+    size_t line,
+    PtnValue *value_out
+);
 static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3254,6 +3281,16 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &internal_xml_value
+    )) {
+        return internal_xml_value;
+    }
     PtnValue array_object_value = ptn_null();
     if (ptn_internal_array_object_property_read(
         runtime,
@@ -3658,6 +3695,18 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
             return ptn_lookup_missing();
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &internal_xml_value
+    )) {
+        return ptn_lookup_found(internal_xml_value);
+    }
+#endif
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -3838,6 +3887,17 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (!indirect_write) {
+        PtnValue internal_xml_value = ptn_null();
+        if (ptn_internal_xml_property_write(
+            runtime,
+            receiver,
+            property,
+            value,
+            line,
+            &internal_xml_value
+        )) {
+            return internal_xml_value;
+        }
         PtnValue array_object_value = ptn_null();
         if (ptn_internal_array_object_property_write(
             runtime,

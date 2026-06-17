@@ -41,6 +41,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ReflectionException", "Exception"),
     ("SoapFault", "Exception"),
     ("IntlException", "Exception"),
+    ("DOMException", "Exception"),
     ("RuntimeException", "Exception"),
     ("InvalidArgumentException", "RuntimeException"),
     ("UnexpectedValueException", "RuntimeException"),
@@ -657,6 +658,25 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
         "    if (ptn_ascii_case_equal(class_name, \"DateTime\") || ptn_ascii_case_equal(class_name, \"DateTimeImmutable\")) {\n",
     );
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DateTimeInterface\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMNodeList\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMDocument\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMParentNode\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMDocumentFragment\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMElement\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMParentNode\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMText\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMCdataSection\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMCDataSection\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMComment\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
     out.push_str("    }\n");
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
@@ -2268,6 +2288,12 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     }
     if name.eq_ignore_ascii_case("mb_convert_variables") && argument_index >= 2 {
         return Some("vars");
+    }
+    if name.eq_ignore_ascii_case("xml_parse_into_struct") && argument_index == 2 {
+        return Some("values");
+    }
+    if name.eq_ignore_ascii_case("xml_parse_into_struct") && argument_index == 3 {
+        return Some("index");
     }
     if name.eq_ignore_ascii_case("exec") && argument_index == 1 {
         return Some("output");
@@ -4124,7 +4150,19 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "DOMNode",
+        "DOMDocument",
+        "DOMDocumentFragment",
+        "DOMElement",
+        "DOMAttr",
+        "DOMCharacterData",
+        "DOMText",
+        "DOMCdataSection",
+        "DOMComment",
+        "DOMNodeList",
+        "XMLReader",
         "XMLWriter",
+        "XMLParser",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -4302,6 +4340,8 @@ fn emit_class_metadata_helpers(
         "DateTimeInterface",
         "Countable",
         "Serializable",
+        "DOMParentNode",
+        "DOMChildNode",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(builtin);
@@ -4343,6 +4383,8 @@ fn emit_class_metadata_helpers(
         "DateTimeInterface",
         "Countable",
         "Serializable",
+        "DOMParentNode",
+        "DOMChildNode",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(builtin);
@@ -4492,7 +4534,19 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "DOMNode",
+        "DOMDocument",
+        "DOMDocumentFragment",
+        "DOMElement",
+        "DOMAttr",
+        "DOMCharacterData",
+        "DOMText",
+        "DOMCdataSection",
+        "DOMComment",
+        "DOMNodeList",
+        "XMLReader",
         "XMLWriter",
+        "XMLParser",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);
@@ -4551,6 +4605,8 @@ fn emit_class_metadata_helpers(
         "DateTimeInterface",
         "Countable",
         "Serializable",
+        "DOMParentNode",
+        "DOMChildNode",
     ] {
         out.push_str(
             "    ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"",
@@ -4737,6 +4793,14 @@ fn emit_class_metadata_helpers(
         ("SplStack", "SplDoublyLinkedList"),
         ("IntlRuleBasedBreakIterator", "IntlBreakIterator"),
         ("IntlCodePointBreakIterator", "IntlBreakIterator"),
+        ("DOMDocument", "DOMNode"),
+        ("DOMDocumentFragment", "DOMNode"),
+        ("DOMElement", "DOMNode"),
+        ("DOMAttr", "DOMNode"),
+        ("DOMCharacterData", "DOMNode"),
+        ("DOMText", "DOMCharacterData"),
+        ("DOMCdataSection", "DOMText"),
+        ("DOMComment", "DOMCharacterData"),
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -8815,6 +8879,25 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
     }
 }
 
+fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "domnode" => Some("DOMNode"),
+        "domdocument" => Some("DOMDocument"),
+        "domdocumentfragment" => Some("DOMDocumentFragment"),
+        "domelement" => Some("DOMElement"),
+        "domattr" => Some("DOMAttr"),
+        "domcharacterdata" => Some("DOMCharacterData"),
+        "domtext" => Some("DOMText"),
+        "domcdatasection" => Some("DOMCdataSection"),
+        "domcomment" => Some("DOMComment"),
+        "domnodelist" => Some("DOMNodeList"),
+        "xmlreader" => Some("XMLReader"),
+        "xmlwriter" => Some("XMLWriter"),
+        "xmlparser" => Some("XMLParser"),
+        _ => None,
+    }
+}
+
 fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
     modeled_spl_internal_class_name(name)
         .or_else(|| modeled_reflection_internal_class_name(name))
@@ -8828,6 +8911,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
             },
         )
         .or_else(|| modeled_intl_internal_class_name(name))
+        .or_else(|| modeled_xml_internal_class_name(name))
 }
 
 fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: &str) {
@@ -14339,6 +14423,20 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlCodePointBreakIterator")
                 || class_name.eq_ignore_ascii_case("IntlPartsIterator")
                 || class_name.eq_ignore_ascii_case("IntlCalendar")
+                || class_name.eq_ignore_ascii_case("DOMNode")
+                || class_name.eq_ignore_ascii_case("DOMDocument")
+                || class_name.eq_ignore_ascii_case("DOMDocumentFragment")
+                || class_name.eq_ignore_ascii_case("DOMElement")
+                || class_name.eq_ignore_ascii_case("DOMAttr")
+                || class_name.eq_ignore_ascii_case("DOMCharacterData")
+                || class_name.eq_ignore_ascii_case("DOMText")
+                || class_name.eq_ignore_ascii_case("DOMCdataSection")
+                || class_name.eq_ignore_ascii_case("DOMCDataSection")
+                || class_name.eq_ignore_ascii_case("DOMComment")
+                || class_name.eq_ignore_ascii_case("DOMNodeList")
+                || class_name.eq_ignore_ascii_case("XMLReader")
+                || class_name.eq_ignore_ascii_case("XMLWriter")
+                || class_name.eq_ignore_ascii_case("XMLParser")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;

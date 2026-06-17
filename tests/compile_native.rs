@@ -21487,7 +21487,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,curl,date,filter,hash,iconv,intl,json,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xmlwriter,zip,zlib\narray(0) {\n}\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -43368,6 +43368,12 @@ fn compile_defined_and_undefined_variable_reads_to_native_binary() {
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn lexer_accepts_uppercase_php_open_tag() {
+    let tokens = lexer::lex("<?PHP echo 'ok';").unwrap();
+    assert!(matches!(tokens[0].kind, TokenKind::OpenTag));
 }
 
 #[test]

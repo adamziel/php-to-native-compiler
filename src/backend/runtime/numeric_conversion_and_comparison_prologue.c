@@ -4698,8 +4698,22 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_object_is_internal_or_descendant(receiver, "XMLWriter")
-        && ptn_internal_class_method_exists("XMLWriter", name)
+        && ptn_internal_class_name_is_dom(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_dom_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_xml_reader(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_xml_reader_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_xml_writer(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_xmlwriter_call_method(runtime, receiver, name, argc, args, line);
     }

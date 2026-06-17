@@ -1190,6 +1190,22 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_E_ALL);
         return 1;
     }
+    if (strcmp(name, "LIBXML_DOTTED_VERSION") == 0) {
+        *out = ptn_string("2.9.14");
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_VERSION") == 0) {
+        *out = ptn_int(20914);
+        return 1;
+    }
+    if (strcmp(name, "XML_OPTION_CASE_FOLDING") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "XML_OPTION_PARSE_HUGE") == 0) {
+        *out = ptn_int(5);
+        return 1;
+    }
     if (strcmp(name, "ASSERT_ACTIVE") == 0) {
         *out = ptn_int(1);
         return 1;

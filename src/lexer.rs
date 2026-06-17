@@ -207,7 +207,7 @@ impl<'a> Lexer<'a> {
                     self.skip_line();
                     continue;
                 }
-                if self.rest().starts_with("<?php") {
+                if self.rest_starts_with_open_tag() {
                     self.push_open_tag();
                     continue;
                 }
@@ -385,7 +385,7 @@ impl<'a> Lexer<'a> {
         let start = self.current_span(0);
         let mut content = String::new();
         while let Some(ch) = self.peek_char() {
-            if self.rest().starts_with("<?php") {
+            if self.rest_starts_with_open_tag() {
                 if !content.is_empty() {
                     self.tokens.push(Token {
                         kind: TokenKind::InlineHtml(content),
@@ -423,7 +423,17 @@ impl<'a> Lexer<'a> {
             }
             cursor += ch.len_utf8();
         }
-        cursor == self.source.len() || self.source[cursor..].starts_with("<?php")
+        cursor == self.source.len() || self.source_starts_with_open_tag_at(cursor)
+    }
+
+    fn rest_starts_with_open_tag(&self) -> bool {
+        self.source_starts_with_open_tag_at(self.cursor)
+    }
+
+    fn source_starts_with_open_tag_at(&self, cursor: usize) -> bool {
+        self.source
+            .get(cursor..cursor.saturating_add(5))
+            .is_some_and(|tag| tag.eq_ignore_ascii_case("<?php"))
     }
 
     fn lex_string(&mut self, quote: char) -> Result<()> {
