@@ -664,19 +664,20 @@ static PtnValue ptn_internal_expect_nullable_callback_arg(
     );
 }
 
-static PtnValue ptn_internal_call_callback(
+static PtnValue ptn_internal_call_callback_impl(
     PtnRuntime *runtime,
     PtnValue callback,
     size_t argc,
     const PtnValue *args,
-    size_t line
+    size_t line,
+    int include_user_call_site
 ) {
     PtnTryFrame callback_frame;
     PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
-    int previous_suppress_user_call_frame_location =
-        runtime->suppress_user_call_frame_location;
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    int previous_suppress_user_call_frame_location =
+        runtime->suppress_user_call_frame_location;
     int previous_suppress_user_argument_count_location =
         runtime->suppress_user_argument_count_location;
     ptn_try_frame_push(runtime, &callback_frame);
@@ -691,10 +692,12 @@ static PtnValue ptn_internal_call_callback(
         runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
         ptn_rethrow_exception(runtime);
     }
-    runtime->suppress_user_call_frame_location = 1;
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
-    runtime->suppress_user_argument_count_location = 1;
+    if (!include_user_call_site) {
+        runtime->suppress_user_call_frame_location = 1;
+        runtime->suppress_user_argument_count_location = 1;
+    }
     PtnValue result = ptn_call_callable(runtime, callback, argc, args, line);
     ptn_try_frame_pop(runtime, &callback_frame);
     runtime->trace_frame = saved_trace_frame;
@@ -705,6 +708,26 @@ static PtnValue ptn_internal_call_callback(
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     return result;
+}
+
+static PtnValue ptn_internal_call_callback(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_call_callback_impl(runtime, callback, argc, args, line, 0);
+}
+
+static PtnValue ptn_internal_call_user_callback(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_internal_call_callback_impl(runtime, callback, argc, args, line, 1);
 }
 
 static PtnValue ptn_output_buffer_contents_value(PtnOutputBuffer *buffer) {
@@ -36011,7 +36034,7 @@ static PtnValue ptn_internal_func_get_args(PtnRuntime *runtime, size_t argc, con
 static PtnValue ptn_internal_call_user_func(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_internal_call_callback(
+    PtnValue result = ptn_internal_call_user_callback(
         runtime,
         args[0],
         argc - 1,
@@ -36038,7 +36061,7 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
 
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     runtime->warn_by_ref_argument_mismatch = 1;
-    PtnValue result = ptn_internal_call_callback(runtime, args[0], arguments->len, expanded, line);
+    PtnValue result = ptn_internal_call_user_callback(runtime, args[0], arguments->len, expanded, line);
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     for (size_t i = 0; i < arguments->len; i++) {
         ptn_value_destroy(&expanded[i]);
