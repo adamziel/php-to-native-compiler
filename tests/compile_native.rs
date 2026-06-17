@@ -19314,6 +19314,124 @@ echo get_class($parameter->getAttributes()[1]->newInstance()), \"\\n\";
 }
 
 #[test]
+fn compile_reflection_attribute_constructor_is_not_invokable_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-attribute-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-attribute-constructor.php");
+    let output = root.join("reflection-attribute-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute]
+class A {}
+
+class Foo {
+    #[A]
+    public function bar() {}
+}
+
+$method = new ReflectionMethod(Foo::class, 'bar');
+$attribute = $method->getAttributes()[0];
+$constructor = new ReflectionMethod($attribute, '__construct');
+
+try {
+    $constructor->invoke($attribute, 0, 1, 2);
+} catch (ReflectionException $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot directly instantiate ReflectionAttribute\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot directly instantiate ReflectionAttribute"));
+    assert!(c_source.contains("ptn_reflection_attribute_method_exists"));
+}
+
+#[test]
+fn compile_internal_attribute_named_constructor_slots_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-attribute-named-ctor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-attribute-named-ctor.php");
+    let output = root.join("internal-attribute-named-ctor-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Deprecated(since: \"2.0\")]
+function old_api() {}
+
+$attribute = (new ReflectionFunction('old_api'))->getAttributes()[0];
+$instance = $attribute->newInstance();
+var_dump($instance->message, $instance->since);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\nstring(3) \"2.0\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_null()"));
+    assert!(c_source.contains("ptn_deprecated_new"));
+}
+
+#[test]
+fn compile_attribute_named_argument_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-attribute-named-argument-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-named-argument-validation.php");
+    let output = root.join("attribute-named-argument-validation-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute]
+class MyAttrib {}
+
+#[MyAttrib(notinterned: '')]
+class Test1 {}
+
+$attribute = (new ReflectionClass(Test1::class))->getAttributes()[0];
+try {
+    $attribute->newInstance();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Unknown named parameter $notinterned\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Unknown named parameter $notinterned"));
+}
+
+#[test]
 fn compile_inherited_public_instance_methods_to_native_binary() {
     let root = temp_dir("ptn-native-inherited-public-instance-methods");
     fs::create_dir_all(&root).unwrap();

@@ -43623,7 +43623,8 @@ static int ptn_reflection_constant_method_exists(const char *method_name) {
 }
 
 static int ptn_reflection_attribute_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "getName")
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getArguments")
         || ptn_ascii_case_equal(method_name, "getTarget")
         || ptn_ascii_case_equal(method_name, "isRepeated")
@@ -44175,6 +44176,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_reflection_attribute(class_name)) {
         static const char *const names[] = {
+            "__construct",
             "getName",
             "getArguments",
             "getTarget",
@@ -45157,6 +45159,14 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
     if (data == NULL) {
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        ptn_throw_exception(
+            runtime,
+            "ReflectionException",
+            "Cannot directly instantiate ReflectionAttribute"
+        );
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(name, "getName")) {
         ptn_reflection_attribute_check_exact_arguments(runtime, "getName", argc, 0);
         return runtime->exceptions->active_exception != NULL
@@ -45193,6 +45203,14 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
     if (ptn_ascii_case_equal(name, "newInstance")) {
         ptn_reflection_attribute_check_exact_arguments(runtime, "newInstance", argc, 0);
         if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (data->arguments_error_message != NULL) {
+            ptn_throw_exception(
+                runtime,
+                data->arguments_error_class == NULL ? "Error" : data->arguments_error_class,
+                data->arguments_error_message
+            );
             return ptn_null();
         }
         int attribute_class_found = 0;
@@ -46569,6 +46587,15 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         if (!ptn_reflection_method_check_object_argument(runtime, "invoke", args[0], &object_arg)) {
             return ptn_null();
         }
+        if (ptn_internal_class_name_is_reflection_attribute(data->class_name) &&
+            ptn_ascii_case_equal(data->name, "__construct")) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Cannot directly instantiate ReflectionAttribute"
+            );
+            return ptn_null();
+        }
         return ptn_reflection_method_dispatch_invoke(
             runtime,
             data,
@@ -46604,6 +46631,19 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
                 &method_argc,
                 &method_args
             )) {
+            return ptn_null();
+        }
+        if (ptn_internal_class_name_is_reflection_attribute(data->class_name) &&
+            ptn_ascii_case_equal(data->name, "__construct")) {
+            for (size_t i = 0; i < method_argc; i++) {
+                ptn_value_destroy(&method_args[i]);
+            }
+            free(method_args);
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Cannot directly instantiate ReflectionAttribute"
+            );
             return ptn_null();
         }
         PtnValue result = ptn_reflection_method_dispatch_invoke(

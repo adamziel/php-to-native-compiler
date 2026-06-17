@@ -841,6 +841,10 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_constant(lookup_class_name)) {
         return ptn_reflection_constant_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_attribute(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot directly instantiate ReflectionAttribute");
+        return ptn_null();
+    }
     if (ptn_internal_class_name_is_sensitive_parameter(lookup_class_name)) {
         return ptn_sensitive_parameter_new(runtime, argc, args, line);
     }

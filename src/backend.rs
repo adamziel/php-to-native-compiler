@@ -6727,39 +6727,118 @@ fn emit_declared_constant_attributes(
     out.push_str("}\n");
 }
 
-fn attribute_constructor_argument_order(
+enum AttributeConstructorArgumentPlan {
+    Default,
+    Ordered(Vec<Option<usize>>),
+    Error(String),
+}
+
+fn internal_attribute_constructor_parameters(name: &str) -> Option<&'static [&'static str]> {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "attribute" => Some(&["flags"]),
+        "deprecated" => Some(&["message", "since"]),
+        "nodiscard" => Some(&["message"]),
+        "allowdynamicproperties"
+        | "delayedtargetvalidation"
+        | "returntypewillchange"
+        | "sensitiveparameter" => Some(&[]),
+        _ => None,
+    }
+}
+
+fn attribute_constructor_argument_plan(
     instance: &AttributeInstance,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
-) -> Option<Vec<usize>> {
+) -> AttributeConstructorArgumentPlan {
     if !instance
         .arguments
         .iter()
         .any(|argument| argument.name.is_some())
     {
-        return None;
+        return AttributeConstructorArgumentPlan::Default;
     }
-    let class = class_by_name(classes, &instance.name)?;
-    let constructor = class_constructor_method(class, classes)?;
-    let function = functions.get(constructor.function_index)?;
+    if let Some(parameters) = internal_attribute_constructor_parameters(&instance.name) {
+        let mut slots = Vec::with_capacity(instance.arguments.len());
+        let mut occupied = vec![false; parameters.len()];
+        for (argument_index, argument) in instance.arguments.iter().enumerate() {
+            let Some(argument_name) = &argument.name else {
+                slots.push(argument_index);
+                continue;
+            };
+            let Some(parameter_index) = parameters
+                .iter()
+                .position(|parameter| *parameter == argument_name)
+            else {
+                return AttributeConstructorArgumentPlan::Error(format!(
+                    "Unknown named parameter ${argument_name}"
+                ));
+            };
+            if occupied[parameter_index] {
+                return AttributeConstructorArgumentPlan::Error(format!(
+                    "Named parameter ${argument_name} overwrites previous argument"
+                ));
+            }
+            occupied[parameter_index] = true;
+            slots.push(parameter_index);
+        }
+        let Some(max_slot) = slots.iter().copied().max() else {
+            return AttributeConstructorArgumentPlan::Default;
+        };
+        let mut ordered = vec![None; max_slot + 1];
+        for (argument_index, slot) in slots.into_iter().enumerate() {
+            if slot >= ordered.len() || ordered[slot].is_some() {
+                return AttributeConstructorArgumentPlan::Default;
+            }
+            ordered[slot] = Some(argument_index);
+        }
+        return AttributeConstructorArgumentPlan::Ordered(ordered);
+    }
+    let Some(class) = class_by_name(classes, &instance.name) else {
+        return AttributeConstructorArgumentPlan::Default;
+    };
+    let Some(constructor) = class_constructor_method(class, classes) else {
+        if let Some(argument_name) = instance
+            .arguments
+            .iter()
+            .filter_map(|argument| argument.name.as_deref())
+            .next()
+        {
+            return AttributeConstructorArgumentPlan::Error(format!(
+                "Unknown named parameter ${argument_name}"
+            ));
+        }
+        return AttributeConstructorArgumentPlan::Default;
+    };
+    let Some(function) = functions.get(constructor.function_index) else {
+        return AttributeConstructorArgumentPlan::Default;
+    };
     let argument_names = instance
         .arguments
         .iter()
         .map(|argument| argument.name.clone())
         .collect::<Vec<_>>();
-    let slots = bind_named_call_arguments(&function.parameters, &argument_names).ok()?;
-    let max_slot = slots.iter().copied().max()?;
+    let slots = match bind_named_call_arguments(&function.parameters, &argument_names) {
+        Ok(slots) => slots,
+        Err(error) => return AttributeConstructorArgumentPlan::Error(error.message()),
+    };
+    let Some(max_slot) = slots.iter().copied().max() else {
+        return AttributeConstructorArgumentPlan::Default;
+    };
     if max_slot >= function.parameters.len() {
-        return None;
+        return AttributeConstructorArgumentPlan::Default;
     }
     let mut ordered = vec![None; max_slot + 1];
     for (argument_index, slot) in slots.into_iter().enumerate() {
         if ordered[slot].is_some() {
-            return None;
+            return AttributeConstructorArgumentPlan::Default;
         }
         ordered[slot] = Some(argument_index);
     }
-    ordered.into_iter().collect()
+    if ordered.iter().any(Option::is_none) {
+        return AttributeConstructorArgumentPlan::Default;
+    }
+    AttributeConstructorArgumentPlan::Ordered(ordered)
 }
 
 fn emit_declared_attribute_result(
@@ -6797,7 +6876,15 @@ fn emit_declared_attribute_result(
         out.push_str("            PtnValue attribute_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
-        if let Some(error_message) = reflection_attribute_arguments_error(instance) {
+        let constructor_plan = attribute_constructor_argument_plan(instance, classes, functions);
+        let constructor_error = reflection_attribute_arguments_error(instance).or_else(|| {
+            if let AttributeConstructorArgumentPlan::Error(error) = &constructor_plan {
+                Some(error.clone())
+            } else {
+                None
+            }
+        });
+        if let Some(error_message) = constructor_error {
             out.push_str("            PtnValue constructor_args_");
             out.push_str(&attribute_index.to_string());
             out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
@@ -6856,29 +6943,38 @@ fn emit_declared_attribute_result(
                 out.push_str(&argument_index.to_string());
                 out.push_str(");\n");
             }
-            if let Some(constructor_order) =
-                attribute_constructor_argument_order(instance, classes, functions)
-            {
-                out.push_str("            PtnValue constructor_args_");
-                out.push_str(&attribute_index.to_string());
-                out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
-                for (constructor_index, argument_index) in constructor_order.iter().enumerate() {
-                    out.push_str("            ptn_array_set_entry(constructor_args_");
+            match &constructor_plan {
+                AttributeConstructorArgumentPlan::Ordered(constructor_order) => {
+                    out.push_str("            PtnValue constructor_args_");
                     out.push_str(&attribute_index.to_string());
-                    out.push_str(".as.array, ptn_array_int_key(");
-                    out.push_str(&constructor_index.to_string());
-                    out.push_str("), ptn_value_clone_deref(attribute_args_");
-                    out.push_str(&attribute_index.to_string());
-                    out.push_str(".as.array->entries[");
-                    out.push_str(&argument_index.to_string());
-                    out.push_str("].value));\n");
+                    out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+                    for (constructor_index, argument_index) in constructor_order.iter().enumerate()
+                    {
+                        out.push_str("            ptn_array_set_entry(constructor_args_");
+                        out.push_str(&attribute_index.to_string());
+                        out.push_str(".as.array, ptn_array_int_key(");
+                        out.push_str(&constructor_index.to_string());
+                        out.push_str("), ");
+                        if let Some(argument_index) = argument_index {
+                            out.push_str("ptn_value_clone_deref(attribute_args_");
+                            out.push_str(&attribute_index.to_string());
+                            out.push_str(".as.array->entries[");
+                            out.push_str(&argument_index.to_string());
+                            out.push_str("].value)");
+                        } else {
+                            out.push_str("ptn_null()");
+                        }
+                        out.push_str(");\n");
+                    }
                 }
-            } else {
-                out.push_str("            PtnValue constructor_args_");
-                out.push_str(&attribute_index.to_string());
-                out.push_str(" = ptn_value_clone_deref(attribute_args_");
-                out.push_str(&attribute_index.to_string());
-                out.push_str(");\n");
+                AttributeConstructorArgumentPlan::Default
+                | AttributeConstructorArgumentPlan::Error(_) => {
+                    out.push_str("            PtnValue constructor_args_");
+                    out.push_str(&attribute_index.to_string());
+                    out.push_str(" = ptn_value_clone_deref(attribute_args_");
+                    out.push_str(&attribute_index.to_string());
+                    out.push_str(");\n");
+                }
             }
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name(runtime, \"");
             out.push_str(&c_string(&instance.name));

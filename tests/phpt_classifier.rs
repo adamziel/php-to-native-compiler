@@ -883,6 +883,38 @@ fn phpt_classifier_keeps_supported_attribute_metadata_rows_runnable_by_path() {
             "--TEST--\ninternal symbol attributes\n--FILE--\n<?php\n$rp = new ReflectionProperty('Exception', 'message');\nvar_dump($rp->getAttributes());\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/attributes/021_attribute_flags_type_is_validated.phpt",
+            "--TEST--\nattribute flags type\n--FILE--\n<?php\n#[Attribute('bad')]\nclass BadFlags {}\n#[BadFlags]\nclass Subject {}\nvar_dump((new ReflectionClass(Subject::class))->getAttributes()[0]->newInstance());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/022_attribute_flags_value_is_validated.phpt",
+            "--TEST--\nattribute flags value\n--FILE--\n<?php\n#[Attribute(-1)]\nclass BadFlags {}\n#[BadFlags]\nclass Subject {}\nvar_dump((new ReflectionClass(Subject::class))->getAttributes()[0]->newInstance());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/023_ast_node_in_validation.phpt",
+            "--TEST--\nattribute ast node validation\n--FILE--\n<?php\nclass Foo { const BAR = Attribute::TARGET_CLASS; }\n#[Attribute(Foo::BAR)]\nclass Attr {}\n#[Attr]\nclass Subject {}\nvar_dump((new ReflectionClass(Subject::class))->getAttributes()[0]->newInstance());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/validator_success.phpt",
+            "--TEST--\ndelayed target validation\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[AllowDynamicProperties]\nclass Bag {}\nvar_dump((new ReflectionClass(Bag::class))->getAttributes()[1]->newInstance());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/ossfuzz371445205.phpt",
+            "--TEST--\nunknown named attribute parameter\n--FILE--\n<?php\n#[Attribute]\nclass MyAttrib {}\n#[MyAttrib(notinterned: '')]\nclass Test1 {}\n(new ReflectionClass(Test1::class))->getAttributes()[0]->newInstance();\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/ReflectionAttribute_constructor_001.phpt",
+            "--TEST--\nreflection attribute constructor\n--FILE--\n<?php\n#[Attribute]\nclass A {}\nclass Foo { #[A] public function bar() {} }\n$attribute = (new ReflectionMethod(Foo::class, 'bar'))->getAttributes()[0];\n(new ReflectionMethod($attribute, '__construct'))->invoke($attribute);\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/ReflectionAttribute_newInstance_deprecated.phpt",
+            "--TEST--\nreflection attribute deprecated\n--FILE--\n<?php\n#[Deprecated(since: '2.0')]\nfunction old_api() {}\nvar_dump((new ReflectionFunction('old_api'))->getAttributes()[0]->newInstance());\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/ReflectionAttribute_newInstance_exception.phpt",
+            "--TEST--\nreflection attribute new instance exception\n--FILE--\n<?php\n#[Attribute]\nclass A { public function __construct() { throw new Exception('boom'); } }\n#[A]\nclass C {}\n(new ReflectionClass(C::class))->getAttributes()[0]->newInstance();\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/attributes/032_attribute_validation_scope.phpt",
             "--TEST--\nattribute validation scope\n--FILE--\n<?php\n#[Attribute(parent::x)]\nclass x extends y {}\nclass y { protected const x = Attribute::TARGET_CLASS; }\n#[x]\nclass z {}\nvar_dump((new ReflectionClass(z::class))->getAttributes()[0]->newInstance());\n--EXPECT--\n",
         ),
