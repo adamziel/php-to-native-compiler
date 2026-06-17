@@ -36046,7 +36046,9 @@ static PtnValue ptn_internal_sizeof(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
-    int64_t previous_level = runtime->diagnostics.error_reporting;
+    int64_t previous_level = runtime->diagnostics.suppressed > 0
+        ? 0
+        : runtime->diagnostics.error_reporting;
     if (argc >= 1) {
         runtime->diagnostics.error_reporting = ptn_value_to_integer(args[0]);
     }
