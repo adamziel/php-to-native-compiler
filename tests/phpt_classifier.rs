@@ -1061,8 +1061,8 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "autoload call helper",
             "--TEST--\nautoload\n--FILE--\n<?php\nspl_autoload_call('Missing');\n--EXPECT--\n",
-            "unsupported-autoload-metadata\t",
-            "requires runtime class autoload symbol-table mutation",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "autoload include class declaration",

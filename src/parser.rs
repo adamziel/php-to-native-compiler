@@ -44,9 +44,24 @@ pub fn parse(source: &str) -> Result<Program> {
     parse_with_runtime_class_aliases(source, &HashMap::new())
 }
 
+pub(crate) fn parse_for_include_collection(
+    source: &str,
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<Program> {
+    parse_with_options(source, runtime_class_aliases, false)
+}
+
 pub(crate) fn parse_with_runtime_class_aliases(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
+) -> Result<Program> {
+    parse_with_options(source, runtime_class_aliases, true)
+}
+
+fn parse_with_options(
+    source: &str,
+    runtime_class_aliases: &HashMap<String, String>,
+    validate_method_signatures: bool,
 ) -> Result<Program> {
     let tokens = lex(source)?;
     let compiler_halt_offset = find_compiler_halt_offset(&tokens);
@@ -76,6 +91,7 @@ pub(crate) fn parse_with_runtime_class_aliases(
         strict_types: false,
         compiler_halt_offset,
         compile_warnings: Vec::new(),
+        validate_method_signatures,
     }
     .parse_program()
 }
@@ -106,6 +122,7 @@ struct Parser<'a> {
     strict_types: bool,
     compiler_halt_offset: Option<i64>,
     compile_warnings: Vec<CompileWarning>,
+    validate_method_signatures: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -293,11 +310,13 @@ impl Parser<'_> {
         validate_interface_method_conflicts(&classes)?;
         validate_override_attributes(&classes, &traits)?;
         validate_traversable_implementations(&classes)?;
-        validate_method_signature_compatibility(
-            &classes,
-            &self.runtime_class_aliases,
-            &mut self.compile_warnings,
-        )?;
+        if self.validate_method_signatures {
+            validate_method_signature_compatibility(
+                &classes,
+                &self.runtime_class_aliases,
+                &mut self.compile_warnings,
+            )?;
+        }
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
@@ -14701,6 +14720,10 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "method_exists"
             | "microtime"
             | "property_exists"
+            | "spl_autoload_call"
+            | "spl_autoload_functions"
+            | "spl_autoload_register"
+            | "spl_autoload_unregister"
             | "spl_object_hash"
             | "spl_object_id"
     )

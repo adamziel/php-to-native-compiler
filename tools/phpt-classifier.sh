@@ -1288,7 +1288,7 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_has_unmodeled_spl_function(line) {
             return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|iterator_to_array|spl_classes|class_implements|class_parents|class_uses)[[:space:]]*\(/ ||
-                line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_(call|extensions|functions|unregister))?[[:space:]]*\(/ ||
+                line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_extensions)?[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }
         function ptn_supported_anonymous_get_class_row() {
@@ -1408,7 +1408,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_(call|extensions|functions|unregister))?)[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
                 exit
@@ -1732,7 +1732,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_(call|extensions|functions|unregister))?)[[:space:]]*\(/) {
+            if (line ~ /(^|[^[:alnum:]_$])(__autoload|spl_autoload(_extensions)?)[[:space:]]*\(/) {
                 print "unsupported-autoload-metadata\trequires runtime class autoload symbol-table mutation, outside PTN static class metadata"
                 found = 1
                 exit

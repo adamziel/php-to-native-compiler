@@ -36186,7 +36186,10 @@ static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnV
 static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_autoload_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_autoload_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_spl_autoload_unregister(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_object_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_time(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -36634,7 +36637,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "sleep", 1, 1, ptn_internal_sleep },
         { "sort", 1, 2, ptn_internal_sort },
         { "soundex", 1, 1, ptn_internal_soundex },
+        { "spl_autoload_call", 1, 1, ptn_internal_spl_autoload_call },
+        { "spl_autoload_functions", 0, 0, ptn_internal_spl_autoload_functions },
         { "spl_autoload_register", 0, 3, ptn_internal_spl_autoload_register },
+        { "spl_autoload_unregister", 1, 1, ptn_internal_spl_autoload_unregister },
         { "spl_object_hash", 1, 1, ptn_internal_spl_object_hash },
         { "spl_object_id", 1, 1, ptn_internal_spl_object_id },
         { "sprintf", 1, PTN_VARIADIC_ARGS, ptn_internal_sprintf },
@@ -45362,6 +45368,91 @@ static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const
     return ptn_bool(registered);
 }
 
+static int ptn_spl_autoload_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out) {
+    callable = ptn_value_deref(callable);
+    if (callable.type != PTN_ARRAY || callable.as.array->len != 2) {
+        return 0;
+    }
+    PtnArrayKey scope_key = ptn_array_int_key(0);
+    PtnArrayKey method_key = ptn_array_int_key(1);
+    PtnArrayEntry *scope_entry = ptn_array_entry_for_key(callable.as.array, scope_key);
+    PtnArrayEntry *method_entry = ptn_array_entry_for_key(callable.as.array, method_key);
+    ptn_array_key_free(scope_key);
+    ptn_array_key_free(method_key);
+    if (scope_entry == NULL || method_entry == NULL) {
+        return 0;
+    }
+    *scope_out = ptn_value_deref(scope_entry->value);
+    *method_out = ptn_value_deref(method_entry->value);
+    return 1;
+}
+
+static const char *ptn_spl_autoload_scope_class_name(PtnValue scope, char **owned) {
+    *owned = NULL;
+    scope = ptn_value_deref(scope);
+    if (scope.type == PTN_STRING) {
+        *owned = ptn_value_to_string(scope);
+        return ptn_symbol_name_without_leading_slash(*owned);
+    }
+    if (scope.type == PTN_OBJECT) {
+        return scope.as.object->class_name;
+    }
+    if (scope.type == PTN_EXCEPTION) {
+        return scope.as.exception->class_name;
+    }
+    if (scope.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    return NULL;
+}
+
+static int ptn_spl_autoload_callbacks_equivalent(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    if (ptn_compare_equal(runtime, left, right, line)) {
+        return 1;
+    }
+
+    PtnValue left_scope;
+    PtnValue left_method;
+    PtnValue right_scope;
+    PtnValue right_method;
+    if (!ptn_spl_autoload_array_parts(left, &left_scope, &left_method) ||
+        !ptn_spl_autoload_array_parts(right, &right_scope, &right_method) ||
+        ptn_value_deref(left_method).type != PTN_STRING ||
+        ptn_value_deref(right_method).type != PTN_STRING) {
+        return 0;
+    }
+
+    char *left_method_name = ptn_value_to_string(left_method);
+    char *right_method_name = ptn_value_to_string(right_method);
+    if (!ptn_ascii_case_equal(left_method_name, right_method_name)) {
+        free(right_method_name);
+        free(left_method_name);
+        return 0;
+    }
+
+    char *left_owned_class = NULL;
+    char *right_owned_class = NULL;
+    const char *left_class_name =
+        ptn_spl_autoload_scope_class_name(left_scope, &left_owned_class);
+    const char *right_class_name =
+        ptn_spl_autoload_scope_class_name(right_scope, &right_owned_class);
+    int equivalent = left_class_name != NULL &&
+        right_class_name != NULL &&
+        ptn_ascii_case_equal(left_class_name, right_class_name) &&
+        ptn_declared_class_static_method_is_callable(left_class_name, left_method_name, NULL);
+
+    free(right_owned_class);
+    free(left_owned_class);
+    free(right_method_name);
+    free(left_method_name);
+    return equivalent;
+}
+
 static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
@@ -45373,6 +45464,18 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
         : ptn_internal_expect_callback_arg(runtime, "spl_autoload_register", 1, "callback", args[0]);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+
+    for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
+        if (ptn_spl_autoload_callbacks_equivalent(
+                runtime,
+                root->autoload_callbacks[i],
+                callback,
+                line
+            )) {
+            ptn_value_destroy(&callback);
+            return ptn_bool(1);
+        }
     }
 
     int prepend = argc >= 3 && ptn_is_truthy(args[2]);
@@ -45407,6 +45510,85 @@ static PtnValue ptn_internal_spl_autoload_register(PtnRuntime *runtime, size_t a
     root->autoload_callbacks_len++;
     (void)line;
     return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_spl_autoload_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *class_name = ptn_value_to_string(args[0]);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(class_name);
+    ptn_runtime_autoload_class(runtime, lookup_name, line);
+    free(class_name);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_spl_autoload_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (root == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_value_clone(root->autoload_callbacks[i])
+        );
+    }
+    return result;
+}
+
+static PtnValue ptn_internal_spl_autoload_unregister(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return ptn_bool(0);
+    }
+
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "spl_autoload_unregister",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnValue resolved = ptn_value_deref(callback);
+    if (resolved.type == PTN_STRING) {
+        char *name = ptn_value_to_string(resolved);
+        if (ptn_ascii_case_equal(name, "spl_autoload_call")) {
+            ptn_emit_deprecation(&runtime->diagnostics, "spl_autoload_unregister(): Using spl_autoload_call() as a callback for spl_autoload_unregister() is deprecated, to remove all registered autoloaders, call spl_autoload_unregister() for all values returned from spl_autoload_functions()", line);
+            free(name);
+            ptn_value_destroy(&callback);
+            return ptn_bool(1);
+        }
+        free(name);
+    }
+
+    for (size_t i = 0; i < root->autoload_callbacks_len; i++) {
+        if (!ptn_compare_equal(runtime, root->autoload_callbacks[i], callback, line)) {
+            continue;
+        }
+        ptn_value_destroy(&root->autoload_callbacks[i]);
+        if (i + 1 < root->autoload_callbacks_len) {
+            memmove(
+                root->autoload_callbacks + i,
+                root->autoload_callbacks + i + 1,
+                (root->autoload_callbacks_len - i - 1) * sizeof(PtnValue)
+            );
+        }
+        root->autoload_callbacks_len--;
+        ptn_value_destroy(&callback);
+        return ptn_bool(1);
+    }
+
+    ptn_value_destroy(&callback);
+    return ptn_bool(0);
 }
 
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

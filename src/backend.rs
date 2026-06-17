@@ -12514,6 +12514,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("call_user_func_array")
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("register_shutdown_function")
+        || name.eq_ignore_ascii_case("spl_autoload_call")
         || name.eq_ignore_ascii_case("spl_autoload_register")
 }
 

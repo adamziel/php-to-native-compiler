@@ -11,11 +11,17 @@ use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSource};
 use crate::lexer::decode_php_source_bytes;
-use crate::parser::{parse, parse_with_runtime_class_aliases};
+use crate::parser::{parse_for_include_collection, parse_with_runtime_class_aliases};
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
 
 type IncludePathEnv = HashMap<String, Vec<String>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IncludePathTemplatePart {
+    Static(String),
+    Dynamic,
+}
 
 #[derive(Debug, Clone)]
 pub struct CompileOptions {
@@ -33,14 +39,15 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         Diagnostic::new(format!("failed to read {}: {error}", input.display()), None)
     })?;
     let source = decode_php_source_bytes(&source_bytes);
-    let program = parse(&source)?;
+    let include_program = parse_for_include_collection(&source, &HashMap::new())?;
     let source_file = input.to_string_lossy().into_owned();
     let source_dir = input
         .parent()
         .map(|parent| parent.to_string_lossy().into_owned())
         .unwrap_or_default();
     let mut includes = IncludeCollector::new();
-    includes.collect_program(&program, &source_file, &source_dir)?;
+    includes.collect_program(&include_program, &source_file, &source_dir)?;
+    let program = parse_with_runtime_class_aliases(&source, &includes.runtime_class_aliases)?;
     let include_sources = includes.sources;
     let include_resolutions = includes.resolutions;
     let module = lower_with_source_and_includes(
@@ -1040,7 +1047,7 @@ impl IncludeCollector {
             )
         })?;
         let source = decode_php_source_bytes(&source_bytes);
-        let program = parse_with_runtime_class_aliases(&source, &self.runtime_class_aliases)?;
+        let program = parse_for_include_collection(&source, &self.runtime_class_aliases)?;
 
         let index = self.sources.len();
         self.by_path.insert(canonical_path.clone(), index);
@@ -1056,6 +1063,8 @@ impl IncludeCollector {
             program: program.clone(),
         });
         self.collect_program(&program, &source_file, &source_dir)?;
+        self.sources[index].program =
+            parse_with_runtime_class_aliases(&source, &self.runtime_class_aliases)?;
         Ok(index)
     }
 
@@ -1096,6 +1105,18 @@ fn bounded_include_paths(
     source_dir: &str,
     path_env: &IncludePathEnv,
 ) -> Option<Vec<String>> {
+    if let Some(paths) = bounded_static_include_paths(expr, source_file, source_dir, path_env) {
+        return Some(paths);
+    }
+    bounded_dynamic_include_paths(expr, source_file, source_dir, path_env)
+}
+
+fn bounded_static_include_paths(
+    expr: &Expr,
+    source_file: &str,
+    source_dir: &str,
+    path_env: &IncludePathEnv,
+) -> Option<Vec<String>> {
     match expr {
         Expr::String(value, _) => Some(vec![value.clone()]),
         Expr::InterpolatedString(parts, _) => bounded_interpolated_string_paths(parts, path_env),
@@ -1114,7 +1135,8 @@ fn bounded_include_paths(
         } if name.eq_ignore_ascii_case("dirname")
             && (arguments.len() == 1 || arguments.len() == 2) =>
         {
-            let paths = bounded_include_paths(&arguments[0], source_file, source_dir, path_env)?;
+            let paths =
+                bounded_static_include_paths(&arguments[0], source_file, source_dir, path_env)?;
             let levels = if arguments.len() == 2 {
                 match &arguments[1] {
                     Expr::Int(levels, _) if *levels >= 1 => usize::try_from(*levels).ok()?,
@@ -1132,7 +1154,8 @@ fn bounded_include_paths(
         Expr::Call {
             name, arguments, ..
         } if name.eq_ignore_ascii_case("realpath") && arguments.len() == 1 => {
-            let paths = bounded_include_paths(&arguments[0], source_file, source_dir, path_env)?;
+            let paths =
+                bounded_static_include_paths(&arguments[0], source_file, source_dir, path_env)?;
             let mut resolved = Vec::new();
             for path in paths {
                 let canonical = fs::canonicalize(PathBuf::from(path)).ok()?;
@@ -1146,8 +1169,9 @@ fn bounded_include_paths(
             right,
             ..
         } => {
-            let left_paths = bounded_include_paths(left, source_file, source_dir, path_env)?;
-            let right_paths = bounded_include_paths(right, source_file, source_dir, path_env)?;
+            let left_paths = bounded_static_include_paths(left, source_file, source_dir, path_env)?;
+            let right_paths =
+                bounded_static_include_paths(right, source_file, source_dir, path_env)?;
             concat_bounded_include_paths(&left_paths, &right_paths)
         }
         Expr::Ternary {
@@ -1158,10 +1182,11 @@ fn bounded_include_paths(
         } => {
             let mut paths = Vec::new();
             let true_expr = if_true.as_deref().unwrap_or(condition);
-            for path in bounded_include_paths(true_expr, source_file, source_dir, path_env)? {
+            for path in bounded_static_include_paths(true_expr, source_file, source_dir, path_env)?
+            {
                 push_unique_string(&mut paths, path);
             }
-            for path in bounded_include_paths(if_false, source_file, source_dir, path_env)? {
+            for path in bounded_static_include_paths(if_false, source_file, source_dir, path_env)? {
                 push_unique_string(&mut paths, path);
             }
             if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
@@ -1172,7 +1197,9 @@ fn bounded_include_paths(
         Expr::Match { arms, .. } => {
             let mut paths = Vec::new();
             for arm in arms {
-                for path in bounded_include_paths(&arm.value, source_file, source_dir, path_env)? {
+                for path in
+                    bounded_static_include_paths(&arm.value, source_file, source_dir, path_env)?
+                {
                     push_unique_string(&mut paths, path);
                 }
                 if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
@@ -1182,10 +1209,384 @@ fn bounded_include_paths(
             Some(paths)
         }
         Expr::Grouped { expr, .. } => {
-            bounded_include_paths(expr, source_file, source_dir, path_env)
+            bounded_static_include_paths(expr, source_file, source_dir, path_env)
         }
         _ => None,
     }
+}
+
+fn bounded_dynamic_include_paths(
+    expr: &Expr,
+    source_file: &str,
+    source_dir: &str,
+    path_env: &IncludePathEnv,
+) -> Option<Vec<String>> {
+    let templates = bounded_include_path_templates(expr, source_file, source_dir, path_env)?;
+    let mut paths = Vec::new();
+    let mut saw_dynamic = false;
+    for template in templates {
+        if !template
+            .iter()
+            .any(|part| matches!(part, IncludePathTemplatePart::Dynamic))
+        {
+            continue;
+        }
+        saw_dynamic = true;
+        for path in expand_dynamic_include_template(&template, source_dir)? {
+            push_unique_string(&mut paths, path);
+            if paths.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                return None;
+            }
+        }
+    }
+    if saw_dynamic && !paths.is_empty() {
+        Some(paths)
+    } else {
+        None
+    }
+}
+
+fn bounded_include_path_templates(
+    expr: &Expr,
+    source_file: &str,
+    source_dir: &str,
+    path_env: &IncludePathEnv,
+) -> Option<Vec<Vec<IncludePathTemplatePart>>> {
+    match expr {
+        Expr::String(value, _) => Some(vec![vec![IncludePathTemplatePart::Static(value.clone())]]),
+        Expr::InterpolatedString(parts, _) => {
+            bounded_interpolated_string_templates(parts, path_env)
+        }
+        Expr::Variable(name, _) => {
+            if let Some(paths) = path_env.get(name) {
+                Some(
+                    paths
+                        .iter()
+                        .map(|path| vec![IncludePathTemplatePart::Static(path.clone())])
+                        .collect(),
+                )
+            } else {
+                Some(vec![vec![IncludePathTemplatePart::Dynamic]])
+            }
+        }
+        Expr::MagicConstant(MagicConstantKind::File, _) => {
+            Some(vec![vec![IncludePathTemplatePart::Static(
+                source_file.to_string(),
+            )]])
+        }
+        Expr::MagicConstant(MagicConstantKind::Dir, _) => {
+            Some(vec![vec![IncludePathTemplatePart::Static(
+                source_dir.to_string(),
+            )]])
+        }
+        Expr::Constant(name, _) if name == "DIRECTORY_SEPARATOR" => {
+            Some(vec![vec![IncludePathTemplatePart::Static(
+                std::path::MAIN_SEPARATOR.to_string(),
+            )]])
+        }
+        Expr::Constant(name, _) if name == "PATH_SEPARATOR" => {
+            Some(vec![vec![IncludePathTemplatePart::Static(
+                if cfg!(windows) { ";" } else { ":" }.to_string(),
+            )]])
+        }
+        Expr::Call {
+            name, arguments, ..
+        } if arguments.len() == 1
+            && (name.eq_ignore_ascii_case("strtolower")
+                || name.eq_ignore_ascii_case("strtoupper")
+                || name.eq_ignore_ascii_case("lcfirst")
+                || name.eq_ignore_ascii_case("ucfirst")) =>
+        {
+            let templates =
+                bounded_include_path_templates(&arguments[0], source_file, source_dir, path_env)?;
+            let mut transformed = Vec::new();
+            for template in templates {
+                if template
+                    .iter()
+                    .any(|part| matches!(part, IncludePathTemplatePart::Dynamic))
+                {
+                    transformed.push(vec![IncludePathTemplatePart::Dynamic]);
+                    continue;
+                }
+                let mut value = template_to_string(&template);
+                if name.eq_ignore_ascii_case("strtolower") {
+                    value = value.to_ascii_lowercase();
+                } else if name.eq_ignore_ascii_case("strtoupper") {
+                    value = value.to_ascii_uppercase();
+                } else if name.eq_ignore_ascii_case("lcfirst") {
+                    if let Some(first) = value.get_mut(0..1) {
+                        first.make_ascii_lowercase();
+                    }
+                } else if let Some(first) = value.get_mut(0..1) {
+                    first.make_ascii_uppercase();
+                }
+                transformed.push(vec![IncludePathTemplatePart::Static(value)]);
+            }
+            Some(transformed)
+        }
+        Expr::Binary {
+            op: BinaryOp::Concat,
+            left,
+            right,
+            ..
+        } => {
+            let left_templates =
+                bounded_include_path_templates(left, source_file, source_dir, path_env)?;
+            let right_templates =
+                bounded_include_path_templates(right, source_file, source_dir, path_env)?;
+            concat_include_path_templates(&left_templates, &right_templates)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            let mut templates = Vec::new();
+            let true_expr = if_true.as_deref().unwrap_or(condition);
+            for template in
+                bounded_include_path_templates(true_expr, source_file, source_dir, path_env)?
+            {
+                push_unique_template(&mut templates, template);
+            }
+            for template in
+                bounded_include_path_templates(if_false, source_file, source_dir, path_env)?
+            {
+                push_unique_template(&mut templates, template);
+            }
+            if templates.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                return None;
+            }
+            Some(templates)
+        }
+        Expr::Match { arms, .. } => {
+            let mut templates = Vec::new();
+            for arm in arms {
+                for template in
+                    bounded_include_path_templates(&arm.value, source_file, source_dir, path_env)?
+                {
+                    push_unique_template(&mut templates, template);
+                }
+                if templates.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
+                    return None;
+                }
+            }
+            Some(templates)
+        }
+        Expr::Grouped { expr, .. } => {
+            bounded_include_path_templates(expr, source_file, source_dir, path_env)
+        }
+        _ => None,
+    }
+}
+
+fn bounded_interpolated_string_templates(
+    parts: &[StringPart],
+    path_env: &IncludePathEnv,
+) -> Option<Vec<Vec<IncludePathTemplatePart>>> {
+    let mut templates = vec![Vec::new()];
+    for part in parts {
+        match part {
+            StringPart::Literal(value) => {
+                for template in &mut templates {
+                    push_template_static(template, value.clone());
+                }
+            }
+            StringPart::Variable(name) | StringPart::LegacyDollarBraceVariable(name) => {
+                if let Some(values) = path_env.get(name) {
+                    if templates.len().saturating_mul(values.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES
+                    {
+                        return None;
+                    }
+                    let mut expanded = Vec::new();
+                    for template in &templates {
+                        for value in values {
+                            let mut next = template.clone();
+                            push_template_static(&mut next, value.clone());
+                            push_unique_template(&mut expanded, next);
+                        }
+                    }
+                    templates = expanded;
+                } else {
+                    for template in &mut templates {
+                        template.push(IncludePathTemplatePart::Dynamic);
+                    }
+                }
+            }
+            StringPart::PropertyFetch { .. }
+            | StringPart::PropertyChain { .. }
+            | StringPart::MethodCall { .. }
+            | StringPart::ArrayAccess { .. } => return None,
+        }
+    }
+    Some(templates)
+}
+
+fn concat_include_path_templates(
+    left: &[Vec<IncludePathTemplatePart>],
+    right: &[Vec<IncludePathTemplatePart>],
+) -> Option<Vec<Vec<IncludePathTemplatePart>>> {
+    if left.len().saturating_mul(right.len()) > MAX_BOUNDED_INCLUDE_CANDIDATES {
+        return None;
+    }
+    let mut templates = Vec::new();
+    for left_template in left {
+        for right_template in right {
+            let mut template = left_template.clone();
+            for part in right_template {
+                match part {
+                    IncludePathTemplatePart::Static(value) => {
+                        push_template_static(&mut template, value.clone());
+                    }
+                    IncludePathTemplatePart::Dynamic => {
+                        template.push(IncludePathTemplatePart::Dynamic);
+                    }
+                }
+            }
+            push_unique_template(&mut templates, template);
+        }
+    }
+    Some(templates)
+}
+
+fn push_template_static(template: &mut Vec<IncludePathTemplatePart>, value: String) {
+    if value.is_empty() {
+        return;
+    }
+    if let Some(IncludePathTemplatePart::Static(previous)) = template.last_mut() {
+        previous.push_str(&value);
+    } else {
+        template.push(IncludePathTemplatePart::Static(value));
+    }
+}
+
+fn push_unique_template(
+    templates: &mut Vec<Vec<IncludePathTemplatePart>>,
+    template: Vec<IncludePathTemplatePart>,
+) {
+    if !templates.contains(&template) {
+        templates.push(template);
+    }
+}
+
+fn template_to_string(template: &[IncludePathTemplatePart]) -> String {
+    let mut value = String::new();
+    for part in template {
+        if let IncludePathTemplatePart::Static(segment) = part {
+            value.push_str(segment);
+        }
+    }
+    value
+}
+
+fn expand_dynamic_include_template(
+    template: &[IncludePathTemplatePart],
+    source_dir: &str,
+) -> Option<Vec<String>> {
+    let pattern = template_to_marker_pattern(template);
+    let first_dynamic = pattern.find('\0')?;
+    let static_prefix = &pattern[..first_dynamic];
+    let separator_index = last_path_separator_before(static_prefix, static_prefix.len());
+    let (dir_part, filename_pattern) = if let Some(index) = separator_index {
+        let dir = if index == 0 && static_prefix.starts_with('/') {
+            "/"
+        } else {
+            &static_prefix[..index]
+        };
+        (dir, &pattern[index + 1..])
+    } else {
+        ("", pattern.as_str())
+    };
+    if filename_pattern.chars().any(is_path_separator) {
+        return None;
+    }
+    if filename_pattern.split('\0').all(str::is_empty) {
+        return None;
+    }
+
+    let dir_path = if dir_part.is_empty() {
+        PathBuf::from(source_dir)
+    } else if Path::new(dir_part).is_absolute() {
+        PathBuf::from(dir_part)
+    } else {
+        Path::new(source_dir).join(dir_part)
+    };
+    let entries = fs::read_dir(&dir_path).ok()?;
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let entry = entry.ok()?;
+        let file_name = entry.file_name();
+        let file_name = file_name.to_string_lossy();
+        if !marker_pattern_matches(&file_name, filename_pattern) {
+            continue;
+        }
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        push_unique_string(&mut candidates, path.to_string_lossy().into_owned());
+        if candidates.len() > MAX_BOUNDED_INCLUDE_CANDIDATES {
+            return None;
+        }
+    }
+    candidates.sort();
+    Some(candidates)
+}
+
+fn template_to_marker_pattern(template: &[IncludePathTemplatePart]) -> String {
+    let mut pattern = String::new();
+    for part in template {
+        match part {
+            IncludePathTemplatePart::Static(value) => pattern.push_str(value),
+            IncludePathTemplatePart::Dynamic => pattern.push('\0'),
+        }
+    }
+    pattern
+}
+
+fn last_path_separator_before(value: &str, end: usize) -> Option<usize> {
+    value[..end]
+        .char_indices()
+        .filter_map(|(index, ch)| is_path_separator(ch).then_some(index))
+        .last()
+}
+
+fn is_path_separator(ch: char) -> bool {
+    ch == '/' || (cfg!(windows) && ch == '\\')
+}
+
+fn marker_pattern_matches(name: &str, pattern: &str) -> bool {
+    let chunks: Vec<_> = pattern.split('\0').collect();
+    if chunks.len() <= 1 || chunks.iter().all(|chunk| chunk.is_empty()) {
+        return false;
+    }
+
+    let mut offset = 0;
+    if let Some(first) = chunks.first() {
+        if !first.is_empty() {
+            if !name.starts_with(first) {
+                return false;
+            }
+            offset = first.len();
+        }
+    }
+
+    for chunk in chunks.iter().skip(1).take(chunks.len().saturating_sub(2)) {
+        if chunk.is_empty() {
+            continue;
+        }
+        let Some(found) = name[offset..].find(chunk) else {
+            return false;
+        };
+        offset += found + chunk.len();
+    }
+
+    if let Some(last) = chunks.last() {
+        if !last.is_empty() && !name[offset..].ends_with(last) {
+            return false;
+        }
+    }
+    true
 }
 
 fn bounded_interpolated_string_paths(

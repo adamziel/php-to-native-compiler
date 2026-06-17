@@ -15559,6 +15559,55 @@ var_dump(constant(\"\\\\LOOKUP_CONST\"));
 }
 
 #[test]
+fn compile_spl_autoload_registry_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-autoload-registry-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-autoload-registry-helpers.php");
+    let output = root.join("spl-autoload-registry-helpers-bin");
+    fs::write(
+        &input,
+        "<?php
+function loader_one($class) {
+    echo \"one:$class\\n\";
+}
+function loader_two($class) {
+    echo \"two:$class\\n\";
+}
+spl_autoload_register('loader_one');
+spl_autoload_register('loader_two');
+var_dump(count(spl_autoload_functions()));
+spl_autoload_call('MissingClass');
+var_dump(spl_autoload_unregister('loader_one'));
+var_dump(count(spl_autoload_functions()));
+spl_autoload_call('OtherClass');
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "one:MissingClass\n",
+            "two:MissingClass\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "two:OtherClass\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_spl_autoload_call"));
+    assert!(c_source.contains("ptn_internal_spl_autoload_functions"));
+    assert!(c_source.contains("ptn_internal_spl_autoload_unregister"));
+}
+
+#[test]
 fn compile_class_object_metadata_lists_to_native_binary() {
     let root = temp_dir("ptn-native-class-object-metadata-lists");
     fs::create_dir_all(&root).unwrap();
@@ -32667,6 +32716,38 @@ fn compile_include_path_variable_concatenation_to_native_binary() {
 }
 
 #[test]
+fn compile_include_path_dynamic_filename_segment_to_native_binary() {
+    let root = temp_dir("ptn-native-include-path-dynamic-filename-segment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let alpha = root.join("plain_alpha.inc");
+    let beta = root.join("plain_beta.inc");
+    let output = root.join("include-path-dynamic-filename-segment-bin");
+    fs::write(&alpha, "<?php echo \"alpha\\n\"; return \"A\";").unwrap();
+    fs::write(&beta, "<?php echo \"beta\\n\"; return \"B\";").unwrap();
+    fs::write(
+        &input,
+        "<?php function load_named($name) { return include __DIR__ . \"/plain_\" . $name . \".inc\"; } $result = load_named(\"beta\"); echo \"result=$result\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "beta\nresult=B\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_resolve_path"));
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_include_file_1(&runtime)"));
+}
+
+#[test]
 fn compile_include_exports_include_path_variable_to_native_binary() {
     let root = temp_dir("ptn-native-include-exported-path-variable");
     fs::create_dir_all(&root).unwrap();
@@ -41557,6 +41638,44 @@ class A {
 class B extends A {
     public function test(Bar $foo) {}
 }
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "done\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_included_class_alias_signature_compatibility_to_native_binary() {
+    let root = temp_dir("ptn-native-included-class-alias-signature");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("included-class-alias-signature.php");
+    let include = root.join("included-class-alias-signature.inc.php");
+    let output = root.join("included-class-alias-signature-bin");
+    fs::write(
+        &include,
+        r#"<?php
+class Foo {}
+class_alias('Foo', 'Bar');
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        r#"<?php
+require __DIR__ . '/included-class-alias-signature.inc.php';
+class A {
+    public function test(Foo $foo) {}
+}
+class B extends A {
+    public function test(Bar $foo) {}
+}
+echo "done\n";
 "#,
     )
     .unwrap();
