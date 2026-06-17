@@ -38386,7 +38386,12 @@ static PtnValue ptn_declared_function_reflection_attributes(PtnRuntime *runtime,
 static PtnValue ptn_declared_closure_reflection_attributes(PtnRuntime *runtime, size_t function_index, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_function_parameter_reflection_attributes(PtnRuntime *runtime, const char *function_name, size_t parameter_index, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_constant_attributes(PtnRuntime *runtime, const char *constant_name, size_t argc, const PtnValue *args, size_t line);
-static int ptn_declared_attribute_class_flags(const char *class_name, int *found_out);
+static int ptn_declared_attribute_class_flags(
+    const char *class_name,
+    int *found_out,
+    const char **error_class_out,
+    const char **error_message_out
+);
 static PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name);
@@ -41703,7 +41708,14 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             return ptn_null();
         }
         int attribute_class_found = 0;
-        int attribute_flags = ptn_declared_attribute_class_flags(data->name, &attribute_class_found);
+        const char *attribute_flags_error_class = NULL;
+        const char *attribute_flags_error_message = NULL;
+        int attribute_flags = ptn_declared_attribute_class_flags(
+            data->name,
+            &attribute_class_found,
+            &attribute_flags_error_class,
+            &attribute_flags_error_message
+        );
         if (!attribute_class_found) {
             if (ptn_internal_class_name_is_attribute(data->name)) {
                 attribute_class_found = 1;
@@ -41724,6 +41736,14 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
                 ptn_abort_out_of_memory();
             }
             ptn_throw_exception(runtime, "Error", message);
+            return ptn_null();
+        }
+        if (attribute_flags_error_message != NULL) {
+            ptn_throw_exception(
+                runtime,
+                attribute_flags_error_class == NULL ? "Error" : attribute_flags_error_class,
+                attribute_flags_error_message
+            );
             return ptn_null();
         }
         if (attribute_flags == 0) {

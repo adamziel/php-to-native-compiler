@@ -18072,6 +18072,110 @@ var_dump($all, Attribute::TARGET_ALL, $all === Attribute::TARGET_ALL);
 }
 
 #[test]
+fn compile_attribute_class_flags_resolve_scoped_class_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-attribute-class-scoped-flags");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-class-scoped-flags.php");
+    let output = root.join("attribute-class-scoped-flags-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute(parent::TARGETS)]
+class ScopedAttribute extends ScopedAttributeBase {}
+
+class ScopedAttributeBase {
+    protected const TARGETS = Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE;
+}
+
+#[ScopedAttribute]
+#[ScopedAttribute]
+class ScopedSubject {}
+
+$attributes = (new ReflectionClass(ScopedSubject::class))->getAttributes();
+echo count($attributes), \"\\n\";
+$instance = $attributes[0]->newInstance();
+var_dump(get_class($instance));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2\nstring(15) \"ScopedAttribute\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_attribute_class_flags"));
+    assert!(c_source.contains("return 129;"));
+}
+
+#[test]
+fn compile_attribute_class_flags_defer_invalid_constructor_metadata_to_new_instance() {
+    let root = temp_dir("ptn-native-attribute-invalid-flags");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-invalid-flags.php");
+    let output = root.join("attribute-invalid-flags-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute(\"bad\")]
+class StringFlags {}
+
+#[StringFlags]
+class UsesStringFlags {}
+
+#[Attribute(-1)]
+class NegativeFlags {}
+
+#[NegativeFlags]
+class UsesNegativeFlags {}
+
+#[Attribute(MissingFlags::VALUE)]
+class MissingFlagsAttribute {}
+
+#[MissingFlagsAttribute]
+class UsesMissingFlags {}
+
+function show_attribute_error(string $className): void {
+    try {
+        (new ReflectionClass($className))->getAttributes()[0]->newInstance();
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+show_attribute_error(UsesStringFlags::class);
+show_attribute_error(UsesNegativeFlags::class);
+show_attribute_error(UsesMissingFlags::class);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Attribute::__construct(): Argument #1 ($flags) must be of type int, string given\n",
+            "Invalid attribute flags specified\n",
+            "Class \"MissingFlags\" not found\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("error_message_out"));
+    assert!(c_source.contains("Invalid attribute flags specified"));
+}
+
+#[test]
 fn compile_reflection_attribute_self_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-attribute-self");
     fs::create_dir_all(&root).unwrap();

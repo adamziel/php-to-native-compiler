@@ -5162,6 +5162,40 @@ impl Parser<'_> {
                         );
                     }
                 }
+                TokenKind::Plus | TokenKind::Minus if bracket_depth == 1 && paren_depth == 1 => {
+                    let negative = matches!(token.kind, TokenKind::Minus);
+                    match self.peek().kind.clone() {
+                        TokenKind::Int(value) => {
+                            self.advance();
+                            let text = if negative {
+                                format!("-{value}")
+                            } else {
+                                value.to_string()
+                            };
+                            arguments.record_typed_text(
+                                pending_argument_name.take(),
+                                text,
+                                ParsedAttributeArgumentKind::Int,
+                                span,
+                            );
+                        }
+                        TokenKind::Float(value) => {
+                            self.advance();
+                            let text = if negative {
+                                format!("-{value}")
+                            } else {
+                                value.to_string()
+                            };
+                            arguments.record_typed_text(
+                                pending_argument_name.take(),
+                                text,
+                                ParsedAttributeArgumentKind::Float,
+                                span,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
                 TokenKind::String(value) if bracket_depth == 1 && paren_depth == 1 => {
                     arguments.record_typed_text(
                         pending_argument_name.take(),

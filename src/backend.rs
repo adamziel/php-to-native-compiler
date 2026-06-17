@@ -5702,22 +5702,39 @@ fn emit_declared_function_reflection_attributes(
 
 fn emit_declared_attribute_class_flags(out: &mut String, classes: &[ClassDecl]) {
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_attribute_class_flags(const char *class_name, int *found_out) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_attribute_class_flags(const char *class_name, int *found_out, const char **error_class_out, const char **error_message_out) {\n",
     );
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     out.push_str("    *found_out = 1;\n");
+    out.push_str("    if (error_class_out != NULL) {\n");
+    out.push_str("        *error_class_out = NULL;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (error_message_out != NULL) {\n");
+    out.push_str("        *error_message_out = NULL;\n");
+    out.push_str("    }\n");
     for class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        let evaluation = class_attribute_flags(class, classes);
+        if let Some(error_class) = evaluation.error_class {
+            out.push_str("        if (error_class_out != NULL) {\n");
+            out.push_str("            *error_class_out = \"");
+            out.push_str(error_class);
+            out.push_str("\";\n");
+            out.push_str("        }\n");
+        }
+        if let Some(error_message) = evaluation.error_message {
+            out.push_str("        if (error_message_out != NULL) {\n");
+            out.push_str("            *error_message_out = \"");
+            out.push_str(&c_string(&error_message));
+            out.push_str("\";\n");
+            out.push_str("        }\n");
+        }
         out.push_str("        return ");
-        out.push_str(
-            &class_attribute_flags(&class.attributes)
-                .unwrap_or(0)
-                .to_string(),
-        );
+        out.push_str(&evaluation.flags.to_string());
         out.push_str(";\n");
         out.push_str("    }\n");
     }
@@ -5726,39 +5743,139 @@ fn emit_declared_attribute_class_flags(out: &mut String, classes: &[ClassDecl]) 
     out.push_str("}\n");
 }
 
-fn class_attribute_flags(attributes: &AttributeMetadata) -> Option<i64> {
-    let attribute = attributes.instances.iter().find(|instance| {
+struct AttributeClassFlagEvaluation {
+    flags: i64,
+    error_class: Option<&'static str>,
+    error_message: Option<String>,
+}
+
+enum AttributeFlagError {
+    Type { type_name: &'static str },
+    InvalidValue,
+    MissingClass(String),
+    UndefinedConstant { class_name: String, name: String },
+}
+
+fn class_attribute_flags(class: &ClassDecl, classes: &[ClassDecl]) -> AttributeClassFlagEvaluation {
+    let Some(attribute) = class.attributes.instances.iter().find(|instance| {
         instance
             .name
             .trim_start_matches('\\')
             .eq_ignore_ascii_case("Attribute")
-    })?;
+    }) else {
+        return AttributeClassFlagEvaluation {
+            flags: 0,
+            error_class: None,
+            error_message: None,
+        };
+    };
     if attribute.arguments.is_empty() {
-        return Some(127);
+        return AttributeClassFlagEvaluation {
+            flags: 127,
+            error_class: None,
+            error_message: None,
+        };
     }
-    let flags = attribute
-        .arguments
-        .iter()
-        .filter_map(|argument| attribute_flag_value(&argument.value))
-        .fold(0, |flags, value| flags | value);
-    Some(flags)
+    let mut flags = 0;
+    for argument in &attribute.arguments {
+        let mut seen = HashSet::new();
+        match attribute_flag_value(&argument.value, class, classes, &mut seen) {
+            Ok(value) => flags |= value,
+            Err(error) => return attribute_class_flag_error(error),
+        }
+    }
+    if !valid_attribute_flags(flags) {
+        return attribute_class_flag_error(AttributeFlagError::InvalidValue);
+    }
+    AttributeClassFlagEvaluation {
+        flags,
+        error_class: None,
+        error_message: None,
+    }
 }
 
-fn attribute_flag_value(value: &AttributeArgumentValue) -> Option<i64> {
+fn attribute_flag_value(
+    value: &AttributeArgumentValue,
+    current_class: &ClassDecl,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+) -> std::result::Result<i64, AttributeFlagError> {
     if matches!(value.kind, AttributeArgumentKind::Int) {
-        return value.text.parse::<i64>().ok();
+        return value
+            .text
+            .parse::<i64>()
+            .map_err(|_| AttributeFlagError::InvalidValue);
     }
-    let AttributeConstantReference::ClassConstant { class_name, name } =
-        value.constant_reference.as_ref()?
+    if !matches!(
+        value.kind,
+        AttributeArgumentKind::ClassConstant | AttributeArgumentKind::NativeEnumCase { .. }
+    ) {
+        return Err(AttributeFlagError::Type {
+            type_name: attribute_argument_type_name(value),
+        });
+    }
+    let AttributeConstantReference::ClassConstant { class_name, name } = value
+        .constant_reference
+        .as_ref()
+        .ok_or(AttributeFlagError::InvalidValue)?
     else {
-        return None;
+        return Err(AttributeFlagError::InvalidValue);
     };
-    if !class_name
+    attribute_class_constant_flag_value(class_name, name, current_class, classes, seen)
+}
+
+fn attribute_class_constant_flag_value(
+    class_name: &str,
+    constant_name: &str,
+    current_class: &ClassDecl,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+) -> std::result::Result<i64, AttributeFlagError> {
+    if class_name
         .trim_start_matches('\\')
         .eq_ignore_ascii_case("Attribute")
     {
-        return None;
+        return builtin_attribute_flag_value(constant_name).ok_or_else(|| {
+            AttributeFlagError::UndefinedConstant {
+                class_name: "Attribute".to_string(),
+                name: constant_name.to_string(),
+            }
+        });
     }
+
+    let lookup_class_name = class_name.trim_start_matches('\\');
+    let seen_key = format!(
+        "{}::{}",
+        lookup_class_name.to_ascii_lowercase(),
+        constant_name.to_ascii_lowercase()
+    );
+    if !seen.insert(seen_key) {
+        return Err(AttributeFlagError::InvalidValue);
+    }
+    let target_class = class_by_name(classes, lookup_class_name)
+        .ok_or_else(|| AttributeFlagError::MissingClass(lookup_class_name.to_string()))?;
+    let entry = class_constant_lookup_chain(target_class, classes)
+        .into_iter()
+        .find(|entry| entry.constant.name.eq_ignore_ascii_case(constant_name))
+        .ok_or_else(|| AttributeFlagError::UndefinedConstant {
+            class_name: lookup_class_name.to_string(),
+            name: constant_name.to_string(),
+        })?;
+    if !class_constant_visible_from(
+        entry.declaring_class,
+        entry.constant,
+        current_class,
+        classes,
+    ) {
+        return Err(AttributeFlagError::UndefinedConstant {
+            class_name: lookup_class_name.to_string(),
+            name: constant_name.to_string(),
+        });
+    }
+    attribute_flag_expr_value(&entry.constant.value, current_class, classes, seen)
+}
+
+fn builtin_attribute_flag_value(name: &str) -> Option<i64> {
     match name.to_ascii_uppercase().as_str() {
         "TARGET_CLASS" => Some(1),
         "TARGET_FUNCTION" => Some(2),
@@ -5771,6 +5888,126 @@ fn attribute_flag_value(value: &AttributeArgumentValue) -> Option<i64> {
         "IS_REPEATABLE" => Some(128),
         _ => None,
     }
+}
+
+fn attribute_flag_expr_value(
+    value: &ValueExpr,
+    current_class: &ClassDecl,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+) -> std::result::Result<i64, AttributeFlagError> {
+    match value {
+        ValueExpr::Int(value) => Ok(*value),
+        ValueExpr::String(_) => Err(AttributeFlagError::Type {
+            type_name: "string",
+        }),
+        ValueExpr::Float(_) => Err(AttributeFlagError::Type { type_name: "float" }),
+        ValueExpr::Bool(_) => Err(AttributeFlagError::Type { type_name: "bool" }),
+        ValueExpr::Null => Err(AttributeFlagError::Type { type_name: "null" }),
+        ValueExpr::Array(_) => Err(AttributeFlagError::Type { type_name: "array" }),
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } => attribute_class_constant_flag_value(class_name, name, current_class, classes, seen),
+        ValueExpr::Binary {
+            op, left, right, ..
+        } => c_property_default_eval_int_binary(
+            *op,
+            attribute_flag_expr_value(left, current_class, classes, seen)?,
+            attribute_flag_expr_value(right, current_class, classes, seen)?,
+        )
+        .ok_or(AttributeFlagError::InvalidValue),
+        _ => Err(AttributeFlagError::InvalidValue),
+    }
+}
+
+fn valid_attribute_flags(flags: i64) -> bool {
+    const TARGET_MASK: i64 = 127;
+    const REPEATABLE: i64 = 128;
+    flags > 0 && (flags & TARGET_MASK) != 0 && (flags & !(TARGET_MASK | REPEATABLE)) == 0
+}
+
+fn attribute_class_flag_error(error: AttributeFlagError) -> AttributeClassFlagEvaluation {
+    match error {
+        AttributeFlagError::Type { type_name } => AttributeClassFlagEvaluation {
+            flags: 0,
+            error_class: Some("TypeError"),
+            error_message: Some(format!(
+                "Attribute::__construct(): Argument #1 ($flags) must be of type int, {type_name} given"
+            )),
+        },
+        AttributeFlagError::InvalidValue => AttributeClassFlagEvaluation {
+            flags: 0,
+            error_class: Some("Error"),
+            error_message: Some("Invalid attribute flags specified".to_string()),
+        },
+        AttributeFlagError::MissingClass(class_name) => AttributeClassFlagEvaluation {
+            flags: 0,
+            error_class: Some("Error"),
+            error_message: Some(format!("Class \"{class_name}\" not found")),
+        },
+        AttributeFlagError::UndefinedConstant { class_name, name } => AttributeClassFlagEvaluation {
+            flags: 0,
+            error_class: Some("Error"),
+            error_message: Some(format!("Undefined constant {class_name}::{name}")),
+        },
+    }
+}
+
+fn attribute_argument_type_name(value: &AttributeArgumentValue) -> &'static str {
+    match value.kind {
+        AttributeArgumentKind::String => "string",
+        AttributeArgumentKind::Float => "float",
+        AttributeArgumentKind::Bool => "bool",
+        AttributeArgumentKind::Null => "null",
+        AttributeArgumentKind::Array => "array",
+        AttributeArgumentKind::Constant
+        | AttributeArgumentKind::ClassConstant
+        | AttributeArgumentKind::NativeEnumCase { .. }
+        | AttributeArgumentKind::Int => "mixed",
+    }
+}
+
+fn class_constant_visible_from(
+    declaring_class: &str,
+    constant: &ClassConstantDecl,
+    current_class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    match constant.visibility {
+        PropertyVisibility::Public => true,
+        PropertyVisibility::Private => current_class.name.eq_ignore_ascii_case(declaring_class),
+        PropertyVisibility::Protected => {
+            class_scope_allows_compile_time(&current_class.name, declaring_class, classes)
+        }
+    }
+}
+
+fn class_scope_allows_compile_time(
+    access_scope: &str,
+    declaring_class: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    declared_class_is_same_or_descendant_compile_time(access_scope, declaring_class, classes)
+        || declared_class_is_same_or_descendant_compile_time(declaring_class, access_scope, classes)
+}
+
+fn declared_class_is_same_or_descendant_compile_time(
+    class_name: &str,
+    ancestor_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut current = Some(class_name);
+    let mut seen = HashSet::new();
+    while let Some(name) = current {
+        if name.eq_ignore_ascii_case(ancestor_name) {
+            return true;
+        }
+        if !seen.insert(name.to_ascii_lowercase()) {
+            return false;
+        }
+        current = class_by_name(classes, name).and_then(|class| class.parent_name.as_deref());
+    }
+    false
 }
 
 fn emit_declared_function_parameter_reflection_attributes(
