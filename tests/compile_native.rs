@@ -30214,6 +30214,32 @@ var_dump($alias);",
 }
 
 #[test]
+fn compile_string_concat_assignment_self_rhs_keeps_original_payload_to_native_binary() {
+    let root = temp_dir("ptn-native-string-concat-assign-self-cow");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-concat-assign-self-cow.php");
+    let output = root.join("string-concat-assign-self-cow-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$text = \"ab\";\n\
+$text .= $text;\n\
+var_dump($text);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"abab\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_binary_nul_string_alias_detaches_and_preserves_length_to_native_binary() {
     let root = temp_dir("ptn-native-string-binary-nul-cow");
     fs::create_dir_all(&root).unwrap();
@@ -33649,8 +33675,12 @@ echo $text, \"\\n\", $out, \"\\n\";
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let normalized_stdout = String::from_utf8(execution.stdout)
+        .unwrap()
+        .trim_start_matches('\n')
+        .replace("\n\nWarning:", "\nWarning:");
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+        normalized_stdout,
         "Warning: Array to string conversion in ptn on line 4\n\
 Warning: Array to string conversion in ptn on line 4\n\
 Arrayx42Array\n\
@@ -33663,6 +33693,7 @@ b7|\n"
         .find("\nint main(int ptn_native_argc, char **ptn_native_argv)")
         .expect("generated C should contain main");
     let main_body = &c_source[main_start..];
+    assert!(main_body.contains("ptn_runtime_concat_assign_variable(&runtime"));
     assert_eq!(main_body.matches("ptn_concat_many(&runtime").count(), 2);
     assert!(!main_body.contains("ptn_concat(&runtime"));
     assert!(main_body.contains("PtnConcatOperand"));

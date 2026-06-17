@@ -345,6 +345,7 @@ typedef enum {
 typedef struct {
     size_t refcount;
     size_t len;
+    size_t capacity;
     unsigned char *data;
 } PtnStringPayload;
 
@@ -1635,6 +1636,7 @@ static PTN_UNUSED PtnStringPayload *ptn_string_payload_from_owned(char *string, 
     }
     payload->refcount = 1;
     payload->len = len;
+    payload->capacity = len;
     payload->data = (unsigned char *)string;
     payload->data[len] = '\0';
     ptn_cow_debug_note_string_alloc();
@@ -1680,7 +1682,7 @@ static PTN_UNUSED void ptn_string_value_refresh(PtnValue *value) {
     value->as.string.len = value->as.string.payload->len;
 }
 
-static PTN_UNUSED void ptn_string_value_resize(PtnValue *value, size_t new_len) {
+static PTN_UNUSED void ptn_string_value_reserve(PtnValue *value, size_t min_capacity) {
     if (value == NULL ||
         value->type != PTN_STRING ||
         !value->owned ||
@@ -1688,21 +1690,40 @@ static PTN_UNUSED void ptn_string_value_resize(PtnValue *value, size_t new_len) 
         value->as.string.payload->refcount != 1) {
         ptn_abort_out_of_memory();
     }
-    if (new_len == SIZE_MAX) {
+    if (min_capacity == SIZE_MAX) {
         ptn_abort_out_of_memory();
     }
 
     PtnStringPayload *payload = value->as.string.payload;
-    size_t old_len = payload->len;
-    unsigned char *data = realloc(payload->data, new_len + 1);
+    if (min_capacity <= payload->capacity) {
+        return;
+    }
+
+    size_t new_capacity = payload->capacity == 0 ? 16 : payload->capacity;
+    while (new_capacity < min_capacity) {
+        if (new_capacity > (SIZE_MAX - 1) / 2) {
+            new_capacity = min_capacity;
+            break;
+        }
+        new_capacity *= 2;
+    }
+    unsigned char *data = realloc(payload->data, new_capacity + 1);
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
-    if (new_len > old_len) {
-        memset(data + old_len, ' ', new_len - old_len);
-    }
-    data[new_len] = '\0';
     payload->data = data;
+    payload->capacity = new_capacity;
+    ptn_string_value_refresh(value);
+}
+
+static PTN_UNUSED void ptn_string_value_resize(PtnValue *value, size_t new_len) {
+    ptn_string_value_reserve(value, new_len);
+    PtnStringPayload *payload = value->as.string.payload;
+    size_t old_len = payload->len;
+    if (new_len > old_len) {
+        memset(payload->data + old_len, ' ', new_len - old_len);
+    }
+    payload->data[new_len] = '\0';
     payload->len = new_len;
     ptn_string_value_refresh(value);
 }

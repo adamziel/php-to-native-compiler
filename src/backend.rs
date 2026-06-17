@@ -8098,6 +8098,24 @@ fn emit_instruction(
 ) {
     match instruction {
         Instruction::Store { name, value } => {
+            if let Some((right, line)) = self_concat_assignment_rhs(name, value) {
+                let right_temp = values.emit_materialized_value(out, right);
+                let result_temp = values.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_concat_assign_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&right_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &result_temp);
+                emit_value_cleanup(out, "    ", &right_temp);
+                return;
+            }
             let emitted_value = values.emit_materialized_value(out, value);
             out.push_str("    ptn_runtime_write_variable(&runtime, \"");
             out.push_str(&c_string(name));
@@ -15484,6 +15502,26 @@ impl ValueEmitter {
             );
             emit_value_cleanup(out, "    ", &value_temp);
             return result_temp;
+        }
+
+        if let AssignmentTarget::Variable { name, .. } = target {
+            if let Some((right, line)) = self_concat_assignment_rhs(name, value) {
+                let right_temp = self.emit_materialized_value(out, right);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_concat_assign_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&right_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &right_temp);
+                return result_temp;
+            }
         }
 
         let value_temp = self.emit_materialized_value(out, value);
@@ -24114,6 +24152,28 @@ fn collect_concat_operands<'a>(
         }
         _ => operands.push(ConcatOperand { value, line }),
     }
+}
+
+fn self_concat_assignment_rhs<'a>(
+    name: &str,
+    value: &'a ValueExpr,
+) -> Option<(&'a ValueExpr, usize)> {
+    let ValueExpr::Binary {
+        op: BinaryOp::Concat,
+        left,
+        right,
+        line,
+    } = value
+    else {
+        return None;
+    };
+    let ValueExpr::Load {
+        name: left_name, ..
+    } = left.as_ref()
+    else {
+        return None;
+    };
+    (left_name == name).then_some((right.as_ref(), *line))
 }
 
 fn c_string(value: &str) -> String {

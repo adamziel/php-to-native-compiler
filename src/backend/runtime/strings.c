@@ -787,6 +787,55 @@ static PTN_UNUSED PtnValue ptn_concat(PtnRuntime *runtime, PtnValue left, PtnVal
     return ptn_concat_many(runtime, operands, 2, strings);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_concat_assign_variable(
+    PtnRuntime *runtime,
+    const char *name,
+    PtnValue right,
+    const char *path,
+    size_t line
+) {
+    PtnValue *slot = ptn_symbols_get_slot(&runtime->symbols, name);
+    if (slot != NULL &&
+        slot->type == PTN_STRING &&
+        slot->owned &&
+        slot->as.string.payload != NULL &&
+        slot->as.string.payload->refcount == 1) {
+        PtnStringPayload *payload = slot->as.string.payload;
+        PtnStringOperand suffix = ptn_concat_string_operand(runtime, right, line);
+        size_t old_len = payload->len;
+        if (suffix.len > SIZE_MAX - old_len) {
+            ptn_string_operand_free(suffix);
+            ptn_abort_out_of_memory();
+        }
+        size_t new_len = old_len + suffix.len;
+        ptn_concat_enforce_memory_limit(runtime, new_len, line);
+
+        char *suffix_copy = NULL;
+        const char *suffix_data = suffix.data;
+        if (suffix.len != 0 &&
+            suffix.data >= (const char *)payload->data &&
+            suffix.data < (const char *)payload->data + old_len) {
+            suffix_copy = ptn_duplicate_string_len(suffix.data, suffix.len);
+            suffix_data = suffix_copy;
+        }
+
+        ptn_string_value_reserve(slot, new_len);
+        memcpy(slot->as.string.payload->data + old_len, suffix_data, suffix.len);
+        slot->as.string.payload->len = new_len;
+        slot->as.string.payload->data[new_len] = '\0';
+        ptn_string_value_refresh(slot);
+        free(suffix_copy);
+        ptn_string_operand_free(suffix);
+        return ptn_value_clone(*slot);
+    }
+
+    PtnValue current = ptn_runtime_read_variable(runtime, name, path, line);
+    PtnValue concatenated = ptn_concat(runtime, current, right, line);
+    PtnValue assigned = ptn_runtime_write_variable_result(runtime, name, concatenated);
+    ptn_value_destroy(&concatenated);
+    return assigned;
+}
+
 static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION) {
