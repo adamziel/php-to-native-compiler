@@ -3354,6 +3354,51 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
 }
 
 #[test]
+fn parser_reports_php_class_declaration_diagnostics() {
+    let cases = [
+        (
+            "<?php class Impl { function Foo(); }",
+            "Non-abstract method Impl::Foo() must contain body",
+        ),
+        (
+            "<?php abstract class Test { abstract private function foo() {} }",
+            "Abstract function Test::foo() cannot be declared private",
+        ),
+        (
+            "<?php class Test { function __clone($var) {} }",
+            "Method Test::__clone() cannot take arguments",
+        ),
+        (
+            "<?php class Test { static function __destruct() {} }",
+            "Method Test::__destruct() cannot be static",
+        ),
+        (
+            "<?php class Test extends self {}",
+            "Cannot use \"self\" as class name, as it is reserved",
+        ),
+        (
+            "<?php class Test implements parent {}",
+            "Cannot use \"parent\" as interface name, as it is reserved",
+        ),
+        (
+            "<?php class Test { abstract $var = 1; }",
+            "Only hooked properties may be declared abstract",
+        ),
+        ("<?php class stdclass {}", "Cannot redeclare class stdClass"),
+        (
+            "<?php class Test { function make() { class Nested {} } }",
+            "Class declarations may not be nested",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{source}");
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+    }
+}
+
+#[test]
 fn parser_accepts_variable_root_array_assignment_and_unset() {
     let program = parser::parse(
         "<?php $items[null] = \"value\"; $items[] += 2; $items[0][\"nested\"] = 3; unset($items[null], $items[0][\"nested\"], $items);",
