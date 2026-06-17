@@ -2255,6 +2255,15 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("parse_str") && argument_index == 1 {
         return Some("result");
     }
+    if name.eq_ignore_ascii_case("mb_parse_str") && argument_index == 1 {
+        return Some("result");
+    }
+    if name.eq_ignore_ascii_case("mb_ereg") && argument_index == 2 {
+        return Some("regs");
+    }
+    if name.eq_ignore_ascii_case("mb_convert_variables") && argument_index >= 2 {
+        return Some("vars");
+    }
     if name.eq_ignore_ascii_case("exec") && argument_index == 1 {
         return Some("output");
     }

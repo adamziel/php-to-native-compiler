@@ -1682,7 +1682,16 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
     if (index == 1 && ptn_ascii_case_equal(name, "parse_str")) {
         return 1;
     }
+    if (index == 1 && ptn_ascii_case_equal(name, "mb_parse_str")) {
+        return 1;
+    }
     if (index == 2 && ptn_ascii_case_equal(name, "is_callable")) {
+        return 1;
+    }
+    if (index == 2 && ptn_ascii_case_equal(name, "mb_ereg")) {
+        return 1;
+    }
+    if (index >= 2 && ptn_ascii_case_equal(name, "mb_convert_variables")) {
         return 1;
     }
     if (index == 3 &&
@@ -33888,6 +33897,7 @@ static PtnValue ptn_internal_iconv(PtnRuntime *runtime, size_t argc, const PtnVa
             break;
         }
         if (ptn_text_utf8_invalid_is_incomplete(input.data, input.len, i)) {
+            ptn_output_write_cstr(runtime, "\n");
             ptn_emit_notice(&runtime->diagnostics, "iconv(): Detected an incomplete multibyte character in input string", line);
             output.len = 0;
             output.data[0] = '\0';
@@ -33989,7 +33999,7 @@ static PtnValue ptn_internal_mb_convert_encoding(PtnRuntime *runtime, size_t arg
         }
         return ptn_null();
     }
-    if (ptn_mb_encoding_equals(to, "Base64") || ptn_mb_encoding_equals(from, "Base64")) {
+    if (ptn_mb_encoding_equals(to, "Base64")) {
         ptn_emit_deprecation(&runtime->diagnostics, "mb_convert_encoding(): Handling Base64 via mbstring is deprecated; use base64_encode/base64_decode instead", line);
     }
     if (ptn_mb_encoding_equals(to, "Base64")) {
@@ -34077,6 +34087,25 @@ static PtnValue ptn_internal_mb_convert_encoding(PtnRuntime *runtime, size_t arg
     return result;
 }
 
+static PtnValue ptn_mb_deep_clone_deref(PtnValue value, size_t depth) {
+    value = ptn_value_deref(value);
+    if (depth > 1024 || value.type != PTN_ARRAY || value.as.array == NULL) {
+        return ptn_value_clone(value);
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(value.as.array->entries[i].key),
+            ptn_mb_deep_clone_deref(value.as.array->entries[i].value, depth + 1)
+        );
+    }
+    result.as.array->current_index = value.as.array->current_index <= result.as.array->len
+        ? value.as.array->current_index
+        : result.as.array->len;
+    return result;
+}
+
 static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)line;
@@ -34094,6 +34123,13 @@ static PtnValue ptn_internal_mb_convert_variables(PtnRuntime *runtime, size_t ar
         ptn_string_operand_free(to);
         ptn_string_operand_free(from);
         return ptn_null();
+    }
+    for (size_t i = 2; i < argc; i++) {
+        if (args[i].type == PTN_REFERENCE) {
+            PtnValue separated = ptn_mb_deep_clone_deref(args[i], 0);
+            ptn_reference_assign(runtime, args[i].as.reference, separated);
+            ptn_value_destroy(&separated);
+        }
     }
     PtnValue result = ptn_owned_string_len(ptn_duplicate_string_len(to.data, to.len), to.len);
     ptn_string_operand_free(to);
@@ -34279,25 +34315,29 @@ static size_t ptn_mb_find_forward(
     return SIZE_MAX;
 }
 
-static size_t ptn_mb_find_reverse(
+static size_t ptn_mb_find_reverse_range(
     const char *haystack,
     size_t haystack_len,
     const char *needle,
     size_t needle_len,
+    size_t min_start_byte,
     size_t max_start_byte,
     int insensitive
 ) {
     if (needle_len == 0) {
         return max_start_byte;
     }
-    if (needle_len > haystack_len) {
+    if (needle_len > haystack_len || min_start_byte > haystack_len) {
         return SIZE_MAX;
     }
     size_t max_i = max_start_byte;
     if (max_i + needle_len > haystack_len) {
         max_i = haystack_len - needle_len;
     }
-    for (size_t i = max_i + 1; i-- > 0;) {
+    if (min_start_byte > max_i) {
+        return SIZE_MAX;
+    }
+    for (size_t i = max_i;; i--) {
         int match = 1;
         for (size_t j = 0; j < needle_len; j++) {
             unsigned char left = (unsigned char)haystack[i + j];
@@ -34314,7 +34354,7 @@ static size_t ptn_mb_find_reverse(
         if (match) {
             return i;
         }
-        if (i == 0) {
+        if (i == min_start_byte) {
             break;
         }
     }
@@ -34348,8 +34388,28 @@ static PtnValue ptn_mb_strpos_common(
     }
     size_t found;
     if (reverse) {
-        size_t max_start = ptn_text_utf8_byte_offset_for_char(haystack.data, haystack.len, (size_t)start_char);
-        found = ptn_mb_find_reverse(haystack.data, haystack.len, needle.data, needle.len, max_start, insensitive);
+        size_t start_byte = ptn_text_utf8_byte_offset_for_char(haystack.data, haystack.len, (size_t)start_char);
+        if (offset >= 0) {
+            found = ptn_mb_find_reverse_range(
+                haystack.data,
+                haystack.len,
+                needle.data,
+                needle.len,
+                start_byte,
+                haystack.len,
+                insensitive
+            );
+        } else {
+            found = ptn_mb_find_reverse_range(
+                haystack.data,
+                haystack.len,
+                needle.data,
+                needle.len,
+                0,
+                start_byte,
+                insensitive
+            );
+        }
     } else {
         size_t start_byte = ptn_text_utf8_byte_offset_for_char(haystack.data, haystack.len, (size_t)start_char);
         found = ptn_mb_find_forward(haystack.data, haystack.len, needle.data, needle.len, start_byte, insensitive);
@@ -35320,7 +35380,7 @@ static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
             ptn_throw_exception(runtime, "ValueError", "IntlBreakIterator::getLocale(): Argument #1 ($type) must be either Locale::ACTUAL_LOCALE or Locale::VALID_LOCALE");
             return ptn_null();
         }
-        return type == 0 ? ptn_string("") : ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale));
+        return type == 0 ? ptn_string("root") : ptn_owned_string(ptn_duplicate_string(data->locale == NULL ? "" : data->locale));
     }
     if (ptn_ascii_case_equal(name, "getPartsIterator")) {
         int64_t key_type = argc >= 1 ? ptn_value_to_integer(args[0]) : PTN_INTL_PARTS_KEY_SEQUENTIAL;
@@ -37089,6 +37149,16 @@ static PtnValue ptn_internal_rand(PtnRuntime *runtime, size_t argc, const PtnVal
     uint64_t span = (uint64_t)(max - min) + 1;
     int64_t value = min + (int64_t)((uint64_t)rand() % span);
     return ptn_int(value);
+}
+
+static PtnValue ptn_internal_srand(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    unsigned int seed = argc >= 1 ? (unsigned int)ptn_value_to_integer(args[0]) : (unsigned int)time(NULL);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    srand(seed);
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_random_int(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -43780,6 +43850,7 @@ static PtnValue ptn_internal_get_declared_traits(PtnRuntime *runtime, size_t arg
 static PtnValue ptn_internal_get_defined_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_defined_functions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_extension_funcs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -44072,6 +44143,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_defined_vars", 0, 0, ptn_internal_get_defined_vars },
         { "get_defined_constants", 0, 1, ptn_internal_get_defined_constants },
         { "get_defined_functions", 0, 1, ptn_internal_get_defined_functions },
+        { "get_extension_funcs", 1, 1, ptn_internal_get_extension_funcs },
         { "get_error_handler", 0, 0, ptn_internal_get_error_handler },
         { "get_exception_handler", 0, 0, ptn_internal_get_exception_handler },
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },
@@ -44261,6 +44333,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rad2deg", 1, 1, ptn_internal_rad2deg },
         { "rand", 0, 2, ptn_internal_rand },
         { "random_int", 2, 2, ptn_internal_random_int },
+        { "srand", 0, 2, ptn_internal_srand },
         { "rawurldecode", 1, 1, ptn_internal_rawurldecode },
         { "rawurlencode", 1, 1, ptn_internal_rawurlencode },
         { "range", 2, 3, ptn_internal_range },
@@ -44536,6 +44609,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "get_defined_constants") ||
         ptn_ascii_case_equal(name, "get_defined_functions") ||
         ptn_ascii_case_equal(name, "get_defined_vars") ||
+        ptn_ascii_case_equal(name, "get_extension_funcs") ||
         ptn_ascii_case_equal(name, "get_include_path") ||
         ptn_ascii_case_equal(name, "get_loaded_extensions") ||
         ptn_ascii_case_equal(name, "get_parent_class") ||
@@ -44567,6 +44641,34 @@ static PtnValue ptn_internal_get_defined_functions(PtnRuntime *runtime, size_t a
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     ptn_array_set_entry(result.as.array, ptn_array_string_key("internal"), ptn_internal_function_names());
     ptn_array_set_entry(result.as.array, ptn_array_string_key("user"), ptn_user_function_names(runtime));
+    return result;
+}
+
+static PtnValue ptn_internal_get_extension_funcs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)line;
+    PtnStringOperand extension = ptn_value_to_string_operand(args[0]);
+    if (!ptn_is_modeled_extension_operand(extension)) {
+        ptn_string_operand_free(extension);
+        return ptn_bool(0);
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t count = 0;
+    const PtnInternalFunction *functions = ptn_internal_functions(&count);
+    int64_t next_index = 0;
+    for (size_t i = 0; i < count; i++) {
+        const char *name = functions[i].name;
+        if (strncmp(name, "_ptn_", 5) == 0 || strstr(name, "::") != NULL) {
+            continue;
+        }
+        if (!ptn_string_operand_ascii_case_equal(extension, ptn_internal_function_extension_name(name))) {
+            continue;
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), ptn_string(name));
+    }
+    ptn_string_operand_free(extension);
     return result;
 }
 
