@@ -6553,19 +6553,36 @@ var_dump($worker instanceof Base, $worker instanceof Contract);
 }
 
 #[test]
-fn parser_rejects_class_like_declarations_with_explicit_diagnostics() {
-    let cases = [(
-        "enum",
-        "<?php\nenum Sample { case A; }",
-        "enum declarations are unsupported",
-    )];
+fn parser_accepts_unit_and_backed_enum_declarations() {
+    let program = parser::parse(
+        "<?php
+enum Sample {
+    case A;
+    const Alias = self::A;
+    public function label() { return __METHOD__; }
+}
+enum Code: int {
+    case Ok = 200;
+}",
+    )
+    .unwrap();
 
-    for (name, source, message) in cases {
-        let error = parser::parse(source).unwrap_err();
-        assert_eq!(error.message, message, "{name}");
-        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
-        assert_eq!(error.span.unwrap().line, 2, "{name}");
-    }
+    assert_eq!(program.classes.len(), 2);
+    assert!(program.classes[0].is_enum);
+    assert_eq!(program.classes[0].enum_backing_type, None);
+    assert_eq!(program.classes[0].constants.len(), 2);
+    assert!(program.classes[0].constants[0].is_enum_case);
+    assert!(program.classes[0].constants[0].enum_case_value.is_none());
+    assert!(!program.classes[0].constants[1].is_enum_case);
+    assert_eq!(program.classes[0].methods.len(), 1);
+
+    assert!(program.classes[1].is_enum);
+    assert_eq!(
+        program.classes[1].enum_backing_type,
+        Some(ptn::ast::EnumBackingType::Int)
+    );
+    assert!(program.classes[1].constants[0].is_enum_case);
+    assert!(program.classes[1].constants[0].enum_case_value.is_some());
 }
 
 #[test]
