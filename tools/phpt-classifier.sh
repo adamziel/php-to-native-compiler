@@ -1771,6 +1771,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/property_hooks\/syntax[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/property_hooks\/ReflectionClass_getMethods[.]phpt$/
         }
+        function ptn_supported_enum_metadata_row() {
+            return ptn_path ~ /Zend\/tests\/enum\/(__call|__callStatic|__class__|__clone|__function__|__get|__invoke|__isset|__method__|__serialize|__set|__set_state|__sleep|__toString|__unserialize|__unset|__wakeup|backed-cases-int|backed-cases-string|backed-duplicate-int|backed-duplicate-string|backed-from-invalid-int|backed-from-invalid-string)[.]phpt$/
+        }
         {
             line = ptn_php_code_line($0)
             if (implemented_modifier_diagnostic_seen) {
@@ -1797,7 +1800,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 line ~ /(^|[[:space:]])readonly[[:space:]]+(public|protected|private|var)?[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/) {
                 readonly_property_seen = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])enum[[:space:]]+[a-z_\\]/) {
+            if (line ~ /(^|[^[:alnum:]_$])enum[[:space:]]+[a-z_\\]/ &&
+                !ptn_supported_enum_metadata_row()) {
                 print "unsupported-enum-metadata\trequires enum declarations and case metadata, outside PTN modeled class metadata"
                 found = 1
                 exit
