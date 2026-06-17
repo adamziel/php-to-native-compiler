@@ -160,8 +160,9 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value) {
         case PTN_ARRAY:
             return ptn_duplicate_string("Array");
         case PTN_OBJECT:
-        case PTN_CLOSURE:
             return ptn_duplicate_string("Object");
+        case PTN_CLOSURE:
+            return ptn_duplicate_string("Closure");
         case PTN_EXCEPTION: {
             PtnException *exception = value.as.exception;
             PtnStringOperand exception_string = ptn_exception_to_string_operand(NULL, exception);
@@ -404,7 +405,26 @@ static PTN_UNUSED char *ptn_callable_output_name(PtnValue callable) {
         if (callable.as.closure->has_wrapped_callable) {
             return ptn_callable_output_name(callable.as.closure->wrapped_callable);
         }
-        return ptn_duplicate_string("Closure::__invoke");
+        return ptn_duplicate_string(callable.as.closure->display_name);
+    }
+    if (callable.type == PTN_OBJECT || callable.type == PTN_EXCEPTION) {
+        const char *class_name = callable.type == PTN_OBJECT
+            ? callable.as.object->class_name
+            : callable.as.exception->class_name;
+        size_t class_len = strlen(class_name);
+        const char *invoke_suffix = "::__invoke";
+        size_t suffix_len = strlen(invoke_suffix);
+        if (class_len > SIZE_MAX - suffix_len - 1) {
+            ptn_abort_out_of_memory();
+        }
+        char *name = malloc(class_len + suffix_len + 1);
+        if (name == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(name, class_name, class_len);
+        memcpy(name + class_len, invoke_suffix, suffix_len);
+        name[class_len + suffix_len] = '\0';
+        return name;
     }
     if (callable.type == PTN_ARRAY && callable.as.array->len == 2) {
         PtnArrayKey scope_key = ptn_array_int_key(0);

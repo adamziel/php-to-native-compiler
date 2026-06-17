@@ -267,6 +267,11 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
     PtnFunctionMetadata metadata
 ) {
     PtnValue closure = ptn_closure(runtime, (size_t)-1, "Closure::__invoke", metadata, 0, 0);
+    ptn_closure_set_scope(
+        closure,
+        runtime->current_class_name,
+        runtime->current_called_class_name
+    );
     closure.as.closure->has_wrapped_callable = 1;
     closure.as.closure->wrapped_callable = ptn_value_clone_deref(callable);
     return closure;
