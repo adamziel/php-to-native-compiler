@@ -269,6 +269,16 @@ enum VirtualPropertyHookKind {
     Other,
 }
 
+#[derive(Default)]
+struct ParsedPropertyHookBlock {
+    is_virtual: bool,
+    has_get: bool,
+    has_set: bool,
+    get_is_abstract: bool,
+    set_is_abstract: bool,
+    get_value: Option<Expr>,
+}
+
 enum ParsedClassMember {
     Method(MethodDecl),
     Properties(Vec<PropertyDecl>),
@@ -317,6 +327,7 @@ impl Parser<'_> {
                 &mut self.compile_warnings,
             )?;
         }
+        validate_property_interface_set_visibility(&classes)?;
         validate_abstract_methods(&classes)?;
         validate_final_class_inheritance(&classes)?;
         validate_readonly_class_inheritance(&classes)?;
@@ -1794,17 +1805,12 @@ impl Parser<'_> {
                 )?,
             ));
         }
-        if class_is_interface && matches!(self.peek().kind, TokenKind::Variable(_)) {
-            return Err(Diagnostic::new(
-                "interfaces may not include properties",
-                Some(self.peek().span),
-            ));
-        }
         let member_is_readonly = class_is_readonly || modifiers.is_readonly;
         let set_visibility = modifiers
             .set_visibility
             .unwrap_or_else(|| default_set_visibility(modifiers.visibility, member_is_readonly));
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
+            self.validate_interface_property_modifiers(class_is_interface, &modifiers)?;
             if modifiers.is_static {
                 if member_is_readonly {
                     return Err(Diagnostic::new(
@@ -1830,6 +1836,7 @@ impl Parser<'_> {
                     modifiers.set_visibility_span,
                     member_is_readonly,
                     modifiers.is_final,
+                    modifiers.is_abstract || class_is_interface,
                     attributes,
                     true,
                     class_name,
@@ -1837,6 +1844,7 @@ impl Parser<'_> {
             ));
         }
         if self.peek_starts_property_type_hint() {
+            self.validate_interface_property_modifiers(class_is_interface, &modifiers)?;
             if modifiers.is_static {
                 if member_is_readonly {
                     return Err(Diagnostic::new(
@@ -1862,6 +1870,7 @@ impl Parser<'_> {
                     modifiers.set_visibility_span,
                     member_is_readonly,
                     modifiers.is_final,
+                    modifiers.is_abstract || class_is_interface,
                     attributes,
                     true,
                     class_name,
@@ -1889,6 +1898,35 @@ impl Parser<'_> {
             ));
         }
         Ok(ParsedClassMember::Method(method))
+    }
+
+    fn validate_interface_property_modifiers(
+        &self,
+        class_is_interface: bool,
+        modifiers: &ClassModifiers,
+    ) -> Result<()> {
+        if !class_is_interface {
+            return Ok(());
+        }
+        if modifiers.is_abstract {
+            return Err(Diagnostic::new(
+                "Property in interface cannot be explicitly abstract. All interface members are implicitly abstract",
+                modifiers.abstract_span,
+            ));
+        }
+        if modifiers.is_final {
+            return Err(Diagnostic::new(
+                "Property in interface cannot be final",
+                modifiers.final_span,
+            ));
+        }
+        if modifiers.visibility != PropertyVisibility::Public {
+            return Err(Diagnostic::new(
+                "Property in interface cannot be protected or private",
+                modifiers.visibility_span,
+            ));
+        }
+        Ok(())
     }
 
     fn parse_class_modifiers(&mut self) -> Result<ClassModifiers> {
@@ -2179,6 +2217,7 @@ impl Parser<'_> {
         set_visibility_span: Option<SourceSpan>,
         is_readonly: bool,
         is_final: bool,
+        is_abstract: bool,
         attributes: ParsedAttributes,
         allow_property_hooks: bool,
         class_name: &str,
@@ -2211,6 +2250,7 @@ impl Parser<'_> {
             visibility,
             set_visibility,
             is_final,
+            is_abstract,
             is_readonly,
             type_hint.clone(),
             attributes.clone(),
@@ -2240,6 +2280,7 @@ impl Parser<'_> {
                 visibility,
                 set_visibility,
                 is_final,
+                is_abstract,
                 is_readonly,
                 type_hint.clone(),
                 attributes.clone(),
@@ -2327,6 +2368,7 @@ impl Parser<'_> {
         visibility: PropertyVisibility,
         set_visibility: PropertyVisibility,
         is_final: bool,
+        is_abstract: bool,
         is_readonly: bool,
         type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
@@ -2344,7 +2386,19 @@ impl Parser<'_> {
             set_visibility,
             token.span,
         )?;
+        if is_final && visibility == PropertyVisibility::Private {
+            return Err(Diagnostic::new(
+                "Property cannot be both final and private",
+                Some(token.span),
+            ));
+        }
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            if is_readonly {
+                return Err(Diagnostic::new(
+                    "Hooked properties cannot be readonly",
+                    Some(self.peek().span),
+                ));
+            }
             if set_visibility != visibility {
                 let hook_kind = self
                     .tokens
@@ -2376,17 +2430,22 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            let (is_virtual, hook_get_value) = self.parse_property_hook_block(&name)?;
+            let hooks = self.parse_property_hook_block(&name, visibility)?;
             return Ok((
                 PropertyDecl {
                     name,
                     visibility,
                     set_visibility,
                     is_final,
+                    is_abstract,
                     is_readonly,
                     has_hooks: true,
-                    is_virtual,
-                    hook_get_value,
+                    is_virtual: hooks.is_virtual,
+                    hook_has_get: hooks.has_get,
+                    hook_has_set: hooks.has_set,
+                    hook_get_is_abstract: hooks.get_is_abstract,
+                    hook_set_is_abstract: hooks.set_is_abstract,
+                    hook_get_value: hooks.get_value,
                     type_hint,
                     attributes: attributes.clone(),
                     has_override_attribute: attributes.has_override,
@@ -2394,6 +2453,12 @@ impl Parser<'_> {
                     span: token.span,
                 },
                 true,
+            ));
+        }
+        if is_abstract {
+            return Err(Diagnostic::new(
+                "Only hooked properties may be declared abstract",
+                Some(token.span),
             ));
         }
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
@@ -2421,9 +2486,14 @@ impl Parser<'_> {
                 visibility,
                 set_visibility,
                 is_final,
+                is_abstract: false,
                 is_readonly,
                 has_hooks: false,
                 is_virtual: false,
+                hook_has_get: false,
+                hook_has_set: false,
+                hook_get_is_abstract: false,
+                hook_set_is_abstract: false,
                 hook_get_value: None,
                 type_hint,
                 attributes: attributes.clone(),
@@ -2471,6 +2541,12 @@ impl Parser<'_> {
         } else {
             None
         };
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return Err(Diagnostic::new(
+                "Cannot declare hooks for static property",
+                Some(self.peek().span),
+            ));
+        }
         Ok(StaticPropertyDecl {
             name,
             visibility,
@@ -2484,11 +2560,53 @@ impl Parser<'_> {
         })
     }
 
-    fn parse_property_hook_block(&mut self, property_name: &str) -> Result<(bool, Option<Expr>)> {
+    fn parse_property_hook_block(
+        &mut self,
+        property_name: &str,
+        property_visibility: PropertyVisibility,
+    ) -> Result<ParsedPropertyHookBlock> {
         self.expect_left_brace()?;
-        let mut is_virtual = true;
-        let mut get_value = None;
+        let mut hooks = ParsedPropertyHookBlock {
+            is_virtual: true,
+            ..ParsedPropertyHookBlock::default()
+        };
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
+            let mut hook_is_final = false;
+            let mut hook_is_abstract = false;
+            let mut hook_visibility = property_visibility;
+            loop {
+                let TokenKind::Identifier(modifier) = &self.peek().kind else {
+                    break;
+                };
+                match modifier.to_ascii_lowercase().as_str() {
+                    "final" => {
+                        hook_is_final = true;
+                        self.advance();
+                    }
+                    "abstract" => {
+                        hook_is_abstract = true;
+                        self.advance();
+                    }
+                    "public" => {
+                        hook_visibility = PropertyVisibility::Public;
+                        self.advance();
+                    }
+                    "protected" => {
+                        hook_visibility = PropertyVisibility::Protected;
+                        self.advance();
+                    }
+                    "private" => {
+                        hook_visibility = PropertyVisibility::Private;
+                        self.advance();
+                    }
+                    _ => break,
+                }
+            }
+
+            if matches!(self.peek().kind, TokenKind::Ampersand) {
+                self.advance();
+            }
+
             let token = self.advance().clone();
             match token.kind {
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("get") => {
@@ -2502,19 +2620,47 @@ impl Parser<'_> {
                             ));
                         }
                         self.expect_semicolon()?;
-                        get_value = Some(value);
-                    } else if self.skip_property_hook_body("get", property_name)? {
-                        is_virtual = false;
+                        hooks.has_get = true;
+                        hooks.get_value = Some(value);
+                    } else {
+                        let is_abstract_hook =
+                            hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
+                        validate_property_hook_modifiers(
+                            hook_is_final,
+                            is_abstract_hook,
+                            hook_visibility,
+                            token.span,
+                        )?;
+                        hooks.has_get = true;
+                        hooks.get_is_abstract = is_abstract_hook;
+                        if self.skip_property_hook_body("get", property_name)? {
+                            hooks.is_virtual = false;
+                        }
+                    }
+                }
+                TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set") => {
+                    let is_abstract_hook =
+                        hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
+                    validate_property_hook_modifiers(
+                        hook_is_final,
+                        is_abstract_hook,
+                        hook_visibility,
+                        token.span,
+                    )?;
+                    hooks.has_set = true;
+                    hooks.set_is_abstract = is_abstract_hook;
+                    if self.skip_property_hook_body(&name, property_name)? {
+                        hooks.is_virtual = false;
                     }
                 }
                 TokenKind::Identifier(name) => {
                     if self.skip_property_hook_body(&name, property_name)? {
-                        is_virtual = false;
+                        hooks.is_virtual = false;
                     }
                 }
                 TokenKind::LeftBrace => {
                     if self.skip_braced_property_hook_body(property_name)? {
-                        is_virtual = false;
+                        hooks.is_virtual = false;
                     }
                 }
                 TokenKind::Eof => {
@@ -2527,7 +2673,13 @@ impl Parser<'_> {
             }
         }
         self.expect_right_brace()?;
-        Ok((is_virtual, get_value))
+        if !hooks.has_get && !hooks.has_set {
+            return Err(Diagnostic::new(
+                "Property hook list must not be empty",
+                Some(self.previous_span()),
+            ));
+        }
+        Ok(hooks)
     }
 
     fn skip_property_hook_body(&mut self, hook_name: &str, property_name: &str) -> Result<bool> {
@@ -5695,6 +5847,32 @@ impl Parser<'_> {
                             CLASS_CONSTANT_FETCH_UNSUPPORTED,
                             Some(scope_span),
                         ));
+                    }
+                    if let Expr::StaticPropertyFetch {
+                        class_name,
+                        name: property_name,
+                        ..
+                    } = &expr
+                    {
+                        if class_name.eq_ignore_ascii_case("parent")
+                            && literal_name.as_ref().is_some_and(|name| {
+                                name.eq_ignore_ascii_case("get") || name.eq_ignore_ascii_case("set")
+                            })
+                        {
+                            if self.active_type_scope.is_none() {
+                                return Err(Diagnostic::new(
+                                    "Cannot use \"parent\" when no class scope is active",
+                                    Some(start_span),
+                                ));
+                            }
+                            return Err(Diagnostic::new(
+                                format!(
+                                    "Must not use parent::${property_name}::{}() outside a property hook",
+                                    literal_name.as_ref().expect("hook name checked above")
+                                ),
+                                Some(start_span),
+                            ));
+                        }
                     }
                     if self.peek_is_first_class_callable_arguments() {
                         return Err(Diagnostic::new(
@@ -9167,6 +9345,33 @@ fn validate_asymmetric_property_visibility(
     ))
 }
 
+fn validate_property_hook_modifiers(
+    is_final: bool,
+    is_abstract: bool,
+    visibility: PropertyVisibility,
+    span: SourceSpan,
+) -> Result<()> {
+    if is_final && visibility == PropertyVisibility::Private {
+        return Err(Diagnostic::new(
+            "Property hook cannot be both final and private",
+            Some(span),
+        ));
+    }
+    if is_final && is_abstract {
+        return Err(Diagnostic::new(
+            "Property hook cannot be both abstract and final",
+            Some(span),
+        ));
+    }
+    if is_abstract && visibility == PropertyVisibility::Private {
+        return Err(Diagnostic::new(
+            "Property hook cannot be both abstract and private",
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
 fn promoted_properties_from_constructor(
     method: &MethodDecl,
     class_is_readonly: bool,
@@ -9181,9 +9386,14 @@ fn promoted_properties_from_constructor(
                 visibility: promoted.visibility,
                 set_visibility: promoted.set_visibility,
                 is_final: promoted.is_final,
+                is_abstract: false,
                 is_readonly: class_is_readonly || promoted.is_readonly,
                 has_hooks: false,
                 is_virtual: false,
+                hook_has_get: false,
+                hook_has_set: false,
+                hook_get_is_abstract: false,
+                hook_set_is_abstract: false,
                 hook_get_value: None,
                 type_hint: parameter
                     .type_hint
@@ -11541,6 +11751,14 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
         if class.is_abstract {
             continue;
         }
+        let own_property_hooks = own_unsatisfied_abstract_property_hooks(class);
+        if !own_property_hooks.is_empty() {
+            return Err(abstract_property_hooks_diagnostic(
+                &class.name,
+                &own_property_hooks,
+                class.span,
+            ));
+        }
         if let Some(method) = class
             .methods
             .iter()
@@ -11557,6 +11775,14 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
                 Some(class.span),
             ));
         }
+        let property_hooks = inherited_unsatisfied_abstract_property_hooks(class, classes);
+        if !property_hooks.is_empty() {
+            return Err(abstract_property_hooks_diagnostic(
+                &class.name,
+                &property_hooks,
+                class.span,
+            ));
+        }
         if let Some(required_method) = inherited_unsatisfied_abstract_method(class, classes) {
             return Err(Diagnostic::new(
                 format!(
@@ -11570,9 +11796,199 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
     Ok(())
 }
 
+#[derive(Clone)]
+struct RequiredAbstractPropertyHook {
+    declaring_class: String,
+    property_name: String,
+    hook_name: &'static str,
+}
+
 struct RequiredAbstractMethod {
     declaring_class: String,
     method_name: String,
+}
+
+fn abstract_property_hooks_diagnostic(
+    class_name: &str,
+    hooks: &[RequiredAbstractPropertyHook],
+    span: SourceSpan,
+) -> Diagnostic {
+    let count = hooks.len();
+    let remaining = hooks
+        .iter()
+        .map(|hook| {
+            format!(
+                "{}::${}::{}",
+                hook.declaring_class, hook.property_name, hook.hook_name
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    Diagnostic::new(
+        format!(
+            "Class {class_name} contains {count} abstract method{} and must therefore be declared abstract or implement the remaining method{} ({remaining})",
+            if count == 1 { "" } else { "s" },
+            if count == 1 { "" } else { "s" },
+        ),
+        Some(span),
+    )
+}
+
+fn own_unsatisfied_abstract_property_hooks(class: &ClassDecl) -> Vec<RequiredAbstractPropertyHook> {
+    class
+        .properties
+        .iter()
+        .flat_map(|property| abstract_property_hooks_for(&class.name, property))
+        .collect()
+}
+
+fn abstract_property_hooks_for(
+    declaring_class: &str,
+    property: &PropertyDecl,
+) -> Vec<RequiredAbstractPropertyHook> {
+    let mut hooks = Vec::new();
+    if property.hook_get_is_abstract {
+        hooks.push(RequiredAbstractPropertyHook {
+            declaring_class: declaring_class.to_string(),
+            property_name: property.name.clone(),
+            hook_name: "get",
+        });
+    }
+    if property.hook_set_is_abstract {
+        hooks.push(RequiredAbstractPropertyHook {
+            declaring_class: declaring_class.to_string(),
+            property_name: property.name.clone(),
+            hook_name: "set",
+        });
+    }
+    hooks
+}
+
+fn inherited_unsatisfied_abstract_property_hooks(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Vec<RequiredAbstractPropertyHook> {
+    let mut requirements = Vec::new();
+    collect_parent_abstract_property_hooks(class, classes, &mut requirements);
+    collect_interface_abstract_property_hooks(class, classes, &mut requirements);
+    requirements
+        .into_iter()
+        .filter(|required| !class_satisfies_property_hook(class, required, classes))
+        .collect()
+}
+
+fn collect_parent_abstract_property_hooks(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    requirements: &mut Vec<RequiredAbstractPropertyHook>,
+) {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        for property in &parent.properties {
+            requirements.extend(abstract_property_hooks_for(&parent.name, property));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+}
+
+fn collect_interface_abstract_property_hooks(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    requirements: &mut Vec<RequiredAbstractPropertyHook>,
+) {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        for interface_name in &candidate.interfaces {
+            collect_interface_property_hooks(
+                interface_name,
+                classes,
+                &mut seen_interfaces,
+                requirements,
+            );
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+}
+
+fn collect_interface_property_hooks(
+    interface_name: &str,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+    requirements: &mut Vec<RequiredAbstractPropertyHook>,
+) {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return;
+    };
+    if !interface.is_interface {
+        return;
+    }
+    for property in &interface.properties {
+        requirements.extend(abstract_property_hooks_for(&interface.name, property));
+    }
+    for parent_interface in &interface.interfaces {
+        collect_interface_property_hooks(parent_interface, classes, seen, requirements);
+    }
+}
+
+fn class_satisfies_property_hook(
+    class: &ClassDecl,
+    required: &RequiredAbstractPropertyHook,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut current = Some(class);
+    let mut seen = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        if let Some(property) = candidate
+            .properties
+            .iter()
+            .find(|property| property.name == required.property_name)
+        {
+            if property.visibility == PropertyVisibility::Private
+                && !candidate.name.eq_ignore_ascii_case(&class.name)
+            {
+                return false;
+            }
+            return property_satisfies_hook(property, required.hook_name);
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+    false
+}
+
+fn property_satisfies_hook(property: &PropertyDecl, hook_name: &str) -> bool {
+    if !property.has_hooks {
+        return hook_name == "get" || (hook_name == "set" && !property.is_readonly);
+    }
+    match hook_name {
+        "get" => property.hook_has_get && !property.hook_get_is_abstract,
+        "set" => property.hook_has_set && !property.hook_set_is_abstract,
+        _ => false,
+    }
 }
 
 fn inherited_unsatisfied_abstract_method(
@@ -11742,6 +12158,118 @@ fn validate_readonly_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
     Ok(())
 }
 
+fn validate_property_interface_set_visibility(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        if class.is_interface {
+            continue;
+        }
+        for property in &class.properties {
+            let mut requirements = Vec::new();
+            collect_class_interface_set_visibility_properties(
+                class,
+                &property.name,
+                classes,
+                &mut requirements,
+            );
+            for (interface, interface_property) in requirements {
+                if !interface_property.has_hooks || !interface_property.hook_has_set {
+                    continue;
+                }
+                if interface_property.set_visibility == interface_property.visibility
+                    && property.set_visibility != property.visibility
+                {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Set access level of {}::${} must be omitted (as in class {})",
+                            class.name, property.name, interface.name
+                        ),
+                        Some(property.span),
+                    ));
+                }
+                if visibility_rank(property.set_visibility)
+                    > visibility_rank(interface_property.set_visibility)
+                {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Set access level of {}::${} must be {}(set) (as in class {}) or weaker",
+                            class.name,
+                            property.name,
+                            property_visibility_name(interface_property.set_visibility),
+                            interface.name
+                        ),
+                        Some(property.span),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_class_interface_set_visibility_properties<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+    requirements: &mut Vec<(&'a ClassDecl, &'a PropertyDecl)>,
+) {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        for interface_name in &candidate.interfaces {
+            collect_interface_set_visibility_properties(
+                interface_name,
+                property_name,
+                classes,
+                &mut seen_interfaces,
+                requirements,
+            );
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+}
+
+fn collect_interface_set_visibility_properties<'a>(
+    interface_name: &str,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+    seen: &mut HashSet<String>,
+    requirements: &mut Vec<(&'a ClassDecl, &'a PropertyDecl)>,
+) {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return;
+    };
+    if !interface.is_interface {
+        return;
+    }
+    if let Some(property) = interface
+        .properties
+        .iter()
+        .find(|property| property.name == property_name)
+    {
+        requirements.push((interface, property));
+    }
+    for parent_interface in &interface.interfaces {
+        collect_interface_set_visibility_properties(
+            parent_interface,
+            property_name,
+            classes,
+            seen,
+            requirements,
+        );
+    }
+}
+
 fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()> {
     for class in classes {
         let Some(parent_name) = &class.parent_name else {
@@ -11764,8 +12292,9 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
             if parent_property.visibility == PropertyVisibility::Private {
                 continue;
             }
-            if parent_property.set_visibility == PropertyVisibility::Private
-                && parent_property.visibility != PropertyVisibility::Private
+            if parent_property.is_final
+                || (parent_property.set_visibility == PropertyVisibility::Private
+                    && parent_property.visibility != PropertyVisibility::Private)
             {
                 return Err(Diagnostic::new(
                     format!(

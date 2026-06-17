@@ -1955,7 +1955,22 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
     ptn_throw_exception(runtime, "Error", message);
 }
 
-static PTN_UNUSED void ptn_emit_array_object_dynamic_property_deprecation(
+static PTN_UNUSED int ptn_object_class_allows_dynamic_properties(
+    PtnRuntime *runtime,
+    const char *class_name
+) {
+    if (class_name == NULL) {
+        return 0;
+    }
+    if (ptn_class_name_is_stdclass(class_name)) {
+        return 1;
+    }
+    return runtime != NULL &&
+        runtime->declared_class_allows_dynamic_properties != NULL &&
+        runtime->declared_class_allows_dynamic_properties(class_name);
+}
+
+static PTN_UNUSED void ptn_emit_dynamic_property_deprecation(
     PtnRuntime *runtime,
     PtnObject *object,
     const char *property,
@@ -1963,19 +1978,22 @@ static PTN_UNUSED void ptn_emit_array_object_dynamic_property_deprecation(
 ) {
     if (runtime == NULL ||
         object == NULL ||
-        !ptn_ascii_case_equal(object->class_name, "ArrayObject") ||
+        ptn_object_class_allows_dynamic_properties(runtime, object->class_name) ||
         !ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_DEPRECATED)) {
         return;
     }
-    runtime->diagnostics.emitted_deprecation = 1;
-    ptn_diagnostic_printf(
-        &runtime->diagnostics,
-        "\nDeprecated: Creation of dynamic property %s::$%s is deprecated in %s on line %zu\n",
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Creation of dynamic property %s::$%s is deprecated",
         object->class_name,
-        property,
-        runtime->source_path != NULL ? runtime->source_path : "ptn",
-        line
+        property
     );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_deprecation(runtime, message, line);
 }
 
 #define PTN_PROPERTY_ACCESS_READ 0
@@ -2214,6 +2232,13 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         PtnPropertyVisibility visibility = (for_write || unset_write)
             ? scoped_private->set_visibility
             : scoped_private->read_visibility;
+        if ((access_mode == PTN_PROPERTY_ACCESS_WRITE ||
+                access_mode == PTN_PROPERTY_ACCESS_INDIRECT_WRITE) &&
+            scoped_private->is_readonly &&
+            scoped_private->set_visibility == PTN_PROPERTY_PROTECTED &&
+            ptn_object_property_storage_initialized(object, scoped_private->storage_name)) {
+            return ptn_duplicate_string(scoped_private->storage_name);
+        }
         if (!ptn_property_visibility_allows(
             runtime,
             visibility,
@@ -2288,12 +2313,6 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
             }
             return NULL;
         }
-        int readonly_initialized = (for_write || unset_write) &&
-            scoped_private->is_readonly &&
-            ptn_object_property_storage_initialized(object, scoped_private->storage_name);
-        if (readonly_initialized) {
-            return ptn_duplicate_string(scoped_private->storage_name);
-        }
         return ptn_duplicate_string(scoped_private->storage_name);
     }
     const PtnObjectPropertyMetadata *shared_property =
@@ -2302,6 +2321,13 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         PtnPropertyVisibility visibility = (for_write || unset_write)
             ? shared_property->set_visibility
             : shared_property->read_visibility;
+        if ((access_mode == PTN_PROPERTY_ACCESS_WRITE ||
+                access_mode == PTN_PROPERTY_ACCESS_INDIRECT_WRITE) &&
+            shared_property->is_readonly &&
+            shared_property->set_visibility == PTN_PROPERTY_PROTECTED &&
+            ptn_object_property_storage_initialized(object, shared_property->storage_name)) {
+            return ptn_duplicate_string(shared_property->storage_name);
+        }
         if (!ptn_property_visibility_allows(
             runtime,
             visibility,
@@ -2375,12 +2401,6 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                 );
             }
             return NULL;
-        }
-        int readonly_initialized = (for_write || unset_write) &&
-            shared_property->is_readonly &&
-            ptn_object_property_storage_initialized(object, shared_property->storage_name);
-        if (readonly_initialized) {
-            return ptn_duplicate_string(shared_property->storage_name);
         }
         return ptn_duplicate_string(shared_property->storage_name);
     }
@@ -3076,7 +3096,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         return ptn_null();
     }
     if (metadata == NULL && entry == NULL) {
-        ptn_emit_array_object_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
+        ptn_emit_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
     }
     PtnValue stored = ptn_null();
     if (metadata != NULL &&

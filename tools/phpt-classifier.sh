@@ -1704,7 +1704,11 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/property_readonly_00[12][.]phpt$/
         }
         function ptn_supported_property_hook_metadata_row() {
-            return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/
+            return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/property_hooks\/abstract_hook[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/property_hooks\/abstract_prop_hooks[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/property_hooks\/syntax[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/property_hooks\/ReflectionClass_getMethods[.]phpt$/
         }
         {
             line = ptn_php_code_line($0)

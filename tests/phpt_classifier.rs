@@ -1146,6 +1146,36 @@ fn phpt_classifier_keeps_supported_asymmetric_property_hook_rows_runnable_by_pat
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path() {
+    let cases = [
+        (
+            "Zend/tests/property_hooks/syntax.phpt",
+            "--TEST--\nsyntax\n--FILE--\n<?php\nclass Test { public $prop { get { } set { } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/abstract_hook.phpt",
+            "--TEST--\nabstract hook\n--FILE--\n<?php\nabstract class A { public abstract $prop { get; set {} } }\nclass B extends A { public $prop { get {} } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/abstract_prop_hooks.phpt",
+            "--TEST--\nabstract prop hooks\n--FILE--\n<?php\nabstract class A { abstract public $prop { get; set; } }\nclass B extends A { public $prop { get {} set {} } }\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/property_hooks/ReflectionClass_getMethods.phpt",
+            "--TEST--\nreflection class methods\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } }\nvar_dump((new ReflectionClass(Test::class))->getMethods());\n--EXPECT--\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n",
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_arrow_functions_runnable() {
     let classification = classify(
         "--TEST--\narrow\n--FILE--\n<?php\n$fn = fn($value) => $value + 1;\nvar_dump($fn(1));\n--EXPECT--\nint(2)\n",

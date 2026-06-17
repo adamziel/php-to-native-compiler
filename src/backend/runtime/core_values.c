@@ -797,6 +797,7 @@ typedef int (*PtnClassScopeAllowsHandler)(
     const char *declaring_class
 );
 typedef int (*PtnDeclaredClassReadonlyHandler)(const char *class_name);
+typedef int (*PtnDeclaredClassAllowsDynamicPropertiesHandler)(const char *class_name);
 typedef int (*PtnMagicPropertyReadHandler)(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -902,6 +903,7 @@ struct PtnRuntime {
     PtnDeclaredMethodExistsHandler declared_method_exists;
     PtnClassScopeAllowsHandler class_scope_allows;
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
+    PtnDeclaredClassAllowsDynamicPropertiesHandler declared_class_allows_dynamic_properties;
     PtnMagicPropertyReadHandler magic_property_read;
     PtnMagicPropertyIssetHandler magic_property_isset;
     int *declared_user_functions;
