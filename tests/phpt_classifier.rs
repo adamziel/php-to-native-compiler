@@ -1034,6 +1034,54 @@ fn phpt_classifier_allows_collected_generator_runtime_subset() {
 }
 
 #[test]
+fn phpt_classifier_allows_supported_generator_reference_frontier_rows() {
+    let cases = [
+        (
+            "Zend/tests/generators/gc_with_iterator_in_foreach.phpt",
+            "--TEST--\ngenerator gc foreach\n--FILE--\n<?php\nfunction gen($iter, &$gen) {\n    foreach ($iter as $v) {\n        yield;\n    }\n}\n$iter = new ArrayIterator([1, 2, 3]);\n$gen = gen($iter, $gen);\n$gen->next();\nunset($gen);\ngc_collect_cycles();\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/generators/no_foreach_var_leaks.phpt",
+            "--TEST--\ngenerator foreach close\n--FILE--\n<?php\nfunction gen(array $array) {\n    foreach ($array as $value) {\n        yield $value;\n    }\n}\n$gen = gen(['Foo', 'Bar']);\nvar_dump($gen->current());\n--EXPECT--\nstring(3) \"Foo\"\n",
+        ),
+        (
+            "Zend/tests/generators/yield_by_reference.phpt",
+            "--TEST--\nyield by ref\n--FILE--\n<?php\nfunction &iter(array &$array) {\n    foreach ($array as $key => &$value) {\n        yield $key => $value;\n    }\n}\n$array = [1, 2, 3];\n$iter = iter($array);\nforeach ($iter as &$value) {\n    $value *= -1;\n}\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/generators/yield_by_reference_optimization.phpt",
+            "--TEST--\nyield by ref assignment\n--FILE--\n<?php\nfunction &gen() {\n    yield $v = 0;\n    yield $v = 1;\n}\nforeach (gen() as $v) {\n    var_dump($v);\n}\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/generators/yield_from_by_reference.phpt",
+            "--TEST--\nyield from by ref\n--FILE--\n<?php\nfunction &gen() {\n    yield from [];\n}\n--EXPECTF--\n",
+        ),
+    ];
+
+    for (relative_path, phpt) in cases {
+        let classification = classify_at_relative_path(phpt, relative_path);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{relative_path}: {classification:?}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_keeps_return_from_by_ref_generator_blocked() {
+    let classification = classify_at_relative_path(
+        "--TEST--\nreturn from by ref generator\n--FILE--\n<?php\nfunction &gen() {\n    yield;\n    $arr = [42];\n    return $arr[0];\n}\nfunction gen2() {\n    var_dump(yield from gen());\n}\ngen2()->next();\n--EXPECT--\nint(42)\n",
+        "Zend/tests/generators/return_from_by_ref_generator.phpt",
+    );
+
+    assert!(
+        classification.starts_with("unsupported-generator-runtime\t")
+            && classification.contains("by-reference generator bare-yield return boundary"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_asymmetric_property_visibility_rows_runnable() {
     let classification = classify(
         "--TEST--\nasymmetric visibility\n--FILE--\n<?php\nclass Bag { public private(set) int $value; }\n--EXPECT--\n",

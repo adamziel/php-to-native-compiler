@@ -1323,6 +1323,20 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_supported_anonymous_dynamic_static_row() {
             return ptn_path ~ /Zend\/tests\/anon\/008[.]phpt$/
         }
+        function ptn_supported_generator_foreach_cleanup_row() {
+            return ptn_path ~ /Zend\/tests\/generators\/gc_with_iterator_in_foreach[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/generators\/no_foreach_var_leaks[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/generators\/yield_by_reference[.]phpt$/
+        }
+        function ptn_supported_generator_by_reference_assignment_yield_row() {
+            return ptn_path ~ /Zend\/tests\/generators\/yield_by_reference_optimization[.]phpt$/
+        }
+        function ptn_supported_generator_by_reference_yield_from_diagnostic_row() {
+            return ptn_path ~ /Zend\/tests\/generators\/yield_from_by_reference[.]phpt$/
+        }
+        function ptn_unsupported_generator_return_from_by_ref_row() {
+            return ptn_path ~ /Zend\/tests\/generators\/return_from_by_ref_generator[.]phpt$/
+        }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
             for (i = 1; i <= length(line); i++) {
@@ -1412,6 +1426,11 @@ ptn_phpt_first_unsupported_language_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
+                found = 1
+                exit
+            }
+            if (ptn_unsupported_generator_return_from_by_ref_row()) {
+                print "unsupported-generator-runtime\trequires by-reference generator bare-yield return boundary without spurious yield notice"
                 found = 1
                 exit
             }
@@ -1518,20 +1537,22 @@ ptn_phpt_first_unsupported_language_surface() {
                 ptn_generator_foreach_context = 1
             }
             if (line ~ /(^|[^[:alnum:]_$])yield[[:space:]]+from([^[:alnum:]_]|$)/) {
-                if (ptn_by_ref_function_context) {
+                if (ptn_by_ref_function_context && !ptn_supported_generator_by_reference_yield_from_diagnostic_row()) {
                     ptn_defer_generator_reason("requires generator yield-from by-reference rejection, outside PTN collected generator runtime")
                 }
-                if (ptn_generator_foreach_context) {
+                if (ptn_generator_foreach_context && !ptn_supported_generator_foreach_cleanup_row()) {
                     ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
                 }
                 next
             }
             if (line ~ /(^|[^[:alnum:]_$])yield([[:space:];(),]|$)/) {
-                if (ptn_by_ref_function_context && line ~ /yield[^;]*[^=!<>]=([^=>]|$)/) {
+                if (ptn_by_ref_function_context &&
+                    line ~ /yield[^;]*[^=!<>]=([^=>]|$)/ &&
+                    !ptn_supported_generator_by_reference_assignment_yield_row()) {
                     ptn_defer_generator_reason("requires generator suspension timing for by-reference yielded assignment expressions, outside PTN collected generator runtime")
                     next
                 }
-                if (ptn_generator_foreach_context) {
+                if (ptn_generator_foreach_context && !ptn_supported_generator_foreach_cleanup_row()) {
                     ptn_defer_generator_reason("requires generator suspension cleanup for live foreach variables and premature close, outside PTN generator runtime")
                 }
                 next
