@@ -991,6 +991,22 @@ static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
     if (diagnostics != NULL) {
         diagnostics->emitted_deprecation = 1;
     }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Implicit conversion from float %.16G to int loses precision",
+        value
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    if (
+        diagnostics != NULL &&
+        ptn_diagnostics_try_error_handler(diagnostics, PTN_E_DEPRECATED, message, path, line)
+    ) {
+        return;
+    }
     ptn_diagnostic_printf(
         diagnostics,
         "\nDeprecated: Implicit conversion from float %.16G to int loses precision in %s on line %zu\n",
@@ -1024,6 +1040,33 @@ static PTN_UNUSED void ptn_emit_float_string_to_int_precision_deprecation_at(
     if (diagnostics != NULL) {
         diagnostics->emitted_deprecation = 1;
     }
+    int needed = snprintf(
+        NULL,
+        0,
+        "Implicit conversion from float-string \"%s\" to int loses precision",
+        value
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Implicit conversion from float-string \"%s\" to int loses precision",
+        value
+    );
+    if (
+        diagnostics != NULL &&
+        ptn_diagnostics_try_error_handler(diagnostics, PTN_E_DEPRECATED, message, path, line)
+    ) {
+        free(message);
+        return;
+    }
+    free(message);
     ptn_diagnostic_printf(
         diagnostics,
         "\nDeprecated: Implicit conversion from float-string \"%s\" to int loses precision in %s on line %zu\n",
@@ -1459,6 +1502,19 @@ static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
     }
     char formatted[64];
     ptn_format_bitwise_float_diagnostic(value, formatted, sizeof(formatted));
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The float %s is not representable as an int, cast occurred",
+        formatted
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
+        return;
+    }
     fputc('\n', stdout);
     fputs("Warning: The float ", stdout);
     fputs(formatted, stdout);

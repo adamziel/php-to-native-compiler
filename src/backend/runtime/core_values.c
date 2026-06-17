@@ -609,6 +609,12 @@ typedef struct {
 } PtnOutputBuffer;
 
 typedef struct {
+    PtnValue callback;
+    PtnValue *args;
+    size_t argc;
+} PtnShutdownFunction;
+
+typedef struct {
     PtnReference *reference;
 } PtnStaticLocalSlot;
 
@@ -877,6 +883,12 @@ struct PtnRuntime {
     size_t output_buffers_len;
     size_t output_buffers_capacity;
     size_t output_buffer_callback_depth;
+    PtnShutdownFunction *shutdown_functions;
+    size_t shutdown_functions_len;
+    size_t shutdown_functions_capacity;
+    size_t shutdown_function_index;
+    int shutdown_functions_running;
+    int shutdown_functions_completed;
     PtnMethodDispatchHandler method_dispatch;
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;

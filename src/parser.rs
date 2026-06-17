@@ -14311,6 +14311,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "ord"
             | "rand"
             | "range"
+            | "register_shutdown_function"
             | "register_tick_function"
             | "arsort"
             | "asort"

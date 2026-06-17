@@ -856,11 +856,33 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     ptn_diagnostics_clear_current_error_handler(handler_diagnostics);
     PtnValue result = ptn_null();
     PtnTryFrame handler_frame;
+    PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    int saved_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    int saved_throw_argument_count_errors = runtime->throw_argument_count_errors;
     ptn_try_frame_push(runtime, &handler_frame);
-    if (setjmp(handler_frame.jump) == 0) {
-        result = ptn_call_callable(runtime, saved_handler, 4, args, line);
+    if (setjmp(handler_frame.jump) != 0) {
+        ptn_try_frame_pop(runtime, &handler_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->warn_by_ref_argument_mismatch = saved_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
+        if (!handler_diagnostics->has_error_handler) {
+            handler_diagnostics->error_handler = saved_handler;
+            handler_diagnostics->has_error_handler = 1;
+            handler_diagnostics->error_handler_levels = saved_handler_levels;
+        } else {
+            ptn_value_destroy(&saved_handler);
+        }
+        for (size_t i = 0; i < 4; i++) {
+            ptn_value_destroy(&args[i]);
+        }
+        ptn_rethrow_exception(runtime);
+        return 1;
     }
+    result = ptn_call_callable(runtime, saved_handler, 4, args, line);
     ptn_try_frame_pop(runtime, &handler_frame);
+    runtime->trace_frame = saved_trace_frame;
+    runtime->warn_by_ref_argument_mismatch = saved_warn_by_ref_argument_mismatch;
+    runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
     if (!handler_diagnostics->has_error_handler) {
         handler_diagnostics->error_handler = saved_handler;
         handler_diagnostics->has_error_handler = 1;
@@ -1165,17 +1187,30 @@ static PTN_UNUSED void ptn_emit_user_notice(PtnDiagnosticSink *diagnostics, cons
     );
 }
 
-static PTN_UNUSED void ptn_emit_notice(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+static PTN_UNUSED void ptn_emit_notice_with_path(
+    PtnDiagnosticSink *diagnostics,
+    const char *message,
+    const char *path,
+    size_t line,
+    int leading_newline
+) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
+        return;
+    }
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_NOTICE, message, path, line)) {
         return;
     }
     ptn_diagnostic_printf(
         diagnostics,
-        "Notice: %s in %s on line %zu\n",
+        leading_newline ? "\nNotice: %s in %s on line %zu\n" : "Notice: %s in %s on line %zu\n",
         message,
-        ptn_diagnostic_builtin_path(line),
+        path != NULL ? path : ptn_diagnostic_builtin_path(line),
         line
     );
+}
+
+static PTN_UNUSED void ptn_emit_notice(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    ptn_emit_notice_with_path(diagnostics, message, NULL, line, 0);
 }
 
 static PTN_UNUSED void ptn_emit_runtime_warning(PtnRuntime *runtime, const char *message, size_t line) {
@@ -1254,92 +1289,83 @@ static PTN_UNUSED void ptn_emit_spaced_warning(PtnDiagnosticSink *diagnostics, c
 }
 
 static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Only variables should be assigned by reference in ptn on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        diagnostics,
+        "Only variables should be assigned by reference",
+        NULL,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_only_variables_assigned_by_reference_notice_at(PtnRuntime *runtime, size_t line) {
-    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Only variables should be assigned by reference in ", stdout);
-    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
-    fputs(" on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        &runtime->diagnostics,
+        "Only variables should be assigned by reference",
+        runtime->source_path,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_attempting_to_set_reference_to_non_referenceable_value_notice(PtnDiagnosticSink *diagnostics, size_t line) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Attempting to set reference to non referenceable value in ptn on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        diagnostics,
+        "Attempting to set reference to non referenceable value",
+        NULL,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_only_variables_passed_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Only variables should be passed by reference in ptn on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        diagnostics,
+        "Only variables should be passed by reference",
+        NULL,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_only_variables_passed_by_reference_notice_at(PtnRuntime *runtime, size_t line) {
-    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Only variables should be passed by reference in ", stdout);
-    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
-    fputs(" on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        &runtime->diagnostics,
+        "Only variables should be passed by reference",
+        runtime->source_path,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_only_variable_references_returned_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Only variable references should be returned by reference in ptn on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        diagnostics,
+        "Only variable references should be returned by reference",
+        NULL,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_only_variable_references_returned_by_reference_notice_at(PtnRuntime *runtime, size_t line) {
-    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Only variable references should be returned by reference in ", stdout);
-    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
-    fputs(" on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        &runtime->diagnostics,
+        "Only variable references should be returned by reference",
+        runtime->source_path,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_only_variable_references_yielded_by_reference_notice(PtnDiagnosticSink *diagnostics, size_t line) {
-    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_NOTICE)) {
-        return;
-    }
-    fputc('\n', stdout);
-    fputs("Notice: Only variable references should be yielded by reference in ptn on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_emit_notice_with_path(
+        diagnostics,
+        "Only variable references should be yielded by reference",
+        NULL,
+        line,
+        1
+    );
 }
 
 static PTN_UNUSED void ptn_emit_control_warning(const char *message, const char *path, size_t line) {
@@ -1440,6 +1466,12 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
+    runtime->shutdown_functions = NULL;
+    runtime->shutdown_functions_len = 0;
+    runtime->shutdown_functions_capacity = 0;
+    runtime->shutdown_function_index = 0;
+    runtime->shutdown_functions_running = 0;
+    runtime->shutdown_functions_completed = 0;
     runtime->method_dispatch = NULL;
     runtime->reflected_method_dispatch = NULL;
     runtime->declared_method_exists = NULL;

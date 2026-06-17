@@ -469,8 +469,17 @@ static PTN_UNUSED void ptn_emit_array_runtime_warning(PtnRuntime *runtime, const
     if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
         return;
     }
-    ptn_emit_array_runtime_diagnostic(runtime, "Warning", message, line);
     runtime->diagnostics.emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_WARNING,
+        message,
+        runtime->source_path,
+        line
+    )) {
+        return;
+    }
+    ptn_emit_array_runtime_diagnostic(runtime, "Warning", message, line);
 }
 
 static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, PtnResource *resource, size_t line) {
@@ -487,6 +496,15 @@ static PTN_UNUSED void ptn_emit_resource_offset_warning(PtnRuntime *runtime, Ptn
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
+    }
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_WARNING,
+        message,
+        runtime->source_path,
+        line
+    )) {
+        return;
     }
     ptn_emit_array_runtime_diagnostic_at_path(
         runtime,
@@ -3420,6 +3438,16 @@ static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtim
         return;
     }
     runtime->diagnostics.emitted_deprecation = 1;
+    const char *message = "Using null as an array offset is deprecated, use an empty string instead";
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_DEPRECATED,
+        message,
+        runtime->source_path,
+        line
+    )) {
+        return;
+    }
     ptn_diagnostic_printf(
         &runtime->diagnostics,
         "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line %zu\n",

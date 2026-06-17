@@ -63,6 +63,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffers_len = 0;
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
+    runtime->shutdown_functions = NULL;
+    runtime->shutdown_functions_len = 0;
+    runtime->shutdown_functions_capacity = 0;
+    runtime->shutdown_function_index = 0;
+    runtime->shutdown_functions_running = 0;
+    runtime->shutdown_functions_completed = 0;
     runtime->method_dispatch = caller_runtime->method_dispatch;
     runtime->reflected_method_dispatch = caller_runtime->reflected_method_dispatch;
     runtime->declared_method_exists = caller_runtime->declared_method_exists;
@@ -219,8 +225,131 @@ static PTN_UNUSED void ptn_runtime_pop_trace_frame(PtnRuntime *runtime, PtnTrace
     }
 }
 
+static void ptn_shutdown_function_destroy(PtnShutdownFunction *function) {
+    if (function == NULL) {
+        return;
+    }
+    ptn_value_destroy(&function->callback);
+    for (size_t i = 0; i < function->argc; i++) {
+        ptn_value_destroy(&function->args[i]);
+    }
+    free(function->args);
+    function->args = NULL;
+    function->argc = 0;
+}
+
+static PTN_UNUSED void ptn_runtime_register_shutdown_function(
+    PtnRuntime *runtime,
+    PtnValue callback,
+    size_t argc,
+    const PtnValue *args
+) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (root->shutdown_functions_len == root->shutdown_functions_capacity) {
+        size_t new_capacity = root->shutdown_functions_capacity == 0
+            ? 4
+            : root->shutdown_functions_capacity * 2;
+        PtnShutdownFunction *new_functions = realloc(
+            root->shutdown_functions,
+            new_capacity * sizeof(PtnShutdownFunction)
+        );
+        if (new_functions == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        root->shutdown_functions = new_functions;
+        root->shutdown_functions_capacity = new_capacity;
+    }
+    PtnShutdownFunction *function =
+        &root->shutdown_functions[root->shutdown_functions_len++];
+    function->callback = ptn_value_clone(callback);
+    function->argc = argc;
+    function->args = NULL;
+    if (argc != 0) {
+        function->args = malloc(argc * sizeof(PtnValue));
+        if (function->args == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < argc; i++) {
+            function->args[i] = ptn_value_clone_deref(args[i]);
+        }
+    }
+}
+
+static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    if (
+        root->shutdown_functions_completed ||
+        root->shutdown_functions_running
+    ) {
+        return;
+    }
+    root->shutdown_functions_running = 1;
+    while (root->shutdown_function_index < root->shutdown_functions_len) {
+        PtnShutdownFunction *function =
+            &root->shutdown_functions[root->shutdown_function_index++];
+        PtnValue result = ptn_null();
+        PtnTryFrame callback_frame;
+        PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+        int saved_suppress_user_call_frame_location =
+            runtime->suppress_user_call_frame_location;
+        int saved_warn_by_ref_argument_mismatch =
+            runtime->warn_by_ref_argument_mismatch;
+        int saved_throw_argument_count_errors =
+            runtime->throw_argument_count_errors;
+        ptn_try_frame_push(runtime, &callback_frame);
+        if (setjmp(callback_frame.jump) != 0) {
+            ptn_try_frame_pop(runtime, &callback_frame);
+            runtime->trace_frame = saved_trace_frame;
+            runtime->suppress_user_call_frame_location =
+                saved_suppress_user_call_frame_location;
+            runtime->warn_by_ref_argument_mismatch =
+                saved_warn_by_ref_argument_mismatch;
+            runtime->throw_argument_count_errors =
+                saved_throw_argument_count_errors;
+            root->shutdown_functions_running = 0;
+            ptn_rethrow_exception(runtime);
+        }
+        runtime->suppress_user_call_frame_location = 1;
+        runtime->warn_by_ref_argument_mismatch = 1;
+        runtime->throw_argument_count_errors = 1;
+        result = ptn_call_callable(
+            runtime,
+            function->callback,
+            function->argc,
+            function->args,
+            0
+        );
+        ptn_try_frame_pop(runtime, &callback_frame);
+        runtime->trace_frame = saved_trace_frame;
+        runtime->suppress_user_call_frame_location =
+            saved_suppress_user_call_frame_location;
+        runtime->warn_by_ref_argument_mismatch =
+            saved_warn_by_ref_argument_mismatch;
+        runtime->throw_argument_count_errors =
+            saved_throw_argument_count_errors;
+        ptn_value_destroy(&result);
+        if (runtime->exceptions->active_exception != NULL) {
+            root->shutdown_functions_running = 0;
+            ptn_rethrow_exception(runtime);
+        }
+    }
+    root->shutdown_functions_running = 0;
+    root->shutdown_functions_completed = 1;
+#else
+    (void)runtime;
+#endif
+}
+
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
+        ptn_runtime_run_shutdown_functions(runtime);
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_static_local_destructors(runtime);
         ptn_runtime_run_object_destructors(runtime);
@@ -330,6 +459,16 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffers_len = 0;
         runtime->output_buffers_capacity = 0;
         runtime->output_buffer_callback_depth = 0;
+        for (size_t i = 0; i < runtime->shutdown_functions_len; i++) {
+            ptn_shutdown_function_destroy(&runtime->shutdown_functions[i]);
+        }
+        free(runtime->shutdown_functions);
+        runtime->shutdown_functions = NULL;
+        runtime->shutdown_functions_len = 0;
+        runtime->shutdown_functions_capacity = 0;
+        runtime->shutdown_function_index = 0;
+        runtime->shutdown_functions_running = 0;
+        runtime->shutdown_functions_completed = 0;
         free(runtime->strtok_string);
         runtime->strtok_string = NULL;
         runtime->strtok_len = 0;

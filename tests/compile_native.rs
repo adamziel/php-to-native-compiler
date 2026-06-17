@@ -5150,6 +5150,67 @@ important();
 }
 
 #[test]
+fn compile_attribute_throwing_error_handler_remains_installed_to_native_binary() {
+    let root = temp_dir("ptn-native-attribute-throwing-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-throwing-handler.php");
+    let output = root.join("attribute-throwing-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function (int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) {
+    throw new ErrorException($errstr, 0, $errno, $errfile, $errline);
+});
+
+#[\\Deprecated(TEST)]
+const TEST = 'from itself';
+
+#[\\Deprecated]
+const TEST2 = 'from another';
+
+#[\\Deprecated(TEST2)]
+const TEST3 = 1;
+
+#[\\NoDiscard]
+function important(): int { return 1; }
+
+try {
+    TEST;
+} catch (ErrorException $e) {
+    echo 'Caught: ', $e->getMessage(), \"\\n\";
+}
+
+try {
+    TEST3;
+} catch (ErrorException $e) {
+    echo 'Caught: ', $e->getMessage(), \"\\n\";
+}
+
+try {
+    important();
+} catch (ErrorException $e) {
+    echo 'Caught: ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Caught: Constant TEST is deprecated, from itself\n",
+            "Caught: Constant TEST2 is deprecated\n",
+            "Caught: The return value of function important() should either be used or intentionally ignored by casting it as (void)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_error_handler_stack_and_trigger_error_to_native_binary() {
     let root = temp_dir("ptn-native-error-handler-stack-trigger");
     fs::create_dir_all(&root).unwrap();
@@ -5190,6 +5251,84 @@ trigger_error('delta');
 }
 
 #[test]
+fn compile_reference_notice_routes_through_user_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-notice-reference-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("notice-reference-handler.php");
+    let output = root.join("notice-reference-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function (int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) {
+    echo 'notice:', $errno, ':', $errstr, ':', $errfile, ':', $errline, \"\\n\";
+    return true;
+});
+
+function returns_null() { return null; }
+
+$value = &returns_null();
+echo \"after\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("notice:8:Only variables should be assigned by reference:"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("notice-reference-handler.php:"), "{stdout}");
+    assert!(stdout.contains("after\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_numeric_and_array_diagnostics_route_through_user_error_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-numeric-array-diagnostics-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("numeric-array-diagnostics-handler.php");
+    let output = root.join("numeric-array-diagnostics-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function (int $errno, string $errstr) {
+    throw new Exception($errno . ':' . $errstr);
+});
+
+try {
+    ~INF;
+} catch (Exception $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $array = [null => 'value'];
+} catch (Exception $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2:The float INF is not representable as an int, cast occurred\n",
+            "8192:Using null as an array offset is deprecated, use an empty string instead\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_exception_handler_stack_and_null_restore_to_native_binary() {
     let root = temp_dir("ptn-native-exception-handler-stack");
     fs::create_dir_all(&root).unwrap();
@@ -5222,6 +5361,83 @@ throw new Exception('boom');
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Second handler: boom\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_shutdown_function_callbacks_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-function-callbacks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-function-callbacks.php");
+    let output = root.join("shutdown-function-callbacks-bin");
+    fs::write(
+        &input,
+        "<?php
+class Probe {
+    public function __destruct() {
+        echo \"destruct\\n\";
+    }
+}
+
+function shutdown_label($label, $value) {
+    echo \"shutdown:$label:$value\\n\";
+}
+
+$probe = new Probe();
+register_shutdown_function('shutdown_label', 'first', 7);
+register_shutdown_function(function () {
+    echo \"shutdown:closure\\n\";
+});
+echo \"main\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "main\nshutdown:first:7\nshutdown:closure\ndestruct\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_register_shutdown_function"));
+    assert!(c_source.contains("ptn_runtime_run_shutdown_functions(runtime)"));
+}
+
+#[test]
+fn compile_shutdown_function_error_handler_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-handler-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-handler-exception.php");
+    let output = root.join("shutdown-handler-exception-bin");
+    fs::write(
+        &input,
+        "<?php
+set_exception_handler(function (Throwable $exception) {
+    echo 'Caught: ', $exception->getMessage(), \"\\n\";
+});
+set_error_handler(function ($errno, $errstr) {
+    throw new Exception($errstr);
+});
+register_shutdown_function(function () {
+    trigger_error('main', E_USER_WARNING);
+});
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Caught: main\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -16266,6 +16482,63 @@ var_dump(method_exists(\"ReflectionMethod\", \"invokeArgs\"));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("runtime.reflected_method_dispatch"));
     assert!(c_source.contains("ptn_reflection_method_dispatch_invoke"));
+}
+
+#[test]
+fn compile_reflection_method_invoke_exception_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-method-invoke-exception-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-method-invoke-exception-trace.php");
+    let output = root.join("reflection-method-invoke-exception-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+class ErrorHandler {
+    public static function handle(int $errno, string $errstr, string $errfile, int $errline) {
+        throw new RuntimeException;
+    }
+}
+
+class Target {
+    public function run() {
+        $source = &$this->missing();
+    }
+
+    public function missing() {
+        return null;
+    }
+}
+
+set_error_handler([ErrorHandler::class, 'handle'], E_ALL);
+
+$method = new ReflectionMethod(Target::class, 'run');
+$method->invoke(new Target());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught RuntimeException"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(": ErrorHandler::handle(8, 'Only variables ...'"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("[internal function]: Target->run()"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(": ReflectionMethod->invoke(Object(Target))"),
+        "{stderr}"
+    );
 }
 
 #[test]

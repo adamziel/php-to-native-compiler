@@ -35085,6 +35085,28 @@ static PtnValue ptn_internal_register_tick_function(PtnRuntime *runtime, size_t 
     return ptn_bool(1);
 }
 
+static PtnValue ptn_internal_register_shutdown_function(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnValue callback = ptn_internal_expect_callback_arg(
+        runtime,
+        "register_shutdown_function",
+        1,
+        "callback",
+        args[0]
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_runtime_register_shutdown_function(
+        runtime,
+        callback,
+        argc > 1 ? argc - 1 : 0,
+        argc > 1 ? args + 1 : NULL
+    );
+    ptn_value_destroy(&callback);
+    return ptn_bool(1);
+}
+
 static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || root->output_buffers_len == 0) {
@@ -36566,6 +36588,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "rawurldecode", 1, 1, ptn_internal_rawurldecode },
         { "rawurlencode", 1, 1, ptn_internal_rawurlencode },
         { "range", 2, 3, ptn_internal_range },
+        { "register_shutdown_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_shutdown_function },
         { "register_tick_function", 1, PTN_VARIADIC_ARGS, ptn_internal_register_tick_function },
         { "readdir", 1, 1, ptn_internal_readdir },
         { "readfile", 1, 3, ptn_internal_readfile },
@@ -39593,6 +39616,9 @@ static int ptn_reflection_method_collect_invoke_args(
 static PtnValue ptn_reflection_method_dispatch_invoke(
     PtnRuntime *runtime,
     PtnReflectionMethodData *data,
+    const char *reflection_method_name,
+    size_t reflection_argc,
+    const PtnValue *reflection_args,
     int is_static,
     PtnValue object_arg,
     size_t method_argc,
@@ -39610,7 +39636,31 @@ static PtnValue ptn_reflection_method_dispatch_invoke(
 
     PtnValue result = ptn_null();
     const char *previous_current_class = runtime->current_class_name;
+    int previous_suppress_user_call_frame_location =
+        runtime->suppress_user_call_frame_location;
+    PtnTraceFrame trace_frame;
+    PtnTryFrame dispatch_frame;
+    ptn_runtime_push_trace_frame(
+        runtime,
+        &trace_frame,
+        reflection_method_name,
+        runtime->source_path,
+        line,
+        reflection_argc,
+        reflection_args
+    );
+    ptn_try_frame_push(runtime, &dispatch_frame);
+    if (setjmp(dispatch_frame.jump) != 0) {
+        ptn_try_frame_pop(runtime, &dispatch_frame);
+        runtime->current_class_name = previous_current_class;
+        runtime->suppress_user_call_frame_location =
+            previous_suppress_user_call_frame_location;
+        ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
     runtime->current_class_name = data->class_name;
+    runtime->suppress_user_call_frame_location = 1;
     int handled = runtime->reflected_method_dispatch(
         runtime,
         is_static ? ptn_null() : object_arg,
@@ -39623,6 +39673,10 @@ static PtnValue ptn_reflection_method_dispatch_invoke(
         &result
     );
     runtime->current_class_name = previous_current_class;
+    runtime->suppress_user_call_frame_location =
+        previous_suppress_user_call_frame_location;
+    ptn_try_frame_pop(runtime, &dispatch_frame);
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
     if (handled) {
         return result;
     }
@@ -39699,6 +39753,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         return ptn_reflection_method_dispatch_invoke(
             runtime,
             data,
+            "ReflectionMethod->invoke",
+            argc,
+            args,
             is_static,
             object_arg,
             argc - 1,
@@ -39733,6 +39790,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         PtnValue result = ptn_reflection_method_dispatch_invoke(
             runtime,
             data,
+            "ReflectionMethod->invokeArgs",
+            argc,
+            args,
             is_static,
             object_arg,
             method_argc,
