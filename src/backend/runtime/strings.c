@@ -1281,11 +1281,11 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         return 1;
     }
     if (strcmp(name, "JSON_OBJECT_AS_ARRAY") == 0) {
-        *out = ptn_int(1);
+        *out = ptn_int(PTN_JSON_OBJECT_AS_ARRAY);
         return 1;
     }
     if (strcmp(name, "JSON_BIGINT_AS_STRING") == 0) {
-        *out = ptn_int(2);
+        *out = ptn_int(PTN_JSON_BIGINT_AS_STRING);
         return 1;
     }
     if (strcmp(name, "JSON_INVALID_UTF8_IGNORE") == 0) {

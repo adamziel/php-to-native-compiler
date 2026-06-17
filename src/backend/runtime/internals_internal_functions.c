@@ -1164,6 +1164,43 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 
+static void ptn_var_dump_exception_indented(PtnException *exception, size_t indent, PtnDumpSeenArrays *seen) {
+    const char *path = exception->path == NULL ? "" : exception->path;
+    printf("object(%s)#%zu (7) {\n", exception->class_name, exception->object_id);
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"message\":protected]=>\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    printf("string(%zu) \"", exception->message_len);
+    fwrite(exception->message, 1, exception->message_len, stdout);
+    fputs("\"\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"string\":\"Exception\":private]=>\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    fputs("string(0) \"\"\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"code\":protected]=>\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    printf("int(%lld)\n", (long long)exception->code);
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"file\":protected]=>\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    printf("string(%zu) \"", strlen(path));
+    fputs(path, stdout);
+    fputs("\"\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"line\":protected]=>\n", stdout);
+    ptn_var_dump_indent(indent + 1);
+    printf("int(%zu)\n", exception->line);
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"trace\":\"Exception\":private]=>\n", stdout);
+    ptn_var_dump_value_indented(exception->trace, indent + 1, seen);
+    ptn_var_dump_indent(indent + 1);
+    fputs("[\"previous\":\"Exception\":private]=>\n", stdout);
+    ptn_var_dump_value_indented(exception->previous, indent + 1, seen);
+    ptn_var_dump_indent(indent);
+    fputs("}\n", stdout);
+}
+
 static void ptn_var_dump_object_initialized_properties(
     PtnObject *object,
     size_t indent,
@@ -1802,15 +1839,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_var_dump_closure(value.as.closure, indent);
             break;
         case PTN_EXCEPTION:
-            printf("object(%s)#%zu (1) {\n", value.as.exception->class_name, value.as.exception->object_id);
-            ptn_var_dump_indent(indent + 1);
-            fputs("[\"message\"]=>\n", stdout);
-            ptn_var_dump_indent(indent + 1);
-            printf("string(%zu) \"", strlen(value.as.exception->message));
-            fputs(value.as.exception->message, stdout);
-            fputs("\"\n", stdout);
-            ptn_var_dump_indent(indent);
-            fputs("}\n", stdout);
+            ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE:
             printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, value.as.resource->type_name);
@@ -1990,15 +2019,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             ptn_var_dump_closure(value.as.closure, indent);
             break;
         case PTN_EXCEPTION:
-            printf("object(%s)#%zu (1) {\n", value.as.exception->class_name, value.as.exception->object_id);
-            ptn_var_dump_indent(indent + 1);
-            fputs("[\"message\"]=>\n", stdout);
-            ptn_var_dump_indent(indent + 1);
-            printf("string(%zu) \"", strlen(value.as.exception->message));
-            fputs(value.as.exception->message, stdout);
-            fputs("\"\n", stdout);
-            ptn_var_dump_indent(indent);
-            fputs("}\n", stdout);
+            ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE:
             printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, value.as.resource->type_name);
@@ -4063,7 +4084,8 @@ static PtnValue ptn_internal_var_export(PtnRuntime *runtime, size_t argc, const 
     return ptn_bool(1);
 }
 
-static void ptn_json_set_last_error(PtnRuntime *runtime, int error);
+static void ptn_json_set_last_error(PtnRuntime *runtime, int error, size_t line, size_t column);
+static void ptn_json_throw_exception(PtnRuntime *runtime, int error, size_t line, size_t column);
 static void ptn_json_append_utf8(PtnStringBuffer *buffer, uint32_t codepoint);
 
 static int ptn_json_encode_append_value(
@@ -4187,11 +4209,9 @@ static int ptn_json_utf8_decode(
 }
 
 static size_t ptn_json_utf8_invalid_skip(const unsigned char *data, size_t len) {
-    size_t skip = 1;
-    while (skip < len && ptn_json_is_continuation(data[skip])) {
-        skip++;
-    }
-    return skip;
+    (void)data;
+    (void)len;
+    return 1;
 }
 
 static void ptn_json_encode_append_hex4_unit(PtnStringBuffer *buffer, uint32_t unit, int uppercase) {
@@ -4362,6 +4382,33 @@ static int ptn_json_array_is_list(PtnArray *array) {
     return 1;
 }
 
+static int ptn_json_encode_append_numeric_string(
+    PtnStringBuffer *buffer,
+    const unsigned char *data,
+    size_t len
+) {
+    if (len == 0 || memchr(data, '\0', len) != NULL) {
+        return 0;
+    }
+    char *copy = ptn_duplicate_string_len((const char *)data, len);
+    double numeric = 0.0;
+    if (!ptn_is_numeric_string(copy, &numeric)) {
+        free(copy);
+        return 0;
+    }
+    (void)numeric;
+    PtnNumber number = ptn_string_to_number(copy);
+    free(copy);
+    if (number.type == PTN_NUMBER_INT) {
+        ptn_string_buffer_append_format(buffer, "%lld", (long long)number.integer);
+    } else {
+        char formatted[128];
+        ptn_format_scalar_float(number.floating, formatted, sizeof(formatted));
+        ptn_string_buffer_append(buffer, formatted);
+    }
+    return 1;
+}
+
 static int ptn_json_encode_append_array(
     PtnStringBuffer *buffer,
     PtnArray *array,
@@ -4441,6 +4488,11 @@ static int ptn_json_encode_append_object(
         ptn_json_note_error(error, PTN_JSON_ERROR_DEPTH);
         return 0;
     }
+    if (ptn_dump_seen_objects_contains(seen, object)) {
+        ptn_json_note_error(error, PTN_JSON_ERROR_RECURSION);
+        return 0;
+    }
+    ptn_dump_seen_objects_push(seen, object);
     ptn_string_buffer_append_char(buffer, '{');
     size_t emitted = 0;
     for (size_t i = 0; i < object->properties->len; i++) {
@@ -4464,15 +4516,18 @@ static int ptn_json_encode_append_object(
             error,
             1
         )) {
+            ptn_dump_seen_objects_pop(seen);
             return 0;
         }
         ptn_string_buffer_append_char(buffer, ':');
         if (!ptn_json_encode_append_value(buffer, entry->value, seen, depth - 1, flags, error)) {
+            ptn_dump_seen_objects_pop(seen);
             return 0;
         }
         emitted++;
     }
     ptn_string_buffer_append_char(buffer, '}');
+    ptn_dump_seen_objects_pop(seen);
     return 1;
 }
 
@@ -4510,6 +4565,10 @@ static int ptn_json_encode_append_value(
             return 1;
         }
         case PTN_STRING:
+            if ((flags & PTN_JSON_NUMERIC_CHECK) != 0 &&
+                ptn_json_encode_append_numeric_string(buffer, value.as.string.data, value.as.string.len)) {
+                return 1;
+            }
             if (ptn_json_encode_append_string(
                 buffer,
                 value.as.string.data,
@@ -4582,10 +4641,18 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
     int error = PTN_JSON_ERROR_NONE;
     int ok = ptn_json_encode_append_value(&buffer, args[0], &seen, depth, flags, &error);
     ptn_dump_seen_arrays_free(&seen);
-    ptn_json_set_last_error(runtime, error);
     if (!ok) {
         free(buffer.data);
+        if ((flags & PTN_JSON_THROW_ON_ERROR) != 0 &&
+            (flags & PTN_JSON_PARTIAL_OUTPUT_ON_ERROR) == 0) {
+            ptn_json_throw_exception(runtime, error, 0, 0);
+        }
+        ptn_json_set_last_error(runtime, error, 0, 0);
         return ptn_bool(0);
+    }
+    if ((flags & PTN_JSON_THROW_ON_ERROR) == 0 ||
+        (flags & PTN_JSON_PARTIAL_OUTPUT_ON_ERROR) != 0) {
+        ptn_json_set_last_error(runtime, error, 0, 0);
     }
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
@@ -4598,6 +4665,7 @@ typedef struct {
     int assoc;
     int64_t flags;
     int error;
+    size_t error_marker;
 } PtnJsonParser;
 
 static PtnRuntime *ptn_json_state_root(PtnRuntime *runtime) {
@@ -4607,16 +4675,28 @@ static PtnRuntime *ptn_json_state_root(PtnRuntime *runtime) {
     return runtime->lifecycle_root;
 }
 
-static void ptn_json_set_last_error(PtnRuntime *runtime, int error) {
+static void ptn_json_set_last_error(PtnRuntime *runtime, int error, size_t line, size_t column) {
     PtnRuntime *root = ptn_json_state_root(runtime);
     if (root != NULL) {
         root->json_last_error = error;
+        root->json_last_error_line = line;
+        root->json_last_error_column = column;
     }
 }
 
 static int ptn_json_last_error(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_json_state_root(runtime);
     return root == NULL ? PTN_JSON_ERROR_NONE : root->json_last_error;
+}
+
+static size_t ptn_json_last_error_line(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_json_state_root(runtime);
+    return root == NULL ? 0 : root->json_last_error_line;
+}
+
+static size_t ptn_json_last_error_column(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_json_state_root(runtime);
+    return root == NULL ? 0 : root->json_last_error_column;
 }
 
 static const char *ptn_json_error_message(int error) {
@@ -4649,6 +4729,46 @@ static const char *ptn_json_error_message(int error) {
     }
 }
 
+static char *ptn_json_error_message_owned(int error, size_t line, size_t column) {
+    const char *base = ptn_json_error_message(error);
+    if (error == PTN_JSON_ERROR_NONE || line == 0 || column == 0) {
+        return ptn_duplicate_string(base);
+    }
+    int needed = snprintf(NULL, 0, "%s near location %zu:%zu", base, line, column);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "%s near location %zu:%zu", base, line, column);
+    return message;
+}
+
+static void ptn_json_throw_exception(PtnRuntime *runtime, int error, size_t line, size_t column) {
+    char *message = ptn_json_error_message_owned(error, line, column);
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "JsonException",
+        message,
+        strlen(message),
+        error,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        runtime->call_site_line != 0 ? runtime->call_site_line : line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
 static void ptn_json_parser_skip_ws(PtnJsonParser *parser) {
     while (parser->pos < parser->len) {
         unsigned char byte = parser->data[parser->pos];
@@ -4662,8 +4782,64 @@ static void ptn_json_parser_skip_ws(PtnJsonParser *parser) {
 static int ptn_json_parser_fail(PtnJsonParser *parser, int error) {
     if (parser->error == PTN_JSON_ERROR_NONE) {
         parser->error = error;
+        parser->error_marker = parser->len == 0 ? 0 : parser->pos + 1;
     }
     return 0;
+}
+
+static int ptn_json_parser_fail_at(PtnJsonParser *parser, int error, size_t pos) {
+    if (parser->error == PTN_JSON_ERROR_NONE) {
+        parser->error = error;
+        parser->error_marker = parser->len == 0 ? 0 : pos + 1;
+    }
+    return 0;
+}
+
+static void ptn_json_location_from_marker(
+    const unsigned char *data,
+    size_t len,
+    size_t marker,
+    size_t *line,
+    size_t *column
+) {
+    if (marker == 0) {
+        *line = 0;
+        *column = 0;
+        return;
+    }
+    size_t target = marker - 1;
+    if (target > len) {
+        target = len;
+    }
+    size_t current_line = 1;
+    size_t current_column = 1;
+    for (size_t i = 0; i < target; i++) {
+        unsigned char byte = data[i];
+        if (byte == '\r') {
+            current_line++;
+            current_column = 1;
+            if (i + 1 < target && data[i + 1] == '\n') {
+                i++;
+            }
+            continue;
+        }
+        if (byte == '\n') {
+            current_line++;
+            current_column = 1;
+            continue;
+        }
+        if (byte > 0x7f) {
+            uint32_t codepoint = 0;
+            size_t consumed = 0;
+            if (ptn_json_utf8_decode(data + i, target - i, &codepoint, &consumed) && consumed > 0) {
+                (void)codepoint;
+                i += consumed - 1;
+            }
+        }
+        current_column++;
+    }
+    *line = current_line;
+    *column = current_column;
 }
 
 static int ptn_json_hex_value(unsigned char byte) {
@@ -4718,6 +4894,7 @@ static int ptn_json_parser_parse_string(PtnJsonParser *parser, PtnStringBuffer *
     if (parser->pos >= parser->len || parser->data[parser->pos] != '"') {
         return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
     }
+    size_t string_start = parser->pos;
     parser->pos++;
     while (parser->pos < parser->len) {
         unsigned char byte = parser->data[parser->pos];
@@ -4726,7 +4903,7 @@ static int ptn_json_parser_parse_string(PtnJsonParser *parser, PtnStringBuffer *
             return 1;
         }
         if (byte < 0x20) {
-            return ptn_json_parser_fail(parser, PTN_JSON_ERROR_CTRL_CHAR);
+            return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_CTRL_CHAR, string_start);
         }
         if (byte != '\\') {
             if (byte <= 0x7f) {
@@ -4752,11 +4929,11 @@ static int ptn_json_parser_parse_string(PtnJsonParser *parser, PtnStringBuffer *
                 parser->pos += skip;
                 continue;
             }
-            return ptn_json_parser_fail(parser, PTN_JSON_ERROR_UTF8);
+            return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_UTF8, string_start);
         }
         parser->pos++;
         if (parser->pos >= parser->len) {
-            return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
+            return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_SYNTAX, string_start);
         }
         unsigned char escaped = parser->data[parser->pos++];
         switch (escaped) {
@@ -4783,34 +4960,40 @@ static int ptn_json_parser_parse_string(PtnJsonParser *parser, PtnStringBuffer *
             case 'u': {
                 uint32_t codepoint;
                 if (!ptn_json_parser_read_hex4(parser, &codepoint)) {
+                    if (parser->error != PTN_JSON_ERROR_NONE) {
+                        parser->error_marker = string_start + 1;
+                    }
                     return 0;
                 }
                 if (codepoint >= 0xd800 && codepoint <= 0xdbff) {
                     if (parser->pos + 6 > parser->len ||
                         parser->data[parser->pos] != '\\' ||
                         parser->data[parser->pos + 1] != 'u') {
-                        return ptn_json_parser_fail(parser, PTN_JSON_ERROR_UTF16);
+                        return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_UTF16, string_start);
                     }
                     parser->pos += 2;
                     uint32_t low;
                     if (!ptn_json_parser_read_hex4(parser, &low)) {
+                        if (parser->error != PTN_JSON_ERROR_NONE) {
+                            parser->error_marker = string_start + 1;
+                        }
                         return 0;
                     }
                     if (low < 0xdc00 || low > 0xdfff) {
-                        return ptn_json_parser_fail(parser, PTN_JSON_ERROR_UTF16);
+                        return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_UTF16, string_start);
                     }
                     codepoint = 0x10000 + (((codepoint - 0xd800) << 10) | (low - 0xdc00));
                 } else if (codepoint >= 0xdc00 && codepoint <= 0xdfff) {
-                    return ptn_json_parser_fail(parser, PTN_JSON_ERROR_UTF16);
+                    return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_UTF16, string_start);
                 }
                 ptn_json_append_utf8(buffer, codepoint);
                 break;
             }
             default:
-                return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
+                return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_SYNTAX, string_start);
         }
     }
-    return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
+    return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_CTRL_CHAR, string_start);
 }
 
 static int ptn_json_parser_parse_value(PtnJsonParser *parser, size_t depth, PtnValue *out);
@@ -4831,7 +5014,7 @@ static int ptn_json_parser_parse_number(PtnJsonParser *parser, PtnValue *out) {
         parser->pos++;
     }
     if (parser->pos >= parser->len) {
-        return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
+        return ptn_json_parser_fail_at(parser, PTN_JSON_ERROR_SYNTAX, start);
     }
     if (parser->data[parser->pos] == '0') {
         parser->pos++;
@@ -4882,6 +5065,10 @@ static int ptn_json_parser_parse_number(PtnJsonParser *parser, PtnValue *out) {
             *out = ptn_int((int64_t)integer);
             return 1;
         }
+        if ((parser->flags & PTN_JSON_BIGINT_AS_STRING) != 0 && end != NULL && *end == '\0') {
+            *out = ptn_owned_string_len(number, number_len);
+            return 1;
+        }
     }
     errno = 0;
     char *end = NULL;
@@ -4896,7 +5083,7 @@ static int ptn_json_parser_parse_number(PtnJsonParser *parser, PtnValue *out) {
 }
 
 static int ptn_json_parser_parse_array(PtnJsonParser *parser, size_t depth, PtnValue *out) {
-    if (depth == 0) {
+    if (depth <= 1) {
         return ptn_json_parser_fail(parser, PTN_JSON_ERROR_DEPTH);
     }
     parser->pos++;
@@ -4921,7 +5108,10 @@ static int ptn_json_parser_parse_array(PtnJsonParser *parser, size_t depth, PtnV
             return 1;
         }
         if (parser->pos >= parser->len || parser->data[parser->pos] != ',') {
-            return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
+            int error = parser->pos < parser->len && parser->data[parser->pos] == '}'
+                ? PTN_JSON_ERROR_STATE_MISMATCH
+                : PTN_JSON_ERROR_SYNTAX;
+            return ptn_json_parser_fail(parser, error);
         }
         parser->pos++;
         ptn_json_parser_skip_ws(parser);
@@ -4929,18 +5119,27 @@ static int ptn_json_parser_parse_array(PtnJsonParser *parser, size_t depth, PtnV
     return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
 }
 
+static PtnValue ptn_json_parser_finish_object(PtnJsonParser *parser, PtnValue members) {
+    if (parser->assoc) {
+        return members;
+    }
+    PtnValue object = ptn_object_new_shell(parser->runtime, "stdClass");
+    ptn_array_free(object.as.object->properties);
+    object.as.object->properties = members.as.array;
+    members.as.array = NULL;
+    return object;
+}
+
 static int ptn_json_parser_parse_object(PtnJsonParser *parser, size_t depth, PtnValue *out) {
-    if (depth == 0) {
+    if (depth <= 1) {
         return ptn_json_parser_fail(parser, PTN_JSON_ERROR_DEPTH);
     }
     parser->pos++;
-    PtnValue target = parser->assoc
-        ? ptn_array_from_literal_entries(0, NULL)
-        : ptn_object_new_shell(parser->runtime, "stdClass");
     ptn_json_parser_skip_ws(parser);
+    PtnValue members = ptn_array_from_literal_entries(0, NULL);
     if (parser->pos < parser->len && parser->data[parser->pos] == '}') {
         parser->pos++;
-        *out = target;
+        *out = ptn_json_parser_finish_object(parser, members);
         return 1;
     }
     while (parser->pos < parser->len) {
@@ -4948,45 +5147,45 @@ static int ptn_json_parser_parse_object(PtnJsonParser *parser, size_t depth, Ptn
         ptn_string_buffer_init(&key_buffer);
         if (!ptn_json_parser_parse_string(parser, &key_buffer)) {
             free(key_buffer.data);
+            ptn_value_destroy(&members);
             return 0;
         }
         ptn_json_parser_skip_ws(parser);
         if (parser->pos >= parser->len || parser->data[parser->pos] != ':') {
             free(key_buffer.data);
+            ptn_value_destroy(&members);
             return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
         }
         parser->pos++;
         PtnValue value = ptn_null();
         if (!ptn_json_parser_parse_value(parser, depth - 1, &value)) {
             free(key_buffer.data);
+            ptn_value_destroy(&members);
             return 0;
         }
-        if (parser->assoc) {
-            ptn_array_set_entry(
-                target.as.array,
-                ptn_array_string_key_len(key_buffer.data, key_buffer.len),
-                value
-            );
-        } else {
-            ptn_array_set_entry(
-                target.as.object->properties,
-                ptn_array_string_key_len(key_buffer.data, key_buffer.len),
-                value
-            );
-        }
+        ptn_array_set_entry(
+            members.as.array,
+            ptn_array_string_key_len(key_buffer.data, key_buffer.len),
+            value
+        );
         free(key_buffer.data);
         ptn_json_parser_skip_ws(parser);
         if (parser->pos < parser->len && parser->data[parser->pos] == '}') {
             parser->pos++;
-            *out = target;
+            *out = ptn_json_parser_finish_object(parser, members);
             return 1;
         }
         if (parser->pos >= parser->len || parser->data[parser->pos] != ',') {
-            return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
+            int error = parser->pos < parser->len && parser->data[parser->pos] == ']'
+                ? PTN_JSON_ERROR_STATE_MISMATCH
+                : PTN_JSON_ERROR_SYNTAX;
+            ptn_value_destroy(&members);
+            return ptn_json_parser_fail(parser, error);
         }
         parser->pos++;
         ptn_json_parser_skip_ws(parser);
     }
+    ptn_value_destroy(&members);
     return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
 }
 
@@ -4996,6 +5195,9 @@ static int ptn_json_parser_parse_value(PtnJsonParser *parser, size_t depth, PtnV
         return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
     }
     unsigned char byte = parser->data[parser->pos];
+    if (byte < 0x20) {
+        return ptn_json_parser_fail(parser, PTN_JSON_ERROR_CTRL_CHAR);
+    }
     if (byte == '"') {
         PtnStringBuffer buffer;
         ptn_string_buffer_init(&buffer);
@@ -5027,6 +5229,15 @@ static int ptn_json_parser_parse_value(PtnJsonParser *parser, size_t depth, PtnV
         *out = ptn_null();
         return 1;
     }
+    if (byte > 0x7f) {
+        uint32_t codepoint = 0;
+        size_t consumed = 0;
+        if (!ptn_json_utf8_decode(parser->data + parser->pos, parser->len - parser->pos, &codepoint, &consumed)) {
+            return ptn_json_parser_fail(parser, PTN_JSON_ERROR_UTF8);
+        }
+        (void)codepoint;
+        (void)consumed;
+    }
     return ptn_json_parser_fail(parser, PTN_JSON_ERROR_SYNTAX);
 }
 
@@ -5037,7 +5248,9 @@ static int ptn_json_decode_string(
     size_t depth,
     int64_t flags,
     PtnValue *out,
-    int *error
+    int *error,
+    size_t *error_line,
+    size_t *error_column
 ) {
     PtnJsonParser parser = {
         .runtime = runtime,
@@ -5047,25 +5260,29 @@ static int ptn_json_decode_string(
         .assoc = assoc,
         .flags = flags,
         .error = PTN_JSON_ERROR_NONE,
+        .error_marker = 0,
     };
     if (!ptn_json_parser_parse_value(&parser, depth, out)) {
         *error = parser.error == PTN_JSON_ERROR_NONE ? PTN_JSON_ERROR_SYNTAX : parser.error;
+        ptn_json_location_from_marker(parser.data, parser.len, parser.error_marker, error_line, error_column);
         return 0;
     }
     ptn_json_parser_skip_ws(&parser);
     if (parser.pos != parser.len) {
         *error = PTN_JSON_ERROR_SYNTAX;
+        ptn_json_location_from_marker(parser.data, parser.len, parser.pos + 1, error_line, error_column);
         return 0;
     }
     *error = PTN_JSON_ERROR_NONE;
+    *error_line = 0;
+    *error_column = 0;
     return 1;
 }
 
 static PtnValue ptn_internal_json_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    PtnStringOperand json = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand json = ptn_internal_expect_string_arg(runtime, "json_decode", 1, "json", args[0], line);
     int64_t flags = argc >= 4 ? ptn_value_to_integer(args[3]) : 0;
-    int assoc = (flags & 1) != 0;
+    int assoc = (flags & PTN_JSON_OBJECT_AS_ARRAY) != 0;
     if (argc >= 2) {
         PtnValue assoc_arg = ptn_value_deref(args[1]);
         if (assoc_arg.type != PTN_NULL) {
@@ -5085,18 +5302,35 @@ static PtnValue ptn_internal_json_decode(PtnRuntime *runtime, size_t argc, const
 
     PtnValue decoded = ptn_null();
     int error = PTN_JSON_ERROR_NONE;
-    int ok = ptn_json_decode_string(runtime, json, assoc, (size_t)requested_depth, flags, &decoded, &error);
+    size_t error_line = 0;
+    size_t error_column = 0;
+    int ok = ptn_json_decode_string(
+        runtime,
+        json,
+        assoc,
+        (size_t)requested_depth,
+        flags,
+        &decoded,
+        &error,
+        &error_line,
+        &error_column
+    );
     ptn_string_operand_free(json);
-    ptn_json_set_last_error(runtime, error);
     if (!ok) {
+        if ((flags & PTN_JSON_THROW_ON_ERROR) != 0) {
+            ptn_json_throw_exception(runtime, error, error_line, error_column);
+        }
+        ptn_json_set_last_error(runtime, error, error_line, error_column);
         return ptn_null();
+    }
+    if ((flags & PTN_JSON_THROW_ON_ERROR) == 0) {
+        ptn_json_set_last_error(runtime, error, error_line, error_column);
     }
     return decoded;
 }
 
 static PtnValue ptn_internal_json_validate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    PtnStringOperand json = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand json = ptn_internal_expect_string_arg(runtime, "json_validate", 1, "json", args[0], line);
     int64_t requested_depth = argc >= 2 ? ptn_value_to_integer(args[1]) : 512;
     int64_t flags = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
     if (requested_depth <= 0) {
@@ -5110,10 +5344,27 @@ static PtnValue ptn_internal_json_validate(PtnRuntime *runtime, size_t argc, con
     }
     PtnValue decoded = ptn_null();
     int error = PTN_JSON_ERROR_NONE;
-    int ok = ptn_json_decode_string(runtime, json, 1, (size_t)requested_depth, flags, &decoded, &error);
+    size_t error_line = 0;
+    size_t error_column = 0;
+    int ok = ptn_json_decode_string(
+        runtime,
+        json,
+        1,
+        (size_t)requested_depth,
+        flags,
+        &decoded,
+        &error,
+        &error_line,
+        &error_column
+    );
     ptn_value_destroy(&decoded);
     ptn_string_operand_free(json);
-    ptn_json_set_last_error(runtime, error);
+    if (!ok && (flags & PTN_JSON_THROW_ON_ERROR) != 0) {
+        ptn_json_throw_exception(runtime, error, error_line, error_column);
+    }
+    if ((flags & PTN_JSON_THROW_ON_ERROR) == 0) {
+        ptn_json_set_last_error(runtime, error, error_line, error_column);
+    }
     return ptn_bool(ok);
 }
 
@@ -5128,7 +5379,12 @@ static PtnValue ptn_internal_json_last_error_msg(PtnRuntime *runtime, size_t arg
     (void)argc;
     (void)args;
     (void)line;
-    return ptn_string(ptn_json_error_message(ptn_json_last_error(runtime)));
+    char *message = ptn_json_error_message_owned(
+        ptn_json_last_error(runtime),
+        ptn_json_last_error_line(runtime),
+        ptn_json_last_error_column(runtime)
+    );
+    return ptn_owned_string(message);
 }
 
 typedef int (*PtnCtypePredicate)(int ch);

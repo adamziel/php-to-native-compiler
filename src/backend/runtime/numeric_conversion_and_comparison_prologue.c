@@ -165,6 +165,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->strtok_offset = 0;
     runtime->strtok_has_state = 0;
     runtime->json_last_error = caller_runtime->json_last_error;
+    runtime->json_last_error_line = caller_runtime->json_last_error_line;
+    runtime->json_last_error_column = caller_runtime->json_last_error_column;
 }
 
 static PTN_UNUSED void ptn_runtime_set_call_frame(
@@ -1445,6 +1447,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "ReflectionException")) {
         return "ReflectionException";
     }
+    if (ptn_exception_name_equal(class_name, "JsonException")) {
+        return "JsonException";
+    }
     if (ptn_exception_name_equal(class_name, "RuntimeException")) {
         return "RuntimeException";
     }
@@ -1534,6 +1539,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     if (ptn_exception_name_equal(type_name, "Exception")) {
         return ptn_exception_name_equal(class_name, "ErrorException") ||
             ptn_exception_name_equal(class_name, "ReflectionException") ||
+            ptn_exception_name_equal(class_name, "JsonException") ||
             ptn_exception_name_equal(class_name, "RuntimeException") ||
             ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
             ptn_exception_name_equal(class_name, "UnexpectedValueException") ||

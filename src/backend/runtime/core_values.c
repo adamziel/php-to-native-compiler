@@ -275,6 +275,8 @@ typedef struct {
 #define PTN_JSON_ERROR_INVALID_PROPERTY_NAME 9
 #define PTN_JSON_ERROR_UTF16 10
 #define PTN_JSON_ERROR_NON_BACKED_ENUM 11
+#define PTN_JSON_OBJECT_AS_ARRAY 1
+#define PTN_JSON_BIGINT_AS_STRING 2
 #define PTN_JSON_HEX_TAG 1
 #define PTN_JSON_HEX_AMP 2
 #define PTN_JSON_HEX_APOS 4
@@ -971,6 +973,8 @@ struct PtnRuntime {
     size_t strtok_offset;
     int strtok_has_state;
     int json_last_error;
+    size_t json_last_error_line;
+    size_t json_last_error_column;
 };
 
 typedef struct {
