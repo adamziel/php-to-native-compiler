@@ -5,14 +5,15 @@ use crate::ast::{
     AssignmentTarget, AttributeArgument, AttributeArgumentKind, AttributeArgumentValue,
     AttributeConstantReference, AttributeInstance, AttributeMetadata, BinaryOp, CastKind,
     CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning,
-    CompileWarningKind, ConstDeclaration, Expr, FunctionDecl, FunctionParameter, GlobalTarget,
-    IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget, ListAssignmentElement,
-    ListAssignmentElementTarget, ListAssignmentTarget, ListExpr, ListExprElement,
-    ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program, PromotedProperty,
-    PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility, ReferenceTarget,
-    Statement, StaticLocalDeclaration, StaticPropertyDecl, StringInterpolationIndex, StringPart,
-    SwitchCase, TraitAdaptation, TraitAliasAdaptation, TraitDecl, TraitMethodReference,
-    TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp, UnsetTarget,
+    CompileWarningKind, ConstDeclaration, EnumBackingType, Expr, FunctionDecl, FunctionParameter,
+    GlobalTarget, IncDecOp, IncDecResult, IncDecTarget, IncludeKind, InstanceOfTarget,
+    ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget, ListExpr,
+    ListExprElement, ListExprElementTarget, MagicConstantKind, MatchArm, MethodDecl, Program,
+    PromotedProperty, PropertyDecl, PropertyTypeHint, PropertyTypeKind, PropertyVisibility,
+    ReferenceTarget, Statement, StaticLocalDeclaration, StaticPropertyDecl,
+    StringInterpolationIndex, StringPart, SwitchCase, TraitAdaptation, TraitAliasAdaptation,
+    TraitDecl, TraitMethodReference, TraitPrecedenceAdaptation, TraitUseDecl, TypeHint, UnaryOp,
+    UnsetTarget,
 };
 use crate::diagnostic::{Diagnostic, Result, SourceSpan};
 use crate::lexer::{

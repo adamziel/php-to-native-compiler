@@ -7,9 +7,9 @@ use crate::ast::{
     AttributeMetadata, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
     CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
     ClosureUseCapture as AstClosureUseCapture, CompileWarning as AstCompileWarning,
-    CompileWarningKind as AstCompileWarningKind, Expr, FunctionDecl as AstFunctionDecl,
-    FunctionParameter as AstFunctionParameter, GlobalTarget, IncDecOp as AstIncDecOp,
-    IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
+    CompileWarningKind as AstCompileWarningKind, EnumBackingType as AstEnumBackingType, Expr,
+    FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter, GlobalTarget,
+    IncDecOp as AstIncDecOp, IncDecResult as AstIncDecResult, IncDecTarget as AstIncDecTarget,
     IncludeKind as AstIncludeKind, InstanceOfTarget as AstInstanceOfTarget,
     ListAssignmentElement as AstListAssignmentElement,
     ListAssignmentElementTarget as AstListAssignmentElementTarget,
@@ -81,10 +81,18 @@ pub struct ClassDecl {
     pub is_final: bool,
     pub is_interface: bool,
     pub is_readonly: bool,
+    pub is_enum: bool,
+    pub enum_backing_type: Option<EnumBackingType>,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub constants: Vec<ClassConstantDecl>,
     pub methods: Vec<MethodDecl>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnumBackingType {
+    Int,
+    String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -178,6 +186,7 @@ pub struct ClassConstantDecl {
     pub deprecated_message_dependency: Option<DeprecatedMessageDependency>,
     pub deprecated_message_runtime_reference: Option<AttributeConstantReference>,
     pub is_enum_case: bool,
+    pub enum_case_value: Option<ValueExpr>,
     pub is_final: bool,
     pub value: ValueExpr,
 }
@@ -1528,6 +1537,10 @@ impl<'a> LoweringContext<'a> {
                     deprecated_message_dependency: metadata.message_dependency,
                     deprecated_message_runtime_reference: metadata.message_runtime_reference,
                     is_enum_case: constant.is_enum_case,
+                    enum_case_value: constant
+                        .enum_case_value
+                        .as_ref()
+                        .map(|value| self.lower_expr(value)),
                     is_final: constant.is_final,
                     value: self.lower_expr(&constant.value),
                 }
@@ -1615,6 +1628,8 @@ impl<'a> LoweringContext<'a> {
             is_final: class.is_final,
             is_interface: class.is_interface,
             is_readonly: class.is_readonly,
+            is_enum: class.is_enum,
+            enum_backing_type: class.enum_backing_type.map(lower_enum_backing_type),
             properties,
             static_properties,
             constants,
@@ -2304,6 +2319,13 @@ fn lower_property_visibility(visibility: AstPropertyVisibility) -> PropertyVisib
         AstPropertyVisibility::Public => PropertyVisibility::Public,
         AstPropertyVisibility::Protected => PropertyVisibility::Protected,
         AstPropertyVisibility::Private => PropertyVisibility::Private,
+    }
+}
+
+fn lower_enum_backing_type(backing_type: AstEnumBackingType) -> EnumBackingType {
+    match backing_type {
+        AstEnumBackingType::Int => EnumBackingType::Int,
+        AstEnumBackingType::String => EnumBackingType::String,
     }
 }
 
