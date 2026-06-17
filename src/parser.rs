@@ -9640,6 +9640,29 @@ fn is_modeled_builtin_date_class_name(name: &str) -> bool {
     )
 }
 
+fn is_modeled_builtin_reflection_class_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "reflection"
+            | "reflectionattribute"
+            | "reflectionclass"
+            | "reflectionclassconstant"
+            | "reflectionconstant"
+            | "reflectionextension"
+            | "reflectionfunction"
+            | "reflectionfunctionabstract"
+            | "reflectionmethod"
+            | "reflectionobject"
+            | "reflectionparameter"
+            | "reflectionproperty"
+            | "reflectionreference"
+            | "reflectiontype"
+            | "reflectionnamedtype"
+            | "reflectionuniontype"
+            | "reflectionintersectiontype"
+    )
+}
+
 fn modeled_builtin_interface_extends(interface_name: &str, target_name: &str) -> bool {
     let interface_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
     let target_name = target_name.trim_start_matches('\\').to_ascii_lowercase();
@@ -10342,6 +10365,7 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
             || is_modeled_spl_iterator_class_name(parent_name)
             || is_modeled_builtin_date_class_name(parent_name)
             || is_modeled_builtin_exception_class_name(parent_name)
+            || is_modeled_builtin_reflection_class_name(parent_name)
             || parent_name.eq_ignore_ascii_case("Generator")
         {
             continue;
@@ -10928,6 +10952,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("Generator")
         || is_modeled_builtin_date_class_name(name)
         || is_modeled_builtin_exception_class_name(name)
+        || is_modeled_builtin_reflection_class_name(name)
         || find_class(classes, name).is_some()
 }
 
@@ -11326,6 +11351,12 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         || candidate_name.eq_ignore_ascii_case("DateTimeImmutable")
     {
         &["DateTimeInterface"][..]
+    } else if candidate_name.eq_ignore_ascii_case("ReflectionFunction")
+        || candidate_name.eq_ignore_ascii_case("ReflectionMethod")
+    {
+        &["ReflectionFunctionAbstract"][..]
+    } else if candidate_name.eq_ignore_ascii_case("ReflectionObject") {
+        &["ReflectionClass"][..]
     } else {
         &[][..]
     };
