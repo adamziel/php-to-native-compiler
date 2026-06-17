@@ -24578,9 +24578,151 @@ static PtnValue ptn_internal_pow(PtnRuntime *runtime, size_t argc, const PtnValu
     return ptn_power(runtime, args[0], args[1], line);
 }
 
+static int ptn_path_is_separator(char byte);
+
+static int ptn_path_contains_scheme_separator(const char *path, size_t len) {
+    if (len < 3) {
+        return 0;
+    }
+    for (size_t i = 0; i + 2 < len; i++) {
+        if (path[i] == ':' && path[i + 1] == '/' && path[i + 2] == '/') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_normalized_previous_segment_is_parent(const char *path, size_t len) {
+    if (len < 2) {
+        return 0;
+    }
+    size_t end = len;
+    if (end > 0 && path[end - 1] == '/') {
+        end--;
+    }
+    size_t start = end;
+    while (start > 0 && path[start - 1] != '/') {
+        start--;
+    }
+    return end - start == 2 && path[start] == '.' && path[start + 1] == '.';
+}
+
+static char *ptn_normalize_filesystem_path(const char *path, size_t len) {
+    if (len == 0) {
+        return ptn_duplicate_string_len(path, len);
+    }
+
+    const char *source = path;
+    size_t source_len = len;
+    if (source_len >= 8 && strncmp(source, "file:///", 8) == 0) {
+        source += 7;
+        source_len -= 7;
+    } else if (ptn_path_contains_scheme_separator(source, source_len)) {
+        return ptn_duplicate_string_len(path, len);
+    }
+
+    char *normalized = malloc(source_len + 2);
+    if (normalized == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    int absolute = source_len > 0 && ptn_path_is_separator(source[0]);
+    size_t out_len = 0;
+    if (absolute) {
+        normalized[out_len++] = '/';
+        while (source_len > 0 && ptn_path_is_separator(*source)) {
+            source++;
+            source_len--;
+        }
+    }
+
+    while (source_len > 0) {
+        while (source_len > 0 && ptn_path_is_separator(*source)) {
+            source++;
+            source_len--;
+        }
+        if (source_len == 0) {
+            break;
+        }
+
+        const char *segment = source;
+        size_t segment_len = 0;
+        while (segment_len < source_len && !ptn_path_is_separator(segment[segment_len])) {
+            segment_len++;
+        }
+
+        if (segment_len == 1 && segment[0] == '.') {
+            source += segment_len;
+            source_len -= segment_len;
+            continue;
+        }
+
+        if (segment_len == 2 && segment[0] == '.' && segment[1] == '.') {
+            if (
+                out_len > 0 &&
+                !(absolute && out_len == 1) &&
+                (absolute || !ptn_normalized_previous_segment_is_parent(normalized, out_len))
+            ) {
+                size_t trim = out_len;
+                if (trim > 0 && normalized[trim - 1] == '/') {
+                    trim--;
+                }
+                while (trim > 0 && normalized[trim - 1] != '/') {
+                    trim--;
+                }
+                if (trim == 0) {
+                    out_len = 0;
+                } else if (absolute) {
+                    out_len = trim;
+                } else {
+                    out_len = trim - 1;
+                }
+            } else if (!absolute) {
+                if (out_len > 0 && normalized[out_len - 1] != '/') {
+                    normalized[out_len++] = '/';
+                }
+                memcpy(normalized + out_len, "..", 2);
+                out_len += 2;
+            }
+            source += segment_len;
+            source_len -= segment_len;
+            continue;
+        }
+
+        if (out_len > 0 && normalized[out_len - 1] != '/') {
+            normalized[out_len++] = '/';
+        }
+        memcpy(normalized + out_len, segment, segment_len);
+        out_len += segment_len;
+
+        source += segment_len;
+        source_len -= segment_len;
+    }
+
+    if (out_len == 0) {
+        if (absolute) {
+            normalized[out_len++] = '/';
+        } else {
+            normalized[out_len++] = '.';
+        }
+    }
+    normalized[out_len] = '\0';
+    return normalized;
+}
+
 static char *ptn_path_operand_to_c_string(PtnStringOperand path) {
     if (memchr(path.data, '\0', path.len) != NULL) {
         return NULL;
+    }
+    return ptn_duplicate_string_len(path.data, path.len);
+}
+
+static char *ptn_fopen_path_operand_to_c_string(PtnStringOperand path) {
+    if (memchr(path.data, '\0', path.len) != NULL) {
+        return NULL;
+    }
+    if (path.len >= 8 && strncmp(path.data, "file:///", 8) == 0) {
+        return ptn_duplicate_string_len(path.data + 7, path.len - 7);
     }
     return ptn_duplicate_string_len(path.data, path.len);
 }
@@ -24778,10 +24920,33 @@ static int ptn_stream_mode_is_append(PtnResource *resource) {
 static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "fopen", 1, "filename", args[0], line);
-    char *path = ptn_path_operand_to_c_string(path_operand);
+    char *path = ptn_fopen_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
         ptn_emit_warning(&runtime->diagnostics, "fopen(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+    if (strncmp(path, "file://", 7) == 0 && strncmp(path, "file:///", 8) != 0) {
+        int needed = snprintf(NULL, 0, "fopen(): Remote host file access not supported, %s", path);
+        if (needed < 0) {
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(message, (size_t)needed + 1, "fopen(): Remote host file access not supported, %s", path);
+        if (written < 0 || written != needed) {
+            free(message);
+            free(path);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_spaced_warning(&runtime->diagnostics, message, line);
+        free(message);
+        ptn_emit_file_warning(runtime, "fopen", path, "Failed to open stream: no suitable wrapper could be found", line);
+        free(path);
         return ptn_bool(0);
     }
 
@@ -26485,6 +26650,9 @@ static PtnValue ptn_internal_file(PtnRuntime *runtime, size_t argc, const PtnVal
     if (path == NULL) {
         return ptn_null();
     }
+    char *normalized_path = ptn_normalize_filesystem_path(path, strlen(path));
+    free(path);
+    path = normalized_path;
 
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
     int use_include_path = (flags & PTN_FILE_USE_INCLUDE_PATH) != 0;
@@ -27364,7 +27532,7 @@ static char *ptn_internal_path_arg_c_string_or_value_error(
         ptn_throw_exception(runtime, "ValueError", message);
         return NULL;
     }
-    char *path = ptn_duplicate_string_len(operand.data, operand.len);
+    char *path = ptn_path_operand_to_c_string(operand);
     ptn_string_operand_free(operand);
     return path;
 }
@@ -27553,24 +27721,38 @@ static PtnValue ptn_internal_sys_get_temp_dir(PtnRuntime *runtime, size_t argc, 
     return ptn_owned_string(ptn_duplicate_string(ptn_system_temp_dir()));
 }
 
-static char *ptn_tempnam_template(const char *directory, const char *prefix) {
+static char *ptn_tempnam_template(const char *directory, const char *prefix, int *used_fallback) {
+    *used_fallback = 0;
     const char *selected_dir = directory;
     struct stat info;
     if (selected_dir[0] == '\0' || stat(selected_dir, &info) != 0 || !S_ISDIR(info.st_mode)) {
         selected_dir = ptn_system_temp_dir();
+        *used_fallback = 1;
+    }
+    char *resolved_dir = NULL;
+#if defined(_WIN32)
+    resolved_dir = _fullpath(NULL, selected_dir, 0);
+#else
+    resolved_dir = realpath(selected_dir, NULL);
+#endif
+    if (resolved_dir != NULL) {
+        selected_dir = resolved_dir;
     }
     size_t dir_len = strlen(selected_dir);
     size_t prefix_len = strlen(prefix);
     int needs_separator = dir_len > 0 && !ptn_path_is_separator(selected_dir[dir_len - 1]);
     size_t len = dir_len + (needs_separator ? 1 : 0) + prefix_len + 6;
     if (len < dir_len || len < prefix_len) {
+        free(resolved_dir);
         ptn_abort_out_of_memory();
     }
     char *templ = malloc(len + 1);
     if (templ == NULL) {
+        free(resolved_dir);
         ptn_abort_out_of_memory();
     }
     memcpy(templ, selected_dir, dir_len);
+    free(resolved_dir);
     size_t offset = dir_len;
     if (needs_separator) {
         templ[offset++] = '/';
@@ -27593,7 +27775,17 @@ static PtnValue ptn_internal_tempnam(PtnRuntime *runtime, size_t argc, const Ptn
         free(directory);
         return ptn_null();
     }
-    char *templ = ptn_tempnam_template(directory, prefix);
+    int used_fallback = 0;
+    char *templ = ptn_tempnam_template(directory, prefix, &used_fallback);
+    if (used_fallback) {
+        ptn_emit_notice_with_path(
+            &runtime->diagnostics,
+            "tempnam(): file created in the system's temporary directory",
+            NULL,
+            line,
+            1
+        );
+    }
     free(prefix);
     free(directory);
 #if defined(_WIN32)
@@ -27794,16 +27986,13 @@ static PtnValue ptn_path_predicate(
     size_t line,
     int (*predicate)(const char *)
 ) {
+    (void)runtime;
+    (void)function_name;
+    (void)line;
     PtnStringOperand path_operand = ptn_value_to_string_operand(path_value);
     char *path = ptn_path_operand_to_c_string(path_operand);
     ptn_string_operand_free(path_operand);
     if (path == NULL) {
-        char message[96];
-        int written = snprintf(message, sizeof(message), "%s(): Filename contains null byte", function_name);
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_emit_warning(&runtime->diagnostics, message, line);
         return ptn_bool(0);
     }
 

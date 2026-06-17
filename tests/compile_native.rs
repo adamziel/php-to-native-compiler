@@ -12154,6 +12154,50 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_filesystem_paths_normalize_native_binary() {
+    let root = temp_dir("ptn-native-filesystem-path-normalize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filesystem-path-normalize.php");
+    let output = root.join("filesystem-path-normalize-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$base = __DIR__ . '/path-normalize';\n\
+$nested = $base . '/child';\n\
+mkdir($base);\n\
+mkdir($nested);\n\
+$file = $base . '/leaf.txt';\n\
+file_put_contents($file, \"Line 1\\nLine 2\");\n\
+var_dump(file($nested . '/missing/../../leaf.txt'));\n\
+$stream = fopen('file://' . $file, 'r');\n\
+var_dump(fread($stream, 6));\n\
+fclose($stream);\n\
+$temp = tempnam($nested . '/..', 'ptn');\n\
+var_dump(dirname($temp) === realpath($base));\n\
+unlink($temp);\n\
+unlink($file);\n\
+rmdir($nested);\n\
+rmdir($base);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [0]=>\n  string(7) \"Line 1\n\"\n  [1]=>\n  string(6) \"Line 2\"\n}\n\
+string(6) \"Line 1\"\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_normalize_filesystem_path"));
+}
+
+#[test]
 fn compile_stream_read_and_csv_internals_to_native_binary() {
     let root = temp_dir("ptn-native-stream-read-csv-internals");
     fs::create_dir_all(&root).unwrap();
