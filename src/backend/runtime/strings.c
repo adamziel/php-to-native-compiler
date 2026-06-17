@@ -1105,6 +1105,62 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(7);
         return 1;
     }
+    if (strcmp(name, "TCP_NODELAY") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "AF_UNIX") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "AF_INET") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "AF_INET6") == 0) {
+        *out = ptn_int(10);
+        return 1;
+    }
+    if (strcmp(name, "SOCK_STREAM") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "SOCK_DGRAM") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "SOL_TCP") == 0) {
+        *out = ptn_int(6);
+        return 1;
+    }
+    if (strcmp(name, "SOL_UDP") == 0) {
+        *out = ptn_int(17);
+        return 1;
+    }
+    if (strcmp(name, "IPPROTO_IP") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "IPPROTO_IPV6") == 0) {
+        *out = ptn_int(41);
+        return 1;
+    }
+    if (strcmp(name, "MCAST_JOIN_GROUP") == 0) {
+        *out = ptn_int(42);
+        return 1;
+    }
+    if (strcmp(name, "SO_REUSEPORT") == 0) {
+        *out = ptn_int(15);
+        return 1;
+    }
+    if (strcmp(name, "SOAP_1_1") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "SOAP_1_2") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
     if (strcmp(name, "EXTR_OVERWRITE") == 0) {
         *out = ptn_int(PTN_EXTR_OVERWRITE);
         return 1;

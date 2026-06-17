@@ -950,6 +950,15 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_class_name_is_date_interval(lookup_class_name)) {
         return ptn_date_interval_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_zip_archive(lookup_class_name)) {
+        return ptn_zip_archive_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_soap_client(lookup_class_name)) {
+        return ptn_soap_client_new(runtime, "SoapClient", argc, args, line);
+    }
+    if (ptn_internal_class_name_is_soap_server(lookup_class_name)) {
+        return ptn_soap_client_new(runtime, "SoapServer", argc, args, line);
+    }
 #endif
     if (ptn_class_name_is_generator(lookup_class_name)) {
         ptn_throw_exception_at(

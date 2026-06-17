@@ -21269,9 +21269,123 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,date,json,pcre,Reflection,standard\narray(0) {\n}\n"
+            "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,curl,date,json,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,zip,zlib\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_archive_network_extension_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-archive-network-extension-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("archive-network-extension-surface.php");
+    let output = root.join("archive-network-extension-surface-bin");
+    fs::write(
+        &input,
+        "<?php
+class ExtendedSoapClient extends SoapClient {}
+
+var_dump(
+    extension_loaded('phar'),
+    extension_loaded('Phar'),
+    extension_loaded('zip'),
+    extension_loaded('sockets'),
+    extension_loaded('soap'),
+    extension_loaded('zlib'),
+    extension_loaded('openssl'),
+    extension_loaded('curl'),
+    extension_loaded('SPL')
+);
+var_dump(
+    Phar::apiVersion(),
+    Phar::canCompress(),
+    Phar::canCompress(Phar::GZ),
+    Phar::canCompress(Phar::BZ2),
+    Phar::GZ,
+    Phar::BZ2
+);
+var_dump(TCP_NODELAY, socket_strerror(1), SOAP_1_1, SOAP_1_2);
+
+$phar = new ReflectionExtension('phar');
+$soap = new ReflectionExtension('soap');
+$sockets = new ReflectionExtension('sockets');
+var_dump(
+    $phar->getName(),
+    in_array('Phar', $phar->getClassNames(), true),
+    $soap->getConstants()['SOAP_1_1'],
+    in_array('SoapClient', $soap->getClassNames(), true),
+    $sockets->getConstants()['TCP_NODELAY'],
+    isset($sockets->getFunctions()['socket_strerror'])
+);
+
+$rc = new ReflectionClass('SoapClient');
+var_dump(
+    $rc->getExtensionName(),
+    method_exists('SoapClient', '__construct'),
+    class_exists('ZipArchive'),
+    method_exists('Phar', 'apiVersion')
+);
+
+try {
+    new SoapClient('irrelevant', ['encoding' => 'non-sense']);
+} catch (Throwable $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+try {
+    new ExtendedSoapClient(null, ['uri' => 'https://example.com']);
+} catch (Throwable $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(5) \"1.1.1\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(4096)\n",
+            "int(8192)\n",
+            "int(1)\n",
+            "string(23) \"Operation not permitted\"\n",
+            "int(1)\n",
+            "int(2)\n",
+            "string(4) \"Phar\"\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "string(4) \"soap\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "SoapFault: SoapClient::__construct(): Invalid 'encoding' option - 'non-sense'\n",
+            "SoapFault: SoapClient::__construct(): 'location' option is required in nonWSDL mode\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_phar_can_compress"));
+    assert!(c_source.contains("ptn_soap_client_new"));
+    assert!(c_source.contains("ptn_internal_socket_strerror"));
 }
 
 #[test]

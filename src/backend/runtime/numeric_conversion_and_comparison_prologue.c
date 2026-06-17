@@ -1529,6 +1529,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "ReflectionException")) {
         return "ReflectionException";
     }
+    if (ptn_exception_name_equal(class_name, "SoapFault")) {
+        return "SoapFault";
+    }
     if (ptn_exception_name_equal(class_name, "JsonException")) {
         return "JsonException";
     }
@@ -1621,6 +1624,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     if (ptn_exception_name_equal(type_name, "Exception")) {
         return ptn_exception_name_equal(class_name, "ErrorException") ||
             ptn_exception_name_equal(class_name, "ReflectionException") ||
+            ptn_exception_name_equal(class_name, "SoapFault") ||
             ptn_exception_name_equal(class_name, "JsonException") ||
             ptn_exception_name_equal(class_name, "RuntimeException") ||
             ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
@@ -2819,6 +2823,16 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
         if (strcmp(constant, "ARRAY_AS_PROPS") == 0) {
             *out = ptn_int(2);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Phar")) {
+        if (strcmp(constant, "GZ") == 0) {
+            *out = ptn_int(0x1000);
+            return 1;
+        }
+        if (strcmp(constant, "BZ2") == 0) {
+            *out = ptn_int(0x2000);
             return 1;
         }
     }

@@ -9614,6 +9614,7 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
             | "errorexception"
             | "reflectionexception"
             | "jsonexception"
+            | "soapfault"
             | "runtimeexception"
             | "invalidargumentexception"
             | "unexpectedvalueexception"
@@ -9703,6 +9704,13 @@ fn is_modeled_builtin_reflection_class_name(name: &str) -> bool {
             | "reflectionnamedtype"
             | "reflectionuniontype"
             | "reflectionintersectiontype"
+    )
+}
+
+fn is_modeled_archive_network_class_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "phar" | "ziparchive" | "soapclient" | "soapserver"
     )
 }
 
@@ -10410,6 +10418,7 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
             || is_modeled_builtin_enum_class_name(parent_name)
             || is_modeled_builtin_exception_class_name(parent_name)
             || is_modeled_builtin_reflection_class_name(parent_name)
+            || is_modeled_archive_network_class_name(parent_name)
             || parent_name.eq_ignore_ascii_case("Generator")
         {
             continue;
@@ -10998,6 +11007,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || is_modeled_builtin_enum_class_name(name)
         || is_modeled_builtin_exception_class_name(name)
         || is_modeled_builtin_reflection_class_name(name)
+        || is_modeled_archive_network_class_name(name)
         || find_class(classes, name).is_some()
 }
 
@@ -15733,6 +15743,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "rewind"
             | "set_time_limit"
             | "sleep"
+            | "socket_strerror"
             | "zend_version"
             | "var_export"
             | "bindec"

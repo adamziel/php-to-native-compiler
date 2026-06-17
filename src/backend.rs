@@ -27,11 +27,14 @@ const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
+const ARCHIVE_NETWORK_INTERNAL_CLASS_NAMES: &[&str] =
+    &["Phar", "ZipArchive", "SoapClient", "SoapServer"];
 const SERIALIZABLE_DEPRECATION_SUFFIX: &str =
     " implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)";
 const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
+    ("SoapFault", "Exception"),
     ("RuntimeException", "Exception"),
     ("InvalidArgumentException", "RuntimeException"),
     ("UnexpectedValueException", "RuntimeException"),
@@ -4095,6 +4098,10 @@ fn emit_class_metadata_helpers(
         "ReflectionProperty",
         "SensitiveParameter",
         "SensitiveParameterValue",
+        "Phar",
+        "ZipArchive",
+        "SoapClient",
+        "SoapServer",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(class_name);
@@ -4155,6 +4162,13 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    for class_name in ARCHIVE_NETWORK_INTERNAL_CLASS_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
     for class in classes {
         if class.is_interface {
             continue;
@@ -4207,6 +4221,13 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    for class_name in ARCHIVE_NETWORK_INTERNAL_CLASS_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(class_name);
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
     for (index, class) in classes.iter().enumerate() {
         if class.is_interface {
             continue;
@@ -4438,6 +4459,10 @@ fn emit_class_metadata_helpers(
         "DateTimeZone",
         "DateInterval",
         "RoundingMode",
+        "Phar",
+        "ZipArchive",
+        "SoapClient",
+        "SoapServer",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
         out.push_str(builtin);
@@ -8651,7 +8676,16 @@ fn modeled_reflection_internal_class_name(name: &str) -> Option<&'static str> {
 }
 
 fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
-    modeled_spl_internal_class_name(name).or_else(|| modeled_reflection_internal_class_name(name))
+    modeled_spl_internal_class_name(name)
+        .or_else(|| modeled_reflection_internal_class_name(name))
+        .or_else(
+            || match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+                "soapclient" => Some("SoapClient"),
+                "soapserver" => Some("SoapServer"),
+                "ziparchive" => Some("ZipArchive"),
+                _ => None,
+            },
+        )
 }
 
 fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: &str) {

@@ -10,7 +10,7 @@
 # runtime diagnostic APIs, and upstream XFAILs. Generic PHP semantic gaps
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
-PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,ctype,date,json,pcre,SPL,standard,Reflection"
+PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,ctype,curl,date,json,openssl,pcre,Phar,phar,Reflection,sockets,soap,SPL,standard,zip,zlib"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.active,assert.bail,assert.callback,assert.exception,assert.warning,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,max_input_nesting_level,max_input_vars,max_memory_limit,memory_limit,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,post_max_size,precision,register_argc_argv,serialize_precision,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST,STDIN"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
