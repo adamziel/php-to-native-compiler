@@ -9767,22 +9767,35 @@ static PtnValue ptn_internal_array_fill(PtnRuntime *runtime, size_t argc, const 
         );
     }
 
-    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (count == 0) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+
+    size_t entry_count = (size_t)count;
+    if ((uint64_t)entry_count > (uint64_t)SIZE_MAX / sizeof(PtnArrayLiteralEntry)) {
+        ptn_abort_out_of_memory();
+    }
+
+    PtnArrayLiteralEntry *entries = malloc(entry_count * sizeof(PtnArrayLiteralEntry));
+    if (entries == NULL) {
+        ptn_abort_out_of_memory();
+    }
     for (int64_t i = 0; i < count; i++) {
         if (start > INT64_MAX - i) {
-            ptn_value_destroy(&result);
+            free(entries);
             ptn_throw_exception(
                 runtime,
                 "Error",
                 "Cannot add element to the array as the next element is already occupied"
             );
         }
-        ptn_array_set_entry(
-            result.as.array,
-            ptn_array_int_key(start + i),
-            ptn_value_clone(args[2])
-        );
+        entries[i].has_key = 1;
+        entries[i].key = ptn_int(start + i);
+        entries[i].value = args[2];
     }
+
+    PtnValue result = ptn_array_from_literal_entries(entry_count, entries);
+    free(entries);
     return result;
 }
 
