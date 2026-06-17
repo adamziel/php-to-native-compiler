@@ -156,6 +156,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->call_site_line = 0;
     runtime->suppress_user_call_frame_location =
         caller_runtime->suppress_user_call_frame_location;
+    runtime->suppress_user_argument_count_location =
+        caller_runtime->suppress_user_argument_count_location;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
     runtime->active_serialize_state = caller_runtime->active_serialize_state;
@@ -2239,6 +2241,15 @@ static PTN_UNUSED void ptn_throw_user_argument_count_error(
     int exactly,
     size_t line
 ) {
+    if (
+        runtime != NULL &&
+        (
+            runtime->suppress_user_call_frame_location ||
+            runtime->suppress_user_argument_count_location
+        )
+    ) {
+        line = 0;
+    }
     const char *mode = exactly ? "exactly" : "at least";
     const char *path = runtime->source_path != NULL ? runtime->source_path : "ptn";
     if (runtime->suppress_user_call_frame_location) {

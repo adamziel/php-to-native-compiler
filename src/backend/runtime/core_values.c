@@ -975,6 +975,7 @@ struct PtnRuntime {
     int assert_exception;
     size_t call_site_line;
     int suppress_user_call_frame_location;
+    int suppress_user_argument_count_location;
     int warn_by_ref_argument_mismatch;
     int throw_argument_count_errors;
     void *active_serialize_state;

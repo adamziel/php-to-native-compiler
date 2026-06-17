@@ -677,24 +677,31 @@ static PtnValue ptn_internal_call_callback(
         runtime->suppress_user_call_frame_location;
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
+    int previous_suppress_user_argument_count_location =
+        runtime->suppress_user_argument_count_location;
     ptn_try_frame_push(runtime, &callback_frame);
     if (setjmp(callback_frame.jump) != 0) {
         ptn_try_frame_pop(runtime, &callback_frame);
         runtime->trace_frame = saved_trace_frame;
         runtime->suppress_user_call_frame_location =
             previous_suppress_user_call_frame_location;
-        runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+        runtime->suppress_user_argument_count_location =
+            previous_suppress_user_argument_count_location;
         runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+        runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
         ptn_rethrow_exception(runtime);
     }
     runtime->suppress_user_call_frame_location = 1;
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
+    runtime->suppress_user_argument_count_location = 1;
     PtnValue result = ptn_call_callable(runtime, callback, argc, args, line);
     ptn_try_frame_pop(runtime, &callback_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->suppress_user_call_frame_location =
         previous_suppress_user_call_frame_location;
+    runtime->suppress_user_argument_count_location =
+        previous_suppress_user_argument_count_location;
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
     return result;

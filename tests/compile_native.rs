@@ -36789,6 +36789,21 @@ try {
 } catch (Throwable $e) {
     echo \"Exception: \" . $e->getMessage() . \"\\n\";
 }
+try {
+    var_dump(array_walk_recursive($input, \"callback1\"));
+} catch (Throwable $e) {
+    echo \"Exception: \" . $e->getMessage() . \"\\n\";
+}
+try {
+    var_dump(array_walk_recursive($input, \"callback2\", 4));
+} catch (Throwable $e) {
+    echo \"Exception: \" . $e->getMessage() . \"\\n\";
+}
+try {
+    var_dump(array_walk_recursive($input, \"callback1\", 20, 10));
+} catch (Throwable $e) {
+    echo \"Exception: \" . $e->getMessage() . \"\\n\";
+}
 ",
     )
     .unwrap();
@@ -36804,6 +36819,9 @@ try {
             "Exception: Too few arguments to function callback2(), 3 passed and exactly 4 expected\n",
             "array_walk(): Argument #2 ($callback) must be a valid callback, function \"echo\" not found or invalid function name\n",
             "Exception: array_walk() expects at most 3 arguments, 4 given\n",
+            "Exception: Too few arguments to function callback1(), 2 passed and exactly 3 expected\n",
+            "Exception: Too few arguments to function callback2(), 3 passed and exactly 4 expected\n",
+            "Exception: array_walk_recursive() expects at most 3 arguments, 4 given\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
