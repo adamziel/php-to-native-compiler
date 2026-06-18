@@ -1807,9 +1807,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/with_Override_(okay|error_get|error_set)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(no_compile_errors|with_(AllowDynamicProperties|NoDiscard|SensitiveParameter))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/closures\/closure_0(49|51|53|55|62)[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/property_hooks\/abstract_hook[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/property_hooks\/abstract_prop_hooks[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/property_hooks\/syntax[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/property_hooks\/(abstract_get_set_readonly|abstract_hook(_in_non_abstract_class|_not_implemented)?|abstract_prop_(final|hooks|not_implemented|without_hooks)|backed_invariant|bug004|default_on_virtual(_with_inheritance)?|duplicate_hook|final_private_prop|final_prop(_2|_promoted_[234])?|gh15419_[12]|interface(_explicit_abstract|_final_hook|_final_prop|_get_only|_get_set_readonly|_invalid_explicitly_abstract|_not_implemented|_not_public)?|invalid_(abstract_(body|final|indirect(_2)?|private)|empty_hooks|final_private|hook_visibility|static|static_prop)|no_get_parameters|parent_get_not_in_class|parent_outside_property|private_prop_final_hook|readonly|set_by_ref|set_variadic|syntax|traits_abstract|unknown_hook(_private)?)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_getProperties_003[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_isIterable_gh20217[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/property_hooks\/ReflectionClass_getMethods[.]phpt$/
@@ -1866,6 +1864,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 line ~ /(^|[^[:alnum:]_$])(public|protected|private)[[:space:]]+final[[:space:]]+const([^[:alnum:]_$]|$)/
             if (!implemented_modifier_diagnostic &&
                 !final_class_constant_modifier &&
+                !ptn_supported_property_hook_metadata_row() &&
                 line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(function|static|public|protected|private|abstract)([^[:alnum:]_$]|$)/) {
                 print "unsupported-class-contract-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
                 found = 1

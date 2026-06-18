@@ -1960,12 +1960,6 @@ impl Parser<'_> {
                 self.parse_trait_use_declarations()?,
             ));
         }
-        if modifiers.is_abstract && modifiers.is_final {
-            return Err(Diagnostic::new(
-                "Cannot use the final modifier on an abstract method",
-                modifiers.final_span.or(modifiers.abstract_span),
-            ));
-        }
         if matches!(self.peek().kind, TokenKind::Const) {
             if modifiers.is_abstract {
                 return Err(Diagnostic::new(
@@ -2075,6 +2069,12 @@ impl Parser<'_> {
             return Err(Diagnostic::new(
                 "unsupported class member",
                 Some(self.peek().span),
+            ));
+        }
+        if modifiers.is_abstract && modifiers.is_final {
+            return Err(Diagnostic::new(
+                "Cannot use the final modifier on an abstract method",
+                modifiers.final_span.or(modifiers.abstract_span),
             ));
         }
         if class_is_interface {
@@ -2595,6 +2595,45 @@ impl Parser<'_> {
                 Some(token.span),
             ));
         }
+        if is_final && is_abstract {
+            return Err(Diagnostic::new(
+                "Cannot use the final modifier on an abstract property",
+                Some(token.span),
+            ));
+        }
+        let value = if matches!(self.peek().kind, TokenKind::Equal) {
+            self.advance();
+            let value = self.parse_expr()?;
+            validate_constant_expression_closures(&value)?;
+            validate_constant_expression_runtime_restrictions(&value)?;
+            if const_expr_contains_new_object(&value) {
+                return Err(Diagnostic::new(
+                    "New expressions are not supported in this context",
+                    Some(value.span()),
+                ));
+            }
+            if const_expr_contains_object_cast(&value) {
+                return Err(Diagnostic::new(
+                    "Object casts are not supported in this context",
+                    Some(value.span()),
+                ));
+            }
+            if !is_supported_property_default_expr(&value) {
+                return Err(Diagnostic::new(
+                    "property default value must be a supported constant expression",
+                    Some(value.span()),
+                ));
+            }
+            if is_readonly {
+                return Err(Diagnostic::new(
+                    format!("Readonly property {class_name}::${name} cannot have default value"),
+                    Some(value.span()),
+                ));
+            }
+            Some(value)
+        } else {
+            None
+        };
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
             if is_readonly {
                 return Err(Diagnostic::new(
@@ -2633,7 +2672,23 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            let hooks = self.parse_property_hook_block(&name, visibility)?;
+            let hooks = self.parse_property_hook_block(class_name, &name, visibility)?;
+            if hooks.is_virtual && value.is_some() {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot specify default value for virtual hooked property {class_name}::${name}"
+                    ),
+                    Some(token.span),
+                ));
+            }
+            if is_abstract && !hooks.get_is_abstract && !hooks.set_is_abstract {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Abstract property {class_name}::${name} must specify at least one abstract hook"
+                    ),
+                    Some(token.span),
+                ));
+            }
             return Ok((
                 PropertyDecl {
                     name,
@@ -2654,7 +2709,7 @@ impl Parser<'_> {
                     type_hint,
                     attributes: attributes.clone(),
                     has_override_attribute: attributes.has_override,
-                    value: None,
+                    value,
                     span: token.span,
                 },
                 true,
@@ -2666,39 +2721,6 @@ impl Parser<'_> {
                 Some(token.span),
             ));
         }
-        let value = if matches!(self.peek().kind, TokenKind::Equal) {
-            self.advance();
-            let value = self.parse_expr()?;
-            validate_constant_expression_closures(&value)?;
-            validate_constant_expression_runtime_restrictions(&value)?;
-            if const_expr_contains_new_object(&value) {
-                return Err(Diagnostic::new(
-                    "New expressions are not supported in this context",
-                    Some(value.span()),
-                ));
-            }
-            if const_expr_contains_object_cast(&value) {
-                return Err(Diagnostic::new(
-                    "Object casts are not supported in this context",
-                    Some(value.span()),
-                ));
-            }
-            if !is_supported_property_default_expr(&value) {
-                return Err(Diagnostic::new(
-                    "property default value must be a supported constant expression",
-                    Some(value.span()),
-                ));
-            }
-            if is_readonly {
-                return Err(Diagnostic::new(
-                    format!("Readonly property {class_name}::${name} cannot have default value"),
-                    Some(value.span()),
-                ));
-            }
-            Some(value)
-        } else {
-            None
-        };
         Ok((
             PropertyDecl {
                 name,
@@ -2797,6 +2819,7 @@ impl Parser<'_> {
 
     fn parse_property_hook_block(
         &mut self,
+        class_name: &str,
         property_name: &str,
         property_visibility: PropertyVisibility,
     ) -> Result<ParsedPropertyHookBlock> {
@@ -2809,11 +2832,12 @@ impl Parser<'_> {
             let hook_attributes = self.parse_attribute_groups()?;
             let mut hook_is_final = false;
             let mut hook_is_abstract = false;
-            let mut hook_visibility = property_visibility;
+            let hook_visibility = property_visibility;
             loop {
                 let TokenKind::Identifier(modifier) = &self.peek().kind else {
                     break;
                 };
+                let modifier_span = self.peek().span;
                 match modifier.to_ascii_lowercase().as_str() {
                     "final" => {
                         hook_is_final = true;
@@ -2823,17 +2847,29 @@ impl Parser<'_> {
                         hook_is_abstract = true;
                         self.advance();
                     }
+                    "static" => {
+                        return Err(Diagnostic::new(
+                            "Cannot use the static modifier on a property hook",
+                            Some(modifier_span),
+                        ));
+                    }
                     "public" => {
-                        hook_visibility = PropertyVisibility::Public;
-                        self.advance();
+                        return Err(Diagnostic::new(
+                            "Cannot use the public modifier on a property hook",
+                            Some(modifier_span),
+                        ));
                     }
                     "protected" => {
-                        hook_visibility = PropertyVisibility::Protected;
-                        self.advance();
+                        return Err(Diagnostic::new(
+                            "Cannot use the protected modifier on a property hook",
+                            Some(modifier_span),
+                        ));
                     }
                     "private" => {
-                        hook_visibility = PropertyVisibility::Private;
-                        self.advance();
+                        return Err(Diagnostic::new(
+                            "Cannot use the private modifier on a property hook",
+                            Some(modifier_span),
+                        ));
                     }
                     _ => break,
                 }
@@ -2846,6 +2882,12 @@ impl Parser<'_> {
             let token = self.advance().clone();
             match token.kind {
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("get") => {
+                    if hooks.has_get {
+                        return Err(Diagnostic::new(
+                            "Cannot redeclare property hook \"get\"",
+                            Some(token.span),
+                        ));
+                    }
                     validate_builtin_attributes_for_target(
                         &hook_attributes,
                         AttributeTarget::Method,
@@ -2872,6 +2914,14 @@ impl Parser<'_> {
                             hooks.get_value = Some(value);
                         }
                     } else {
+                        if matches!(self.peek().kind, TokenKind::LeftParen) {
+                            return Err(Diagnostic::new(
+                                format!(
+                                    "get hook of property {class_name}::${property_name} must not have a parameter list"
+                                ),
+                                Some(self.peek().span),
+                            ));
+                        }
                         let is_abstract_hook =
                             hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
                         validate_property_hook_modifiers(
@@ -2888,6 +2938,12 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set") => {
+                    if hooks.has_set {
+                        return Err(Diagnostic::new(
+                            "Cannot redeclare property hook \"set\"",
+                            Some(token.span),
+                        ));
+                    }
                     validate_builtin_attributes_for_target(
                         &hook_attributes,
                         AttributeTarget::Method,
@@ -2895,6 +2951,9 @@ impl Parser<'_> {
                     )?;
                     if hook_attributes.has_override {
                         hooks.set_override_span = Some(token.span);
+                    }
+                    if matches!(self.peek().kind, TokenKind::LeftParen) {
+                        self.parse_property_hook_set_parameters(class_name, property_name)?;
                     }
                     let is_abstract_hook =
                         hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
@@ -2911,9 +2970,12 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::Identifier(name) => {
-                    if self.skip_property_hook_body(&name, property_name)? {
-                        hooks.is_virtual = false;
-                    }
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Unknown hook \"{name}\" for property {class_name}::${property_name}, expected \"get\" or \"set\""
+                        ),
+                        Some(token.span),
+                    ));
                 }
                 TokenKind::LeftBrace => {
                     if self.skip_braced_property_hook_body(property_name)? {
@@ -2937,6 +2999,44 @@ impl Parser<'_> {
             ));
         }
         Ok(hooks)
+    }
+
+    fn parse_property_hook_set_parameters(
+        &mut self,
+        class_name: &str,
+        property_name: &str,
+    ) -> Result<()> {
+        let parameters = self.parse_function_parameters()?;
+        if let Some(parameter) = parameters.first() {
+            if parameter.by_ref {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Parameter ${} of set hook {class_name}::${property_name} must not be pass-by-reference",
+                        parameter.name
+                    ),
+                    Some(parameter.span),
+                ));
+            }
+            if parameter.is_variadic {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Parameter ${} of set hook {class_name}::${property_name} must not be variadic",
+                        parameter.name
+                    ),
+                    Some(parameter.span),
+                ));
+            }
+            if parameter.default_value.is_some() {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Parameter ${} of set hook {class_name}::${property_name} must not have a default value",
+                        parameter.name
+                    ),
+                    Some(parameter.span),
+                ));
+            }
+        }
+        Ok(())
     }
 
     fn skip_property_hook_body(&mut self, hook_name: &str, property_name: &str) -> Result<bool> {
@@ -3546,6 +3646,20 @@ impl Parser<'_> {
         } else {
             None
         };
+        if let Some(promoted) = &promoted_property {
+            if matches!(self.peek().kind, TokenKind::LeftBrace) {
+                if promoted.is_readonly {
+                    return Err(Diagnostic::new(
+                        "Hooked properties cannot be readonly",
+                        Some(self.peek().span),
+                    ));
+                }
+                return Err(Diagnostic::new(
+                    "property hooks are unsupported",
+                    Some(self.peek().span),
+                ));
+            }
+        }
         let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
