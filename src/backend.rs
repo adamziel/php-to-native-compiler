@@ -13263,7 +13263,7 @@ fn emit_instruction(
                             out.push_str(");\n");
                             emit_value_cleanup(out, "    ", &reference_value);
                         } else {
-                            let result_value = values.emit_materialized_value(out, value);
+                            let result_value = values.emit_raw_materialized_value(out, value);
                             out.push_str("    ptn_return_value = ptn_return_reference_source_or_plain_value(");
                             out.push_str(&result_value);
                             out.push_str(");\n");
@@ -18706,6 +18706,16 @@ fn by_ref_temporary_argument_allowed(value: &ValueExpr) -> bool {
     )
 }
 
+fn call_result_needs_value_deref(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::InternalCall { .. }
+            | ValueExpr::DynamicCall { .. }
+            | ValueExpr::MethodCall { .. }
+            | ValueExpr::DynamicMethodCall { .. }
+    )
+}
+
 fn temporary_array_dim_by_ref_argument_path(
     value: &ValueExpr,
 ) -> Option<(&ValueExpr, Vec<Option<ValueExpr>>, usize)> {
@@ -23135,7 +23145,7 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        let source_temp = self.emit_materialized_value(out, source);
+        let source_temp = self.emit_raw_materialized_value(out, source);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -23306,7 +23316,7 @@ impl ValueEmitter {
             return source_temp;
         }
 
-        let source_temp = self.emit_materialized_value(out, source);
+        let source_temp = self.emit_raw_materialized_value(out, source);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -23407,7 +23417,7 @@ impl ValueEmitter {
             return;
         }
 
-        let source_temp = self.emit_materialized_value(out, source);
+        let source_temp = self.emit_raw_materialized_value(out, source);
         out.push_str("    if (");
         out.push_str(&source_temp);
         out.push_str(".type == PTN_REFERENCE) {\n");
@@ -23464,7 +23474,7 @@ impl ValueEmitter {
             return;
         }
 
-        let source_temp = self.emit_materialized_value(out, source);
+        let source_temp = self.emit_raw_materialized_value(out, source);
         let path = emit_array_path_segments(out, self, &target.dimensions);
         out.push_str("    if (");
         out.push_str(&source_temp);
@@ -23951,7 +23961,8 @@ impl ValueEmitter {
         target: &ListAssignmentTarget,
         value: &ValueExpr,
     ) -> String {
-        if list_assignment_has_reference(target) {
+        let has_reference = list_assignment_has_reference(target);
+        if has_reference {
             if let ValueExpr::Load { name, .. } = value {
                 return self.emit_reference_list_assignment_from_variable(out, target, name);
             }
@@ -23977,9 +23988,7 @@ impl ValueEmitter {
             }
         }
 
-        if list_assignment_has_reference(target)
-            && !list_reference_source_warns_non_referenceable(value)
-        {
+        if has_reference && !list_reference_source_warns_non_referenceable(value) {
             out.push_str(
                 "    ptn_abort_type_error_at(\"Cannot assign reference to non referenceable value\", \"",
             );
@@ -23989,10 +23998,12 @@ impl ValueEmitter {
             out.push_str(");\n");
         }
 
-        let value_temp = self.emit_materialized_value(out, value);
-        if list_assignment_has_reference(target)
-            && list_reference_source_fatals_non_referenceable(value)
-        {
+        let value_temp = if has_reference {
+            self.emit_raw_materialized_value(out, value)
+        } else {
+            self.emit_materialized_value(out, value)
+        };
+        if has_reference && list_reference_source_fatals_non_referenceable(value) {
             self.emit_non_referenceable_list_reference_fatal(out, value_temp.as_str(), target.line);
         }
         let result_temp = self.emit_list_assignment_from_temp(
@@ -28907,6 +28918,35 @@ impl ValueEmitter {
     }
 
     fn emit_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        let temp = self.emit_raw_materialized_value(out, value);
+        if !call_result_needs_value_deref(value) {
+            return temp;
+        }
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&temp);
+        out.push_str(".type == PTN_REFERENCE) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone_deref(");
+        out.push_str(&temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &temp);
+        out.push_str("    } else {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_raw_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
         if matches!(
             value,
             ValueExpr::Binary { .. }
@@ -29238,7 +29278,7 @@ impl ValueEmitter {
             return self.emit_reference_target(out, &target);
         }
 
-        let result_temp = self.emit_materialized_value(out, source);
+        let result_temp = self.emit_raw_materialized_value(out, source);
         let temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&temp);
@@ -29264,7 +29304,7 @@ impl ValueEmitter {
                 if let Some(target) = reference_target_from_value(value) {
                     self.emit_reference_target(out, &target)
                 } else {
-                    self.emit_materialized_value(out, value)
+                    self.emit_raw_materialized_value(out, value)
                 }
             }
             Some(value) => self.emit_materialized_value(out, value),
@@ -31759,7 +31799,7 @@ impl ValueEmitter {
                 _ => false,
             };
             if root_allowed {
-                let root_temp = self.emit_materialized_value(out, root);
+                let root_temp = self.emit_raw_materialized_value(out, root);
                 let path = emit_array_path_segments(out, self, &dimensions);
                 let temp = self.next_temp();
                 out.push_str("    PtnValue ");
@@ -31805,7 +31845,7 @@ impl ValueEmitter {
                     return self.emit_reference_source(out, argument, line);
                 }
                 if allow_temporary && by_ref_temporary_argument_allowed(argument) {
-                    let value_temp = self.emit_materialized_value(out, argument);
+                    let value_temp = self.emit_raw_materialized_value(out, argument);
                     let reference_temp = self.next_temp();
                     out.push_str("    PtnValue ");
                     out.push_str(&reference_temp);
