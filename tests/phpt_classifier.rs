@@ -1755,6 +1755,23 @@ fn phpt_classifier_keeps_supported_public_tostring_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_class_metadata_helpers_runnable() {
+    let cases = [
+        "--TEST--\nclass parents supported\n--FILE--\n<?php\nclass Base {}\nclass Child extends Base {}\nvar_dump(class_parents(Child::class));\n--EXPECT--\n",
+        "--TEST--\nclass implements supported\n--FILE--\n<?php\ninterface Contract {}\nclass Worker implements Contract {}\nvar_dump(class_implements('Worker'));\n--EXPECT--\n",
+        "--TEST--\nclass uses supported\n--FILE--\n<?php\ntrait ListedTrait {}\nclass Worker { use ListedTrait; }\nvar_dump(class_uses(new Worker));\n--EXPECT--\n",
+    ];
+
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt).trim_end(),
+            "runnable\tselected for PTN semantic measurement"
+        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
+    }
+}
+
+#[test]
 fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
     let cases = [
         "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_shift($items); }\n--EXPECT--\n",

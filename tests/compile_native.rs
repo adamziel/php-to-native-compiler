@@ -18601,6 +18601,7 @@ fn compile_declared_class_metadata_intrinsics_to_native_binary() {
         &input,
         "<?php
 interface Contract {
+    const MARK = \"contract\";
 }
 
 const LOOKUP_CONST = \"value\";
@@ -18612,7 +18613,7 @@ function lookup_func() {
 class BaseWorker {
 }
 
-class Worker extends BaseWorker {
+class Worker extends BaseWorker implements Contract {
     public function Run($value) {
         return $value;
     }
@@ -18644,6 +18645,7 @@ var_dump(get_class(new stdClass));
 var_dump(get_class($callback));
 var_dump(get_parent_class($worker));
 var_dump(get_parent_class(\"worker\"));
+var_dump(get_parent_class(\"Contract\"));
 var_dump(get_parent_class(new stdClass));
 try {
     get_class(42);
@@ -18660,6 +18662,13 @@ var_dump(function_exists(\"interface_exists\"));
 var_dump(function_exists(\"\\\\lookup_func\"));
 var_dump(defined(\"\\\\LOOKUP_CONST\"));
 var_dump(constant(\"\\\\LOOKUP_CONST\"));
+var_dump(defined(\"Worker::MARK\"));
+var_dump(constant(\"Worker::MARK\"));
+spl_autoload_register(function($name) {
+    echo \"lookup:\", $name, \"\\n\";
+});
+var_dump(is_a(\"AutoloadMissing\", \"Worker\", true));
+var_dump(is_subclass_of(\"AutoloadMissing2\", \"Worker\"));
 ",
     )
     .unwrap();
@@ -18693,6 +18702,7 @@ var_dump(constant(\"\\\\LOOKUP_CONST\"));
             "string(10) \"BaseWorker\"\n",
             "string(10) \"BaseWorker\"\n",
             "bool(false)\n",
+            "bool(false)\n",
             "TypeError: get_class(): Argument #1 ($object) must be of type object, int given\n",
             "TypeError: get_parent_class(): Argument #1 ($object_or_class) must be an object or a valid class name, array given\n",
             "bool(true)\n",
@@ -18700,6 +18710,12 @@ var_dump(constant(\"\\\\LOOKUP_CONST\"));
             "bool(true)\n",
             "bool(true)\n",
             "string(5) \"value\"\n",
+            "bool(true)\n",
+            "string(8) \"contract\"\n",
+            "lookup:AutoloadMissing\n",
+            "bool(false)\n",
+            "lookup:AutoloadMissing2\n",
+            "bool(false)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -18886,6 +18902,8 @@ class BaseList {
 }
 
 class WorkerList extends BaseList implements Contract {
+    use ListedTrait;
+
     public function pubI() {}
     private function privWorker() {}
     protected function protWorker() {}
@@ -18903,6 +18921,12 @@ class PeerList {
     }
 }
 
+class StringBox {
+    public function __toString() {
+        return \"box\";
+    }
+}
+
 function dump_methods($methods) {
     foreach ($methods as $method) {
         echo $method, \"|\";
@@ -18910,9 +18934,24 @@ function dump_methods($methods) {
     echo \"\\n\";
 }
 
+function dump_assoc($items) {
+    foreach ($items as $key => $value) {
+        echo $key, \"=\", $value, \"|\";
+    }
+    echo \"\\n\";
+}
+
 dump_methods(get_class_methods(\"WorkerList\"));
 WorkerList::fromWorker();
 PeerList::fromPeer();
+dump_assoc(class_parents(\"WorkerList\"));
+dump_assoc(class_parents(new WorkerList()));
+dump_assoc(class_implements(\"WorkerList\"));
+dump_assoc(class_implements(new WorkerList()));
+dump_assoc(class_uses(\"WorkerList\"));
+dump_assoc(class_uses(new WorkerList()));
+dump_assoc(class_uses(\"BaseList\"));
+dump_assoc(class_implements(new StringBox()));
 var_dump(in_array(\"WorkerList\", get_declared_classes()));
 var_dump(in_array(\"Contract\", get_declared_interfaces()));
 var_dump(in_array(\"ListedTrait\", get_declared_traits()));
@@ -18948,6 +18987,14 @@ try {
             "pubI|privWorker|protWorker|pubWorker|fromWorker|protBase|pubBase|\n",
             "protBase|pubBase|\n",
             "pubI|pubWorker|fromWorker|pubBase|\n",
+            "BaseList=BaseList|\n",
+            "BaseList=BaseList|\n",
+            "Contract=Contract|\n",
+            "Contract=Contract|\n",
+            "ListedTrait=ListedTrait|\n",
+            "ListedTrait=ListedTrait|\n",
+            "\n",
+            "Stringable=Stringable|\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -18971,6 +19018,9 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_method_names"));
     assert!(c_source.contains("ptn_declared_class_method_exists_from_class_name"));
+    assert!(c_source.contains("ptn_declared_class_parent_names"));
+    assert!(c_source.contains("ptn_declared_class_interface_names"));
+    assert!(c_source.contains("ptn_declared_class_trait_names"));
     assert!(c_source.contains("ptn_internal_get_declared_classes"));
     assert!(c_source.contains("ptn_internal_is_a"));
 }

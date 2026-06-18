@@ -5057,6 +5057,133 @@ fn emit_class_metadata_helpers(
     out.push_str("    return result;\n");
     out.push_str("}\n");
 
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_class_metadata_add_assoc_name(PtnValue result, const char *name) {\n",
+    );
+    out.push_str(
+        "    ptn_array_set_entry(result.as.array, ptn_array_string_key(name), ptn_string(name));\n",
+    );
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_builtin_class_interface_names(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    for interface in [
+        "SeekableIterator",
+        "Traversable",
+        "Iterator",
+        "RecursiveIterator",
+        "OuterIterator",
+        "IteratorAggregate",
+        "ArrayAccess",
+        "Serializable",
+        "Countable",
+        "Stringable",
+        "Throwable",
+        "DateTimeInterface",
+        "DOMParentNode",
+        "DOMChildNode",
+        "UnitEnum",
+        "BackedEnum",
+    ] {
+        out.push_str("    if (ptn_builtin_class_implements_interface(class_name, \"");
+        out.push_str(interface);
+        out.push_str("\")) {\n");
+        out.push_str("        ptn_class_metadata_add_assoc_name(result, \"");
+        out.push_str(interface);
+        out.push_str("\");\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_parent_names(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    out.push_str("    const char *parent_name = ptn_declared_class_parent_name(class_name);\n");
+    out.push_str("    while (parent_name != NULL) {\n");
+    out.push_str("        ptn_class_metadata_add_assoc_name(result, parent_name);\n");
+    out.push_str("        parent_name = ptn_declared_class_parent_name(parent_name);\n");
+    out.push_str("    }\n");
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_interface_names(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        let has_to_string = class
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case("__toString"));
+        let interfaces = class_interface_lookup_chain(class, classes);
+        if interfaces.is_empty() && !class.is_enum && !has_to_string {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        if has_to_string {
+            out.push_str("        ptn_class_metadata_add_assoc_name(result, \"Stringable\");\n");
+        }
+        if class.is_enum {
+            out.push_str("        ptn_class_metadata_add_assoc_name(result, \"UnitEnum\");\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str(
+                    "        ptn_class_metadata_add_assoc_name(result, \"BackedEnum\");\n",
+                );
+            }
+        }
+        for interface in interfaces {
+            out.push_str("        ptn_class_metadata_add_assoc_name(result, \"");
+            out.push_str(&c_string(interface));
+            out.push_str("\");\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"Generator\")) {\n");
+    out.push_str("        ptn_class_metadata_add_assoc_name(result, \"Iterator\");\n");
+    out.push_str("        ptn_class_metadata_add_assoc_name(result, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_trait_names(PtnRuntime *runtime, const char *class_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+    if classes.iter().all(|class| class.trait_uses.is_empty()) {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        if class.trait_uses.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for trait_use in &class.trait_uses {
+            out.push_str("        ptn_class_metadata_add_assoc_name(result, \"");
+            out.push_str(&c_string(&trait_use.name));
+            out.push_str("\");\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return result;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_readonly(const char *name) {\n");
     if classes.is_empty() {
         out.push_str("    (void)name;\n");
@@ -5273,12 +5400,21 @@ fn emit_class_metadata_helpers(
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     for class in classes {
-        if class.interfaces.is_empty() && !class.is_enum {
+        let has_to_string = class
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case("__toString"));
+        if class.interfaces.is_empty() && !class.is_enum && !has_to_string {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if has_to_string {
+            out.push_str("        if (ptn_ascii_case_equal(interface_name, \"Stringable\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         if class.is_enum {
             out.push_str("        if (ptn_ascii_case_equal(interface_name, \"UnitEnum\")) {\n");
             out.push_str("            return 1;\n");
@@ -10171,18 +10307,29 @@ fn class_constant_lookup_chain<'a>(
                 }
             }
         }
-        let Some(parent_name) = &class.parent_name else {
-            return;
-        };
-        if let Some(parent) = class_by_name(classes, parent_name) {
-            collect(
-                target_class_name,
-                parent,
-                classes,
-                seen_classes,
-                seen_constants,
-                constants,
-            );
+        if let Some(parent_name) = &class.parent_name {
+            if let Some(parent) = class_by_name(classes, parent_name) {
+                collect(
+                    target_class_name,
+                    parent,
+                    classes,
+                    seen_classes,
+                    seen_constants,
+                    constants,
+                );
+            }
+        }
+        for interface_name in class_transitive_interfaces(class, classes) {
+            if let Some(interface) = class_by_name(classes, interface_name) {
+                collect(
+                    target_class_name,
+                    interface,
+                    classes,
+                    seen_classes,
+                    seen_constants,
+                    constants,
+                );
+            }
         }
     }
 
