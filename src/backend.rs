@@ -4096,6 +4096,11 @@ fn emit_user_function_dispatch(
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
+    out.push_str("        if (ptn_declared_magic_static_call(runtime, ptn_static_magic_class, ptn_static_magic_method, argc, args, line, &ptn_static_magic_result)) {\n");
+    out.push_str("            free(ptn_static_magic_name);\n");
+    out.push_str("            *found = 1;\n");
+    out.push_str("            return ptn_static_magic_result;\n");
+    out.push_str("        }\n");
     out.push_str(
         "        if (ptn_declared_class_has_call_magic(ptn_static_magic_resolved_class)) {\n",
     );
@@ -4108,11 +4113,6 @@ fn emit_user_function_dispatch(
     out.push_str("            *found = 1;\n");
     out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_nonstatic_magic_message, runtime->source_path, line);\n");
     out.push_str("            return ptn_null();\n");
-    out.push_str("        }\n");
-    out.push_str("        if (ptn_declared_magic_static_call(runtime, ptn_static_magic_class, ptn_static_magic_method, argc, args, line, &ptn_static_magic_result)) {\n");
-    out.push_str("            free(ptn_static_magic_name);\n");
-    out.push_str("            *found = 1;\n");
-    out.push_str("            return ptn_static_magic_result;\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("    free(ptn_static_magic_name);\n");
@@ -11512,14 +11512,6 @@ fn emit_instruction(
             argument_unpacks,
             line,
         } => {
-            let value = ValueExpr::InternalCall {
-                name: name.clone(),
-                arguments: arguments.clone(),
-                argument_names: argument_names.clone(),
-                argument_unpacks: argument_unpacks.clone(),
-                line: *line,
-            };
-            values.emit_no_discard_warning(out, &value);
             let result_temp = if name.eq_ignore_ascii_case("array_splice")
                 && (2..=4).contains(&arguments.len())
                 && argument_names.iter().all(Option::is_none)
@@ -11534,6 +11526,7 @@ fn emit_instruction(
                     argument_names,
                     argument_unpacks,
                     *line,
+                    true,
                 )
             };
             out.push_str("    (void)");
@@ -16266,6 +16259,7 @@ struct DirectUserCall {
     deprecated_message: Option<String>,
     deprecated_since: Option<String>,
     deprecated_message_runtime_reference: Option<AttributeConstantReference>,
+    no_discard_warning: Option<String>,
     display_name: String,
     class_name: Option<String>,
     method_name: Option<String>,
@@ -17754,7 +17748,6 @@ impl ValueEmitter {
             line,
         } = value
         {
-            self.emit_no_discard_warning(out, value);
             if name.eq_ignore_ascii_case("array_splice")
                 && (2..=4).contains(&arguments.len())
                 && argument_names.iter().all(Option::is_none)
@@ -17769,6 +17762,7 @@ impl ValueEmitter {
                 argument_names,
                 argument_unpacks,
                 *line,
+                true,
             );
         }
         if let ValueExpr::DynamicCall {
@@ -21271,6 +21265,7 @@ impl ValueEmitter {
                 argument_names,
                 argument_unpacks,
                 *line,
+                false,
             ),
             ValueExpr::DynamicNewObject {
                 class_name,
@@ -21285,6 +21280,7 @@ impl ValueEmitter {
                 argument_names,
                 argument_unpacks,
                 *line,
+                false,
             ),
             ValueExpr::Clone { expr, line } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
@@ -21506,6 +21502,7 @@ impl ValueEmitter {
                 argument_names,
                 argument_unpacks,
                 *line,
+                false,
             ),
             ValueExpr::FirstClassCallable { callable, line } => {
                 self.emit_first_class_callable(out, callable, *line)
@@ -22400,6 +22397,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
+        _discarded: bool,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
             let result_temp = self.next_temp();
@@ -22504,6 +22502,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
+        _discarded: bool,
     ) -> String {
         if argument_names.iter().any(Option::is_some) {
             let result_temp = self.next_temp();
@@ -26229,6 +26228,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
         line: usize,
+        discarded: bool,
     ) -> String {
         let has_named_arguments = argument_names.iter().any(Option::is_some);
         let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
@@ -26319,6 +26319,7 @@ impl ValueEmitter {
                 deprecated_message_runtime_reference: function
                     .deprecated_message_runtime_reference
                     .clone(),
+                no_discard_warning: no_discard_warning_message(function),
                 display_name: function.display_name.clone(),
                 class_name: function.class_name.clone(),
                 method_name: function.method_name.clone(),
@@ -26368,6 +26369,7 @@ impl ValueEmitter {
                     &format!("{args_temp}.values"),
                     line,
                     called_class_override.as_ref(),
+                    discarded,
                 );
             } else {
                 out.push_str("    PtnValue ");
@@ -26402,6 +26404,7 @@ impl ValueEmitter {
                                 &normalized_argument_names,
                                 &vec![false; normalized_arguments.len()],
                                 line,
+                                discarded,
                             )
                         }
                         Err(error) => {
@@ -26421,6 +26424,7 @@ impl ValueEmitter {
                     argument_names,
                     line,
                     called_class_override.as_ref(),
+                    discarded,
                 );
             }
             self.emit_fatal_value(
@@ -26440,6 +26444,7 @@ impl ValueEmitter {
                     "NULL",
                     line,
                     called_class_override.as_ref(),
+                    discarded,
                 );
             } else if let Some((target_class_name, method_name)) =
                 self.relative_scoped_call_parts(name)
@@ -26539,6 +26544,7 @@ impl ValueEmitter {
                 &args_temp,
                 line,
                 called_class_override.as_ref(),
+                discarded,
             );
         } else if let Some((target_class_name, method_name)) = self.relative_scoped_call_parts(name)
         {
@@ -26681,12 +26687,22 @@ impl ValueEmitter {
         args_expr: &str,
         line: usize,
         called_class_override: Option<&CalledClassOverride>,
+        discarded: bool,
     ) {
         if direct_user.deprecated_message.is_some()
             || direct_user.deprecated_since.is_some()
             || direct_user.deprecated_message_runtime_reference.is_some()
         {
             self.emit_deprecated_call_warning(out, direct_user, line);
+        }
+        if discarded {
+            if let Some(message) = direct_user.no_discard_warning.as_deref() {
+                out.push_str("    ptn_emit_user_warning(&runtime.diagnostics, \"");
+                out.push_str(&c_string(message));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
         }
         let previous_override_temp = called_class_override.map(|override_| {
             let previous_override_temp = self.next_temp();
@@ -26845,6 +26861,7 @@ impl ValueEmitter {
         argument_names: &[Option<String>],
         line: usize,
         called_class_override: Option<&CalledClassOverride>,
+        discarded: bool,
     ) -> String {
         let argument_slots =
             match bind_named_call_arguments(&direct_user.parameters, argument_names) {
@@ -26922,6 +26939,7 @@ impl ValueEmitter {
             &args_temp,
             line,
             called_class_override,
+            discarded,
         );
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
