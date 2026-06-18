@@ -3165,7 +3165,7 @@ fn emit_return_type_boundary(
 ) {
     match return_type {
         TypeHint::Null => {
-            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
+            out.push_str("    if (!ptn_return_value_was_set || ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
             out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
             out.push_str(
@@ -3692,6 +3692,22 @@ fn emit_return_scalar_cast_boundary(
     function_name: &str,
     return_by_ref: bool,
 ) {
+    emit_return_scalar_cast_boundary_with_label(
+        out,
+        return_type,
+        &type_hint_label(return_type),
+        function_name,
+        return_by_ref,
+    );
+}
+
+fn emit_return_scalar_cast_boundary_with_label(
+    out: &mut String,
+    return_type: &TypeHint,
+    expected_type_label: &str,
+    function_name: &str,
+    return_by_ref: bool,
+) {
     let coercion_helper = type_hint_scalar_return_coercion_helper(Some(return_type))
         .expect("scalar return type should map to return coercion helper");
     out.push_str("    PtnValue ptn_typed_return_value;\n");
@@ -3700,7 +3716,7 @@ fn emit_return_scalar_cast_boundary(
     out.push_str("(&runtime, \"");
     out.push_str(&c_string(function_name));
     out.push_str("\", \"");
-    out.push_str(&c_string(&type_hint_label(return_type)));
+    out.push_str(&c_string(expected_type_label));
     out.push_str("\", ptn_return_value, ptn_return_value_was_set, ptn_return_line, &ptn_typed_return_value)) {\n");
     out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
     out.push_str("        ptn_runtime_free(&runtime);\n");
@@ -3730,7 +3746,7 @@ fn emit_nullable_return_type_boundary(
 ) {
     match return_type {
         TypeHint::Array => {
-            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && ptn_value_deref(ptn_return_value).type != PTN_ARRAY) {\n");
+            out.push_str("    if (!ptn_return_value_was_set || (ptn_value_deref(ptn_return_value).type != PTN_NULL && ptn_value_deref(ptn_return_value).type != PTN_ARRAY)) {\n");
             out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
             out.push_str(
@@ -3742,14 +3758,20 @@ fn emit_nullable_return_type_boundary(
             out.push_str("    }\n");
         }
         TypeHint::Int | TypeHint::Float | TypeHint::String | TypeHint::Bool => {
-            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
-            emit_return_scalar_cast_boundary(out, return_type, function_name, return_by_ref);
+            out.push_str("    if (!ptn_return_value_was_set || ptn_value_deref(ptn_return_value).type != PTN_NULL) {\n");
+            emit_return_scalar_cast_boundary_with_label(
+                out,
+                return_type,
+                &format!("?{}", type_hint_label(return_type)),
+                function_name,
+                return_by_ref,
+            );
             out.push_str("    }\n");
         }
         TypeHint::Class(class_name) => {
-            out.push_str("    if (ptn_value_deref(ptn_return_value).type != PTN_NULL && !ptn_value_satisfies_class_type_hint(&runtime, ptn_return_value, \"");
+            out.push_str("    if (!ptn_return_value_was_set || (ptn_value_deref(ptn_return_value).type != PTN_NULL && !ptn_value_satisfies_class_type_hint(&runtime, ptn_return_value, \"");
             out.push_str(&c_string(class_name));
-            out.push_str("\")) {\n");
+            out.push_str("\"))) {\n");
             out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
             out.push_str(&c_string(function_name));
             out.push_str("\", \"?");
