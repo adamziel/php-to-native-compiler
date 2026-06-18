@@ -286,6 +286,40 @@ pub struct AttributeArgumentValue {
     pub text: String,
     pub kind: AttributeArgumentKind,
     pub constant_reference: Option<AttributeConstantReference>,
+    pub expression: Option<AttributeArgumentExpression>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttributeArgumentArrayElement {
+    pub key: Option<AttributeArgumentExpression>,
+    pub value: AttributeArgumentExpression,
+    pub line: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AttributeArgumentExpression {
+    String(String),
+    Int(String),
+    Float(String),
+    Bool(bool),
+    Null,
+    Constant(String),
+    ClassName(String),
+    ClassConstant {
+        class_name: String,
+        name: String,
+    },
+    Array(Vec<AttributeArgumentArrayElement>),
+    Unary {
+        op: UnaryOp,
+        expr: Box<AttributeArgumentExpression>,
+    },
+    Binary {
+        op: BinaryOp,
+        left: Box<AttributeArgumentExpression>,
+        right: Box<AttributeArgumentExpression>,
+        line: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

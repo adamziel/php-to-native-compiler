@@ -2,7 +2,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction, ArrayDimTarget, ArrayElement, ArrayElementValue, AssignmentOp,
-    AssignmentTarget, AttributeArgument, AttributeArgumentKind, AttributeArgumentValue,
+    AssignmentTarget, AttributeArgument, AttributeArgumentArrayElement,
+    AttributeArgumentExpression, AttributeArgumentKind, AttributeArgumentValue,
     AttributeConstantReference, AttributeInstance, AttributeMetadata, BinaryOp, CastKind,
     CatchClause, ClassConstantDecl, ClassDecl, ClosureUseCapture, CompileWarning,
     CompileWarningKind, ConstDeclaration, EnumBackingType, Expr, FunctionDecl, FunctionParameter,
@@ -1119,6 +1120,7 @@ impl Parser<'_> {
         }
     }
 
+    #[allow(dead_code)]
     fn resolve_attribute_name(&self, name_segments: &[String], leading_backslash: bool) -> String {
         if name_segments.is_empty() {
             return String::new();
@@ -5250,12 +5252,13 @@ impl Parser<'_> {
     fn parse_attribute_groups(&mut self) -> Result<ParsedAttributes> {
         let mut attributes = ParsedAttributes::default();
         while matches!(self.peek().kind, TokenKind::AttributeStart) {
-            let group = self.parse_attribute_group()?;
+            let group = self.parse_attribute_group_expr()?;
             merge_parsed_attributes(&mut attributes, group);
         }
         Ok(attributes)
     }
 
+    #[allow(dead_code)]
     fn parse_attribute_group(&mut self) -> Result<ParsedAttributes> {
         let start = self.advance().span;
         let mut bracket_depth = 1usize;
@@ -5355,6 +5358,7 @@ impl Parser<'_> {
                                         name: member_name,
                                     },
                                 ),
+                                expression: None,
                             },
                         );
                     } else {
@@ -5368,6 +5372,7 @@ impl Parser<'_> {
                                 constant_reference: Some(AttributeConstantReference::Constant(
                                     name,
                                 )),
+                                expression: None,
                             },
                         );
                     }
@@ -5420,6 +5425,7 @@ impl Parser<'_> {
                                         name: member_name,
                                     },
                                 ),
+                                expression: None,
                             },
                         );
                     } else {
@@ -5433,6 +5439,7 @@ impl Parser<'_> {
                                 constant_reference: Some(AttributeConstantReference::Constant(
                                     name,
                                 )),
+                                expression: None,
                             },
                         );
                     }
@@ -5591,6 +5598,186 @@ impl Parser<'_> {
             }
         }
         Ok(attributes)
+    }
+
+    fn parse_attribute_group_expr(&mut self) -> Result<ParsedAttributes> {
+        let start = self.advance().span;
+        let mut attributes = ParsedAttributes::default();
+        loop {
+            if matches!(self.peek().kind, TokenKind::RightBracket) {
+                self.advance();
+                return Ok(attributes);
+            }
+            if matches!(self.peek().kind, TokenKind::Eof) {
+                return Err(Diagnostic::new("unterminated attribute", Some(start)));
+            }
+            if let TokenKind::Variable(name) = self.peek().kind.clone() {
+                let span = self.advance().span;
+                return Err(Diagnostic::parse_error(
+                    format!("syntax error, unexpected variable \"${name}\""),
+                    Some(span),
+                ));
+            }
+
+            let parsed_name = self.parse_name("expected attribute name")?;
+            let resolved_name = self.resolve_class_name(&parsed_name);
+            let name_segments = parsed_attribute_source_segments(&parsed_name);
+            let mut arguments = ParsedAttributeArguments::default();
+
+            if matches!(self.peek().kind, TokenKind::LeftParen) {
+                let (argument_exprs, argument_names, argument_unpacks, _) =
+                    self.parse_call_arguments()?;
+                for (argument_index, argument) in argument_exprs.iter().enumerate() {
+                    if argument_unpacks[argument_index] {
+                        return Err(Diagnostic::new(
+                            "Cannot use unpacking in attribute argument list",
+                            Some(argument.span()),
+                        ));
+                    }
+                    arguments.record_value(
+                        argument_names[argument_index].clone(),
+                        self.parsed_attribute_argument_value_from_expr(argument)?,
+                    );
+                }
+            }
+
+            apply_parsed_attribute(
+                &mut attributes,
+                &name_segments,
+                &resolved_name,
+                &arguments,
+                self.strict_types,
+                start.line,
+            )?;
+
+            match self.peek().kind {
+                TokenKind::Comma => {
+                    self.advance();
+                }
+                TokenKind::RightBracket => {
+                    self.advance();
+                    return Ok(attributes);
+                }
+                TokenKind::Eof => {
+                    return Err(Diagnostic::new("unterminated attribute", Some(start)));
+                }
+                _ => {
+                    let token = self.advance().clone();
+                    return Err(Diagnostic::new(
+                        "expected comma or end of attribute group",
+                        Some(token.span),
+                    ));
+                }
+            }
+        }
+    }
+
+    fn parsed_attribute_argument_value_from_expr(
+        &self,
+        expr: &Expr,
+    ) -> Result<ParsedAttributeArgumentValue> {
+        validate_constant_expression_closures(expr)?;
+        validate_constant_expression_runtime_restrictions(expr)?;
+        if !is_supported_const_declaration_expr(expr) {
+            return Err(Diagnostic::new(
+                "Constant expression contains invalid operations",
+                Some(expr.span()),
+            ));
+        }
+        let expression = self.attribute_argument_expression_from_expr(expr)?;
+        let (text, kind, constant_reference) =
+            parsed_attribute_argument_expression_metadata(&expression);
+        Ok(ParsedAttributeArgumentValue {
+            text,
+            kind,
+            span: expr.span(),
+            constant_reference,
+            expression: Some(expression),
+        })
+    }
+
+    fn attribute_argument_expression_from_expr(
+        &self,
+        expr: &Expr,
+    ) -> Result<AttributeArgumentExpression> {
+        match expr {
+            Expr::Grouped { expr, .. } => self.attribute_argument_expression_from_expr(expr),
+            Expr::String(value, _) => Ok(AttributeArgumentExpression::String(value.clone())),
+            Expr::Int(value, _) => Ok(AttributeArgumentExpression::Int(value.to_string())),
+            Expr::Float(value, _) => Ok(AttributeArgumentExpression::Float(value.to_string())),
+            Expr::Bool(value, _) => Ok(AttributeArgumentExpression::Bool(*value)),
+            Expr::Null(_) => Ok(AttributeArgumentExpression::Null),
+            Expr::Constant(name, _) => Ok(AttributeArgumentExpression::Constant(name.clone())),
+            Expr::ClassConstantFetch {
+                class_name, name, ..
+            } if name.eq_ignore_ascii_case("class") => {
+                Ok(AttributeArgumentExpression::ClassName(class_name.clone()))
+            }
+            Expr::ClassConstantFetch {
+                class_name, name, ..
+            } => Ok(AttributeArgumentExpression::ClassConstant {
+                class_name: class_name.clone(),
+                name: name.clone(),
+            }),
+            Expr::Array { elements, .. } => {
+                let mut attribute_elements = Vec::with_capacity(elements.len());
+                for element in elements {
+                    let key = element
+                        .key
+                        .as_ref()
+                        .map(|key| self.attribute_argument_expression_from_expr(key))
+                        .transpose()?;
+                    let value = match &element.value {
+                        ArrayElementValue::Value(value) => {
+                            self.attribute_argument_expression_from_expr(value)?
+                        }
+                        ArrayElementValue::Hole(span) => {
+                            return Err(Diagnostic::new(
+                                "Cannot use empty array elements in arrays",
+                                Some(*span),
+                            ));
+                        }
+                        ArrayElementValue::Unpack(value) => {
+                            return Err(Diagnostic::new(
+                                "Cannot use unpacking in attribute argument list",
+                                Some(value.span()),
+                            ));
+                        }
+                        ArrayElementValue::Reference(_) => {
+                            return Err(Diagnostic::new(
+                                "Constant expression contains invalid operations",
+                                Some(expr.span()),
+                            ));
+                        }
+                    };
+                    attribute_elements.push(AttributeArgumentArrayElement {
+                        key,
+                        value,
+                        line: element.line,
+                    });
+                }
+                Ok(AttributeArgumentExpression::Array(attribute_elements))
+            }
+            Expr::Unary { op, expr, .. } => Ok(AttributeArgumentExpression::Unary {
+                op: *op,
+                expr: Box::new(self.attribute_argument_expression_from_expr(expr)?),
+            }),
+            Expr::Binary {
+                op,
+                left,
+                right,
+                span,
+            } => Ok(AttributeArgumentExpression::Binary {
+                op: *op,
+                left: Box::new(self.attribute_argument_expression_from_expr(left)?),
+                right: Box::new(self.attribute_argument_expression_from_expr(right)?),
+                line: span.line,
+            }),
+            _ => Err(Diagnostic::new(
+                "Constant expression contains invalid operations",
+                Some(expr.span()),
+            )),
+        }
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {
@@ -9644,6 +9831,7 @@ struct ParsedAttributeArgumentValue {
     kind: ParsedAttributeArgumentKind,
     span: SourceSpan,
     constant_reference: Option<AttributeConstantReference>,
+    expression: Option<AttributeArgumentExpression>,
 }
 
 #[derive(Clone)]
@@ -9677,6 +9865,7 @@ struct ParsedAttributeArguments {
 }
 
 impl ParsedAttributeArguments {
+    #[allow(dead_code)]
     fn record_typed_text(
         &mut self,
         name: Option<String>,
@@ -9691,6 +9880,7 @@ impl ParsedAttributeArguments {
                 kind,
                 span,
                 constant_reference: None,
+                expression: None,
             },
         );
     }
@@ -9763,6 +9953,126 @@ fn parsed_attribute_argument_value_to_ast(
         text: value.text.clone(),
         kind: parsed_attribute_argument_kind_to_ast(&value.kind),
         constant_reference: value.constant_reference.clone(),
+        expression: value.expression.clone(),
+    }
+}
+
+fn parsed_attribute_source_segments(parsed: &ParsedName) -> Vec<String> {
+    let mut segments = Vec::new();
+    if parsed.resolution == NameResolution::NamespaceRelative {
+        segments.push("namespace".to_string());
+    }
+    segments.extend(
+        parsed
+            .name
+            .split('\\')
+            .filter(|segment| !segment.is_empty())
+            .map(ToString::to_string),
+    );
+    segments
+}
+
+fn parsed_attribute_argument_expression_metadata(
+    expression: &AttributeArgumentExpression,
+) -> (
+    String,
+    ParsedAttributeArgumentKind,
+    Option<AttributeConstantReference>,
+) {
+    match expression {
+        AttributeArgumentExpression::String(value) => {
+            (value.clone(), ParsedAttributeArgumentKind::String, None)
+        }
+        AttributeArgumentExpression::Int(value) => {
+            (value.clone(), ParsedAttributeArgumentKind::Int, None)
+        }
+        AttributeArgumentExpression::Float(value) => {
+            (value.clone(), ParsedAttributeArgumentKind::Float, None)
+        }
+        AttributeArgumentExpression::Bool(true) => {
+            ("1".to_string(), ParsedAttributeArgumentKind::Bool, None)
+        }
+        AttributeArgumentExpression::Bool(false) => {
+            (String::new(), ParsedAttributeArgumentKind::Bool, None)
+        }
+        AttributeArgumentExpression::Null => {
+            (String::new(), ParsedAttributeArgumentKind::Null, None)
+        }
+        AttributeArgumentExpression::Constant(name) => (
+            name.clone(),
+            ParsedAttributeArgumentKind::Constant,
+            Some(AttributeConstantReference::Constant(name.clone())),
+        ),
+        AttributeArgumentExpression::ClassName(class_name) => (
+            class_name.clone(),
+            ParsedAttributeArgumentKind::String,
+            Some(AttributeConstantReference::ClassConstant {
+                class_name: class_name.clone(),
+                name: "class".to_string(),
+            }),
+        ),
+        AttributeArgumentExpression::ClassConstant { class_name, name } => {
+            let kind = parsed_attribute_class_constant_kind(class_name, name);
+            let text = if matches!(kind, ParsedAttributeArgumentKind::String) {
+                class_name.clone()
+            } else {
+                format!("{class_name}::{name}")
+            };
+            (
+                text,
+                kind,
+                Some(AttributeConstantReference::ClassConstant {
+                    class_name: class_name.clone(),
+                    name: name.clone(),
+                }),
+            )
+        }
+        AttributeArgumentExpression::Array(_) => (
+            "Array".to_string(),
+            ParsedAttributeArgumentKind::Array,
+            None,
+        ),
+        AttributeArgumentExpression::Unary { .. } | AttributeArgumentExpression::Binary { .. } => {
+            if let Some(value) = parsed_attribute_argument_int_value(expression) {
+                (value.to_string(), ParsedAttributeArgumentKind::Int, None)
+            } else {
+                (String::new(), ParsedAttributeArgumentKind::Constant, None)
+            }
+        }
+    }
+}
+
+fn parsed_attribute_argument_int_value(expression: &AttributeArgumentExpression) -> Option<i64> {
+    match expression {
+        AttributeArgumentExpression::Int(value) => value.parse().ok(),
+        AttributeArgumentExpression::Unary { op, expr } => {
+            let value = parsed_attribute_argument_int_value(expr)?;
+            match op {
+                UnaryOp::Positive => Some(value),
+                UnaryOp::Negate => value.checked_neg(),
+                UnaryOp::BitwiseNot => Some(!value),
+                _ => None,
+            }
+        }
+        AttributeArgumentExpression::Binary {
+            op, left, right, ..
+        } => {
+            let left = parsed_attribute_argument_int_value(left)?;
+            let right = parsed_attribute_argument_int_value(right)?;
+            match op {
+                BinaryOp::Add => left.checked_add(right),
+                BinaryOp::Subtract => left.checked_sub(right),
+                BinaryOp::Multiply => left.checked_mul(right),
+                BinaryOp::Modulo if right != 0 => left.checked_rem(right),
+                BinaryOp::ShiftLeft if (0..63).contains(&right) => left.checked_shl(right as u32),
+                BinaryOp::ShiftRight if (0..63).contains(&right) => left.checked_shr(right as u32),
+                BinaryOp::BitwiseAnd => Some(left & right),
+                BinaryOp::BitwiseOr => Some(left | right),
+                BinaryOp::BitwiseXor => Some(left ^ right),
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 
