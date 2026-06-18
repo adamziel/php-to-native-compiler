@@ -2027,6 +2027,11 @@ static PTN_UNUSED int ptn_bcmath_number_inc_dec(
     size_t line,
     PtnValue *result_out
 );
+static PTN_UNUSED void ptn_bcmath_number_hydrate_unserialized(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_zip_archive_new(
     PtnRuntime *runtime,
     size_t argc,

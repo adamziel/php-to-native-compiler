@@ -1151,6 +1151,46 @@ static PtnValue ptn_bcmath_number_value_clone(PtnValue value) {
     return ptn_value_clone_deref(entry->value);
 }
 
+static void ptn_bcmath_number_throw_invalid_serialization(PtnRuntime *runtime) {
+    ptn_throw_exception(runtime, "Exception", "Invalid serialization data for BcMath\\Number object");
+}
+
+static int ptn_bcmath_number_parse_serialization_data(
+    PtnRuntime *runtime,
+    PtnValue data,
+    PtnBcNumber *out
+) {
+    data = ptn_value_deref(data);
+    if (data.type != PTN_ARRAY || data.as.array->len != 1) {
+        ptn_bcmath_number_throw_invalid_serialization(runtime);
+        return 0;
+    }
+
+    PtnArrayKey key = ptn_array_string_key("value");
+    PtnArrayEntry *entry = ptn_array_entry_for_key(data.as.array, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        ptn_bcmath_number_throw_invalid_serialization(runtime);
+        return 0;
+    }
+
+    PtnValue value = ptn_value_deref(entry->value);
+    if (value.type != PTN_STRING || value.as.string.len == 0) {
+        ptn_bcmath_number_throw_invalid_serialization(runtime);
+        return 0;
+    }
+
+    PtnStringOperand operand = ptn_string_operand_borrowed_len(
+        (const char *)value.as.string.data,
+        value.as.string.len
+    );
+    if (!ptn_bc_parse_number_operand(operand, out)) {
+        ptn_bcmath_number_throw_invalid_serialization(runtime);
+        return 0;
+    }
+    return 1;
+}
+
 static void ptn_bcmath_number_throw_value_error(
     PtnRuntime *runtime,
     const char *function_name,
@@ -1803,6 +1843,23 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_new(
     return object;
 }
 
+static PtnValue ptn_bcmath_number_initialize_from_serialization_data(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnValue data,
+    size_t line
+) {
+    PtnBcNumber number;
+    if (!ptn_bcmath_number_parse_serialization_data(runtime, data, &number)) {
+        return ptn_null();
+    }
+    PtnValue value = ptn_bc_format_digits_value(number.digits, number.sign, number.scale, number.scale);
+    PtnValue result = ptn_bcmath_number_initialize_from_value(runtime, object, value, (int)number.scale, line);
+    ptn_value_destroy(&value);
+    ptn_bc_number_free(&number);
+    return runtime->exceptions->active_exception != NULL ? ptn_null() : result;
+}
+
 static int ptn_bcmath_number_argc_between(
     PtnRuntime *runtime,
     const char *function_name,
@@ -1860,6 +1917,27 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
         ptn_array_set_entry(result.as.array, ptn_array_string_key("value"), ptn_bcmath_number_value_clone(receiver));
         return result;
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::__unserialize", argc, 1, 1)) {
+            return ptn_null();
+        }
+        PtnValue data = ptn_value_deref(args[0]);
+        if (data.type != PTN_ARRAY) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "BcMath\\Number::__unserialize(): Argument #1 ($data) must be of type array, %s given",
+                ptn_bcmath_number_arg_type_name(data)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        return ptn_bcmath_number_initialize_from_serialization_data(runtime, receiver, data, line);
     }
 
     PtnBcNumber left;
@@ -2198,6 +2276,66 @@ static PTN_UNUSED int ptn_bcmath_number_binary_op(
     return 1;
 }
 
+static PTN_UNUSED void ptn_bcmath_number_hydrate_unserialized(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (!ptn_bcmath_number_is_object(value)) {
+        return;
+    }
+
+    PtnArrayEntry *entry = ptn_bcmath_number_property_entry(value.as.object, "value");
+    if (value.as.object->properties == NULL || value.as.object->properties->len != 1 || entry == NULL) {
+        ptn_bcmath_number_throw_invalid_serialization(runtime);
+        return;
+    }
+
+    PtnValue property = ptn_value_deref(entry->value);
+    if (property.type != PTN_STRING || property.as.string.len == 0) {
+        ptn_bcmath_number_throw_invalid_serialization(runtime);
+        return;
+    }
+
+    PtnStringOperand operand = ptn_string_operand_borrowed_len(
+        (const char *)property.as.string.data,
+        property.as.string.len
+    );
+    PtnBcNumber number;
+    if (!ptn_bc_parse_number_operand(operand, &number)) {
+        ptn_bcmath_number_throw_invalid_serialization(runtime);
+        return;
+    }
+
+    PtnValue no_value = ptn_null();
+    ptn_bcmath_number_declare_readonly_property(
+        runtime,
+        value,
+        "value",
+        PTN_PROPERTY_TYPE_STRING,
+        no_value,
+        0,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_bc_number_free(&number);
+        return;
+    }
+
+    PtnValue scale = ptn_int((int64_t)number.scale);
+    ptn_bcmath_number_declare_readonly_property(
+        runtime,
+        value,
+        "scale",
+        PTN_PROPERTY_TYPE_INT,
+        scale,
+        1,
+        line
+    );
+    ptn_bc_number_free(&number);
+}
+
 static PTN_UNUSED int ptn_bcmath_number_inc_dec(
     PtnRuntime *runtime,
     PtnValue value,
@@ -2217,21 +2355,10 @@ static PTN_UNUSED int ptn_bcmath_number_inc_dec(
     PtnBcNumber one;
     ptn_bcmath_number_parse_int64(1, &one);
     PtnValue result_value = ptn_bc_add_or_sub_values(&number, &one, increment ? 0 : 1, (int)number.scale);
+    int scale = (int)number.scale;
     ptn_bc_number_free(&one);
     ptn_bc_number_free(&number);
-    *result_out = ptn_bcmath_number_object_from_result(runtime, result_value, (int)ptn_value_deref(result_value).as.string.len, line);
-    PtnStringOperand result_operand = ptn_string_operand_borrowed_len(
-        (const char *)ptn_value_deref(result_value).as.string.data,
-        ptn_value_deref(result_value).as.string.len
-    );
-    PtnBcNumber parsed;
-    int parsed_scale = 0;
-    if (ptn_bc_parse_number_operand(result_operand, &parsed)) {
-        parsed_scale = (int)parsed.scale;
-        ptn_bc_number_free(&parsed);
-    }
-    ptn_value_destroy(result_out);
-    *result_out = ptn_bcmath_number_object_from_result(runtime, result_value, parsed_scale, line);
+    *result_out = ptn_bcmath_number_object_from_result(runtime, result_value, scale, line);
     ptn_value_destroy(&result_value);
     return 1;
 }

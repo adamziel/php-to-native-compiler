@@ -3122,6 +3122,32 @@ static void ptn_serialize_append_spl_heap_object(PtnStringBuffer *buffer, PtnObj
     );
 }
 
+static void ptn_serialize_append_bcmath_number_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":1:{",
+        strlen(object->class_name),
+        object->class_name
+    );
+    ptn_serialize_append_string(buffer, "value", 5);
+
+    PtnArrayKey key = ptn_array_string_key("value");
+    PtnArrayEntry *entry = object == NULL || object->properties == NULL
+        ? NULL
+        : ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    if (entry == NULL) {
+        ptn_string_buffer_append(buffer, "N;");
+    } else {
+        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    ptn_string_buffer_append_char(buffer, '}');
+}
+
 static int ptn_serialize_append_serializable_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -3181,6 +3207,10 @@ static void ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *obje
     }
     if (ptn_serialize_object_is_spl_heap(object)) {
         ptn_serialize_append_spl_heap_object(buffer, object);
+        return;
+    }
+    if (object != NULL && ptn_internal_class_name_is_bcmath_number(object->class_name)) {
+        ptn_serialize_append_bcmath_number_object(buffer, object, state);
         return;
     }
     if (ptn_serialize_append_serializable_object(buffer, object, state)) {
@@ -4198,6 +4228,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
+            ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
             return result;
         }
         case 'C': {
@@ -59699,6 +59730,8 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_bcmath_number(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "__toString")
+            || ptn_ascii_case_equal(method_name, "__serialize")
+            || ptn_ascii_case_equal(method_name, "__unserialize")
             || ptn_ascii_case_equal(method_name, "add")
             || ptn_ascii_case_equal(method_name, "sub")
             || ptn_ascii_case_equal(method_name, "mul")
@@ -60168,6 +60201,8 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         static const char *const names[] = {
             "__construct",
             "__toString",
+            "__serialize",
+            "__unserialize",
             "add",
             "sub",
             "mul",
