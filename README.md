@@ -204,7 +204,7 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
 - PHPT runners preclassify broad rows before execution and write selected,
   runnable, classification, excluded, and per-category manifests under
   `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
-  `pcre`, `Reflection`, and `standard` extension surface plus accepted runner ini keys
+  `pcre`, `Reflection`, `standard`, and `uri` extension surface plus accepted runner ini keys
   (`assert.active`, `assert.bail`, `assert.callback`, `assert.exception`,
   `assert.warning`, `date.timezone`, `display_errors`, `error_reporting`,
   `extension_dir`, `include_path`, `opcache.save_comments`,

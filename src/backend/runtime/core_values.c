@@ -1464,6 +1464,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_parser(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -1959,6 +1960,13 @@ static PTN_UNUSED PtnValue ptn_xmlwriter_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_uri_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_intl_break_iterator_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_dom_new(
     PtnRuntime *runtime,
@@ -2030,6 +2038,14 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_xml_reader_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_uri_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

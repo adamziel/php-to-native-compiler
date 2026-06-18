@@ -47405,6 +47405,69 @@ echo http_build_query(["name" => "main page"], "", ini_get("arg_separator.output
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_uri_rfc3986_core_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-rfc3986-core");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-rfc3986-core.php");
+    let output = root.join("uri-rfc3986-core-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(class_exists("Uri\\Rfc3986\\Uri"));
+$uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61");
+var_dump($uri->toRawString());
+var_dump($uri->toString());
+var_dump($uri->getRawPath());
+var_dump($uri->getPath());
+$changed = $uri
+    ->withHost("%65xample.net")
+    ->withScheme("HTTP")
+    ->withPort(null)
+    ->withQuery(null)
+    ->withFragment("");
+var_dump($changed->toRawString());
+var_dump($changed->toString());
+var_dump($changed->getHost());
+var_dump($changed->getFragment());
+var_dump(Uri\Rfc3986\Uri::parse("\xF0\x9F\x90\x98"));
+try {
+    new Uri\Rfc3986\Uri("https://ex\xE1mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
+            "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
+            "string(12) \"/foo%2Fb%61r\"\n",
+            "string(10) \"/foo%2Fbar\"\n",
+            "string(43) \"HTTP://user:info@%65xample.net/foo%2Fb%61r#\"\n",
+            "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
+            "string(11) \"example.net\"\n",
+            "string(0) \"\"\n",
+            "NULL\n",
+            "Uri\\InvalidUriException: The specified URI is malformed\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

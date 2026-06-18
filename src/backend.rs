@@ -33,6 +33,7 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "SoapClient",
     "SoapServer",
     "XMLWriter",
+    "Uri\\Rfc3986\\Uri",
 ];
 const SERIALIZABLE_DEPRECATION_SUFFIX: &str =
     " implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)";
@@ -51,6 +52,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("TypeError", "Error"),
     ("ArgumentCountError", "TypeError"),
     ("ValueError", "Error"),
+    ("Uri\\InvalidUriException", "ValueError"),
     ("ArithmeticError", "Error"),
     ("DivisionByZeroError", "ArithmeticError"),
     ("AssertionError", "Error"),
@@ -4008,6 +4010,14 @@ fn emit_user_function_dispatch(
     out.push_str("                return ptn_null();\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
+    out.push_str("        if (ptn_internal_class_exists_name(ptn_static_call_resolved_class) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+    out.push_str("            PtnValue ptn_internal_static_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
+    out.push_str("            free(ptn_static_call_class);\n");
+    out.push_str("            return ptn_internal_static_result;\n");
+    out.push_str("        }\n");
+    out.push_str("#endif\n");
     out.push_str("        free(ptn_static_call_class);\n");
     out.push_str("    }\n");
     out.push_str("    int found = 0;\n");
@@ -4178,12 +4188,13 @@ fn emit_class_metadata_helpers(
         "XMLReader",
         "XMLWriter",
         "XMLParser",
+        "Uri\\Rfc3986\\Uri",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
@@ -4198,10 +4209,10 @@ fn emit_class_metadata_helpers(
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
@@ -4230,7 +4241,7 @@ fn emit_class_metadata_helpers(
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4240,7 +4251,7 @@ fn emit_class_metadata_helpers(
     out.push_str("    }\n");
     for class_name in MODELED_EXTENSION_INTERNAL_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4289,7 +4300,7 @@ fn emit_class_metadata_helpers(
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4299,7 +4310,7 @@ fn emit_class_metadata_helpers(
     out.push_str("    }\n");
     for class_name in MODELED_EXTENSION_INTERNAL_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -4565,9 +4576,10 @@ fn emit_class_metadata_helpers(
         "XMLReader",
         "XMLWriter",
         "XMLParser",
+        "Uri\\Rfc3986\\Uri",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
-        out.push_str(builtin);
+        out.push_str(&c_string(builtin));
         out.push_str("\"));\n");
     }
     for class_name in BUILTIN_EXCEPTION_ROOT_NAMES {
@@ -4577,7 +4589,7 @@ fn emit_class_metadata_helpers(
     }
     for (class_name, _) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\"));\n");
     }
     out.push_str("    }\n");
@@ -4790,10 +4802,10 @@ fn emit_class_metadata_helpers(
     }
     for (class_name, parent_name) in BUILTIN_EXCEPTION_PARENT_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return \"");
-        out.push_str(parent_name);
+        out.push_str(&c_string(parent_name));
         out.push_str("\";\n");
         out.push_str("    }\n");
     }
@@ -9110,6 +9122,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "soapclient" => Some("SoapClient"),
                 "soapserver" => Some("SoapServer"),
                 "xmlwriter" => Some("XMLWriter"),
+                "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
                 "ziparchive" => Some("ZipArchive"),
                 _ => None,
             },
@@ -14556,6 +14569,9 @@ fn collect_value_runtime_requirements(
             if name.eq_ignore_ascii_case("setTimestamp") {
                 requirements.internal_function_dispatch = true;
             }
+            if name.eq_ignore_ascii_case("parse") {
+                requirements.internal_function_dispatch = true;
+            }
             if name.eq_ignore_ascii_case("__invoke") {
                 requirements.closure_invoke_method_dispatch = true;
                 requirements.internal_function_dispatch = true;
@@ -14644,6 +14660,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("XMLReader")
                 || class_name.eq_ignore_ascii_case("XMLWriter")
                 || class_name.eq_ignore_ascii_case("XMLParser")
+                || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;

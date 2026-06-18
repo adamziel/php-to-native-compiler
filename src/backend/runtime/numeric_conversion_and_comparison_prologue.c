@@ -1573,6 +1573,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "ValueError")) {
         return "ValueError";
     }
+    if (ptn_exception_name_equal(class_name, "Uri\\InvalidUriException")) {
+        return "Uri\\InvalidUriException";
+    }
     if (ptn_exception_name_equal(class_name, "ArithmeticError")) {
         return "ArithmeticError";
     }
@@ -1616,12 +1619,16 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "TypeError") ||
             ptn_exception_name_equal(class_name, "ArgumentCountError") ||
             ptn_exception_name_equal(class_name, "ValueError") ||
+            ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
             ptn_exception_name_equal(class_name, "ArithmeticError") ||
             ptn_exception_name_equal(class_name, "DivisionByZeroError") ||
             ptn_exception_name_equal(class_name, "UnhandledMatchError") ||
             ptn_exception_name_equal(class_name, "AssertionError") ||
             ptn_exception_name_equal(class_name, "ParseError") ||
             ptn_exception_name_equal(class_name, "UnhandledMatchError");
+    }
+    if (ptn_exception_name_equal(type_name, "ValueError")) {
+        return ptn_exception_name_equal(class_name, "Uri\\InvalidUriException");
     }
     if (ptn_exception_name_equal(type_name, "TypeError")) {
         return ptn_exception_name_equal(class_name, "ArgumentCountError");
@@ -4747,6 +4754,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_xmlwriter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_uri_rfc3986_uri(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_uri_call_method(runtime, receiver, name, argc, args, line);
     }
 #endif
     ptn_throw_exception(runtime, "Error", "Call to undefined method");

@@ -13556,6 +13556,1080 @@ static PtnValue ptn_internal_rawurldecode(PtnRuntime *runtime, size_t argc, cons
 }
 
 typedef struct {
+    char *scheme;
+    char *username;
+    char *password;
+    char *host;
+    int64_t port;
+    int port_present;
+    int port_separator_present;
+    char *path;
+    char *query;
+    char *fragment;
+    int authority_present;
+    int userinfo_present;
+    int userinfo_colon_present;
+} PtnUriData;
+
+static void ptn_uri_data_free(void *payload) {
+    PtnUriData *data = (PtnUriData *)payload;
+    if (data == NULL) {
+        return;
+    }
+    free(data->scheme);
+    free(data->username);
+    free(data->password);
+    free(data->host);
+    free(data->path);
+    free(data->query);
+    free(data->fragment);
+    free(data);
+}
+
+static char *ptn_uri_duplicate_len(const char *data, size_t len) {
+    return ptn_duplicate_string_len(data, len);
+}
+
+static char *ptn_uri_duplicate_or_null(const char *data) {
+    return data == NULL ? NULL : ptn_duplicate_string(data);
+}
+
+static PtnUriData *ptn_uri_data_new(void) {
+    PtnUriData *data = calloc(1, sizeof(PtnUriData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->path = ptn_uri_duplicate_len("", 0);
+    return data;
+}
+
+static PtnUriData *ptn_uri_data_clone(const PtnUriData *source) {
+    PtnUriData *copy = ptn_uri_data_new();
+    free(copy->path);
+    copy->scheme = ptn_uri_duplicate_or_null(source->scheme);
+    copy->username = ptn_uri_duplicate_or_null(source->username);
+    copy->password = ptn_uri_duplicate_or_null(source->password);
+    copy->host = ptn_uri_duplicate_or_null(source->host);
+    copy->port = source->port;
+    copy->port_present = source->port_present;
+    copy->port_separator_present = source->port_separator_present;
+    copy->path = ptn_uri_duplicate_or_null(source->path);
+    if (copy->path == NULL) {
+        copy->path = ptn_uri_duplicate_len("", 0);
+    }
+    copy->query = ptn_uri_duplicate_or_null(source->query);
+    copy->fragment = ptn_uri_duplicate_or_null(source->fragment);
+    copy->authority_present = source->authority_present;
+    copy->userinfo_present = source->userinfo_present;
+    copy->userinfo_colon_present = source->userinfo_colon_present;
+    return copy;
+}
+
+static void ptn_uri_replace_string(char **slot, const char *data, size_t len) {
+    free(*slot);
+    *slot = ptn_uri_duplicate_len(data, len);
+}
+
+static int ptn_uri_ascii_clean(const char *data, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == 0 || byte >= 0x80) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_hex_value(char byte) {
+    if (byte >= '0' && byte <= '9') {
+        return byte - '0';
+    }
+    if (byte >= 'a' && byte <= 'f') {
+        return byte - 'a' + 10;
+    }
+    if (byte >= 'A' && byte <= 'F') {
+        return byte - 'A' + 10;
+    }
+    return -1;
+}
+
+static int ptn_uri_is_unreserved(unsigned char byte) {
+    return (byte >= 'A' && byte <= 'Z') ||
+        (byte >= 'a' && byte <= 'z') ||
+        (byte >= '0' && byte <= '9') ||
+        byte == '-' ||
+        byte == '.' ||
+        byte == '_' ||
+        byte == '~';
+}
+
+static int ptn_uri_is_sub_delim(unsigned char byte) {
+    return byte == '!' ||
+        byte == '$' ||
+        byte == '&' ||
+        byte == '\'' ||
+        byte == '(' ||
+        byte == ')' ||
+        byte == '*' ||
+        byte == '+' ||
+        byte == ',' ||
+        byte == ';' ||
+        byte == '=';
+}
+
+static int ptn_uri_validate_pct_encoded(const char *data, size_t len, size_t *offset) {
+    if (*offset + 2 >= len) {
+        return 0;
+    }
+    if (ptn_uri_hex_value(data[*offset + 1]) < 0 ||
+        ptn_uri_hex_value(data[*offset + 2]) < 0) {
+        return 0;
+    }
+    *offset += 2;
+    return 1;
+}
+
+static int ptn_uri_validate_scheme_component(const char *data, size_t len) {
+    if (len == 0 || !isalpha((unsigned char)data[0])) {
+        return 0;
+    }
+    for (size_t i = 1; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (!isalnum(byte) && byte != '+' && byte != '-' && byte != '.') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_validate_userinfo_component(const char *data, size_t len) {
+    if (!ptn_uri_ascii_clean(data, len)) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '%') {
+            if (!ptn_uri_validate_pct_encoded(data, len, &i)) {
+                return 0;
+            }
+            continue;
+        }
+        if (!ptn_uri_is_unreserved(byte) && !ptn_uri_is_sub_delim(byte) && byte != ':') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_validate_host_component(const char *data, size_t len) {
+    if (!ptn_uri_ascii_clean(data, len)) {
+        return 0;
+    }
+    if (len > 0 && data[0] == '[') {
+        if (data[len - 1] != ']') {
+            return 0;
+        }
+        for (size_t i = 1; i + 1 < len; i++) {
+            unsigned char byte = (unsigned char)data[i];
+            if (byte == '[' || byte == ']' || byte == '%' || byte == '/' || byte == '?' || byte == '#') {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '%') {
+            if (!ptn_uri_validate_pct_encoded(data, len, &i)) {
+                return 0;
+            }
+            continue;
+        }
+        if (byte == '[' || byte == ']' || byte == ':' || byte == '@' || byte == '/' || byte == '?' || byte == '#') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_validate_path_component(const char *data, size_t len) {
+    if (!ptn_uri_ascii_clean(data, len)) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '%') {
+            if (!ptn_uri_validate_pct_encoded(data, len, &i)) {
+                return 0;
+            }
+            continue;
+        }
+        if (!ptn_uri_is_unreserved(byte) &&
+            !ptn_uri_is_sub_delim(byte) &&
+            byte != ':' &&
+            byte != '@' &&
+            byte != '/') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_validate_query_or_fragment_component(const char *data, size_t len, int allow_hash) {
+    if (!ptn_uri_ascii_clean(data, len)) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '%') {
+            if (!ptn_uri_validate_pct_encoded(data, len, &i)) {
+                return 0;
+            }
+            continue;
+        }
+        if (!ptn_uri_is_unreserved(byte) &&
+            !ptn_uri_is_sub_delim(byte) &&
+            byte != ':' &&
+            byte != '@' &&
+            byte != '/' &&
+            byte != '?' &&
+            !(allow_hash && byte == '#')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_validate_port_component(const char *data, size_t len, int64_t *port_out) {
+    if (len == 0) {
+        return 1;
+    }
+    if (len > 5) {
+        return 0;
+    }
+    int64_t port = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (!isdigit(byte)) {
+            return 0;
+        }
+        port = port * 10 + (int64_t)(byte - '0');
+    }
+    if (port > 65535) {
+        return 0;
+    }
+    *port_out = port;
+    return 1;
+}
+
+static size_t ptn_uri_find_byte(const char *data, size_t len, size_t offset, char byte) {
+    while (offset < len && data[offset] != byte) {
+        offset++;
+    }
+    return offset;
+}
+
+static int ptn_uri_is_remainder_delimiter(char byte) {
+    return byte == '/' || byte == '?' || byte == '#';
+}
+
+static size_t ptn_uri_find_remainder_delimiter(const char *data, size_t len, size_t offset) {
+    while (offset < len && !ptn_uri_is_remainder_delimiter(data[offset])) {
+        offset++;
+    }
+    return offset;
+}
+
+static void ptn_uri_parse_remainder(PtnUriData *result, const char *data, size_t len, size_t offset) {
+    size_t fragment = ptn_uri_find_byte(data, len, offset, '#');
+    size_t query_limit = fragment < len ? fragment : len;
+    size_t query = ptn_uri_find_byte(data, query_limit, offset, '?');
+    size_t path_end = query < query_limit ? query : query_limit;
+    ptn_uri_replace_string(&result->path, data + offset, path_end - offset);
+    if (query < query_limit) {
+        result->query = ptn_uri_duplicate_len(data + query + 1, query_limit - query - 1);
+    }
+    if (fragment < len) {
+        result->fragment = ptn_uri_duplicate_len(data + fragment + 1, len - fragment - 1);
+    }
+}
+
+static int ptn_uri_parse_authority(PtnUriData *result, const char *authority, size_t authority_len) {
+    result->authority_present = 1;
+    size_t host_start = 0;
+    for (size_t i = authority_len; i > 0; i--) {
+        if (authority[i - 1] == '@') {
+            size_t userinfo_len = i - 1;
+            size_t colon = ptn_uri_find_byte(authority, userinfo_len, 0, ':');
+            result->userinfo_present = 1;
+            result->userinfo_colon_present = colon < userinfo_len;
+            if (colon < userinfo_len) {
+                result->username = ptn_uri_duplicate_len(authority, colon);
+                result->password = ptn_uri_duplicate_len(authority + colon + 1, userinfo_len - colon - 1);
+            } else {
+                result->username = ptn_uri_duplicate_len(authority, userinfo_len);
+                result->password = ptn_uri_duplicate_len("", 0);
+            }
+            host_start = i;
+            break;
+        }
+    }
+
+    const char *host = authority + host_start;
+    size_t host_len = authority_len - host_start;
+    size_t port_colon = host_len;
+    if (host_len > 0 && host[0] == '[') {
+        size_t close = ptn_uri_find_byte(host, host_len, 1, ']');
+        if (close >= host_len) {
+            return 0;
+        }
+        if (close + 1 < host_len) {
+            if (host[close + 1] != ':') {
+                return 0;
+            }
+            port_colon = close + 1;
+        }
+    } else {
+        for (size_t i = host_len; i > 0; i--) {
+            if (host[i - 1] == ':') {
+                port_colon = i - 1;
+                break;
+            }
+        }
+    }
+
+    size_t component_host_len = port_colon < host_len ? port_colon : host_len;
+    result->host = ptn_uri_duplicate_len(host, component_host_len);
+
+    if (port_colon < host_len) {
+        int64_t port = 0;
+        size_t port_len = host_len - port_colon - 1;
+        result->port_separator_present = 1;
+        if (!ptn_uri_validate_port_component(host + port_colon + 1, port_len, &port)) {
+            return 0;
+        }
+        if (port_len != 0) {
+            result->port_present = 1;
+            result->port = port;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_validate_parsed_data(const PtnUriData *data) {
+    if (data->scheme != NULL && !ptn_uri_validate_scheme_component(data->scheme, strlen(data->scheme))) {
+        return 0;
+    }
+    if (data->userinfo_present) {
+        if (!ptn_uri_validate_userinfo_component(data->username, strlen(data->username)) ||
+            !ptn_uri_validate_userinfo_component(data->password, strlen(data->password))) {
+            return 0;
+        }
+    }
+    if (data->host != NULL && !ptn_uri_validate_host_component(data->host, strlen(data->host))) {
+        return 0;
+    }
+    if (!ptn_uri_validate_path_component(data->path, strlen(data->path))) {
+        return 0;
+    }
+    if (data->query != NULL &&
+        !ptn_uri_validate_query_or_fragment_component(data->query, strlen(data->query), 0)) {
+        return 0;
+    }
+    if (data->fragment != NULL &&
+        !ptn_uri_validate_query_or_fragment_component(data->fragment, strlen(data->fragment), 0)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_uri_parse(PtnStringOperand input, PtnUriData **result_out) {
+    if (!ptn_uri_ascii_clean(input.data, input.len)) {
+        return 0;
+    }
+    PtnUriData *result = ptn_uri_data_new();
+    const char *data = input.data;
+    size_t len = input.len;
+
+    size_t offset = 0;
+    if (len >= 2 && data[0] == '/' && data[1] == '/') {
+        size_t authority_start = 2;
+        size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
+        if (!ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start)) {
+            ptn_uri_data_free(result);
+            return 0;
+        }
+        offset = authority_end;
+    } else {
+        size_t first_delimiter = ptn_uri_find_remainder_delimiter(data, len, 0);
+        size_t colon = ptn_uri_find_byte(data, first_delimiter, 0, ':');
+        if (colon < first_delimiter) {
+            if (colon == 0 || !ptn_uri_validate_scheme_component(data, colon)) {
+                ptn_uri_data_free(result);
+                return 0;
+            }
+            result->scheme = ptn_uri_duplicate_len(data, colon);
+            offset = colon + 1;
+            if (offset + 1 < len && data[offset] == '/' && data[offset + 1] == '/') {
+                size_t authority_start = offset + 2;
+                size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
+                if (!ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start)) {
+                    ptn_uri_data_free(result);
+                    return 0;
+                }
+                offset = authority_end;
+            }
+        }
+    }
+
+    ptn_uri_parse_remainder(result, data, len, offset);
+    if (!ptn_uri_validate_parsed_data(result)) {
+        ptn_uri_data_free(result);
+        return 0;
+    }
+    *result_out = result;
+    return 1;
+}
+
+static void ptn_uri_throw_malformed(PtnRuntime *runtime, const char *component) {
+    char message[96];
+    int written = snprintf(message, sizeof(message), "The specified %s is malformed", component);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Uri\\InvalidUriException", message);
+}
+
+static PtnValue ptn_uri_component_property_value(const char *value) {
+    return value == NULL
+        ? ptn_null()
+        : ptn_owned_string_len(ptn_uri_duplicate_len(value, strlen(value)), strlen(value));
+}
+
+static void ptn_uri_sync_properties(PtnValue object, const PtnUriData *data) {
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("scheme"), ptn_uri_component_property_value(data->scheme));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("username"), ptn_uri_component_property_value(data->username));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("password"), ptn_uri_component_property_value(data->password));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("host"), ptn_uri_component_property_value(data->host));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("port"), data->port_present ? ptn_int(data->port) : ptn_null());
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("path"), ptn_uri_component_property_value(data->path));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("query"), ptn_uri_component_property_value(data->query));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("fragment"), ptn_uri_component_property_value(data->fragment));
+}
+
+static PtnValue ptn_uri_object_from_data(PtnRuntime *runtime, const char *class_name, PtnUriData *data) {
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_uri_data_free;
+    ptn_uri_sync_properties(object, data);
+    return object;
+}
+
+static PtnUriData *ptn_uri_data_from_value(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT || value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnUriData *)value.as.object->native_data;
+}
+
+static void ptn_uri_replace_object_data(PtnValue object, PtnUriData *data) {
+    if (object.as.object->native_data_free != NULL) {
+        object.as.object->native_data_free(object.as.object->native_data);
+    }
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_uri_data_free;
+    ptn_uri_sync_properties(object, data);
+}
+
+static char ptn_uri_upper_hex(int value) {
+    static const char hex[] = "0123456789ABCDEF";
+    return hex[value & 0x0f];
+}
+
+static char *ptn_uri_normalize_component_owned(
+    const char *data,
+    size_t len,
+    int lowercase_ascii,
+    size_t *len_out
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '%' && i + 2 < len) {
+            int high = ptn_uri_hex_value(data[i + 1]);
+            int low = ptn_uri_hex_value(data[i + 2]);
+            if (high >= 0 && low >= 0) {
+                unsigned char decoded = (unsigned char)((high << 4) | low);
+                if (ptn_uri_is_unreserved(decoded)) {
+                    char out = (char)decoded;
+                    if (lowercase_ascii) {
+                        out = (char)tolower((unsigned char)out);
+                    }
+                    ptn_string_buffer_append_char(&buffer, out);
+                } else {
+                    ptn_string_buffer_append_char(&buffer, '%');
+                    ptn_string_buffer_append_char(&buffer, ptn_uri_upper_hex(high));
+                    ptn_string_buffer_append_char(&buffer, ptn_uri_upper_hex(low));
+                }
+                i += 2;
+                continue;
+            }
+        }
+        if (lowercase_ascii) {
+            byte = (unsigned char)tolower(byte);
+        }
+        ptn_string_buffer_append_char(&buffer, (char)byte);
+    }
+    *len_out = buffer.len;
+    return buffer.data;
+}
+
+static char *ptn_uri_remove_dot_segments_owned(char *path, size_t *len_io) {
+    size_t len = *len_io;
+    while (len >= 2 && path[0] == '.' && path[1] == '/') {
+        memmove(path, path + 2, len - 1);
+        len -= 2;
+    }
+    for (size_t i = 0; i + 2 < len;) {
+        if (path[i] == '/' && path[i + 1] == '.' && path[i + 2] == '/') {
+            memmove(path + i + 1, path + i + 3, len - i - 2);
+            len -= 2;
+            continue;
+        }
+        i++;
+    }
+    if (len == 2 && path[0] == '/' && path[1] == '.') {
+        path[1] = '\0';
+        len = 1;
+    }
+    path[len] = '\0';
+    *len_io = len;
+    return path;
+}
+
+static PtnValue ptn_uri_normalized_string_value(const char *value, int lowercase_ascii, int normalize_path) {
+    if (value == NULL) {
+        return ptn_null();
+    }
+    size_t len = 0;
+    char *normalized = ptn_uri_normalize_component_owned(value, strlen(value), lowercase_ascii, &len);
+    if (normalize_path) {
+        normalized = ptn_uri_remove_dot_segments_owned(normalized, &len);
+    }
+    return ptn_owned_string_len(normalized, len);
+}
+
+static void ptn_uri_append_normalized(PtnStringBuffer *buffer, const char *value, int lowercase_ascii, int normalize_path) {
+    if (value == NULL) {
+        return;
+    }
+    size_t len = 0;
+    char *normalized = ptn_uri_normalize_component_owned(value, strlen(value), lowercase_ascii, &len);
+    if (normalize_path) {
+        normalized = ptn_uri_remove_dot_segments_owned(normalized, &len);
+    }
+    ptn_string_buffer_append_len(buffer, normalized, len);
+    free(normalized);
+}
+
+static void ptn_uri_append_port(PtnStringBuffer *buffer, const PtnUriData *data) {
+    if (!data->port_separator_present) {
+        return;
+    }
+    ptn_string_buffer_append_char(buffer, ':');
+    if (data->port_present) {
+        ptn_string_buffer_append_format(buffer, "%lld", (long long)data->port);
+    }
+}
+
+static PtnValue ptn_uri_to_string_value(const PtnUriData *data, int normalized) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (data->scheme != NULL) {
+        if (normalized) {
+            ptn_uri_append_normalized(&buffer, data->scheme, 1, 0);
+        } else {
+            ptn_string_buffer_append(&buffer, data->scheme);
+        }
+        ptn_string_buffer_append_char(&buffer, ':');
+    }
+    if (data->authority_present) {
+        ptn_string_buffer_append(&buffer, "//");
+        if (data->userinfo_present) {
+            if (normalized) {
+                ptn_uri_append_normalized(&buffer, data->username, 0, 0);
+                if (data->userinfo_colon_present) {
+                    ptn_string_buffer_append_char(&buffer, ':');
+                    ptn_uri_append_normalized(&buffer, data->password, 0, 0);
+                }
+            } else {
+                ptn_string_buffer_append(&buffer, data->username);
+                if (data->userinfo_colon_present) {
+                    ptn_string_buffer_append_char(&buffer, ':');
+                    ptn_string_buffer_append(&buffer, data->password);
+                }
+            }
+            ptn_string_buffer_append_char(&buffer, '@');
+        }
+        if (data->host != NULL) {
+            if (normalized) {
+                ptn_uri_append_normalized(&buffer, data->host, 1, 0);
+            } else {
+                ptn_string_buffer_append(&buffer, data->host);
+            }
+        }
+        ptn_uri_append_port(&buffer, data);
+    }
+    if (normalized) {
+        ptn_uri_append_normalized(&buffer, data->path, 0, 1);
+    } else {
+        ptn_string_buffer_append(&buffer, data->path);
+    }
+    if (data->query != NULL) {
+        ptn_string_buffer_append_char(&buffer, '?');
+        if (normalized) {
+            ptn_uri_append_normalized(&buffer, data->query, 0, 0);
+        } else {
+            ptn_string_buffer_append(&buffer, data->query);
+        }
+    }
+    if (data->fragment != NULL) {
+        ptn_string_buffer_append_char(&buffer, '#');
+        if (normalized) {
+            ptn_uri_append_normalized(&buffer, data->fragment, 0, 0);
+        } else {
+            ptn_string_buffer_append(&buffer, data->fragment);
+        }
+    }
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static PtnValue ptn_uri_userinfo_value(const PtnUriData *data, int normalized) {
+    if (!data->userinfo_present) {
+        return ptn_null();
+    }
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (normalized) {
+        ptn_uri_append_normalized(&buffer, data->username, 0, 0);
+        if (data->userinfo_colon_present) {
+            ptn_string_buffer_append_char(&buffer, ':');
+            ptn_uri_append_normalized(&buffer, data->password, 0, 0);
+        }
+    } else {
+        ptn_string_buffer_append(&buffer, data->username);
+        if (data->userinfo_colon_present) {
+            ptn_string_buffer_append_char(&buffer, ':');
+            ptn_string_buffer_append(&buffer, data->password);
+        }
+    }
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static int ptn_uri_first_segment_contains_colon(const char *path) {
+    for (size_t i = 0; path[i] != '\0' && path[i] != '/'; i++) {
+        if (path[i] == ':') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_uri_prefix_path(PtnUriData *data, const char *prefix) {
+    size_t prefix_len = strlen(prefix);
+    size_t path_len = strlen(data->path);
+    if (prefix_len > SIZE_MAX - path_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *path = malloc(prefix_len + path_len + 1);
+    if (path == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(path, prefix, prefix_len);
+    memcpy(path + prefix_len, data->path, path_len + 1);
+    free(data->path);
+    data->path = path;
+}
+
+static int ptn_uri_nullable_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *out,
+    int *is_null_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        *is_null_out = 1;
+        *out = ptn_string_operand_borrowed_len("", 0);
+        return 1;
+    }
+    *is_null_out = 0;
+    *out = ptn_internal_expect_string_arg(runtime, function_name, 1, argument_name, value, line);
+    return runtime->exceptions->active_exception == NULL;
+}
+
+static PtnValue ptn_uri_clone_with(PtnRuntime *runtime, PtnValue receiver, PtnUriData *data) {
+    const char *class_name = ptn_value_deref(receiver).as.object->class_name;
+    return ptn_uri_object_from_data(runtime, class_name, data);
+}
+
+static PtnValue ptn_uri_with_string_component(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *function_name,
+    const char *argument_name,
+    const char *component_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(message, sizeof(message), "%s() expects exactly 1 argument, %zu given", function_name, argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand value;
+    int is_null = 0;
+    if (!ptn_uri_nullable_string_arg(runtime, function_name, argument_name, args[0], line, &value, &is_null)) {
+        return ptn_null();
+    }
+
+    PtnUriData *source = ptn_uri_data_from_value(receiver);
+    PtnUriData *copy = ptn_uri_data_clone(source);
+    int valid = 1;
+    if (strcmp(component_name, "scheme") == 0) {
+        if (is_null) {
+            free(copy->scheme);
+            copy->scheme = NULL;
+        } else if (ptn_uri_validate_scheme_component(value.data, value.len)) {
+            ptn_uri_replace_string(&copy->scheme, value.data, value.len);
+            if (!copy->authority_present &&
+                copy->path[0] != '/' &&
+                ptn_uri_first_segment_contains_colon(copy->path)) {
+                ptn_uri_prefix_path(copy, "./");
+            }
+        } else {
+            valid = 0;
+        }
+    } else if (strcmp(component_name, "host") == 0) {
+        if (is_null) {
+            free(copy->host);
+            copy->host = NULL;
+            copy->authority_present = 0;
+            copy->port_present = 0;
+            copy->port_separator_present = 0;
+            copy->userinfo_present = 0;
+            copy->userinfo_colon_present = 0;
+            free(copy->username);
+            free(copy->password);
+            copy->username = NULL;
+            copy->password = NULL;
+            if (copy->path[0] == '/' && copy->path[1] == '/') {
+                ptn_uri_prefix_path(copy, "/.");
+            }
+        } else if (ptn_uri_validate_host_component(value.data, value.len)) {
+            ptn_uri_replace_string(&copy->host, value.data, value.len);
+            copy->authority_present = 1;
+            if (copy->path[0] != '\0' && copy->path[0] != '/') {
+                ptn_uri_prefix_path(copy, "/");
+            }
+        } else {
+            valid = 0;
+        }
+    } else if (strcmp(component_name, "path") == 0) {
+        if (!is_null &&
+            ptn_uri_validate_path_component(value.data, value.len) &&
+            (!copy->authority_present || value.len == 0 || value.data[0] == '/')) {
+            ptn_uri_replace_string(&copy->path, value.data, value.len);
+        } else {
+            valid = 0;
+        }
+    } else if (strcmp(component_name, "query") == 0) {
+        if (is_null) {
+            free(copy->query);
+            copy->query = NULL;
+        } else if (ptn_uri_validate_query_or_fragment_component(value.data, value.len, 0)) {
+            ptn_uri_replace_string(&copy->query, value.data, value.len);
+        } else {
+            valid = 0;
+        }
+    } else if (strcmp(component_name, "fragment") == 0) {
+        if (is_null) {
+            free(copy->fragment);
+            copy->fragment = NULL;
+        } else if (ptn_uri_validate_query_or_fragment_component(value.data, value.len, 0)) {
+            ptn_uri_replace_string(&copy->fragment, value.data, value.len);
+        } else {
+            valid = 0;
+        }
+    } else if (strcmp(component_name, "userinfo") == 0) {
+        if (is_null) {
+            copy->userinfo_present = 0;
+            copy->userinfo_colon_present = 0;
+            free(copy->username);
+            free(copy->password);
+            copy->username = NULL;
+            copy->password = NULL;
+        } else if (ptn_uri_validate_userinfo_component(value.data, value.len)) {
+            size_t colon = ptn_uri_find_byte(value.data, value.len, 0, ':');
+            copy->userinfo_present = 1;
+            copy->userinfo_colon_present = colon < value.len;
+            if (colon < value.len) {
+                ptn_uri_replace_string(&copy->username, value.data, colon);
+                ptn_uri_replace_string(&copy->password, value.data + colon + 1, value.len - colon - 1);
+            } else {
+                ptn_uri_replace_string(&copy->username, value.data, value.len);
+                ptn_uri_replace_string(&copy->password, "", 0);
+            }
+            copy->authority_present = 1;
+            if (copy->host == NULL) {
+                copy->host = ptn_uri_duplicate_len("", 0);
+            }
+        } else {
+            valid = 0;
+        }
+    }
+    ptn_string_operand_free(value);
+    if (!valid) {
+        ptn_uri_data_free(copy);
+        ptn_uri_throw_malformed(runtime, component_name);
+        return ptn_null();
+    }
+    return ptn_uri_clone_with(runtime, receiver, copy);
+}
+
+static PtnValue ptn_uri_with_port(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(message, sizeof(message), "Uri\\Rfc3986\\Uri::withPort() expects exactly 1 argument, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnUriData *copy = ptn_uri_data_clone(ptn_uri_data_from_value(receiver));
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_NULL) {
+        copy->port_present = 0;
+        copy->port_separator_present = 0;
+        return ptn_uri_clone_with(runtime, receiver, copy);
+    }
+    int64_t port = ptn_internal_expect_integer_arg(runtime, "Uri\\Rfc3986\\Uri::withPort", 1, "port", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_uri_data_free(copy);
+        return ptn_null();
+    }
+    if (port < 0 || port > 65535) {
+        ptn_uri_data_free(copy);
+        ptn_uri_throw_malformed(runtime, "port");
+        return ptn_null();
+    }
+    copy->port = port;
+    copy->port_present = 1;
+    copy->port_separator_present = 1;
+    copy->authority_present = 1;
+    if (copy->host == NULL) {
+        copy->host = ptn_uri_duplicate_len("", 0);
+    }
+    return ptn_uri_clone_with(runtime, receiver, copy);
+}
+
+static PtnValue ptn_uri_construct_data(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    int throw_on_invalid,
+    PtnUriData **data_out
+) {
+    if (argc != 1) {
+        char message[160];
+        int written = snprintf(message, sizeof(message), "%s() expects exactly 1 argument, %zu given", function_name, argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand uri = ptn_internal_expect_string_arg(runtime, function_name, 1, "uri", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnUriData *data = NULL;
+    int valid = ptn_uri_parse(uri, &data);
+    ptn_string_operand_free(uri);
+    if (!valid) {
+        if (throw_on_invalid) {
+            ptn_uri_throw_malformed(runtime, "URI");
+        }
+        return ptn_null();
+    }
+    *data_out = data;
+    return ptn_bool(1);
+}
+
+static PTN_UNUSED PtnValue ptn_uri_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnUriData *data = NULL;
+    PtnValue status = ptn_uri_construct_data(runtime, "Uri\\Rfc3986\\Uri::__construct", argc, args, line, 1, &data);
+    ptn_value_destroy(&status);
+    if (runtime->exceptions->active_exception != NULL || data == NULL) {
+        return ptn_null();
+    }
+    return ptn_uri_object_from_data(runtime, class_name, data);
+}
+
+static PTN_UNUSED PtnValue ptn_uri_parse_static(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnUriData *data = NULL;
+    PtnValue status = ptn_uri_construct_data(runtime, "Uri\\Rfc3986\\Uri::parse", argc, args, line, 0, &data);
+    ptn_value_destroy(&status);
+    if (runtime->exceptions->active_exception != NULL || data == NULL) {
+        return ptn_null();
+    }
+    return ptn_uri_object_from_data(runtime, class_name, data);
+}
+
+static PTN_UNUSED PtnValue ptn_uri_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnUriData *data = ptn_uri_data_from_value(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid URI object");
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnUriData *new_data = NULL;
+        PtnValue status = ptn_uri_construct_data(runtime, "Uri\\Rfc3986\\Uri::__construct", argc, args, line, 1, &new_data);
+        ptn_value_destroy(&status);
+        if (runtime->exceptions->active_exception != NULL || new_data == NULL) {
+            return ptn_null();
+        }
+        ptn_uri_replace_object_data(ptn_value_deref(receiver), new_data);
+        return ptn_null();
+    }
+    if (argc != 0 &&
+        (ptn_ascii_case_equal(name, "toRawString") ||
+         ptn_ascii_case_equal(name, "toString") ||
+         ptn_ascii_case_equal(name, "__toString") ||
+         strncmp(name, "get", 3) == 0)) {
+        char message[160];
+        int written = snprintf(message, sizeof(message), "Uri\\Rfc3986\\Uri::%s() expects exactly 0 arguments, %zu given", name, argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "toRawString")) {
+        return ptn_uri_to_string_value(data, 0);
+    }
+    if (ptn_ascii_case_equal(name, "toString") || ptn_ascii_case_equal(name, "__toString")) {
+        return ptn_uri_to_string_value(data, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getRawScheme")) {
+        return ptn_uri_component_property_value(data->scheme);
+    }
+    if (ptn_ascii_case_equal(name, "getScheme")) {
+        return ptn_uri_normalized_string_value(data->scheme, 1, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getRawUserInfo")) {
+        return ptn_uri_userinfo_value(data, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getUserInfo")) {
+        return ptn_uri_userinfo_value(data, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getUsername")) {
+        return ptn_uri_normalized_string_value(data->username, 0, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getPassword")) {
+        return ptn_uri_normalized_string_value(data->password, 0, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getRawHost")) {
+        return ptn_uri_component_property_value(data->host);
+    }
+    if (ptn_ascii_case_equal(name, "getHost") || ptn_ascii_case_equal(name, "getAsciiHost")) {
+        return ptn_uri_normalized_string_value(data->host, 1, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getPort")) {
+        return data->port_present ? ptn_int(data->port) : ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getRawPath")) {
+        return ptn_uri_component_property_value(data->path);
+    }
+    if (ptn_ascii_case_equal(name, "getPath")) {
+        return ptn_uri_normalized_string_value(data->path, 0, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getRawQuery")) {
+        return ptn_uri_component_property_value(data->query);
+    }
+    if (ptn_ascii_case_equal(name, "getQuery")) {
+        return ptn_uri_normalized_string_value(data->query, 0, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getRawFragment")) {
+        return ptn_uri_component_property_value(data->fragment);
+    }
+    if (ptn_ascii_case_equal(name, "getFragment")) {
+        return ptn_uri_normalized_string_value(data->fragment, 0, 0);
+    }
+    if (ptn_ascii_case_equal(name, "withScheme")) {
+        return ptn_uri_with_string_component(runtime, receiver, "Uri\\Rfc3986\\Uri::withScheme", "scheme", "scheme", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "withHost")) {
+        return ptn_uri_with_string_component(runtime, receiver, "Uri\\Rfc3986\\Uri::withHost", "host", "host", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "withPath")) {
+        return ptn_uri_with_string_component(runtime, receiver, "Uri\\Rfc3986\\Uri::withPath", "path", "path", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "withQuery")) {
+        return ptn_uri_with_string_component(runtime, receiver, "Uri\\Rfc3986\\Uri::withQuery", "query", "query", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "withFragment")) {
+        return ptn_uri_with_string_component(runtime, receiver, "Uri\\Rfc3986\\Uri::withFragment", "fragment", "fragment", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "withUserInfo")) {
+        return ptn_uri_with_string_component(runtime, receiver, "Uri\\Rfc3986\\Uri::withUserInfo", "userinfo", "userinfo", argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "withPort")) {
+        return ptn_uri_with_port(runtime, receiver, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+typedef struct {
     const char *data;
     size_t len;
     int present;
@@ -49646,6 +50720,10 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         ptn_ascii_case_equal(name, "getKeywordValuesForLocale")) {
         return ptn_intl_calendar_get_keyword_values(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name) &&
+        ptn_ascii_case_equal(name, "parse")) {
+        return ptn_uri_parse_static(runtime, class_name, argc, args, line);
+    }
     if (ptn_internal_class_name_is_xml_writer(class_name)) {
         return ptn_xmlwriter_static_call_method(runtime, name, argc, args, line);
     }
@@ -51800,6 +52878,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_xml_parser(const char *class_na
     return ptn_ascii_case_equal(class_name, "XMLParser");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Uri\\Rfc3986\\Uri");
+}
+
 static int ptn_internal_interface_exists_name(const char *name) {
     return ptn_ascii_case_equal(name, "ArrayAccess")
         || ptn_ascii_case_equal(name, "Iterator")
@@ -51869,6 +52951,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_xml_reader(class_name)
         || ptn_internal_class_name_is_xml_writer(class_name)
         || ptn_internal_class_name_is_xml_parser(class_name)
+        || ptn_internal_class_name_is_uri_rfc3986_uri(class_name)
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
@@ -52959,6 +54042,36 @@ static int ptn_directory_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "close");
 }
 
+static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "toRawString")
+        || ptn_ascii_case_equal(method_name, "toString")
+        || ptn_ascii_case_equal(method_name, "getRawScheme")
+        || ptn_ascii_case_equal(method_name, "getScheme")
+        || ptn_ascii_case_equal(method_name, "getRawUserInfo")
+        || ptn_ascii_case_equal(method_name, "getUserInfo")
+        || ptn_ascii_case_equal(method_name, "getUsername")
+        || ptn_ascii_case_equal(method_name, "getPassword")
+        || ptn_ascii_case_equal(method_name, "getRawHost")
+        || ptn_ascii_case_equal(method_name, "getHost")
+        || ptn_ascii_case_equal(method_name, "getAsciiHost")
+        || ptn_ascii_case_equal(method_name, "getPort")
+        || ptn_ascii_case_equal(method_name, "getRawPath")
+        || ptn_ascii_case_equal(method_name, "getPath")
+        || ptn_ascii_case_equal(method_name, "getRawQuery")
+        || ptn_ascii_case_equal(method_name, "getQuery")
+        || ptn_ascii_case_equal(method_name, "getRawFragment")
+        || ptn_ascii_case_equal(method_name, "getFragment")
+        || ptn_ascii_case_equal(method_name, "withScheme")
+        || ptn_ascii_case_equal(method_name, "withUserInfo")
+        || ptn_ascii_case_equal(method_name, "withHost")
+        || ptn_ascii_case_equal(method_name, "withPort")
+        || ptn_ascii_case_equal(method_name, "withPath")
+        || ptn_ascii_case_equal(method_name, "withQuery")
+        || ptn_ascii_case_equal(method_name, "withFragment");
+}
+
 static int ptn_internal_class_property_exists(const char *class_name, const char *property_name) {
     if (ptn_internal_class_name_is_directory(class_name)) {
         return ptn_ascii_case_equal(property_name, "path")
@@ -52976,6 +54089,16 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
     }
     if (ptn_internal_class_name_is_no_discard(class_name)) {
         return ptn_ascii_case_equal(property_name, "message");
+    }
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name)) {
+        return ptn_ascii_case_equal(property_name, "scheme")
+            || ptn_ascii_case_equal(property_name, "username")
+            || ptn_ascii_case_equal(property_name, "password")
+            || ptn_ascii_case_equal(property_name, "host")
+            || ptn_ascii_case_equal(property_name, "port")
+            || ptn_ascii_case_equal(property_name, "path")
+            || ptn_ascii_case_equal(property_name, "query")
+            || ptn_ascii_case_equal(property_name, "fragment");
     }
     if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
         ptn_internal_class_name_is_spl_queue(class_name) ||
@@ -53143,6 +54266,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_xml_writer(class_name)) {
         return ptn_xmlwriter_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name)) {
+        return ptn_uri_rfc3986_uri_method_exists(method_name);
+    }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
         return ptn_exception_method_exists(method_name);
     }
@@ -53179,6 +54305,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_rounding_mode(class_name)) {
         return ptn_ascii_case_equal(method_name, "cases");
+    }
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name)) {
+        return ptn_ascii_case_equal(method_name, "parse");
     }
     return 0;
 }
@@ -53789,6 +54918,40 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_xml_writer(class_name)) {
         ptn_xmlwriter_append_method_names(result, &index);
+        return result;
+    }
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "parse",
+            "toRawString",
+            "toString",
+            "getRawScheme",
+            "getScheme",
+            "getRawUserInfo",
+            "getUserInfo",
+            "getUsername",
+            "getPassword",
+            "getRawHost",
+            "getHost",
+            "getAsciiHost",
+            "getPort",
+            "getRawPath",
+            "getPath",
+            "getRawQuery",
+            "getQuery",
+            "getRawFragment",
+            "getFragment",
+            "withScheme",
+            "withUserInfo",
+            "withHost",
+            "withPort",
+            "withPath",
+            "withQuery",
+            "withFragment",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
     if (ptn_builtin_exception_class_name(class_name) != NULL) {
