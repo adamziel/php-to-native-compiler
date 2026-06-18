@@ -331,6 +331,12 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
+    out.push_str(
+        "    const char *ptn_runtime_source_path_override = getenv(\"PTN_RUNTIME_SOURCE_PATH\");\n",
+    );
+    out.push_str("    if (ptn_runtime_source_path_override != NULL && ptn_runtime_source_path_override[0] != '\\0') {\n");
+    out.push_str("        runtime.source_path = ptn_runtime_source_path_override;\n");
+    out.push_str("    }\n");
     out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
     let mut values = ValueEmitter::new(
         &module.source_file,
@@ -22161,11 +22167,18 @@ impl ValueEmitter {
             ValueExpr::MagicConstant { kind, line } => match kind {
                 MagicConstantKind::Line => format!("ptn_int({line})"),
                 MagicConstantKind::File => {
-                    format!(
-                        "ptn_string_literal(\"{}\", {})",
-                        c_string(&self.source_file),
-                        self.source_file.len()
-                    )
+                    if self.top_level_scope {
+                        format!(
+                            "ptn_string(ptn_runtime_source_path_or(&runtime, \"{}\"))",
+                            c_string(&self.source_file)
+                        )
+                    } else {
+                        format!(
+                            "ptn_string_literal(\"{}\", {})",
+                            c_string(&self.source_file),
+                            self.source_file.len()
+                        )
+                    }
                 }
                 MagicConstantKind::Dir => {
                     format!(

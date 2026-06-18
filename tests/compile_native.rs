@@ -38976,6 +38976,38 @@ if (defined('ptn_self_include_seen')) {
 }
 
 #[test]
+fn compile_top_level_file_magic_can_use_runtime_source_override_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-source-override");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("original.php");
+    let runtime_source = root.join("runtime-source.php");
+    let output = root.join("runtime-source-override-bin");
+    let source = "<?php\n\
+function declared_file_name() { return basename(__FILE__); }\n\
+$fp = fopen(__FILE__, 'r');\n\
+var_dump(is_resource($fp));\n\
+fclose($fp);\n\
+echo basename(__FILE__), \"\\n\";\n\
+echo declared_file_name(), \"\\n\";\n";
+    fs::write(&input, source).unwrap();
+    fs::write(&runtime_source, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    fs::remove_file(&input).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_RUNTIME_SOURCE_PATH", &runtime_source)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nruntime-source.php\noriginal.php\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_file_get_contents_uses_include_path_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-include-path");
     let cwd = root.join("cwd");

@@ -820,10 +820,25 @@ fn compile_and_run(
             PhpcError::Message(error.to_string())
         }
     })?;
+    let runtime_source_name = script
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("source.php");
+    let runtime_source = {
+        let runtime_source = TempPath::new_with_suffix("ptn-phpc-source", runtime_source_name);
+        match fs::copy(script, runtime_source.path()) {
+            Ok(_) => Some(runtime_source),
+            Err(_) => None,
+        }
+    };
 
     let mut command = Command::new(native.path());
     command.args(args);
     command.env("PTN_SCRIPT_FILENAME", script);
+    if let Some(runtime_source) = &runtime_source {
+        command.env("PTN_RUNTIME_SOURCE_PATH", runtime_source.path());
+    }
     if let Some(precision) = ini.precision {
         command.env("PTN_PHP_PRECISION", precision.to_string());
     }
@@ -1007,6 +1022,16 @@ impl TempPath {
             "{prefix}-{}-{nanos}.{extension}",
             std::process::id()
         ));
+        Self { path }
+    }
+
+    fn new_with_suffix(prefix: &str, suffix: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        path.push(format!("{prefix}-{}-{nanos}-{suffix}", std::process::id()));
         Self { path }
     }
 
