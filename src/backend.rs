@@ -17151,6 +17151,690 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(112)),
         },
     ];
+    static SINGLE_STRING_PARAMETER: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "string",
+        default: None,
+    }];
+    static CHARACTER_PARAMETER: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "character",
+        default: None,
+    }];
+    static CODEPOINT_PARAMETER: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "codepoint",
+        default: None,
+    }];
+    static ITEM_PARAMETER: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "item",
+        default: None,
+    }];
+    static FORMAT_PARAMETER: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "format",
+        default: None,
+    }];
+    static FPRINTF_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "stream",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "format",
+            default: None,
+        },
+    ];
+    static VSPRINTF_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "format",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "values",
+            default: None,
+        },
+    ];
+    static SSCANF_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "format",
+            default: None,
+        },
+    ];
+    static VFPRINTF_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "stream",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "format",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "values",
+            default: None,
+        },
+    ];
+    static SETLOCALE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "category",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "locales",
+            default: None,
+        },
+    ];
+    static DATE_FORMAT_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "format",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "timestamp",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static STR_REPEAT_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "times",
+            default: None,
+        },
+    ];
+    static EXPLODE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "separator",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "limit",
+            default: Some(InternalParameterDefault::Int(i64::MAX)),
+        },
+    ];
+    static IMPLODE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "separator",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "array",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static TRIM_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "characters",
+            default: Some(InternalParameterDefault::String(" \n\r\t\x0B\0")),
+        },
+    ];
+    static BASENAME_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "path",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "suffix",
+            default: Some(InternalParameterDefault::String("")),
+        },
+    ];
+    static DIRNAME_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "path",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "levels",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static PATHINFO_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "path",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(15)),
+        },
+    ];
+    static PARSE_URL_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "url",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "component",
+            default: Some(InternalParameterDefault::Int(-1)),
+        },
+    ];
+    static HTTP_BUILD_QUERY_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "data",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "numeric_prefix",
+            default: Some(InternalParameterDefault::String("")),
+        },
+        InternalParameterSpec {
+            name: "arg_separator",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "encoding_type",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static NUMBER_FORMAT_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "num",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "decimals",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "decimal_separator",
+            default: Some(InternalParameterDefault::String(".")),
+        },
+        InternalParameterSpec {
+            name: "thousands_separator",
+            default: Some(InternalParameterDefault::String(",")),
+        },
+    ];
+    static HTML_ENCODE_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(11)),
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "double_encode",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static HTML_DECODE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(11)),
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static HTMLSPECIALCHARS_DECODE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(11)),
+        },
+    ];
+    static GET_HTML_TRANSLATION_TABLE_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "table",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(11)),
+        },
+        InternalParameterSpec {
+            name: "encoding",
+            default: Some(InternalParameterDefault::String("UTF-8")),
+        },
+    ];
+    static WORDWRAP_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "width",
+            default: Some(InternalParameterDefault::Int(75)),
+        },
+        InternalParameterSpec {
+            name: "break",
+            default: Some(InternalParameterDefault::String("\n")),
+        },
+        InternalParameterSpec {
+            name: "cut_long_words",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static SUBSTR_REPLACE_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "replace",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static STR_REPLACE_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "search",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "replace",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "subject",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "count",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static STRTR_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "from",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "to",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static STRIP_TAGS_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "allowed_tags",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static HAYSTACK_NEEDLE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "needle",
+            default: None,
+        },
+    ];
+    static STRING_CHARACTERS_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "characters",
+            default: None,
+        },
+    ];
+    static STRTOK_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "token",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static STR_WORD_COUNT_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "format",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "characters",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static STR_SPLIT_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static COUNT_CHARS_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "mode",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static STR_PAD_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "pad_string",
+            default: Some(InternalParameterDefault::String(" ")),
+        },
+        InternalParameterSpec {
+            name: "pad_type",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static CHUNK_SPLIT_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Int(76)),
+        },
+        InternalParameterSpec {
+            name: "separator",
+            default: Some(InternalParameterDefault::String("\r\n")),
+        },
+    ];
+    static BASE64_DECODE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "strict",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static HEBREV_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "max_chars_per_line",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static NL2BR_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "use_xhtml",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static TWO_STRING_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "characters",
+            default: None,
+        },
+    ];
+    static TWO_ORDERED_STRING_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string1",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string2",
+            default: None,
+        },
+    ];
+    static METAPHONE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "max_phonemes",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static LEVENSHTEIN_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "string1",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string2",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "insertion_cost",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "replacement_cost",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+        InternalParameterSpec {
+            name: "deletion_cost",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static SIMILAR_TEXT_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "string1",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string2",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "percent",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static PARSE_STR_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "result",
+            default: None,
+        },
+    ];
+    static SUBSTR_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static SUBSTR_COUNT_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "needle",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static OFFSET_SEARCH_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "needle",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static STRSTR_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "needle",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "before_needle",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static SPAN_PARAMETERS: [InternalParameterSpec; 4] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "characters",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    static SUBSTR_COMPARE_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "needle",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "length",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "case_insensitive",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static HASH_STRING_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "binary",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static HASH_FILE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "binary",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static CRYPT_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "salt",
+            default: None,
+        },
+    ];
+    static UNPACK_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "format",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
@@ -17170,6 +17854,166 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&XMLWRITER_START_DOCUMENT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("ob_start") {
         Some(&OB_START_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("sprintf")
+        || name.eq_ignore_ascii_case("printf")
+        || name.eq_ignore_ascii_case("pack")
+    {
+        Some(&FORMAT_PARAMETER)
+    } else if name.eq_ignore_ascii_case("fprintf") {
+        Some(&FPRINTF_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("vsprintf") || name.eq_ignore_ascii_case("vprintf") {
+        Some(&VSPRINTF_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("vfprintf") {
+        Some(&VFPRINTF_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("sscanf") {
+        Some(&SSCANF_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("setlocale") {
+        Some(&SETLOCALE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strftime") || name.eq_ignore_ascii_case("gmstrftime") {
+        Some(&DATE_FORMAT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("str_repeat") {
+        Some(&STR_REPEAT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("explode") {
+        Some(&EXPLODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("implode") || name.eq_ignore_ascii_case("join") {
+        Some(&IMPLODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("trim")
+        || name.eq_ignore_ascii_case("ltrim")
+        || name.eq_ignore_ascii_case("rtrim")
+        || name.eq_ignore_ascii_case("chop")
+    {
+        Some(&TRIM_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("basename") {
+        Some(&BASENAME_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("dirname") {
+        Some(&DIRNAME_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("pathinfo") {
+        Some(&PATHINFO_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("parse_url") {
+        Some(&PARSE_URL_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("http_build_query") {
+        Some(&HTTP_BUILD_QUERY_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("number_format") {
+        Some(&NUMBER_FORMAT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("htmlspecialchars")
+        || name.eq_ignore_ascii_case("htmlentities")
+    {
+        Some(&HTML_ENCODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("html_entity_decode") {
+        Some(&HTML_DECODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("htmlspecialchars_decode") {
+        Some(&HTMLSPECIALCHARS_DECODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("get_html_translation_table") {
+        Some(&GET_HTML_TRANSLATION_TABLE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("wordwrap") {
+        Some(&WORDWRAP_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("substr_replace") {
+        Some(&SUBSTR_REPLACE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("str_replace") || name.eq_ignore_ascii_case("str_ireplace")
+    {
+        Some(&STR_REPLACE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strtr") {
+        Some(&STRTR_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strip_tags") {
+        Some(&STRIP_TAGS_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("str_contains")
+        || name.eq_ignore_ascii_case("str_starts_with")
+        || name.eq_ignore_ascii_case("str_ends_with")
+    {
+        Some(&HAYSTACK_NEEDLE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strtok") {
+        Some(&STRTOK_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("str_word_count") {
+        Some(&STR_WORD_COUNT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("str_split") {
+        Some(&STR_SPLIT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("str_pad") {
+        Some(&STR_PAD_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("chunk_split") {
+        Some(&CHUNK_SPLIT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("base64_decode") {
+        Some(&BASE64_DECODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("hebrev") {
+        Some(&HEBREV_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("nl2br") {
+        Some(&NL2BR_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("addcslashes") {
+        Some(&TWO_STRING_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("quotemeta")
+        || name.eq_ignore_ascii_case("stripcslashes")
+        || name.eq_ignore_ascii_case("str_shuffle")
+        || name.eq_ignore_ascii_case("str_increment")
+        || name.eq_ignore_ascii_case("str_decrement")
+        || name.eq_ignore_ascii_case("str_rot13")
+        || name.eq_ignore_ascii_case("base64_encode")
+        || name.eq_ignore_ascii_case("addslashes")
+        || name.eq_ignore_ascii_case("bin2hex")
+        || name.eq_ignore_ascii_case("convert_uudecode")
+        || name.eq_ignore_ascii_case("convert_uuencode")
+        || name.eq_ignore_ascii_case("crc32")
+        || name.eq_ignore_ascii_case("hex2bin")
+        || name.eq_ignore_ascii_case("lcfirst")
+        || name.eq_ignore_ascii_case("quoted_printable_decode")
+        || name.eq_ignore_ascii_case("quoted_printable_encode")
+        || name.eq_ignore_ascii_case("rawurldecode")
+        || name.eq_ignore_ascii_case("rawurlencode")
+        || name.eq_ignore_ascii_case("soundex")
+        || name.eq_ignore_ascii_case("stripslashes")
+        || name.eq_ignore_ascii_case("strlen")
+        || name.eq_ignore_ascii_case("strrev")
+        || name.eq_ignore_ascii_case("strtolower")
+        || name.eq_ignore_ascii_case("strtoupper")
+        || name.eq_ignore_ascii_case("ucfirst")
+        || name.eq_ignore_ascii_case("urldecode")
+        || name.eq_ignore_ascii_case("urlencode")
+    {
+        Some(&SINGLE_STRING_PARAMETER)
+    } else if name.eq_ignore_ascii_case("chr") {
+        Some(&CODEPOINT_PARAMETER)
+    } else if name.eq_ignore_ascii_case("ord") {
+        Some(&CHARACTER_PARAMETER)
+    } else if name.eq_ignore_ascii_case("nl_langinfo") {
+        Some(&ITEM_PARAMETER)
+    } else if name.eq_ignore_ascii_case("metaphone") {
+        Some(&METAPHONE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("levenshtein") {
+        Some(&LEVENSHTEIN_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("similar_text") {
+        Some(&SIMILAR_TEXT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strnatcmp") || name.eq_ignore_ascii_case("strnatcasecmp") {
+        Some(&TWO_ORDERED_STRING_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("parse_str") {
+        Some(&PARSE_STR_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("substr") {
+        Some(&SUBSTR_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("substr_count") {
+        Some(&SUBSTR_COUNT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strpos")
+        || name.eq_ignore_ascii_case("stripos")
+        || name.eq_ignore_ascii_case("strrpos")
+        || name.eq_ignore_ascii_case("strripos")
+    {
+        Some(&OFFSET_SEARCH_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strstr") || name.eq_ignore_ascii_case("stristr") {
+        Some(&STRSTR_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strrchr") {
+        Some(&OFFSET_SEARCH_PARAMETERS[..2])
+    } else if name.eq_ignore_ascii_case("strpbrk") {
+        Some(&STRING_CHARACTERS_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("strspn") || name.eq_ignore_ascii_case("strcspn") {
+        Some(&SPAN_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("substr_compare") {
+        Some(&SUBSTR_COMPARE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("md5") || name.eq_ignore_ascii_case("sha1") {
+        Some(&HASH_STRING_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("md5_file") || name.eq_ignore_ascii_case("sha1_file") {
+        Some(&HASH_FILE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("crypt") {
+        Some(&CRYPT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("count_chars") {
+        Some(&COUNT_CHARS_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("unpack") {
+        Some(&UNPACK_PARAMETERS)
     } else {
         None
     }

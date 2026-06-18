@@ -53711,6 +53711,69 @@ static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnV
     return result;
 }
 
+static PtnValue ptn_internal_strftime_named(PtnRuntime *runtime, const char *function_name, int use_gmt, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand format = ptn_internal_expect_string_arg(runtime, function_name, 1, "format", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(format);
+        return ptn_null();
+    }
+    time_t timestamp = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL
+        ? (time_t)ptn_value_to_integer(args[1])
+        : time(NULL);
+    struct tm parts_storage;
+    struct tm *parts = use_gmt ? gmtime(&timestamp) : localtime(&timestamp);
+    if (parts == NULL) {
+        ptn_string_operand_free(format);
+        return ptn_bool(0);
+    }
+    parts_storage = *parts;
+
+    if (format.len == 0) {
+        ptn_string_operand_free(format);
+        return ptn_string("");
+    }
+
+    char *format_c = ptn_duplicate_string_len(format.data, format.len);
+    if (format.len > (SIZE_MAX - 64) / 4) {
+        free(format_c);
+        ptn_string_operand_free(format);
+        ptn_abort_out_of_memory();
+    }
+    size_t cap = (format.len * 4) + 64;
+    if (cap < 128) {
+        cap = 128;
+    }
+    for (;;) {
+        char *output = malloc(cap);
+        if (output == NULL) {
+            free(format_c);
+            ptn_string_operand_free(format);
+            ptn_abort_out_of_memory();
+        }
+        size_t written = strftime(output, cap, format_c, &parts_storage);
+        if (written > 0) {
+            free(format_c);
+            ptn_string_operand_free(format);
+            return ptn_owned_string_len(output, written);
+        }
+        free(output);
+        if (cap >= (1u << 20)) {
+            free(format_c);
+            ptn_string_operand_free(format);
+            return ptn_string("");
+        }
+        cap *= 2;
+    }
+}
+
+static PtnValue ptn_internal_strftime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strftime_named(runtime, "strftime", 0, argc, args, line);
+}
+
+static PtnValue ptn_internal_gmstrftime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_strftime_named(runtime, "gmstrftime", 1, argc, args, line);
+}
+
 static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)line;
@@ -63207,6 +63270,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "gettype", 1, 1, ptn_internal_gettype },
         { "glob", 1, 2, ptn_internal_glob },
         { "gmdate", 1, 2, ptn_internal_gmdate },
+        { "gmstrftime", 1, 2, ptn_internal_gmstrftime },
         { "gmmktime", 0, 6, ptn_internal_gmmktime },
         { "gregoriantojd", 3, 3, ptn_internal_gregoriantojd },
         { "hebrev", 1, 2, ptn_internal_hebrev },
@@ -63555,6 +63619,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "strripos", 2, 3, ptn_internal_strripos },
         { "strrpos", 2, 3, ptn_internal_strrpos },
         { "strstr", 2, 3, ptn_internal_strstr },
+        { "strftime", 1, 2, ptn_internal_strftime },
         { "strtotime", 1, 2, ptn_internal_strtotime },
         { "strtolower", 1, 1, ptn_internal_strtolower },
         { "strtoupper", 1, 1, ptn_internal_strtoupper },

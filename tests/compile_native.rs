@@ -13506,6 +13506,44 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_strftime_locale_formatting_to_native_binary() {
+    let root = temp_dir("ptn-native-strftime-locale-formatting");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("strftime-locale-formatting.php");
+    let output = root.join("strftime-locale-formatting-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set(\"UTC\");\n\
+setlocale(LC_ALL, \"C\");\n\
+$ts = mktime(8, 8, 8, 8, 8, 2008);\n\
+echo strftime(\"%Y-%m-%d %H:%M:%S %A\", $ts), \"\\n\";\n\
+echo gmstrftime(format: \"%Y-%m-%d %H:%M:%S\", timestamp: $ts), \"\\n\";\n\
+echo strftime(format: \"\"), \"\\n\";\n\
+var_dump(function_exists(\"strftime\"), function_exists(\"gmstrftime\"));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2008-08-08 08:08:08 Friday\n\
+2008-08-08 08:08:08\n\
+\n\
+bool(true)\n\
+bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_strftime("));
+    assert!(c_source.contains("static PtnValue ptn_internal_gmstrftime("));
+}
+
+#[test]
 fn compile_date_interval_diff_and_format_to_native_binary() {
     let root = temp_dir("ptn-native-date-interval-diff-format");
     fs::create_dir_all(&root).unwrap();
@@ -17244,16 +17282,17 @@ inner();
 
 #[test]
 fn parser_accepts_named_arguments_on_calls() {
-    let program = parser::parse(
-        "<?php function pair($left, $right) { return $left . $right; } pair(right: 2, left: 1);",
-    )
-    .unwrap();
+    let program = parser::parse("<?php target(string: 1, break: 2, true: 3);").unwrap();
     let Statement::Call { argument_names, .. } = &program.statements[0] else {
         panic!("expected call statement");
     };
     assert_eq!(
         argument_names,
-        &vec![Some("right".to_string()), Some("left".to_string())]
+        &vec![
+            Some("string".to_string()),
+            Some("break".to_string()),
+            Some("true".to_string())
+        ]
     );
 }
 
@@ -17282,6 +17321,112 @@ echo collect(right: side(\"R\"), left: side(\"L\"), middle: side(\"M\")), \"\\n\
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "arg:R\narg:L\narg:M\nL|M|R|3\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_internal_string_named_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-string-named-arguments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-string-named-arguments.php");
+    let output = root.join("internal-string-named-arguments-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+setlocale(category: LC_ALL, locales: \"C\");\n\
+echo sprintf(format: \"literal\"), \"\\n\";\n\
+echo vsprintf(values: [\"id\", 7], format: \"%s:%02d\"), \"\\n\";\n\
+echo number_format(num: 1234.567, thousands_separator: \" \", decimal_separator: \",\", decimals: 2), \"\\n\";\n\
+echo wordwrap(string: \"abcd\", break: \"|\", cut_long_words: true, width: 2), \"\\n\";\n\
+echo substr_replace(\"abcdef\", replace: \"XY\", offset: 2, length: 2), \"\\n\";\n\
+$count = -1;\n\
+echo str_replace(subject: \"aba\", count: $count, replace: \"x\", search: \"a\"), \" count=$count\\n\";\n\
+echo strtr(\"abc\", to: \"XY\", from: \"ab\"), \"\\n\";\n\
+echo strtok(\"a,b\", token: \",\"), \"|\", strtok(\",\"), \"\\n\";\n\
+echo strlen(string: \"abc\"), \" \", strtoupper(string: \"ab\"), \" \", strrev(string: \"xy\"), \"\\n\";\n\
+echo str_repeat(times: 3, string: \"ha\"), \"\\n\";\n\
+print_r(explode(string: \"a,b,c\", separator: \",\", limit: 2));\n\
+echo implode(separator: \"-\", array: [\"a\", \"b\"]), \"\\n\";\n\
+$parsed = [];\n\
+parse_str(result: $parsed, string: \"a=1&b=two\");\n\
+print_r($parsed);\n\
+echo trim(string: \" xyz \", characters: \" \"), \"\\n\";\n\
+echo metaphone(max_phonemes: 4, string: \"testing\"), \"\\n\";\n\
+echo levenshtein(string2: \"sitting\", string1: \"kitten\"), \"\\n\";\n\
+$percent = null;\n\
+echo similar_text(percent: $percent, string2: \"abx\", string1: \"abc\"), \" \", number_format(num: $percent, decimals: 2), \"\\n\";\n\
+echo strnatcmp(string2: \"a10\", string1: \"a2\"), \"\\n\";\n\
+echo ord(character: \"A\"), \" \", chr(codepoint: 66), \"\\n\";\n\
+echo bin2hex(string: \"A\"), \" \", crc32(string: \"abc\"), \" \", soundex(string: \"Euler\"), \"\\n\";\n\
+echo quoted_printable_decode(string: \"=41\"), \" \", convert_uudecode(string: convert_uuencode(string: \"z\")), \"\\n\";\n\
+echo basename(path: \"/tmp/report.txt\", suffix: \".txt\"), \" \", dirname(path: \"/a/b/c\", levels: 2), \"\\n\";\n\
+echo pathinfo(path: \"/tmp/report.txt\", flags: PATHINFO_FILENAME), \" \", parse_url(url: \"https://example.test/a?b=c\", component: PHP_URL_HOST), \"\\n\";\n\
+echo hex2bin(string: \"4142\"), \" \", urlencode(string: \"a b\"), \" \", rawurldecode(string: \"a%20b\"), \"\\n\";\n\
+echo http_build_query(data: [\"a\" => 1, \"b\" => \"x y\"], arg_separator: \"&\", numeric_prefix: \"n\", encoding_type: PHP_QUERY_RFC3986), \"\\n\";\n\
+print_r(str_split(\"abcd\", length: 2));\n\
+echo str_pad(\"7\", pad_type: STR_PAD_LEFT, pad_string: \"0\", length: 4), \"\\n\";\n\
+echo chunk_split(\"abcd\", separator: \"|\", length: 2), \"\\n\";\n\
+echo nl2br(\"a\\nb\", use_xhtml: false), \"\\n\";\n\
+echo htmlspecialchars(\"<a>\", double_encode: false, encoding: \"UTF-8\", flags: ENT_QUOTES), \"\\n\";\n\
+echo html_entity_decode(\"&lt;a&gt;\", encoding: \"UTF-8\", flags: ENT_QUOTES), \"\\n\";\n\
+echo base64_decode(\"YQ==\", strict: true), \"\\n\";\n\
+print_r(unpack(\"Cbyte\", \"xA\", offset: 1));\n\
+echo count_chars(\"aba\", mode: 3), \"\\n\";\n\
+var_dump(str_contains(needle: \"b\", haystack: \"abc\"));\n\
+echo strpbrk(\"abcde\", characters: \"de\"), \"\\n\";\n\
+echo strrchr(needle: \"/\", haystack: \"a/b\"), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "literal\n\
+id:07\n\
+1 234,57\n\
+ab|cd\n\
+abXYef\n\
+xbx count=2\n\
+XYc\n\
+a|b\n\
+3 AB yx\n\
+hahaha\n\
+Array\n\
+(\n    [0] => a\n    [1] => b,c\n)\n\
+a-b\n\
+Array\n\
+(\n    [a] => 1\n    [b] => two\n)\n\
+xyz\n\
+TSTN\n\
+3\n\
+2 66.67\n\
+-1\n\
+65 B\n\
+41 891568578 E460\n\
+A z\n\
+report /a\n\
+report example.test\n\
+AB a+b a b\n\
+a=1&b=x%20y\n\
+Array\n\
+(\n    [0] => ab\n    [1] => cd\n)\n\
+0007\n\
+ab|cd|\n\
+a<br>\n\
+b\n\
+&lt;a&gt;\n\
+<a>\n\
+a\n\
+Array\n\
+(\n    [byte] => 65\n)\n\
+ab\n\
+bool(true)\n\
+de\n\
+/b\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

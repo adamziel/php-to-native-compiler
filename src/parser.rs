@@ -7816,12 +7816,11 @@ impl Parser<'_> {
             let value = self.parse_call_argument_expr()?;
             return Ok((None, true, value, spread_span));
         }
-        if let TokenKind::Identifier(name) = &self.peek().kind {
-            if matches!(
-                self.tokens.get(self.index + 1).map(|token| &token.kind),
-                Some(TokenKind::Colon)
-            ) {
-                let name = name.clone();
+        if matches!(
+            self.tokens.get(self.index + 1).map(|token| &token.kind),
+            Some(TokenKind::Colon)
+        ) {
+            if let Some(name) = name_segment_from_token(&self.peek().kind) {
                 let name_span = self.advance().span;
                 self.expect_colon()?;
                 let value = self.parse_call_argument_expr()?;
