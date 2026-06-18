@@ -14935,6 +14935,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::NullsafePropertyFetch { .. }
         | ValueExpr::DynamicPropertyFetch { .. }
         | ValueExpr::StaticPropertyFetch { .. }
+        | ValueExpr::DynamicStaticPropertyNameFetch { .. }
         | ValueExpr::DynamicStaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. }
         | ValueExpr::DynamicClassConstantFetch { .. }
@@ -15485,6 +15486,9 @@ fn collect_assignment_target_legacy_dollar_brace_deprecations(
 ) {
     match target {
         AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
         AssignmentTarget::DynamicVariable { name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
@@ -15700,6 +15704,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
         }
         ValueExpr::DynamicPropertyFetch { receiver, name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(receiver, deprecations);
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
+        }
+        ValueExpr::DynamicStaticPropertyNameFetch { name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
         ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
@@ -16221,6 +16228,9 @@ fn collect_assignment_target_runtime_requirements(
             collect_value_runtime_requirements(name, functions, requirements);
         }
         AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
+        }
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
         }
@@ -16585,6 +16595,9 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::DynamicStaticPropertyFetch { receiver, .. } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
+        }
+        ValueExpr::DynamicStaticPropertyNameFetch { name, .. } => {
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         ValueExpr::DynamicClassConstantFetch { receiver, name, .. } => {
             if let Some(receiver) = receiver {
@@ -17966,6 +17979,7 @@ impl AssignmentTargetLine for AssignmentTarget {
             | AssignmentTarget::DynamicProperty { line, .. } => *line,
             AssignmentTarget::Property { line, .. }
             | AssignmentTarget::StaticProperty { line, .. }
+            | AssignmentTarget::DynamicStaticPropertyName { line, .. }
             | AssignmentTarget::DynamicStaticProperty { line, .. } => *line,
             AssignmentTarget::List(target) => target.line,
         }
@@ -18001,6 +18015,7 @@ fn list_assignment_has_reference(target: &ListAssignmentTarget) -> bool {
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
             | AssignmentTarget::StaticProperty { .. }
+            | AssignmentTarget::DynamicStaticPropertyName { .. }
             | AssignmentTarget::DynamicStaticProperty { .. } => false,
         },
     })
@@ -18103,6 +18118,10 @@ fn assignment_target_mentions_variable(target: &AssignmentTarget, name: &str) ->
         } => {
             value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
         }
+        AssignmentTarget::DynamicStaticPropertyName {
+            name: property_name,
+            ..
+        } => value_mentions_variable(property_name, name),
         AssignmentTarget::StaticProperty { .. } => false,
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             value_mentions_variable(receiver, name)
@@ -18295,6 +18314,10 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         } => {
             value_mentions_variable(receiver, name) || value_mentions_variable(property_name, name)
         }
+        ValueExpr::DynamicStaticPropertyNameFetch {
+            name: property_name,
+            ..
+        } => value_mentions_variable(property_name, name),
         ValueExpr::InstanceOf { expr, target, .. } => {
             value_mentions_variable(expr, name)
                 || matches!(target, InstanceOfTarget::Expr(target) if value_mentions_variable(target, name))
@@ -18465,6 +18488,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::NullsafePropertyFetch { line, .. }
         | ValueExpr::DynamicPropertyFetch { line, .. }
         | ValueExpr::StaticPropertyFetch { line, .. }
+        | ValueExpr::DynamicStaticPropertyNameFetch { line, .. }
         | ValueExpr::DynamicStaticPropertyFetch { line, .. }
         | ValueExpr::ClassConstantFetch { line, .. }
         | ValueExpr::DynamicClassConstantFetch { line, .. }
@@ -19089,6 +19113,7 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::MagicConstant { .. }
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. } => false,
+        ValueExpr::DynamicStaticPropertyNameFetch { name, .. } => value_expr_uses_this(name),
         ValueExpr::LegacyDollarBraceStringVariable { .. } => false,
         ValueExpr::DynamicVariable { name, .. }
         | ValueExpr::ArrayAppendAccess { array: name, .. }
@@ -19199,6 +19224,7 @@ fn assignment_target_uses_this(target: &AssignmentTarget) -> bool {
         AssignmentTarget::Variable { .. }
         | AssignmentTarget::ArrayDim { .. }
         | AssignmentTarget::StaticProperty { .. } => false,
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => value_expr_uses_this(name),
         AssignmentTarget::StaticPropertyArrayDim { dimensions, .. } => {
             dimensions.iter().flatten().any(value_expr_uses_this)
         }
@@ -20258,9 +20284,13 @@ impl ValueEmitter {
                         "parser rejects null coalescing assignment for dynamic static property array offsets"
                     );
                 }
-                AssignmentTarget::ValueArrayDim { .. } => {
-                    unreachable!(
-                        "parser rejects null coalescing assignment for value array offsets"
+                AssignmentTarget::ValueArrayDim {
+                    array,
+                    dimensions,
+                    line,
+                } => {
+                    return self.emit_value_offset_coalesce_assignment(
+                        out, array, dimensions, *line, value,
                     );
                 }
                 AssignmentTarget::List(_) => {
@@ -20274,9 +20304,13 @@ impl ValueEmitter {
                     return self
                         .emit_property_coalesce_assignment(out, receiver, name, *line, value);
                 }
-                AssignmentTarget::DynamicProperty { .. } => {
-                    unreachable!(
-                        "parser rejects null coalescing assignment for dynamic properties"
+                AssignmentTarget::DynamicProperty {
+                    receiver,
+                    name,
+                    line,
+                } => {
+                    return self.emit_dynamic_property_coalesce_assignment(
+                        out, receiver, name, *line, value,
                     );
                 }
                 AssignmentTarget::StaticProperty {
@@ -20288,9 +20322,22 @@ impl ValueEmitter {
                         out, class_name, name, *line, value,
                     );
                 }
-                AssignmentTarget::DynamicStaticProperty { .. } => {
-                    unreachable!(
-                        "parser rejects null coalescing assignment for dynamic static properties"
+                AssignmentTarget::DynamicStaticPropertyName {
+                    class_name,
+                    name,
+                    line,
+                } => {
+                    return self.emit_dynamic_static_property_name_coalesce_assignment(
+                        out, class_name, name, *line, value,
+                    );
+                }
+                AssignmentTarget::DynamicStaticProperty {
+                    receiver,
+                    name,
+                    line,
+                } => {
+                    return self.emit_dynamic_static_property_coalesce_assignment(
+                        out, receiver, name, *line, value,
                     );
                 }
             }
@@ -22054,6 +22101,11 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
             }
+            AssignmentTarget::DynamicStaticPropertyName { .. } => {
+                unreachable!(
+                    "parser rejects by-reference assignment to dynamic static property names"
+                );
+            }
             AssignmentTarget::DynamicStaticProperty { .. } => {
                 unreachable!("parser rejects by-reference assignment to dynamic static properties");
             }
@@ -22302,6 +22354,32 @@ impl ValueEmitter {
                 out.push_str(value_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
+                out.push_str(");\n");
+                result_temp
+            }
+            AssignmentTarget::DynamicStaticPropertyName {
+                class_name,
+                name,
+                line,
+            } => {
+                let resolved_class_name = self.static_property_class_name(class_name);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+                out.push_str(&c_string(&resolved_class_name));
+                out.push_str("\", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
                 out.push_str(");\n");
                 result_temp
             }
@@ -23065,6 +23143,11 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_static_property_fetch(out, class_name, name, *line),
+            ValueExpr::DynamicStaticPropertyNameFetch {
+                class_name,
+                name,
+                line,
+            } => self.emit_dynamic_static_property_name_fetch(out, class_name, name, *line),
             ValueExpr::DynamicStaticPropertyFetch {
                 receiver,
                 name,
@@ -25228,6 +25311,33 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_dynamic_static_property_name_fetch(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_read_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        result_temp
+    }
+
     fn emit_static_property_reference(
         &mut self,
         out: &mut String,
@@ -26056,8 +26166,9 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&left_lookup);
         out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
         out.push_str(&left_lookup);
-        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str(".value).type != PTN_NULL) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -26095,8 +26206,9 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&lookup_temp);
         out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
         out.push_str(&lookup_temp);
-        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str(".value).type != PTN_NULL) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -26142,8 +26254,9 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&lookup_temp);
         out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
         out.push_str(&lookup_temp);
-        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str(".value).type != PTN_NULL) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -26199,8 +26312,9 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&lookup_temp);
         out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
         out.push_str(&lookup_temp);
-        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str(".value).type != PTN_NULL) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -26215,7 +26329,9 @@ impl ValueEmitter {
         out.push_str(" = ptn_value_snapshot_for_array_path_write(");
         out.push_str(&value_temp);
         out.push_str(");\n");
-        out.push_str("        ptn_runtime_array_path_set(&runtime, \"");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_array_path_set_result(&runtime, \"");
         out.push_str(&c_string(array));
         out.push_str("\", ");
         out.push_str(&path.name);
@@ -26226,34 +26342,6 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        let stored_lookup_temp = self.next_temp();
-        out.push_str("        PtnLookupResult ");
-        out.push_str(&stored_lookup_temp);
-        out.push_str(" = ptn_runtime_array_path_lookup_quiet(&runtime, \"");
-        out.push_str(&c_string(array));
-        out.push_str("\", ");
-        out.push_str(&path.name);
-        out.push_str(", ");
-        out.push_str(&path.len.to_string());
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
-        out.push_str("        if (");
-        out.push_str(&stored_lookup_temp);
-        out.push_str(".exists) {\n");
-        out.push_str("            ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
-        out.push_str(&stored_lookup_temp);
-        out.push_str(".value;\n");
-        out.push_str("        } else {\n");
-        emit_value_cleanup(out, "            ", &format!("{stored_lookup_temp}.value"));
-        out.push_str("            ");
-        out.push_str(&result_temp);
-        out.push_str(" = ptn_value_clone(");
-        out.push_str(&snapshot_temp);
-        out.push_str(");\n");
-        out.push_str("        }\n");
         emit_value_cleanup(out, "        ", &snapshot_temp);
         emit_value_cleanup(out, "        ", &value_temp);
         out.push_str("    }\n");
@@ -26293,8 +26381,9 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&lookup_temp);
         out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
         out.push_str(&lookup_temp);
-        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str(".value).type != PTN_NULL) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -26309,7 +26398,9 @@ impl ValueEmitter {
         out.push_str(" = ptn_value_snapshot_for_array_path_write(");
         out.push_str(&value_temp);
         out.push_str(");\n");
-        out.push_str("        ptn_runtime_array_path_set(&runtime, ");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_array_path_set_result(&runtime, ");
         out.push_str(&name_temp);
         out.push_str(", ");
         out.push_str(&path.name);
@@ -26320,40 +26411,82 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        let stored_lookup_temp = self.next_temp();
-        out.push_str("        PtnLookupResult ");
-        out.push_str(&stored_lookup_temp);
-        out.push_str(" = ptn_runtime_array_path_lookup_quiet(&runtime, ");
-        out.push_str(&name_temp);
-        out.push_str(", ");
-        out.push_str(&path.name);
-        out.push_str(", ");
-        out.push_str(&path.len.to_string());
-        out.push_str(", ");
-        out.push_str(&line.to_string());
-        out.push_str(");\n");
-        out.push_str("        if (");
-        out.push_str(&stored_lookup_temp);
-        out.push_str(".exists) {\n");
-        out.push_str("            ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
-        out.push_str(&stored_lookup_temp);
-        out.push_str(".value;\n");
-        out.push_str("        } else {\n");
-        emit_value_cleanup(out, "            ", &format!("{stored_lookup_temp}.value"));
-        out.push_str("            ");
-        out.push_str(&result_temp);
-        out.push_str(" = ptn_value_clone(");
-        out.push_str(&snapshot_temp);
-        out.push_str(");\n");
-        out.push_str("        }\n");
         emit_value_cleanup(out, "        ", &snapshot_temp);
         emit_value_cleanup(out, "        ", &value_temp);
         out.push_str("    }\n");
         out.push_str("    free(");
         out.push_str(&name_temp);
         out.push_str(");\n");
+        for segment_temp in path.value_temps {
+            emit_value_cleanup(out, "    ", &segment_temp);
+        }
+        result_temp
+    }
+
+    fn emit_value_offset_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        array: &ValueExpr,
+        dimensions: &[Option<ValueExpr>],
+        line: usize,
+        value: &ValueExpr,
+    ) -> String {
+        let array_temp = self.emit_materialized_value(out, array);
+        let path = emit_array_path_segments(out, self, dimensions);
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_value_array_path_lookup_quiet(&runtime, ");
+        out.push_str(&array_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value).type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        let snapshot_temp = self.next_temp();
+        out.push_str("        PtnValue ");
+        out.push_str(&snapshot_temp);
+        out.push_str(" = ptn_value_snapshot_for_array_path_write(");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_array_path_set_result(&runtime, &");
+        out.push_str(&array_temp);
+        out.push_str(", ");
+        out.push_str(&path.name);
+        out.push_str(", ");
+        out.push_str(&path.len.to_string());
+        out.push_str(", ");
+        out.push_str(&snapshot_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &snapshot_temp);
+        emit_value_cleanup(out, "        ", &value_temp);
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &array_temp);
         for segment_temp in path.value_temps {
             emit_value_cleanup(out, "    ", &segment_temp);
         }
@@ -26368,12 +26501,12 @@ impl ValueEmitter {
         line: usize,
         value: &ValueExpr,
     ) -> String {
-        let lookup_receiver_temp = self.emit_materialized_value(out, receiver);
+        let receiver_temp = self.emit_materialized_value(out, receiver);
         let lookup_temp = self.next_temp();
         out.push_str("    PtnLookupResult ");
         out.push_str(&lookup_temp);
         out.push_str(" = ptn_object_property_lookup_quiet(&runtime, ");
-        out.push_str(&lookup_receiver_temp);
+        out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
@@ -26381,7 +26514,6 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        emit_value_cleanup(out, "    ", &lookup_receiver_temp);
 
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -26390,8 +26522,9 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&lookup_temp);
         out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
         out.push_str(&lookup_temp);
-        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str(".value).type != PTN_NULL) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -26400,11 +26533,10 @@ impl ValueEmitter {
         out.push_str("    } else {\n");
         emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
         let value_temp = self.emit_materialized_value(out, value);
-        let write_receiver_temp = self.emit_materialized_value(out, receiver);
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_object_write_property(&runtime, ");
-        out.push_str(&write_receiver_temp);
+        out.push_str(&receiver_temp);
         out.push_str(", \"");
         out.push_str(&c_string(name));
         out.push_str("\", ");
@@ -26414,9 +26546,72 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        emit_value_cleanup(out, "        ", &write_receiver_temp);
         emit_value_cleanup(out, "        ", &value_temp);
         out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
+        result_temp
+    }
+
+    fn emit_dynamic_property_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &ValueExpr,
+        line: usize,
+        value: &ValueExpr,
+    ) -> String {
+        let receiver_temp = self.emit_materialized_value(out, receiver);
+        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_object_property_lookup_quiet(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value).type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_object_write_property(&runtime, ");
+        out.push_str(&receiver_temp);
+        out.push_str(", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &value_temp);
+        out.push_str("    }\n");
+        out.push_str("    free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &receiver_temp);
         result_temp
     }
 
@@ -26449,8 +26644,9 @@ impl ValueEmitter {
         out.push_str("    if (");
         out.push_str(&lookup_temp);
         out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
         out.push_str(&lookup_temp);
-        out.push_str(".value.type != PTN_NULL) {\n");
+        out.push_str(".value).type != PTN_NULL) {\n");
         out.push_str("        ");
         out.push_str(&result_temp);
         out.push_str(" = ");
@@ -26474,6 +26670,131 @@ impl ValueEmitter {
         out.push_str(");\n");
         emit_value_cleanup(out, "        ", &value_temp);
         out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_dynamic_static_property_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        receiver: &ValueExpr,
+        name: &str,
+        line: usize,
+        value: &ValueExpr,
+    ) -> String {
+        let (class_value_temp, class_name_temp) =
+            self.emit_dynamic_class_name_cstr(out, receiver, line);
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_runtime_read_static_property_quiet(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value).type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_write_static_property(&runtime, ");
+        out.push_str(&class_name_temp);
+        out.push_str(", \"");
+        out.push_str(&c_string(name));
+        out.push_str("\", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &value_temp);
+        out.push_str("    }\n");
+        out.push_str("    free(");
+        out.push_str(&class_name_temp);
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &class_value_temp);
+        result_temp
+    }
+
+    fn emit_dynamic_static_property_name_coalesce_assignment(
+        &mut self,
+        out: &mut String,
+        class_name: &str,
+        name: &ValueExpr,
+        line: usize,
+        value: &ValueExpr,
+    ) -> String {
+        let resolved_class_name = self.static_property_class_name(class_name);
+        let name_temp = self.emit_dynamic_property_name(out, name, line);
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_runtime_read_static_property_quiet(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+        out.push_str("    if (");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists && ");
+        out.push_str("ptn_value_deref(");
+        out.push_str(&lookup_temp);
+        out.push_str(".value).type != PTN_NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value;\n");
+        out.push_str("    } else {\n");
+        emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+        let value_temp = self.emit_materialized_value(out, value);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_write_static_property(&runtime, \"");
+        out.push_str(&c_string(&resolved_class_name));
+        out.push_str("\", ");
+        out.push_str(&name_temp);
+        out.push_str(", ");
+        self.emit_access_scope(out);
+        out.push_str(", ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "        ", &value_temp);
+        out.push_str("    }\n");
+        out.push_str("    free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
         result_temp
     }
 
@@ -26787,9 +27108,9 @@ impl ValueEmitter {
                 out.push_str(&result_temp);
                 out.push_str(" = ");
                 out.push_str(&lookup_temp);
-                out.push_str(".exists && ");
+                out.push_str(".exists && ptn_value_deref(");
                 out.push_str(&lookup_temp);
-                out.push_str(".value.type != PTN_NULL;\n");
+                out.push_str(".value).type != PTN_NULL;\n");
                 emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
                 result_temp
             }

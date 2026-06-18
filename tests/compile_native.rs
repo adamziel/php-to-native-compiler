@@ -27820,7 +27820,7 @@ var_dump($source[0][\"leaf\"][\"v\"], $copy[0][\"leaf\"][\"v\"], $read[\"v\"]);"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_value_snapshot_for_array_path_write"));
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_result(&runtime"));
 }
 
 #[test]
@@ -41280,7 +41280,12 @@ $string = \"abc\";\n\
 var_dump($string[1] ??= rhs(\"string-hit\"));\n\
 var_dump($string[5] ??= rhs(\"string-missing\"));\n\
 var_dump($string);\n\
-var_dump($items[\"hit\"], $items[\"nullish\"], $items[\"missing\"], $items[\"nested\"][\"leaf\"], $undef[\"key\"], $nullbase[\"key\"]);\n",
+var_dump($items[\"hit\"], $items[\"nullish\"], $items[\"missing\"], $items[\"nested\"][\"leaf\"], $undef[\"key\"], $nullbase[\"key\"]);\n\
+$refItems = [];\n\
+function &ref_items() { global $refItems; echo \"ref_items\\n\"; return $refItems; }\n\
+var_dump(ref_items()[\"memo\"] ??= rhs(\"value-root\"));\n\
+var_dump(ref_items()[\"memo\"] ??= rhs(\"value-root-hit\"));\n\
+var_dump($refItems[\"memo\"]);\n",
     )
     .unwrap();
 
@@ -41314,13 +41319,20 @@ string(7) \"nullish\"\n\
 string(7) \"missing\"\n\
 string(6) \"nested\"\n\
 string(5) \"undef\"\n\
-string(8) \"nullbase\"\n"
+string(8) \"nullbase\"\n\
+ref_items\n\
+rhs:value-root\n\
+string(10) \"value-root\"\n\
+ref_items\n\
+string(10) \"value-root\"\n\
+string(10) \"value-root\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_path_lookup_quiet(&runtime"));
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_lookup_quiet(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_result(&runtime"));
 }
 
 #[test]
@@ -44097,6 +44109,10 @@ function rhs($label) {
     echo \"rhs:$label\\n\";
     return $label;
 }
+function prop($label, $name) {
+    echo \"prop:$label\\n\";
+    return $name;
+}
 
 $object = new stdClass;
 var_dump(receiver($object, \"missing\")->missing ??= rhs(\"missing\"));
@@ -44104,7 +44120,9 @@ $object->nullish = null;
 var_dump(receiver($object, \"nullish\")->nullish ??= rhs(\"nullish\"));
 $object->hit = \"kept\";
 var_dump(receiver($object, \"hit\")->hit ??= rhs(\"hit\"));
-var_dump($object->missing, $object->nullish, $object->hit);
+var_dump(receiver($object, \"dynamic\")->{prop(\"dynamic\", \"dynamic\")} ??= rhs(\"dynamic\"));
+var_dump(receiver($object, \"dynamic-hit\")->{prop(\"dynamic-hit\", \"dynamic\")} ??= rhs(\"dynamic-hit\"));
+var_dump($object->missing, $object->nullish, $object->hit, $object->dynamic);
 
 $scalar = 3;
 try {
@@ -44124,17 +44142,23 @@ try {
         String::from_utf8(execution.stdout).unwrap(),
         "receiver:missing\n\
 rhs:missing\n\
-receiver:missing\n\
 string(7) \"missing\"\n\
 receiver:nullish\n\
 rhs:nullish\n\
-receiver:nullish\n\
 string(7) \"nullish\"\n\
 receiver:hit\n\
 string(4) \"kept\"\n\
+receiver:dynamic\n\
+prop:dynamic\n\
+rhs:dynamic\n\
+string(7) \"dynamic\"\n\
+receiver:dynamic-hit\n\
+prop:dynamic-hit\n\
+string(7) \"dynamic\"\n\
 string(7) \"missing\"\n\
 string(7) \"nullish\"\n\
 string(4) \"kept\"\n\
+string(7) \"dynamic\"\n\
 rhs:bad\n\
 Attempt to assign property \"bad\" on int\n"
     );
@@ -46451,6 +46475,7 @@ class Counter {
     public static $nullish = null;
     public static $hit = \"kept\";
     public static $selfValue;
+    public static $dynamic;
 
     public static function initSelf() {
         var_dump(self::$selfValue ??= rhs(\"self\"));
@@ -46467,6 +46492,10 @@ var_dump(Counter::$nullish ??= rhs(\"nullish\"));
 var_dump(Counter::$hit ??= rhs(\"hit\"));
 var_dump(Counter::$nullish, Counter::$hit);
 Counter::initSelf();
+$propName = \"dynamic\";
+var_dump(Counter::$$propName ??= rhs(\"dynamic\"));
+var_dump(Counter::$$propName ??= rhs(\"dynamic-hit\"));
+var_dump(Counter::$dynamic);
 ",
     )
     .unwrap();
@@ -46486,6 +46515,10 @@ Counter::initSelf();
             "rhs:self\n",
             "string(4) \"self\"\n",
             "string(4) \"self\"\n",
+            "rhs:dynamic\n",
+            "string(7) \"dynamic\"\n",
+            "string(7) \"dynamic\"\n",
+            "string(7) \"dynamic\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -47540,7 +47573,7 @@ echo $ordered[\"key\"], \"\\n\";\n",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_variable_name(&runtime"));
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_result(&runtime, ptn_tmp_"));
 }
 
 #[test]
@@ -47710,7 +47743,7 @@ string(3) \"abc\"\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, ptn_tmp_"));
     assert!(c_source.contains("ptn_runtime_array_path_lookup_quiet(&runtime, ptn_tmp_"));
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_result(&runtime, ptn_tmp_"));
 }
 
 #[test]
@@ -47917,10 +47950,7 @@ fn parser_rejects_append_null_coalescing_assignment_with_explicit_diagnostics() 
 
     for (name, source) in cases {
         let error = parser::parse(source).unwrap_err();
-        assert_eq!(
-            error.message, "null coalescing assignment cannot use append array access",
-            "{name}"
-        );
+        assert_eq!(error.message, "Cannot use [] for reading", "{name}");
         assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
         let span = error.span.unwrap();
         let operator_offset = source.find("??=").unwrap();
@@ -47972,7 +48002,7 @@ fn phpc_renders_append_null_coalescing_assignment_diagnostic() {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: null coalescing assignment cannot use append array access in {} on line 2\n",
+            "Fatal error: Cannot use [] for reading in {} on line 2\n",
             input.display()
         )
     );

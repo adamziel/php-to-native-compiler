@@ -648,6 +648,7 @@ impl IncludeCollector {
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
             | AssignmentTarget::StaticProperty { .. }
+            | AssignmentTarget::DynamicStaticPropertyName { .. }
             | AssignmentTarget::DynamicStaticProperty { .. } => {}
         }
     }
@@ -749,6 +750,9 @@ impl IncludeCollector {
             }
             Expr::DynamicStaticPropertyFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
+            }
+            Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+                self.collect_expr(name, source_file, source_dir)
             }
             Expr::DynamicClassNameFetch { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
@@ -964,6 +968,9 @@ impl IncludeCollector {
             }
             AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
+            }
+            AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+                self.collect_expr(name, source_file, source_dir)
             }
             AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => Ok(()),
         }

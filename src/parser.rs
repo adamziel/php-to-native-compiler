@@ -7151,6 +7151,28 @@ impl Parser<'_> {
         ))
     }
 
+    fn parse_dynamic_static_property_name(
+        &mut self,
+        dollar_span: SourceSpan,
+    ) -> Result<(Expr, SourceSpan)> {
+        if matches!(self.peek().kind, TokenKind::LeftBrace) {
+            self.advance();
+            let name = self.parse_expr()?;
+            let right_span = self.expect_right_brace()?;
+            return Ok((name, combine_spans(dollar_span, right_span)));
+        }
+
+        if let TokenKind::Variable(name) = self.peek().kind.clone() {
+            let span = self.advance().span;
+            return Ok((Expr::Variable(name, span), combine_spans(dollar_span, span)));
+        }
+
+        Err(Diagnostic::new(
+            "expected static property name after `$`",
+            Some(self.peek().span),
+        ))
+    }
+
     fn parse_static_member_expr(
         &mut self,
         class_name: String,
@@ -7167,6 +7189,14 @@ impl Parser<'_> {
                 class_name,
                 name: member_name,
                 span: combine_spans(class_span, member.span),
+            });
+        }
+        if let TokenKind::Dollar = member.kind {
+            let (name, member_span) = self.parse_dynamic_static_property_name(member.span)?;
+            return Ok(Expr::DynamicStaticPropertyNameFetch {
+                class_name,
+                name: Box::new(name),
+                span: combine_spans(class_span, member_span),
             });
         }
         if let TokenKind::LeftBrace = member.kind {
@@ -9619,6 +9649,9 @@ fn collect_arrow_captures_from_expr(
         Expr::DynamicStaticPropertyFetch { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             if let Some(receiver) = receiver {
                 collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
@@ -9831,6 +9864,9 @@ fn collect_arrow_captures_from_assignment_target(
             collect_arrow_captures_from_expr(name, exclusions, seen, captures);
         }
         AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -15370,6 +15406,9 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. }
         | Expr::PipeValue { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+            validate_control_transfers_in_expr(name)?
+        }
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             if let Some(receiver) = receiver {
                 validate_control_transfers_in_expr(receiver)?;
@@ -15455,6 +15494,9 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
 fn validate_control_transfers_in_assignment_target(target: &AssignmentTarget) -> Result<()> {
     match target {
         AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
@@ -15670,6 +15712,7 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::Property { .. } => return Ok(()),
         AssignmentTarget::DynamicProperty { .. } => return Ok(()),
         AssignmentTarget::StaticProperty { .. } => return Ok(()),
+        AssignmentTarget::DynamicStaticPropertyName { .. } => return Ok(()),
         AssignmentTarget::DynamicStaticProperty { .. } => return Ok(()),
         AssignmentTarget::List(_) => return Ok(()),
     };
@@ -15774,6 +15817,9 @@ fn expr_array_literal_reference_to_variable(
                     .and_then(|value| expr_array_literal_reference_to_variable(value, variable))
             }),
         Expr::DynamicVariable { name, .. } => {
+            expr_array_literal_reference_to_variable(name, variable)
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
             expr_array_literal_reference_to_variable(name, variable)
         }
         Expr::String(_, _)
@@ -15899,7 +15945,8 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
         | Expr::DynamicMethodCall { .. }
         | Expr::PropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
-        | Expr::StaticPropertyFetch { .. } => Ok(()),
+        | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. } => Ok(()),
         Expr::Call { name, span, .. }
             if is_modeled_internal_function_name(name)
                 && !modeled_internal_has_by_ref_parameter(name) =>
@@ -16402,6 +16449,7 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         Expr::PropertyFetch { receiver, .. }
         | Expr::NullsafePropertyFetch { receiver, .. }
         | Expr::DynamicStaticPropertyFetch { receiver, .. } => expr_contains_yield(receiver),
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => expr_contains_yield(name),
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             receiver
                 .as_ref()
@@ -16505,6 +16553,7 @@ fn assignment_target_contains_yield(target: &AssignmentTarget) -> bool {
         } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
         AssignmentTarget::Property { receiver, .. }
         | AssignmentTarget::DynamicStaticProperty { receiver, .. } => expr_contains_yield(receiver),
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => expr_contains_yield(name),
         AssignmentTarget::DynamicProperty { receiver, name, .. } => {
             expr_contains_yield(receiver) || expr_contains_yield(name)
         }
@@ -16839,6 +16888,9 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         }
         Expr::DynamicStaticPropertyFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+            validate_anonymous_functions_in_expr(name, functions)?;
         }
         Expr::DynamicClassNameFetch { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
@@ -18819,6 +18871,15 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             name,
             span,
         }),
+        Expr::DynamicStaticPropertyNameFetch {
+            class_name,
+            name,
+            span,
+        } => Ok(AssignmentTarget::DynamicStaticPropertyName {
+            class_name,
+            name,
+            span,
+        }),
         Expr::DynamicStaticPropertyFetch {
             receiver,
             name,
@@ -19044,6 +19105,7 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
         | AssignmentTarget::Property { span, .. }
         | AssignmentTarget::DynamicProperty { span, .. }
         | AssignmentTarget::StaticProperty { span, .. }
+        | AssignmentTarget::DynamicStaticPropertyName { span, .. }
         | AssignmentTarget::DynamicStaticProperty { span, .. } => *span,
         AssignmentTarget::ArrayDim(target) => target.span,
         AssignmentTarget::List(target) => target.span,
@@ -19136,7 +19198,7 @@ fn validate_coalesce_assignment_target(
         AssignmentTarget::DynamicArrayDim { dimensions, .. } => {
             if dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
+                    "Cannot use [] for reading",
                     Some(span),
                 ));
             }
@@ -19145,7 +19207,7 @@ fn validate_coalesce_assignment_target(
         AssignmentTarget::ArrayDim(target) => {
             if target.dimensions.iter().any(Option::is_none) {
                 return Err(Diagnostic::new(
-                    "null coalescing assignment cannot use append array access",
+                    "Cannot use [] for reading",
                     Some(span),
                 ));
             }
@@ -19163,28 +19225,27 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
-        AssignmentTarget::ValueArrayDim { array, .. } => {
+        AssignmentTarget::ValueArrayDim {
+            array,
+            dimensions,
+            ..
+        } => {
             if let Some(call_span) = modeled_internal_write_context_error_span(array) {
                 return Err(Diagnostic::new(
                     "Cannot use result of built-in function in write context",
                     Some(call_span),
                 ));
             }
-            Err(Diagnostic::new(
-                "null coalescing assignment currently supports variables, array/string offsets, and properties",
-                Some(span),
-            ))
+            if dimensions.iter().any(Option::is_none) {
+                return Err(Diagnostic::new("Cannot use [] for reading", Some(span)));
+            }
+            Ok(())
         }
         AssignmentTarget::Property { .. } => Ok(()),
-        AssignmentTarget::DynamicProperty { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports variables, array/string offsets, and properties",
-            Some(span),
-        )),
+        AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
-        AssignmentTarget::DynamicStaticProperty { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports variables, array/string offsets, and properties",
-            Some(span),
-        )),
+        AssignmentTarget::DynamicStaticPropertyName { .. } => Ok(()),
+        AssignmentTarget::DynamicStaticProperty { .. } => Ok(()),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),
@@ -19231,6 +19292,7 @@ fn validate_expression_assignment_target(
         AssignmentTarget::Property { .. } => Ok(()),
         AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
+        AssignmentTarget::DynamicStaticPropertyName { .. } => Ok(()),
         AssignmentTarget::DynamicStaticProperty { .. } => Ok(()),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "compound assignment expressions currently support variables, array/string offsets, and properties",
@@ -19310,6 +19372,12 @@ fn validate_reference_assignment_target_source(
         AssignmentTarget::DynamicProperty { .. } => {}
         AssignmentTarget::StaticProperty { .. } => {
             return Ok(());
+        }
+        AssignmentTarget::DynamicStaticPropertyName { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
         }
         AssignmentTarget::DynamicStaticProperty { .. } => {
             return Err(Diagnostic::new(
@@ -19583,6 +19651,7 @@ fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
         | Expr::NullsafePropertyFetch { receiver, .. }
         | Expr::DynamicStaticPropertyFetch { receiver, .. }
         | Expr::DynamicClassNameFetch { receiver, .. } => reject_standalone_list_expr(receiver)?,
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => reject_standalone_list_expr(name)?,
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             if let Some(receiver) = receiver {
                 reject_standalone_list_expr(receiver)?;
@@ -19739,6 +19808,9 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         }
         Expr::DynamicStaticPropertyFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
+        }
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+            reject_append_array_read(name)?;
         }
         Expr::DynamicClassNameFetch { receiver, .. } => {
             reject_append_array_read(receiver)?;
@@ -20038,6 +20110,9 @@ fn reject_append_array_read_in_list_assignment_target(target: &ListAssignmentTar
 fn reject_append_array_read_in_assignment_target(target: &AssignmentTarget) -> Result<()> {
     match target {
         AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => {}
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            reject_append_array_read(name)?;
+        }
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             reject_append_array_read(receiver)?;
         }
@@ -20378,6 +20453,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::Clone { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
@@ -20977,6 +21053,9 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. } => false,
+        Expr::DynamicStaticPropertyNameFetch { name, .. } => {
+            expr_uses_this_property(name, property_name)
+        }
     }
 }
 
@@ -21078,6 +21157,9 @@ fn assignment_target_uses_this_property(target: &AssignmentTarget, property_name
         }
         AssignmentTarget::List(list) => {
             list_assignment_target_uses_this_property(list, property_name)
+        }
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            expr_uses_this_property(name, property_name)
         }
         AssignmentTarget::Variable { .. }
         | AssignmentTarget::StaticProperty { .. }
@@ -21280,6 +21362,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }
         | Expr::DynamicClassNameFetch { .. }
@@ -21422,6 +21505,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
+        | Expr::DynamicStaticPropertyNameFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }

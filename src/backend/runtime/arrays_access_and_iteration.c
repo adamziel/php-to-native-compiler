@@ -7772,6 +7772,25 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
     ptn_string_value_refresh(target);
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_string_offset_set_result(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    PtnValue key_value,
+    PtnValue value,
+    size_t line
+) {
+    ptn_runtime_string_offset_set(runtime, target, key_value, value, line);
+    if (target == NULL || target->type != PTN_STRING) {
+        return ptn_null();
+    }
+
+    PtnLookupResult lookup = ptn_string_offset_lookup(runtime, *target, key_value, line, 1);
+    if (!lookup.exists) {
+        return ptn_null();
+    }
+    return lookup.value;
+}
+
 static PTN_UNUSED int ptn_arrayaccess_can_dispatch(
     PtnRuntime *runtime,
     PtnValue container,
@@ -8489,6 +8508,51 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_array_path_lookup_quiet(
     }
 
     PtnValue container = ptn_value_deref(root.value);
+    PtnValue owned_container = ptn_null();
+    int has_owned_container = 0;
+    for (size_t i = 0; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return ptn_lookup_missing();
+        }
+
+        PtnLookupResult result = ptn_offset_lookup(runtime, container, segment->value, line, 1);
+        if (!result.exists || i + 1 == segment_count) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return result;
+        }
+
+        if (has_owned_container) {
+            ptn_value_destroy(&owned_container);
+        }
+        owned_container = result.value;
+        has_owned_container = 1;
+        container = ptn_value_deref(owned_container);
+    }
+
+    if (has_owned_container) {
+        ptn_value_destroy(&owned_container);
+    }
+    return ptn_lookup_missing();
+}
+
+static PTN_UNUSED PtnLookupResult ptn_value_array_path_lookup_quiet(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_lookup_found(ptn_value_clone_deref(target));
+    }
+
+    PtnValue container = ptn_value_deref(target);
     PtnValue owned_container = ptn_null();
     int has_owned_container = 0;
     for (size_t i = 0; i < segment_count; i++) {
@@ -9307,8 +9371,13 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
                 return ptn_null();
             }
-            ptn_runtime_string_offset_set(runtime, slot_value, segments[1].value, value, line);
-            return ptn_value_clone_deref(value);
+            return ptn_runtime_string_offset_set_result(
+                runtime,
+                slot_value,
+                segments[1].value,
+                value,
+                line
+            );
         }
     }
 
@@ -9318,6 +9387,33 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
     }
 
     for (size_t i = 1; i + 1 < segment_count; i++) {
+        if (!segments[i].append) {
+            PtnArrayKey key;
+            if (!ptn_array_path_segment_key(runtime, array, &segments[i], line, &key)) {
+                return ptn_null();
+            }
+            PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+            if (entry != NULL) {
+                PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+                    ? &entry->value.as.reference->value
+                    : &entry->value;
+                PtnValue entry_deref = ptn_value_deref(*entry_value);
+                if (ptn_arrayaccess_can_dispatch(runtime, entry_deref, "offsetGet") ||
+                    ptn_arrayaccess_can_dispatch(runtime, entry_deref, "offsetSet")) {
+                    ptn_array_path_emit_null_key_deprecation(runtime, &segments[i], line, 1);
+                    ptn_array_key_free(key);
+                    return ptn_value_array_path_set_result(
+                        runtime,
+                        entry_value,
+                        segments + i + 1,
+                        segment_count - i - 1,
+                        value,
+                        line
+                    );
+                }
+            }
+            ptn_array_key_free(key);
+        }
         array = ptn_array_descend_for_write(runtime, array, &segments[i], line, 1);
         if (array == NULL) {
             return ptn_null();
@@ -9500,8 +9596,13 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
                 return ptn_null();
             }
-            ptn_runtime_string_offset_set(runtime, slot_value, segments[0].value, value, line);
-            return ptn_value_clone_deref(value);
+            return ptn_runtime_string_offset_set_result(
+                runtime,
+                slot_value,
+                segments[0].value,
+                value,
+                line
+            );
         }
     }
     if (slot != NULL && segment_count == 1) {
@@ -9569,6 +9670,33 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
     }
 
     for (size_t i = 0; i + 1 < segment_count; i++) {
+        if (!segments[i].append) {
+            PtnArrayKey key;
+            if (!ptn_array_path_segment_key(runtime, array, &segments[i], line, &key)) {
+                return ptn_null();
+            }
+            PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+            if (entry != NULL) {
+                PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+                    ? &entry->value.as.reference->value
+                    : &entry->value;
+                PtnValue entry_deref = ptn_value_deref(*entry_value);
+                if (ptn_arrayaccess_can_dispatch(runtime, entry_deref, "offsetGet") ||
+                    ptn_arrayaccess_can_dispatch(runtime, entry_deref, "offsetSet")) {
+                    ptn_array_path_emit_null_key_deprecation(runtime, &segments[i], line, 1);
+                    ptn_array_key_free(key);
+                    return ptn_value_array_path_set_result(
+                        runtime,
+                        entry_value,
+                        segments + i + 1,
+                        segment_count - i - 1,
+                        value,
+                        line
+                    );
+                }
+            }
+            ptn_array_key_free(key);
+        }
         array = ptn_array_descend_for_write(runtime, array, &segments[i], line, 1);
         if (array == NULL) {
             return ptn_null();
@@ -9943,8 +10071,13 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
             ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
             return ptn_null();
         }
-        ptn_runtime_string_offset_set(runtime, target_value, segments[0].value, value, line);
-        return ptn_value_clone_deref(value);
+        return ptn_runtime_string_offset_set_result(
+            runtime,
+            target_value,
+            segments[0].value,
+            value,
+            line
+        );
     }
     if (ptn_weak_map_reject_append_offset(runtime, *target_value, &segments[0])) {
         return ptn_null();
@@ -10002,6 +10135,33 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
     }
 
     for (size_t i = 0; i + 1 < segment_count; i++) {
+        if (!segments[i].append) {
+            PtnArrayKey key;
+            if (!ptn_array_path_segment_key(runtime, array, &segments[i], line, &key)) {
+                return ptn_null();
+            }
+            PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+            if (entry != NULL) {
+                PtnValue *entry_value = entry->value.type == PTN_REFERENCE
+                    ? &entry->value.as.reference->value
+                    : &entry->value;
+                PtnValue entry_deref = ptn_value_deref(*entry_value);
+                if (ptn_arrayaccess_can_dispatch(runtime, entry_deref, "offsetGet") ||
+                    ptn_arrayaccess_can_dispatch(runtime, entry_deref, "offsetSet")) {
+                    ptn_array_path_emit_null_key_deprecation(runtime, &segments[i], line, 1);
+                    ptn_array_key_free(key);
+                    return ptn_value_array_path_set_result(
+                        runtime,
+                        entry_value,
+                        segments + i + 1,
+                        segment_count - i - 1,
+                        value,
+                        line
+                    );
+                }
+            }
+            ptn_array_key_free(key);
+        }
         array = ptn_array_descend_for_write(runtime, array, &segments[i], line, 1);
         if (array == NULL) {
             return ptn_null();

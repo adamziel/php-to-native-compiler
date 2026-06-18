@@ -629,6 +629,11 @@ pub enum AssignmentTarget {
         name: String,
         span: SourceSpan,
     },
+    DynamicStaticPropertyName {
+        class_name: String,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     DynamicStaticProperty {
         receiver: Box<Expr>,
         name: String,
@@ -921,6 +926,11 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    DynamicStaticPropertyNameFetch {
+        class_name: String,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     DynamicStaticPropertyFetch {
         receiver: Box<Expr>,
         name: String,
@@ -1178,6 +1188,7 @@ impl Expr {
             | Expr::NullsafePropertyFetch { span, .. }
             | Expr::DynamicPropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
+            | Expr::DynamicStaticPropertyNameFetch { span, .. }
             | Expr::DynamicStaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
             | Expr::DynamicClassConstantFetch { span, .. }
