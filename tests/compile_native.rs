@@ -21837,6 +21837,46 @@ try {
 }
 
 #[test]
+fn compile_nullable_class_and_scalar_return_type_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-nullable-return-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nullable-return-type-errors.php");
+    let output = root.join("nullable-return-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+class RealClass {}
+function return_class(): ?RealClass { return new stdClass; }
+function return_int(): ?int { return new stdClass; }
+function missing_class(): ?RealClass {}
+function missing_int(): ?int {}
+function nullable_ok(): ?RealClass { return null; }
+
+try { return_class(); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+try { return_int(); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+try { missing_class(); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+try { missing_int(); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+var_dump(nullable_ok());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "return_class(): Return value must be of type ?RealClass, stdClass returned\n\
+return_int(): Return value must be of type ?int, stdClass returned\n\
+missing_class(): Return value must be of type ?RealClass, none returned\n\
+missing_int(): Return value must be of type ?int, none returned\n\
+NULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iterable_object_and_composite_type_hints_to_native_binary() {
     let root = temp_dir("ptn-native-composite-user-type-hints");
     fs::create_dir_all(&root).unwrap();
