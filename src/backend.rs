@@ -166,6 +166,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
         &module.functions,
         &module.classes,
+        runtime_requirements.internal_function_dispatch,
     );
     emit_user_functions(
         &mut out,
@@ -174,6 +175,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
         &module.source_file,
         &module.source_dir,
+        runtime_requirements.internal_function_dispatch,
     );
     if runtime_requirements.internal_function_dispatch {
         emit_user_function_dispatch(&mut out, &module.functions, &module.classes);
@@ -194,6 +196,7 @@ pub fn emit_c(module: &Module) -> String {
             &module.includes,
             &module.source_file,
             &module.source_dir,
+            runtime_requirements.internal_function_dispatch,
         );
     }
     if runtime_requirements.internal_function_dispatch {
@@ -230,6 +233,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.functions,
         &module.classes,
         &module.includes,
+        runtime_requirements.internal_function_dispatch,
     );
     out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
@@ -345,6 +349,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.functions,
         &module.classes,
         &module.includes,
+        runtime_requirements.internal_function_dispatch,
     );
     emit_compile_warnings(&mut out, &module.compile_warnings, &module.source_file);
     emit_legacy_dollar_brace_deprecations(&mut out, &legacy_dollar_brace_deprecations);
@@ -561,7 +566,9 @@ struct RuntimeRequirements {
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     direct_internal_helpers: bool,
+    compact_internal_helpers: bool,
     request_context: bool,
+    known_array_variables: HashSet<String>,
 }
 
 fn variable_needs_request_context(name: &str) -> bool {
@@ -591,21 +598,31 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         runtime::DIRECT_INTERNAL_HELPERS_START,
         runtime::DIRECT_INTERNAL_HELPERS_END,
     );
+    let compact_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::COMPACT_INTERNAL_HELPERS_START,
+        runtime::COMPACT_INTERNAL_HELPERS_END,
+    );
     let internal_functions = runtime_chunk_range(
         runtime_c,
         runtime::INTERNAL_FUNCTIONS_START,
         runtime::INTERNAL_FUNCTIONS_END,
     );
     assert!(
-        direct_helpers.after_end <= internal_functions.start,
-        "runtime direct-helper chunk should precede internal-function chunk"
+        direct_helpers.after_end <= compact_helpers.start
+            && compact_helpers.after_end <= internal_functions.start,
+        "runtime helper chunks should precede internal-function chunk"
     );
 
     out.push_str(&runtime_c[..direct_helpers.start]);
     if requirements.direct_internal_helpers || requirements.internal_function_dispatch {
         out.push_str(&runtime_c[direct_helpers.after_start..direct_helpers.end]);
     }
-    out.push_str(&runtime_c[direct_helpers.after_end..internal_functions.start]);
+    out.push_str(&runtime_c[direct_helpers.after_end..compact_helpers.start]);
+    if requirements.compact_internal_helpers && !requirements.internal_function_dispatch {
+        out.push_str(&runtime_c[compact_helpers.after_start..compact_helpers.end]);
+    }
+    out.push_str(&runtime_c[compact_helpers.after_end..internal_functions.start]);
     if requirements.internal_function_dispatch {
         out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
     }
@@ -1266,8 +1283,16 @@ fn emit_declared_class_new_instance_without_constructor(
     functions: &[FunctionDecl],
     classes: &[ClassDecl],
     includes: &[IncludeFile],
+    full_internal_dispatch: bool,
 ) {
-    let mut values = ValueEmitter::new(source_file, source_dir, functions, classes, includes);
+    let mut values = ValueEmitter::new(
+        source_file,
+        source_dir,
+        functions,
+        classes,
+        includes,
+        full_internal_dispatch,
+    );
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_new_instance_without_constructor(PtnRuntime *caller_runtime, const char *class_name, size_t line) {\n",
     );
@@ -1392,6 +1417,7 @@ fn emit_user_functions(
     includes: &[IncludeFile],
     source_file: &str,
     source_dir: &str,
+    full_internal_dispatch: bool,
 ) {
     for (index, function) in functions.iter().enumerate() {
         let required_parameter_count = function_required_parameter_count(function);
@@ -1584,6 +1610,7 @@ fn emit_user_functions(
             classes,
             includes,
             function,
+            full_internal_dispatch,
         );
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             let guard_required_argument = parameter_index < required_parameter_count
@@ -2544,6 +2571,7 @@ fn emit_include_helpers(
     includes: &[IncludeFile],
     functions: &[FunctionDecl],
     classes: &[ClassDecl],
+    full_internal_dispatch: bool,
 ) {
     for (index, include) in includes.iter().enumerate() {
         out.push_str("\nstatic PTN_UNUSED PtnValue ");
@@ -2567,6 +2595,7 @@ fn emit_include_helpers(
             functions,
             classes,
             includes,
+            full_internal_dispatch,
         );
         let mut control_targets = Vec::new();
         let mut finally_stack = Vec::new();
@@ -2704,12 +2733,20 @@ fn emit_class_constant_initializer_helper(
     includes: &[IncludeFile],
     source_file: &str,
     source_dir: &str,
+    full_internal_dispatch: bool,
 ) {
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_constant_initializer(PtnRuntime *runtime_ptr, const char *class_name, const char *constant_name) {\n",
     );
     out.push_str("#define runtime (*runtime_ptr)\n");
-    let mut values = ValueEmitter::new(source_file, source_dir, functions, classes, includes);
+    let mut values = ValueEmitter::new(
+        source_file,
+        source_dir,
+        functions,
+        classes,
+        includes,
+        full_internal_dispatch,
+    );
     for class in classes {
         if class.constants.is_empty() {
             continue;
@@ -15569,11 +15606,21 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
         if function_has_sensitive_parameters(function) {
             requirements.internal_function_dispatch = true;
         }
+        let previous_known_array_variables =
+            std::mem::take(&mut requirements.known_array_variables);
+        for parameter in &function.parameters {
+            if parameter.is_variadic {
+                requirements
+                    .known_array_variables
+                    .insert(parameter.name.clone());
+            }
+        }
         collect_instructions_runtime_requirements(
             &function.body,
             &module.functions,
             &mut requirements,
         );
+        requirements.known_array_variables = previous_known_array_variables;
     }
     requirements
 }
@@ -15737,12 +15784,14 @@ fn collect_instruction_runtime_requirements(
             name,
             arguments,
             argument_names,
+            argument_unpacks,
             ..
         } => {
             collect_call_runtime_requirements(
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 functions,
                 requirements,
             );
@@ -16140,12 +16189,14 @@ fn collect_value_runtime_requirements(
             name,
             arguments,
             argument_names,
+            argument_unpacks,
             ..
         } => {
             collect_call_runtime_requirements(
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 functions,
                 requirements,
             );
@@ -16169,11 +16220,22 @@ fn collect_value_runtime_requirements(
             receiver,
             name,
             arguments,
+            argument_names,
+            argument_unpacks,
             ..
         } => {
             collect_value_runtime_requirements(receiver, functions, requirements);
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
+            }
+            if is_direct_exception_get_message_call(
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+            ) {
+                requirements.compact_internal_helpers = true;
+                return;
             }
             requirements.method_dispatch = true;
             if name.eq_ignore_ascii_case("setTimestamp") {
@@ -16377,6 +16439,7 @@ fn collect_call_runtime_requirements(
     name: &str,
     arguments: &[ValueExpr],
     argument_names: &[Option<String>],
+    argument_unpacks: &[bool],
     functions: &[FunctionDecl],
     requirements: &mut RuntimeRequirements,
 ) {
@@ -16394,16 +16457,38 @@ fn collect_call_runtime_requirements(
     if is_generated_user_function_call(name, functions) {
         return;
     }
-    if name.eq_ignore_ascii_case("count") || name.eq_ignore_ascii_case("sizeof") {
+    if (name.eq_ignore_ascii_case("count") || name.eq_ignore_ascii_case("sizeof"))
+        && !is_known_array_count_call(arguments, requirements)
+    {
         requirements.method_dispatch = true;
     }
     if is_uri_whatwg_url_static_call_name(name) {
         requirements.method_dispatch = true;
     }
-    if argument_names.iter().all(Option::is_none)
-        && is_direct_internal_helper_call(name, arguments.len())
+    let has_named_arguments = argument_names.iter().any(Option::is_some);
+    let has_unpacked_arguments = argument_unpacks.iter().any(|unpack| *unpack);
+    if !has_named_arguments && name.eq_ignore_ascii_case("var_dump") {
+        requirements.compact_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments && is_direct_array_fill_call(name, arguments, argument_unpacks) {
+        requirements.compact_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && is_direct_internal_helper_call(name, arguments.len(), has_unpacked_arguments)
     {
         requirements.direct_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments && is_direct_array_push_call(name, arguments, argument_unpacks) {
+        requirements.compact_internal_helpers = true;
+        return;
+    }
+    if !has_named_arguments
+        && is_direct_array_uassoc_call(name, arguments, argument_unpacks, functions)
+    {
+        requirements.compact_internal_helpers = true;
         return;
     }
     requirements.internal_function_dispatch = true;
@@ -16463,12 +16548,92 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
     })
 }
 
-fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
+fn is_direct_internal_helper_call(
+    name: &str,
+    argument_count: usize,
+    has_unpacked_arguments: bool,
+) -> bool {
+    if has_unpacked_arguments {
+        return false;
+    }
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
         || (name.eq_ignore_ascii_case("str_repeat") && argument_count == 2)
         || (name.eq_ignore_ascii_case("get_class") && argument_count == 1)
         || name.eq_ignore_ascii_case("var_dump")
+}
+
+fn is_direct_array_push_call(
+    name: &str,
+    arguments: &[ValueExpr],
+    argument_unpacks: &[bool],
+) -> bool {
+    if !name.eq_ignore_ascii_case("array_push")
+        || arguments.is_empty()
+        || argument_unpacks.first().copied().unwrap_or(false)
+    {
+        return false;
+    }
+    matches!(arguments.first(), Some(ValueExpr::Load { .. }))
+        || matches!(
+            arguments
+                .first()
+                .and_then(reference_array_dim_target_from_value),
+            Some(ReferenceTarget::ArrayDim(_))
+        )
+}
+
+fn is_direct_array_fill_call(
+    name: &str,
+    arguments: &[ValueExpr],
+    argument_unpacks: &[bool],
+) -> bool {
+    name.eq_ignore_ascii_case("array_fill")
+        && arguments.len() == 3
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+}
+
+fn is_known_array_count_call(arguments: &[ValueExpr], requirements: &RuntimeRequirements) -> bool {
+    match arguments.first() {
+        Some(ValueExpr::Array(_)) => true,
+        Some(ValueExpr::Load { name, .. }) => requirements.known_array_variables.contains(name),
+        _ => false,
+    }
+}
+
+fn is_direct_array_uassoc_call(
+    name: &str,
+    arguments: &[ValueExpr],
+    argument_unpacks: &[bool],
+    functions: &[FunctionDecl],
+) -> bool {
+    if !(name.eq_ignore_ascii_case("array_diff_uassoc")
+        || name.eq_ignore_ascii_case("array_intersect_uassoc"))
+        || arguments.len() < 3
+        || argument_unpacks.iter().any(|unpack| *unpack)
+    {
+        return false;
+    }
+    let Some(ValueExpr::String(callback_name)) = arguments.last() else {
+        return false;
+    };
+    functions.iter().any(|function| {
+        !function.is_anonymous
+            && function.class_name.is_none()
+            && function.name.eq_ignore_ascii_case(callback_name)
+    })
+}
+
+fn is_direct_exception_get_message_call(
+    name: &str,
+    arguments: &[ValueExpr],
+    argument_names: &[Option<String>],
+    argument_unpacks: &[bool],
+) -> bool {
+    name.eq_ignore_ascii_case("getMessage")
+        && arguments.is_empty()
+        && argument_names.iter().all(Option::is_none)
+        && argument_unpacks.iter().all(|unpack| !*unpack)
 }
 
 enum NamedArgumentBindingError {
@@ -17647,6 +17812,7 @@ struct ValueEmitter {
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
+    full_internal_dispatch: bool,
 }
 
 enum CalledClassOverride {
@@ -19032,6 +19198,7 @@ impl ValueEmitter {
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
         includes: &[IncludeFile],
+        full_internal_dispatch: bool,
     ) -> Self {
         Self::new_with_scope(
             source_file,
@@ -19039,6 +19206,7 @@ impl ValueEmitter {
             functions,
             classes,
             includes,
+            full_internal_dispatch,
             None,
             None,
             None,
@@ -19059,6 +19227,7 @@ impl ValueEmitter {
         classes: &[ClassDecl],
         includes: &[IncludeFile],
         function: &FunctionDecl,
+        full_internal_dispatch: bool,
     ) -> Self {
         let function_magic_name = function
             .trait_method_name
@@ -19081,6 +19250,7 @@ impl ValueEmitter {
             functions,
             classes,
             includes,
+            full_internal_dispatch,
             Some(function_magic_name),
             Some(method_magic_name.as_str()),
             function.class_name.as_deref(),
@@ -19109,6 +19279,7 @@ impl ValueEmitter {
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
         includes: &[IncludeFile],
+        full_internal_dispatch: bool,
         current_function_name: Option<&str>,
         current_method_name: Option<&str>,
         current_class_name: Option<&str>,
@@ -19141,6 +19312,7 @@ impl ValueEmitter {
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),
+            full_internal_dispatch,
         }
     }
 
@@ -27725,6 +27897,297 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_direct_var_dump_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
+        line: usize,
+    ) -> String {
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            let args_temp = self.emit_call_arguments_builder(
+                out,
+                "var_dump",
+                arguments,
+                argument_unpacks,
+                line,
+                false,
+                None,
+            );
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_direct_var_dump(&runtime, ");
+            out.push_str(&args_temp);
+            out.push_str(".len, ");
+            out.push_str(&args_temp);
+            out.push_str(".values, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_call_arguments_destroy(&");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            return result_temp.to_string();
+        }
+
+        if arguments.is_empty() {
+            out.push_str("    PtnValue ");
+            out.push_str(result_temp);
+            out.push_str(" = ptn_direct_var_dump(&runtime, 0, NULL, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return result_temp.to_string();
+        }
+
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, "var_dump", argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_direct_var_dump(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp.to_string()
+    }
+
+    fn emit_direct_array_fill_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, "array_fill", argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ptn_direct_array_fill(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp.to_string()
+    }
+
+    fn direct_user_function_c_name_for_literal_callback(
+        &self,
+        argument: &ValueExpr,
+    ) -> Option<String> {
+        let ValueExpr::String(callback_name) = argument else {
+            return None;
+        };
+        self.direct_user_function_by_resolved_name(callback_name)
+            .and_then(|(index, function)| {
+                if function.class_name.is_none() && !function.is_anonymous {
+                    Some(user_function_c_name(index))
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn emit_direct_array_uassoc_call(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> Option<String> {
+        if arguments.len() < 3 {
+            return None;
+        }
+        let callback_c_name =
+            self.direct_user_function_c_name_for_literal_callback(arguments.last()?)?;
+        let array_arguments = &arguments[..arguments.len() - 1];
+        let helper = if name.eq_ignore_ascii_case("array_diff_uassoc") {
+            "ptn_direct_array_diff_uassoc"
+        } else if name.eq_ignore_ascii_case("array_intersect_uassoc") {
+            "ptn_direct_array_intersect_uassoc"
+        } else {
+            return None;
+        };
+
+        let mut temps = Vec::with_capacity(array_arguments.len());
+        for (argument_index, argument) in array_arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+        }
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+        out.push_str("    PtnValue ");
+        out.push_str(result_temp);
+        out.push_str(" = ");
+        out.push_str(helper);
+        out.push_str("(&runtime, ");
+        out.push_str(&array_arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&callback_c_name);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        Some(result_temp.to_string())
+    }
+
+    fn emit_direct_array_push_unpack_call(
+        &mut self,
+        out: &mut String,
+        arguments: &[ValueExpr],
+        argument_unpacks: &[bool],
+        line: usize,
+    ) -> Option<String> {
+        if !argument_unpacks.iter().any(|unpack| *unpack)
+            || argument_unpacks.first().copied().unwrap_or(false)
+        {
+            return None;
+        }
+        let first_argument = arguments.first()?;
+        let variable_name = match first_argument {
+            ValueExpr::Load { name, .. } => Some(name.as_str()),
+            _ => None,
+        };
+        let path_target = if variable_name.is_none() {
+            match reference_array_dim_target_from_value(first_argument) {
+                Some(ReferenceTarget::ArrayDim(target)) => Some(target),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if variable_name.is_none() && path_target.is_none() {
+            return None;
+        }
+
+        let path = path_target
+            .as_ref()
+            .map(|target| emit_array_path_segments(out, self, &target.dimensions));
+        let array_temp = variable_name.map(|_| self.emit_materialized_value(out, first_argument));
+        let value_unpacks: &[bool] = if argument_unpacks.len() > 1 {
+            &argument_unpacks[1..]
+        } else {
+            &[]
+        };
+        let values_temp = self.emit_call_arguments_builder(
+            out,
+            "array_push",
+            &arguments[1..],
+            value_unpacks,
+            line,
+            false,
+            None,
+        );
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        if let Some(variable_name) = variable_name {
+            out.push_str("ptn_direct_array_push_variable(&runtime, \"");
+            out.push_str(&c_string(variable_name));
+            out.push_str("\", ");
+            out.push_str(array_temp.as_ref().expect("variable mutator temp"));
+            out.push_str(", ");
+            out.push_str(&values_temp);
+            out.push_str(".len, ");
+            out.push_str(&values_temp);
+            out.push_str(".values");
+        } else {
+            let target = path_target.as_ref().expect("array path mutator target");
+            let path = path.as_ref().expect("array path mutator segments");
+            out.push_str("ptn_direct_array_push_path(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(", ");
+            out.push_str(&values_temp);
+            out.push_str(".len, ");
+            out.push_str(&values_temp);
+            out.push_str(".values");
+        }
+        out.push_str(");\n");
+        out.push_str("    ptn_call_arguments_destroy(&");
+        out.push_str(&values_temp);
+        out.push_str(");\n");
+        if let Some(array_temp) = &array_temp {
+            emit_value_cleanup(out, "    ", array_temp);
+        }
+        if let Some(path) = path {
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
+        Some(result_temp)
+    }
+
     fn emit_internal_call(
         &mut self,
         out: &mut String,
@@ -27935,6 +28398,53 @@ impl ValueEmitter {
                     &method_name,
                     line,
                 );
+                return result_temp;
+            }
+        }
+        if !self.full_internal_dispatch
+            && !has_named_arguments
+            && direct_user.is_none()
+            && name.eq_ignore_ascii_case("var_dump")
+        {
+            return self.emit_direct_var_dump_call(
+                out,
+                &result_temp,
+                arguments,
+                argument_unpacks,
+                line,
+            );
+        }
+        if !self.full_internal_dispatch
+            && !has_named_arguments
+            && !has_unpacked_arguments
+            && direct_user.is_none()
+            && name.eq_ignore_ascii_case("array_fill")
+            && arguments.len() == 3
+        {
+            return self.emit_direct_array_fill_call(out, &result_temp, arguments, line);
+        }
+        if !self.full_internal_dispatch
+            && !has_named_arguments
+            && !has_unpacked_arguments
+            && direct_user.is_none()
+            && (name.eq_ignore_ascii_case("array_diff_uassoc")
+                || name.eq_ignore_ascii_case("array_intersect_uassoc"))
+        {
+            if let Some(result_temp) =
+                self.emit_direct_array_uassoc_call(out, &result_temp, name, arguments, line)
+            {
+                return result_temp;
+            }
+        }
+        if !self.full_internal_dispatch
+            && !has_named_arguments
+            && has_unpacked_arguments
+            && direct_user.is_none()
+            && name.eq_ignore_ascii_case("array_push")
+        {
+            if let Some(result_temp) =
+                self.emit_direct_array_push_unpack_call(out, arguments, argument_unpacks, line)
+            {
                 return result_temp;
             }
         }
@@ -29243,10 +29753,17 @@ impl ValueEmitter {
         }
 
         let helpers = if name.eq_ignore_ascii_case("array_push") {
-            Some((
-                "ptn_runtime_array_push_variable",
-                "ptn_runtime_array_push_path",
-            ))
+            if self.full_internal_dispatch {
+                Some((
+                    "ptn_runtime_array_push_variable",
+                    "ptn_runtime_array_push_path",
+                ))
+            } else {
+                Some((
+                    "ptn_direct_array_push_variable",
+                    "ptn_direct_array_push_path",
+                ))
+            }
         } else if name.eq_ignore_ascii_case("array_unshift") {
             Some((
                 "ptn_runtime_array_unshift_variable",
@@ -29608,6 +30125,24 @@ impl ValueEmitter {
         }
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
+        if !self.full_internal_dispatch
+            && is_direct_exception_get_message_call(
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+            )
+        {
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_direct_exception_get_message(&runtime, ");
+            out.push_str(&receiver_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &receiver_temp);
+            return result_temp;
+        }
         let declared_signature =
             self.declared_instance_method_signature_for_receiver(receiver, name);
         let no_discard_value = discarded.then(|| ValueExpr::MethodCall {
