@@ -1630,6 +1630,7 @@ static PTN_UNUSED int ptn_weak_map_offset_isset(
     PtnValue key_value,
     size_t line
 );
+static PTN_UNUSED size_t ptn_runtime_collect_weak_map_cycles(PtnRuntime *runtime);
 static PTN_UNUSED PtnValue ptn_reflection_property_new(
     PtnRuntime *runtime,
     size_t argc,

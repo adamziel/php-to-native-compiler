@@ -9510,6 +9510,43 @@ var_dump(count($map), count($clone));
 }
 
 #[test]
+fn compile_weak_map_self_cycle_gc_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-self-cycle-gc");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map-self-cycle-gc.php");
+    let output = root.join("weak-map-self-cycle-gc-bin");
+    fs::write(
+        &input,
+        "<?php
+class Value {
+    public function __construct(public readonly string $value) {}
+}
+
+$map = new WeakMap;
+$obj = new Value('a');
+$map[$obj] = [$obj, $map];
+$ref = WeakReference::create($map);
+var_dump(count($map), $ref->get() instanceof WeakMap);
+$obj = null;
+$map = null;
+gc_collect_cycles();
+var_dump($ref->get());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nbool(true)\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_var_dump_recursive_object_to_native_binary() {
     let root = temp_dir("ptn-native-var-dump-recursive-object");
     fs::create_dir_all(&root).unwrap();

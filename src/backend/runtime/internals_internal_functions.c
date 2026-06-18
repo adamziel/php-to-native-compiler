@@ -44943,10 +44943,16 @@ static PtnValue ptn_internal_memory_reset_peak_usage(PtnRuntime *runtime, size_t
 }
 
 static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
+    size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
+    if (weak_map_cycles > 0) {
+        if (weak_map_cycles > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)weak_map_cycles);
+    }
     if (ptn_intl_cycle_collection_pending) {
         ptn_intl_cycle_collection_pending = 0;
         return ptn_int(1);
@@ -59324,6 +59330,172 @@ static PTN_UNUSED int ptn_weak_map_offset_isset(
         return 0;
     }
     return ptn_value_deref(map->values[index]).type != PTN_NULL;
+}
+
+static size_t ptn_weak_map_count_exclusive_value_object_refs(
+    PtnValue value,
+    PtnObject *target,
+    size_t depth
+) {
+    if (target == NULL || depth > 64) {
+        return 0;
+    }
+    if (value.type == PTN_REFERENCE) {
+        if (value.as.reference == NULL || value.as.reference->refcount > 1) {
+            return 0;
+        }
+        return ptn_weak_map_count_exclusive_value_object_refs(
+            value.as.reference->value,
+            target,
+            depth + 1
+        );
+    }
+
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        PtnObject *object = value.as.object;
+        if (object == NULL) {
+            return 0;
+        }
+        if (object == target) {
+            return 1;
+        }
+        if (object->refcount > 1 || object->properties == NULL) {
+            return 0;
+        }
+        size_t count = 0;
+        for (size_t i = 0; i < object->properties->len; i++) {
+            count += ptn_weak_map_count_exclusive_value_object_refs(
+                object->properties->entries[i].value,
+                target,
+                depth + 1
+            );
+        }
+        return count;
+    }
+    if (value.type == PTN_ARRAY) {
+        PtnArray *array = value.as.array;
+        if (array == NULL || array->refcount > 1) {
+            return 0;
+        }
+        size_t count = 0;
+        for (size_t i = 0; i < array->len; i++) {
+            count += ptn_weak_map_count_exclusive_value_object_refs(
+                array->entries[i].value,
+                target,
+                depth + 1
+            );
+        }
+        return count;
+    }
+    return 0;
+}
+
+static size_t ptn_weak_map_count_weak_value_refs_to_object(
+    PtnRuntime *root,
+    PtnObject *target
+) {
+    if (root == NULL || target == NULL || target->refcount == 0) {
+        return 0;
+    }
+
+    size_t count = 0;
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        PtnObject *owner = root->live_objects[i];
+        if (owner == NULL ||
+            owner->refcount == 0 ||
+            !ptn_internal_class_name_is_weak_map(owner->class_name) ||
+            owner->native_data == NULL) {
+            continue;
+        }
+
+        PtnWeakMapData *map = (PtnWeakMapData *)owner->native_data;
+        for (size_t entry = 0; entry < map->len; entry++) {
+            int target_is_owner = owner == target;
+            int target_is_key =
+                map->objects[entry] == target &&
+                map->object_ids[entry] == target->object_id;
+            if (!target_is_owner && !target_is_key) {
+                continue;
+            }
+            count += ptn_weak_map_count_exclusive_value_object_refs(
+                map->values[entry],
+                target,
+                0
+            );
+        }
+    }
+    return count;
+}
+
+static int ptn_weak_map_object_is_weakly_held_only(PtnRuntime *root, PtnObject *target) {
+    if (root == NULL || target == NULL || target->refcount == 0) {
+        return 0;
+    }
+    size_t weak_refs = ptn_weak_map_count_weak_value_refs_to_object(root, target);
+    return weak_refs != 0 && weak_refs >= target->refcount;
+}
+
+static size_t ptn_weak_map_collect_object_cycles(PtnRuntime *root, PtnObject *owner) {
+    if (root == NULL ||
+        owner == NULL ||
+        owner->refcount == 0 ||
+        !ptn_internal_class_name_is_weak_map(owner->class_name) ||
+        owner->native_data == NULL) {
+        return 0;
+    }
+
+    PtnWeakMapData *map = (PtnWeakMapData *)owner->native_data;
+    ptn_weak_map_prune(map);
+    int owner_weak_only = ptn_weak_map_object_is_weakly_held_only(root, owner);
+    size_t removed = 0;
+    int retained_owner = 0;
+    size_t index = 0;
+    while (index < map->len) {
+        PtnObject *key = map->objects[index];
+        int key_weak_only = ptn_weak_map_object_is_weakly_held_only(root, key);
+        if (!owner_weak_only && !key_weak_only) {
+            index++;
+            continue;
+        }
+        if (!retained_owner) {
+            ptn_object_retain(owner);
+            retained_owner = 1;
+        }
+        ptn_weak_map_remove_at(map, index);
+        removed++;
+    }
+    if (retained_owner) {
+        ptn_object_release(owner);
+    }
+    return removed;
+}
+
+static PTN_UNUSED size_t ptn_runtime_collect_weak_map_cycles(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return 0;
+    }
+
+    size_t collected = 0;
+    for (;;) {
+        size_t pass_collected = 0;
+        for (size_t i = 0; i < root->live_objects_len; i++) {
+            PtnObject *object = root->live_objects[i];
+            pass_collected = ptn_weak_map_collect_object_cycles(root, object);
+            if (pass_collected != 0) {
+                break;
+            }
+        }
+        if (pass_collected == 0) {
+            break;
+        }
+        collected += pass_collected;
+        if (collected > root->live_objects_len + 1024) {
+            break;
+        }
+    }
+    return collected;
 }
 
 static PTN_UNUSED PtnValue ptn_zip_archive_new(
