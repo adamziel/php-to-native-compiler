@@ -8852,6 +8852,39 @@ echo \"|\", $contents, \"|\", $length, \"|\", ob_get_level(), \"\\n\";\n",
 }
 
 #[test]
+fn compile_exit_flushes_throwing_output_buffer_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-exit-throwing-output-buffer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exit-throwing-output-buffer.php");
+    let output = root.join("exit-throwing-output-buffer-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ob_start(function ($text) {\n\
+    fwrite(STDOUT, \"Handler: \" . $text);\n\
+    throw new Exception('test');\n\
+}, chunk_size: 10);\n\
+try {\n\
+    exit(\"Hello world!\\n\");\n\
+} catch (Throwable $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), PHP_EOL;\n\
+}\n\
+echo \"After?\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Handler: Hello world!\nHello world!\nException: test\nAfter?\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_output_buffer_captures_var_dump_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-var-dump");
     fs::create_dir_all(&root).unwrap();
@@ -38587,6 +38620,47 @@ L1: if ($s != \"X\") {
 }
 
 #[test]
+fn compile_goto_into_try_body_enters_try_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-goto-into-try-body");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("goto-into-try-body.php");
+    let output = root.join("goto-into-try-body-bin");
+    fs::write(
+        &input,
+        "<?php
+goto a;
+try {
+    echo \"1\";
+a:
+    echo \"2\";
+    throw new Exception();
+} catch (Exception $e) {
+    echo \"3\";
+}
+echo \"4\";
+goto b;
+try {
+    echo \"5\";
+    throw new Exception();
+} catch (Exception $e) {
+    echo \"6\";
+b:
+    echo \"7\";
+}
+echo \"8\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "23478\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_goto_within_finally_to_native_binary() {
     let root = temp_dir("ptn-native-goto-within-finally");
     fs::create_dir_all(&root).unwrap();
@@ -38943,6 +39017,45 @@ var_dump($o->die());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(5)\nint(10)\nNULL\nNULL\nint(20)\nint(15)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assert_exit_and_die_operands_render_canonical_exit_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-exit-die-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-exit-die-text.php");
+    let output = root.join("assert-exit-die-text-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+ini_set('zend.assertions', '1');\n\
+foreach ([\n\
+    function () { assert(0 && die); },\n\
+    function () { assert(0 && die()); },\n\
+    function () { assert(0 && exit); },\n\
+    function () { assert(0 && exit()); },\n\
+] as $run) {\n\
+    try {\n\
+        $run();\n\
+    } catch (Throwable $e) {\n\
+        echo $e::class, ': ', $e->getMessage(), PHP_EOL;\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "AssertionError: assert(0 && \\exit())\n\
+AssertionError: assert(0 && \\exit())\n\
+AssertionError: assert(0 && \\exit())\n\
+AssertionError: assert(0 && \\exit())\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

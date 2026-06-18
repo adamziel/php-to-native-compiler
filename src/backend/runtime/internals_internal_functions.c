@@ -1560,6 +1560,10 @@ static PtnValue ptn_output_buffer_apply_callback(PtnRuntime *runtime, PtnOutputB
         runtime->trace_frame = saved_trace_frame;
         runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
         runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
+        PtnValue original_output = ptn_value_deref(original);
+        if (original_output.type == PTN_STRING) {
+            ptn_output_write(runtime, (const char *)original_output.as.string.data, original_output.as.string.len);
+        }
         ptn_value_destroy(&original);
         ptn_output_buffer_rethrow_active_exception(runtime);
     }

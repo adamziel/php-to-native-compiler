@@ -13423,7 +13423,52 @@ fn emit_try(
     };
     let catch_active_temp =
         (!finally_body.is_empty() && !catches.is_empty()).then(|| values.next_temp());
+    let body_labels = instruction_labels_excluding_nested_try(body);
+    let body_gotos = instruction_gotos(body);
+    let can_scope_body_labels = !body_labels.is_empty()
+        && body_gotos
+            .iter()
+            .all(|label| body_labels.contains(label.as_str()));
+    let body_entry_scope = can_scope_body_labels.then(|| values.next_label("ptn_try_body_labels"));
+    let body_entry_target_temp = body_entry_scope.as_ref().map(|_| values.next_temp());
+    let body_entry_start_label = body_entry_scope
+        .as_ref()
+        .map(|_| values.next_label("ptn_try_body_entry"));
+    let mut body_entry_labels = body_labels.iter().cloned().collect::<Vec<_>>();
+    body_entry_labels.sort();
     out.push_str("    {\n");
+    if let (Some(entry_target_temp), Some(entry_start_label)) =
+        (&body_entry_target_temp, &body_entry_start_label)
+    {
+        out.push_str("        volatile int ");
+        out.push_str(entry_target_temp);
+        out.push_str(" = 0;\n");
+        for label in &body_entry_labels {
+            let public_label = c_label_with_scope(label, label_scope);
+            emit_label_reference(out, &public_label);
+        }
+        out.push_str("        goto ");
+        out.push_str(entry_start_label);
+        out.push_str(";\n");
+        for (index, label) in body_entry_labels.iter().enumerate() {
+            let public_label = c_label_with_scope(label, label_scope);
+            out.push_str("        ");
+            out.push_str(&public_label);
+            out.push_str(":\n");
+            out.push_str("        ");
+            out.push_str(entry_target_temp);
+            out.push_str(" = ");
+            out.push_str(&(index + 1).to_string());
+            out.push_str(";\n");
+            out.push_str("        goto ");
+            out.push_str(entry_start_label);
+            out.push_str(";\n");
+        }
+        out.push_str("        ");
+        out.push_str(entry_start_label);
+        out.push_str(":\n");
+        out.push_str("        ;\n");
+    }
     out.push_str("        PtnTryFrame ");
     out.push_str(&frame_temp);
     out.push_str(";\n");
@@ -13475,6 +13520,25 @@ fn emit_try(
     out.push_str("        if (setjmp(");
     out.push_str(&frame_temp);
     out.push_str(".jump) == 0) {\n");
+    if let (Some(entry_target_temp), Some(entry_scope)) =
+        (&body_entry_target_temp, &body_entry_scope)
+    {
+        out.push_str("            if (");
+        out.push_str(entry_target_temp);
+        out.push_str(" != 0) {\n");
+        out.push_str("                switch (");
+        out.push_str(entry_target_temp);
+        out.push_str(") {\n");
+        for (index, label) in body_entry_labels.iter().enumerate() {
+            out.push_str("                    case ");
+            out.push_str(&(index + 1).to_string());
+            out.push_str(": goto ");
+            out.push_str(&c_label_with_scope(label, Some(entry_scope)));
+            out.push_str(";\n");
+        }
+        out.push_str("                }\n");
+        out.push_str("            }\n");
+    }
     for body_instruction in body {
         emit_instruction(
             out,
@@ -13484,7 +13548,7 @@ fn emit_try(
             finally_stack,
             source_path,
             body_return_target,
-            label_scope,
+            body_entry_scope.as_deref().or(label_scope),
         );
     }
     out.push_str("            ptn_try_frame_pop(&runtime, &");
@@ -14011,6 +14075,12 @@ fn instruction_labels(instructions: &[Instruction]) -> HashSet<String> {
     labels
 }
 
+fn instruction_labels_excluding_nested_try(instructions: &[Instruction]) -> HashSet<String> {
+    let mut labels = HashSet::new();
+    collect_instruction_labels_excluding_nested_try(instructions, &mut labels);
+    labels
+}
+
 fn collect_instruction_labels(instructions: &[Instruction], labels: &mut HashSet<String>) {
     for instruction in instructions {
         match instruction {
@@ -14052,6 +14122,103 @@ fn collect_instruction_labels(instructions: &[Instruction], labels: &mut HashSet
             Instruction::Switch { cases, .. } => {
                 for case in cases {
                     collect_instruction_labels(&case.body, labels);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_instruction_labels_excluding_nested_try(
+    instructions: &[Instruction],
+    labels: &mut HashSet<String>,
+) {
+    for instruction in instructions {
+        match instruction {
+            Instruction::Label { name } => {
+                labels.insert(name.clone());
+            }
+            Instruction::Try { .. } => {}
+            Instruction::Branch {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_instruction_labels_excluding_nested_try(then_body, labels);
+                collect_instruction_labels_excluding_nested_try(else_body, labels);
+            }
+            Instruction::While { body, .. }
+            | Instruction::DoWhile { body, .. }
+            | Instruction::Foreach { body, .. } => {
+                collect_instruction_labels_excluding_nested_try(body, labels)
+            }
+            Instruction::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_instruction_labels_excluding_nested_try(initializers, labels);
+                collect_instruction_labels_excluding_nested_try(updates, labels);
+                collect_instruction_labels_excluding_nested_try(body, labels);
+            }
+            Instruction::Switch { cases, .. } => {
+                for case in cases {
+                    collect_instruction_labels_excluding_nested_try(&case.body, labels);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn instruction_gotos(instructions: &[Instruction]) -> HashSet<String> {
+    let mut labels = HashSet::new();
+    collect_instruction_gotos(instructions, &mut labels);
+    labels
+}
+
+fn collect_instruction_gotos(instructions: &[Instruction], labels: &mut HashSet<String>) {
+    for instruction in instructions {
+        match instruction {
+            Instruction::Goto { label } => {
+                labels.insert(label.clone());
+            }
+            Instruction::Try {
+                body,
+                catches,
+                finally_body,
+            } => {
+                collect_instruction_gotos(body, labels);
+                for catch in catches {
+                    collect_instruction_gotos(&catch.body, labels);
+                }
+                collect_instruction_gotos(finally_body, labels);
+            }
+            Instruction::Branch {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_instruction_gotos(then_body, labels);
+                collect_instruction_gotos(else_body, labels);
+            }
+            Instruction::While { body, .. }
+            | Instruction::DoWhile { body, .. }
+            | Instruction::Foreach { body, .. } => collect_instruction_gotos(body, labels),
+            Instruction::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_instruction_gotos(initializers, labels);
+                collect_instruction_gotos(updates, labels);
+                collect_instruction_gotos(body, labels);
+            }
+            Instruction::Switch { cases, .. } => {
+                for case in cases {
+                    collect_instruction_gotos(&case.body, labels);
                 }
             }
             _ => {}
@@ -16478,6 +16645,20 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static OB_START_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "callback",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "chunk_size",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "flags",
+            default: Some(InternalParameterDefault::Int(112)),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
@@ -16495,6 +16676,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&XMLWRITER_FLUSH_PARAMETERS)
     } else if name.eq_ignore_ascii_case("xmlwriter_start_document") {
         Some(&XMLWRITER_START_DOCUMENT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("ob_start") {
+        Some(&OB_START_PARAMETERS)
     } else {
         None
     }
@@ -16689,6 +16872,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("array_walk_recursive")
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
+        || name.eq_ignore_ascii_case("ob_start")
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("preg_replace_callback_array")
         || name.eq_ignore_ascii_case("register_shutdown_function")
@@ -17343,7 +17527,11 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     })?;
     let optimization_args = cc_optimization_args(c_source.len())?;
     let mut command = Command::new("cc");
-    command.arg("-std=c11").arg("-Wall").arg("-Wextra");
+    command
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Wno-uninitialized");
     for arg in optimization_args {
         command.arg(arg);
     }

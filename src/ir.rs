@@ -4167,6 +4167,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::Null(_) => "null".to_string(),
         Expr::Variable(name, _) => format!("${name}"),
         Expr::DynamicVariable { name, .. } => format!("$${}", assertion_expr_text(name)),
+        Expr::Constant(name, _) if assertion_is_exit_construct_name(name) => {
+            assertion_exit_construct_text(&[])
+        }
         Expr::Constant(name, _) => name.clone(),
         Expr::MagicConstant(kind, _) => assertion_magic_constant_text(*kind).to_string(),
         Expr::IncDec {
@@ -4185,6 +4188,9 @@ fn assertion_expr_text(expr: &Expr) -> String {
             assertion_assignment_target_text(target),
             assertion_expr_text(source)
         ),
+        Expr::Call {
+            name, arguments, ..
+        } if assertion_is_exit_construct_name(name) => assertion_exit_construct_text(arguments),
         Expr::Call {
             name, arguments, ..
         } => format!("{}({})", name, assertion_argument_list_text(arguments)),
@@ -4411,6 +4417,14 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::PipeValue { expr, .. } => assertion_expr_text(expr),
         Expr::AnonymousFunction(function) => assertion_anonymous_function_text(function),
     }
+}
+
+fn assertion_is_exit_construct_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("exit") || name.eq_ignore_ascii_case("die")
+}
+
+fn assertion_exit_construct_text(arguments: &[Expr]) -> String {
+    format!("\\exit({})", assertion_argument_list_text(arguments))
 }
 
 fn assertion_match_arm_text(arm: &AstMatchArm) -> String {
