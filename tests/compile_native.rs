@@ -36929,6 +36929,45 @@ var_dump($copy);
 }
 
 #[test]
+fn compile_array_walk_exception_trace_dumps_closure_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-closure-trace-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-closure-trace-dump.php");
+    let output = root.join("array-walk-closure-trace-dump-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$items = [1, 2];\n\
+try {\n\
+    array_walk($items, function($value, $key) {\n\
+        if ($value === 2) {\n\
+            throw new Exception(\"stop\");\n\
+        }\n\
+    });\n\
+} catch (Exception $e) {\n\
+    $trace = $e->getTrace();\n\
+    var_dump($trace[1][\"args\"][1]);\n\
+}\n",
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(Closure)#"), "{stdout}");
+    assert!(stdout.contains(" (4) {\n"), "{stdout}");
+    assert!(stdout.contains("[\"name\"]=>"), "{stdout}");
+    assert!(stdout.contains("[\"file\"]=>"), "{stdout}");
+    assert!(stdout.contains("[\"line\"]=>"), "{stdout}");
+    assert!(stdout.contains("[\"parameter\"]=>"), "{stdout}");
+    assert!(stdout.contains("[\"$value\"]=>"), "{stdout}");
+    assert!(stdout.contains("[\"$key\"]=>"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_copy_on_write_detaches_shared_payloads_to_native_binary() {
     let root = temp_dir("ptn-native-array-cow-detach");
     fs::create_dir_all(&root).unwrap();

@@ -405,6 +405,16 @@ static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata meta
     return fallback;
 }
 
+typedef struct {
+    int found;
+    const char *file;
+    size_t file_len;
+    size_t line;
+} PtnClosureSourceLocation;
+
+static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure);
+static size_t ptn_closure_dump_field_count(PtnClosure *closure);
+
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
 static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -1256,12 +1266,16 @@ static PTN_UNUSED void ptn_direct_value_var_dump_exception(
 }
 
 static PTN_UNUSED size_t ptn_direct_closure_dump_field_count(PtnClosure *closure) {
-    if (closure == NULL || !closure->has_wrapped_callable) {
+    if (closure == NULL) {
         return 0;
     }
     PtnFunctionMetadata metadata = closure->metadata;
+    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     size_t count = 0;
-    if (metadata.found && metadata.name != NULL) {
+    if (location.found) {
+        count += 3;
+    }
+    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         count++;
     }
     if (metadata.found && metadata.parameter_count > 0) {
@@ -1303,15 +1317,34 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure(
     size_t indent
 ) {
     PtnFunctionMetadata metadata = closure->metadata;
+    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     size_t field_count = ptn_direct_closure_dump_field_count(closure);
     ptn_direct_dump_printf(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    if (location.found) {
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"name\"]=>\n");
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_printf(runtime, "string(%zu) \"", strlen(closure->display_name));
+        ptn_direct_dump_write_cstr(runtime, closure->display_name);
+        ptn_direct_dump_write_cstr(runtime, "\"\n");
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"file\"]=>\n");
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_printf(runtime, "string(%zu) \"", location.file_len);
+        ptn_direct_dump_write(runtime, location.file, location.file_len);
+        ptn_direct_dump_write_cstr(runtime, "\"\n");
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"line\"]=>\n");
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_printf(runtime, "int(%zu)\n", location.line);
+    }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "[\"function\"]=>\n");
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "string(%zu) \"%s\"\n", strlen(metadata.name), metadata.name);
     }
-    if (closure->has_wrapped_callable && metadata.found && metadata.parameter_count > 0) {
+    if (metadata.found && metadata.parameter_count > 0) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "[\"parameter\"]=>\n");
         ptn_direct_value_var_dump_closure_parameters(runtime, metadata, indent + 1);
@@ -2295,7 +2328,60 @@ static PTN_UNUSED void ptn_direct_var_dump_closure_indented(
     PtnClosure *closure,
     size_t indent
 ) {
-    ptn_direct_var_dump_writef(runtime, "object(Closure)#%zu (0) {\n", closure->object_id);
+    PtnFunctionMetadata metadata = closure->metadata;
+    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
+    size_t field_count = ptn_closure_dump_field_count(closure);
+    ptn_direct_var_dump_writef(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    if (location.found) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"name\"]=>\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_writef(runtime, "string(%zu) \"", strlen(closure->display_name));
+        ptn_output_write_cstr(runtime, closure->display_name);
+        ptn_output_write_cstr(runtime, "\"\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"file\"]=>\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_writef(runtime, "string(%zu) \"", location.file_len);
+        ptn_output_write(runtime, location.file, location.file_len);
+        ptn_output_write_cstr(runtime, "\"\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"line\"]=>\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_writef(runtime, "int(%zu)\n", location.line);
+    }
+    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"function\"]=>\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_writef(runtime, "string(%zu) \"", strlen(metadata.name));
+        ptn_output_write_cstr(runtime, metadata.name);
+        ptn_output_write_cstr(runtime, "\"\n");
+    }
+    if (metadata.found && metadata.parameter_count > 0) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"parameter\"]=>\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_writef(runtime, "array(%zu) {\n", metadata.parameter_count);
+        for (size_t i = 0; i < metadata.parameter_count; i++) {
+            char fallback[32];
+            const char *parameter_name = ptn_function_metadata_parameter_name(
+                metadata,
+                i,
+                fallback,
+                sizeof(fallback)
+            );
+            const char *requiredness = i < metadata.required_parameter_count
+                ? "<required>"
+                : "<optional>";
+            ptn_direct_var_dump_indent(runtime, indent + 2);
+            ptn_direct_var_dump_writef(runtime, "[\"$%s\"]=>\n", parameter_name);
+            ptn_direct_var_dump_indent(runtime, indent + 2);
+            ptn_direct_var_dump_writef(runtime, "string(10) \"%s\"\n", requiredness);
+        }
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "}\n");
+    }
     ptn_direct_var_dump_indent(runtime, indent);
     ptn_output_write_cstr(runtime, "}\n");
 }
@@ -2423,6 +2509,87 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump(
     return ptn_null();
 }
 /* PTN_COMPACT_INTERNAL_HELPERS_END */
+
+static int ptn_parse_size_t_digits(const char *start, size_t len, size_t *result) {
+    if (len == 0) {
+        return 0;
+    }
+    size_t value = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)start[i];
+        if (c < '0' || c > '9') {
+            return 0;
+        }
+        size_t digit = (size_t)(c - '0');
+        if (value > (SIZE_MAX - digit) / 10) {
+            return 0;
+        }
+        value = value * 10 + digit;
+    }
+    *result = value;
+    return 1;
+}
+
+static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure) {
+    PtnClosureSourceLocation location;
+    location.found = 0;
+    location.file = NULL;
+    location.file_len = 0;
+    location.line = 0;
+    if (closure == NULL || closure->display_name == NULL) {
+        return location;
+    }
+    const char *prefix = "{closure:";
+    size_t prefix_len = strlen(prefix);
+    const char *name = closure->display_name;
+    size_t name_len = strlen(name);
+    if (
+        name_len <= prefix_len + 1 ||
+        strncmp(name, prefix, prefix_len) != 0 ||
+        name[name_len - 1] != '}'
+    ) {
+        return location;
+    }
+
+    const char *body_start = name + prefix_len;
+    const char *body_end = name + name_len - 1;
+    const char *line_start = body_end;
+    while (line_start > body_start && line_start[-1] != ':') {
+        line_start--;
+    }
+    if (line_start == body_start) {
+        return location;
+    }
+    const char *separator = line_start - 1;
+    size_t file_len = (size_t)(separator - body_start);
+    size_t line_len = (size_t)(body_end - line_start);
+    size_t line = 0;
+    if (file_len == 0 || !ptn_parse_size_t_digits(line_start, line_len, &line)) {
+        return location;
+    }
+
+    location.found = 1;
+    location.file = body_start;
+    location.file_len = file_len;
+    location.line = line;
+    return location;
+}
+
+static size_t ptn_closure_dump_field_count(PtnClosure *closure) {
+    PtnFunctionMetadata metadata = closure->metadata;
+    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
+    size_t count = 0;
+    if (location.found) {
+        count += 3;
+    }
+    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        count++;
+    }
+    if (metadata.found && metadata.parameter_count > 0) {
+        count++;
+    }
+    return count;
+}
 
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
@@ -4096,78 +4263,6 @@ static int ptn_function_metadata_parameter_type_is_builtin(PtnFunctionMetadata m
     return metadata.parameters[index].type_is_builtin;
 }
 
-typedef struct {
-    int found;
-    const char *file;
-    size_t file_len;
-    size_t line;
-} PtnClosureSourceLocation;
-
-static int ptn_parse_size_t_digits(const char *start, size_t len, size_t *result) {
-    if (len == 0) {
-        return 0;
-    }
-    size_t value = 0;
-    for (size_t i = 0; i < len; i++) {
-        unsigned char c = (unsigned char)start[i];
-        if (c < '0' || c > '9') {
-            return 0;
-        }
-        size_t digit = (size_t)(c - '0');
-        if (value > (SIZE_MAX - digit) / 10) {
-            return 0;
-        }
-        value = value * 10 + digit;
-    }
-    *result = value;
-    return 1;
-}
-
-static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure) {
-    PtnClosureSourceLocation location;
-    location.found = 0;
-    location.file = NULL;
-    location.file_len = 0;
-    location.line = 0;
-    if (closure == NULL || closure->display_name == NULL) {
-        return location;
-    }
-    const char *prefix = "{closure:";
-    size_t prefix_len = strlen(prefix);
-    const char *name = closure->display_name;
-    size_t name_len = strlen(name);
-    if (
-        name_len <= prefix_len + 1 ||
-        strncmp(name, prefix, prefix_len) != 0 ||
-        name[name_len - 1] != '}'
-    ) {
-        return location;
-    }
-
-    const char *body_start = name + prefix_len;
-    const char *body_end = name + name_len - 1;
-    const char *line_start = body_end;
-    while (line_start > body_start && line_start[-1] != ':') {
-        line_start--;
-    }
-    if (line_start == body_start) {
-        return location;
-    }
-    const char *separator = line_start - 1;
-    size_t file_len = (size_t)(separator - body_start);
-    size_t line_len = (size_t)(body_end - line_start);
-    size_t line = 0;
-    if (file_len == 0 || !ptn_parse_size_t_digits(line_start, line_len, &line)) {
-        return location;
-    }
-
-    location.found = 1;
-    location.file = body_start;
-    location.file_len = file_len;
-    location.line = line;
-    return location;
-}
-
 static void ptn_var_dump_string_property(
     size_t indent,
     const char *name,
@@ -4180,22 +4275,6 @@ static void ptn_var_dump_string_property(
     printf("string(%zu) \"", value_len);
     fwrite(value, 1, value_len, stdout);
     fputs("\"\n", stdout);
-}
-
-static size_t ptn_closure_dump_field_count(PtnClosure *closure) {
-    PtnFunctionMetadata metadata = closure->metadata;
-    PtnClosureSourceLocation location = ptn_closure_source_location(closure);
-    size_t count = 0;
-    if (location.found) {
-        count += 3;
-    }
-    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
-        count++;
-    }
-    if (metadata.found && metadata.parameter_count > 0) {
-        count++;
-    }
-    return count;
 }
 
 static void ptn_var_dump_closure_parameters(PtnFunctionMetadata metadata, size_t indent) {
