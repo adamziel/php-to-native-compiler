@@ -17527,6 +17527,9 @@ fn temporary_array_dim_by_ref_argument_path(
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
             | ValueExpr::DynamicMethodCall { .. } => {
+                if dimensions.is_empty() {
+                    return None;
+                }
                 dimensions.reverse();
                 return Some((current, dimensions, line));
             }

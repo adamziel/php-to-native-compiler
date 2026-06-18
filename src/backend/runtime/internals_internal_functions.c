@@ -790,6 +790,51 @@ static PTN_UNUSED void ptn_direct_var_dump_exception(
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
 
+static PTN_UNUSED int ptn_direct_var_dump_magic_debug_info(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnDirectDumpSeen *seen
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT ||
+        runtime == NULL ||
+        runtime->magic_debug_info == NULL) {
+        return 0;
+    }
+    PtnValue debug_info = ptn_null();
+    if (!runtime->magic_debug_info(runtime, resolved, line, &debug_info)) {
+        return 0;
+    }
+    PtnValue debug_value = ptn_value_deref(debug_info);
+    if (debug_value.type != PTN_ARRAY) {
+        ptn_value_destroy(&debug_info);
+        return 0;
+    }
+
+    PtnObject *object = resolved.as.object;
+    PtnArray *properties = debug_value.as.array;
+    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+    ptn_direct_dump_printf(
+        runtime,
+        "object(%.*s)#%zu (%zu) {\n",
+        (int)class_len,
+        object->class_name,
+        object->object_id,
+        properties->len
+    );
+    ptn_direct_dump_seen_object_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_direct_var_dump_indent(runtime, 1);
+        ptn_direct_var_dump_array_key(runtime, properties->entries[i].key);
+        ptn_direct_var_dump_value_indented(runtime, properties->entries[i].value, 1, seen);
+    }
+    ptn_direct_dump_seen_object_pop(seen);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    ptn_value_destroy(&debug_info);
+    return 1;
+}
+
 static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
@@ -930,7 +975,13 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
     for (size_t i = 0; i < argc; i++) {
         PtnDirectDumpSeen seen;
         ptn_direct_dump_seen_init(&seen);
-        ptn_direct_var_dump_value_indented(runtime, args[i], 0, &seen);
+        PtnValue value = args[i];
+        if (value.type == PTN_REFERENCE) {
+            value = ptn_value_deref(value);
+        }
+        if (!ptn_direct_var_dump_magic_debug_info(runtime, value, line, &seen)) {
+            ptn_direct_var_dump_value_indented(runtime, value, 0, &seen);
+        }
         ptn_direct_dump_seen_free(&seen);
     }
     return ptn_null();
