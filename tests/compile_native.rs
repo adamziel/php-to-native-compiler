@@ -21847,6 +21847,172 @@ fn compile_array_type_errors_to_native_binary() {
 }
 
 #[test]
+fn compile_weak_userland_int_coercion_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-userland-int-coercion-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-userland-int-coercion-edges.php");
+    let output = root.join("weak-userland-int-coercion-edges-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function takes_int(int $value) { return $value; }
+function returns_int($value): int { return $value; }
+
+function check_param($label, $value) {
+    try {
+        $coerced = takes_int($value);
+        echo "param ", $label, ": ";
+        var_dump($coerced);
+    } catch (TypeError $e) {
+        echo "param ", $label, " error: ", $e->getMessage(), "\n";
+    }
+}
+
+function check_return($label, $value) {
+    try {
+        $coerced = returns_int($value);
+        echo "return ", $label, ": ";
+        var_dump($coerced);
+    } catch (TypeError $e) {
+        echo "return ", $label, " error: ", $e->getMessage(), "\n";
+    }
+}
+
+check_param("decimal-leading-zero", "039");
+check_return("decimal-leading-zero", "039");
+check_param("hex-lower", "0x5F");
+check_return("hex-lower", "0x5F");
+check_param("hex-upper", "0X5f");
+check_return("hex-upper", "0X5f");
+check_param("max-int-string", "9223372036854775807");
+check_return("max-int-string", "9223372036854775807");
+check_param("overflow-int-string", "9223372036854775808");
+check_return("overflow-int-string", "9223372036854775808");
+check_param("rounded-positive-float-string", "9.223372036854775E+18");
+check_return("rounded-positive-float-string", "9.223372036854775E+18");
+check_param("positive-bound-float-string", "9.223372036854776E+18");
+check_return("positive-bound-float-string", "9.223372036854776E+18");
+check_param("rounded-positive-float", 9.223372036854775E+18);
+check_return("rounded-positive-float", 9.223372036854775E+18);
+check_param("positive-bound-float", 9.223372036854776E+18);
+check_return("positive-bound-float", 9.223372036854776E+18);
+check_param("min-int-string", "-9223372036854775808");
+check_return("min-int-string", "-9223372036854775808");
+check_param("underflow-int-string", "-9223372036854775809");
+check_return("underflow-int-string", "-9223372036854775809");
+check_param("lower-bound-float", -9.223372036854776E+18);
+check_return("lower-bound-float", -9.223372036854776E+18);
+check_param("lower-bound-float-string", "-9.223372036854776E+18");
+check_return("lower-bound-float-string", "-9.223372036854776E+18");
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("param decimal-leading-zero: int(39)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return decimal-leading-zero: int(39)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("param max-int-string: int(9223372036854775807)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return max-int-string: int(9223372036854775807)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("param rounded-positive-float-string: int(9223372036854774784)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return rounded-positive-float-string: int(9223372036854774784)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("param rounded-positive-float: int(9223372036854774784)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return rounded-positive-float: int(9223372036854774784)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("param min-int-string: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return min-int-string: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("param underflow-int-string: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return underflow-int-string: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("param lower-bound-float: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return lower-bound-float: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("param lower-bound-float-string: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("return lower-bound-float-string: int(-9223372036854775808)\n"),
+        "{stdout}"
+    );
+
+    for label in [
+        "hex-lower",
+        "hex-upper",
+        "overflow-int-string",
+        "positive-bound-float-string",
+    ] {
+        assert!(
+            stdout.contains(&format!(
+                "param {label} error: takes_int(): Argument #1 ($value) must be of type int, string given"
+            )),
+            "{stdout}"
+        );
+        assert!(
+            stdout.contains(&format!(
+                "return {label} error: returns_int(): Return value must be of type int, string returned\n"
+            )),
+            "{stdout}"
+        );
+    }
+    assert!(
+        stdout.contains(
+            "param positive-bound-float error: takes_int(): Argument #1 ($value) must be of type int, float given"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "return positive-bound-float error: returns_int(): Return value must be of type int, float returned\n"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_callable_type_boundaries_to_native_binary() {
     let root = temp_dir("ptn-native-callable-type-boundaries");
     fs::create_dir_all(&root).unwrap();

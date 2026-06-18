@@ -903,6 +903,57 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    return is_numeric;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic PTN_UNUSED int ptn_userland_double_fits_int(double value) {\n");
+    out.push_str("    return isfinite(value) && value >= -9223372036854775808.0 && value < 9223372036854775808.0;\n");
+    out.push_str("}\n");
+
+    out.push_str("\nstatic PTN_UNUSED int ptn_userland_string_to_int(PtnString string, int64_t *integer) {\n");
+    out.push_str(
+        "    char *copy = ptn_duplicate_string_len((const char *)string.data, string.len);\n",
+    );
+    out.push_str("    int accepted = 0;\n");
+    out.push_str("    if (ptn_string_may_be_numeric(copy)) {\n");
+    out.push_str("        const char *start = copy;\n");
+    out.push_str("        while (isspace((unsigned char)*start)) {\n");
+    out.push_str("            start++;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (*start != '\\0') {\n");
+    out.push_str("            const char *numeric_start = start;\n");
+    out.push_str("            if (*numeric_start == '+' || *numeric_start == '-') {\n");
+    out.push_str("                numeric_start++;\n");
+    out.push_str("            }\n");
+    out.push_str("            if (!(numeric_start[0] == '0' && (numeric_start[1] == 'x' || numeric_start[1] == 'X'))) {\n");
+    out.push_str("                char *int_end = NULL;\n");
+    out.push_str("                errno = 0;\n");
+    out.push_str("                long long parsed_integer = strtoll(start, &int_end, 10);\n");
+    out.push_str("                int int_errno = errno;\n");
+    out.push_str("                char *float_end = NULL;\n");
+    out.push_str("                errno = 0;\n");
+    out.push_str("                double parsed_float = strtod(start, &float_end);\n");
+    out.push_str("                if (float_end != start) {\n");
+    out.push_str("                    char *end = float_end;\n");
+    out.push_str("                    while (isspace((unsigned char)*end)) {\n");
+    out.push_str("                        end++;\n");
+    out.push_str("                    }\n");
+    out.push_str("                    if (*end == '\\0') {\n");
+    out.push_str("                        if (int_end == float_end && int_errno != ERANGE && !ptn_contains_float_marker(start, int_end)) {\n");
+    out.push_str("                            *integer = (int64_t)parsed_integer;\n");
+    out.push_str("                            accepted = 1;\n");
+    out.push_str(
+        "                        } else if (ptn_userland_double_fits_int(parsed_float)) {\n",
+    );
+    out.push_str("                            *integer = (int64_t)parsed_float;\n");
+    out.push_str("                            accepted = 1;\n");
+    out.push_str("                        }\n");
+    out.push_str("                    }\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    free(copy);\n");
+    out.push_str("    return accepted;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_coerce_user_parameter_int(PtnRuntime *runtime, const char *function_name, size_t position, const char *parameter_name, const char *expected_type_name, PtnValue value, size_t line, const char *declaration_path, size_t declaration_line, PtnValue *out) {\n");
     out.push_str("    PtnValue resolved = ptn_value_deref(value);\n");
     out.push_str("    if (resolved.type == PTN_INT) {\n");
@@ -910,16 +961,18 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (!runtime->strict_types) {\n");
-    out.push_str("        if (resolved.type == PTN_BOOL || resolved.type == PTN_FLOAT) {\n");
+    out.push_str("        if (resolved.type == PTN_BOOL) {\n");
+    out.push_str("            *out = ptn_cast_int(resolved);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (resolved.type == PTN_FLOAT && ptn_userland_double_fits_int(resolved.as.floating)) {\n");
     out.push_str("            *out = ptn_cast_int(resolved);\n");
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        if (resolved.type == PTN_STRING) {\n");
-    out.push_str("            double number = 0.0;\n");
-    out.push_str(
-        "            if (ptn_user_parameter_string_is_numeric(resolved.as.string, &number)) {\n",
-    );
-    out.push_str("                *out = ptn_int((int64_t)number);\n");
+    out.push_str("            int64_t integer = 0;\n");
+    out.push_str("            if (ptn_userland_string_to_int(resolved.as.string, &integer)) {\n");
+    out.push_str("                *out = ptn_int(integer);\n");
     out.push_str("                return 1;\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
@@ -1008,16 +1061,18 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (!runtime->strict_types) {\n");
-    out.push_str("        if (resolved.type == PTN_BOOL || resolved.type == PTN_FLOAT) {\n");
+    out.push_str("        if (resolved.type == PTN_BOOL) {\n");
+    out.push_str("            *out = ptn_cast_int(resolved);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        if (resolved.type == PTN_FLOAT && ptn_userland_double_fits_int(resolved.as.floating)) {\n");
     out.push_str("            *out = ptn_cast_int(resolved);\n");
     out.push_str("            return 1;\n");
     out.push_str("        }\n");
     out.push_str("        if (resolved.type == PTN_STRING) {\n");
-    out.push_str("            double number = 0.0;\n");
-    out.push_str(
-        "            if (ptn_user_parameter_string_is_numeric(resolved.as.string, &number)) {\n",
-    );
-    out.push_str("                *out = ptn_int((int64_t)number);\n");
+    out.push_str("            int64_t integer = 0;\n");
+    out.push_str("            if (ptn_userland_string_to_int(resolved.as.string, &integer)) {\n");
+    out.push_str("                *out = ptn_int(integer);\n");
     out.push_str("                return 1;\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
