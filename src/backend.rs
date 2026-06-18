@@ -1589,6 +1589,9 @@ fn emit_user_functions(
         if tracks_return_line {
             out.push_str("    size_t ptn_return_line = line;\n");
         }
+        if function.return_by_ref && !function.is_generator {
+            out.push_str("    int ptn_return_value_from_declared_reference_call = 0;\n");
+        }
         if function.is_generator {
             out.push_str("    PtnValue ptn_generator_value = ptn_generator_new(&runtime, ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
@@ -1995,7 +1998,7 @@ fn emit_user_functions(
             continue;
         }
         if function.return_by_ref {
-            out.push_str("    if (ptn_return_value.type != PTN_REFERENCE) {\n");
+            out.push_str("    if (ptn_return_value.type != PTN_REFERENCE && !ptn_return_value.by_ref_return_fallback && !ptn_return_value_from_declared_reference_call) {\n");
             out.push_str("        PtnValue ptn_return_reference = ptn_return_reference_source_or_value(&runtime, ptn_return_value, ptn_return_line);\n");
             out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        ptn_return_value = ptn_return_reference;\n");
@@ -13259,6 +13262,7 @@ fn emit_instruction(
                     out.push_str("    ptn_return_value_was_set = 1;\n");
                 }
                 if values.current_function_return_by_ref {
+                    out.push_str("    ptn_return_value_from_declared_reference_call = 0;\n");
                     if let Some(value) = value {
                         if let Some(target) = reference_target_from_value(value) {
                             let reference_value = values.emit_reference_target(out, &target);
@@ -13267,10 +13271,15 @@ fn emit_instruction(
                             out.push_str(");\n");
                             emit_value_cleanup(out, "    ", &reference_value);
                         } else {
-                            let result_value = values.emit_raw_materialized_value(out, value);
+                            let result_value = values.emit_reference_candidate_value(out, value);
                             out.push_str("    ptn_return_value = ptn_return_reference_source_or_plain_value(");
                             out.push_str(&result_value);
                             out.push_str(");\n");
+                            if values.source_is_declared_by_ref_call(value) {
+                                out.push_str(
+                                    "    ptn_return_value_from_declared_reference_call = 1;\n",
+                                );
+                            }
                             emit_value_cleanup(out, "    ", &result_value);
                         }
                     }
@@ -23255,7 +23264,7 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        let source_temp = self.emit_raw_materialized_value(out, source);
+        let source_temp = self.emit_reference_candidate_value(out, source);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -23426,7 +23435,7 @@ impl ValueEmitter {
             return source_temp;
         }
 
-        let source_temp = self.emit_raw_materialized_value(out, source);
+        let source_temp = self.emit_reference_candidate_value(out, source);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
@@ -23527,7 +23536,7 @@ impl ValueEmitter {
             return;
         }
 
-        let source_temp = self.emit_raw_materialized_value(out, source);
+        let source_temp = self.emit_reference_candidate_value(out, source);
         out.push_str("    if (");
         out.push_str(&source_temp);
         out.push_str(".type == PTN_REFERENCE) {\n");
@@ -23584,7 +23593,7 @@ impl ValueEmitter {
             return;
         }
 
-        let source_temp = self.emit_raw_materialized_value(out, source);
+        let source_temp = self.emit_reference_candidate_value(out, source);
         let path = emit_array_path_segments(out, self, &target.dimensions);
         out.push_str("    if (");
         out.push_str(&source_temp);
@@ -29027,6 +29036,95 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_raw_call_result(&mut self, out: &mut String, value: &ValueExpr) -> Option<String> {
+        match value {
+            ValueExpr::InternalCall {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                line,
+            } => Some(self.emit_internal_call(
+                out,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+                false,
+            )),
+            ValueExpr::DynamicCall {
+                callee,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                line,
+            } => Some(self.emit_dynamic_call(
+                out,
+                callee,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+                false,
+            )),
+            ValueExpr::MethodCall {
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                nullsafe,
+                line,
+            } => Some(if *nullsafe {
+                self.emit_nullsafe_method_call(
+                    out,
+                    receiver,
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    *line,
+                    false,
+                )
+            } else {
+                self.emit_method_call(
+                    out,
+                    receiver,
+                    name,
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    *line,
+                    false,
+                )
+            }),
+            ValueExpr::DynamicMethodCall {
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                line,
+            } => Some(self.emit_dynamic_method_call(
+                out,
+                receiver,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+                false,
+            )),
+            _ => None,
+        }
+    }
+
+    fn emit_reference_candidate_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        self.emit_raw_call_result(out, value)
+            .unwrap_or_else(|| self.emit_materialized_value(out, value))
+    }
+
     fn emit_materialized_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
         let temp = self.emit_raw_materialized_value(out, value);
         if !call_result_needs_value_deref(value) {
@@ -29063,9 +29161,7 @@ impl ValueEmitter {
                 | ValueExpr::Assign { .. }
                 | ValueExpr::AssignRef { .. }
                 | ValueExpr::IncDec { .. }
-                | ValueExpr::InternalCall { .. }
                 | ValueExpr::FirstClassCallable { .. }
-                | ValueExpr::DynamicCall { .. }
                 | ValueExpr::Unary { .. }
                 | ValueExpr::Cast { .. }
                 | ValueExpr::Array(_)
@@ -29078,8 +29174,6 @@ impl ValueEmitter {
                 | ValueExpr::Empty { .. }
                 | ValueExpr::Ternary { .. }
                 | ValueExpr::Match { .. }
-                | ValueExpr::MethodCall { .. }
-                | ValueExpr::DynamicMethodCall { .. }
                 | ValueExpr::Clone { .. }
                 | ValueExpr::DynamicPropertyFetch { .. }
                 | ValueExpr::StaticPropertyFetch { .. }
@@ -29388,7 +29482,7 @@ impl ValueEmitter {
             return self.emit_reference_target(out, &target);
         }
 
-        let result_temp = self.emit_raw_materialized_value(out, source);
+        let result_temp = self.emit_reference_candidate_value(out, source);
         let temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&temp);
@@ -29702,7 +29796,7 @@ impl ValueEmitter {
                         emit_value_cleanup(out, "    ", &value_temp);
                     }
                 } else {
-                    let value_temp = self.emit_materialized_value(out, argument);
+                    let value_temp = self.emit_reference_candidate_value(out, argument);
                     out.push_str("    ptn_call_arguments_unpack(&runtime, &");
                     out.push_str(&args_temp);
                     out.push_str(", ");

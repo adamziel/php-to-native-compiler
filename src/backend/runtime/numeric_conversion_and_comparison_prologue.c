@@ -859,11 +859,22 @@ static PTN_UNUSED PtnValue ptn_return_reference_source_or_plain_value(PtnValue v
     return ptn_value_clone_deref_preserve_return_reference_fallback(value);
 }
 
+static PTN_UNUSED PtnValue ptn_call_result_for_value_context(PtnValue value) {
+    if (value.type != PTN_REFERENCE) {
+        return value;
+    }
+    PtnValue result = ptn_value_clone_deref(value);
+    ptn_value_destroy(&value);
+    return result;
+}
+
 static PTN_UNUSED PtnValue ptn_by_ref_argument_source_or_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
     if (value.type == PTN_REFERENCE) {
         return ptn_value_clone(value);
     }
-    ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
+    if (!ptn_value_is_return_reference_fallback(value)) {
+        ptn_emit_only_variables_passed_by_reference_notice_at(runtime, line);
+    }
     return ptn_reference_value(ptn_reference_new_owned(ptn_value_deep_clone(ptn_value_deref(value))));
 }
 

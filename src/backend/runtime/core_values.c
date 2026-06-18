@@ -547,6 +547,11 @@ typedef struct {
     } as;
 } PtnValue;
 
+static PTN_UNUSED PtnValue ptn_value_with_by_ref_return_fallback(PtnValue value, int fallback) {
+    value.by_ref_return_fallback = fallback ? 1 : 0;
+    return value;
+}
+
 typedef PtnValue (*PtnFunctionStaticVariablesProvider)(PtnRuntime *runtime);
 
 typedef struct {
