@@ -7,7 +7,7 @@ source "$repo_root/tools/phpt-corpus.sh"
 source "$repo_root/tools/phpt-classifier.sh"
 php_src="$(ptn_resolve_phpt_corpus "$repo_root")"
 corpus_revision="$(ptn_phpt_corpus_revision "$php_src")"
-log_dir="$repo_root/.runtime/phpt-progress"
+log_dir="${PHPT_PROGRESS_DIR:-$repo_root/.runtime/phpt-progress}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 log="$log_dir/run-$stamp.log"
 resolved_manifest="$log_dir/manifest-$stamp.txt"
@@ -114,14 +114,22 @@ if [[ "${#paths[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-cd "$repo_root"
-cargo build --bin phpc
-
 phpc_bin="${PHPC_BIN:-$repo_root/target/debug/phpc}"
+phpt_test_timeout="${PTN_PHPT_TEST_TIMEOUT:-120}"
+if [[ ! "$phpt_test_timeout" =~ ^[0-9]+$ || "$phpt_test_timeout" -le 0 ]]; then
+  echo "PTN_PHPT_TEST_TIMEOUT must be a positive integer number of seconds: $phpt_test_timeout" >&2
+  exit 2
+fi
+
+cd "$repo_root"
+if [[ -z "${PHPC_BIN:-}" ]]; then
+  cargo build --bin phpc
+fi
+
 start="$(date +%s)"
 
 set +e
-PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q -p "$phpc_bin" "${paths[@]}" 2>&1 | tee "$log"
+PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${paths[@]}" 2>&1 | tee "$log"
 run_status="${PIPESTATUS[0]}"
 set -e
 
@@ -144,7 +152,7 @@ summary="$(awk '
 
 {
   echo
-  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) corpus_revision=$corpus_revision manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows elapsed=${elapsed}s status=$run_status"
+  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) corpus_revision=$corpus_revision manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows timeout_seconds=$phpt_test_timeout elapsed=${elapsed}s status=$run_status"
   if [[ -n "$summary" ]]; then
     echo "[ptn-patrol] $summary"
   fi

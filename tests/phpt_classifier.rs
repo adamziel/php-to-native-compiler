@@ -309,6 +309,63 @@ fn run_bounded_phpt_passes_configured_native_timeout_to_run_tests() {
 }
 
 #[test]
+fn run_phpt_manifest_passes_configured_native_timeout_to_run_tests() {
+    let root = temp_dir("ptn-run-phpt-manifest-timeout");
+    let corpus = root.join("php-src");
+    let tests_dir = corpus.join("tests/basic");
+    fs::create_dir_all(&tests_dir).expect("create fake PHPT corpus");
+    fs::write(
+        corpus.join("run-tests.php"),
+        "<?php\n\
+        $timeout = '<missing>';\n\
+        for ($i = 1; $i < $argc; $i++) {\n\
+            if ($argv[$i] === '--set-timeout') {\n\
+                $timeout = $argv[$i + 1] ?? '<missing-value>';\n\
+                break;\n\
+            }\n\
+        }\n\
+        echo \"seen-timeout: $timeout\\n\";\n\
+        echo \"Number of tests : 1\\n\";\n\
+        echo \"Tests skipped   : 0\\n\";\n\
+        echo \"Tests warned    : 0\\n\";\n\
+        echo \"Tests failed    : 0\\n\";\n\
+        echo \"Tests passed    : 1\\n\";\n",
+    )
+    .expect("write fake run-tests.php");
+    fs::write(
+        tests_dir.join("timeout.phpt"),
+        "--TEST--\ntimeout\n--FILE--\n<?php echo 'ok'; ?>\n--EXPECT--\nok\n",
+    )
+    .expect("write PHPT");
+
+    let manifest = root.join("manifest.txt");
+    fs::write(&manifest, "tests/basic/timeout.phpt\n").expect("write manifest");
+
+    let progress = root.join("progress");
+    let output = Command::new("timeout")
+        .arg("30s")
+        .arg("tools/run-phpt-manifest.sh")
+        .arg(&manifest)
+        .env("PHP_SRC_PHPT", &corpus)
+        .env("PHPT_PROGRESS_DIR", &progress)
+        .env("PTN_PHPT_AUTO_FETCH", "0")
+        .env("PTN_PHPT_TEST_TIMEOUT", "77")
+        .env("PHPC_BIN", "/bin/true")
+        .output()
+        .expect("run PHPT manifest");
+    assert!(
+        output.status.success(),
+        "PHPT manifest failed: status={:?}\nstdout={}\nstderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("seen-timeout: 77"), "{stdout}");
+    assert!(stdout.contains("timeout_seconds=77"), "{stdout}");
+}
+
+#[test]
 fn phpt_classifier_skipif_harness_is_opt_in() {
     let skipif = "--TEST--\nskipif\n--SKIPIF--\n<?php echo getenv('PTN_SKIP') ? 'skip' : ''; ?>\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n";
 
