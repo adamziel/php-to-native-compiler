@@ -1,0 +1,22 @@
+# ptn-exliq Override attribute omitted runnable row pack.
+#
+# These rows are the 16 runnable Zend/tests/attributes/override PHPTs that were
+# outside the older 34-row Override manifest. They cover native interfaces,
+# trait composition, enums, anonymous classes, static methods, and GH-12189
+# trait/parent variants.
+Zend/tests/attributes/override/001.phpt
+Zend/tests/attributes/override/002.phpt
+Zend/tests/attributes/override/007.phpt
+Zend/tests/attributes/override/009.phpt
+Zend/tests/attributes/override/012.phpt
+Zend/tests/attributes/override/013.phpt
+Zend/tests/attributes/override/014.phpt
+Zend/tests/attributes/override/015.phpt
+Zend/tests/attributes/override/016.phpt
+Zend/tests/attributes/override/018.phpt
+Zend/tests/attributes/override/019.phpt
+Zend/tests/attributes/override/023.phpt
+Zend/tests/attributes/override/024.phpt
+Zend/tests/attributes/override/gh12189.phpt
+Zend/tests/attributes/override/gh12189_3.phpt
+Zend/tests/attributes/override/gh12189_5.phpt
