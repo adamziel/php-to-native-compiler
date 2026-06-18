@@ -43682,6 +43682,60 @@ echo $class::{\"class\"}, \"\\n\";
 }
 
 #[test]
+fn compile_dynamic_class_constant_fetches_evaluate_receiver_first_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-class-constant-receiver-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-class-constant-receiver-order.php");
+    let output = root.join("dynamic-class-constant-receiver-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public const FOO = \"Foo\";
+}
+
+function foo() {
+    echo \"foo()\\n\";
+    return \"FOO\";
+}
+
+function bar() {
+    echo \"bar()\\n\";
+    return \"BAR\";
+}
+
+function test($callback) {
+    try {
+        echo $callback(), \"\\n\";
+    } catch (Throwable $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+test(fn() => Foo::{foo()}::{bar()});
+test(fn() => Foo::{bar()}::{foo()});
+",
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "foo()\n",
+            "bar()\n",
+            "Undefined constant Foo::BAR\n",
+            "bar()\n",
+            "Undefined constant Foo::BAR\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_deprecated_class_constant_reads_to_native_binary() {
     let root = temp_dir("ptn-native-deprecated-class-constant-reads");
     fs::create_dir_all(&root).unwrap();
