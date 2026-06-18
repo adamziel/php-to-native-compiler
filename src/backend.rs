@@ -107,8 +107,8 @@ pub fn emit_c(module: &Module) -> String {
         || runtime_requirements.internal_function_dispatch
         || has_declared_methods
         || needs_direct_callable_dispatch;
-    let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
-    if needs_callable_dispatch {
+    let needs_callable_dispatch = needs_direct_callable_dispatch;
+    if needs_direct_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
     let needs_magic_property_read = module.classes.iter().any(|class| {
@@ -10373,9 +10373,88 @@ fn emit_method_dispatch(
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
     out.push_str("    if (resolved.type == PTN_EXCEPTION) {\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getMessage\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getMessage() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            const char *message = resolved.as.exception->message == NULL ? \"\" : resolved.as.exception->message;\n");
+    out.push_str("            return ptn_owned_string_len(ptn_duplicate_string_len(message, resolved.as.exception->message_len), resolved.as.exception->message_len);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getCode\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getCode() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_int(resolved.as.exception->code);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getFile\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getFile() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            const char *path = resolved.as.exception->path == NULL ? \"\" : resolved.as.exception->path;\n");
+    out.push_str("            return ptn_owned_string_len(ptn_duplicate_string_len(path, strlen(path)), strlen(path));\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getLine\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getLine() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_int((int64_t)resolved.as.exception->line);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getTrace\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getTrace() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_value_clone_deref(resolved.as.exception->trace);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getPrevious\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getPrevious() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_value_clone_deref(resolved.as.exception->previous);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"getTraceAsString\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getTraceAsString() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, resolved.as.exception);\n");
+    out.push_str("            return ptn_owned_string_len(trace.owned, trace.len);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(resolved.as.exception->class_name, \"ErrorException\") && ptn_ascii_case_equal(method_name, \"getSeverity\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::getSeverity() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            return ptn_int(resolved.as.exception->severity);\n");
+    out.push_str("        }\n");
+    out.push_str("        if (ptn_ascii_case_equal(method_name, \"__toString\")) {\n");
+    out.push_str("            if (argc != 0) {\n");
+    out.push_str("                ptn_throw_exception(runtime, \"ArgumentCountError\", \"Exception::__toString() expects exactly 0 arguments\");\n");
+    out.push_str("                return ptn_null();\n");
+    out.push_str("            }\n");
+    out.push_str("            PtnStringOperand text = ptn_exception_to_string_operand(runtime, resolved.as.exception);\n");
+    out.push_str("            return ptn_owned_string_len(text.owned, text.len);\n");
+    out.push_str("        }\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str(
         "        return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
+    out.push_str("#else\n");
+    out.push_str("        char message[256];\n");
+    out.push_str("        int written = snprintf(message, sizeof(message), \"Call to undefined method %s::%s()\", resolved.as.exception->class_name, method_name);\n");
+    out.push_str("        if (written < 0 || (size_t)written >= sizeof(message)) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, line);\n",
+    );
+    out.push_str("        return ptn_null();\n");
+    out.push_str("#endif\n");
     out.push_str("    }\n");
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        if (ptn_ascii_case_equal(method_name, \"bindTo\")) {\n");
@@ -10715,7 +10794,19 @@ fn emit_method_dispatch(
     out.push_str("        }\n");
     out.push_str("    }\n");
     out.push_str("#endif\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("#else\n");
+    out.push_str("    char message[256];\n");
+    out.push_str("    int written = snprintf(message, sizeof(message), \"Call to undefined method %s::%s()\", class_name, method_name);\n");
+    out.push_str("    if (written < 0 || (size_t)written >= sizeof(message)) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    ptn_throw_exception_at(runtime, \"Error\", message, runtime->source_path, line);\n",
+    );
+    out.push_str("    return ptn_null();\n");
+    out.push_str("#endif\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -14787,8 +14878,7 @@ fn collect_value_legacy_dollar_brace_deprecations(
 fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
     let mut requirements = RuntimeRequirements::default();
     if module.classes.iter().any(|class| {
-        !class.methods.is_empty()
-            || !class.properties.is_empty()
+        !class.properties.is_empty()
             || !class.static_properties.is_empty()
             || !class.interfaces.is_empty()
             || class
@@ -15739,6 +15829,7 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+        || (name.eq_ignore_ascii_case("var_dump") && argument_count >= 1)
 }
 
 enum NamedArgumentBindingError {
@@ -26985,6 +27076,49 @@ impl ValueEmitter {
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &key_temp);
             emit_value_cleanup(out, "    ", &array_temp);
+            return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("var_dump")
+            && !arguments.is_empty()
+        {
+            let mut temps = Vec::with_capacity(arguments.len());
+            for (argument_index, argument) in arguments.iter().enumerate() {
+                temps.push(self.emit_call_argument(out, name, argument_index, argument));
+            }
+
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            for (index, temp) in temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
+            out.push_str(" };\n");
+
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_direct_var_dump(&runtime, ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            for index in 0..temps.len() {
+                emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+            }
+            for temp in temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
             return result_temp;
         }
 

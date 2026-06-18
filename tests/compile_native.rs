@@ -9215,6 +9215,92 @@ fn compile_var_dump_null_phpt_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_static_variable_var_dump_fast_path_to_native_binary() {
+    let root = temp_dir("ptn-native-static-variable-var-dump-fast-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-variable-var-dump.php");
+    let output = root.join("static-variable-var-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+const bar = 2, baz = bar + 1;
+
+function foo() {
+    static $a = 1 + 1;
+    static $b = [bar => 1 + 1, baz * 2 => 1 << 2];
+    static $c = [1 => bar, 3 => baz];
+    var_dump($a, $b, $c);
+}
+
+foo();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "array(2) {\n",
+            "  [2]=>\n",
+            "  int(2)\n",
+            "  [6]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(2) {\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [3]=>\n",
+            "  int(3)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
+}
+
+#[test]
+fn compile_private_method_static_variable_avoids_internal_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-private-method-static-variable-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("private-method-static-variable.php");
+    let output = root.join("private-method-static-variable-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    private function m() {
+        static $x;
+    }
+}
+class B extends A {}
+?>
+===DONE===
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "===DONE===\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.method_dispatch = ptn_call_declared_method;"));
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
+}
+
+#[test]
 fn compile_weak_reference_to_native_binary() {
     let root = temp_dir("ptn-native-weak-reference");
     fs::create_dir_all(&root).unwrap();
@@ -46695,12 +46781,30 @@ fn phpc_renders_append_null_coalescing_assignment_diagnostic() {
 }
 
 #[test]
-fn var_dump_complex_edges_remain_unsupported_before_codegen() {
-    let source = "<?php $array = []; $array[] = &$array; var_dump($array);";
-    assert!(
-        parser::parse(source).is_err(),
-        "expected unsupported recursive array var_dump edge to fail before codegen"
+fn compile_var_dump_recursive_array_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-recursive-array");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-recursive-array.php");
+    let output = root.join("var-dump-recursive-array-bin");
+    fs::write(
+        &input,
+        "<?php $array = []; $array[] = &$array; var_dump($array);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  *RECURSION*\n}\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
 }
 
 #[test]
