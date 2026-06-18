@@ -48015,6 +48015,41 @@ var_dump($object);
 }
 
 #[test]
+fn compile_magic_debug_info_reference_return_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-debug-info-reference-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-debug-info-reference-return.php");
+    let output = root.join("magic-debug-info-reference-return-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    private $tmp = ['x' => 1];
+    public function &__debugInfo(): array {
+        return $this->tmp;
+    }
+}
+var_dump(new Test);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(Test)#1 (1) {\n  [\"x\"]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_magic_debug_info"));
+    assert!(c_source.contains("ptn_value_clone_deref(ptn_debug_result)"));
+}
+
+#[test]
 fn compile_declared_non_public_property_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-non-public-property-metadata");
     fs::create_dir_all(&root).unwrap();

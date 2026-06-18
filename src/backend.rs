@@ -10930,9 +10930,15 @@ fn emit_magic_debug_info_dispatch(out: &mut String, classes: &[ClassDecl]) {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        *value_out = ");
+        out.push_str("        PtnValue ptn_debug_result = ");
         out.push_str(&user_function_c_name(debug_method.function_index));
         out.push_str("(runtime, resolved, 0, NULL, line);\n");
+        out.push_str("        if (ptn_debug_result.type == PTN_REFERENCE) {\n");
+        out.push_str("            *value_out = ptn_value_clone_deref(ptn_debug_result);\n");
+        out.push_str("            ptn_value_destroy(&ptn_debug_result);\n");
+        out.push_str("        } else {\n");
+        out.push_str("            *value_out = ptn_debug_result;\n");
+        out.push_str("        }\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
     }
@@ -15178,6 +15184,23 @@ fn magic_return_type_is_debug_info_compatible(return_type: &TypeHint) -> bool {
     }
 }
 
+fn magic_parameter_type_accepts_expected(
+    declared_type: &TypeHint,
+    expected_type: &TypeHint,
+) -> bool {
+    if declared_type == expected_type || matches!(declared_type, TypeHint::Mixed) {
+        return true;
+    }
+    match declared_type {
+        TypeHint::Nullable(inner) => magic_parameter_type_accepts_expected(inner, expected_type),
+        TypeHint::Union(types) => types
+            .iter()
+            .any(|member| magic_parameter_type_accepts_expected(member, expected_type)),
+        TypeHint::Iterable if matches!(expected_type, TypeHint::Array) => true,
+        _ => false,
+    }
+}
+
 fn magic_parameter_type_fatal(
     class: &ClassDecl,
     method: &crate::ir::MethodDecl,
@@ -15188,7 +15211,7 @@ fn magic_parameter_type_fatal(
 ) -> Option<String> {
     let parameter = function.parameters.get(parameter_index)?;
     let declared_type = parameter.type_hint.as_ref()?;
-    if declared_type == &expected_type {
+    if magic_parameter_type_accepts_expected(declared_type, &expected_type) {
         return None;
     }
     Some(format!(
@@ -17362,6 +17385,9 @@ fn temporary_array_dim_by_ref_argument_path(
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
             | ValueExpr::DynamicMethodCall { .. } => {
+                if dimensions.is_empty() {
+                    return None;
+                }
                 dimensions.reverse();
                 return Some((current, dimensions, line));
             }
