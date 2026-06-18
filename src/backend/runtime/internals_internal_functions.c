@@ -25,6 +25,19 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     }
     PtnValue value;
     if (ptn_runtime_constant_value(runtime, name, &value)) {
+        if (strcmp(name, "FILE_BINARY") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant FILE_BINARY is deprecated since 8.1, as the constant has no effect",
+                line
+            );
+        } else if (strcmp(name, "FILE_TEXT") == 0) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Constant FILE_TEXT is deprecated since 8.1, as the constant has no effect",
+                line
+            );
+        }
         return value;
     }
     int needed = snprintf(NULL, 0, "Undefined constant \"%s\"", name);
@@ -23967,8 +23980,9 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 if (value.type == PTN_ARRAY) {
                     ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
                 }
-                PtnStringOperand string =
-                    ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame(runtime, value, line);
+                PtnStringOperand string = value.type == PTN_RESOURCE
+                    ? ptn_string_operand_borrowed("Resource")
+                    : ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame(runtime, value, line);
                 ptn_sprintf_append_string(&output, string, &spec);
                 ptn_string_operand_free(string);
                 break;
@@ -48687,6 +48701,37 @@ static int ptn_ini_eval_int_expression(PtnRuntime *runtime, PtnIniText text, int
     return 1;
 }
 
+static int ptn_ini_text_is_plain_octal_or_hex_literal(PtnIniText text) {
+    text = ptn_ini_trim_text(text);
+    size_t offset = 0;
+    if (offset < text.len && (text.data[offset] == '+' || text.data[offset] == '-')) {
+        offset++;
+    }
+    if (offset + 1 >= text.len || text.data[offset] != '0') {
+        return 0;
+    }
+    if (text.data[offset + 1] == 'x' || text.data[offset + 1] == 'X') {
+        if (offset + 2 >= text.len) {
+            return 0;
+        }
+        for (size_t i = offset + 2; i < text.len; i++) {
+            if (!isxdigit((unsigned char)text.data[i])) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    if (!isdigit((unsigned char)text.data[offset + 1])) {
+        return 0;
+    }
+    for (size_t i = offset + 1; i < text.len; i++) {
+        if (text.data[i] < '0' || text.data[i] > '7') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int ptn_ini_parse_float_literal(PtnIniText text, double *out) {
     text = ptn_ini_trim_text(text);
     if (text.len == 0) {
@@ -48743,7 +48788,10 @@ static PtnValue ptn_ini_normalized_string_value(
     }
 
     int64_t expression = 0;
-    if (ptn_ini_eval_int_expression(runtime, trimmed, &expression)) {
+    if (
+        (scanner_mode != PTN_INI_SCANNER_NORMAL || !ptn_ini_text_is_plain_octal_or_hex_literal(trimmed)) &&
+        ptn_ini_eval_int_expression(runtime, trimmed, &expression)
+    ) {
         char number[64];
         int written = snprintf(number, sizeof(number), "%lld", (long long)expression);
         if (written < 0 || (size_t)written >= sizeof(number)) {
@@ -48988,7 +49036,7 @@ static int ptn_ini_scan_value_end(
     size_t *offset,
     size_t *line_no,
     size_t *value_end_out,
-    int *unmatched_quote_out,
+    char *unmatched_quote_out,
     int scanner_mode
 ) {
     char quote = '\0';
@@ -49050,8 +49098,42 @@ static int ptn_ini_scan_value_end(
         (*offset)++;
     }
     *value_end_out = *offset;
-    *unmatched_quote_out = quote != '\0';
+    *unmatched_quote_out = quote;
     return 1;
+}
+
+static const char *ptn_ini_syntax_detail_for_failed_value(PtnIniText text) {
+    for (size_t i = 0; i + 1 < text.len; i++) {
+        if (text.data[i] != '$' || text.data[i + 1] != '{') {
+            continue;
+        }
+        size_t depth = 1;
+        int saw_fallback = 0;
+        i += 2;
+        while (i < text.len && depth > 0) {
+            if (text.data[i] == '$' && i + 1 < text.len && text.data[i + 1] == '{') {
+                depth++;
+                i += 2;
+                continue;
+            }
+            if (depth == 1 && text.data[i] == ':' && i + 1 < text.len && text.data[i + 1] == '-') {
+                saw_fallback = 1;
+            }
+            if (text.data[i] == '}') {
+                depth--;
+                if (depth == 0) {
+                    break;
+                }
+            }
+            i++;
+        }
+        if (depth != 0) {
+            return saw_fallback
+                ? "unexpected TC_FALLBACK, expecting TC_VARNAME"
+                : "unexpected end of file, expecting TC_FALLBACK or '}'";
+        }
+    }
+    return "unexpected end of file";
 }
 
 static PtnValue ptn_ini_parse_contents(
@@ -49127,15 +49209,18 @@ static PtnValue ptn_ini_parse_contents(
         }
         size_t value_start = offset;
         size_t value_end = offset;
-        int unmatched_quote = 0;
+        char unmatched_quote = '\0';
         if (!ptn_ini_scan_value_end(data, len, &offset, &line_no, &value_end, &unmatched_quote, scanner_mode)) {
             ptn_ini_emit_syntax_warning(runtime, source_name, statement_line, call_line, "unexpected '='");
             *ok_out = 0;
             ptn_value_destroy(&result);
             return ptn_bool(0);
         }
-        if (unmatched_quote) {
-            ptn_ini_emit_syntax_warning(runtime, source_name, statement_line, call_line, "unexpected end of file, expecting '\"'");
+        if (unmatched_quote != '\0') {
+            const char *detail = unmatched_quote == '"'
+                ? "unexpected end of file, expecting TC_DOLLAR_CURLY or TC_QUOTED_STRING or '\"'"
+                : "unexpected end of file";
+            ptn_ini_emit_syntax_warning(runtime, source_name, statement_line, call_line, detail);
             *ok_out = 0;
             ptn_value_destroy(&result);
             return ptn_bool(0);
@@ -49156,7 +49241,13 @@ static PtnValue ptn_ini_parse_contents(
         PtnValue value = ptn_ini_parse_value(runtime, value_text, scanner_mode, call_line, &syntax_ok);
         if (!syntax_ok || runtime->exceptions->active_exception != NULL) {
             if (!syntax_ok) {
-                ptn_ini_emit_syntax_warning(runtime, source_name, statement_line, call_line, "unexpected end of file");
+                ptn_ini_emit_syntax_warning(
+                    runtime,
+                    source_name,
+                    statement_line,
+                    call_line,
+                    ptn_ini_syntax_detail_for_failed_value(value_text)
+                );
             }
             *ok_out = 0;
             ptn_value_destroy(&result);
@@ -53326,12 +53417,72 @@ static PtnValue ptn_internal_shell_exec(PtnRuntime *runtime, size_t argc, const 
     return ptn_owned_string_len(command_result.output.data, command_result.output.len);
 }
 
+static size_t ptn_shell_command_max_len(void) {
+#ifdef _SC_ARG_MAX
+    long value = sysconf(_SC_ARG_MAX);
+    if (value > 0) {
+        return (size_t)value;
+    }
+#ifdef _POSIX_ARG_MAX
+    return (size_t)_POSIX_ARG_MAX;
+#else
+    return 4096;
+#endif
+#elif defined(ARG_MAX)
+    return (size_t)ARG_MAX;
+#elif defined(_WIN32)
+    return 8192;
+#else
+    return 4096;
+#endif
+}
+
+static int ptn_shell_input_length_ok(
+    PtnRuntime *runtime,
+    const char *kind,
+    size_t len
+) {
+    size_t max_len = ptn_shell_command_max_len();
+    if (len <= max_len - 3) {
+        return 1;
+    }
+    char message[128];
+    int written = snprintf(message, sizeof(message), "%s exceeds the allowed length of %zu bytes", kind, max_len);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 0;
+}
+
+static int ptn_shell_escaped_length_ok(
+    PtnRuntime *runtime,
+    const char *kind,
+    size_t len
+) {
+    size_t max_len = ptn_shell_command_max_len();
+    if (len <= max_len + 1) {
+        return 1;
+    }
+    char message[128];
+    int written = snprintf(message, sizeof(message), "Escaped %s exceeds the allowed length of %zu bytes", kind, max_len);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 0;
+}
+
 static PtnValue ptn_internal_escapeshellarg(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand argument = ptn_internal_expect_string_arg(runtime, "escapeshellarg", 1, "arg", args[0], line);
     if (memchr(argument.data, '\0', argument.len) != NULL) {
         ptn_string_operand_free(argument);
         ptn_throw_exception(runtime, "ValueError", "escapeshellarg(): Argument #1 ($arg) must not contain any null bytes");
+        return ptn_null();
+    }
+    if (!ptn_shell_input_length_ok(runtime, "Argument", argument.len)) {
+        ptn_string_operand_free(argument);
         return ptn_null();
     }
 
@@ -53347,6 +53498,88 @@ static PtnValue ptn_internal_escapeshellarg(PtnRuntime *runtime, size_t argc, co
     }
     ptn_string_buffer_append_char(&escaped, '\'');
     ptn_string_operand_free(argument);
+    if (!ptn_shell_escaped_length_ok(runtime, "argument", escaped.len)) {
+        free(escaped.data);
+        return ptn_null();
+    }
+    return ptn_owned_string_len(escaped.data, escaped.len);
+}
+
+static int ptn_shellcmd_byte_needs_escape(char byte) {
+    switch (byte) {
+        case '"':
+        case '#':
+        case '&':
+        case ';':
+        case '`':
+        case '|':
+        case '*':
+        case '?':
+        case '~':
+        case '<':
+        case '>':
+        case '^':
+        case '(':
+        case ')':
+        case '[':
+        case ']':
+        case '{':
+        case '}':
+        case '$':
+        case '\\':
+        case '\n':
+        case (char)0xff:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static PtnValue ptn_internal_escapeshellcmd(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand command =
+        ptn_internal_expect_string_arg(runtime, "escapeshellcmd", 1, "command", args[0], line);
+    if (memchr(command.data, '\0', command.len) != NULL) {
+        ptn_string_operand_free(command);
+        ptn_throw_exception(runtime, "ValueError", "escapeshellcmd(): Argument #1 ($command) must not contain any null bytes");
+        return ptn_null();
+    }
+    if (!ptn_shell_input_length_ok(runtime, "Command", command.len)) {
+        ptn_string_operand_free(command);
+        return ptn_null();
+    }
+
+    PtnStringBuffer escaped;
+    ptn_string_buffer_init(&escaped);
+    char active_quote = '\0';
+    for (size_t i = 0; i < command.len; i++) {
+        char byte = command.data[i];
+        if (byte == '\'' || byte == '"') {
+            if (active_quote == '\0') {
+                const void *next = memchr(command.data + i + 1, byte, command.len - i - 1);
+                if (next != NULL) {
+                    active_quote = byte;
+                } else {
+                    ptn_string_buffer_append_char(&escaped, '\\');
+                }
+            } else if (active_quote == byte) {
+                active_quote = '\0';
+            } else {
+                ptn_string_buffer_append_char(&escaped, '\\');
+            }
+            ptn_string_buffer_append_char(&escaped, byte);
+            continue;
+        }
+        if (ptn_shellcmd_byte_needs_escape(byte)) {
+            ptn_string_buffer_append_char(&escaped, '\\');
+        }
+        ptn_string_buffer_append_char(&escaped, byte);
+    }
+    ptn_string_operand_free(command);
+    if (!ptn_shell_escaped_length_ok(runtime, "command", escaped.len)) {
+        free(escaped.data);
+        return ptn_null();
+    }
     return ptn_owned_string_len(escaped.data, escaped.len);
 }
 
@@ -65372,6 +65605,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "error_log", 1, 4, ptn_internal_error_log },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "escapeshellarg", 1, 1, ptn_internal_escapeshellarg },
+        { "escapeshellcmd", 1, 1, ptn_internal_escapeshellcmd },
         { "easter_date", 0, 2, ptn_internal_easter_date },
         { "easter_days", 0, 2, ptn_internal_easter_days },
         { "exit", 0, 1, ptn_internal_exit },

@@ -1003,6 +1003,8 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(value); \
         return 1; \
     }
+    PTN_BUILTIN_INT_CONSTANT("FILE_BINARY", 0)
+    PTN_BUILTIN_INT_CONSTANT("FILE_TEXT", 0)
     PTN_BUILTIN_INT_CONSTANT("HASH_HMAC", PTN_HASH_HMAC)
     PTN_BUILTIN_INT_CONSTANT("SQLITE3_ASSOC", 1)
     PTN_BUILTIN_INT_CONSTANT("SQLITE3_NUM", 2)
