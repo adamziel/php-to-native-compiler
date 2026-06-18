@@ -669,6 +669,60 @@ static PtnValue ptn_internal_expect_callback_arg(
     );
 }
 
+static PtnValue ptn_internal_shutdown_callback_arg(PtnRuntime *runtime, PtnValue callback) {
+    PtnValue resolved = ptn_value_deref(callback);
+    if (
+        runtime != NULL &&
+        runtime->has_current_receiver &&
+        resolved.type == PTN_STRING
+    ) {
+        char *name = ptn_value_to_string(resolved);
+        char *separator = strstr(name, "::");
+        if (separator != NULL) {
+            *separator = '\0';
+            const char *method_name = separator + 2;
+            PtnValue receiver = ptn_value_deref(runtime->current_receiver);
+            const char *receiver_class = NULL;
+            if (receiver.type == PTN_OBJECT) {
+                receiver_class = receiver.as.object->class_name;
+            } else if (receiver.type == PTN_EXCEPTION) {
+                receiver_class = receiver.as.exception->class_name;
+            }
+            if (
+                receiver_class != NULL &&
+                ptn_declared_class_is_same_or_descendant(receiver_class, name) &&
+                ptn_declared_class_method_is_callable(
+                    receiver_class,
+                    method_name,
+                    runtime->current_class_name
+                )
+            ) {
+                PtnValue normalized = ptn_array_from_literal_entries(0, NULL);
+                ptn_array_set_entry(
+                    normalized.as.array,
+                    ptn_array_int_key(0),
+                    ptn_value_clone_deref(receiver)
+                );
+                ptn_array_set_entry(
+                    normalized.as.array,
+                    ptn_array_int_key(1),
+                    ptn_owned_string(ptn_duplicate_string(method_name))
+                );
+                free(name);
+                return normalized;
+            }
+        }
+        free(name);
+    }
+    return ptn_internal_expect_callback_arg(
+        runtime,
+        "register_shutdown_function",
+        1,
+        "callback",
+        callback
+    );
+}
+
 static PtnValue ptn_internal_expect_nullable_callback_arg(
     PtnRuntime *runtime,
     const char *function_name,
@@ -48173,13 +48227,7 @@ static PtnValue ptn_internal_register_tick_function(PtnRuntime *runtime, size_t 
 
 static PtnValue ptn_internal_register_shutdown_function(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)line;
-    PtnValue callback = ptn_internal_expect_callback_arg(
-        runtime,
-        "register_shutdown_function",
-        1,
-        "callback",
-        args[0]
-    );
+    PtnValue callback = ptn_internal_shutdown_callback_arg(runtime, args[0]);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }

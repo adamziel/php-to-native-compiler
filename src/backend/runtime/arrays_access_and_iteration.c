@@ -2726,6 +2726,19 @@ static PTN_UNUSED void ptn_throw_overloaded_property_reference_error(
     );
 }
 
+static PTN_UNUSED void ptn_call_magic_get_then_throw_overloaded_property_reference_error(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+) {
+    PtnValue magic_value = ptn_null();
+    if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
+        ptn_value_destroy(&magic_value);
+    }
+    ptn_throw_overloaded_property_reference_error(runtime, line);
+}
+
 static int ptn_reflection_internal_readonly_property_declaring_class(const char *declaring_class) {
     return ptn_ascii_case_equal(declaring_class, "ReflectionAttribute")
         || ptn_ascii_case_equal(declaring_class, "ReflectionClass")
@@ -2772,6 +2785,26 @@ static PTN_UNUSED void ptn_throw_readonly_property_error(
         message,
         sizeof(message),
         "Cannot modify readonly property %s::$%s",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_throw_readonly_property_reference_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot acquire reference to readonly property %s::$%s",
         declaring_class,
         property
     );
@@ -4341,7 +4374,12 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     PtnObjectPropertyMetadata *blocked_metadata =
         ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
     if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, receiver)) {
-        ptn_throw_overloaded_property_reference_error(runtime, line);
+        ptn_call_magic_get_then_throw_overloaded_property_reference_error(
+            runtime,
+            receiver,
+            property,
+            line
+        );
         return;
     }
     ptn_emit_static_property_non_static_notice_if_accessible(
@@ -4355,7 +4393,12 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     if (blocked_metadata == NULL &&
         ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
         ptn_magic_property_get_exists(runtime, receiver)) {
-        ptn_throw_overloaded_property_reference_error(runtime, line);
+        ptn_call_magic_get_then_throw_overloaded_property_reference_error(
+            runtime,
+            receiver,
+            property,
+            line
+        );
         return;
     }
     char *storage_key = ptn_object_resolve_property_storage_key(
@@ -4501,6 +4544,27 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
                 ptn_array_entry_for_key(receiver.as.object->properties, read_key);
             ptn_array_key_free(read_key);
             if (read_entry != NULL) {
+                const PtnObjectPropertyMetadata *read_metadata =
+                    ptn_object_property_metadata(receiver.as.object, read_storage_key);
+                if (
+                    read_metadata != NULL &&
+                    !read_metadata->is_readonly &&
+                    ptn_property_visibility_allows(
+                        runtime,
+                        read_metadata->set_visibility,
+                        read_metadata->declaring_class,
+                        access_scope
+                    )
+                ) {
+                    if (read_entry->value.type != PTN_REFERENCE) {
+                        PtnValue current = read_entry->value;
+                        read_entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+                    }
+                    ptn_reference_adopt_property_type(read_entry->value.as.reference, read_metadata);
+                    PtnValue reference = ptn_value_clone(read_entry->value);
+                    free(read_storage_key);
+                    return reference;
+                }
                 PtnValue current = ptn_value_clone_deref(read_entry->value);
                 if (current.type == PTN_OBJECT) {
                     free(read_storage_key);
@@ -6371,7 +6435,8 @@ static PTN_UNUSED void ptn_iteratoraggregate_invalid_result_throw(
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     PtnRuntime *runtime,
     PtnObject *object,
-    const char *access_scope
+    const char *access_scope,
+    size_t line
 ) {
     PtnArrayIterator iterator = ptn_array_iterator_empty();
     if (object == NULL || object->properties == NULL) {
@@ -6381,6 +6446,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_object_properties(
     iterator.object = object;
     iterator.runtime = runtime;
     iterator.access_scope = access_scope;
+    iterator.line = line;
     iterator.valid = iterator.array->len != 0;
     iterator.live = 1;
     ptn_object_retain(object);
@@ -6454,7 +6520,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         return ptn_array_iterator_from_protocol_iterator(runtime, value, access_scope, line);
     }
 
-    return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope);
+    return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope, line);
 }
 
 static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_value(
@@ -6688,6 +6754,19 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
         ptn_generator_emit_pending_reference_notice(iterator->runtime, iterator->generator, iterator->index);
     }
     PtnArrayEntry *entry = &iterator->array->entries[iterator->index];
+    if (iterator->object != NULL && iterator->generator == NULL && entry->key.type == PTN_ARRAY_KEY_STRING) {
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(iterator->object, entry->key.as.string);
+        if (metadata != NULL && metadata->is_readonly) {
+            ptn_throw_readonly_property_reference_error(
+                iterator->runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                iterator->line
+            );
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+    }
     if (entry->value.type != PTN_REFERENCE) {
         PtnValue current = entry->value;
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
@@ -7812,6 +7891,78 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_globals_array_path_lookup_quiet(
     return ptn_lookup_missing();
 }
 
+static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_read(
+    PtnRuntime *runtime,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_runtime_globals_snapshot(runtime);
+    }
+
+    char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+    if (global_name == NULL) {
+        return ptn_null();
+    }
+
+    PtnValue root_value;
+    if (!ptn_symbols_get(ptn_runtime_global_symbol_table(runtime), global_name, &root_value)) {
+        ptn_emit_undefined_global_variable_warning(
+            &runtime->diagnostics,
+            global_name,
+            runtime->source_path,
+            line
+        );
+        free(global_name);
+        return ptn_null();
+    }
+    free(global_name);
+
+    if (segment_count == 1) {
+        return ptn_value_clone_deref(root_value);
+    }
+
+    PtnValue container = ptn_value_deref(root_value);
+    PtnValue owned_container = ptn_null();
+    int has_owned_container = 0;
+    for (size_t i = 1; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return ptn_null();
+        }
+
+        PtnLookupResult result = ptn_offset_lookup(runtime, container, segment->value, line, 0);
+        if (!result.exists) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return ptn_null();
+        }
+        if (i + 1 == segment_count) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return result.value;
+        }
+
+        if (has_owned_container) {
+            ptn_value_destroy(&owned_container);
+        }
+        owned_container = result.value;
+        has_owned_container = 1;
+        container = ptn_value_deref(owned_container);
+    }
+
+    if (has_owned_container) {
+        ptn_value_destroy(&owned_container);
+    }
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnLookupResult ptn_runtime_array_path_lookup_quiet(
     PtnRuntime *runtime,
     const char *name,
@@ -8484,6 +8635,15 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
     if (segment_count == 0) {
         return;
     }
+    if (segments[0].append) {
+        ptn_emit_fatal_error_at(
+            runtime,
+            "Cannot append to $GLOBALS",
+            runtime->source_path,
+            line
+        );
+        return;
+    }
 
     char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
     if (global_name == NULL) {
@@ -8551,6 +8711,15 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
 ) {
     if (segment_count == 0) {
         return ptn_value_clone_deref(value);
+    }
+    if (segments[0].append) {
+        ptn_emit_fatal_error_at(
+            runtime,
+            "Cannot append to $GLOBALS",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
     }
 
     char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
@@ -8893,6 +9062,36 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
 ) {
     if (segment_count == 0) {
         return ptn_null();
+    }
+    if (ptn_runtime_is_globals_name(name)) {
+        char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+        if (global_name == NULL) {
+            return ptn_null();
+        }
+
+        PtnValue root_value;
+        if (!ptn_symbols_get(ptn_runtime_global_symbol_table(runtime), global_name, &root_value)) {
+            ptn_emit_undefined_global_variable_warning(
+                &runtime->diagnostics,
+                global_name,
+                runtime->source_path,
+                line
+            );
+            free(global_name);
+            return ptn_null();
+        }
+        free(global_name);
+
+        if (segment_count == 1) {
+            return ptn_value_clone(root_value);
+        }
+        return ptn_value_array_path_read_for_assign_op(
+            runtime,
+            root_value,
+            segments + 1,
+            segment_count - 1,
+            line
+        );
     }
 
     if (ptn_runtime_is_globals_name(name)) {

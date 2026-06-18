@@ -606,8 +606,9 @@ static PTN_UNUSED int ptn_try_object_to_string_operand(
         return 0;
     }
 
+    PtnException *active_exception_before = runtime->exceptions->active_exception;
     PtnValue result = runtime->method_dispatch(runtime, value, "__toString", 0, NULL, line);
-    if (runtime->exceptions->active_exception != NULL) {
+    if (runtime->exceptions->active_exception != active_exception_before) {
         ptn_value_destroy(&result);
         *out = ptn_string_operand_borrowed("");
         return 1;
@@ -641,7 +642,7 @@ static PTN_UNUSED int ptn_try_object_to_string_operand(
         *out = ptn_string_operand_borrowed("");
         return 1;
     }
-    PtnStringOperand result_string = ptn_value_to_string_operand(result);
+    PtnStringOperand result_string = ptn_value_to_string_operand(ptn_value_deref(result));
     char *copy = ptn_duplicate_string_len(result_string.data, result_string.len);
     *out = ptn_string_operand_owned_len(copy, result_string.len);
     ptn_string_operand_free(result_string);

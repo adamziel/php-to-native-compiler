@@ -1,0 +1,24 @@
+# ptn-c3uk focused reference/COW row pack.
+# Corpus revision: 8c63ec400ce8e07c57a8d9499317b96a8beafb8b
+# Rows covered here were red in the c3uk frontier before this branch work,
+# or adjacent restrict-globals rows needed to validate the same semantics.
+Zend/tests/restrict_globals/globals_in_globals.phpt
+Zend/tests/restrict_globals/invalid_append.phpt
+Zend/tests/restrict_globals/invalid_append_isset.phpt
+Zend/tests/restrict_globals/invalid_append_unset.phpt
+Zend/tests/restrict_globals/invalid_assign.phpt
+Zend/tests/restrict_globals/invalid_assign_list.phpt
+Zend/tests/restrict_globals/invalid_assign_list_ref.phpt
+Zend/tests/restrict_globals/invalid_assign_op.phpt
+Zend/tests/restrict_globals/invalid_assign_ref_lhs.phpt
+Zend/tests/restrict_globals/invalid_assign_ref_rhs.phpt
+Zend/tests/restrict_globals/invalid_foreach.phpt
+Zend/tests/restrict_globals/invalid_foreach_ref.phpt
+Zend/tests/restrict_globals/invalid_pass_by_ref.phpt
+Zend/tests/restrict_globals/invalid_unset.phpt
+Zend/tests/restrict_globals/key_canonicalization.phpt
+Zend/tests/restrict_globals/valid.phpt
+Zend/tests/exceptions/exception_during_by_reference_magic_get.phpt
+Zend/tests/exceptions/exception_fatal_uncaught_error_reference_tostring.phpt
+Zend/tests/readonly_props/by_ref_foreach.phpt
+Zend/tests/register_shutdown_function_refcount.phpt

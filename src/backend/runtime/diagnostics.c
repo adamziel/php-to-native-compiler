@@ -964,6 +964,39 @@ static void ptn_emit_undefined_variable_warning(
     free(message);
 }
 
+static void ptn_emit_undefined_global_variable_warning(
+    PtnDiagnosticSink *diagnostics,
+    const char *name,
+    const char *path,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    diagnostics->emitted_warning = 1;
+    int needed = snprintf(NULL, 0, "Undefined global variable $%s", name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Undefined global variable $%s", name);
+    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, path, line)) {
+        free(message);
+        return;
+    }
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nWarning: Undefined global variable $%s in %s on line %zu\n",
+        name,
+        path,
+        line
+    );
+    free(message);
+}
+
 static PTN_UNUSED void ptn_emit_undefined_function_error(PtnDiagnosticSink *diagnostics, const char *name) {
     if (!diagnostics->display_errors) {
         return;
