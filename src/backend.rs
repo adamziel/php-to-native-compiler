@@ -11199,6 +11199,13 @@ fn emit_instruction(
     match instruction {
         Instruction::Store { name, value } => {
             let emitted_value = values.emit_materialized_value(out, value);
+            if name == "GLOBALS" {
+                values.emit_globals_reference_fatal(
+                    out,
+                    "$GLOBALS can only be modified using the $GLOBALS[$name] = $value syntax",
+                    value_expr_runtime_line(value).unwrap_or(0),
+                );
+            }
             out.push_str("    ptn_runtime_write_variable(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\", ");
@@ -11375,6 +11382,13 @@ fn emit_instruction(
             emit_increment_statement(out, values, target, *op, *line, source_path);
         }
         Instruction::UnsetVariable { name } => {
+            if name == "GLOBALS" {
+                values.emit_globals_reference_fatal(
+                    out,
+                    "$GLOBALS can only be modified using the $GLOBALS[$name] = $value syntax",
+                    0,
+                );
+            }
             out.push_str("    ptn_runtime_unset_variable(&runtime, \"");
             out.push_str(&c_string(name));
             out.push_str("\");\n");
@@ -17713,6 +17727,16 @@ fn inc_dec_target_uses_this(target: &IncDecTarget) -> bool {
 }
 
 impl ValueEmitter {
+    fn emit_globals_reference_fatal(&self, out: &mut String, message: &str, line: usize) {
+        out.push_str("    ptn_emit_fatal_error_at(&runtime, \"");
+        out.push_str(&c_string(message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
+
     fn new(
         source_file: &str,
         source_dir: &str,
@@ -20166,6 +20190,13 @@ impl ValueEmitter {
         source: &ValueExpr,
         line: usize,
     ) {
+        if name == "GLOBALS" {
+            self.emit_globals_reference_fatal(
+                out,
+                "$GLOBALS can only be modified using the $GLOBALS[$name] = $value syntax",
+                line,
+            );
+        }
         if name == "this" && self.current_class_name.is_some() {
             out.push_str("    ptn_abort_type_error_at(\"Cannot re-assign $this\", \"");
             out.push_str(&c_string(&self.source_file));
@@ -20188,6 +20219,9 @@ impl ValueEmitter {
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &reference_temp);
             return;
+        }
+        if matches!(source, ValueExpr::Load { name, .. } if name == "GLOBALS") {
+            self.emit_globals_reference_fatal(out, "Cannot acquire reference to $GLOBALS", line);
         }
         if let Some(target) = reference_target_from_value(source) {
             let reference_temp = self.emit_reference_target(out, &target);
@@ -20307,6 +20341,13 @@ impl ValueEmitter {
     ) {
         match target {
             AssignmentTarget::Variable { name, line } => {
+                if name == "GLOBALS" {
+                    self.emit_globals_reference_fatal(
+                        out,
+                        "$GLOBALS can only be modified using the $GLOBALS[$name] = $value syntax",
+                        *line,
+                    );
+                }
                 if name == "this" && self.current_class_name.is_some() {
                     out.push_str("    ptn_abort_type_error_at(\"Cannot re-assign $this\", \"");
                     out.push_str(&c_string(&self.source_file));
@@ -20476,6 +20517,17 @@ impl ValueEmitter {
             AssignmentTarget::Variable { name, .. } => {
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_null();\n");
+                if name == "GLOBALS" {
+                    self.emit_globals_reference_fatal(
+                        out,
+                        "$GLOBALS can only be modified using the $GLOBALS[$name] = $value syntax",
+                        target.line(),
+                    );
+                    return result_temp;
+                }
+                out.push_str("    ");
                 out.push_str(&result_temp);
                 out.push_str(" = ptn_runtime_write_variable_result(&runtime, \"");
                 out.push_str(&c_string(name));
@@ -21014,7 +21066,14 @@ impl ValueEmitter {
         reference_temp: &str,
     ) {
         match target {
-            ReferenceTarget::Variable { name, .. } => {
+            ReferenceTarget::Variable { name, line } => {
+                if name == "GLOBALS" {
+                    self.emit_globals_reference_fatal(
+                        out,
+                        "Cannot acquire reference to $GLOBALS",
+                        *line,
+                    );
+                }
                 out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
                 out.push_str(&c_string(name));
                 out.push_str("\", ");
@@ -21136,6 +21195,33 @@ impl ValueEmitter {
     }
 
     fn emit_value(&mut self, out: &mut String, value: &ValueExpr) -> String {
+        if let Some(ReferenceTarget::ArrayDim(target)) =
+            reference_array_dim_target_from_value(value)
+        {
+            if target.array == "GLOBALS"
+                && target
+                    .dimensions
+                    .iter()
+                    .all(|dimension| dimension.is_some())
+            {
+                let path = emit_array_path_segments(out, self, &target.dimensions);
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_runtime_globals_array_path_read(&runtime, ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&target.line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                return result_temp;
+            }
+        }
+
         match value {
             ValueExpr::Binary {
                 op,
@@ -25994,13 +26080,24 @@ impl ValueEmitter {
 
     fn emit_reference_target(&mut self, out: &mut String, target: &ReferenceTarget) -> String {
         match target {
-            ReferenceTarget::Variable { name, .. } => {
+            ReferenceTarget::Variable { name, line } => {
                 let temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&temp);
-                out.push_str(" = ptn_runtime_reference_for_variable(&runtime, \"");
-                out.push_str(&c_string(name));
-                out.push_str("\");\n");
+                out.push_str(" = ptn_null();\n");
+                if name == "GLOBALS" {
+                    self.emit_globals_reference_fatal(
+                        out,
+                        "Cannot acquire reference to $GLOBALS",
+                        *line,
+                    );
+                } else {
+                    out.push_str("    ");
+                    out.push_str(&temp);
+                    out.push_str(" = ptn_runtime_reference_for_variable(&runtime, \"");
+                    out.push_str(&c_string(name));
+                    out.push_str("\");\n");
+                }
                 temp
             }
             ReferenceTarget::DynamicVariable { name, line } => {

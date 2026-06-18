@@ -1504,6 +1504,13 @@ static PTN_UNUSED PtnValue ptn_exception_capture_trace(PtnRuntime *runtime) {
     return trace;
 }
 
+static PTN_UNUSED int ptn_try_object_to_string_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *out
+);
+
 static PTN_UNUSED PtnException *ptn_exception_new_owned(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1525,6 +1532,8 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->class_name = class_name;
     exception->message = message;
     exception->message_len = message_len;
+    exception->uncaught_text = NULL;
+    exception->uncaught_text_len = 0;
     exception->code = code;
     exception->path = path;
     exception->line = line;
@@ -1846,6 +1855,15 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
         fprintf(stderr, "%s: ", label);
         fwrite(exception->message, 1, exception->message_len, stderr);
         fputc('\n', stderr);
+        return;
+    }
+
+    if (exception->uncaught_text != NULL) {
+        fputc('\n', stderr);
+        fprintf(stderr, "%s: Uncaught ", label);
+        fwrite(exception->uncaught_text, 1, exception->uncaught_text_len, stderr);
+        fputc('\n', stderr);
+        fprintf(stderr, "  thrown in %s on line %zu\n", display_path, display_line);
         return;
     }
 
@@ -2434,6 +2452,22 @@ static PTN_UNUSED PtnValue ptn_throw_value(
             exception_path,
             stored_line < 0 ? line : (size_t)stored_line
         );
+        if (
+            runtime->exceptions->try_frame == NULL &&
+            runtime->declared_method_exists != NULL &&
+            runtime->declared_method_exists(resolved.as.object->class_name, "__toString")
+        ) {
+            PtnStringOperand uncaught_text;
+            if (ptn_try_object_to_string_operand(runtime, resolved, line, &uncaught_text)) {
+                runtime->exceptions->active_exception->uncaught_text_len = uncaught_text.len;
+                if (uncaught_text.owned != NULL) {
+                    runtime->exceptions->active_exception->uncaught_text = uncaught_text.owned;
+                } else {
+                    runtime->exceptions->active_exception->uncaught_text =
+                        ptn_duplicate_string_len(uncaught_text.data, uncaught_text.len);
+                }
+            }
+        }
         ptn_value_destroy(&previous);
         if (runtime->exceptions->try_frame != NULL) {
             longjmp(runtime->exceptions->try_frame->jump, 1);
