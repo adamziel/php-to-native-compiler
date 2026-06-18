@@ -3384,6 +3384,7 @@ impl Parser<'_> {
             return_type,
             return_by_ref,
             is_static: modifiers.is_static,
+            is_final: modifiers.is_final,
             is_abstract: modifiers.is_abstract,
             body,
             span,
@@ -12022,6 +12023,15 @@ fn validate_method_signature_compatibility(
             let has_visible_parent_method = if let Some((parent_class, parent_method)) =
                 find_visible_parent_method(class, &method.name, classes)
             {
+                if parent_method.is_final {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot override final method {}::{}()",
+                            parent_class.name, parent_method.name
+                        ),
+                        Some(method.span),
+                    ));
+                }
                 if method_requires_parent_signature_compatibility(method, parent_method) {
                     validate_method_signature_pair(
                         class,

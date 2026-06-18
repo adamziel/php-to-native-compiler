@@ -194,6 +194,7 @@ pub struct MethodDecl {
     pub return_type: Option<TypeHint>,
     pub return_by_ref: bool,
     pub is_static: bool,
+    pub is_final: bool,
     pub is_abstract: bool,
     pub body: Vec<Statement>,
     pub span: SourceSpan,
