@@ -12151,6 +12151,7 @@ static void ptn_array_adopt_storage(PtnArray *target, PtnArray *source) {
     target->index_capacity = source->index_capacity;
     target->next_auto_key = source->next_auto_key;
     target->current_index = source->current_index <= source->len ? source->current_index : source->len;
+    target->destroying = 0;
 
     source->len = 0;
     source->capacity = 0;
@@ -12160,6 +12161,7 @@ static void ptn_array_adopt_storage(PtnArray *target, PtnArray *source) {
     source->next_auto_key = 0;
     source->current_index = 0;
     source->mutation_epoch = 0;
+    source->destroying = 0;
 }
 
 static void ptn_array_splice_note_iterator_mutation(
@@ -12248,6 +12250,60 @@ static PtnValue ptn_array_splice_values(
     return removed;
 }
 
+static void ptn_runtime_drop_value_preserving_first_cleanup_exception(
+    PtnRuntime *runtime,
+    PtnValue *value
+) {
+    if (
+        runtime == NULL ||
+        runtime->exceptions == NULL ||
+        value == NULL ||
+        !value->owned
+    ) {
+        ptn_value_drop(value);
+        return;
+    }
+
+    PtnException *saved_exception = runtime->exceptions->active_exception;
+    if (saved_exception != NULL) {
+        ptn_exception_retain(saved_exception);
+        ptn_exception_free(runtime->exceptions->active_exception);
+        runtime->exceptions->active_exception = NULL;
+    }
+
+    PtnException *first_cleanup_exception = NULL;
+    PtnTryFrame cleanup_frame;
+    ptn_try_frame_push(runtime, &cleanup_frame);
+    while (value->owned) {
+        if (setjmp(cleanup_frame.jump) == 0) {
+            ptn_value_drop(value);
+            break;
+        }
+
+        PtnException *cleanup_exception = runtime->exceptions->active_exception;
+        if (
+            saved_exception == NULL &&
+            first_cleanup_exception == NULL &&
+            cleanup_exception != NULL
+        ) {
+            ptn_exception_retain(cleanup_exception);
+            first_cleanup_exception = cleanup_exception;
+        }
+        ptn_exception_free(cleanup_exception);
+        runtime->exceptions->active_exception = NULL;
+    }
+    ptn_try_frame_pop(runtime, &cleanup_frame);
+
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = NULL;
+    if (saved_exception != NULL) {
+        runtime->exceptions->active_exception = saved_exception;
+        ptn_exception_free(first_cleanup_exception);
+    } else if (first_cleanup_exception != NULL) {
+        runtime->exceptions->active_exception = first_cleanup_exception;
+    }
+}
+
 static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
     PtnRuntime *runtime,
     PtnValue target,
@@ -12262,7 +12318,7 @@ static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
         mutation_epoch = array->mutation_epoch;
     }
 
-    ptn_value_drop(removed);
+    ptn_runtime_drop_value_preserving_first_cleanup_exception(runtime, removed);
 
     if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
         if (array != NULL) {

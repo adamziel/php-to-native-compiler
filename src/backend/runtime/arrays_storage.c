@@ -453,6 +453,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     array->debug_hidden_refcount = 0;
     array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;
+    array->destroying = 0;
     array->len = 0;
     array->capacity = entry_count;
     array->entries = NULL;
@@ -1240,6 +1241,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     array->debug_hidden_refcount = 0;
     array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;
+    array->destroying = 0;
     array->len = 0;
     array->capacity = source->len;
     array->entries = NULL;

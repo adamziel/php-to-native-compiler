@@ -165,9 +165,14 @@ static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {
     if (array == NULL) {
         return;
     }
-    ptn_cow_debug_note_array_free();
+    if (!array->destroying) {
+        array->destroying = 1;
+        ptn_cow_debug_note_array_free();
+    }
     for (size_t i = 0; i < array->len; i++) {
-        ptn_array_key_free(array->entries[i].key);
+        PtnArrayKey key = array->entries[i].key;
+        array->entries[i].key = ptn_array_int_key(0);
+        ptn_array_key_free(key);
         ptn_value_destroy(&array->entries[i].value);
     }
     free(array->index_slots);
@@ -177,6 +182,14 @@ static PTN_UNUSED void ptn_array_destroy_storage(PtnArray *array) {
 
 static PTN_UNUSED void ptn_array_free(PtnArray *array) {
     if (array == NULL) {
+        return;
+    }
+    if (array->refcount == 0) {
+        if (array->destroying && array->iterator_refcount == 0) {
+            ptn_array_destroy_storage(array);
+            return;
+        }
+        ptn_cow_debug_assert_array_refcount(array, "release");
         return;
     }
     ptn_cow_debug_assert_array_refcount(array, "release");

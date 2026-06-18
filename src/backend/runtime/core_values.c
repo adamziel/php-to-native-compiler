@@ -736,6 +736,7 @@ struct PtnArray {
     size_t debug_hidden_refcount;
     int debug_reference_wrapped;
     size_t iterator_refcount;
+    int destroying;
     size_t len;
     size_t capacity;
     PtnArrayEntry *entries;
