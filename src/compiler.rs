@@ -322,13 +322,13 @@ impl IncludeCollector {
             }
             Statement::For {
                 initializers,
-                condition,
+                conditions,
                 updates,
                 body,
                 ..
             } => {
                 self.collect_statements(initializers, source_file, source_dir)?;
-                if let Some(condition) = condition {
+                for condition in conditions {
                     self.collect_expr(condition, source_file, source_dir)?;
                 }
                 let before_loop = self.path_env.clone();
