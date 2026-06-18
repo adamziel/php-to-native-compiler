@@ -103,6 +103,8 @@ pub struct TraitDecl {
     pub deprecated_message: Option<String>,
     pub deprecated_since: Option<String>,
     pub line: usize,
+    pub properties: Vec<PropertyDecl>,
+    pub static_properties: Vec<StaticPropertyDecl>,
     pub methods: Vec<TraitMethodDecl>,
 }
 
@@ -2119,13 +2121,64 @@ impl<'a> LoweringContext<'a> {
         annotated
     }
 
-    fn lower_trait(&self, trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
+    fn lower_trait(&mut self, trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
+        let properties = trait_decl
+            .properties
+            .iter()
+            .map(|property| PropertyDecl {
+                name: property.name.clone(),
+                visibility: lower_property_visibility(property.visibility),
+                set_visibility: lower_property_visibility(property.set_visibility),
+                is_final: property.is_final,
+                is_abstract: property.is_abstract,
+                is_readonly: property.is_readonly,
+                has_hooks: property.has_hooks,
+                is_virtual: property.is_virtual,
+                hook_has_get: property.hook_has_get,
+                hook_has_set: property.hook_has_set,
+                hook_get_is_abstract: property.hook_get_is_abstract,
+                hook_set_is_abstract: property.hook_set_is_abstract,
+                hook_get_value: property
+                    .hook_get_value
+                    .as_ref()
+                    .map(|value| self.lower_expr(value)),
+                type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
+                attributes: self.lower_class_scoped_attribute_metadata(
+                    &property.attributes,
+                    &trait_decl.name,
+                    None,
+                ),
+                value: property.value.as_ref().map(|value| self.lower_expr(value)),
+                line: property.span.line,
+                source_order: property.span.byte_start,
+            })
+            .collect();
+        let static_properties = trait_decl
+            .static_properties
+            .iter()
+            .map(|property| StaticPropertyDecl {
+                name: property.name.clone(),
+                visibility: lower_property_visibility(property.visibility),
+                set_visibility: lower_property_visibility(property.set_visibility),
+                is_final: property.is_final,
+                type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
+                attributes: self.lower_class_scoped_attribute_metadata(
+                    &property.attributes,
+                    &trait_decl.name,
+                    None,
+                ),
+                value: property.value.as_ref().map(|value| self.lower_expr(value)),
+                source_order: property.span.byte_start,
+            })
+            .collect();
         TraitDecl {
             name: trait_decl.name.clone(),
             trait_uses: lower_trait_uses(&trait_decl.trait_uses),
             deprecated_message: trait_decl.attributes.deprecated_message.clone(),
             deprecated_since: trait_decl.attributes.deprecated_since.clone(),
             line: trait_decl.span.line,
+            properties,
+            static_properties,
             methods: trait_decl
                 .methods
                 .iter()

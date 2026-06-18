@@ -20830,6 +20830,59 @@ var_dump(in_array(\"Attribute\", get_declared_classes()));
 }
 
 #[test]
+fn compile_trait_property_attributes_are_visible_to_reflection_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-property-attributes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-property-attributes.php");
+    let output = root.join("trait-property-attributes-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute(Attribute::TARGET_PROPERTY)]
+class A2 {}
+
+trait T1 {
+    #[A2]
+    public $a;
+}
+
+class C4 {
+    use T1;
+}
+
+class C5 {
+    use T1;
+
+    public $a;
+}
+
+foreach ([T1::class, C4::class, C5::class] as $class) {
+    $attributes = (new ReflectionClass($class))->getProperty('a')->getAttributes();
+    echo $class, ':', count($attributes), \"\\n\";
+    foreach ($attributes as $attribute) {
+        echo $attribute->getName(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("T1:1\n", "A2\n", "C4:1\n", "A2\n", "C5:0\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_reflection_attributes"));
+    assert!(c_source.contains("ptn_reflection_property_object_from_name(runtime, \"T1\", \"a\")"));
+}
+
+#[test]
 fn compile_reflection_attribute_new_instance_uses_attribute_site_strict_types() {
     let root = temp_dir("ptn-native-reflection-attribute-strict-use-site");
     fs::create_dir_all(&root).unwrap();

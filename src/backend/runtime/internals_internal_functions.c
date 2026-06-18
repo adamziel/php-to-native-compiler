@@ -67013,7 +67013,9 @@ static PtnValue ptn_reflection_property_to_string(
     PtnRuntime *runtime,
     PtnReflectionPropertyData *data
 ) {
-    if (!data->is_dynamic && ptn_declared_user_class_or_interface_exists(data->class_name)) {
+    if (!data->is_dynamic &&
+        (ptn_declared_user_class_or_interface_exists(data->class_name) ||
+         ptn_declared_trait_exists(data->class_name))) {
         PtnValue declared_string = ptn_declared_class_reflection_property_to_string(
             runtime,
             data->class_name,
@@ -67340,7 +67342,9 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     }
     if (ptn_ascii_case_equal(name, "getAttributes")) {
         const char *attribute_class_name = declaring_class == NULL ? data->class_name : declaring_class;
-        if (!data->is_dynamic && ptn_declared_user_class_or_interface_exists(attribute_class_name)) {
+        if (!data->is_dynamic &&
+            (ptn_declared_user_class_or_interface_exists(attribute_class_name) ||
+             ptn_declared_trait_exists(attribute_class_name))) {
             return ptn_declared_class_property_reflection_attributes(
                 runtime,
                 attribute_class_name,

@@ -6326,7 +6326,7 @@ fn emit_reflection_attribute_metadata_helpers(
 ) {
     emit_declared_class_reflection_attributes(out, classes, functions);
     emit_declared_class_method_reflection_attributes(out, classes, traits, functions);
-    emit_declared_class_property_reflection_attributes(out, classes, functions);
+    emit_declared_class_property_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_constant_reflection_attributes(out, classes, functions);
     emit_declared_function_reflection_attributes(out, classes, functions);
     emit_declared_function_parameter_reflection_attributes(out, classes, functions);
@@ -6655,6 +6655,7 @@ fn emit_declared_class_method_reflection_attributes(
 fn emit_declared_class_property_reflection_attributes(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str(
@@ -6668,6 +6669,15 @@ fn emit_declared_class_property_reflection_attributes(
             .iter()
             .any(|property| !property.attributes.instances.is_empty())
             || class
+                .static_properties
+                .iter()
+                .any(|property| !property.attributes.instances.is_empty())
+    }) || traits.iter().any(|trait_decl| {
+        trait_decl
+            .properties
+            .iter()
+            .any(|property| !property.attributes.instances.is_empty())
+            || trait_decl
                 .static_properties
                 .iter()
                 .any(|property| !property.attributes.instances.is_empty())
@@ -6703,6 +6713,48 @@ fn emit_declared_class_property_reflection_attributes(
             }
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
+            out.push_str("\") && strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            emit_declared_attribute_result(
+                out,
+                "ReflectionProperty",
+                "ReflectionProperty::getAttributes",
+                &property.attributes,
+                8,
+                classes,
+                functions,
+            );
+            out.push_str("    }\n");
+        }
+    }
+    for trait_decl in traits {
+        for property in &trait_decl.properties {
+            if property.attributes.instances.is_empty() {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
+            out.push_str("\") && strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            emit_declared_attribute_result(
+                out,
+                "ReflectionProperty",
+                "ReflectionProperty::getAttributes",
+                &property.attributes,
+                8,
+                classes,
+                functions,
+            );
+            out.push_str("    }\n");
+        }
+        for property in &trait_decl.static_properties {
+            if property.attributes.instances.is_empty() {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&trait_decl.name));
             out.push_str("\") && strcmp(property_name, \"");
             out.push_str(&c_string(&property.name));
             out.push_str("\") == 0) {\n");
@@ -7945,6 +7997,9 @@ fn emit_class_reflection_metadata_helpers(
     if classes
         .iter()
         .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
     {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)filter_present;\n");
@@ -7961,6 +8016,24 @@ fn emit_class_reflection_metadata_helpers(
             {
                 continue;
             }
+            out.push_str("        if (ptn_reflection_property_matches_filter(");
+            out.push_str(&entry.reflection_modifiers().to_string());
+            out.push_str(", filter_present, filter)) {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_property_object_from_name(runtime, \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\"));\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return result;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
             out.push_str("        if (ptn_reflection_property_matches_filter(");
             out.push_str(&entry.reflection_modifiers().to_string());
             out.push_str(", filter_present, filter)) {\n");
@@ -8064,6 +8137,9 @@ fn emit_class_reflection_metadata_helpers(
     if classes
         .iter()
         .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
     {
         out.push_str("    (void)property_name;\n");
         out.push_str("    (void)declaring_class;\n");
@@ -8106,6 +8182,35 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            *declaring_class = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            *is_static = ");
+            out.push_str(if entry.is_static { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            *visibility = ");
+            out.push_str(c_property_visibility(entry.visibility));
+            out.push_str(";\n");
+            out.push_str("            *has_default = ");
+            out.push_str(if entry.has_default { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            *modifiers = ");
+            out.push_str(&entry.reflection_modifiers().to_string());
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
@@ -8118,6 +8223,9 @@ fn emit_class_reflection_metadata_helpers(
     if classes
         .iter()
         .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
     {
         out.push_str("    (void)property_name;\n");
         out.push_str("    (void)type_name;\n");
@@ -8170,6 +8278,45 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            *is_readonly = ");
+            out.push_str(if entry.is_readonly { "1" } else { "0" });
+            out.push_str(";\n");
+            if let Some(type_metadata) = entry
+                .type_hint
+                .and_then(reflection_property_named_type_metadata)
+            {
+                out.push_str("            *type_name = \"");
+                out.push_str(&c_string(&type_metadata.name));
+                out.push_str("\";\n");
+                out.push_str("            *type_display_name = \"");
+                out.push_str(&c_string(&type_metadata.display_name));
+                out.push_str("\";\n");
+                out.push_str("            *allows_null = ");
+                out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+                out.push_str(";\n");
+                out.push_str("            *is_builtin = ");
+                out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+                out.push_str(";\n");
+            } else {
+                out.push_str("            *type_name = NULL;\n");
+                out.push_str("            *type_display_name = NULL;\n");
+                out.push_str("            *allows_null = 0;\n");
+                out.push_str("            *is_builtin = 0;\n");
+            }
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
@@ -8183,6 +8330,9 @@ fn emit_class_reflection_metadata_helpers(
     if classes
         .iter()
         .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
     {
         out.push_str("    (void)property_name;\n");
     }
@@ -8207,6 +8357,22 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("        return ptn_null();\n");
         out.push_str("    }\n");
     }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(&c_property_default_value(entry.value));
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
     out.push_str("    return ptn_null();\n");
     out.push_str("}\n");
 
@@ -8220,6 +8386,9 @@ fn emit_class_reflection_metadata_helpers(
     if classes
         .iter()
         .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
     {
         out.push_str("    (void)property_name;\n");
     }
@@ -8233,6 +8402,22 @@ fn emit_class_reflection_metadata_helpers(
             {
                 continue;
             }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ptn_string(\"");
+            out.push_str(&c_string(&reflection_property_to_string(&entry)));
+            out.push_str("\");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(entry.name));
             out.push_str("\") == 0) {\n");
@@ -8984,6 +9169,67 @@ impl ClassPropertyExistsEntry<'_> {
             self.is_virtual,
         )
     }
+}
+
+fn trait_property_exists_entries<'a>(
+    trait_decl: &'a TraitDecl,
+) -> Vec<ClassPropertyExistsEntry<'a>> {
+    let instance_property_entry =
+        |property: &'a crate::ir::PropertyDecl| ClassPropertyExistsEntry {
+            declaring_class: trait_decl.name.as_str(),
+            name: property.name.as_str(),
+            visibility: property.visibility,
+            set_visibility: property.set_visibility,
+            is_static: false,
+            is_final: property.is_final,
+            is_abstract: property.is_abstract,
+            is_readonly: property.is_readonly,
+            has_hooks: property.has_hooks,
+            is_virtual: property.is_virtual,
+            hook_has_get: property.hook_has_get,
+            hook_has_set: property.hook_has_set,
+            hook_get_is_abstract: property.hook_get_is_abstract,
+            hook_set_is_abstract: property.hook_set_is_abstract,
+            type_hint: property.type_hint.as_ref(),
+            value: property.value.as_ref(),
+            has_default: property.value.is_some() || property.type_hint.is_none(),
+        };
+    let mut properties = Vec::new();
+    properties.extend(
+        trait_decl
+            .properties
+            .iter()
+            .map(|property| (property.source_order, instance_property_entry(property))),
+    );
+    properties.extend(trait_decl.static_properties.iter().map(|property| {
+        (
+            property.source_order,
+            ClassPropertyExistsEntry {
+                declaring_class: trait_decl.name.as_str(),
+                name: property.name.as_str(),
+                visibility: property.visibility,
+                set_visibility: property.set_visibility,
+                is_static: true,
+                is_final: property.is_final,
+                is_abstract: false,
+                is_readonly: false,
+                has_hooks: false,
+                is_virtual: false,
+                hook_has_get: false,
+                hook_has_set: false,
+                hook_get_is_abstract: false,
+                hook_set_is_abstract: false,
+                type_hint: property.type_hint.as_ref(),
+                value: property.value.as_ref(),
+                has_default: property.value.is_some() || property.type_hint.is_none(),
+            },
+        )
+    }));
+    properties.sort_by_key(|(source_order, _)| *source_order);
+    properties
+        .into_iter()
+        .map(|(_, property)| property)
+        .collect()
 }
 
 fn property_reflection_modifiers(
