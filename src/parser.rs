@@ -3355,7 +3355,10 @@ impl Parser<'_> {
                 self.parse_unset_statement()
             }
             TokenKind::Identifier(ref name)
-                if name.eq_ignore_ascii_case("list")
+                if (name.eq_ignore_ascii_case("array")
+                    || name.eq_ignore_ascii_case("empty")
+                    || name.eq_ignore_ascii_case("isset")
+                    || name.eq_ignore_ascii_case("list"))
                     && matches!(self.peek_next().kind, TokenKind::LeftParen) =>
             {
                 self.parse_expression_statement()
