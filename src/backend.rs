@@ -1356,8 +1356,38 @@ fn emit_user_functions(
             out.push_str("    runtime.has_current_receiver = 1;\n");
             out.push_str("    runtime.current_receiver = receiver;\n");
         }
+        let sensitive_variadic_position = function_sensitive_variadic_position(function);
+        let sensitive_parameter_count = function.parameters.len();
+        if function_has_sensitive_parameters(function) {
+            out.push_str("    static const unsigned char ptn_sensitive_parameters[] = { ");
+            for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+                if parameter_index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str(if parameter_has_sensitive_parameter(parameter) {
+                    "1"
+                } else {
+                    "0"
+                });
+            }
+            out.push_str(" };\n");
+        }
+        let sensitive_parameters_expr = if function_has_sensitive_parameters(function) {
+            "ptn_sensitive_parameters"
+        } else {
+            "NULL"
+        };
+        let sensitive_variadic_position_expr = sensitive_variadic_position
+            .map(|position| position.to_string())
+            .unwrap_or_else(|| "((size_t)-1)".to_string());
         if call_frame_parameter_count == 0 {
-            out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL);\n");
+            out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, 0, NULL, ");
+            out.push_str(&sensitive_parameter_count.to_string());
+            out.push_str(", ");
+            out.push_str(sensitive_parameters_expr);
+            out.push_str(", ");
+            out.push_str(&sensitive_variadic_position_expr);
+            out.push_str(");\n");
         } else {
             out.push_str("    static const char *ptn_parameter_names[] = { ");
             for (parameter_index, parameter) in function
@@ -1376,7 +1406,13 @@ fn emit_user_functions(
             out.push_str(" };\n");
             out.push_str("    ptn_runtime_set_call_frame(&runtime, argc, args, ");
             out.push_str(&call_frame_parameter_count.to_string());
-            out.push_str(", ptn_parameter_names);\n");
+            out.push_str(", ptn_parameter_names, ");
+            out.push_str(&sensitive_parameter_count.to_string());
+            out.push_str(", ");
+            out.push_str(sensitive_parameters_expr);
+            out.push_str(", ");
+            out.push_str(&sensitive_variadic_position_expr);
+            out.push_str(");\n");
         }
         if function.is_anonymous {
             out.push_str("    if (receiver.type == PTN_CLOSURE && receiver.as.closure->scope_class_name != NULL) {\n");
@@ -1895,6 +1931,31 @@ fn function_call_frame_parameter_count(function: &FunctionDecl) -> usize {
         .iter()
         .position(|parameter| parameter.is_variadic)
         .unwrap_or(function.parameters.len())
+}
+
+fn attribute_metadata_has_builtin_attribute(attributes: &AttributeMetadata, name: &str) -> bool {
+    attributes
+        .instances
+        .iter()
+        .any(|instance| instance.name.eq_ignore_ascii_case(name))
+}
+
+fn parameter_has_sensitive_parameter(parameter: &FunctionParameter) -> bool {
+    attribute_metadata_has_builtin_attribute(&parameter.attributes, "SensitiveParameter")
+}
+
+fn function_has_sensitive_parameters(function: &FunctionDecl) -> bool {
+    function
+        .parameters
+        .iter()
+        .any(parameter_has_sensitive_parameter)
+}
+
+fn function_sensitive_variadic_position(function: &FunctionDecl) -> Option<usize> {
+    function
+        .parameters
+        .iter()
+        .position(|parameter| parameter.is_variadic && parameter_has_sensitive_parameter(parameter))
 }
 
 fn emit_user_function_declaration_location_args(out: &mut String, function: &FunctionDecl) {
@@ -11397,6 +11458,14 @@ fn emit_instruction(
             argument_unpacks,
             line,
         } => {
+            let value = ValueExpr::InternalCall {
+                name: name.clone(),
+                arguments: arguments.clone(),
+                argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
+                line: *line,
+            };
+            values.emit_no_discard_warning(out, &value);
             let result_temp = if name.eq_ignore_ascii_case("array_splice")
                 && (2..=4).contains(&arguments.len())
                 && argument_names.iter().all(Option::is_none)
@@ -11413,14 +11482,6 @@ fn emit_instruction(
                     *line,
                 )
             };
-            let value = ValueExpr::InternalCall {
-                name: name.clone(),
-                arguments: arguments.clone(),
-                argument_names: argument_names.clone(),
-                argument_unpacks: argument_unpacks.clone(),
-                line: *line,
-            };
-            values.emit_no_discard_warning(out, &value);
             out.push_str("    (void)");
             out.push_str(&result_temp);
             out.push_str(";\n");
@@ -14105,6 +14166,9 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
         );
     }
     for function in &module.functions {
+        if function_has_sensitive_parameters(function) {
+            requirements.internal_function_dispatch = true;
+        }
         collect_instructions_runtime_requirements(
             &function.body,
             &module.functions,
@@ -17630,6 +17694,7 @@ impl ValueEmitter {
             line,
         } = value
         {
+            self.emit_no_discard_warning(out, value);
             if name.eq_ignore_ascii_case("array_splice")
                 && (2..=4).contains(&arguments.len())
                 && argument_names.iter().all(Option::is_none)
@@ -17637,6 +17702,14 @@ impl ValueEmitter {
             {
                 return self.emit_discarded_array_splice_call(out, arguments, *line);
             }
+            return self.emit_internal_call(
+                out,
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            );
         }
         if let ValueExpr::DynamicCall {
             callee,
@@ -17689,7 +17762,6 @@ impl ValueEmitter {
                     true,
                 )
             };
-            self.emit_no_discard_warning(out, value);
             return emitted_value;
         }
         if let ValueExpr::DynamicMethodCall {
@@ -18063,6 +18135,23 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+    }
+
+    fn emit_discarded_declared_method_warnings(
+        &self,
+        out: &mut String,
+        receiver_temp: &str,
+        method_name_expr: &str,
+        value: &ValueExpr,
+        line: usize,
+    ) {
+        self.emit_no_discard_warning(out, value);
+        self.emit_no_discard_warning_for_internal_method_expr(
+            out,
+            receiver_temp,
+            method_name_expr,
+            line,
+        );
     }
 
     fn no_discard_function_for_callable_expr(&self, callable: &ValueExpr) -> Option<&FunctionDecl> {
@@ -27810,6 +27899,15 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         let declared_signature =
             self.declared_instance_method_signature_for_receiver(receiver, name);
+        let no_discard_value = discarded.then(|| ValueExpr::MethodCall {
+            receiver: Box::new(receiver.clone()),
+            name: name.to_string(),
+            arguments: arguments.to_vec(),
+            argument_names: argument_names.to_vec(),
+            argument_unpacks: argument_unpacks.to_vec(),
+            nullsafe: false,
+            line,
+        });
         if argument_unpacks.iter().any(|unpack| *unpack) {
             let direct_parameters = declared_signature
                 .as_ref()
@@ -27823,6 +27921,16 @@ impl ValueEmitter {
                 declared_signature.is_none(),
                 direct_parameters,
             );
+            if let Some(value) = no_discard_value.as_ref() {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_discarded_declared_method_warnings(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    value,
+                    line,
+                );
+            }
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
             out.push_str(&receiver_temp);
@@ -27835,15 +27943,6 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                let method_name_expr = format!("\"{}\"", c_string(name));
-                self.emit_no_discard_warning_for_internal_method_expr(
-                    out,
-                    &receiver_temp,
-                    &method_name_expr,
-                    line,
-                );
-            }
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -27851,6 +27950,16 @@ impl ValueEmitter {
             return result_temp;
         }
         if arguments.is_empty() {
+            if let Some(value) = no_discard_value.as_ref() {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_discarded_declared_method_warnings(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    value,
+                    line,
+                );
+            }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -27860,15 +27969,6 @@ impl ValueEmitter {
             out.push_str("\", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                let method_name_expr = format!("\"{}\"", c_string(name));
-                self.emit_no_discard_warning_for_internal_method_expr(
-                    out,
-                    &receiver_temp,
-                    &method_name_expr,
-                    line,
-                );
-            }
             emit_value_cleanup(out, "    ", &receiver_temp);
             return result_temp;
         }
@@ -27929,6 +28029,16 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        if let Some(value) = no_discard_value.as_ref() {
+            let method_name_expr = format!("\"{}\"", c_string(name));
+            self.emit_discarded_declared_method_warnings(
+                out,
+                &receiver_temp,
+                &method_name_expr,
+                value,
+                line,
+            );
+        }
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -27942,15 +28052,6 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        if discarded {
-            let method_name_expr = format!("\"{}\"", c_string(name));
-            self.emit_no_discard_warning_for_internal_method_expr(
-                out,
-                &receiver_temp,
-                &method_name_expr,
-                line,
-            );
-        }
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
@@ -28017,6 +28118,15 @@ impl ValueEmitter {
         let result_temp = self.next_temp();
         let declared_signature =
             self.declared_instance_method_signature_for_receiver(receiver, name);
+        let no_discard_value = discarded.then(|| ValueExpr::MethodCall {
+            receiver: Box::new(receiver.clone()),
+            name: name.to_string(),
+            arguments: arguments.to_vec(),
+            argument_names: argument_names.to_vec(),
+            argument_unpacks: argument_unpacks.to_vec(),
+            nullsafe: true,
+            line,
+        });
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_null();\n");
@@ -28036,6 +28146,16 @@ impl ValueEmitter {
                 declared_signature.is_none(),
                 direct_parameters,
             );
+            if let Some(value) = no_discard_value.as_ref() {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_discarded_declared_method_warnings(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    value,
+                    line,
+                );
+            }
             out.push_str("        ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -28049,19 +28169,20 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                let method_name_expr = format!("\"{}\"", c_string(name));
-                self.emit_no_discard_warning_for_internal_method_expr(
-                    out,
-                    &receiver_temp,
-                    &method_name_expr,
-                    line,
-                );
-            }
             out.push_str("        ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
         } else if arguments.is_empty() {
+            if let Some(value) = no_discard_value.as_ref() {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_discarded_declared_method_warnings(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    value,
+                    line,
+                );
+            }
             out.push_str("        ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -28071,15 +28192,6 @@ impl ValueEmitter {
             out.push_str("\", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                let method_name_expr = format!("\"{}\"", c_string(name));
-                self.emit_no_discard_warning_for_internal_method_expr(
-                    out,
-                    &receiver_temp,
-                    &method_name_expr,
-                    line,
-                );
-            }
         } else {
             let mut temps = Vec::with_capacity(arguments.len());
             let mut unwrap_array_dim_reference_temps = Vec::new();
@@ -28137,6 +28249,16 @@ impl ValueEmitter {
                 out.push(')');
             }
             out.push_str(" };\n");
+            if let Some(value) = no_discard_value.as_ref() {
+                let method_name_expr = format!("\"{}\"", c_string(name));
+                self.emit_discarded_declared_method_warnings(
+                    out,
+                    &receiver_temp,
+                    &method_name_expr,
+                    value,
+                    line,
+                );
+            }
             out.push_str("        ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -28150,15 +28272,6 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                let method_name_expr = format!("\"{}\"", c_string(name));
-                self.emit_no_discard_warning_for_internal_method_expr(
-                    out,
-                    &receiver_temp,
-                    &method_name_expr,
-                    line,
-                );
-            }
             for temp in &unwrap_array_dim_reference_temps {
                 emit_unwrap_array_dim_reference_call_argument(out, "        ", temp);
             }
@@ -28213,6 +28326,14 @@ impl ValueEmitter {
                 true,
                 None,
             );
+            if discarded {
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_temp,
+                    line,
+                );
+            }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -28226,14 +28347,6 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                self.emit_no_discard_warning_for_internal_method_expr(
-                    out,
-                    &receiver_temp,
-                    &method_name_temp,
-                    line,
-                );
-            }
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -28245,6 +28358,14 @@ impl ValueEmitter {
             return result_temp;
         }
         if arguments.is_empty() {
+            if discarded {
+                self.emit_no_discard_warning_for_internal_method_expr(
+                    out,
+                    &receiver_temp,
+                    &method_name_temp,
+                    line,
+                );
+            }
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -28254,14 +28375,6 @@ impl ValueEmitter {
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
-            if discarded {
-                self.emit_no_discard_warning_for_internal_method_expr(
-                    out,
-                    &receiver_temp,
-                    &method_name_temp,
-                    line,
-                );
-            }
             out.push_str("    free(");
             out.push_str(&method_name_temp);
             out.push_str(");\n");
@@ -28292,6 +28405,14 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        if discarded {
+            self.emit_no_discard_warning_for_internal_method_expr(
+                out,
+                &receiver_temp,
+                &method_name_temp,
+                line,
+            );
+        }
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_declared_method(&runtime, ");
@@ -28305,14 +28426,6 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
-        if discarded {
-            self.emit_no_discard_warning_for_internal_method_expr(
-                out,
-                &receiver_temp,
-                &method_name_temp,
-                line,
-            );
-        }
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }

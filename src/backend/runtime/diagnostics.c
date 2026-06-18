@@ -1487,6 +1487,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->owned_trace_frame.args = NULL;
     runtime->owned_trace_frame.parameter_count = 0;
     runtime->owned_trace_frame.parameter_names = NULL;
+    runtime->owned_trace_frame.sensitive_parameter_count = 0;
+    runtime->owned_trace_frame.sensitive_parameters = NULL;
+    runtime->owned_trace_frame.sensitive_variadic_position = (size_t)-1;
     runtime->owned_trace_frame.has_receiver = 0;
     runtime->owned_trace_frame.receiver = ptn_null();
     runtime->owned_trace_frame.previous = NULL;

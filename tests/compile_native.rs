@@ -40413,6 +40413,48 @@ var_dump($p->getValue($v1));
 }
 
 #[test]
+fn compile_sensitive_parameter_attribute_redacts_trace_to_native_binary() {
+    let root = temp_dir("ptn-native-sensitive-parameter-attribute-trace");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sensitive-parameter-attribute-trace.php");
+    let output = root.join("sensitive-parameter-attribute-trace-bin");
+    fs::write(
+        &input,
+        "<?php
+class SecretBox {
+    public function fail(
+        #[DelayedTargetValidation]
+        #[SensitiveParameter]
+        $secret,
+        $plain
+    ) {
+        throw new Exception('boom');
+    }
+}
+
+(new SecretBox())->fail('hidden', 'shown');
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("SecretBox->fail(Object(SensitiveParameterValue), 'shown')"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("hidden"), "{stderr}");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_sensitive_parameters"));
+    assert!(c_source.contains("ptn_sensitive_parameter_value_new"));
+}
+
+#[test]
 fn compile_first_class_callable_syntax_and_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-first-class-callable-syntax");
     fs::create_dir_all(&root).unwrap();

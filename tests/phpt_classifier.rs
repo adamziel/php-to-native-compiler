@@ -915,6 +915,22 @@ fn phpt_classifier_keeps_supported_attribute_metadata_rows_runnable_by_path() {
             "--TEST--\ndelayed target validation\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[AllowDynamicProperties]\nclass Bag {}\nvar_dump((new ReflectionClass(Bag::class))->getAttributes()[1]->newInstance());\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/attributes/delayed_target_validation/no_compile_errors.phpt",
+            "--TEST--\ndelayed target validation no compile errors\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Attribute] get => $this->hooked; #[DelayedTargetValidation] #[Attribute] set => $value; } }\necho \"ok\\n\";\n--EXPECT--\nok\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_AllowDynamicProperties.phpt",
+            "--TEST--\ndelayed allow dynamic properties\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[AllowDynamicProperties]\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[AllowDynamicProperties] get => $this->hooked; set => $value; } }\necho \"ok\\n\";\n--EXPECT--\nok\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_NoDiscard.phpt",
+            "--TEST--\ndelayed no discard\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[NoDiscard] get => $this->hooked; set => $value; } #[DelayedTargetValidation] #[NoDiscard] public function run() { return 1; } }\n(new Demo())->run();\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_SensitiveParameter.phpt",
+            "--TEST--\ndelayed sensitive parameter\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[SensitiveParameter] get => $this->hooked; set => $value; } public function run(#[DelayedTargetValidation] #[SensitiveParameter] $secret) { throw new Exception('boom'); } }\n(new Demo())->run('hidden');\n--EXPECTF--\n",
+        ),
+        (
             "Zend/tests/attributes/ossfuzz371445205.phpt",
             "--TEST--\nunknown named attribute parameter\n--FILE--\n<?php\n#[Attribute]\nclass MyAttrib {}\n#[MyAttrib(notinterned: '')]\nclass Test1 {}\n(new ReflectionClass(Test1::class))->getAttributes()[0]->newInstance();\n--EXPECT--\n",
         ),
