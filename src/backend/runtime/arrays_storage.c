@@ -262,17 +262,54 @@ static PTN_UNUSED size_t ptn_array_index_slot_for_key(PtnArray *array, PtnArrayK
     }
 }
 
+static PTN_UNUSED int ptn_array_highest_integer_key(PtnArray *array, int64_t *highest_out) {
+    int found = 0;
+    int64_t highest = 0;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayKey key = array->entries[i].key;
+        if (key.type != PTN_ARRAY_KEY_INT) {
+            continue;
+        }
+        if (!found || key.as.integer > highest) {
+            found = 1;
+            highest = key.as.integer;
+        }
+    }
+    if (found) {
+        *highest_out = highest;
+    }
+    return found;
+}
+
+static PTN_UNUSED int64_t ptn_array_next_auto_key_after_integer(int64_t key) {
+    return key < INT64_MAX ? key + 1 : INT64_MAX;
+}
+
 static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayKey key) {
-    if (key.type == PTN_ARRAY_KEY_INT &&
-        key.as.integer >= array->next_auto_key) {
-        array->next_auto_key = key.as.integer < INT64_MAX ? key.as.integer + 1 : INT64_MAX;
+    if (key.type != PTN_ARRAY_KEY_INT) {
+        return;
+    }
+
+    int64_t next = ptn_array_next_auto_key_after_integer(key.as.integer);
+    if (key.as.integer >= 0 || next > array->next_auto_key) {
+        array->next_auto_key = next;
+        return;
+    }
+
+    if (array->next_auto_key == 0) {
+        int64_t highest = 0;
+        if (!ptn_array_highest_integer_key(array, &highest) || key.as.integer > highest) {
+            array->next_auto_key = next;
+        }
     }
 }
 
 static PTN_UNUSED void ptn_array_recompute_next_auto_key(PtnArray *array) {
-    array->next_auto_key = 0;
-    for (size_t i = 0; i < array->len; i++) {
-        ptn_array_update_next_auto_key(array, array->entries[i].key);
+    int64_t highest = 0;
+    if (ptn_array_highest_integer_key(array, &highest)) {
+        array->next_auto_key = ptn_array_next_auto_key_after_integer(highest);
+    } else {
+        array->next_auto_key = 0;
     }
 }
 
