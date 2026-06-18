@@ -4719,6 +4719,46 @@ fn parser_accepts_long_array_literals_and_isset_empty_constructs() {
 }
 
 #[test]
+fn parser_treats_standalone_language_constructs_as_expressions() {
+    let program = parser::parse(
+        "<?php isset($items[(string)'0']); empty($items[(string)'1']); array(call_side_effect());",
+    )
+    .unwrap();
+    assert_eq!(program.statements.len(), 3);
+
+    assert!(matches!(
+        &program.statements[0],
+        Statement::Expression {
+            expression: Expr::Isset { targets, .. },
+            ..
+        } if targets.len() == 1
+            && matches!(
+                &targets[0],
+                Expr::ArrayAccess { index: Some(index), .. }
+                    if matches!(index.as_ref(), Expr::Cast { kind: CastKind::String, .. })
+            )
+    ));
+    assert!(matches!(
+        &program.statements[1],
+        Statement::Expression {
+            expression: Expr::Empty { target, .. },
+            ..
+        } if matches!(
+            target.as_ref(),
+            Expr::ArrayAccess { index: Some(index), .. }
+                if matches!(index.as_ref(), Expr::Cast { kind: CastKind::String, .. })
+        )
+    ));
+    assert!(matches!(
+        &program.statements[2],
+        Statement::Expression {
+            expression: Expr::Array { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn parser_accepts_null_coalescing_as_right_associative_expression() {
     let program = parser::parse("<?php echo $a ?? $b ?? \"fallback\";").unwrap();
     let Statement::Echo { expressions, .. } = &program.statements[0] else {
@@ -45804,6 +45844,51 @@ var_dump($box[0]['name']);
     assert!(c_source.contains("ptn_runtime_array_path_set_from_inc_dec"));
     assert!(c_source.contains("ptn_runtime_bind_array_path_reference"));
     assert!(c_source.contains("ptn_arrayaccess_nested_write_should_apply"));
+}
+
+#[test]
+fn compile_arrayaccess_standalone_isset_numeric_string_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-arrayaccess-standalone-isset-numeric-string-offsets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrayaccess-standalone-isset-numeric-string-offsets.php");
+    let output = root.join("arrayaccess-standalone-isset-numeric-string-offsets-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test implements ArrayAccess {
+    public function offsetExists($offset): bool {
+        echo \"offsetExists given \";
+        var_dump($offset);
+        return true;
+    }
+
+    public function offsetGet($offset): mixed {
+        return null;
+    }
+
+    public function offsetSet($offset, $value): void {
+    }
+
+    public function offsetUnset($offset): void {
+    }
+}
+
+$test = new Test();
+isset($test['0']);
+isset($test[(string)'123']);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "offsetExists given string(1) \"0\"\noffsetExists given string(3) \"123\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

@@ -8711,9 +8711,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
                 return value;
             }
             if (segment_count == 1) {
-                if (ptn_value_deref(value).type != PTN_OBJECT) {
-                    ptn_emit_indirect_modification_overloaded_element_notice(runtime, slot_value, line);
-                }
+                (void)ptn_arrayaccess_nested_write_should_apply(runtime, slot_value, value, line);
                 return ptn_reference_value(ptn_reference_new_owned(value));
             }
             if (value.type == PTN_REFERENCE) {
@@ -8978,9 +8976,7 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
             return value;
         }
         if (segment_count == 1) {
-            if (ptn_value_deref(value).type != PTN_OBJECT) {
-                ptn_emit_indirect_modification_overloaded_element_notice(runtime, *target_value, line);
-            }
+            (void)ptn_arrayaccess_nested_write_should_apply(runtime, *target_value, value, line);
             return ptn_reference_value(ptn_reference_new_owned(value));
         }
         if (value.type == PTN_REFERENCE) {
