@@ -30204,6 +30204,35 @@ $foo->run();\n",
 }
 
 #[test]
+fn compile_self_referential_array_dim_reference_assignment_returns_value_to_native_binary() {
+    let root = temp_dir("ptn-native-self-referential-array-dim-reference-assignment-result");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("self-referential-array-dim-reference-assignment-result.php");
+    let output = root.join("self-referential-array-dim-reference-assignment-result-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [&$a];\n\
+var_dump($a[0] =& returnsVal());\n\
+function returnsVal() {}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nNotice: Only variables should be assigned by reference in {} on line 3\nNULL\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reference_assignment_expression_derefs_result_to_native_binary() {
     let root = temp_dir("ptn-native-reference-assignment-expression-deref-result");
     fs::create_dir_all(&root).unwrap();

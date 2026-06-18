@@ -396,15 +396,22 @@ static PTN_UNUSED PtnValue ptn_array_write_entry_result(PtnRuntime *runtime, Ptn
     PtnValue stored = ptn_value_clone(ptn_value_deref(value));
     size_t index = ptn_array_find_key(array, key);
     if (index < array->len && array->entries[index].value.type == PTN_REFERENCE) {
+        PtnReference *reference = array->entries[index].value.as.reference;
+        if (reference->refcount == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        reference->refcount++;
         ptn_array_update_next_auto_key(array, key);
-        if (ptn_reference_assign(runtime, array->entries[index].value.as.reference, stored)) {
-            PtnValue result = ptn_value_clone(array->entries[index].value.as.reference->value);
+        if (ptn_reference_assign(runtime, reference, stored)) {
+            PtnValue result = ptn_value_clone(reference->value);
             ptn_value_destroy(&stored);
             ptn_array_key_free(key);
+            ptn_reference_release(reference);
             return result;
         }
         ptn_value_destroy(&stored);
         ptn_array_key_free(key);
+        ptn_reference_release(reference);
         return ptn_value_clone_deref(value);
     }
     PtnValue result = ptn_value_clone(stored);
