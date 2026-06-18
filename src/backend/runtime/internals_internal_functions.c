@@ -2030,7 +2030,7 @@ static int ptn_object_property_metadata_dumps_uninitialized(
     if (ptn_object_property_storage_initialized(object, metadata->storage_name)) {
         return 0;
     }
-    return (metadata->is_unset && metadata->last_type_name != NULL) ||
+    return (metadata->is_unset && ptn_property_type_is_declared(metadata->type_kind)) ||
         (ptn_property_type_is_declared(metadata->type_kind) && metadata->type_text != NULL);
 }
 
@@ -2075,7 +2075,9 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
         ptn_var_dump_indent(indent + 1);
         printf(
             "uninitialized(%s)\n",
-            metadata->last_type_name == NULL ? metadata->type_text : metadata->last_type_name
+            metadata->last_type_name != NULL
+                ? metadata->last_type_name
+                : (metadata->type_text != NULL ? metadata->type_text : "mixed")
         );
     }
 }

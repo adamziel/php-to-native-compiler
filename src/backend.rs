@@ -16486,6 +16486,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ReflectionExtension")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
+                || class_name.eq_ignore_ascii_case("ReflectionObject")
                 || class_name.eq_ignore_ascii_case("ReflectionAttribute")
                 || class_name.eq_ignore_ascii_case("ReflectionClassConstant")
                 || class_name.eq_ignore_ascii_case("ReflectionProperty")

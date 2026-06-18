@@ -20295,6 +20295,55 @@ try {
 }
 
 #[test]
+fn compile_standalone_reflection_object_constructor_to_native_binary() {
+    let root = temp_dir("ptn-native-standalone-reflection-object-constructor");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("standalone-reflection-object-constructor.php");
+    let output = root.join("standalone-reflection-object-constructor-bin");
+    fs::write(
+        &input,
+        "<?php
+$r1 = new ReflectionObject(new stdClass);
+var_dump($r1);
+
+class C {}
+$r2 = new ReflectionObject(new C);
+var_dump($r2);
+
+$r3 = new ReflectionObject($r2);
+var_dump($r3);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(ReflectionObject)#2 (1) {\n",
+            "  [\"name\"]=>\n",
+            "  string(8) \"stdClass\"\n",
+            "}\n",
+            "object(ReflectionObject)#4 (1) {\n",
+            "  [\"name\"]=>\n",
+            "  string(1) \"C\"\n",
+            "}\n",
+            "object(ReflectionObject)#5 (1) {\n",
+            "  [\"name\"]=>\n",
+            "  string(16) \"ReflectionObject\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_object_new"));
+}
+
+#[test]
 fn compile_reflection_internal_subclasses_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-internal-subclasses");
     fs::create_dir_all(&root).unwrap();
@@ -48516,6 +48565,75 @@ var_dump($d);
         concat!(
             "Cannot unset private(set) property C::$a from scope D\n",
             "object(D)#1 (0) {\n",
+            "  [\"a\"]=>\n",
+            "  uninitialized(int)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_asymmetric_same_property_magic_set_unset_preserves_uninitialized_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-same-property-magic-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-same-property-magic-dump.php");
+    let output = root.join("asymmetric-same-property-magic-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public private(set) int $a = 1;
+    public function __construct() {
+        unset($this->a);
+    }
+}
+
+class DUnset extends C {
+    public function __unset($name) {
+        unset($this->a);
+    }
+}
+
+class DSet extends C {
+    public function __set($name, $value) {
+        $this->a = $value;
+    }
+}
+
+$unset = new DUnset();
+try {
+    unset($unset->a);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($unset);
+
+$set = new DSet();
+try {
+    $set->a = 2;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($set);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot unset private(set) property C::$a from scope DUnset\n",
+            "object(DUnset)#1 (0) {\n",
+            "  [\"a\"]=>\n",
+            "  uninitialized(int)\n",
+            "}\n",
+            "Cannot modify private(set) property C::$a from scope DSet\n",
+            "object(DSet)#2 (0) {\n",
             "  [\"a\"]=>\n",
             "  uninitialized(int)\n",
             "}\n",
