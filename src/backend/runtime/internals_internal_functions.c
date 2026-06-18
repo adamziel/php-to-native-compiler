@@ -3506,6 +3506,14 @@ static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMe
         strcmp(metadata->display_name, "storage") == 0;
 }
 
+static int ptn_object_metadata_is_spl_array_backed_storage(const PtnObjectPropertyMetadata *metadata) {
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        (ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") ||
+         ptn_ascii_case_equal(metadata->declaring_class, "ArrayIterator")) &&
+        strcmp(metadata->display_name, "storage") == 0;
+}
+
 static PTN_UNUSED size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
     size_t count = 0;
     for (size_t i = 0; i < object->property_metadata_len; i++) {
@@ -5221,6 +5229,28 @@ static const char *ptn_serialize_spl_array_object_iterator_class(PtnObject *obje
     return data->iterator_class;
 }
 
+static PtnValue ptn_serialize_spl_properties_value(PtnObject *object) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (object == NULL || object->properties == NULL) {
+        return result;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (ptn_object_metadata_is_spl_array_backed_storage(metadata)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    return result;
+}
+
 static void ptn_serialize_append_spl_array_backed_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -5237,8 +5267,9 @@ static void ptn_serialize_append_spl_array_backed_object(
     ptn_serialize_append_value_with_id(buffer, storage, state, 0);
     ptn_value_destroy(&storage);
     ptn_string_buffer_append(buffer, "i:2;");
-    PtnValue properties = ptn_array(object->properties);
+    PtnValue properties = ptn_serialize_spl_properties_value(object);
     ptn_serialize_append_value_with_id(buffer, properties, state, 0);
+    ptn_value_destroy(&properties);
     ptn_string_buffer_append(buffer, "i:3;");
     const char *iterator_class = ptn_serialize_spl_array_object_iterator_class(object);
     if (iterator_class == NULL) {
@@ -77870,6 +77901,20 @@ static void ptn_spl_declare_storage_property(
     PtnValue storage,
     size_t line
 );
+static void ptn_spl_declare_storage_property_inner(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    PtnValue storage,
+    size_t line,
+    size_t depth
+);
+static void ptn_spl_sync_nested_storage_properties(
+    PtnRuntime *runtime,
+    PtnValue storage,
+    size_t line,
+    size_t depth
+);
 static void ptn_spl_object_storage_sync_properties(
     PtnRuntime *runtime,
     PtnValue object,
@@ -79979,6 +80024,17 @@ static void ptn_spl_declare_storage_property(
     PtnValue storage,
     size_t line
 ) {
+    ptn_spl_declare_storage_property_inner(runtime, object, declaring_class, storage, line, 0);
+}
+
+static void ptn_spl_declare_storage_property_inner(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *declaring_class,
+    PtnValue storage,
+    size_t line,
+    size_t depth
+) {
     PtnValue resolved_object = ptn_value_deref(object);
     PtnValue resolved_storage = ptn_value_deref(storage);
     if (resolved_object.type == PTN_OBJECT &&
@@ -80031,6 +80087,53 @@ static void ptn_spl_declare_storage_property(
     );
     ptn_value_destroy(&assigned);
     ptn_value_destroy(&storage_value);
+    ptn_spl_sync_nested_storage_properties(runtime, storage, line, depth + 1);
+}
+
+static void ptn_spl_sync_nested_storage_properties(
+    PtnRuntime *runtime,
+    PtnValue storage,
+    size_t line,
+    size_t depth
+) {
+    if (depth >= 32) {
+        return;
+    }
+    PtnValue resolved = ptn_value_deref(storage);
+    if (resolved.type != PTN_OBJECT) {
+        return;
+    }
+    PtnArrayObjectData *array_object = ptn_spl_array_object_data_from_value(resolved);
+    if (array_object != NULL) {
+        PtnValue nested = ptn_value_deref(array_object->storage);
+        ptn_spl_declare_storage_property_inner(
+            runtime,
+            resolved,
+            "ArrayObject",
+            array_object->storage,
+            line,
+            depth + 1
+        );
+        if (!(nested.type == PTN_OBJECT && nested.as.object == resolved.as.object)) {
+            ptn_spl_sync_nested_storage_properties(runtime, nested, line, depth + 1);
+        }
+        return;
+    }
+    PtnArrayIteratorData *array_iterator = ptn_spl_array_iterator_data_from_value(resolved);
+    if (array_iterator != NULL) {
+        PtnValue nested = ptn_value_deref(array_iterator->storage);
+        ptn_spl_declare_storage_property_inner(
+            runtime,
+            resolved,
+            "ArrayIterator",
+            array_iterator->storage,
+            line,
+            depth + 1
+        );
+        if (!(nested.type == PTN_OBJECT && nested.as.object == resolved.as.object)) {
+            ptn_spl_sync_nested_storage_properties(runtime, nested, line, depth + 1);
+        }
+    }
 }
 
 static void ptn_spl_declare_private_value_property(
