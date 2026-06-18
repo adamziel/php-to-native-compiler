@@ -2237,6 +2237,7 @@ static PTN_UNUSED PtnValue ptn_uri_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_uri_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_intl_break_iterator_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_dom_new(
     PtnRuntime *runtime,

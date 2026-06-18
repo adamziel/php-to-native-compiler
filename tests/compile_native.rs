@@ -887,12 +887,7 @@ var_dump(Uri\WhatWg\Url::parse("scheme://example.com")->isSpecialScheme());
 var_dump(Uri\WhatWg\Url::parse("scheme://example.com")->getHostType());
 var_dump(Uri\WhatWg\Url::parse("test://")->getUnicodeHost());
 
-try {
-    Uri\WhatWg\Url::parse("https://ex[a]mple.com");
-} catch (Uri\WhatWg\InvalidUrlException $e) {
-    echo $e::class, ": ", $e->getMessage(), "\n";
-    var_dump($e->errors);
-}
+var_dump(Uri\WhatWg\Url::parse("https://ex[a]mple.com"));
 "##,
     )
     .unwrap();
@@ -931,9 +926,7 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
-            "array(0) {\n",
-            "}\n",
+            "NULL\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -49767,11 +49760,19 @@ fn compile_uri_rfc3986_core_surface_to_native_binary() {
         &input,
         r#"<?php
 var_dump(class_exists("Uri\\Rfc3986\\Uri"));
+var_dump(class_exists("Uri\\Rfc3986\\UriHostType"));
+var_dump(class_exists("Uri\\Rfc3986\\UriType"));
 $uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61");
 var_dump($uri->toRawString());
 var_dump($uri->toString());
 var_dump($uri->getRawPath());
 var_dump($uri->getPath());
+var_dump(Uri\Rfc3986\Uri::parse("https://192.168.0.1")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("/foo/bar")->getUriType());
+var_dump((new Uri\Rfc3986\Uri("https://[2001:0db8:0001:0000:0000:0ab9:C0A8:0102]"))
+    ->equals(new Uri\Rfc3986\Uri("https://[2001:DB8:1::AB9:C0A8:102]")));
+$copy = clone $uri;
+var_dump($copy->toRawString());
 $changed = $uri
     ->withHost("%65xample.net")
     ->withScheme("HTTP")
@@ -49783,6 +49784,13 @@ var_dump($changed->toString());
 var_dump($changed->getHost());
 var_dump($changed->getFragment());
 var_dump(Uri\Rfc3986\Uri::parse("\xF0\x9F\x90\x98"));
+$big = new Uri\Rfc3986\Uri("https://example.com:9223372036854775807");
+var_dump($big->getPort());
+try {
+    new Uri\Rfc3986\Uri("https://example.com:9223372036854775808");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
 try {
     new Uri\Rfc3986\Uri("https://ex\xE1mple.com");
 } catch (Throwable $e) {
@@ -49805,15 +49813,23 @@ try {
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
             "string(12) \"/foo%2Fb%61r\"\n",
             "string(10) \"/foo%2Fbar\"\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPv4)\n",
+            "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
+            "bool(true)\n",
+            "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(43) \"HTTP://user:info@%65xample.net/foo%2Fb%61r#\"\n",
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
             "string(0) \"\"\n",
             "NULL\n",
+            "int(9223372036854775807)\n",
+            "Uri\\InvalidUriException: The port is out of range\n",
             "Uri\\InvalidUriException: The specified URI is malformed\n",
         )
     );
@@ -49838,13 +49854,12 @@ var_dump($url->getHostType());
 var_dump($url->withPath("foo#bar")->toAsciiString());
 var_dump($url->withUsername("u:s/r")->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
+var_dump($normalized->toAsciiString());
+$copy = clone $url;
+var_dump($copy->toAsciiString());
 var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
-try {
-    Uri\WhatWg\Url::parse("foo");
-} catch (Throwable $e) {
-    echo $e::class, ": ", $e->getMessage(), "\n";
-}
+var_dump(Uri\WhatWg\Url::parse("foo"));
 try {
     new Uri\WhatWg\Url("https://");
 } catch (Throwable $e) {
@@ -49873,9 +49888,11 @@ try {
             "enum(Uri\\WhatWg\\UrlHostType::Domain)\n",
             "string(52) \"https://user:info@example.com/foo%23bar?abc=123#hash\"\n",
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
+            "string(50) \"https://user:info@example.com/foo/bar?abc=123#hash\"\n",
+            "string(50) \"https://user:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "NULL\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
         )
     );
