@@ -20327,11 +20327,11 @@ var_dump($r3);
             "  [\"name\"]=>\n",
             "  string(8) \"stdClass\"\n",
             "}\n",
-            "object(ReflectionObject)#4 (1) {\n",
+            "object(ReflectionObject)#3 (1) {\n",
             "  [\"name\"]=>\n",
             "  string(1) \"C\"\n",
             "}\n",
-            "object(ReflectionObject)#5 (1) {\n",
+            "object(ReflectionObject)#1 (1) {\n",
             "  [\"name\"]=>\n",
             "  string(16) \"ReflectionObject\"\n",
             "}\n",
@@ -48574,7 +48574,8 @@ var_dump($d);
 }
 
 #[test]
-fn compile_asymmetric_same_property_magic_set_unset_preserves_uninitialized_dump_to_native_binary() {
+fn compile_asymmetric_same_property_magic_set_unset_preserves_uninitialized_dump_to_native_binary()
+{
     let root = temp_dir("ptn-native-asymmetric-same-property-magic-dump");
     fs::create_dir_all(&root).unwrap();
     let input = root.join("asymmetric-same-property-magic-dump.php");
@@ -48633,7 +48634,7 @@ var_dump($set);
             "  uninitialized(int)\n",
             "}\n",
             "Cannot modify private(set) property C::$a from scope DSet\n",
-            "object(DSet)#2 (0) {\n",
+            "object(DSet)#3 (0) {\n",
             "  [\"a\"]=>\n",
             "  uninitialized(int)\n",
             "}\n",
@@ -49311,6 +49312,48 @@ foreach ($boxes as $box) {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_clone_value(&runtime"));
     assert!(c_source.contains("root->method_dispatch(root, clone, \"__clone\""));
+}
+
+#[test]
+fn compile_magic_debug_info_reference_return_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-debug-info-reference-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-debug-info-reference-return.php");
+    let output = root.join("magic-debug-info-reference-return-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    private $tmp = ['x' => 1];
+
+    public function &__debugInfo(): array {
+        return $this->tmp;
+    }
+}
+
+var_dump(new Test);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Test)#1 (1) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump_magic_debug_info"));
+    assert!(c_source.contains("ptn_declared_magic_debug_info"));
 }
 
 #[test]

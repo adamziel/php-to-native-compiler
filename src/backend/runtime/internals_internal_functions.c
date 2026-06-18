@@ -741,12 +741,103 @@ static PTN_UNUSED void ptn_direct_var_dump_object_key(
     }
 }
 
+static PTN_UNUSED void ptn_direct_var_dump_object_metadata_key(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", metadata->display_name);
+        return;
+    }
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        ptn_direct_dump_printf(runtime, "[\"%s\":protected]=>\n", metadata->display_name);
+        return;
+    }
+    ptn_direct_dump_printf(
+        runtime,
+        "[\"%s\":\"%s\":private]=>\n",
+        metadata->display_name,
+        metadata->declaring_class
+    );
+}
+
+static PTN_UNUSED int ptn_direct_object_property_metadata_dumps_uninitialized(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (object == NULL || metadata == NULL) {
+        return 0;
+    }
+    if (metadata->lazy_skip && ptn_object_property_storage_initialized(object, metadata->storage_name)) {
+        return 0;
+    }
+    if (object->lazy_uninitialized &&
+        !object->lazy_initializing &&
+        ptn_property_type_is_declared(metadata->type_kind) &&
+        metadata->type_text != NULL) {
+        return 1;
+    }
+    if (ptn_object_property_storage_initialized(object, metadata->storage_name)) {
+        return 0;
+    }
+    return (metadata->is_unset && ptn_property_type_is_declared(metadata->type_kind)) ||
+        (ptn_property_type_is_declared(metadata->type_kind) && metadata->type_text != NULL);
+}
+
 static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
     size_t indent,
     PtnDirectDumpSeen *seen
 );
+
+static PTN_UNUSED int ptn_direct_var_dump_magic_debug_info(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t indent,
+    PtnDirectDumpSeen *seen
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT ||
+        runtime == NULL ||
+        runtime->magic_debug_info == NULL) {
+        return 0;
+    }
+
+    PtnValue debug_info = ptn_null();
+    size_t line = runtime->call_site_line == 0 ? 1 : runtime->call_site_line;
+    if (!runtime->magic_debug_info(runtime, resolved, line, &debug_info)) {
+        return 0;
+    }
+    PtnValue debug_value = ptn_value_deref(debug_info);
+    if (debug_value.type != PTN_ARRAY) {
+        ptn_value_destroy(&debug_info);
+        return 0;
+    }
+
+    PtnObject *object = resolved.as.object;
+    PtnArray *properties = debug_value.as.array;
+    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+    ptn_direct_dump_printf(
+        runtime,
+        "object(%.*s)#%zu (%zu) {\n",
+        (int)class_len,
+        object->class_name,
+        object->object_id,
+        properties->len
+    );
+    ptn_direct_dump_seen_object_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_array_key(runtime, properties->entries[i].key);
+        ptn_direct_var_dump_value_indented(runtime, properties->entries[i].value, indent + 1, seen);
+    }
+    ptn_direct_dump_seen_object_pop(seen);
+    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    ptn_value_destroy(&debug_info);
+    return 1;
+}
 
 static PTN_UNUSED void ptn_direct_var_dump_exception(
     PtnRuntime *runtime,
@@ -861,6 +952,9 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
                 ptn_direct_dump_printf(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
                 break;
             }
+            if (ptn_direct_var_dump_magic_debug_info(runtime, value, indent, seen)) {
+                break;
+            }
             size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
             size_t property_count = object->properties == NULL ? 0 : object->properties->len;
             ptn_direct_dump_printf(
@@ -879,6 +973,22 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
                     ptn_direct_var_dump_object_key(runtime, object, entry->key);
                     ptn_direct_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
                 }
+            }
+            for (size_t i = 0; i < object->property_metadata_len; i++) {
+                PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+                if (!ptn_direct_object_property_metadata_dumps_uninitialized(object, metadata)) {
+                    continue;
+                }
+                ptn_direct_var_dump_indent(runtime, indent + 1);
+                ptn_direct_var_dump_object_metadata_key(runtime, metadata);
+                ptn_direct_var_dump_indent(runtime, indent + 1);
+                ptn_direct_dump_printf(
+                    runtime,
+                    "uninitialized(%s)\n",
+                    metadata->last_type_name != NULL
+                        ? metadata->last_type_name
+                        : (metadata->type_text != NULL ? metadata->type_text : "mixed")
+                );
             }
             ptn_direct_dump_seen_object_pop(seen);
             ptn_direct_var_dump_indent(runtime, indent);
