@@ -166,6 +166,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.functions,
         &module.classes,
     );
+    emit_function_static_local_declarations(&mut out, &module.functions);
     emit_user_functions(
         &mut out,
         &module.classes,
@@ -1522,6 +1523,7 @@ fn emit_user_functions(
             classes,
             includes,
             function,
+            index,
         );
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
             let guard_required_argument = parameter_index < required_parameter_count
@@ -3801,6 +3803,23 @@ fn function_static_variables_provider_name(function_index: usize) -> String {
     format!("ptn_function_{function_index}_static_variables")
 }
 
+fn function_static_local_slot_name(function_index: usize, binding_index: usize) -> String {
+    format!("ptn_function_{function_index}_static_local_{binding_index}")
+}
+
+fn emit_function_static_local_declarations(out: &mut String, functions: &[FunctionDecl]) {
+    for (function_index, function) in functions.iter().enumerate() {
+        for binding_index in 0..function_static_local_bindings(function).len() {
+            out.push_str("\nstatic PtnReference *");
+            out.push_str(&function_static_local_slot_name(
+                function_index,
+                binding_index,
+            ));
+            out.push_str(" = NULL;\n");
+        }
+    }
+}
+
 fn emit_function_static_variable_providers(out: &mut String, functions: &[FunctionDecl]) {
     for (function_index, function) in functions.iter().enumerate() {
         let bindings = function_static_local_bindings(function);
@@ -3812,11 +3831,17 @@ fn emit_function_static_variable_providers(out: &mut String, functions: &[Functi
         out.push_str("(PtnRuntime *runtime) {\n");
         out.push_str("    (void)runtime;\n");
         out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
-        for (name, value) in bindings {
+        for (binding_index, (name, value)) in bindings.iter().enumerate() {
+            let slot = function_static_local_slot_name(function_index, binding_index);
             out.push_str("    ptn_array_set_entry(result.as.array, ptn_array_string_key(\"");
             out.push_str(&c_string(name));
             out.push_str("\"), ");
-            out.push_str(&c_property_default_value(value));
+            out.push_str(&slot);
+            out.push_str(" == NULL ? ");
+            out.push_str(&c_property_default_value(*value));
+            out.push_str(" : ptn_value_clone(ptn_reference_value(");
+            out.push_str(&slot);
+            out.push_str("))");
             out.push_str(");\n");
         }
         out.push_str("    return result;\n");
@@ -11701,9 +11726,11 @@ fn emit_instruction(
         }
         Instruction::BindStatic { name, value, .. } => {
             let slot = values.next_static_local();
-            out.push_str("    static PtnReference *");
-            out.push_str(&slot);
-            out.push_str(" = NULL;\n");
+            if !values.has_file_scope_static_local_slots() {
+                out.push_str("    static PtnReference *");
+                out.push_str(&slot);
+                out.push_str(" = NULL;\n");
+            }
             out.push_str("    if (");
             out.push_str(&slot);
             out.push_str(" == NULL) {\n");
@@ -16402,6 +16429,42 @@ fn reference_array_dim_target_from_value(value: &ValueExpr) -> Option<ReferenceT
     }
 }
 
+fn temporary_array_reference_source_parts<'a>(
+    value: &'a ValueExpr,
+) -> Option<(&'a ValueExpr, Vec<(Option<&'a ValueExpr>, usize)>)> {
+    let mut dimensions = Vec::new();
+    let mut current = value;
+    loop {
+        match current {
+            ValueExpr::ArrayAccess { array, index, line } => {
+                dimensions.push((Some(index.as_ref()), *line));
+                current = array.as_ref();
+            }
+            ValueExpr::ArrayAppendAccess { array, line } => {
+                dimensions.push((None, *line));
+                current = array.as_ref();
+            }
+            _ => break,
+        }
+    }
+
+    if dimensions.is_empty() || !temporary_array_reference_source_root_allowed(current) {
+        return None;
+    }
+    dimensions.reverse();
+    Some((current, dimensions))
+}
+
+fn temporary_array_reference_source_root_allowed(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::InternalCall { .. }
+            | ValueExpr::DynamicCall { .. }
+            | ValueExpr::MethodCall { .. }
+            | ValueExpr::DynamicMethodCall { .. }
+    )
+}
+
 fn property_receiver_is_temporary_write_context(value: &ValueExpr) -> bool {
     matches!(
         value,
@@ -16862,6 +16925,7 @@ struct ValueEmitter {
     current_function_tracks_return_line: bool,
     current_function_tracks_return_value_was_set: bool,
     current_function_is_anonymous: bool,
+    current_function_index: Option<usize>,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
@@ -18267,6 +18331,7 @@ impl ValueEmitter {
             false,
             false,
             false,
+            None,
         )
     }
 
@@ -18277,6 +18342,7 @@ impl ValueEmitter {
         classes: &[ClassDecl],
         includes: &[IncludeFile],
         function: &FunctionDecl,
+        function_index: usize,
     ) -> Self {
         let function_magic_name = function
             .trait_method_name
@@ -18318,6 +18384,7 @@ impl ValueEmitter {
                     .is_some_and(return_type_needs_return_value_was_set),
             function.is_anonymous,
             function.is_anonymous,
+            Some(function_index),
         )
     }
 
@@ -18337,6 +18404,7 @@ impl ValueEmitter {
         current_function_tracks_return_value_was_set: bool,
         use_runtime_class_scope: bool,
         current_function_is_anonymous: bool,
+        current_function_index: Option<usize>,
     ) -> Self {
         Self {
             next_temp: 0,
@@ -18356,10 +18424,15 @@ impl ValueEmitter {
             current_function_tracks_return_line,
             current_function_tracks_return_value_was_set,
             current_function_is_anonymous,
+            current_function_index,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),
         }
+    }
+
+    fn has_file_scope_static_local_slots(&self) -> bool {
+        self.current_function_index.is_some()
     }
 
     fn emit_access_scope(&self, out: &mut String) {
@@ -20625,6 +20698,49 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_temporary_array_dim_reference_source(
+        &mut self,
+        out: &mut String,
+        source: &ValueExpr,
+    ) -> Option<String> {
+        let (root, dimensions) = temporary_array_reference_source_parts(source)?;
+        let root_temp = self.emit_materialized_value(out, root);
+        let mut container_temp = root_temp.clone();
+        let mut current_reference_temp: Option<String> = None;
+
+        for (index, line) in dimensions {
+            let key_temp = index.map(|index| self.emit_materialized_value(out, index));
+            let reference_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&reference_temp);
+            out.push_str(" = ptn_runtime_reference_for_array_value_dim(&runtime, &");
+            out.push_str(&container_temp);
+            out.push_str(", ");
+            if let Some(key_temp) = key_temp.as_deref() {
+                out.push('&');
+                out.push_str(key_temp);
+            } else {
+                out.push_str("NULL");
+            }
+            out.push_str(", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(", 0);\n");
+            if let Some(key_temp) = key_temp {
+                emit_value_cleanup(out, "    ", &key_temp);
+            }
+            if let Some(previous_reference_temp) = current_reference_temp.take() {
+                emit_value_cleanup(out, "    ", &previous_reference_temp);
+            }
+            container_temp = reference_temp.clone();
+            current_reference_temp = Some(reference_temp);
+        }
+
+        emit_value_cleanup(out, "    ", &root_temp);
+        current_reference_temp
+    }
+
     fn emit_reference_assignment(
         &mut self,
         out: &mut String,
@@ -20650,6 +20766,17 @@ impl ValueEmitter {
         }
         if let Some(source_target) = reference_target_from_value(source) {
             let source_temp = self.emit_reference_target(out, &source_target);
+            self.emit_bind_assignment_target_reference(out, target, &source_temp);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_value_clone(");
+            out.push_str(&source_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &source_temp);
+            return result_temp;
+        }
+        if let Some(source_temp) = self.emit_temporary_array_dim_reference_source(out, source) {
             self.emit_bind_assignment_target_reference(out, target, &source_temp);
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
@@ -20740,6 +20867,15 @@ impl ValueEmitter {
             emit_value_cleanup(out, "    ", &reference_temp);
             return;
         }
+        if let Some(reference_temp) = self.emit_temporary_array_dim_reference_source(out, source) {
+            out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
+            out.push_str(&c_string(name));
+            out.push_str("\", ");
+            out.push_str(&reference_temp);
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &reference_temp);
+            return;
+        }
 
         let source_temp = self.emit_materialized_value(out, source);
         out.push_str("    if (");
@@ -20772,6 +20908,27 @@ impl ValueEmitter {
     ) {
         if let Some(source_target) = reference_target_from_value(source) {
             let source_temp = self.emit_reference_target(out, &source_target);
+            let path = emit_array_path_segments(out, self, &target.dimensions);
+            out.push_str("    ptn_runtime_bind_array_path_reference(&runtime, \"");
+            out.push_str(&c_string(&target.array));
+            out.push_str("\", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&source_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&target.line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &source_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+            return;
+        }
+        if let Some(source_temp) = self.emit_temporary_array_dim_reference_source(out, source) {
             let path = emit_array_path_segments(out, self, &target.dimensions);
             out.push_str("    ptn_runtime_bind_array_path_reference(&runtime, \"");
             out.push_str(&c_string(&target.array));
@@ -26511,6 +26668,9 @@ impl ValueEmitter {
         if let Some(target) = reference_target_from_value(source) {
             return self.emit_reference_target(out, &target);
         }
+        if let Some(reference_temp) = self.emit_temporary_array_dim_reference_source(out, source) {
+            return reference_temp;
+        }
 
         let result_temp = self.emit_materialized_value(out, source);
         let temp = self.next_temp();
@@ -29250,7 +29410,11 @@ impl ValueEmitter {
     }
 
     fn next_static_local(&mut self) -> String {
-        let name = format!("ptn_static_local_{}", self.next_static_local);
+        let name = if let Some(function_index) = self.current_function_index {
+            function_static_local_slot_name(function_index, self.next_static_local)
+        } else {
+            format!("ptn_static_local_{}", self.next_static_local)
+        };
         self.next_static_local += 1;
         name
     }

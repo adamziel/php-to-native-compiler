@@ -4339,12 +4339,13 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
     parser::parse("<?php $refs = [&$array[0][1]];").unwrap();
     parser::parse("<?php $refs = ['k' => &$array[0][1]];").unwrap();
     parser::parse("<?php $refs = [&($array[0])[1]];").unwrap();
+    parser::parse("<?php $alias =& factory()[0];").unwrap();
+    parser::parse("<?php $alias =& $methodInfo->getStaticVariables()['a'];").unwrap();
+    parser::parse("<?php $refs = [&factory()[0]];").unwrap();
 
     let temporary_offset_forms = [
-        ("<?php $alias =& factory()[0];", "factory()[0]"),
         ("<?php $alias =& [1][0];", "[1][0]"),
         ("<?php $alias =& ($value + 1)[0];", "($value + 1)[0]"),
-        ("<?php $refs = [&factory()[0]];", "factory()[0]"),
         ("<?php $refs = [&[1][0]];", "[1][0]"),
     ];
     for (source, target) in temporary_offset_forms {
@@ -19448,6 +19449,57 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"getName\"));
     assert!(c_source.contains("ptn_user_function_metadata"));
     assert!(c_source.contains("ptn_reflection_function_new"));
     assert!(c_source.contains("ptn_reflection_function_call_method"));
+}
+
+#[test]
+fn compile_reflection_function_static_variables_reference_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-static-variable-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-static-variable-references.php");
+    let output = root.join("reflection-function-static-variable-references-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function seed() {
+    echo "seed() called\n";
+    return 42;
+}
+
+function foo() {
+    $methodInfo = new ReflectionFunction(__FUNCTION__);
+    $nullWithIsTypeUninitialized = $methodInfo->getStaticVariables()['a'];
+
+    static $a = seed();
+    var_dump($a);
+
+    $staticVar = &$methodInfo->getStaticVariables()['a'];
+    $staticVar = $nullWithIsTypeUninitialized;
+}
+
+foo();
+foo();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("seed() called\n", "int(42)\n", "NULL\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("_static_local_0"));
+    assert!(c_source.contains("ptn_runtime_reference_for_array_value_dim"));
 }
 
 #[test]
