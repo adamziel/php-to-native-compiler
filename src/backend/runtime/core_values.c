@@ -1461,6 +1461,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *cla
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_weak_reference(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_allow_dynamic_properties(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_delayed_target_validation(const char *class_name);
@@ -1551,6 +1552,18 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_weak_reference_create(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_weak_reference_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_reflection_property_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -1598,6 +1611,7 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_clone(
     PtnValue source,
     size_t line
 );
+static PtnObject *ptn_weak_reference_object_referent(PtnObject *object);
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -1687,6 +1701,14 @@ static PTN_UNUSED PtnValue ptn_reflection_extension_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_weak_reference_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

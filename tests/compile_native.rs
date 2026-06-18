@@ -9188,6 +9188,40 @@ fn compile_var_dump_null_phpt_shape_to_native_binary() {
 }
 
 #[test]
+fn compile_weak_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-reference.php");
+    let output = root.join("weak-reference-bin");
+    fs::write(
+        &input,
+        "<?php
+$std = new stdClass;
+$wr = WeakReference::create($std);
+$wr2 = WeakReference::create($std);
+var_dump($wr === $wr2);
+var_dump($wr->get() === $std);
+$held = $wr->get();
+unset($std);
+var_dump($held instanceof stdClass);
+unset($held);
+var_dump($wr->get());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_var_dump_recursive_object_to_native_binary() {
     let root = temp_dir("ptn-native-var-dump-recursive-object");
     fs::create_dir_all(&root).unwrap();
