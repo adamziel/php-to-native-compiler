@@ -22405,11 +22405,7 @@ impl ValueEmitter {
         out.push_str(");\n");
 
         let path = emit_array_path_segments(out, self, dimensions);
-        let value_temp = if list_assignment_has_reference(target) {
-            self.emit_reference_candidate_value(out, value)
-        } else {
-            self.emit_materialized_value(out, value)
-        };
+        let value_temp = self.emit_materialized_value(out, value);
 
         let base_temp = self.next_temp();
         let container_temp = self.next_temp();
@@ -24122,7 +24118,7 @@ impl ValueEmitter {
         }
 
         let value_temp = if has_reference {
-            self.emit_raw_materialized_value(out, value)
+            self.emit_reference_candidate_value(out, value)
         } else {
             self.emit_materialized_value(out, value)
         };
