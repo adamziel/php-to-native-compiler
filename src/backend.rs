@@ -10163,6 +10163,11 @@ fn emit_method_dispatch(
     out.push_str("        while (ptn_modeled_parent != NULL) {\n");
     out.push_str("            if (ptn_internal_class_exists_name(ptn_modeled_parent) && ptn_internal_class_method_exists(ptn_modeled_parent, method_name)) {\n");
     out.push_str(
+        "                if (ptn_ascii_case_equal(ptn_modeled_parent, \"SplObjectStorage\")) {\n",
+    );
+    out.push_str("                    return ptn_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str("                }\n");
+    out.push_str(
         "                char *ptn_original_class_name = resolved.as.object->class_name;\n",
     );
     out.push_str("                resolved.as.object->class_name = (char *)ptn_modeled_parent;\n");
@@ -10376,6 +10381,10 @@ fn emit_method_dispatch(
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     out.push_str("    if (resolved_receiver.type == PTN_OBJECT && ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_method_exists(target_class_name, method_name) && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
+    out.push_str("        if (ptn_ascii_case_equal(target_class_name, \"SplObjectStorage\")) {\n");
+    out.push_str("            *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
+    out.push_str("            return 1;\n");
+    out.push_str("        }\n");
     out.push_str(
         "        char *ptn_original_class_name = resolved_receiver.as.object->class_name;\n",
     );

@@ -9741,6 +9741,87 @@ try {
 }
 
 #[test]
+fn compile_spl_object_storage_get_hash_overrides_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-storage-get-hash");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-storage-get-hash.php");
+    let output = root.join("spl-storage-get-hash-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BadHashStorage extends SplObjectStorage {
+    #[ReturnTypeWillChange]
+    public function getHash($object) {
+        return 2;
+    }
+}
+
+class ThrowingHashStorage extends SplObjectStorage {
+    public function getHash($object): string {
+        throw new Exception("foo");
+    }
+}
+
+class CollidingHashStorage extends SplObjectStorage {
+    public function getHash($object): string {
+        return "same";
+    }
+}
+
+function exerciseStorage($label, $instance, $first, $second) {
+    echo "Instance as ", $label, "\n";
+    try {
+        $instance[$first] = "foo";
+        var_dump($instance->offsetGet($first));
+        var_dump($instance[$first]);
+        $instance[$second] = $second;
+        var_dump($instance[$first] === $instance[$second]);
+    } catch (Throwable $e) {
+        echo $e::class, ": ", $e->getMessage(), "\n";
+    }
+}
+
+$first = new stdClass();
+$second = new stdClass();
+
+exerciseStorage("SplObjectStorage", new SplObjectStorage(), $first, $second);
+exerciseStorage("BadHashStorage", new BadHashStorage(), $first, $second);
+exerciseStorage("ThrowingHashStorage", new ThrowingHashStorage(), $first, $second);
+exerciseStorage("CollidingHashStorage", new CollidingHashStorage(), $first, $second);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Instance as SplObjectStorage\n",
+            "string(3) \"foo\"\n",
+            "string(3) \"foo\"\n",
+            "bool(false)\n",
+            "Instance as BadHashStorage\n",
+            "TypeError: BadHashStorage::getHash(): Return value must be of type string, int returned\n",
+            "Instance as ThrowingHashStorage\n",
+            "Exception: foo\n",
+            "Instance as CollidingHashStorage\n",
+            "string(3) \"foo\"\n",
+            "string(3) \"foo\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_and_heaps_to_native_binary() {
     let root = temp_dir("ptn-native-spl-storage-heaps");
     fs::create_dir_all(&root).unwrap();
