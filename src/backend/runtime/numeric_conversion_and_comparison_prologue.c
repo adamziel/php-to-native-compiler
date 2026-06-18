@@ -3779,27 +3779,30 @@ static void ptn_runtime_emit_class_constant_deprecation(
 
 static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     PtnRuntime *runtime,
-    const char *class_name,
+    const char *lookup_class_name,
+    const char *message_class_name,
     const char *constant,
     size_t line
 ) {
     char message[256];
     int written;
-    if (!ptn_declared_runtime_class_exists(runtime, class_name) &&
-        !ptn_declared_runtime_interface_exists(runtime, class_name) &&
-        !ptn_declared_trait_exists(class_name)
+    if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name) &&
+        !ptn_declared_runtime_interface_exists(runtime, lookup_class_name) &&
+        !ptn_declared_trait_exists(lookup_class_name)
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-        && !ptn_internal_class_exists_name(class_name)
-        && !ptn_internal_interface_exists_name(class_name)
+        && !ptn_internal_class_exists_name(lookup_class_name)
+        && !ptn_internal_interface_exists_name(lookup_class_name)
 #endif
     ) {
-        written = snprintf(message, sizeof(message), "Class \"%s\" not found", class_name);
+        written = snprintf(message, sizeof(message), "Class \"%s\" not found", lookup_class_name);
     } else {
+        const char *display_class_name =
+            message_class_name == NULL ? lookup_class_name : message_class_name;
         written = snprintf(
             message,
             sizeof(message),
             "Undefined constant %s::%s",
-            class_name,
+            display_class_name,
             constant
         );
     }
@@ -3820,6 +3823,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     PtnRuntime *runtime,
     const char *class_name,
     const char *constant,
+    const char *message_class_name,
     const char *access_scope,
     int enforce_visibility,
     size_t line,
@@ -3976,7 +3980,13 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
         return builtin_value;
     }
-    return ptn_runtime_undefined_class_constant(runtime, resolved_class_name, constant, line);
+    return ptn_runtime_undefined_class_constant(
+        runtime,
+        resolved_class_name,
+        message_class_name,
+        constant,
+        line
+    );
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
@@ -3989,6 +3999,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant(
         runtime,
         class_name,
         constant,
+        NULL,
         NULL,
         0,
         line,
@@ -4007,6 +4018,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope(
         runtime,
         class_name,
         constant,
+        NULL,
         access_scope,
         1,
         line,
@@ -4025,10 +4037,31 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope_suppress_d
         runtime,
         class_name,
         constant,
+        NULL,
         access_scope,
         1,
         line,
         0
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope_message_class(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    const char *message_class_name,
+    const char *access_scope,
+    size_t line
+) {
+    return ptn_runtime_read_class_constant_impl(
+        runtime,
+        class_name,
+        constant,
+        message_class_name,
+        access_scope,
+        1,
+        line,
+        line
     );
 }
 

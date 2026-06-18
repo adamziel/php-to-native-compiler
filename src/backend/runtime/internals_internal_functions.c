@@ -68609,16 +68609,44 @@ static PtnValue ptn_reflection_class_constant_object_from_name(
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionClassConstant");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_class_constant_data_free;
-    ptn_array_set_entry(
-        object.as.object->properties,
-        ptn_array_string_key("name"),
-        ptn_owned_string(ptn_duplicate_string(constant_name))
+    PtnValue name_value = ptn_owned_string(ptn_duplicate_string(constant_name));
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "name",
+        "ReflectionClassConstant",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "string",
+        0,
+        1,
+        name_value,
+        0
     );
-    ptn_array_set_entry(
-        object.as.object->properties,
-        ptn_array_string_key("class"),
-        ptn_owned_string(ptn_duplicate_string(class_name))
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&name_value);
+    PtnValue class_value = ptn_owned_string(ptn_duplicate_string(class_name));
+    assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        "class",
+        "ReflectionClassConstant",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        0,
+        PTN_PROPERTY_TYPE_STRING,
+        NULL,
+        "string",
+        0,
+        1,
+        class_value,
+        0
     );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&class_value);
     return object;
 }
 

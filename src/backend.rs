@@ -9349,7 +9349,13 @@ fn reflection_class_to_string_methods_tail(
         .copied()
         .filter(|entry| !entry.method.is_static)
         .collect::<Vec<_>>();
-    reflection_class_methods_to_string(&mut out, "Static methods", &static_methods, functions);
+    reflection_class_methods_to_string(
+        &mut out,
+        "Static methods",
+        class,
+        &static_methods,
+        functions,
+    );
     out.push('\n');
 
     let properties = reflection_class_visible_property_entries(class, classes)
@@ -9357,7 +9363,7 @@ fn reflection_class_to_string_methods_tail(
         .filter(|entry| !entry.is_static)
         .collect::<Vec<_>>();
     reflection_class_properties_to_string(&mut out, "Properties", &properties);
-    reflection_class_methods_to_string(&mut out, "Methods", &instance_methods, functions);
+    reflection_class_methods_to_string(&mut out, "Methods", class, &instance_methods, functions);
 
     out.push_str("}\n");
     out
@@ -9574,6 +9580,7 @@ fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
 fn reflection_class_methods_to_string(
     out: &mut String,
     label: &str,
+    class: &ClassDecl,
     methods: &[ClassMethodLookupEntry<'_>],
     functions: &[FunctionDecl],
 ) {
@@ -9582,10 +9589,14 @@ fn reflection_class_methods_to_string(
     out.push_str(" [");
     out.push_str(&methods.len().to_string());
     out.push_str("] {\n");
-    for entry in methods {
+    for (index, entry) in methods.iter().enumerate() {
         let method = entry.method;
         let function = &functions[method.function_index];
         out.push_str("    Method [ <user");
+        if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
+            out.push_str(", inherits ");
+            out.push_str(entry.declaring_class);
+        }
         if method.name.eq_ignore_ascii_case("__construct") {
             out.push_str(", ctor");
         }
@@ -9597,7 +9608,11 @@ fn reflection_class_methods_to_string(
         out.push_str(" method ");
         out.push_str(&method.name);
         out.push_str(" ] {\n");
-        out.push_str("      @@ %s\n\n");
+        out.push_str("      @@ %s ");
+        out.push_str(&method.line.to_string());
+        out.push_str(" - ");
+        out.push_str(&method.end_line.to_string());
+        out.push_str("\n\n");
         reflection_parameters_to_string(out, &function.parameters);
         if let Some(return_type) = &function.return_type {
             out.push_str("      - Return [ ");
@@ -9605,6 +9620,9 @@ fn reflection_class_methods_to_string(
             out.push_str(" ]\n");
         }
         out.push_str("    }\n");
+        if index + 1 < methods.len() {
+            out.push('\n');
+        }
     }
     out.push_str("  }\n");
 }
@@ -9624,7 +9642,7 @@ fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParam
         });
         out.push_str("> ");
         if let Some(type_hint) = &parameter.type_hint {
-            out.push_str(&type_hint_label(type_hint));
+            out.push_str(&reflection_parameter_type_label(parameter, type_hint));
             out.push(' ');
         }
         if parameter.by_ref {
@@ -9642,6 +9660,22 @@ fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParam
         out.push_str(" ]\n");
     }
     out.push_str("      }\n");
+}
+
+fn reflection_parameter_type_label(parameter: &FunctionParameter, type_hint: &TypeHint) -> String {
+    if parameter_default_value_is_null(parameter)
+        && !type_hint_allows_null(Some(type_hint))
+        && type_hint_allows_implicit_nullable_default(type_hint)
+    {
+        return match type_hint {
+            TypeHint::Iterable => "Traversable|array|null".to_string(),
+            TypeHint::Union(_) | TypeHint::Intersection(_) => {
+                format!("{}|null", type_hint_label(type_hint))
+            }
+            _ => format!("?{}", type_hint_label(type_hint)),
+        };
+    }
+    type_hint_label(type_hint)
 }
 
 fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
@@ -26729,11 +26763,18 @@ impl ValueEmitter {
                     out.push_str(");\n");
                     out.push_str("    }\n");
                 } else {
-                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                    if class_name.eq_ignore_ascii_case("self") {
+                        out.push_str(" = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"");
+                    } else {
+                        out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                    }
                     out.push_str(&c_string(&resolved_class_name));
                     out.push_str("\", \"");
                     out.push_str(&c_string(name));
                     out.push_str("\", ");
+                    if class_name.eq_ignore_ascii_case("self") {
+                        out.push_str("\"self\", ");
+                    }
                     self.emit_access_scope(out);
                     out.push_str(", ");
                     out.push_str(&line.to_string());
@@ -26811,11 +26852,20 @@ impl ValueEmitter {
                 out.push_str("    } else {\n");
                 out.push_str("        ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                if class_name.eq_ignore_ascii_case("self") {
+                    out.push_str(
+                        " = ptn_runtime_read_class_constant_with_scope_message_class(&runtime, \"",
+                    );
+                } else {
+                    out.push_str(" = ptn_runtime_read_class_constant_with_scope(&runtime, \"");
+                }
                 out.push_str(&c_string(&resolved_class_name));
                 out.push_str("\", ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
+                if class_name.eq_ignore_ascii_case("self") {
+                    out.push_str("\"self\", ");
+                }
                 self.emit_access_scope(out);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
