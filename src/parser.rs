@@ -41,6 +41,20 @@ const MULTIPLICATIVE_PRECEDENCE: u8 = 33;
 const POWER_PRECEDENCE: u8 = 40;
 const CLASS_CONSTANT_FETCH_UNSUPPORTED: &str =
     "class constant fetches are unsupported; class constants and enum cases require class metadata";
+const NULLSAFE_WRITE_CONTEXT_MESSAGE: &str = "Can't use nullsafe operator in write context";
+const NULLSAFE_REFERENCE_MESSAGE: &str = "Cannot take reference of a nullsafe chain";
+
+fn nullsafe_write_context_diagnostic(span: SourceSpan) -> Diagnostic {
+    Diagnostic::new(NULLSAFE_WRITE_CONTEXT_MESSAGE, Some(span))
+}
+
+fn nullsafe_reference_diagnostic(span: SourceSpan) -> Diagnostic {
+    Diagnostic::new(NULLSAFE_REFERENCE_MESSAGE, Some(span))
+}
+
+fn is_nullsafe_write_context_diagnostic(diagnostic: &Diagnostic) -> bool {
+    diagnostic.message == NULLSAFE_WRITE_CONTEXT_MESSAGE
+}
 
 pub fn parse(source: &str) -> Result<Program> {
     parse_with_runtime_class_aliases(source, &HashMap::new())
@@ -4751,6 +4765,8 @@ impl Parser<'_> {
         let target = assignment_target_from_expr(target_expr).map_err(|diagnostic| {
             if diagnostic.message == "Cannot use empty list" {
                 diagnostic
+            } else if is_nullsafe_write_context_diagnostic(&diagnostic) {
+                diagnostic
             } else {
                 Diagnostic::new("expected foreach variable", Some(target_span))
             }
@@ -5140,6 +5156,9 @@ impl Parser<'_> {
 
     fn parse_unset_target(&mut self) -> Result<UnsetTarget> {
         let target = self.parse_expr_allowing_append_array_read()?;
+        if expr_is_nullsafe_chain(&target) {
+            return Err(nullsafe_write_context_diagnostic(target.span()));
+        }
         match target {
             Expr::Variable(name, span) => Ok(UnsetTarget::Variable { name, span }),
             Expr::DynamicVariable { name, span } => Ok(UnsetTarget::DynamicVariable { name, span }),
@@ -5912,6 +5931,9 @@ impl Parser<'_> {
             {
                 return Err(diagnostic);
             }
+            Err(diagnostic) if is_nullsafe_write_context_diagnostic(&diagnostic) => {
+                return Err(diagnostic);
+            }
             Err(diagnostic) if list_assignment_diagnostic_should_surface(&diagnostic) => {
                 return Err(diagnostic);
             }
@@ -5937,6 +5959,7 @@ impl Parser<'_> {
         }
         let value = self.parse_assignment_expr_without_keyword_boolean()?;
         if matches!(op, AssignmentOp::Assign) {
+            reject_nullsafe_reference_list_assignment_source(&target, &value)?;
             validate_recursive_reference_assignment_value(&target, &value)?;
         }
         let span = combine_spans(left_span, value.span());
@@ -6937,12 +6960,22 @@ impl Parser<'_> {
         if matches!(self.peek().kind, TokenKind::DoubleArrow) {
             self.advance();
             let value = self.parse_expr()?;
+            if self.return_by_ref_stack.last().copied().unwrap_or(false)
+                && expr_is_nullsafe_chain(&value)
+            {
+                return Err(nullsafe_reference_diagnostic(value.span()));
+            }
             let span = combine_spans(start_span, value.span());
             return Ok(Expr::Yield {
                 key: Some(Box::new(first)),
                 value: Some(Box::new(value)),
                 span,
             });
+        }
+        if self.return_by_ref_stack.last().copied().unwrap_or(false)
+            && expr_is_nullsafe_chain(&first)
+        {
+            return Err(nullsafe_reference_diagnostic(first.span()));
         }
         let span = combine_spans(start_span, first.span());
         Ok(Expr::Yield {
@@ -15756,6 +15789,10 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
 }
 
 fn validate_reference_source_expr(source: &Expr) -> Result<()> {
+    if expr_is_nullsafe_chain(source) {
+        return Err(nullsafe_reference_diagnostic(source.span()));
+    }
+
     match source {
         Expr::Variable(_, _)
         | Expr::DynamicVariable { .. }
@@ -16965,6 +17002,10 @@ fn validate_reference_assignment_source_expr(
 }
 
 fn validate_by_reference_return_value(value: &Expr, function_name: &str) -> Result<()> {
+    if expr_is_nullsafe_chain(value) {
+        return Err(nullsafe_reference_diagnostic(value.span()));
+    }
+
     match value {
         Expr::Grouped { expr, .. } => validate_by_reference_return_value(expr, function_name),
         Expr::Call { name, span, .. } if name.eq_ignore_ascii_case(function_name) => {
@@ -18479,11 +18520,15 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
 }
 
 fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTarget> {
-    let target = assignment_target_from_expr(expr).map_err(|_| {
-        Diagnostic::new(
-            "increment/decrement expression target must be a variable, array offset, or property",
-            Some(op_span),
-        )
+    let target = assignment_target_from_expr(expr).map_err(|diagnostic| {
+        if is_nullsafe_write_context_diagnostic(&diagnostic) {
+            diagnostic
+        } else {
+            Diagnostic::new(
+                "increment/decrement expression target must be a variable, array offset, or property",
+                Some(op_span),
+            )
+        }
     })?;
     match target {
         AssignmentTarget::Variable { name, span } => Ok(IncDecTarget::Variable { name, span }),
@@ -18554,6 +18599,9 @@ fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
 
 fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
     let span = expr.span();
+    if expr_is_nullsafe_chain(&expr) {
+        return Err(nullsafe_reference_diagnostic(span));
+    }
     match expr {
         Expr::Variable(name, span) => Ok(ReferenceTarget::Variable { name, span }),
         Expr::DynamicVariable { name, span } => Ok(ReferenceTarget::DynamicVariable { name, span }),
@@ -18633,6 +18681,10 @@ fn reference_array_dim_target_from_expr(
 }
 
 fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
+    if expr_is_nullsafe_chain(&expr) {
+        return Err(nullsafe_write_context_diagnostic(expr.span()));
+    }
+
     match expr {
         Expr::Variable(name, span) => Ok(AssignmentTarget::Variable { name, span }),
         Expr::DynamicVariable { name, span } => {
@@ -18743,6 +18795,47 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             Some(other.span()),
         )),
     }
+}
+
+fn expr_is_nullsafe_chain(expr: &Expr) -> bool {
+    match expr {
+        Expr::NullsafePropertyFetch { .. } => true,
+        Expr::MethodCall { nullsafe: true, .. } => true,
+        Expr::Grouped { expr, .. } => expr_is_nullsafe_chain(expr),
+        Expr::PropertyFetch { receiver, .. }
+        | Expr::DynamicPropertyFetch { receiver, .. }
+        | Expr::DynamicMethodCall { receiver, .. }
+        | Expr::DynamicStaticPropertyFetch { receiver, .. }
+        | Expr::DynamicClassNameFetch { receiver, .. } => expr_is_nullsafe_chain(receiver),
+        Expr::MethodCall { receiver, .. } => expr_is_nullsafe_chain(receiver),
+        Expr::ArrayAccess { array, .. } => expr_is_nullsafe_chain(array),
+        Expr::DynamicClassConstantFetch {
+            receiver: Some(receiver),
+            ..
+        } => expr_is_nullsafe_chain(receiver),
+        _ => false,
+    }
+}
+
+fn reject_nullsafe_reference_list_assignment_source(
+    target: &AssignmentTarget,
+    source: &Expr,
+) -> Result<()> {
+    if matches!(target, AssignmentTarget::List(list) if list_assignment_target_has_reference(list))
+        && expr_is_nullsafe_chain(source)
+    {
+        return Err(nullsafe_reference_diagnostic(source.span()));
+    }
+    Ok(())
+}
+
+fn list_assignment_target_has_reference(target: &ListAssignmentTarget) -> bool {
+    target.elements.iter().any(|element| match &element.target {
+        ListAssignmentElementTarget::Reference(_) => true,
+        ListAssignmentElementTarget::Value(target) => {
+            matches!(target.as_ref(), AssignmentTarget::List(list) if list_assignment_target_has_reference(list))
+        }
+    })
 }
 
 fn assignment_array_dim_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
@@ -19292,7 +19385,8 @@ fn list_assignment_writable_error(diagnostic: Diagnostic, span: SourceSpan) -> D
     match diagnostic.message.as_str() {
         "unsupported assignment target"
         | "class constant fetch is not a writable target"
-        | "class name fetch is not a writable target" => {
+        | "class name fetch is not a writable target"
+        | NULLSAFE_WRITE_CONTEXT_MESSAGE => {
             Diagnostic::new("Assignments can only happen to writable values", Some(span))
         }
         _ => diagnostic,

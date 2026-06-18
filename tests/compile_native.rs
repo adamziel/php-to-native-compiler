@@ -4056,6 +4056,55 @@ fn parser_reports_php_write_context_and_unset_append_errors() {
 }
 
 #[test]
+fn parser_rejects_nullsafe_write_and_reference_contexts() {
+    let write_context_cases = [
+        "<?php $foo = null; $foo?->bar = 'bar';",
+        "<?php $foo = null; $foo?->bar += 1;",
+        "<?php $foo = null; ++$foo?->bar;",
+        "<?php $foo = null; $foo?->bar++;",
+        "<?php $foo = null; $foo?->bar ??= 'bar';",
+        "<?php class Foo { public $bar; } $foo = null; $foo?->bar->baz = bar();",
+        "<?php $foo = null; unset($foo?->bar->baz);",
+        "<?php $foo = null; foreach ([1, 2, 3] as $foo?->bar) {}",
+    ];
+    for source in write_context_cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message, "Can't use nullsafe operator in write context",
+            "{source}"
+        );
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+    }
+
+    let list_write = parser::parse(
+        "<?php class Foo { public $bar; } class Bar { public $baz; } $foo = new Foo(); $foo->bar = new Bar(); [$foo?->bar->baz] = ['bar'];",
+    )
+    .unwrap_err();
+    assert_eq!(
+        list_write.message,
+        "Assignments can only happen to writable values"
+    );
+    assert_eq!(list_write.kind, DiagnosticKind::Fatal);
+
+    let reference_context_cases = [
+        "<?php $foo = null; $ref = &$foo?->bar;",
+        "<?php $foo = null; $ref = &$foo?->bar->baz;",
+        "<?php function &get_bar_ref($foo) { return $foo?->bar; }",
+        "<?php function &test($object) { yield $object->y?->y; }",
+        "<?php [&$y] = $y->y?->y;",
+        "<?php [&$y] = $y?->y->y;",
+    ];
+    for source in reference_context_cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message, "Cannot take reference of a nullsafe chain",
+            "{source}"
+        );
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+    }
+}
+
+#[test]
 fn parser_reports_php_class_declaration_diagnostics() {
     let cases = [
         (
