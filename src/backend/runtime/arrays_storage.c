@@ -24,6 +24,7 @@ static PTN_UNUSED PtnValue ptn_value_deref(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone_deref(PtnValue value);
 static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *reference, PtnValue value);
+static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnReference *reference, PtnValue value, PtnValue *result_out);
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
 static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static PTN_UNUSED void ptn_value_drop(PtnValue *value);
@@ -439,8 +440,8 @@ static PTN_UNUSED PtnValue ptn_array_write_entry_result(PtnRuntime *runtime, Ptn
         }
         reference->refcount++;
         ptn_array_update_next_auto_key(array, key);
-        if (ptn_reference_assign(runtime, reference, stored)) {
-            PtnValue result = ptn_value_clone(reference->value);
+        PtnValue result = ptn_null();
+        if (ptn_reference_assign_result(runtime, reference, stored, &result)) {
             ptn_value_destroy(&stored);
             ptn_array_key_free(key);
             ptn_reference_release(reference);
