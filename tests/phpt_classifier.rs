@@ -725,6 +725,7 @@ fn phpt_classifier_keeps_nullable_never_and_static_rows_runnable() {
     let cases = [
         "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
         "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => throw new Exception('done');\n--EXPECT--\n",
+        "--TEST--\ntop-level static\n--FILE--\n<?php\nstatic $value;\nvar_dump($value);\n--EXPECT--\nNULL\n",
         "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
         "--TEST--\ntop-level static\n--FILE--\n<?php\ntry { static $value; } catch (Throwable $e) {}\n--EXPECT--\n",
     ];

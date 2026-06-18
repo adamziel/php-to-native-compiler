@@ -2428,9 +2428,16 @@ fn parser_accepts_nullable_and_never_type_hints() {
 #[test]
 fn parser_accepts_function_static_local_declarations() {
     let program = parser::parse(
-        "<?php function next_value() { static $value = 0, $other; return ++$value; }",
+        "<?php static $top; function next_value() { static $value = 0, $other; return ++$value; }",
     )
     .unwrap();
+
+    let Statement::Static { declarations, .. } = &program.statements[0] else {
+        panic!("expected top-level static declaration");
+    };
+    assert_eq!(declarations.len(), 1);
+    assert_eq!(declarations[0].name, "top");
+    assert!(declarations[0].value.is_none());
 
     let Statement::Static { declarations, .. } = &program.functions[0].body[0] else {
         panic!("expected static local declaration");
@@ -18407,6 +18414,51 @@ echo \"done\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_run_static_property_destructors(runtime)"));
+    assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
+}
+
+#[test]
+fn compile_top_level_static_binding_replaces_variable_and_preserves_slot_to_native_binary() {
+    let root = temp_dir("ptn-native-top-level-static-binding");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("top-level-static-binding.php");
+    let output = root.join("top-level-static-binding-bin");
+    fs::write(
+        &input,
+        "<?php
+class Probe {
+    public $name;
+
+    public function __construct($name) {
+        $this->name = $name;
+    }
+
+    public function __destruct() {
+        echo \"destruct \", $this->name, \"\\n\";
+    }
+}
+
+$value = new Probe(\"old\");
+static $value;
+var_dump($value);
+$value = new Probe(\"static\");
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "destruct old\nNULL\ndone\ndestruct static\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_bind_variable_reference(&runtime, \"value\""));
     assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
 }
 
