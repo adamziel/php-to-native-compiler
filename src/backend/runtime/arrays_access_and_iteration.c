@@ -7648,6 +7648,9 @@ static PTN_UNUSED void ptn_runtime_array_warn_missing_base_for_assign_op(
     const char *path,
     size_t line
 ) {
+    if (strcmp(name, "GLOBALS") == 0) {
+        return;
+    }
     PtnValue container;
     if (!ptn_symbols_get(&runtime->symbols, name, &container)) {
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
@@ -8890,6 +8893,29 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
 ) {
     if (segment_count == 0) {
         return ptn_null();
+    }
+
+    if (ptn_runtime_is_globals_name(name)) {
+        char *global_name = ptn_runtime_global_name_from_segment(&segments[0]);
+        if (global_name == NULL) {
+            return ptn_null();
+        }
+        PtnLookupResult root = ptn_runtime_read_global_variable_quiet(runtime, global_name);
+        free(global_name);
+        if (!root.exists) {
+            ptn_emit_assign_op_missing_array_key(runtime, segments[0].value, line);
+            return ptn_null();
+        }
+        if (segment_count == 1) {
+            return ptn_value_clone(root.value);
+        }
+        return ptn_value_array_path_read_for_assign_op(
+            runtime,
+            root.value,
+            segments + 1,
+            segment_count - 1,
+            line
+        );
     }
 
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);

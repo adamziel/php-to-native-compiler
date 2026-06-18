@@ -11429,6 +11429,50 @@ wordwrap(): Argument #3 ($break) must not be empty\n"
 }
 
 #[test]
+fn compile_substr_replace_snapshots_subject_before_replacement_tostring_to_native_binary() {
+    let root = temp_dir("ptn-native-substr-replace-tostring-side-effect");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("substr-replace-tostring-side-effect.php");
+    let output = root.join("substr-replace-tostring-side-effect-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Appender {\n\
+    public function __toString() {\n\
+        $GLOBALS[\"my_var\"] .= \"AAAAAAAA\";\n\
+        return \"\";\n\
+    }\n\
+}\n\
+class Adder {\n\
+    public function __toString() {\n\
+        $GLOBALS[\"num\"] += 5;\n\
+        return \"\";\n\
+    }\n\
+}\n\
+$my_var = str_repeat(\"A\", 40);\n\
+$out = substr_replace(array(&$my_var), array(new Appender), 40, 0);\n\
+var_dump($out, $my_var);\n\
+$num = 7;\n\
+echo substr_replace(\"abc\", new Adder, 1, 1), \"\\n\";\n\
+var_dump($num);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  string(40) \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"\n}\n\
+string(48) \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"\n\
+ac\n\
+int(12)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_strrev_internal_function_to_native_binary() {
     let root = temp_dir("ptn-native-strrev");
     fs::create_dir_all(&root).unwrap();
@@ -12484,6 +12528,11 @@ fn compile_source_highlight_functions_reject_output_buffer_handlers_to_native_bi
             "highlight-file",
             "highlight_file(__FILE__, true);",
             "Fatal error: highlight_file(): Cannot use output buffering in output buffering display handlers",
+        ),
+        (
+            "highlight-string",
+            "highlight_string(__FILE__, true);",
+            "Fatal error: highlight_string(): Cannot use output buffering in output buffering display handlers",
         ),
     ] {
         let input = root.join(format!("{case}.php"));

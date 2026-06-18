@@ -28042,6 +28042,16 @@ static PtnValue ptn_substr_replace_apply(
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static PtnStringOperand ptn_substr_replace_stable_operand(PtnStringOperand operand) {
+    if (operand.owned != NULL) {
+        return operand;
+    }
+    return ptn_string_operand_owned_len(
+        ptn_duplicate_string_len(operand.data, operand.len),
+        operand.len
+    );
+}
+
 static PtnStringOperand ptn_substr_replace_value_to_string(
     PtnRuntime *runtime,
     PtnValue value,
@@ -28110,6 +28120,7 @@ static PtnValue ptn_internal_substr_replace(PtnRuntime *runtime, size_t argc, co
 
         PtnStringOperand subject =
             ptn_internal_expect_string_arg(runtime, "substr_replace", 1, "string", args[0], line);
+        subject = ptn_substr_replace_stable_operand(subject);
         PtnStringOperand replacement;
         PtnValue replacement_value = ptn_value_deref(args[1]);
         if (replacement_value.type == PTN_ARRAY) {
@@ -28135,6 +28146,7 @@ static PtnValue ptn_internal_substr_replace(PtnRuntime *runtime, size_t argc, co
     for (size_t i = 0; i < string_value.as.array->len; i++) {
         PtnArrayEntry *entry = &string_value.as.array->entries[i];
         PtnStringOperand subject = ptn_substr_replace_value_to_string(runtime, entry->value, line);
+        subject = ptn_substr_replace_stable_operand(subject);
         PtnStringOperand replacement = ptn_substr_replace_array_string_at(runtime, args[1], i, line);
         int64_t offset = ptn_substr_replace_array_integer_at(args[2], i, 0);
         int entry_has_length = has_length;
@@ -35994,7 +36006,14 @@ static PtnValue ptn_highlight_string_value(PtnStringOperand input) {
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
+static void ptn_guard_source_highlight_output_buffer_handler(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+);
+
 static PtnValue ptn_internal_highlight_string(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    ptn_guard_source_highlight_output_buffer_handler(runtime, "highlight_string", line);
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "highlight_string", 1, "string", args[0], line);
     int return_output = argc >= 2 && ptn_is_truthy(args[1]);
     PtnValue highlighted = ptn_highlight_string_value(input);
