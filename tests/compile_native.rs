@@ -42949,6 +42949,106 @@ try {
 }
 
 #[test]
+fn compile_lazy_reflection_property_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-reflection-property-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-reflection-property-metadata.php");
+    let output = root.join("lazy-reflection-property-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyRawBox {
+    public $a;
+}
+
+class LazyDefaultBox {
+    public $a;
+    public $b = 1;
+    public int $c;
+}
+
+class LazyMarkBox {
+    public int $a = 1;
+}
+
+var_dump(method_exists(ReflectionClass::class, \"markLazyObjectAsInitialized\"));
+var_dump(method_exists(ReflectionProperty::class, \"skipLazyInitialization\"));
+var_dump(method_exists(ReflectionProperty::class, \"setRawValueWithoutLazyInitialization\"));
+
+$rawRc = new ReflectionClass(LazyRawBox::class);
+$raw = $rawRc->newLazyGhost(function ($obj) {
+    echo \"raw initializer\\n\";
+    $obj->a = \"init\";
+});
+$rawRc->getProperty(\"a\")->setRawValueWithoutLazyInitialization($raw, \"raw\");
+var_dump($rawRc->isUninitializedLazyObject($raw));
+var_dump($raw->a);
+var_dump($rawRc->isUninitializedLazyObject($raw));
+
+$skipRc = new ReflectionClass(LazyDefaultBox::class);
+$skip = $skipRc->newLazyGhost(function ($obj) {
+    echo \"skip initializer\\n\";
+    $obj->a = \"init\";
+    $obj->b = 2;
+    $obj->c = 3;
+});
+$skipRc->getProperty(\"b\")->skipLazyInitialization($skip);
+$skipRc->getProperty(\"c\")->skipLazyInitialization($skip);
+var_dump($skip->b);
+try {
+    var_dump($skip->c);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($skipRc->isUninitializedLazyObject($skip));
+
+$markRc = new ReflectionClass(LazyMarkBox::class);
+$mark = $markRc->newLazyProxy(function () {
+    echo \"mark initializer\\n\";
+    return new LazyMarkBox();
+});
+var_dump($markRc->markLazyObjectAsInitialized($mark) === $mark);
+var_dump($markRc->isLazy($mark));
+var_dump($mark->a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "string(3) \"raw\"\n",
+            "bool(false)\n",
+            "int(1)\n",
+            "Typed property LazyDefaultBox::$c must not be accessed before initialization\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("markLazyObjectAsInitialized"));
+    assert!(c_source.contains("setRawValueWithoutLazyInitialization"));
+    assert!(c_source.contains("skipLazyInitialization"));
+}
+
+#[test]
 fn compile_property_and_static_property_inc_dec_to_native_binary() {
     let root = temp_dir("ptn-native-property-static-inc-dec");
     fs::create_dir_all(&root).unwrap();

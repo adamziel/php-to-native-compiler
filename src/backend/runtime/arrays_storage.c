@@ -824,15 +824,26 @@ static PTN_UNUSED void ptn_lazy_object_copy_properties_from_instance(
     target->properties = copied;
 }
 
-static PTN_UNUSED void ptn_lazy_object_sync_proxy_instance_properties(PtnObject *proxy) {
+static void ptn_lazy_object_sync_proxy_instance_properties_depth(PtnObject *proxy, size_t depth) {
     if (proxy == NULL || proxy->lazy_uninitialized || !proxy->lazy_is_proxy) {
+        return;
+    }
+    if (depth > 64) {
         return;
     }
     PtnValue real = ptn_value_deref(proxy->lazy_proxy_instance);
     if (real.type != PTN_OBJECT || real.as.object == NULL) {
         return;
     }
+    if (real.as.object == proxy) {
+        return;
+    }
     ptn_lazy_object_copy_properties_from_instance(real.as.object, proxy);
+    ptn_lazy_object_sync_proxy_instance_properties_depth(real.as.object, depth + 1);
+}
+
+static PTN_UNUSED void ptn_lazy_object_sync_proxy_instance_properties(PtnObject *proxy) {
+    ptn_lazy_object_sync_proxy_instance_properties_depth(proxy, 0);
 }
 
 static PTN_UNUSED int ptn_lazy_object_real_instance_compatible(
@@ -1154,6 +1165,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].set_visibility = set_visibility;
             object->property_metadata[i].is_readonly = is_readonly;
             object->property_metadata[i].is_unset = 0;
+            object->property_metadata[i].lazy_skip = 0;
             free(object->property_metadata[i].last_type_name);
             object->property_metadata[i].last_type_name = NULL;
             free(object->property_metadata[i].type_class_name);
@@ -1194,6 +1206,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->set_visibility = set_visibility;
     metadata->is_readonly = is_readonly;
     metadata->is_unset = 0;
+    metadata->lazy_skip = 0;
     metadata->last_type_name = NULL;
     metadata->type_kind = type_kind;
     metadata->type_class_name = type_class_name == NULL ? NULL : ptn_duplicate_string(type_class_name);

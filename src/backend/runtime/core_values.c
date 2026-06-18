@@ -653,6 +653,7 @@ typedef struct {
     PtnPropertyVisibility set_visibility;
     int is_readonly;
     int is_unset;
+    int lazy_skip;
     char *last_type_name;
     PtnPropertyTypeKind type_kind;
     char *type_class_name;

@@ -1152,6 +1152,7 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         }
         if (cloned_metadata != NULL) {
             cloned_metadata->is_unset = metadata->is_unset;
+            cloned_metadata->lazy_skip = metadata->lazy_skip;
             if (metadata->last_type_name != NULL) {
                 cloned_metadata->last_type_name = ptn_duplicate_string(metadata->last_type_name);
             }
@@ -3317,8 +3318,34 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         return ptn_null();
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
-        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
-            return ptn_null();
+        int local_lazy_slot = 0;
+        char *lazy_storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_READ,
+            1,
+            line
+        );
+        if (lazy_storage_key != NULL) {
+            PtnArrayKey lazy_key = ptn_array_string_key(lazy_storage_key);
+            PtnArrayEntry *lazy_entry =
+                ptn_array_entry_for_key(receiver.as.object->properties, lazy_key);
+            const PtnObjectPropertyMetadata *lazy_metadata =
+                ptn_object_property_metadata(receiver.as.object, lazy_storage_key);
+            ptn_array_key_free(lazy_key);
+            local_lazy_slot = lazy_metadata != NULL &&
+                lazy_metadata->lazy_skip &&
+                (lazy_entry != NULL ||
+                 (lazy_metadata->is_unset &&
+                  ptn_property_type_is_declared(lazy_metadata->type_kind)));
+            free(lazy_storage_key);
+        }
+        if (!local_lazy_slot) {
+            if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+                return ptn_null();
+            }
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -3931,8 +3958,26 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         return ptn_null();
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
-        if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
-            return ptn_null();
+        int local_lazy_slot = 0;
+        char *lazy_storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            receiver.as.object,
+            property,
+            access_scope,
+            indirect_write ? PTN_PROPERTY_ACCESS_INDIRECT_WRITE : PTN_PROPERTY_ACCESS_WRITE,
+            1,
+            line
+        );
+        if (lazy_storage_key != NULL) {
+            const PtnObjectPropertyMetadata *lazy_metadata =
+                ptn_object_property_metadata(receiver.as.object, lazy_storage_key);
+            local_lazy_slot = lazy_metadata != NULL && lazy_metadata->lazy_skip;
+            free(lazy_storage_key);
+        }
+        if (!local_lazy_slot) {
+            if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
+                return ptn_null();
+            }
         }
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH

@@ -1369,6 +1369,10 @@ static size_t ptn_object_initialized_property_dump_count(PtnObject *object) {
         if (ptn_object_metadata_is_array_object_storage(metadata)) {
             continue;
         }
+        if (object->lazy_uninitialized && !object->lazy_initializing &&
+            (metadata == NULL || !metadata->lazy_skip)) {
+            continue;
+        }
         count++;
     }
     return count;
@@ -1454,6 +1458,10 @@ static void ptn_var_dump_object_initialized_properties(
         if (ptn_object_metadata_is_array_object_storage(metadata)) {
             continue;
         }
+        if (object->lazy_uninitialized && !object->lazy_initializing &&
+            (metadata == NULL || !metadata->lazy_skip)) {
+            continue;
+        }
         ptn_var_dump_indent(indent + 1);
         if (metadata != NULL) {
             ptn_var_dump_object_property_metadata_key(metadata);
@@ -1471,6 +1479,9 @@ static void ptn_var_dump_object_initialized_properties(
         PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
         ptn_array_key_free(key);
         if (entry == NULL) {
+            continue;
+        }
+        if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
             continue;
         }
         ptn_var_dump_indent(indent + 1);
@@ -1492,6 +1503,10 @@ static void ptn_debug_zval_dump_object_initialized_properties(
         if (ptn_object_metadata_is_array_object_storage(metadata)) {
             continue;
         }
+        if (object->lazy_uninitialized && !object->lazy_initializing &&
+            (metadata == NULL || !metadata->lazy_skip)) {
+            continue;
+        }
         ptn_var_dump_indent(indent + 1);
         if (metadata != NULL) {
             ptn_var_dump_object_property_metadata_key(metadata);
@@ -1511,6 +1526,9 @@ static void ptn_debug_zval_dump_object_initialized_properties(
         if (entry == NULL) {
             continue;
         }
+        if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
+            continue;
+        }
         ptn_var_dump_indent(indent + 1);
         ptn_var_dump_object_property_metadata_key(metadata);
         ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
@@ -1519,9 +1537,6 @@ static void ptn_debug_zval_dump_object_initialized_properties(
 
 static size_t ptn_var_dump_object_visible_property_count(PtnObject *object) {
     if (object == NULL) {
-        return 0;
-    }
-    if (object->lazy_uninitialized && !object->lazy_initializing) {
         return 0;
     }
     if (object->lazy_is_proxy &&
@@ -2254,8 +2269,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 0
             );
             ptn_dump_seen_objects_push(seen, object);
-            if ((!object->lazy_uninitialized || object->lazy_initializing) &&
-                !ptn_var_dump_object_proxy_instance(object, indent, seen, 0)) {
+            if (!ptn_var_dump_object_proxy_instance(object, indent, seen, 0)) {
                 ptn_var_dump_object_initialized_properties(object, indent, seen);
             }
             ptn_var_dump_object_uninitialized_properties(object, indent);
@@ -2404,8 +2418,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 1
             );
             ptn_dump_seen_objects_push(seen, object);
-            if ((!object->lazy_uninitialized || object->lazy_initializing) &&
-                !ptn_var_dump_object_proxy_instance(object, indent, seen, 1)) {
+            if (!ptn_var_dump_object_proxy_instance(object, indent, seen, 1)) {
                 ptn_debug_zval_dump_object_initialized_properties(object, indent, seen);
             }
             ptn_var_dump_object_uninitialized_properties(object, indent);
@@ -48595,6 +48608,15 @@ static PtnValue ptn_clone_object_storage(PtnRuntime *runtime, PtnObject *source)
             metadata->type_text,
             metadata->type_allows_null
         );
+        PtnObjectPropertyMetadata *cloned_metadata =
+            ptn_object_mutable_property_metadata(cloned, metadata->storage_name);
+        if (cloned_metadata != NULL) {
+            cloned_metadata->is_unset = metadata->is_unset;
+            cloned_metadata->lazy_skip = metadata->lazy_skip;
+            if (metadata->last_type_name != NULL) {
+                cloned_metadata->last_type_name = ptn_duplicate_string(metadata->last_type_name);
+            }
+        }
     }
     return clone;
 }
@@ -57421,6 +57443,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "initializeLazyObject")
         || ptn_ascii_case_equal(method_name, "isLazy")
         || ptn_ascii_case_equal(method_name, "isUninitializedLazyObject")
+        || ptn_ascii_case_equal(method_name, "markLazyObjectAsInitialized")
         || ptn_ascii_case_equal(method_name, "newInstance")
         || ptn_ascii_case_equal(method_name, "newInstanceArgs")
         || ptn_ascii_case_equal(method_name, "newInstanceWithoutConstructor")
@@ -57594,7 +57617,9 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isVirtual")
         || ptn_ascii_case_equal(method_name, "isWritable")
         || ptn_ascii_case_equal(method_name, "setRawValue")
+        || ptn_ascii_case_equal(method_name, "setRawValueWithoutLazyInitialization")
         || ptn_ascii_case_equal(method_name, "setAccessible")
+        || ptn_ascii_case_equal(method_name, "skipLazyInitialization")
         || ptn_ascii_case_equal(method_name, "setValue");
 }
 
@@ -59152,6 +59177,7 @@ static const char *ptn_reflection_class_canonical_method_name(const char *method
     if (ptn_ascii_case_equal(method_name, "initializeLazyObject")) return "initializeLazyObject";
     if (ptn_ascii_case_equal(method_name, "isLazy")) return "isLazy";
     if (ptn_ascii_case_equal(method_name, "isUninitializedLazyObject")) return "isUninitializedLazyObject";
+    if (ptn_ascii_case_equal(method_name, "markLazyObjectAsInitialized")) return "markLazyObjectAsInitialized";
     if (ptn_ascii_case_equal(method_name, "newInstance")) return "newInstance";
     if (ptn_ascii_case_equal(method_name, "newInstanceArgs")) return "newInstanceArgs";
     if (ptn_ascii_case_equal(method_name, "newLazyGhost")) return "newLazyGhost";
@@ -62402,6 +62428,30 @@ static void ptn_reflection_property_check_at_most_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static void ptn_lazy_object_realize_if_all_properties_skipped(PtnValue target) {
+    target = ptn_value_deref(target);
+    if (target.type != PTN_OBJECT || target.as.object == NULL) {
+        return;
+    }
+    PtnObject *object = target.as.object;
+    if (!object->lazy_uninitialized || object->property_metadata_len == 0) {
+        return;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        if (!object->property_metadata[i].lazy_skip) {
+            return;
+        }
+    }
+    object->lazy_uninitialized = 0;
+    object->lazy_is_proxy = 0;
+    object->lazy_options = 0;
+    object->lazy_initializing = 0;
+    ptn_value_destroy(&object->lazy_initializer);
+    ptn_value_destroy(&object->lazy_proxy_instance);
+    object->lazy_initializer = ptn_null();
+    object->lazy_proxy_instance = ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -62889,6 +62939,127 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             "Method ReflectionProperty::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1",
             line
         );
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "skipLazyInitialization") ||
+        ptn_ascii_case_equal(name, "setRawValueWithoutLazyInitialization")) {
+        int skip_property = ptn_ascii_case_equal(name, "skipLazyInitialization");
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, skip_property ? 1 : 2);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *property_owner = declaring_class == NULL ? data->class_name : declaring_class;
+        if (is_static) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Can not use %s on static property %s::$%s",
+                name,
+                property_owner,
+                data->name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
+            return ptn_null();
+        }
+        if ((modifiers & 512) != 0) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Can not use %s on virtual property %s::$%s",
+                name,
+                property_owner,
+                data->name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
+            return ptn_null();
+        }
+        PtnValue target = ptn_value_deref(args[0]);
+        if (target.type != PTN_OBJECT) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionProperty::%s(): Argument #1 ($object) must be of type object, %s given",
+                name,
+                ptn_offset_container_type_name(target)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        const char *compatibility_class = data->is_dynamic ? data->class_name : property_owner;
+        if (!ptn_reflection_property_target_is_compatible(target, compatibility_class)) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Given object is not an instance of the class this property was declared in"
+            );
+            return ptn_null();
+        }
+        if (skip_property && !target.as.object->lazy_uninitialized) {
+            return ptn_null();
+        }
+        const PtnObjectPropertyMetadata *existing_metadata =
+            ptn_reflection_property_object_metadata(target, data->name, property_owner);
+        if (skip_property && existing_metadata != NULL && existing_metadata->lazy_skip) {
+            return ptn_null();
+        }
+        if (skip_property && !has_default) {
+            const PtnObjectPropertyMetadata *metadata =
+                existing_metadata;
+            if (metadata != NULL) {
+                PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+                ptn_array_unset_entry(target.as.object->properties, key);
+                PtnObjectPropertyMetadata *mutable_metadata =
+                    ptn_object_mutable_property_metadata(target.as.object, metadata->storage_name);
+                if (mutable_metadata != NULL) {
+                    mutable_metadata->is_unset = 1;
+                    mutable_metadata->lazy_skip = 1;
+                }
+            }
+            ptn_lazy_object_realize_if_all_properties_skipped(target);
+            return ptn_null();
+        }
+        PtnValue value = skip_property
+            ? ptn_reflection_property_default_value(runtime, data->class_name, data->name)
+            : ptn_value_clone_deref(args[1]);
+        int previous_lazy_initializing = target.as.object->lazy_initializing;
+        if (target.as.object->lazy_uninitialized) {
+            target.as.object->lazy_initializing = 1;
+        }
+        PtnValue written = ptn_object_write_property(
+            runtime,
+            target,
+            data->name,
+            data->class_name,
+            value,
+            line
+        );
+        target.as.object->lazy_initializing = previous_lazy_initializing;
+        if (runtime->exceptions->active_exception == NULL) {
+            const PtnObjectPropertyMetadata *metadata =
+                ptn_reflection_property_object_metadata(target, data->name, property_owner);
+            if (metadata != NULL) {
+                PtnObjectPropertyMetadata *mutable_metadata =
+                    ptn_object_mutable_property_metadata(target.as.object, metadata->storage_name);
+                if (mutable_metadata != NULL) {
+                    mutable_metadata->lazy_skip = 1;
+                }
+            }
+            ptn_lazy_object_realize_if_all_properties_skipped(target);
+        }
+        ptn_value_destroy(&written);
+        ptn_value_destroy(&value);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "setValue") || ptn_ascii_case_equal(name, "setRawValue")) {
@@ -63811,6 +63982,40 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             return ptn_null();
         }
         return ptn_bool(ptn_lazy_object_is_uninitialized(object));
+    }
+    if (ptn_ascii_case_equal(name, "markLazyObjectAsInitialized")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue object = ptn_reflection_class_lazy_object_arg(runtime, name, 1, "object", args[0]);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (!ptn_value_satisfies_class_type_hint(runtime, object, class_name)) {
+            char message[256];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Object of class %s is not an instance of class %s",
+                object.as.object->class_name,
+                class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
+            return ptn_null();
+        }
+        object.as.object->lazy_uninitialized = 0;
+        object.as.object->lazy_is_proxy = 0;
+        object.as.object->lazy_options = 0;
+        object.as.object->lazy_initializing = 0;
+        ptn_value_destroy(&object.as.object->lazy_initializer);
+        ptn_value_destroy(&object.as.object->lazy_proxy_instance);
+        object.as.object->lazy_initializer = ptn_null();
+        object.as.object->lazy_proxy_instance = ptn_null();
+        return ptn_value_clone_deref(object);
     }
     if (ptn_ascii_case_equal(name, "isLazy")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 1);
