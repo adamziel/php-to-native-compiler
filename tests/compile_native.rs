@@ -20768,6 +20768,101 @@ show_attribute_error(UsesMissingFlags::class);
 }
 
 #[test]
+fn compile_reflection_attribute_const_expression_arguments_to_native_binary() {
+    let root = temp_dir("ptn-native-attribute-const-expression-args");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("attribute-const-expression-args.php");
+    let output = root.join("attribute-const-expression-args-bin");
+    fs::write(
+        &input,
+        "<?php
+const K = 'dynamic-key';
+const V = 6;
+
+#[Attribute(Attribute::TARGET_CLASS | Attribute::IS_REPEATABLE)]
+class Meta {
+    public array $payload;
+    public int $sum;
+
+    public function __construct(array $payload, int $sum) {
+        $this->payload = $payload;
+        $this->sum = $sum;
+    }
+}
+
+class Ref {
+    public const VALUE = 4;
+}
+
+#[Meta([K => V, 'shift' => 4 >> 1, Ref::class => Ref::VALUE], 1 + 2)]
+#[Meta([K => V], 0)]
+class Subject {}
+
+$attributes = (new ReflectionClass(Subject::class))->getAttributes();
+echo count($attributes), \"\\n\";
+var_dump($attributes[0]->getArguments());
+$instance = $attributes[0]->newInstance();
+var_dump($instance->payload, $instance->sum);
+
+#[Meta([MissingClass::VALUE], 0)]
+class MissingSubject {}
+
+try {
+    (new ReflectionClass(MissingSubject::class))->getAttributes()[0]->getArguments();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  array(3) {\n",
+            "    [\"dynamic-key\"]=>\n",
+            "    int(6)\n",
+            "    [\"shift\"]=>\n",
+            "    int(2)\n",
+            "    [\"Ref\"]=>\n",
+            "    int(4)\n",
+            "  }\n",
+            "  [1]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"dynamic-key\"]=>\n",
+            "  int(6)\n",
+            "  [\"shift\"]=>\n",
+            "  int(2)\n",
+            "  [\"Ref\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "int(3)\n",
+            "Class \"MissingClass\" not found\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_literal_append_entry"));
+    assert!(c_source.contains("ptn_shift_right"));
+    assert!(c_source.contains("ptn_reflection_attribute_object_from_name_with_arguments_error"));
+}
+
+#[test]
 fn compile_reflection_attribute_self_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-attribute-self");
     fs::create_dir_all(&root).unwrap();

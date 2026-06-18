@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
     ArrayElement as AstArrayElement, ArrayElementValue as AstArrayElementValue, AssignmentOp,
-    AssignmentTarget as AstAssignmentTarget, AttributeArgumentKind, AttributeConstantReference,
-    AttributeMetadata, BinaryOp as AstBinaryOp, CastKind as AstCastKind,
-    CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
+    AssignmentTarget as AstAssignmentTarget, AttributeArgumentExpression, AttributeArgumentKind,
+    AttributeConstantReference, AttributeMetadata, BinaryOp as AstBinaryOp,
+    CastKind as AstCastKind, CatchClause as AstCatchClause, ClassDecl as AstClassDecl,
     ClosureUseCapture as AstClosureUseCapture, CompileWarning as AstCompileWarning,
     CompileWarningKind as AstCompileWarningKind, EnumBackingType as AstEnumBackingType, Expr,
     FunctionDecl as AstFunctionDecl, FunctionParameter as AstFunctionParameter, GlobalTarget,
@@ -2210,6 +2210,13 @@ fn resolve_attribute_metadata_for_class_scope(
     }
     for instance in &mut resolved.instances {
         for argument in &mut instance.arguments {
+            if let Some(expression) = &mut argument.value.expression {
+                resolve_attribute_argument_expression_for_class_scope(
+                    expression,
+                    current_class,
+                    current_parent,
+                );
+            }
             let Some(AttributeConstantReference::ClassConstant { class_name, name }) =
                 &mut argument.value.constant_reference
             else {
@@ -2247,6 +2254,59 @@ fn resolve_attribute_constant_reference_for_class_scope(
         resolve_attribute_class_scope_name(class_name, current_class, current_parent)
     {
         *class_name = resolved_class;
+    }
+}
+
+fn resolve_attribute_argument_expression_for_class_scope(
+    expression: &mut AttributeArgumentExpression,
+    current_class: &str,
+    current_parent: Option<&str>,
+) {
+    match expression {
+        AttributeArgumentExpression::ClassName(class_name)
+        | AttributeArgumentExpression::ClassConstant { class_name, .. } => {
+            if let Some(resolved_class) =
+                resolve_attribute_class_scope_name(class_name, current_class, current_parent)
+            {
+                *class_name = resolved_class;
+            }
+        }
+        AttributeArgumentExpression::Array(elements) => {
+            for element in elements {
+                if let Some(key) = &mut element.key {
+                    resolve_attribute_argument_expression_for_class_scope(
+                        key,
+                        current_class,
+                        current_parent,
+                    );
+                }
+                resolve_attribute_argument_expression_for_class_scope(
+                    &mut element.value,
+                    current_class,
+                    current_parent,
+                );
+            }
+        }
+        AttributeArgumentExpression::Unary { expr, .. } => {
+            resolve_attribute_argument_expression_for_class_scope(
+                expr,
+                current_class,
+                current_parent,
+            );
+        }
+        AttributeArgumentExpression::Binary { left, right, .. } => {
+            resolve_attribute_argument_expression_for_class_scope(
+                left,
+                current_class,
+                current_parent,
+            );
+            resolve_attribute_argument_expression_for_class_scope(
+                right,
+                current_class,
+                current_parent,
+            );
+        }
+        _ => {}
     }
 }
 

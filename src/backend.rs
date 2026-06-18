@@ -6,8 +6,9 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::ast::{
-    AssignmentOp, AttributeArgumentKind, AttributeArgumentValue, AttributeConstantReference,
-    AttributeInstance, AttributeMetadata, IncludeKind,
+    AssignmentOp, AttributeArgumentExpression, AttributeArgumentKind, AttributeArgumentValue,
+    AttributeConstantReference, AttributeInstance, AttributeMetadata, BinaryOp as AstBinaryOp,
+    IncludeKind, UnaryOp as AstUnaryOp,
 };
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{
@@ -6998,6 +6999,9 @@ fn attribute_flag_value(
     classes: &[ClassDecl],
     seen: &mut HashSet<String>,
 ) -> std::result::Result<i64, AttributeFlagError> {
+    if let Some(expression) = &value.expression {
+        return attribute_flag_argument_expression_value(expression, current_class, classes, seen);
+    }
     if matches!(value.kind, AttributeArgumentKind::Int) {
         return value
             .text
@@ -7020,6 +7024,54 @@ fn attribute_flag_value(
         return Err(AttributeFlagError::InvalidValue);
     };
     attribute_class_constant_flag_value(class_name, name, current_class, classes, seen)
+}
+
+fn attribute_flag_argument_expression_value(
+    expression: &AttributeArgumentExpression,
+    current_class: &ClassDecl,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+) -> std::result::Result<i64, AttributeFlagError> {
+    match expression {
+        AttributeArgumentExpression::Int(value) => value
+            .parse::<i64>()
+            .map_err(|_| AttributeFlagError::InvalidValue),
+        AttributeArgumentExpression::String(_) | AttributeArgumentExpression::ClassName(_) => {
+            Err(AttributeFlagError::Type {
+                type_name: "string",
+            })
+        }
+        AttributeArgumentExpression::Float(_) => {
+            Err(AttributeFlagError::Type { type_name: "float" })
+        }
+        AttributeArgumentExpression::Bool(_) => Err(AttributeFlagError::Type { type_name: "bool" }),
+        AttributeArgumentExpression::Null => Err(AttributeFlagError::Type { type_name: "null" }),
+        AttributeArgumentExpression::Array(_) => {
+            Err(AttributeFlagError::Type { type_name: "array" })
+        }
+        AttributeArgumentExpression::Constant(_) => Err(AttributeFlagError::InvalidValue),
+        AttributeArgumentExpression::ClassConstant { class_name, name } => {
+            attribute_class_constant_flag_value(class_name, name, current_class, classes, seen)
+        }
+        AttributeArgumentExpression::Unary { op, expr } => {
+            let value =
+                attribute_flag_argument_expression_value(expr, current_class, classes, seen)?;
+            match op {
+                AstUnaryOp::Positive => Ok(value),
+                AstUnaryOp::Negate => value.checked_neg().ok_or(AttributeFlagError::InvalidValue),
+                AstUnaryOp::BitwiseNot => Ok(!value),
+                _ => Err(AttributeFlagError::InvalidValue),
+            }
+        }
+        AttributeArgumentExpression::Binary {
+            op, left, right, ..
+        } => attribute_argument_eval_int_binary(
+            *op,
+            attribute_flag_argument_expression_value(left, current_class, classes, seen)?,
+            attribute_flag_argument_expression_value(right, current_class, classes, seen)?,
+        )
+        .ok_or(AttributeFlagError::InvalidValue),
+    }
 }
 
 fn attribute_class_constant_flag_value(
@@ -7454,13 +7506,14 @@ fn emit_declared_attribute_result(
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
         let constructor_plan = attribute_constructor_argument_plan(instance, classes, functions);
-        let constructor_error = reflection_attribute_arguments_error(instance).or_else(|| {
-            if let AttributeConstructorArgumentPlan::Error(error) = &constructor_plan {
-                Some(error.clone())
-            } else {
-                None
-            }
-        });
+        let constructor_error =
+            reflection_attribute_arguments_error(instance, classes).or_else(|| {
+                if let AttributeConstructorArgumentPlan::Error(error) = &constructor_plan {
+                    Some(error.clone())
+                } else {
+                    None
+                }
+            });
         if let Some(error_message) = constructor_error {
             out.push_str("            PtnValue constructor_args_");
             out.push_str(&attribute_index.to_string());
@@ -7487,13 +7540,14 @@ fn emit_declared_attribute_result(
         } else {
             let mut positional_index = 0usize;
             for (argument_index, argument) in instance.arguments.iter().enumerate() {
-                out.push_str("            PtnValue attribute_arg_");
-                out.push_str(&attribute_index.to_string());
-                out.push('_');
-                out.push_str(&argument_index.to_string());
-                out.push_str(" = ");
-                out.push_str(&c_attribute_argument_value(&argument.value));
-                out.push_str(";\n");
+                let argument_temp = format!("attribute_arg_{attribute_index}_{argument_index}");
+                emit_attribute_argument_value(
+                    out,
+                    &argument_temp,
+                    &argument.value,
+                    "            ",
+                    instance.line,
+                );
                 out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
                 out.push_str("                ptn_value_destroy(&attribute_args_");
                 out.push_str(&attribute_index.to_string());
@@ -7592,24 +7646,437 @@ fn c_attribute_source_file(instance: &crate::ast::AttributeInstance) -> String {
 
 fn reflection_attribute_arguments_error(
     instance: &crate::ast::AttributeInstance,
+    classes: &[ClassDecl],
 ) -> Option<String> {
     instance.arguments.iter().find_map(|argument| {
-        let AttributeConstantReference::ClassConstant { class_name, name } =
-            argument.value.constant_reference.as_ref()?
-        else {
-            return None;
-        };
-        if !matches!(
-            argument.value.kind,
-            AttributeArgumentKind::ClassConstant | AttributeArgumentKind::NativeEnumCase { .. }
-        ) {
-            return None;
-        }
-        (class_name.eq_ignore_ascii_case("self")
-            || class_name.eq_ignore_ascii_case("static")
-            || class_name.eq_ignore_ascii_case("parent"))
-        .then(|| format!("Undefined constant {class_name}::{name}"))
+        argument
+            .value
+            .expression
+            .as_ref()
+            .and_then(|expression| attribute_expression_arguments_error(expression, classes))
+            .or_else(|| {
+                let AttributeConstantReference::ClassConstant { class_name, name } =
+                    argument.value.constant_reference.as_ref()?
+                else {
+                    return None;
+                };
+                if !matches!(
+                    argument.value.kind,
+                    AttributeArgumentKind::ClassConstant
+                        | AttributeArgumentKind::NativeEnumCase { .. }
+                ) {
+                    return None;
+                }
+                attribute_class_constant_arguments_error(class_name, name, classes)
+            })
     })
+}
+
+fn attribute_expression_arguments_error(
+    expression: &AttributeArgumentExpression,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    match expression {
+        AttributeArgumentExpression::ClassConstant { class_name, name } => {
+            attribute_class_constant_arguments_error(class_name, name, classes)
+        }
+        AttributeArgumentExpression::Array(elements) => elements.iter().find_map(|element| {
+            element
+                .key
+                .as_ref()
+                .and_then(|key| attribute_expression_arguments_error(key, classes))
+                .or_else(|| attribute_expression_arguments_error(&element.value, classes))
+        }),
+        AttributeArgumentExpression::Unary { expr, .. } => {
+            attribute_expression_arguments_error(expr, classes)
+        }
+        AttributeArgumentExpression::Binary { left, right, .. } => {
+            attribute_expression_arguments_error(left, classes)
+                .or_else(|| attribute_expression_arguments_error(right, classes))
+        }
+        _ => None,
+    }
+}
+
+fn attribute_class_constant_arguments_error(
+    class_name: &str,
+    name: &str,
+    classes: &[ClassDecl],
+) -> Option<String> {
+    if class_name.eq_ignore_ascii_case("self")
+        || class_name.eq_ignore_ascii_case("static")
+        || class_name.eq_ignore_ascii_case("parent")
+    {
+        return Some(format!("Undefined constant {class_name}::{name}"));
+    }
+    let lookup_class_name = class_name.trim_start_matches('\\');
+    if !attribute_class_constant_class_available(lookup_class_name, classes) {
+        return Some(format!("Class \"{lookup_class_name}\" not found"));
+    }
+    None
+}
+
+fn attribute_class_constant_class_available(class_name: &str, classes: &[ClassDecl]) -> bool {
+    class_by_name(classes, class_name).is_some()
+        || class_name.eq_ignore_ascii_case("stdClass")
+        || class_name.eq_ignore_ascii_case("Attribute")
+        || class_name.eq_ignore_ascii_case("ReflectionAttribute")
+        || class_name.eq_ignore_ascii_case("ReflectionClass")
+        || class_name.eq_ignore_ascii_case("ReflectionClassConstant")
+        || class_name.eq_ignore_ascii_case("ReflectionConstant")
+        || class_name.eq_ignore_ascii_case("ReflectionFunction")
+        || class_name.eq_ignore_ascii_case("ReflectionMethod")
+        || class_name.eq_ignore_ascii_case("ReflectionProperty")
+        || BUILTIN_EXCEPTION_ROOT_NAMES
+            .iter()
+            .any(|candidate| class_name.eq_ignore_ascii_case(candidate))
+        || BUILTIN_EXCEPTION_PARENT_NAMES
+            .iter()
+            .any(|(candidate, _)| class_name.eq_ignore_ascii_case(candidate))
+        || MODELED_EXTENSION_INTERNAL_CLASS_NAMES
+            .iter()
+            .any(|candidate| class_name.eq_ignore_ascii_case(candidate))
+}
+
+fn emit_attribute_argument_value(
+    out: &mut String,
+    target: &str,
+    value: &AttributeArgumentValue,
+    indent: &str,
+    line: usize,
+) {
+    if let Some(expression) = &value.expression {
+        emit_attribute_argument_expression(out, target, expression, indent, line);
+        return;
+    }
+    out.push_str(indent);
+    out.push_str("PtnValue ");
+    out.push_str(target);
+    out.push_str(" = ");
+    out.push_str(&c_attribute_argument_value(value));
+    out.push_str(";\n");
+}
+
+fn emit_attribute_argument_expression(
+    out: &mut String,
+    target: &str,
+    expression: &AttributeArgumentExpression,
+    indent: &str,
+    fallback_line: usize,
+) {
+    match expression {
+        AttributeArgumentExpression::String(value) => {
+            emit_attribute_argument_simple(
+                out,
+                target,
+                indent,
+                &format!("ptn_string(\"{}\")", c_string(value)),
+            );
+        }
+        AttributeArgumentExpression::Int(value) => {
+            let literal = value
+                .parse::<i64>()
+                .map(c_i64_literal)
+                .unwrap_or_else(|_| "0LL".to_string());
+            emit_attribute_argument_simple(out, target, indent, &format!("ptn_int({literal})"));
+        }
+        AttributeArgumentExpression::Float(value) => {
+            let literal = if value.is_empty() { "0" } else { value };
+            emit_attribute_argument_simple(out, target, indent, &format!("ptn_float({literal})"));
+        }
+        AttributeArgumentExpression::Bool(value) => {
+            emit_attribute_argument_simple(
+                out,
+                target,
+                indent,
+                if *value { "ptn_bool(1)" } else { "ptn_bool(0)" },
+            );
+        }
+        AttributeArgumentExpression::Null => {
+            emit_attribute_argument_simple(out, target, indent, "ptn_null()");
+        }
+        AttributeArgumentExpression::Constant(name) => {
+            emit_attribute_argument_simple(out, target, indent, &format!(
+                "ptn_read_constant(runtime, \"{}\", runtime != NULL ? runtime->source_path : NULL, {})",
+                c_string(name.trim_start_matches('\\')),
+                fallback_line
+            ));
+        }
+        AttributeArgumentExpression::ClassName(class_name) => {
+            emit_attribute_argument_simple(
+                out,
+                target,
+                indent,
+                &format!("ptn_string(\"{}\")", c_string(class_name)),
+            );
+        }
+        AttributeArgumentExpression::ClassConstant { class_name, name } => {
+            emit_attribute_argument_simple(
+                out,
+                target,
+                indent,
+                &format!(
+                    "ptn_runtime_read_class_constant(runtime, \"{}\", \"{}\", {})",
+                    c_string(class_name.trim_start_matches('\\')),
+                    c_string(name),
+                    fallback_line
+                ),
+            );
+        }
+        AttributeArgumentExpression::Array(elements) => {
+            out.push_str(indent);
+            out.push_str("PtnValue ");
+            out.push_str(target);
+            out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+            for (index, element) in elements.iter().enumerate() {
+                let value_temp = format!("{target}_value_{index}");
+                let (has_key, key_temp) = if let Some(key) = &element.key {
+                    let key_temp = format!("{target}_key_{index}");
+                    emit_attribute_argument_expression(out, &key_temp, key, indent, element.line);
+                    ("1", key_temp)
+                } else {
+                    ("0", "ptn_null()".to_string())
+                };
+                emit_attribute_argument_expression(
+                    out,
+                    &value_temp,
+                    &element.value,
+                    indent,
+                    element.line,
+                );
+                out.push_str(indent);
+                out.push_str("ptn_array_literal_append_entry(runtime, ");
+                out.push_str(target);
+                out.push_str(".as.array, ");
+                out.push_str(&element.line.to_string());
+                out.push_str(", ");
+                out.push_str(has_key);
+                out.push_str(", ");
+                out.push_str(&key_temp);
+                out.push_str(", ");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                if element.key.is_some() {
+                    emit_value_cleanup(out, indent, &key_temp);
+                }
+                emit_value_cleanup(out, indent, &value_temp);
+            }
+        }
+        AttributeArgumentExpression::Unary { op, expr } => {
+            let value_temp = format!("{target}_value");
+            emit_attribute_argument_expression(out, &value_temp, expr, indent, fallback_line);
+            out.push_str(indent);
+            out.push_str("PtnValue ");
+            out.push_str(target);
+            out.push_str(" = ");
+            match op {
+                AstUnaryOp::Positive => out.push_str("ptn_positive("),
+                AstUnaryOp::Negate => out.push_str("ptn_negate("),
+                AstUnaryOp::Not => out.push_str("ptn_not("),
+                AstUnaryOp::BitwiseNot => out.push_str("ptn_bitwise_not(runtime, "),
+                AstUnaryOp::ErrorSuppress => unreachable!("attribute expressions reject @"),
+            }
+            out.push_str(&value_temp);
+            if matches!(op, AstUnaryOp::BitwiseNot) {
+                out.push_str(", runtime != NULL ? runtime->source_path : NULL, ");
+                out.push_str(&fallback_line.to_string());
+            }
+            out.push_str(");\n");
+            emit_value_cleanup(out, indent, &value_temp);
+        }
+        AttributeArgumentExpression::Binary {
+            op,
+            left,
+            right,
+            line,
+        } => emit_attribute_argument_binary(out, target, *op, left, right, indent, *line),
+    }
+}
+
+fn emit_attribute_argument_simple(out: &mut String, target: &str, indent: &str, value: &str) {
+    out.push_str(indent);
+    out.push_str("PtnValue ");
+    out.push_str(target);
+    out.push_str(" = ");
+    out.push_str(value);
+    out.push_str(";\n");
+}
+
+fn emit_attribute_argument_binary(
+    out: &mut String,
+    target: &str,
+    op: AstBinaryOp,
+    left: &AttributeArgumentExpression,
+    right: &AttributeArgumentExpression,
+    indent: &str,
+    line: usize,
+) {
+    let left_temp = format!("{target}_left");
+    let right_temp = format!("{target}_right");
+    emit_attribute_argument_expression(out, &left_temp, left, indent, line);
+    emit_attribute_argument_expression(out, &right_temp, right, indent, line);
+    out.push_str(indent);
+    out.push_str("PtnValue ");
+    out.push_str(target);
+    out.push_str(" = ");
+    match op {
+        AstBinaryOp::Concat => {
+            out.push_str("ptn_concat(runtime, ");
+            out.push_str(&left_temp);
+            out.push_str(", ");
+            out.push_str(&right_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push(')');
+        }
+        AstBinaryOp::Spaceship => {
+            out.push_str("ptn_int(ptn_compare_spaceship(runtime, ");
+            out.push_str(&left_temp);
+            out.push_str(", ");
+            out.push_str(&right_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str("))");
+        }
+        AstBinaryOp::Equal
+        | AstBinaryOp::NotEqual
+        | AstBinaryOp::Identical
+        | AstBinaryOp::NotIdentical
+        | AstBinaryOp::Less
+        | AstBinaryOp::LessEqual
+        | AstBinaryOp::Greater
+        | AstBinaryOp::GreaterEqual => {
+            out.push_str("ptn_bool(");
+            out.push_str(&attribute_argument_comparison_predicate(
+                op,
+                &left_temp,
+                &right_temp,
+                line,
+            ));
+            out.push(')');
+        }
+        AstBinaryOp::And => {
+            out.push_str("ptn_bool(ptn_is_truthy(");
+            out.push_str(&left_temp);
+            out.push_str(") && ptn_is_truthy(");
+            out.push_str(&right_temp);
+            out.push_str("))");
+        }
+        AstBinaryOp::Or => {
+            out.push_str("ptn_bool(ptn_is_truthy(");
+            out.push_str(&left_temp);
+            out.push_str(") || ptn_is_truthy(");
+            out.push_str(&right_temp);
+            out.push_str("))");
+        }
+        AstBinaryOp::Xor => {
+            out.push_str("ptn_bool(ptn_is_truthy(");
+            out.push_str(&left_temp);
+            out.push_str(") != ptn_is_truthy(");
+            out.push_str(&right_temp);
+            out.push_str("))");
+        }
+        AstBinaryOp::Coalesce => {
+            out.push('(');
+            out.push_str(left_temp.as_str());
+            out.push_str(".type != PTN_NULL ? ptn_value_clone_deref(");
+            out.push_str(&left_temp);
+            out.push_str(") : ptn_value_clone_deref(");
+            out.push_str(&right_temp);
+            out.push_str("))");
+        }
+        _ => {
+            out.push_str(attribute_argument_binary_runtime_function(op));
+            out.push_str("(runtime, ");
+            out.push_str(&left_temp);
+            out.push_str(", ");
+            out.push_str(&right_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push(')');
+        }
+    }
+    out.push_str(";\n");
+    emit_value_cleanup(out, indent, &left_temp);
+    emit_value_cleanup(out, indent, &right_temp);
+}
+
+fn attribute_argument_comparison_predicate(
+    op: AstBinaryOp,
+    left_temp: &str,
+    right_temp: &str,
+    line: usize,
+) -> String {
+    match op {
+        AstBinaryOp::Equal => {
+            format!("ptn_compare_equal(runtime, {left_temp}, {right_temp}, {line})")
+        }
+        AstBinaryOp::NotEqual => {
+            format!("!ptn_compare_equal(runtime, {left_temp}, {right_temp}, {line})")
+        }
+        AstBinaryOp::Identical => format!("ptn_compare_identical({left_temp}, {right_temp})"),
+        AstBinaryOp::NotIdentical => {
+            format!("ptn_compare_not_identical({left_temp}, {right_temp})")
+        }
+        AstBinaryOp::Less => {
+            format!("ptn_compare_less(runtime, {left_temp}, {right_temp}, {line})")
+        }
+        AstBinaryOp::LessEqual => {
+            format!("ptn_compare_less_equal(runtime, {left_temp}, {right_temp}, {line})")
+        }
+        AstBinaryOp::Greater => {
+            format!("ptn_compare_greater(runtime, {left_temp}, {right_temp}, {line})")
+        }
+        AstBinaryOp::GreaterEqual => {
+            format!("ptn_compare_greater_equal(runtime, {left_temp}, {right_temp}, {line})")
+        }
+        _ => unreachable!("not a comparison op"),
+    }
+}
+
+fn attribute_argument_binary_runtime_function(op: AstBinaryOp) -> &'static str {
+    match op {
+        AstBinaryOp::Add => "ptn_add",
+        AstBinaryOp::Subtract => "ptn_subtract",
+        AstBinaryOp::Multiply => "ptn_multiply",
+        AstBinaryOp::Power => "ptn_power",
+        AstBinaryOp::Divide => "ptn_divide",
+        AstBinaryOp::Modulo => "ptn_modulo",
+        AstBinaryOp::BitwiseAnd => "ptn_bitwise_and",
+        AstBinaryOp::BitwiseXor => "ptn_bitwise_xor",
+        AstBinaryOp::BitwiseOr => "ptn_bitwise_or",
+        AstBinaryOp::ShiftLeft => "ptn_shift_left",
+        AstBinaryOp::ShiftRight => "ptn_shift_right",
+        AstBinaryOp::Concat
+        | AstBinaryOp::Coalesce
+        | AstBinaryOp::Equal
+        | AstBinaryOp::NotEqual
+        | AstBinaryOp::Spaceship
+        | AstBinaryOp::Identical
+        | AstBinaryOp::NotIdentical
+        | AstBinaryOp::Less
+        | AstBinaryOp::LessEqual
+        | AstBinaryOp::Greater
+        | AstBinaryOp::GreaterEqual
+        | AstBinaryOp::And
+        | AstBinaryOp::Xor
+        | AstBinaryOp::Or => unreachable!("not a direct attribute binary runtime helper"),
+    }
+}
+
+fn attribute_argument_eval_int_binary(op: AstBinaryOp, left: i64, right: i64) -> Option<i64> {
+    match op {
+        AstBinaryOp::Add => left.checked_add(right),
+        AstBinaryOp::Subtract => left.checked_sub(right),
+        AstBinaryOp::Multiply => left.checked_mul(right),
+        AstBinaryOp::Modulo if right != 0 => left.checked_rem(right),
+        AstBinaryOp::ShiftLeft if (0..63).contains(&right) => left.checked_shl(right as u32),
+        AstBinaryOp::ShiftRight if (0..63).contains(&right) => left.checked_shr(right as u32),
+        AstBinaryOp::BitwiseAnd => Some(left & right),
+        AstBinaryOp::BitwiseOr => Some(left | right),
+        AstBinaryOp::BitwiseXor => Some(left ^ right),
+        _ => None,
+    }
 }
 
 fn c_attribute_argument_value(value: &AttributeArgumentValue) -> String {
