@@ -4689,6 +4689,7 @@ fn emit_class_metadata_helpers(
         "ReflectionUnionType",
         "ReflectionIntersectionType",
         "ReflectionException",
+        "PhpToken",
         "Attribute",
         "AllowDynamicProperties",
         "DelayedTargetValidation",
@@ -9317,6 +9318,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
             || match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
                 "soapclient" => Some("SoapClient"),
                 "soapserver" => Some("SoapServer"),
+                "phptoken" => Some("PhpToken"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
                 "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
@@ -10207,6 +10209,11 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_class_name_is_php_token(class_name)) {\n");
+    out.push_str(
+        "        return ptn_php_token_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
     out.push_str(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",

@@ -455,6 +455,10 @@ typedef struct {
 #define PTN_T_TRY 1114
 #define PTN_T_CLONE 1115
 #define PTN_T_HALT_COMPILER 1116
+#define PTN_T_NAME_FULLY_QUALIFIED 1117
+#define PTN_T_NAME_RELATIVE 1118
+#define PTN_T_NAME_QUALIFIED 1119
+#define PTN_T_NS_SEPARATOR 1120
 
 typedef struct PtnArray PtnArray;
 typedef struct PtnClosure PtnClosure;
@@ -1477,6 +1481,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_n
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
@@ -2151,6 +2156,14 @@ static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_xmlwriter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_php_token_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

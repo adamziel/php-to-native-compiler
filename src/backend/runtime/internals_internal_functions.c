@@ -38473,7 +38473,20 @@ static const PtnTokenNameEntry PTN_TOKEN_NAMES[] = {
     { "T_TRY", PTN_T_TRY },
     { "T_CLONE", PTN_T_CLONE },
     { "T_HALT_COMPILER", PTN_T_HALT_COMPILER },
+    { "T_NAME_FULLY_QUALIFIED", PTN_T_NAME_FULLY_QUALIFIED },
+    { "T_NAME_RELATIVE", PTN_T_NAME_RELATIVE },
+    { "T_NAME_QUALIFIED", PTN_T_NAME_QUALIFIED },
+    { "T_NS_SEPARATOR", PTN_T_NS_SEPARATOR },
 };
+
+static const char *ptn_token_name_cstr(int64_t id) {
+    for (size_t i = 0; i < sizeof(PTN_TOKEN_NAMES) / sizeof(PTN_TOKEN_NAMES[0]); i++) {
+        if (PTN_TOKEN_NAMES[i].id == id) {
+            return PTN_TOKEN_NAMES[i].name;
+        }
+    }
+    return NULL;
+}
 
 static PtnValue ptn_internal_token_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
@@ -38482,12 +38495,8 @@ static PtnValue ptn_internal_token_name(PtnRuntime *runtime, size_t argc, const 
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    for (size_t i = 0; i < sizeof(PTN_TOKEN_NAMES) / sizeof(PTN_TOKEN_NAMES[0]); i++) {
-        if (PTN_TOKEN_NAMES[i].id == id) {
-            return ptn_string(PTN_TOKEN_NAMES[i].name);
-        }
-    }
-    return ptn_string("UNKNOWN");
+    const char *name = ptn_token_name_cstr(id);
+    return ptn_string(name == NULL ? "UNKNOWN" : name);
 }
 
 static void ptn_token_get_all_append_token(
@@ -38565,6 +38574,45 @@ static int ptn_token_is_ident_start(unsigned char byte) {
 
 static int ptn_token_is_ident_part(unsigned char byte) {
     return ptn_token_is_ident_start(byte) || (byte >= '0' && byte <= '9');
+}
+
+static int ptn_token_ascii_ci_equal(const char *text, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)text[i]) != tolower((unsigned char)literal[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static size_t ptn_token_scan_name_segments(
+    const char *data,
+    size_t len,
+    size_t offset,
+    int leading_separator
+) {
+    size_t i = offset;
+    if (leading_separator) {
+        i++;
+    }
+    if (i >= len || !ptn_token_is_ident_start((unsigned char)data[i])) {
+        return offset;
+    }
+    i++;
+    while (i < len && ptn_token_is_ident_part((unsigned char)data[i])) {
+        i++;
+    }
+    while (i + 1 < len && data[i] == '\\' && ptn_token_is_ident_start((unsigned char)data[i + 1])) {
+        i += 2;
+        while (i < len && ptn_token_is_ident_part((unsigned char)data[i])) {
+            i++;
+        }
+    }
+    return i;
 }
 
 static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -38647,10 +38695,30 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
             ptn_token_get_all_append_token(result, &next_index, PTN_T_LNUMBER, data + start, i - start, token_line);
             continue;
         }
+        if (data[i] == '\\') {
+            size_t end = ptn_token_scan_name_segments(data, len, i, 1);
+            if (end != i) {
+                ptn_token_get_all_append_token(result, &next_index, PTN_T_NAME_FULLY_QUALIFIED, data + i, end - i, token_line);
+                i = end;
+                continue;
+            }
+            ptn_token_get_all_append_token(result, &next_index, PTN_T_NS_SEPARATOR, data + i, 1, token_line);
+            i++;
+            continue;
+        }
         if (ptn_token_is_ident_start((unsigned char)data[i])) {
             size_t start = i++;
             while (i < len && ptn_token_is_ident_part((unsigned char)data[i])) {
                 i++;
+            }
+            if (i + 1 < len && data[i] == '\\' && ptn_token_is_ident_start((unsigned char)data[i + 1])) {
+                size_t end = ptn_token_scan_name_segments(data, len, start, 0);
+                int64_t token_id = ptn_token_ascii_ci_equal(data + start, i - start, "namespace")
+                    ? PTN_T_NAME_RELATIVE
+                    : PTN_T_NAME_QUALIFIED;
+                ptn_token_get_all_append_token(result, &next_index, token_id, data + start, end - start, token_line);
+                i = end;
+                continue;
             }
             ptn_token_get_all_append_token(result, &next_index, ptn_token_keyword_id(data + start, i - start), data + start, i - start, token_line);
             continue;
@@ -38690,6 +38758,136 @@ static PtnValue ptn_internal_token_get_all(PtnRuntime *runtime, size_t argc, con
     }
     ptn_string_operand_free(input);
     return result;
+}
+
+static PtnValue ptn_php_token_object(
+    PtnRuntime *runtime,
+    int64_t id,
+    PtnValue text,
+    int64_t token_line,
+    int64_t pos
+) {
+    PtnValue object = ptn_object_new_shell(runtime, "PhpToken");
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("id"), ptn_int(id));
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("text"),
+        ptn_value_clone_deref(text)
+    );
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("line"), ptn_int(token_line));
+    ptn_array_set_entry(object.as.object->properties, ptn_array_string_key("pos"), ptn_int(pos));
+    return object;
+}
+
+static PtnValue ptn_php_token_tokenize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "PhpToken::tokenize() expects 1 or 2 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue raw_tokens = ptn_internal_token_get_all(runtime, argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t next_index = 0;
+    int64_t pos = 0;
+    for (size_t i = 0; i < raw_tokens.as.array->len; i++) {
+        PtnValue raw_token = ptn_value_deref(raw_tokens.as.array->entries[i].value);
+        int64_t id = 0;
+        int64_t token_line = 1;
+        PtnValue text = ptn_string("");
+        if (raw_token.type == PTN_ARRAY) {
+            PtnArrayKey id_key = ptn_array_int_key(0);
+            PtnArrayKey text_key = ptn_array_int_key(1);
+            PtnArrayKey line_key = ptn_array_int_key(2);
+            PtnArrayEntry *id_entry = ptn_array_entry_for_key(raw_token.as.array, id_key);
+            PtnArrayEntry *text_entry = ptn_array_entry_for_key(raw_token.as.array, text_key);
+            PtnArrayEntry *line_entry = ptn_array_entry_for_key(raw_token.as.array, line_key);
+            ptn_array_key_free(id_key);
+            ptn_array_key_free(text_key);
+            ptn_array_key_free(line_key);
+            if (id_entry != NULL) {
+                PtnValue id_value = ptn_value_deref(id_entry->value);
+                if (id_value.type == PTN_INT) {
+                    id = id_value.as.integer;
+                }
+            }
+            if (text_entry != NULL) {
+                text = ptn_value_deref(text_entry->value);
+            }
+            if (line_entry != NULL) {
+                PtnValue line_value = ptn_value_deref(line_entry->value);
+                if (line_value.type == PTN_INT) {
+                    token_line = line_value.as.integer;
+                }
+            }
+        } else if (raw_token.type == PTN_STRING) {
+            text = raw_token;
+            if (raw_token.as.string.len > 0) {
+                id = (int64_t)raw_token.as.string.data[0];
+            }
+        }
+        PtnValue object = ptn_php_token_object(runtime, id, text, token_line, pos);
+        if (text.type == PTN_STRING) {
+            pos += (int64_t)text.as.string.len;
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(next_index++), object);
+    }
+    ptn_value_destroy(&raw_tokens);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_php_token_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    receiver = ptn_value_deref(receiver);
+    if (!ptn_ascii_case_equal(name, "getTokenName")) {
+        ptn_throw_exception(runtime, "Error", "Call to undefined method");
+        return ptn_null();
+    }
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "PhpToken::getTokenName() expects exactly 0 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (receiver.type != PTN_OBJECT) {
+        return ptn_string("UNKNOWN");
+    }
+    PtnArrayKey id_key = ptn_array_string_key("id");
+    PtnArrayEntry *id_entry = ptn_array_entry_for_key(receiver.as.object->properties, id_key);
+    ptn_array_key_free(id_key);
+    if (id_entry == NULL) {
+        return ptn_string("UNKNOWN");
+    }
+    PtnValue id_value = ptn_value_deref(id_entry->value);
+    if (id_value.type != PTN_INT) {
+        return ptn_string("UNKNOWN");
+    }
+    const char *token_name = ptn_token_name_cstr(id_value.as.integer);
+    if (token_name != NULL) {
+        return ptn_string(token_name);
+    }
+    if (id_value.as.integer > 0 && id_value.as.integer < 256) {
+        char buffer[2] = { (char)id_value.as.integer, '\0' };
+        return ptn_owned_string_len(ptn_duplicate_string_len(buffer, 1), 1);
+    }
+    return ptn_string("UNKNOWN");
 }
 
 typedef struct {
@@ -56546,6 +56744,11 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return ptn_internal_phar_is_valid_phar_filename(runtime, argc, args, line);
         }
     }
+    if (ptn_internal_class_name_is_php_token(class_name)) {
+        if (ptn_ascii_case_equal(name, "tokenize")) {
+            return ptn_php_token_tokenize(runtime, argc, args, line);
+        }
+    }
     if (ptn_internal_class_name_is_rounding_mode(class_name)) {
         if (ptn_ascii_case_equal(name, "cases")) {
             if (argc != 0) {
@@ -59043,6 +59246,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_
     return ptn_ascii_case_equal(class_name, "HashContext");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "PhpToken");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_intl_break_iterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "IntlBreakIterator");
 }
@@ -59171,6 +59378,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_soap_client(class_name)
         || ptn_internal_class_name_is_soap_server(class_name)
         || ptn_internal_class_name_is_hash_context(class_name)
+        || ptn_internal_class_name_is_php_token(class_name)
         || ptn_internal_class_name_is_intl_break_iterator(class_name)
         || ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name)
         || ptn_internal_class_name_is_intl_code_point_break_iterator(class_name)
@@ -60424,6 +60632,12 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
         return ptn_ascii_case_equal(property_name, "value")
             || ptn_ascii_case_equal(property_name, "scale");
     }
+    if (ptn_internal_class_name_is_php_token(class_name)) {
+        return ptn_ascii_case_equal(property_name, "id")
+            || ptn_ascii_case_equal(property_name, "text")
+            || ptn_ascii_case_equal(property_name, "line")
+            || ptn_ascii_case_equal(property_name, "pos");
+    }
     if (ptn_internal_class_name_is_attribute(class_name)) {
         return ptn_ascii_case_equal(property_name, "flags");
     }
@@ -60541,6 +60755,9 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "floor")
             || ptn_ascii_case_equal(method_name, "round")
             || ptn_ascii_case_equal(method_name, "compare");
+    }
+    if (ptn_internal_class_name_is_php_token(class_name)) {
+        return ptn_ascii_case_equal(method_name, "getTokenName");
     }
     if (ptn_internal_class_name_is_attribute(class_name) ||
         ptn_internal_class_name_is_deprecated(class_name) ||
@@ -60716,6 +60933,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
             || ptn_ascii_case_equal(method_name, "getSupportedCompression")
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename");
+    }
+    if (ptn_internal_class_name_is_php_token(class_name)) {
+        return ptn_ascii_case_equal(method_name, "tokenize");
     }
     if (ptn_internal_class_name_is_intl_break_iterator(class_name)) {
         return ptn_ascii_case_equal(method_name, "createWordInstance")
@@ -66152,6 +66372,9 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     }
     if (ptn_internal_class_name_is_hash_context(class_name)) {
         return "hash";
+    }
+    if (ptn_internal_class_name_is_php_token(class_name)) {
+        return "tokenizer";
     }
     if (ptn_internal_class_name_is_intl_break_iterator(class_name) ||
         ptn_internal_class_name_is_intl_rule_based_break_iterator(class_name) ||

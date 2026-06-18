@@ -1,0 +1,2 @@
+Zend/tests/class_name/class_name_as_scalar_error_001.phpt
+ext/tokenizer/tests/namespaced_names.phpt

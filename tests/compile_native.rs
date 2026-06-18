@@ -15114,6 +15114,62 @@ var_dump(function_exists('show_source'), function_exists('SHOW_SOURCE'));\n",
 }
 
 #[test]
+fn compile_php_token_tokenize_namespaced_names_to_native_binary() {
+    let root = temp_dir("ptn-native-php-token-namespaced-names");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-token-namespaced-names.php");
+    let output = root.join("php-token-namespaced-names-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$code = <<<'CODE'
+<?php
+Foo
+Foo\Bar
+\Foo\Bar
+namespace\Foo
+Foo \ Bar
+CODE;
+
+foreach (PhpToken::tokenize($code) as $token) {
+    echo "{$token->getTokenName()}: \"$token->text\"\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "T_OPEN_TAG: \"<?php\n",
+            "\"\n",
+            "T_STRING: \"Foo\"\n",
+            "T_WHITESPACE: \"\n",
+            "\"\n",
+            "T_NAME_QUALIFIED: \"Foo\\Bar\"\n",
+            "T_WHITESPACE: \"\n",
+            "\"\n",
+            "T_NAME_FULLY_QUALIFIED: \"\\Foo\\Bar\"\n",
+            "T_WHITESPACE: \"\n",
+            "\"\n",
+            "T_NAME_RELATIVE: \"namespace\\Foo\"\n",
+            "T_WHITESPACE: \"\n",
+            "\"\n",
+            "T_STRING: \"Foo\"\n",
+            "T_WHITESPACE: \" \"\n",
+            "T_NS_SEPARATOR: \"\\\"\n",
+            "T_WHITESPACE: \" \"\n",
+            "T_STRING: \"Bar\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_non_utf8_source_string_bytes_to_native_binary() {
     let root = temp_dir("ptn-native-non-utf8-source-string-bytes");
     fs::create_dir_all(&root).unwrap();
@@ -42492,7 +42548,7 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_define_class_constant(&runtime"));
-    assert!(c_source.contains("ptn_runtime_read_class_constant(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope(&runtime"));
 }
 
 #[test]
@@ -42787,9 +42843,28 @@ namespace {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_runtime_read_class_constant(&runtime"));
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope(&runtime"));
     assert!(c_source.contains("ptn_dynamic_new_class_name_from_value("));
     assert!(c_source.contains("ptn_internal_date"));
+}
+
+#[test]
+fn parser_rejects_static_class_name_in_class_constant_with_php_message() {
+    let error = parser::parse(
+        "<?php
+namespace Foo\\Bar {
+    class One {
+        const Baz = static::class;
+    }
+}
+",
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "static::class cannot be used for compile-time class name resolution"
+    );
 }
 
 #[test]

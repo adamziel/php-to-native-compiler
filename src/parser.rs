@@ -19439,11 +19439,17 @@ fn validate_constant_expression_closures(expr: &Expr) -> Result<()> {
 fn validate_constant_expression_runtime_restrictions(expr: &Expr) -> Result<()> {
     match expr {
         Expr::ClassConstantFetch {
-            class_name, span, ..
-        } if class_name.eq_ignore_ascii_case("static") => Err(Diagnostic::new(
-            "\"static::\" is not allowed in compile-time constants",
-            Some(*span),
-        )),
+            class_name,
+            name,
+            span,
+        } if class_name.eq_ignore_ascii_case("static") => {
+            let message = if name.eq_ignore_ascii_case("class") {
+                "static::class cannot be used for compile-time class name resolution"
+            } else {
+                "\"static::\" is not allowed in compile-time constants"
+            };
+            Err(Diagnostic::new(message, Some(*span)))
+        }
         Expr::DynamicClassConstantFetch {
             class_name: Some(class_name),
             span,
