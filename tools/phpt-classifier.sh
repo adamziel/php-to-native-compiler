@@ -1086,7 +1086,7 @@ ptn_phpt_has_external_service_harness() {
     local path=$1
 
     grep -Eiq \
-        'http_server(_skipif)?|server\.inc|skipifconnectfailure|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1|::1' \
+        'http_server(_skipif)?|server\.inc|skipifconnectfailure|mysql_pdo_test\.inc|MySQLPDOTest::|PHP_TEST_SHARED_EXTENSIONS|TEST_PHP_(MYSQL|PGSQL|LDAP|ODBC|FTP|SNMP)|getaddrinfo|localhost:[0-9]|127\.0\.0\.1|::1' \
         "$path"
 }
 
@@ -2365,6 +2365,79 @@ ptn_phpt_first_unsupported_phar_archive_surface() {
     return "${ptn_status[1]}"
 }
 
+ptn_phpt_first_unsupported_zip_archive_surface() {
+    local rel=$1
+    local path=$2
+
+    [[ "$rel" == ext/zip/* ]] || return 1
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return tolower(out)
+        }
+        {
+            line = ptn_php_code_line($0)
+            if (line ~ /(^|[^[:alnum:]_$>])new[[:space:]]+\\?ziparchive[[:space:]]*([;(]|$)/ ||
+                line ~ /->[[:space:]]*(open|close|addfromstring|addfile|addemptydir|registercancelcallback|registerprogresscallback|setpassword|setarchivecomment|setcomment(name|index)|delete(name|index)|rename(name|index)|unchange(all|archive|name|index)?)[[:space:]]*\(/) {
+                print "unsupported-zip-archive-runtime\trequires ZipArchive archive mutation/callback runtime, outside PTN modeled ZipArchive metadata surface"
+                found = 1
+                exit
+            }
+        }
+        END {
+            exit found ? 0 : 1
+        }
+    '
+    local -a ptn_status=("${PIPESTATUS[@]}")
+    return "${ptn_status[1]}"
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -2482,6 +2555,11 @@ ptn_phpt_classify_row() {
     fi
 
     if value=$(ptn_phpt_first_unsupported_phar_archive_surface "$rel" "$path"); then
+        printf '%s\n' "$value"
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_unsupported_zip_archive_surface "$rel" "$path"); then
         printf '%s\n' "$value"
         return 0
     fi

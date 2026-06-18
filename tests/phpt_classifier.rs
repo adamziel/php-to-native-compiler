@@ -1894,6 +1894,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "{phar_archive_ini:?}"
     );
 
+    let pdo_mysql_service = classify_at_relative_path(
+        "--TEST--\npdo mysql service\n--EXTENSIONS--\npdo_mysql\n--SKIPIF--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\nMySQLPDOTest::skip();\n?>\n--FILE--\n<?php\nrequire_once __DIR__ . '/inc/mysql_pdo_test.inc';\n$db = MySQLPDOTest::factory();\n--EXPECT--\n",
+        "ext/pdo_mysql/tests/service.phpt",
+    );
+    assert!(
+        pdo_mysql_service.starts_with("external-service\t"),
+        "{pdo_mysql_service:?}"
+    );
+
+    let zip_archive_runtime = classify_at_relative_path(
+        "--TEST--\nzip archive mutation\n--EXTENSIONS--\nzip\n--FILE--\n<?php\nfunction &cb() {}\n$zip = new ZipArchive;\n$zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE);\n$zip->registerCancelCallback(cb(...));\n$zip->addFromString('test', 'test');\n--EXPECT--\n",
+        "ext/zip/tests/ZipArchive_bailout.phpt",
+    );
+    assert!(
+        zip_archive_runtime.starts_with("unsupported-zip-archive-runtime\t"),
+        "{zip_archive_runtime:?}"
+    );
+
     let xmlwriter_extension = classify(
         "--TEST--\nxmlwriter extension\n--EXTENSIONS--\nxmlwriter\n--FILE--\n<?php\n$xw = xmlwriter_open_memory();\nxmlwriter_start_element($xw, 'root');\nxmlwriter_end_element($xw);\necho xmlwriter_flush($xw);\n--EXPECT--\n<root/>\n",
     );
