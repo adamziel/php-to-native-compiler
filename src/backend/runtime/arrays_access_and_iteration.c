@@ -6716,7 +6716,8 @@ static PTN_UNUSED int ptn_object_supports_foreach_by_reference(PtnObject *object
         (
             ptn_ascii_case_equal(object->class_name, "ArrayObject") ||
             ptn_ascii_case_equal(object->class_name, "ArrayIterator") ||
-            ptn_ascii_case_equal(object->class_name, "RecursiveArrayIterator")
+            ptn_ascii_case_equal(object->class_name, "RecursiveArrayIterator") ||
+            ptn_ascii_case_equal(object->class_name, "WeakMap")
         );
 }
 
