@@ -1278,14 +1278,16 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
 
 #[test]
 fn phpt_classifier_keeps_supported_arrow_functions_runnable() {
-    let classification = classify(
+    for source in [
         "--TEST--\narrow\n--FILE--\n<?php\n$fn = fn($value) => $value + 1;\nvar_dump($fn(1));\n--EXPECT--\nint(2)\n",
-    );
-
-    assert_eq!(
-        classification,
-        "runnable\tselected for PTN semantic measurement\n"
-    );
+        "--TEST--\narrow variable variables\n--FILE--\n<?php\n$a = 1;\n$var = \"a\";\n$fn = fn() => $$var;\nvar_dump($fn());\n--EXPECTF--\n",
+        "--TEST--\narrow bound this and scope\n--FILE--\n<?php\nclass Test {\n    public function method() {\n        $fn = fn() => $this;\n        $fn = fn() => Test::method2();\n        $fn = fn() => call_user_func('Test::method2');\n        $thisName = \"this\";\n        $fn = fn() => $$thisName;\n        $fn = fn() => self::class;\n        $fn = static fn() => isset($this);\n    }\n    public function method2() {}\n}\n--EXPECT--\n",
+    ] {
+        assert_eq!(
+            classify(source),
+            "runnable\tselected for PTN semantic measurement\n"
+        );
+    }
 }
 
 #[test]

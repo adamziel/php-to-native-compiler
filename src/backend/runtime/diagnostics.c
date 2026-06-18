@@ -191,6 +191,13 @@ static PTN_UNUSED void ptn_closure_bind_capture_reference(PtnValue closure, cons
 
 static PTN_UNUSED void ptn_runtime_import_closure_captures(PtnRuntime *runtime, PtnValue closure) {
     PtnClosure *resolved = ptn_closure_from_value(closure);
+    if (!resolved->is_static) {
+        PtnValue closure_this;
+        if (ptn_symbols_get(&resolved->captures, "this", &closure_this)) {
+            runtime->has_current_receiver = 1;
+            runtime->current_receiver = ptn_value_deref(closure_this);
+        }
+    }
     for (size_t i = 0; i < resolved->captures.len; i++) {
         PtnSymbol *capture = &resolved->captures.items[i];
         if (capture->value.type == PTN_REFERENCE) {

@@ -1824,11 +1824,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (implemented_modifier_diagnostic_seen) {
                 next
             }
-            if (line ~ /(^|[^[:alnum:]_$])fn[[:space:]]*\([^)]*\)[[:space:]]*=>[^;]*([$]this|[$][$]|self[[:space:]]*::|static[[:space:]]*::|parent[[:space:]]*::|[a-z_\\][a-z0-9_\\]*[[:space:]]*::)/) {
-                print "unsupported-closure-scope-binding\trequires arrow-function closure scope and $this binding parity, outside PTN modeled closure metadata subset"
-                found = 1
-                exit
-            }
             if (line ~ /(^|[^[:alnum:]_$])static[[:space:]]+[$][a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*new[[:space:]]+/ ||
                 line ~ /function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*=[[:space:]]*new[[:space:]]+/) {
                 print "unsupported-constant-expression\trequires object construction in constant-expression initializers, outside PTN modeled constant expression subset"
