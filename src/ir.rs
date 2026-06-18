@@ -591,6 +591,7 @@ pub enum ValueExpr {
     },
     Clone {
         expr: Box<ValueExpr>,
+        with_properties: Option<Box<ValueExpr>>,
         line: usize,
     },
     PropertyFetch {
@@ -2767,10 +2768,16 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::Throw { value: name, .. }
         | Expr::Unary { expr: name, .. }
         | Expr::Cast { expr: name, .. }
-        | Expr::Clone { expr: name, .. }
         | Expr::FirstClassCallable { callable: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_contains_yield(name),
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            expr_contains_yield(expr) || with_properties.as_deref().is_some_and(expr_contains_yield)
+        }
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
         | Expr::ShellExec { .. }
@@ -3690,8 +3697,15 @@ impl<'a> LoweringContext<'a> {
                 argument_unpacks: argument_unpacks.clone(),
                 line: span.line,
             },
-            Expr::Clone { expr, span } => ValueExpr::Clone {
+            Expr::Clone {
+                expr,
+                with_properties,
+                span,
+            } => ValueExpr::Clone {
                 expr: Box::new(self.lower_expr(expr)),
+                with_properties: with_properties
+                    .as_deref()
+                    .map(|properties| Box::new(self.lower_expr(properties))),
                 line: span.line,
             },
             Expr::PropertyFetch {
@@ -4142,7 +4156,21 @@ fn assertion_expr_text(expr: &Expr) -> String {
             assertion_expr_text(class_name),
             assertion_argument_list_text(arguments)
         ),
-        Expr::Clone { expr, .. } => format!("clone {}", assertion_expr_text(expr)),
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            if let Some(with_properties) = with_properties {
+                format!(
+                    "clone({}, {})",
+                    assertion_expr_text(expr),
+                    assertion_expr_text(with_properties)
+                )
+            } else {
+                format!("clone {}", assertion_expr_text(expr))
+            }
+        }
         Expr::PropertyFetch { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }

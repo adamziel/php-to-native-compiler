@@ -14335,8 +14335,15 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::FirstClassCallable { callable, .. } => {
             collect_value_legacy_dollar_brace_deprecations(callable, deprecations);
         }
-        ValueExpr::Clone { expr, .. } => {
+        ValueExpr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
             collect_value_legacy_dollar_brace_deprecations(expr, deprecations);
+            if let Some(with_properties) = with_properties {
+                collect_value_legacy_dollar_brace_deprecations(with_properties, deprecations);
+            }
         }
         ValueExpr::DynamicCall {
             callee, arguments, ..
@@ -15245,8 +15252,15 @@ fn collect_value_runtime_requirements(
             requirements.internal_function_dispatch = true;
             requirements.method_dispatch = true;
         }
-        ValueExpr::Clone { expr, .. } => {
+        ValueExpr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
             collect_value_runtime_requirements(expr, functions, requirements);
+            if let Some(with_properties) = with_properties {
+                collect_value_runtime_requirements(with_properties, functions, requirements);
+            }
             requirements.method_dispatch = true;
         }
         ValueExpr::PropertyFetch { receiver, .. }
@@ -16860,7 +16874,16 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
                     .any(|argument| value_mentions_variable(argument, name))
         }
         ValueExpr::FirstClassCallable { callable, .. } => value_mentions_variable(callable, name),
-        ValueExpr::Clone { expr, .. } => value_mentions_variable(expr, name),
+        ValueExpr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            value_mentions_variable(expr, name)
+                || with_properties
+                    .as_deref()
+                    .is_some_and(|with_properties| value_mentions_variable(with_properties, name))
+        }
         ValueExpr::DynamicCall {
             callee, arguments, ..
         } => {
@@ -17716,12 +17739,21 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::Include { path: name, .. }
         | ValueExpr::Throw { value: name, .. }
         | ValueExpr::FirstClassCallable { callable: name, .. }
-        | ValueExpr::Clone { expr: name, .. }
         | ValueExpr::Unary { expr: name, .. }
         | ValueExpr::Cast { expr: name, .. }
         | ValueExpr::PipeValue { expr: name, .. }
         | ValueExpr::DynamicStaticPropertyFetch { receiver: name, .. }
         | ValueExpr::DynamicClassNameFetch { receiver: name, .. } => value_expr_uses_this(name),
+        ValueExpr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            value_expr_uses_this(expr)
+                || with_properties
+                    .as_deref()
+                    .is_some_and(|with_properties| value_expr_uses_this(with_properties))
+        }
         ValueExpr::DynamicClassConstantFetch { receiver, name, .. } => {
             receiver
                 .as_ref()
@@ -21651,16 +21683,36 @@ impl ValueEmitter {
                 *line,
                 false,
             ),
-            ValueExpr::Clone { expr, line } => {
+            ValueExpr::Clone {
+                expr,
+                with_properties,
+                line,
+            } => {
                 let expr_temp = self.emit_materialized_value(out, expr);
+                let with_properties_temp = with_properties
+                    .as_ref()
+                    .map(|with_properties| self.emit_materialized_value(out, with_properties));
                 let result_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_clone_value(&runtime, ");
-                out.push_str(&expr_temp);
-                out.push_str(", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
+                if let Some(with_properties_temp) = &with_properties_temp {
+                    out.push_str(" = ptn_clone_value_with_properties(&runtime, ");
+                    out.push_str(&expr_temp);
+                    out.push_str(", ");
+                    out.push_str(with_properties_temp);
+                    out.push_str(", ");
+                    self.emit_access_scope(out);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                    emit_value_cleanup(out, "    ", with_properties_temp);
+                } else {
+                    out.push_str(" = ptn_clone_value(&runtime, ");
+                    out.push_str(&expr_temp);
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                    out.push_str(");\n");
+                }
                 emit_value_cleanup(out, "    ", &expr_temp);
                 result_temp
             }

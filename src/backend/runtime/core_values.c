@@ -1199,6 +1199,7 @@ struct PtnRuntime {
     int suppress_user_argument_count_location;
     int warn_by_ref_argument_mismatch;
     int throw_argument_count_errors;
+    int readonly_property_reinitialization_depth;
     void *active_serialize_state;
     void *active_unserialize_state;
     char *strtok_string;

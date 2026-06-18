@@ -181,6 +181,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         caller_runtime->suppress_user_argument_count_location;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
+    runtime->readonly_property_reinitialization_depth =
+        caller_runtime->readonly_property_reinitialization_depth;
     runtime->active_serialize_state = caller_runtime->active_serialize_state;
     runtime->active_unserialize_state = caller_runtime->active_unserialize_state;
     runtime->strtok_string = NULL;

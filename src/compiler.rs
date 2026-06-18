@@ -806,13 +806,23 @@ impl IncludeCollector {
                 expression: target, ..
             }
             | Expr::DynamicVariable { name: target, .. }
-            | Expr::Clone { expr: target, .. }
             | Expr::Throw { value: target, .. }
             | Expr::Unary { expr: target, .. }
             | Expr::Cast { expr: target, .. }
             | Expr::Grouped { expr: target, .. }
             | Expr::PipeValue { expr: target, .. } => {
                 self.collect_expr(target, source_file, source_dir)
+            }
+            Expr::Clone {
+                expr,
+                with_properties,
+                ..
+            } => {
+                self.collect_expr(expr, source_file, source_dir)?;
+                if let Some(with_properties) = with_properties {
+                    self.collect_expr(with_properties, source_file, source_dir)?;
+                }
+                Ok(())
             }
             Expr::YieldFrom { expr, .. } => self.collect_expr(expr, source_file, source_dir),
             Expr::Yield { key, value, .. } => {
