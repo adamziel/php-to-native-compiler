@@ -10343,6 +10343,10 @@ var_dump(unserialize($encoded));
         "{stdout}"
     );
     assert!(
+        !stdout.contains("__ptn_private:ArrayIterator:storage"),
+        "{stdout}"
+    );
+    assert!(
         stdout.contains("object(__PHP_Incomplete_Class)#"),
         "{stdout}"
     );

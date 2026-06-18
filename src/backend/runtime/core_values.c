@@ -1479,6 +1479,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_parameter(const char
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_property(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_constant(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_reference(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_php_incomplete_class(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_array_object(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);

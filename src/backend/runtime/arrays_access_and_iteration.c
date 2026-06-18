@@ -1059,6 +1059,13 @@ static PTN_UNUSED PtnValue ptn_new_object(
         );
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(lookup_class_name, "__PHP_Incomplete_Class")) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "__PHP_Incomplete_Class constructor expects 0 arguments");
+            return ptn_null();
+        }
+        return ptn_object_new_shell(runtime, "__PHP_Incomplete_Class");
+    }
     if (!ptn_class_name_is_stdclass(lookup_class_name)) {
         char message[192];
         int written = snprintf(message, sizeof(message), "Class \"%s\" not found", lookup_class_name);

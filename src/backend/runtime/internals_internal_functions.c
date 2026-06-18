@@ -2167,12 +2167,21 @@ static PTN_UNUSED void ptn_direct_var_dump_object_property_key(
         ptn_direct_var_dump_writef(runtime, "[%lld]=>\n", (long long)key.as.integer);
         return;
     }
-    const PtnObjectPropertyMetadata *metadata = ptn_object_property_metadata(object, key.as.string);
+    const PtnObjectPropertyMetadata *metadata =
+        memchr(key.as.string, '\0', key.string_len) == NULL
+            ? ptn_object_property_metadata(object, key.as.string)
+            : NULL;
     if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
         const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
         size_t display_len = metadata == NULL ? key.string_len : strlen(display_name);
         ptn_output_write_cstr(runtime, "[\"");
-        ptn_output_write(runtime, display_name, display_len);
+        for (size_t i = 0; i < display_len; i++) {
+            if (display_name[i] == '\0') {
+                ptn_output_write_cstr(runtime, "\\0");
+            } else {
+                ptn_output_write(runtime, &display_name[i], 1);
+            }
+        }
         ptn_output_write_cstr(runtime, "\"]=>\n");
         return;
     }
@@ -3460,16 +3469,33 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
     size_t line
 );
 
+static void ptn_var_dump_print_object_public_property_key(const char *data, size_t len) {
+    fputs("[\"", stdout);
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] == '\0') {
+            fputs("\\0", stdout);
+        } else {
+            fputc((unsigned char)data[i], stdout);
+        }
+    }
+    fputs("\"]=>\n", stdout);
+}
+
 static void ptn_var_dump_object_property_key(PtnObject *object, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         printf("[%lld]=>\n", (long long)key.as.integer);
         return;
     }
     const PtnObjectPropertyMetadata *metadata =
-        ptn_object_property_metadata(object, key.as.string);
+        memchr(key.as.string, '\0', key.string_len) == NULL
+            ? ptn_object_property_metadata(object, key.as.string)
+            : NULL;
     const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
     if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
-        printf("[\"%s\"]=>\n", display_name);
+        ptn_var_dump_print_object_public_property_key(
+            display_name,
+            metadata == NULL ? key.string_len : strlen(display_name)
+        );
         return;
     }
     if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
@@ -5221,6 +5247,41 @@ static const char *ptn_serialize_spl_array_object_iterator_class(PtnObject *obje
     return data->iterator_class;
 }
 
+static int ptn_serialize_property_is_spl_array_backed_storage(
+    PtnObject *object,
+    PtnArrayEntry *entry
+) {
+    if (object == NULL || entry == NULL || entry->key.type != PTN_ARRAY_KEY_STRING) {
+        return 0;
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, entry->key.as.string);
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        strcmp(metadata->display_name, "storage") == 0 &&
+        (ptn_ascii_case_equal(metadata->declaring_class, "ArrayIterator") ||
+         ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject"));
+}
+
+static PtnValue ptn_serialize_spl_array_backed_user_properties(PtnObject *object) {
+    PtnValue properties = ptn_array_from_literal_entries(0, NULL);
+    if (object == NULL || object->properties == NULL) {
+        return properties;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (ptn_serialize_property_is_spl_array_backed_storage(object, entry)) {
+            continue;
+        }
+        ptn_array_set_entry(
+            properties.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(entry->value)
+        );
+    }
+    return properties;
+}
+
 static void ptn_serialize_append_spl_array_backed_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -5237,8 +5298,9 @@ static void ptn_serialize_append_spl_array_backed_object(
     ptn_serialize_append_value_with_id(buffer, storage, state, 0);
     ptn_value_destroy(&storage);
     ptn_string_buffer_append(buffer, "i:2;");
-    PtnValue properties = ptn_array(object->properties);
+    PtnValue properties = ptn_serialize_spl_array_backed_user_properties(object);
     ptn_serialize_append_value_with_id(buffer, properties, state, 0);
+    ptn_value_destroy(&properties);
     ptn_string_buffer_append(buffer, "i:3;");
     const char *iterator_class = ptn_serialize_spl_array_object_iterator_class(object);
     if (iterator_class == NULL) {
@@ -5377,6 +5439,60 @@ static int ptn_serialize_append_serializable_object(
     return 1;
 }
 
+static int ptn_serialize_append_incomplete_class_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    if (object == NULL ||
+        !ptn_ascii_case_equal(object->class_name, "__PHP_Incomplete_Class") ||
+        object->properties == NULL) {
+        return 0;
+    }
+
+    PtnArrayKey name_key = ptn_array_string_key("__PHP_Incomplete_Class_Name");
+    PtnArrayEntry *name_entry = ptn_array_entry_for_key(object->properties, name_key);
+    ptn_array_key_free(name_key);
+    if (name_entry == NULL) {
+        return 0;
+    }
+    PtnValue name_value = ptn_value_deref(name_entry->value);
+    if (name_value.type != PTN_STRING) {
+        return 0;
+    }
+
+    size_t property_count = 0;
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry == name_entry) {
+            continue;
+        }
+        property_count++;
+    }
+
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"",
+        name_value.as.string.len
+    );
+    ptn_string_buffer_append_len(
+        buffer,
+        (const char *)name_value.as.string.data,
+        name_value.as.string.len
+    );
+    ptn_string_buffer_append_format(buffer, "\":%zu:{", property_count);
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry == name_entry) {
+            continue;
+        }
+        ptn_serialize_append_key(buffer, entry->key);
+        ptn_serialize_append_value_with_id(buffer, entry->value, state, 0);
+    }
+    ptn_string_buffer_append_char(buffer, '}');
+    return 1;
+}
+
 static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *object, PtnSerializeState *state) {
     if (object != NULL &&
         object->lazy_uninitialized &&
@@ -5386,6 +5502,9 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
             ptn_string_buffer_append(buffer, "N;");
             return 0;
         }
+    }
+    if (ptn_serialize_append_incomplete_class_object(buffer, object, state)) {
+        return 1;
     }
     if (ptn_serialize_object_is_spl_array_backed(object)) {
         ptn_serialize_append_spl_array_backed_object(buffer, object, state);
@@ -6282,7 +6401,7 @@ static PtnArrayKey ptn_unserialize_object_property_key(PtnObject *object, PtnArr
                     );
                 }
             }
-        } else if (object != NULL) {
+        } else if (object != NULL && memchr(data, '\0', len) == NULL) {
             metadata = ptn_unserialize_find_metadata_by_declared_name(
                 object,
                 NULL,
@@ -66174,6 +66293,10 @@ static int ptn_internal_class_name_is_stdclass_name(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "stdClass");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_php_incomplete_class(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "__PHP_Incomplete_Class");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_array_iterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ArrayIterator");
 }
@@ -66473,6 +66596,7 @@ static int ptn_internal_interface_exists_name(const char *name) {
 static int ptn_internal_class_exists_name(const char *class_name) {
     return ptn_internal_reflection_metadata_class_exists(class_name)
         || ptn_internal_class_name_is_stdclass_name(class_name)
+        || ptn_internal_class_name_is_php_incomplete_class(class_name)
         || ptn_internal_class_name_is_array_iterator(class_name)
         || ptn_internal_class_name_is_recursive_array_iterator(class_name)
         || ptn_internal_class_name_is_array_object(class_name)
