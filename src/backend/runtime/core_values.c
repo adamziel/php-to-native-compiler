@@ -2171,6 +2171,19 @@ static PTN_UNUSED PtnValue ptn_zip_archive_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED void ptn_zip_archive_run_destructor(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_soap_client_new(
     PtnRuntime *runtime,
     const char *class_name,

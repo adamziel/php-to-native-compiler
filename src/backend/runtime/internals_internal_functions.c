@@ -57856,6 +57856,257 @@ static PTN_UNUSED PtnValue ptn_zip_archive_new(
     return ptn_object_new_shell(runtime, "ZipArchive");
 }
 
+typedef struct PtnZipArchiveData {
+    int is_open;
+    int has_cancel_callback;
+    PtnValue cancel_callback;
+} PtnZipArchiveData;
+
+static PtnZipArchiveData *ptn_zip_archive_data_new(void) {
+    PtnZipArchiveData *data = malloc(sizeof(PtnZipArchiveData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->is_open = 0;
+    data->has_cancel_callback = 0;
+    data->cancel_callback = ptn_null();
+    return data;
+}
+
+static void ptn_zip_archive_data_free(void *data_ptr) {
+    PtnZipArchiveData *data = (PtnZipArchiveData *)data_ptr;
+    if (data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&data->cancel_callback);
+    free(data);
+}
+
+static PtnZipArchiveData *ptn_zip_archive_data(PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_zip_archive(receiver.as.object->class_name)) {
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        receiver.as.object->native_data = ptn_zip_archive_data_new();
+        receiver.as.object->native_data_free = ptn_zip_archive_data_free;
+    }
+    return (PtnZipArchiveData *)receiver.as.object->native_data;
+}
+
+static void ptn_zip_archive_poll_cancel_callback(
+    PtnRuntime *runtime,
+    PtnZipArchiveData *data,
+    size_t line
+) {
+    if (data == NULL || !data->has_cancel_callback) {
+        return;
+    }
+    PtnValue result = ptn_call_callable(runtime, data->cancel_callback, 0, NULL, line);
+    ptn_value_destroy(&result);
+}
+
+static PtnValue ptn_zip_archive_open(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 1 || argc > 2) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 1
+                ? "ZipArchive::open() expects at least 1 argument, %zu given"
+                : "ZipArchive::open() expects at most 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand filename = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(filename);
+        return ptn_null();
+    }
+    ptn_string_operand_free(filename);
+    if (argc >= 2) {
+        (void)ptn_value_to_integer(args[1]);
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data != NULL) {
+        data->is_open = 1;
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_zip_archive_register_cancel_callback(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (argc != 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ZipArchive::registerCancelCallback() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid ZipArchive object");
+        return ptn_null();
+    }
+    ptn_value_destroy(&data->cancel_callback);
+    data->cancel_callback = ptn_value_clone_deref(args[0]);
+    data->has_cancel_callback = 1;
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_zip_archive_add_from_string(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ZipArchive::addFromString() expects exactly 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    PtnStringOperand contents = ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        ptn_string_operand_free(contents);
+        return ptn_null();
+    }
+    ptn_string_operand_free(name);
+    ptn_string_operand_free(contents);
+
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
+    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_zip_archive_close(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ZipArchive::close() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
+    if (data != NULL) {
+        data->is_open = 0;
+    }
+    return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(1);
+}
+
+static PTN_UNUSED void ptn_zip_archive_run_destructor(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    PtnZipArchiveData *data = ptn_zip_archive_data(receiver);
+    if (data == NULL || !data->is_open) {
+        return;
+    }
+    ptn_zip_archive_poll_cancel_callback(runtime, data, line);
+    data->is_open = 0;
+}
+
+static PTN_UNUSED PtnValue ptn_zip_archive_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_zip_archive_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception == NULL &&
+            receiver.type == PTN_OBJECT &&
+            replacement.type == PTN_OBJECT) {
+            if (receiver.as.object->native_data_free != NULL) {
+                receiver.as.object->native_data_free(receiver.as.object->native_data);
+            }
+            receiver.as.object->native_data = replacement.as.object->native_data;
+            receiver.as.object->native_data_free = replacement.as.object->native_data_free;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "open")) {
+        return ptn_zip_archive_open(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "registerCancelCallback")) {
+        return ptn_zip_archive_register_cancel_callback(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "addFromString")) {
+        return ptn_zip_archive_add_from_string(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "close")) {
+        return ptn_zip_archive_close(runtime, receiver, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
 static int ptn_soap_options_entry(PtnValue options, const char *name, PtnValue *out) {
     options = ptn_value_deref(options);
     if (options.type != PTN_ARRAY || options.as.array == NULL) {
@@ -61687,9 +61938,15 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
             || ptn_ascii_case_equal(method_name, "isValidPharFilename");
     }
+    if (ptn_internal_class_name_is_zip_archive(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "open")
+            || ptn_ascii_case_equal(method_name, "registerCancelCallback")
+            || ptn_ascii_case_equal(method_name, "addFromString")
+            || ptn_ascii_case_equal(method_name, "close");
+    }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
-        ptn_internal_class_name_is_soap_server(class_name) ||
-        ptn_internal_class_name_is_zip_archive(class_name)) {
+        ptn_internal_class_name_is_soap_server(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct");
     }
     if (ptn_internal_class_name_is_dom(class_name)) {
@@ -62605,9 +62862,16 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "isValidPharFilename");
         return result;
     }
+    if (ptn_internal_class_name_is_zip_archive(class_name)) {
+        ptn_append_method_name(result, &index, "__construct");
+        ptn_append_method_name(result, &index, "open");
+        ptn_append_method_name(result, &index, "registerCancelCallback");
+        ptn_append_method_name(result, &index, "addFromString");
+        ptn_append_method_name(result, &index, "close");
+        return result;
+    }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
-        ptn_internal_class_name_is_soap_server(class_name) ||
-        ptn_internal_class_name_is_zip_archive(class_name)) {
+        ptn_internal_class_name_is_soap_server(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
         return result;
     }
@@ -67438,6 +67702,10 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
     if (ptn_internal_class_name_is_phar(class_name)) {
         ptn_array_set_entry(result.as.array, ptn_array_string_key("GZ"), ptn_int(PTN_PHAR_COMPRESSION_GZ));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("BZ2"), ptn_int(PTN_PHAR_COMPRESSION_BZ2));
+        return;
+    }
+    if (ptn_internal_class_name_is_zip_archive(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("CREATE"), ptn_int(1));
         return;
     }
     if (ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||

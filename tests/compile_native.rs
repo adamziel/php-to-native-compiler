@@ -23348,7 +23348,8 @@ var_dump(
     Phar::canCompress(Phar::GZ),
     Phar::canCompress(Phar::BZ2),
     Phar::GZ,
-    Phar::BZ2
+    Phar::BZ2,
+    ZipArchive::CREATE
 );
 var_dump(TCP_NODELAY, socket_strerror(1), SOAP_1_1, SOAP_1_2);
 
@@ -23369,7 +23370,17 @@ var_dump(
     $rc->getExtensionName(),
     method_exists('SoapClient', '__construct'),
     class_exists('ZipArchive'),
+    method_exists('ZipArchive', 'registerCancelCallback'),
     method_exists('Phar', 'apiVersion')
+);
+
+function &zip_cancel_ref_notice() {}
+$zip = new ZipArchive;
+var_dump(
+    $zip->open(__DIR__ . '/archive.zip', ZipArchive::CREATE),
+    $zip->registerCancelCallback(zip_cancel_ref_notice(...)),
+    $zip->addFromString('name.txt', 'contents'),
+    $zip->close()
 );
 
 try {
@@ -23390,40 +23401,62 @@ try {
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let expected_notice_52 = format!(
+        "\nNotice: Only variable references should be returned by reference in {} on line 52\n",
+        input.display()
+    );
+    let expected_notice_53 = format!(
+        "\nNotice: Only variable references should be returned by reference in {} on line 53\n",
+        input.display()
+    );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "string(5) \"1.1.1\"\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(false)\n",
-            "int(4096)\n",
-            "int(8192)\n",
-            "int(1)\n",
-            "string(23) \"Operation not permitted\"\n",
-            "int(1)\n",
-            "int(2)\n",
-            "string(4) \"Phar\"\n",
-            "bool(true)\n",
-            "int(1)\n",
-            "bool(true)\n",
-            "int(1)\n",
-            "bool(true)\n",
-            "string(4) \"soap\"\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "bool(true)\n",
-            "SoapFault: SoapClient::__construct(): Invalid 'encoding' option - 'non-sense'\n",
-            "SoapFault: SoapClient::__construct(): 'location' option is required in nonWSDL mode\n",
+        format!(
+            "{}{}{}{}{}",
+            concat!(
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "string(5) \"1.1.1\"\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(false)\n",
+                "int(4096)\n",
+                "int(8192)\n",
+                "int(1)\n",
+                "int(1)\n",
+                "string(23) \"Operation not permitted\"\n",
+                "int(1)\n",
+                "int(2)\n",
+                "string(4) \"Phar\"\n",
+                "bool(true)\n",
+                "int(1)\n",
+                "bool(true)\n",
+                "int(1)\n",
+                "bool(true)\n",
+                "string(4) \"soap\"\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+            ),
+            expected_notice_52,
+            expected_notice_52,
+            expected_notice_53,
+            concat!(
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "SoapFault: SoapClient::__construct(): Invalid 'encoding' option - 'non-sense'\n",
+                "SoapFault: SoapClient::__construct(): 'location' option is required in nonWSDL mode\n",
+            ),
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -23432,6 +23465,7 @@ try {
     assert!(c_source.contains("ptn_internal_phar_can_compress"));
     assert!(c_source.contains("ptn_soap_client_new"));
     assert!(c_source.contains("ptn_internal_socket_strerror"));
+    assert!(c_source.contains("ptn_zip_archive_call_method"));
 }
 
 #[test]

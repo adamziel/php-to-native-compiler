@@ -561,13 +561,6 @@ static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
         return;
     }
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
-    if (root->method_dispatch == NULL ||
-        root->declared_method_exists == NULL ||
-        !root->declared_method_exists(object->class_name, "__destruct")) {
-        return;
-    }
-
-    object->destructor_called = 1;
     PtnValue receiver = ptn_value_borrow(ptn_object(object));
     size_t destructor_line = runtime->call_site_line != 0
         ? runtime->call_site_line
@@ -575,6 +568,20 @@ static PTN_UNUSED void ptn_object_run_destructor(PtnObject *object) {
     if (destructor_line == 0) {
         destructor_line = 1;
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (ptn_internal_class_name_is_zip_archive(object->class_name)) {
+        object->destructor_called = 1;
+        ptn_zip_archive_run_destructor(runtime, receiver, destructor_line);
+        return;
+    }
+#endif
+    if (root->method_dispatch == NULL ||
+        root->declared_method_exists == NULL ||
+        !root->declared_method_exists(object->class_name, "__destruct")) {
+        return;
+    }
+
+    object->destructor_called = 1;
     PtnValue result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
     ptn_value_destroy(&result);
 }
