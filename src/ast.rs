@@ -864,6 +864,7 @@ pub enum Expr {
     },
     Clone {
         expr: Box<Expr>,
+        with_properties: Option<Box<Expr>>,
         span: SourceSpan,
     },
     PropertyFetch {

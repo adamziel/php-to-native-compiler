@@ -3530,6 +3530,33 @@ fn parser_accepts_clone_expressions_with_assignment_operands() {
 }
 
 #[test]
+fn parser_accepts_clone_with_property_updates() {
+    let program =
+        parser::parse("<?php $copy = clone($source, ['name' => makeName(), 0 => 'zero']);")
+            .unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment statement");
+    };
+    let Expr::Clone {
+        expr,
+        with_properties,
+        ..
+    } = value
+    else {
+        panic!("expected clone expression");
+    };
+    assert!(matches!(expr.as_ref(), Expr::Variable(name, _) if name == "source"));
+    assert!(matches!(
+        with_properties.as_deref(),
+        Some(Expr::Array {
+            elements,
+            short_syntax: true,
+            ..
+        }) if elements.len() == 2
+    ));
+}
+
+#[test]
 fn parser_accepts_keyword_boolean_precedence() {
     let program = parser::parse(
         "<?php echo true || false and false, false or true && false, true xor false || false;",
@@ -47487,6 +47514,97 @@ foreach ($boxes as $box) {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_clone_value(&runtime"));
     assert!(c_source.contains("root->method_dispatch(root, clone, \"__clone\""));
+}
+
+#[test]
+fn compile_object_clone_with_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-object-clone-with-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("object-clone-with-properties.php");
+    let output = root.join("object-clone-with-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Box {
+    public $a = "default";
+    public $b = "default";
+
+    public function __clone() {
+        $this->b = "__clone";
+    }
+}
+
+$box = new Box();
+$copy = clone($box, ["a" => "with"]);
+echo $copy->a, ":", $copy->b, "\n";
+
+readonly class ReadonlyBox {
+    public function __construct(public public(set) string $name) {}
+
+    public function __clone() {
+        $this->name = "clone";
+    }
+}
+
+$readonly = new ReadonlyBox("default");
+$readonlyClone = clone $readonly;
+$readonlyWith = clone($readonly, ["name" => "with"]);
+echo $readonlyClone->name, ":", $readonlyWith->name, "\n";
+
+$std = clone(new stdClass(), [0 => "zero", "named" => "value"]);
+echo $std->{0}, ":", $std->named, "\n";
+
+try {
+    clone($box, 1);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+try {
+    clone(new stdClass(), ["\0Foo\0bar" => "updated"]);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+$ref = "reference";
+$with = ["x" => &$ref];
+try {
+    clone(new stdClass(), $with);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+unset($ref);
+$after = clone(new stdClass(), $with);
+echo $after->x, "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "with:__clone\n",
+            "clone:with\n",
+            "zero:value\n",
+            "TypeError: clone(): Argument #2 ($withProperties) must be of type array, int given\n",
+            "Error: Cannot access property starting with \"\\0\"\n",
+            "Error: Cannot assign by reference when cloning with updated properties\n",
+            "reference\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_clone_value_with_properties(&runtime"));
 }
 
 #[test]

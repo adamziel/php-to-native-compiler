@@ -5937,10 +5937,32 @@ impl Parser<'_> {
 
     fn parse_clone_expr(&mut self) -> Result<Expr> {
         let token = self.advance().clone();
+        if self.peek_clone_call_has_with_properties_argument() {
+            let (arguments, argument_names, argument_unpacks, right_span) =
+                self.parse_call_arguments()?;
+            reject_named_language_construct_arguments(&argument_names, token.span)?;
+            reject_unpacked_language_construct_arguments(&argument_unpacks, token.span)?;
+            if arguments.len() != 2 {
+                return Err(Diagnostic::new(
+                    "clone with expects exactly two arguments",
+                    Some(token.span),
+                ));
+            }
+            let mut arguments = arguments.into_iter();
+            let expr = arguments.next().expect("argument length checked");
+            let with_properties = arguments.next().expect("argument length checked");
+            let span = combine_spans(token.span, right_span);
+            return Ok(Expr::Clone {
+                expr: Box::new(expr),
+                with_properties: Some(Box::new(with_properties)),
+                span,
+            });
+        }
         let expr = self.parse_assignment_expr()?;
         let span = combine_spans(token.span, expr.span());
         Ok(Expr::Clone {
             expr: Box::new(expr),
+            with_properties: None,
             span,
         })
     }
@@ -7652,6 +7674,39 @@ impl Parser<'_> {
         )
     }
 
+    fn peek_clone_call_has_with_properties_argument(&self) -> bool {
+        if !matches!(self.peek().kind, TokenKind::LeftParen) {
+            return false;
+        }
+        let mut paren_depth = 0usize;
+        let mut bracket_depth = 0usize;
+        let mut brace_depth = 0usize;
+        for token in self.tokens.iter().skip(self.index) {
+            match token.kind {
+                TokenKind::LeftParen => paren_depth += 1,
+                TokenKind::RightParen => {
+                    if paren_depth == 0 {
+                        return false;
+                    }
+                    paren_depth -= 1;
+                    if paren_depth == 0 {
+                        return false;
+                    }
+                }
+                TokenKind::LeftBracket if paren_depth > 0 => bracket_depth += 1,
+                TokenKind::RightBracket if bracket_depth > 0 => bracket_depth -= 1,
+                TokenKind::LeftBrace if paren_depth > 0 => brace_depth += 1,
+                TokenKind::RightBrace if brace_depth > 0 => brace_depth -= 1,
+                TokenKind::Comma if paren_depth == 1 && bracket_depth == 0 && brace_depth == 0 => {
+                    return true;
+                }
+                TokenKind::Eof => return false,
+                _ => {}
+            }
+        }
+        false
+    }
+
     fn peek_starts_set_visibility_modifier(&self) -> bool {
         matches!(self.peek_next().kind, TokenKind::LeftParen)
             && matches!(
@@ -9046,8 +9101,15 @@ fn collect_arrow_captures_from_expr(
             }
             collect_arrow_captures_from_expr(name, exclusions, seen, captures);
         }
-        Expr::Clone { expr, .. } => {
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
+            if let Some(with_properties) = with_properties {
+                collect_arrow_captures_from_expr(with_properties, exclusions, seen, captures);
+            }
         }
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -14166,8 +14228,7 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
                 validate_control_transfers_in_expr(target)?;
             }
         }
-        Expr::Clone { expr, .. }
-        | Expr::PropertyFetch { receiver: expr, .. }
+        Expr::PropertyFetch { receiver: expr, .. }
         | Expr::NullsafePropertyFetch { receiver: expr, .. }
         | Expr::DynamicStaticPropertyFetch { receiver: expr, .. }
         | Expr::DynamicClassNameFetch { receiver: expr, .. }
@@ -14181,6 +14242,16 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. }
         | Expr::PipeValue { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            validate_control_transfers_in_expr(expr)?;
+            if let Some(with_properties) = with_properties {
+                validate_control_transfers_in_expr(with_properties)?;
+            }
+        }
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             if let Some(receiver) = receiver {
                 validate_control_transfers_in_expr(receiver)?;
@@ -14567,7 +14638,6 @@ fn expr_array_literal_reference_to_variable(
         }
         | Expr::Include { path: value, .. }
         | Expr::Throw { value, .. }
-        | Expr::Clone { expr: value, .. }
         | Expr::FirstClassCallable {
             callable: value, ..
         }
@@ -14575,6 +14645,15 @@ fn expr_array_literal_reference_to_variable(
         | Expr::PipeValue { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => expr_array_literal_reference_to_variable(expr, variable).or_else(|| {
+            with_properties.as_deref().and_then(|with_properties| {
+                expr_array_literal_reference_to_variable(with_properties, variable)
+            })
+        }),
         Expr::YieldFrom { expr, .. } => expr_array_literal_reference_to_variable(expr, variable),
         Expr::Yield { key, value, .. } => key
             .as_deref()
@@ -15163,7 +15242,6 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         Expr::DynamicVariable { name, .. }
         | Expr::FirstClassCallable { callable: name, .. }
         | Expr::DynamicClassNameFetch { receiver: name, .. }
-        | Expr::Clone { expr: name, .. }
         | Expr::Print {
             expression: name, ..
         }
@@ -15173,6 +15251,13 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::Cast { expr: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_contains_yield(name),
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            expr_contains_yield(expr) || with_properties.as_deref().is_some_and(expr_contains_yield)
+        }
         Expr::IncDec { target, .. } => inc_dec_target_contains_yield(target),
         Expr::Assign { target, value, .. } => {
             assignment_target_contains_yield(target) || expr_contains_yield(value)
@@ -15662,8 +15747,15 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
                 validate_anonymous_functions_in_expr(target, functions)?;
             }
         }
-        Expr::Clone { expr, .. } => {
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
             validate_anonymous_functions_in_expr(expr, functions)?;
+            if let Some(with_properties) = with_properties {
+                validate_anonymous_functions_in_expr(with_properties, functions)?;
+            }
         }
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
@@ -18270,8 +18362,17 @@ fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
         Expr::Grouped { expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
-        | Expr::Clone { expr, .. }
         | Expr::YieldFrom { expr, .. } => reject_standalone_list_expr(expr)?,
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            reject_standalone_list_expr(expr)?;
+            if let Some(with_properties) = with_properties {
+                reject_standalone_list_expr(with_properties)?;
+            }
+        }
         Expr::Assign { value, .. } => reject_standalone_list_expr(value)?,
         Expr::AssignRef { source, .. } => reject_standalone_list_expr(source)?,
         Expr::FirstClassCallable { callable, .. } => reject_standalone_list_expr(callable)?,
@@ -18494,7 +18595,16 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                 reject_append_array_read(target)?;
             }
         }
-        Expr::Clone { expr, .. } => reject_append_array_read(expr)?,
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            reject_append_array_read(expr)?;
+            if let Some(with_properties) = with_properties {
+                reject_append_array_read(with_properties)?;
+            }
+        }
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -18614,10 +18724,19 @@ fn reject_array_literal_holes(expr: &Expr) -> Result<()> {
                 }
             }
         }
-        Expr::Grouped { expr, .. }
-        | Expr::Unary { expr, .. }
-        | Expr::Cast { expr, .. }
-        | Expr::Clone { expr, .. } => reject_array_literal_holes(expr)?,
+        Expr::Grouped { expr, .. } | Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => {
+            reject_array_literal_holes(expr)?
+        }
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            reject_array_literal_holes(expr)?;
+            if let Some(with_properties) = with_properties {
+                reject_array_literal_holes(with_properties)?;
+            }
+        }
         Expr::Binary { left, right, .. } => {
             reject_array_literal_holes(left)?;
             reject_array_literal_holes(right)?;
@@ -19596,7 +19715,6 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::DynamicNewObject {
             class_name: name, ..
         }
-        | Expr::Clone { expr: name, .. }
         | Expr::DynamicClassNameFetch { receiver: name, .. }
         | Expr::Empty { target: name, .. }
         | Expr::Print {
@@ -19609,6 +19727,16 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::Cast { expr: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_uses_this_property(name, property_name),
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            expr_uses_this_property(expr, property_name)
+                || with_properties.as_deref().is_some_and(|with_properties| {
+                    expr_uses_this_property(with_properties, property_name)
+                })
+        }
         Expr::Assign { target, value, .. } => {
             assignment_target_uses_this_property(target, property_name)
                 || expr_uses_this_property(value, property_name)
