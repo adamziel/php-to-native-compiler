@@ -1478,6 +1478,13 @@ static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_zone(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_bcmath_number(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_pdo(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_pdo_statement(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_pdo_exception(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_pdo_row(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_sqlite3(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_stmt(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_result(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
@@ -1613,6 +1620,26 @@ static PTN_UNUSED PtnValue ptn_return_type_will_change_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_pdo_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_pdo_statement_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_sqlite3_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_clone(
     PtnRuntime *runtime,
     PtnValue source,
@@ -1724,6 +1751,46 @@ static PTN_UNUSED PtnValue ptn_weak_reference_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_attribute_metadata_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_pdo_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_pdo_statement_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_sqlite3_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_sqlite3_stmt_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_sqlite3_result_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

@@ -13305,6 +13305,53 @@ var_dump(ctype_digit(48), ctype_digit(12345), ctype_digit(1));",
 }
 
 #[test]
+fn compile_pdo_sqlite_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-pdo-sqlite-surface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pdo-sqlite-surface.php");
+    let output = root.join("pdo-sqlite-surface-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(extension_loaded('pdo'), extension_loaded('pdo_sqlite'), extension_loaded('sqlite3'));
+var_dump(class_exists('PDO'), class_exists('SQLite3'));
+var_dump(PDO::getAvailableDrivers(), pdo_drivers());
+
+$db = new PDO('sqlite::memory:');
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+var_dump($db->getAttribute(PDO::ATTR_DRIVER_NAME));
+$db->exec('CREATE TABLE t (id INTEGER, label TEXT)');
+$db->exec("INSERT INTO t (id, label) VALUES (1, 'a'), (2, 'b')");
+$stmt = $db->prepare('SELECT id, label FROM t WHERE id = :id');
+$stmt->bindValue(':id', 2, PDO::PARAM_INT);
+var_dump($stmt->execute(), $stmt->rowCount(), $stmt->columnCount());
+var_dump($stmt->fetch(PDO::FETCH_ASSOC));
+var_dump($stmt->fetch(PDO::FETCH_ASSOC));
+echo $db->quote("a'b"), "\n";
+
+$sqlite = new SQLite3(':memory:');
+$sqlite->exec('CREATE TABLE s (n INTEGER)');
+$sqlite->exec('INSERT INTO s VALUES (42)');
+$result = $sqlite->query('SELECT n FROM s');
+var_dump($result->fetchArray(SQLITE3_NUM));
+var_dump($result->fetchArray(SQLITE3_NUM));
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(compiled.binary.exists());
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\narray(1) {\n  [0]=>\n  string(6) \"sqlite\"\n}\nstring(6) \"sqlite\"\nbool(true)\nint(1)\nint(2)\narray(2) {\n  [\"id\"]=>\n  int(2)\n  [\"label\"]=>\n  string(1) \"b\"\n}\nbool(false)\n'a''b'\narray(1) {\n  [0]=>\n  int(42)\n}\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_recursive_mkdir_and_directory_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-mkdir");
     fs::create_dir_all(&root).unwrap();

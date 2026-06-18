@@ -1622,6 +1622,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "SoapFault")) {
         return "SoapFault";
     }
+    if (ptn_exception_name_equal(class_name, "PDOException")) {
+        return "PDOException";
+    }
     if (ptn_exception_name_equal(class_name, "JsonException")) {
         return "JsonException";
     }
@@ -3054,6 +3057,80 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(2);
             return 1;
         }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "PDO") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Sqlite") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Mysql") ||
+        ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Pgsql")) {
+        if (strcmp(constant, "PARAM_NULL") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "PARAM_INT") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "PARAM_STR") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "PARAM_LOB") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "PARAM_STMT") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "PARAM_BOOL") == 0) { *out = ptn_int(5); return 1; }
+        if (strcmp(constant, "PARAM_INPUT_OUTPUT") == 0) { *out = ptn_int(0x80000000LL); return 1; }
+        if (strcmp(constant, "FETCH_DEFAULT") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "FETCH_LAZY") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "FETCH_ASSOC") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "FETCH_NUM") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "FETCH_BOTH") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "FETCH_OBJ") == 0) { *out = ptn_int(5); return 1; }
+        if (strcmp(constant, "FETCH_BOUND") == 0) { *out = ptn_int(6); return 1; }
+        if (strcmp(constant, "FETCH_COLUMN") == 0) { *out = ptn_int(7); return 1; }
+        if (strcmp(constant, "FETCH_CLASS") == 0) { *out = ptn_int(8); return 1; }
+        if (strcmp(constant, "FETCH_INTO") == 0) { *out = ptn_int(9); return 1; }
+        if (strcmp(constant, "FETCH_FUNC") == 0) { *out = ptn_int(10); return 1; }
+        if (strcmp(constant, "FETCH_NAMED") == 0) { *out = ptn_int(11); return 1; }
+        if (strcmp(constant, "FETCH_KEY_PAIR") == 0) { *out = ptn_int(12); return 1; }
+        if (strcmp(constant, "FETCH_GROUP") == 0) { *out = ptn_int(65536); return 1; }
+        if (strcmp(constant, "FETCH_UNIQUE") == 0) { *out = ptn_int(196608); return 1; }
+        if (strcmp(constant, "FETCH_CLASSTYPE") == 0) { *out = ptn_int(262144); return 1; }
+        if (strcmp(constant, "FETCH_SERIALIZE") == 0) { *out = ptn_int(524288); return 1; }
+        if (strcmp(constant, "FETCH_PROPS_LATE") == 0) { *out = ptn_int(1048576); return 1; }
+        if (strcmp(constant, "ATTR_AUTOCOMMIT") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "ATTR_PREFETCH") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "ATTR_TIMEOUT") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "ATTR_ERRMODE") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "ATTR_SERVER_VERSION") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "ATTR_CLIENT_VERSION") == 0) { *out = ptn_int(5); return 1; }
+        if (strcmp(constant, "ATTR_SERVER_INFO") == 0) { *out = ptn_int(6); return 1; }
+        if (strcmp(constant, "ATTR_CONNECTION_STATUS") == 0) { *out = ptn_int(7); return 1; }
+        if (strcmp(constant, "ATTR_CASE") == 0) { *out = ptn_int(8); return 1; }
+        if (strcmp(constant, "ATTR_CURSOR_NAME") == 0) { *out = ptn_int(9); return 1; }
+        if (strcmp(constant, "ATTR_CURSOR") == 0) { *out = ptn_int(10); return 1; }
+        if (strcmp(constant, "ATTR_ORACLE_NULLS") == 0) { *out = ptn_int(11); return 1; }
+        if (strcmp(constant, "ATTR_PERSISTENT") == 0) { *out = ptn_int(12); return 1; }
+        if (strcmp(constant, "ATTR_STATEMENT_CLASS") == 0) { *out = ptn_int(13); return 1; }
+        if (strcmp(constant, "ATTR_DEFAULT_FETCH_MODE") == 0) { *out = ptn_int(19); return 1; }
+        if (strcmp(constant, "ATTR_EMULATE_PREPARES") == 0) { *out = ptn_int(20); return 1; }
+        if (strcmp(constant, "ATTR_STRINGIFY_FETCHES") == 0) { *out = ptn_int(17); return 1; }
+        if (strcmp(constant, "ATTR_DRIVER_NAME") == 0) { *out = ptn_int(16); return 1; }
+        if (strcmp(constant, "CURSOR_FWDONLY") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "CURSOR_SCROLL") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "ERRMODE_SILENT") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "ERRMODE_WARNING") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "ERRMODE_EXCEPTION") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "CASE_NATURAL") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "CASE_UPPER") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "CASE_LOWER") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "NULL_NATURAL") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "NULL_EMPTY_STRING") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "NULL_TO_STRING") == 0) { *out = ptn_int(2); return 1; }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Sqlite")) {
+        if (strcmp(constant, "ATTR_TRANSACTION_MODE") == 0) { *out = ptn_int(1000); return 1; }
+        if (strcmp(constant, "TRANSACTION_MODE_DEFERRED") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "TRANSACTION_MODE_IMMEDIATE") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "TRANSACTION_MODE_EXCLUSIVE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "DETERMINISTIC") == 0) { *out = ptn_int(0x800); return 1; }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "SQLite3")) {
+        if (strcmp(constant, "OK") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "DENY") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "IGNORE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "OPEN_READONLY") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "OPEN_READWRITE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "OPEN_CREATE") == 0) { *out = ptn_int(4); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Phar")) {
         if (strcmp(constant, "GZ") == 0) {
@@ -5035,6 +5112,41 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_uri_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "PDO")
+        && ptn_internal_class_method_exists("PDO", name)
+    ) {
+        return ptn_pdo_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "PDOStatement")
+        && ptn_internal_class_method_exists("PDOStatement", name)
+    ) {
+        return ptn_pdo_statement_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SQLite3")
+        && ptn_internal_class_method_exists("SQLite3", name)
+    ) {
+        return ptn_sqlite3_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SQLite3Stmt")
+        && ptn_internal_class_method_exists("SQLite3Stmt", name)
+    ) {
+        return ptn_sqlite3_stmt_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SQLite3Result")
+        && ptn_internal_class_method_exists("SQLite3Result", name)
+    ) {
+        return ptn_sqlite3_result_call_method(runtime, receiver, name, argc, args, line);
     }
 #endif
     ptn_throw_exception(runtime, "Error", "Call to undefined method");

@@ -33,6 +33,15 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "SoapClient",
     "SoapServer",
     "XMLWriter",
+    "PDO",
+    "Pdo\\Sqlite",
+    "Pdo\\Mysql",
+    "Pdo\\Pgsql",
+    "PDOStatement",
+    "PDORow",
+    "SQLite3",
+    "SQLite3Stmt",
+    "SQLite3Result",
     "Uri\\Rfc3986\\Uri",
     "Uri\\WhatWg\\Url",
 ];
@@ -42,6 +51,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ErrorException", "Exception"),
     ("ReflectionException", "Exception"),
     ("SoapFault", "Exception"),
+    ("PDOException", "Exception"),
     ("IntlException", "Exception"),
     ("DOMException", "Exception"),
     ("RuntimeException", "Exception"),
@@ -9311,9 +9321,25 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
     }
 }
 
+fn modeled_db_internal_class_name(name: &str) -> Option<&'static str> {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "pdo" => Some("PDO"),
+        "pdo\\sqlite" => Some("Pdo\\Sqlite"),
+        "pdo\\mysql" => Some("Pdo\\Mysql"),
+        "pdo\\pgsql" => Some("Pdo\\Pgsql"),
+        "pdostatement" => Some("PDOStatement"),
+        "pdorow" => Some("PDORow"),
+        "sqlite3" => Some("SQLite3"),
+        "sqlite3stmt" => Some("SQLite3Stmt"),
+        "sqlite3result" => Some("SQLite3Result"),
+        _ => None,
+    }
+}
+
 fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
     modeled_spl_internal_class_name(name)
         .or_else(|| modeled_reflection_internal_class_name(name))
+        .or_else(|| modeled_db_internal_class_name(name))
         .or_else(
             || match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
                 "soapclient" => Some("SoapClient"),
@@ -10219,6 +10245,31 @@ fn emit_method_dispatch(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_pdo(class_name)) {\n");
+    out.push_str(
+        "        return ptn_pdo_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_pdo_statement(class_name)) {\n");
+    out.push_str(
+        "        return ptn_pdo_statement_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_sqlite3(class_name)) {\n");
+    out.push_str(
+        "        return ptn_sqlite3_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_sqlite3_stmt(class_name)) {\n");
+    out.push_str(
+        "        return ptn_sqlite3_stmt_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_sqlite3_result(class_name)) {\n");
+    out.push_str(
+        "        return ptn_sqlite3_result_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str(
         "    if (resolved.type == PTN_OBJECT && !ptn_internal_class_exists_name(class_name)) {\n",
     );
@@ -10260,6 +10311,20 @@ fn emit_method_dispatch(
     out.push_str("        return -1;\n");
     out.push_str("    }\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_class_exists_name(class_name)) {\n");
+    out.push_str("        char ptn_internal_method_name[256];\n");
+    out.push_str("        int ptn_internal_method_written = snprintf(ptn_internal_method_name, sizeof(ptn_internal_method_name), \"%s::%s\", class_name, method_name);\n");
+    out.push_str("        if (ptn_internal_method_written >= 0 && (size_t)ptn_internal_method_written < sizeof(ptn_internal_method_name)) {\n");
+    out.push_str("            if (ptn_internal_function_parameter_by_ref(ptn_internal_method_name, argument_index)) {\n");
+    out.push_str("                return 1;\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        return ptn_internal_class_method_exists(class_name, method_name) ? 0 : -1;\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
     }

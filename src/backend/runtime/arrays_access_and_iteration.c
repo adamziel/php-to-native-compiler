@@ -872,6 +872,33 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_return_type_will_change(lookup_class_name)) {
         return ptn_return_type_will_change_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_pdo(lookup_class_name)) {
+        return ptn_pdo_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_pdo_statement(lookup_class_name)) {
+        return ptn_pdo_statement_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_pdo_exception(lookup_class_name)) {
+        return ptn_new_exception_object(runtime, "PDOException", argc, args, line);
+    }
+    if (ptn_internal_class_name_is_pdo_row(lookup_class_name)) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "You may not create a PDORow object manually",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+    if (ptn_internal_class_name_is_sqlite3(lookup_class_name)) {
+        return ptn_sqlite3_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_sqlite3_stmt(lookup_class_name) ||
+        ptn_internal_class_name_is_sqlite3_result(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot directly instantiate internal class");
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(lookup_class_name, "IntlBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlRuleBasedBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlCodePointBreakIterator") ||
