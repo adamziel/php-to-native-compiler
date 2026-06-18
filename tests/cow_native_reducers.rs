@@ -1135,6 +1135,40 @@ try {\n\
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_function_return_array_dim_by_ref_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-function-return-array-dim-by-ref-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("function-return-array-dim-by-ref-argument.php");
+    let output = root.join("function-return-array-dim-by-ref-argument-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$global = \"old\";\n\
+function make_array() { global $global; return [&$global, [\"nested\"]]; }\n\
+function replace(&$value) { $value = \"changed\"; }\n\
+function replace_nested(&$value) { $value[0] = \"updated\"; }\n\
+replace(make_array()[0]);\n\
+echo $global, \"\\n\";\n\
+replace_nested(make_array()[1]);\n\
+replace_nested(array_values([[\"builtin\"]])[0]);\n\
+echo \"done\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "changed\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_reference_for_array_path(&runtime, &"));
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
     let unique = SystemTime::now()
