@@ -3000,6 +3000,111 @@ fn parser_reports_group_use_parse_errors_with_php_shapes() {
 }
 
 #[test]
+fn parser_rejects_same_kind_use_import_symbol_conflicts() {
+    parser::parse("<?php\nnamespace { use const Foo\\bar; use const Foo\\BAR; }\n").unwrap();
+    parser::parse("<?php\nnamespace { use const Foo\\bar; const BAR = 1; }\n").unwrap();
+    parser::parse("<?php\nnamespace { const BAR = 1; use const Foo\\bar; }\n").unwrap();
+    let program =
+        parser::parse("<?php\nnamespace { use const Foo\\PHP_VERSION; echo PHP_VERSION; }\n")
+            .unwrap();
+    let Statement::Echo { expressions, .. } = &program.statements[0] else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::Constant(name, _) if name == "Foo\\PHP_VERSION"
+    ));
+
+    let cases = [
+        (
+            "<?php\nnamespace { use const Foo\\bar; const bar = 1; }\n",
+            "Cannot declare const bar because the name is already in use",
+        ),
+        (
+            "<?php\nnamespace { const bar = 1; use const Foo\\bar; }\n",
+            "Cannot use const Foo\\bar as bar because the name is already in use",
+        ),
+        (
+            "<?php\nnamespace { use const Foo\\BAR; const BAR = 1; }\n",
+            "Cannot declare const BAR because the name is already in use",
+        ),
+        (
+            "<?php\nnamespace { const BAR = 1; use const Foo\\BAR; }\n",
+            "Cannot use const Foo\\BAR as BAR because the name is already in use",
+        ),
+        (
+            "<?php\nnamespace { use function Foo\\bar; function bar() {} }\n",
+            "Cannot redeclare function bar() (previously declared as local import)",
+        ),
+        (
+            "<?php\nnamespace { use function Foo\\bar; function BAR() {} }\n",
+            "Cannot redeclare function BAR() (previously declared as local import)",
+        ),
+        (
+            "<?php\nnamespace { function BAR() {} use function Foo\\bar; }\n",
+            "Cannot use function Foo\\bar as bar because the name is already in use",
+        ),
+        (
+            "<?php\nif (0) { function foo() {} } use function Bar\\foo;\n",
+            "Cannot use function Bar\\foo as foo because the name is already in use",
+        ),
+        (
+            "<?php\nnamespace { use function Foo\\bar; use function Foo\\BAR; }\n",
+            "Cannot use function Foo\\BAR as BAR because the name is already in use",
+        ),
+    ];
+
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+        assert_eq!(error.message, expected, "{source}");
+    }
+}
+
+#[test]
+fn parser_resets_seen_import_symbols_between_bracketed_namespace_blocks() {
+    let program = parser::parse(
+        "<?php
+namespace {
+    function f() {}
+    class C {}
+}
+namespace Ns {
+    function f() {}
+    class C {}
+}
+namespace {
+    use function Ns\\f;
+    use Ns\\C;
+    f();
+    new C;
+}
+namespace Ns {
+    use function f;
+    use C;
+    f();
+    new C;
+}
+namespace {
+    use function f;
+    use C;
+    f();
+    new C;
+}
+",
+    )
+    .unwrap();
+
+    assert_eq!(program.compile_warnings.len(), 2);
+    assert!(program.compile_warnings.iter().any(|warning| {
+        warning.message == "The use statement with non-compound name 'f' has no effect"
+    }));
+    assert!(program.compile_warnings.iter().any(|warning| {
+        warning.message == "The use statement with non-compound name 'C' has no effect"
+    }));
+}
+
+#[test]
 fn parser_stops_at_top_level_halt_compiler_statement() {
     let program =
         parser::parse("<?php echo \"before\\n\"; __HALT_COMPILER(); echo \"after\\n\";").unwrap();

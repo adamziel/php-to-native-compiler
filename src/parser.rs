@@ -97,6 +97,9 @@ fn parse_with_options(
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
+        seen_class_symbols: HashSet::new(),
+        seen_function_symbols: HashSet::new(),
+        seen_constant_symbols: HashSet::new(),
         runtime_class_aliases: runtime_class_aliases.clone(),
         external_classes: external_classes.to_vec(),
         external_traits: external_traits.to_vec(),
@@ -132,6 +135,9 @@ struct Parser<'a> {
     class_aliases: HashMap<String, String>,
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
+    seen_class_symbols: HashSet<String>,
+    seen_function_symbols: HashSet<String>,
+    seen_constant_symbols: HashSet<String>,
     runtime_class_aliases: HashMap<String, String>,
     external_classes: Vec<ClassDecl>,
     external_traits: Vec<TraitDecl>,
@@ -191,6 +197,25 @@ enum UseDeclarationKind {
     Class,
     Function,
     Constant,
+}
+
+fn use_declaration_kind_diagnostic_prefix(kind: UseDeclarationKind) -> &'static str {
+    match kind {
+        UseDeclarationKind::Class => "",
+        UseDeclarationKind::Function => "function ",
+        UseDeclarationKind::Constant => "const ",
+    }
+}
+
+fn local_symbol_name(name: &str) -> &str {
+    name.rsplit('\\').next().unwrap_or(name)
+}
+
+fn use_import_alias_key(kind: UseDeclarationKind, alias: &str) -> String {
+    match kind {
+        UseDeclarationKind::Constant => alias.to_string(),
+        UseDeclarationKind::Class | UseDeclarationKind::Function => alias.to_ascii_lowercase(),
+    }
 }
 
 fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
@@ -582,7 +607,7 @@ impl Parser<'_> {
         self.expect_semicolon()?;
         self.current_namespace = namespace;
         self.seen_namespace_declaration = true;
-        self.clear_namespace_imports();
+        self.clear_namespace_scope();
         Ok(())
     }
 
@@ -618,9 +643,12 @@ impl Parser<'_> {
         let saved_class_aliases = self.class_aliases.clone();
         let saved_function_aliases = self.function_aliases.clone();
         let saved_constant_aliases = self.constant_aliases.clone();
+        let saved_seen_class_symbols = self.seen_class_symbols.clone();
+        let saved_seen_function_symbols = self.seen_function_symbols.clone();
+        let saved_seen_constant_symbols = self.seen_constant_symbols.clone();
 
         self.current_namespace = namespace;
-        self.clear_namespace_imports();
+        self.clear_namespace_scope();
         let result = (|| {
             self.parse_top_level_items(
                 classes,
@@ -637,6 +665,9 @@ impl Parser<'_> {
         self.class_aliases = saved_class_aliases;
         self.function_aliases = saved_function_aliases;
         self.constant_aliases = saved_constant_aliases;
+        self.seen_class_symbols = saved_seen_class_symbols;
+        self.seen_function_symbols = saved_seen_function_symbols;
+        self.seen_constant_symbols = saved_seen_constant_symbols;
 
         result
     }
@@ -730,8 +761,7 @@ impl Parser<'_> {
                 target.span,
             )
         };
-        if kind == UseDeclarationKind::Class
-            && self.current_namespace.is_none()
+        if self.current_namespace.is_none()
             && !target.name.contains('\\')
             && alias.eq_ignore_ascii_case(&target.name)
             && matches!(
@@ -916,26 +946,54 @@ impl Parser<'_> {
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
             NameResolution::Unqualified | NameResolution::Qualified => target.name,
         };
-        let alias_key = alias.to_ascii_lowercase();
+        let alias_key = use_import_alias_key(kind, &alias);
         match kind {
             UseDeclarationKind::Class => {
-                let declared_key = self.qualify_current_namespace(&alias).to_ascii_lowercase();
-                if self.declared_class_names.contains_key(&declared_key) {
-                    return Err(Diagnostic::new(
-                        format!(
-                            "Cannot use {target_name} as {alias} because the name is already in use"
-                        ),
-                        Some(alias_span),
-                    ));
-                }
+                self.validate_use_import_alias(kind, &target_name, &alias, &alias_key, alias_span)?;
                 self.class_aliases.insert(alias_key, target_name);
             }
             UseDeclarationKind::Function => {
+                self.validate_use_import_alias(kind, &target_name, &alias, &alias_key, alias_span)?;
                 self.function_aliases.insert(alias_key, target_name);
             }
             UseDeclarationKind::Constant => {
+                self.validate_use_import_alias(kind, &target_name, &alias, &alias_key, alias_span)?;
                 self.constant_aliases.insert(alias_key, target_name);
             }
+        }
+        Ok(())
+    }
+
+    fn validate_use_import_alias(
+        &self,
+        kind: UseDeclarationKind,
+        target_name: &str,
+        alias: &str,
+        alias_key: &str,
+        alias_span: SourceSpan,
+    ) -> Result<()> {
+        let already_used = match kind {
+            UseDeclarationKind::Class => {
+                self.class_aliases.contains_key(alias_key)
+                    || self.seen_class_symbols.contains(alias_key)
+            }
+            UseDeclarationKind::Function => {
+                self.function_aliases.contains_key(alias_key)
+                    || self.seen_function_symbols.contains(alias_key)
+            }
+            UseDeclarationKind::Constant => {
+                self.constant_aliases.contains_key(alias_key)
+                    || self.seen_constant_symbols.contains(alias_key)
+            }
+        };
+        if already_used {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot use {}{target_name} as {alias} because the name is already in use",
+                    use_declaration_kind_diagnostic_prefix(kind)
+                ),
+                Some(alias_span),
+            ));
         }
         Ok(())
     }
@@ -958,6 +1016,8 @@ impl Parser<'_> {
                 Some(class.span),
             ));
         }
+        self.seen_class_symbols
+            .insert(local_name.to_ascii_lowercase());
         self.declared_class_names
             .insert(class.name.to_ascii_lowercase(), class.span);
         Ok(())
@@ -1030,6 +1090,13 @@ impl Parser<'_> {
         self.class_aliases.clear();
         self.function_aliases.clear();
         self.constant_aliases.clear();
+    }
+
+    fn clear_namespace_scope(&mut self) {
+        self.clear_namespace_imports();
+        self.seen_class_symbols.clear();
+        self.seen_function_symbols.clear();
+        self.seen_constant_symbols.clear();
     }
 
     fn parse_declaration_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
@@ -1213,7 +1280,7 @@ impl Parser<'_> {
             NameResolution::FullyQualified => parsed.name.clone(),
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
             NameResolution::Unqualified => {
-                let alias_key = parsed.name.to_ascii_lowercase();
+                let alias_key = parsed.name.clone();
                 let namespaced = self.qualify_current_namespace(&parsed.name);
                 if let Some(target) = self.constant_aliases.get(&alias_key) {
                     target.clone()
@@ -3452,6 +3519,15 @@ impl Parser<'_> {
             }
         }
         let (name, _) = self.parse_declaration_name("expected function name")?;
+        let local_name = local_symbol_name(&name);
+        let local_key = local_name.to_ascii_lowercase();
+        if self.function_aliases.contains_key(&local_key) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare function {local_name}() (previously declared as local import)"),
+                Some(start_span),
+            ));
+        }
+        self.seen_function_symbols.insert(local_key);
         self.declared_functions.insert(name.to_ascii_lowercase());
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
@@ -4502,6 +4578,15 @@ impl Parser<'_> {
                 Some(token_span),
             ));
         }
+        let local_name = local_symbol_name(&name);
+        let local_key = local_name.to_string();
+        if self.constant_aliases.contains_key(&local_key) {
+            return Err(Diagnostic::new(
+                format!("Cannot declare const {local_name} because the name is already in use"),
+                Some(token_span),
+            ));
+        }
+        self.seen_constant_symbols.insert(local_key);
         self.declared_constants.insert(name.to_ascii_lowercase());
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
