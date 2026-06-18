@@ -1,54 +1,18 @@
-name: Publish STATUS dashboard
+name: Legacy STATUS dashboard disabled
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - STATUS.html
-      - STATUS.md
-      - tools/status-dashboard-features.tsv
-      - tools/update-status-dashboard.sh
-      - tools/publish-status-gh-pages.sh
-      - .github/workflows/status-pages.yml
-  schedule:
-    - cron: '*/30 * * * *'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: status-gh-pages
+  group: legacy-status-gh-pages-disabled
   cancel-in-progress: false
 
 jobs:
-  publish:
+  disabled:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Regenerate dashboard
-        run: bash tools/update-status-dashboard.sh
-
-      - name: Check generated dashboard
-        run: git diff --exit-code -- STATUS.md STATUS.html
-
-      - name: Refresh runtime dashboard metadata
-        run: |
-          STATUS_DASHBOARD_REFRESH_AT_UTC="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-          STATUS_DASHBOARD_SOURCE_COMMIT="$(git rev-parse --short=12 HEAD)" \
-            bash tools/update-status-dashboard.sh
-
-      - name: Prepare Pages artifact
-        run: |
-          mkdir -p _site
-          cp STATUS.html _site/index.html
-          cp STATUS.html _site/STATUS.html
-          cp STATUS.md _site/STATUS.md
-
-      - name: Publish to gh-pages
-        run: bash tools/publish-status-gh-pages.sh _site
+      - run: echo "Legacy STATUS publisher disabled; full PHPT dashboard loop owns gh-pages."
