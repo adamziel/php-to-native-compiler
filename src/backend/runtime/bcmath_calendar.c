@@ -1079,6 +1079,1163 @@ static PtnValue ptn_bc_round_value(const PtnBcNumber *number, int precision, con
     return value;
 }
 
+#define PTN_BCMATH_NUMBER_CLASS "BcMath\\Number"
+
+static const char *ptn_bcmath_number_arg_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_ARRAY:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            return ptn_offset_container_type_name(value);
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static int ptn_bcmath_number_is_object(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_OBJECT &&
+        ptn_internal_class_name_is_bcmath_number(value.as.object->class_name);
+}
+
+static PtnArrayEntry *ptn_bcmath_number_property_entry(PtnObject *object, const char *name) {
+    if (object == NULL || object->properties == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static int ptn_bcmath_number_read(PtnValue value, PtnBcNumber *out) {
+    value = ptn_value_deref(value);
+    if (!ptn_bcmath_number_is_object(value)) {
+        return 0;
+    }
+    PtnArrayEntry *entry = ptn_bcmath_number_property_entry(value.as.object, "value");
+    if (entry == NULL) {
+        return 0;
+    }
+    PtnValue property = ptn_value_deref(entry->value);
+    if (property.type != PTN_STRING) {
+        return 0;
+    }
+    PtnStringOperand operand = ptn_string_operand_borrowed_len(
+        (const char *)property.as.string.data,
+        property.as.string.len
+    );
+    return ptn_bc_parse_number_operand(operand, out);
+}
+
+static PtnValue ptn_bcmath_number_value_clone(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (!ptn_bcmath_number_is_object(value)) {
+        return ptn_null();
+    }
+    PtnArrayEntry *entry = ptn_bcmath_number_property_entry(value.as.object, "value");
+    if (entry == NULL) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(entry->value);
+}
+
+static void ptn_bcmath_number_throw_value_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) is not well-formed",
+        function_name,
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_bcmath_number_throw_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type int, string, or BcMath\\Number, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_bcmath_number_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static void ptn_bcmath_number_emit_null_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Passing null to parameter #%zu ($%s) of type BcMath\\Number|string|int is deprecated",
+        function_name,
+        position,
+        argument_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_deprecation(&runtime->diagnostics, message, line);
+}
+
+static int ptn_bcmath_number_parse_text(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnStringOperand operand,
+    PtnBcNumber *out
+) {
+    if (!ptn_bc_parse_number_operand(operand, out)) {
+        ptn_bcmath_number_throw_value_error(runtime, function_name, position, argument_name);
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_bcmath_number_parse_int64(int64_t value, PtnBcNumber *out) {
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)value);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnStringOperand operand = ptn_string_operand_borrowed_len(buffer, (size_t)written);
+    return ptn_bc_parse_number_operand(operand, out);
+}
+
+static int ptn_bcmath_number_expect_operand(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    int allow_number_object,
+    PtnBcNumber *out
+) {
+    value = ptn_value_deref(value);
+    if (allow_number_object && ptn_bcmath_number_is_object(value)) {
+        if (!ptn_bcmath_number_read(value, out)) {
+            ptn_throw_exception(runtime, "Error", "Invalid BcMath\\Number object");
+            return 0;
+        }
+        return 1;
+    }
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_bcmath_number_emit_null_deprecation(runtime, function_name, position, argument_name, line);
+            return ptn_bcmath_number_parse_int64(0, out);
+        case PTN_BOOL:
+            return ptn_bcmath_number_parse_int64(value.as.boolean ? 1 : 0, out);
+        case PTN_INT:
+            return ptn_bcmath_number_parse_int64(value.as.integer, out);
+        case PTN_FLOAT: {
+            int64_t integer = ptn_internal_expect_integer_arg(
+                runtime,
+                function_name,
+                position,
+                argument_name,
+                value,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return 0;
+            }
+            return ptn_bcmath_number_parse_int64(integer, out);
+        }
+        case PTN_STRING: {
+            PtnStringOperand operand = ptn_string_operand_borrowed_len(
+                (const char *)value.as.string.data,
+                value.as.string.len
+            );
+            return ptn_bcmath_number_parse_text(runtime, function_name, position, argument_name, operand, out);
+        }
+        case PTN_OBJECT:
+        case PTN_ARRAY:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            ptn_bcmath_number_throw_type_error(runtime, function_name, position, argument_name, value);
+            return 0;
+    }
+    ptn_bcmath_number_throw_type_error(runtime, function_name, position, argument_name, value);
+    return 0;
+}
+
+static int ptn_bcmath_number_expect_constructor_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnBcNumber *out
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL: {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "BcMath\\Number::__construct(): Passing null to parameter #1 ($num) of type string|int is deprecated"
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_deprecation(&runtime->diagnostics, message, line);
+            return ptn_bcmath_number_parse_int64(0, out);
+        }
+        case PTN_BOOL:
+            return ptn_bcmath_number_parse_int64(value.as.boolean ? 1 : 0, out);
+        case PTN_INT:
+            return ptn_bcmath_number_parse_int64(value.as.integer, out);
+        case PTN_FLOAT: {
+            int64_t integer = ptn_internal_expect_integer_arg(
+                runtime,
+                "BcMath\\Number::__construct",
+                1,
+                "num",
+                value,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return 0;
+            }
+            return ptn_bcmath_number_parse_int64(integer, out);
+        }
+        case PTN_STRING: {
+            PtnStringOperand operand = ptn_string_operand_borrowed_len(
+                (const char *)value.as.string.data,
+                value.as.string.len
+            );
+            return ptn_bcmath_number_parse_text(
+                runtime,
+                "BcMath\\Number::__construct",
+                1,
+                "num",
+                operand,
+                out
+            );
+        }
+        case PTN_OBJECT:
+        case PTN_ARRAY:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE: {
+            char message[224];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "BcMath\\Number::__construct(): Argument #1 ($num) must be of type string|int, %s given",
+                ptn_bcmath_number_arg_type_name(value)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static void ptn_bcmath_number_declare_readonly_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *property,
+    PtnPropertyTypeKind type_kind,
+    PtnValue value,
+    int has_value,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        property,
+        PTN_BCMATH_NUMBER_CLASS,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        1,
+        type_kind,
+        NULL,
+        NULL,
+        0,
+        has_value,
+        value,
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static PtnValue ptn_bcmath_number_initialize_from_value(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnValue value_string,
+    int scale,
+    size_t line
+) {
+    ptn_bcmath_number_declare_readonly_property(
+        runtime,
+        object,
+        "value",
+        PTN_PROPERTY_TYPE_STRING,
+        value_string,
+        1,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue scale_value = ptn_int(scale);
+    ptn_bcmath_number_declare_readonly_property(
+        runtime,
+        object,
+        "scale",
+        PTN_PROPERTY_TYPE_INT,
+        scale_value,
+        1,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    return object;
+}
+
+static PtnValue ptn_bcmath_number_object_from_value(
+    PtnRuntime *runtime,
+    PtnValue value_string,
+    int scale,
+    size_t line
+) {
+    PtnValue object = ptn_object_new_shell(runtime, PTN_BCMATH_NUMBER_CLASS);
+    PtnValue initialized = ptn_bcmath_number_initialize_from_value(runtime, object, value_string, scale, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&object);
+        return ptn_null();
+    }
+    return initialized;
+}
+
+static PtnValue ptn_bcmath_number_object_from_parsed(
+    PtnRuntime *runtime,
+    const PtnBcNumber *number,
+    size_t line
+) {
+    PtnValue value = ptn_bc_format_digits_value(number->digits, number->sign, number->scale, number->scale);
+    PtnValue object = ptn_bcmath_number_object_from_value(runtime, value, (int)number->scale, line);
+    ptn_value_destroy(&value);
+    return object;
+}
+
+static PtnValue ptn_bcmath_number_object_from_result(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int scale,
+    size_t line
+) {
+    PtnValue object = ptn_bcmath_number_object_from_value(runtime, value, scale, line);
+    return object;
+}
+
+static PtnValue ptn_bcmath_number_format_trimmed(
+    const PtnBcNumber *number,
+    size_t min_scale
+) {
+    size_t scale = number->scale;
+    char *digits = ptn_bc_truncate_or_pad_abs(number->digits, number->scale, scale);
+    while (scale > min_scale) {
+        size_t len = strlen(digits);
+        if (len == 0 || digits[len - 1] != '0') {
+            break;
+        }
+        if (len == 1) {
+            digits[0] = '0';
+            digits[1] = '\0';
+        } else {
+            digits[len - 1] = '\0';
+        }
+        scale--;
+    }
+    PtnValue result = ptn_bc_format_digits_value(
+        digits,
+        ptn_bc_digits_is_zero(digits) ? 0 : number->sign,
+        scale,
+        scale
+    );
+    free(digits);
+    return result;
+}
+
+static PtnValue ptn_bcmath_number_trim_value(PtnValue value, size_t min_scale, int *scale_out) {
+    PtnValue deref = ptn_value_deref(value);
+    PtnStringOperand operand = ptn_string_operand_borrowed_len(
+        (const char *)deref.as.string.data,
+        deref.as.string.len
+    );
+    PtnBcNumber parsed;
+    if (!ptn_bc_parse_number_operand(operand, &parsed)) {
+        *scale_out = 0;
+        return ptn_string("0");
+    }
+    PtnValue result = ptn_bcmath_number_format_trimmed(&parsed, min_scale);
+    PtnStringOperand result_operand = ptn_string_operand_borrowed_len(
+        (const char *)result.as.string.data,
+        result.as.string.len
+    );
+    PtnBcNumber trimmed;
+    if (ptn_bc_parse_number_operand(result_operand, &trimmed)) {
+        *scale_out = (int)trimmed.scale;
+        ptn_bc_number_free(&trimmed);
+    } else {
+        *scale_out = 0;
+    }
+    ptn_bc_number_free(&parsed);
+    return result;
+}
+
+static int ptn_bcmath_number_expect_scale(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    PtnValue value,
+    size_t line,
+    int default_scale,
+    int *out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        *out = default_scale;
+        return 1;
+    }
+    if (value.type == PTN_ARRAY ||
+        value.type == PTN_OBJECT ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION ||
+        value.type == PTN_RESOURCE) {
+        char message[224];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($scale) must be of type ?int, %s given",
+            function_name,
+            position,
+            ptn_bcmath_number_arg_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+    int64_t scale = ptn_internal_expect_integer_arg(runtime, function_name, position, "scale", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    if (scale < 0 || scale > INT_MAX) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #%zu ($scale) must be between 0 and 2147483647",
+            function_name,
+            position
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *out = (int)scale;
+    return 1;
+}
+
+static int ptn_bcmath_number_default_scale_binary(const char *operator, const PtnBcNumber *left, const PtnBcNumber *right) {
+    if (strcmp(operator, "+") == 0 || strcmp(operator, "-") == 0) {
+        return (int)(left->scale > right->scale ? left->scale : right->scale);
+    }
+    if (strcmp(operator, "*") == 0) {
+        return (int)(left->scale + right->scale);
+    }
+    if (strcmp(operator, "%") == 0) {
+        return (int)left->scale;
+    }
+    return 0;
+}
+
+static PtnValue ptn_bcmath_number_binary_result(
+    PtnRuntime *runtime,
+    const char *operator,
+    const char *function_name,
+    const PtnBcNumber *left,
+    const PtnBcNumber *right,
+    int explicit_scale,
+    int scale,
+    size_t line
+) {
+    PtnValue value = ptn_null();
+    int object_scale = scale;
+    if (strcmp(operator, "+") == 0) {
+        object_scale = explicit_scale ? scale : ptn_bcmath_number_default_scale_binary(operator, left, right);
+        value = ptn_bc_add_or_sub_values(left, right, 0, object_scale);
+    } else if (strcmp(operator, "-") == 0) {
+        object_scale = explicit_scale ? scale : ptn_bcmath_number_default_scale_binary(operator, left, right);
+        value = ptn_bc_add_or_sub_values(left, right, 1, object_scale);
+    } else if (strcmp(operator, "*") == 0) {
+        object_scale = explicit_scale ? scale : ptn_bcmath_number_default_scale_binary(operator, left, right);
+        value = ptn_bc_mul_value(left, right, object_scale);
+    } else if (strcmp(operator, "/") == 0) {
+        if (!explicit_scale) {
+            int high_scale = (int)left->scale + 10;
+            value = ptn_bc_div_value(runtime, function_name, left, right, high_scale);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+            PtnValue trimmed = ptn_bcmath_number_trim_value(value, left->scale, &object_scale);
+            ptn_value_destroy(&value);
+            value = trimmed;
+        } else {
+            object_scale = scale;
+            value = ptn_bc_div_value(runtime, function_name, left, right, object_scale);
+        }
+    } else if (strcmp(operator, "%") == 0) {
+        object_scale = explicit_scale ? scale : (int)left->scale;
+        value = ptn_bc_mod_value(runtime, left, right, object_scale);
+    } else if (strcmp(operator, "**") == 0) {
+        int64_t exponent = 0;
+        if (!ptn_bc_parse_exponent(runtime, function_name, 1, "exponent", right, 1, &exponent)) {
+            return ptn_null();
+        }
+        if (!explicit_scale) {
+            if (exponent >= 0) {
+                object_scale = (int)(left->scale * (size_t)exponent);
+                value = ptn_bc_pow_value(runtime, left, exponent, object_scale);
+            } else {
+                int high_scale = (int)left->scale + 10;
+                value = ptn_bc_pow_value(runtime, left, exponent, high_scale);
+                if (runtime->exceptions->active_exception != NULL) {
+                    return ptn_null();
+                }
+                PtnValue trimmed = ptn_bcmath_number_trim_value(value, 0, &object_scale);
+                ptn_value_destroy(&value);
+                value = trimmed;
+            }
+        } else {
+            object_scale = scale;
+            value = ptn_bc_pow_value(runtime, left, exponent, object_scale);
+        }
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&value);
+        return ptn_null();
+    }
+    PtnValue object = ptn_bcmath_number_object_from_result(runtime, value, object_scale, line);
+    ptn_value_destroy(&value);
+    return object;
+}
+
+static int ptn_bcmath_number_operator_operand(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int is_left,
+    size_t line,
+    PtnBcNumber *out
+) {
+    value = ptn_value_deref(value);
+    if (ptn_bcmath_number_is_object(value)) {
+        if (!ptn_bcmath_number_read(value, out)) {
+            ptn_throw_exception(runtime, "Error", "Invalid BcMath\\Number object");
+            return 0;
+        }
+        return 1;
+    }
+    switch (value.type) {
+        case PTN_BOOL:
+            return ptn_bcmath_number_parse_int64(value.as.boolean ? 1 : 0, out);
+        case PTN_INT:
+            return ptn_bcmath_number_parse_int64(value.as.integer, out);
+        case PTN_FLOAT: {
+            int64_t integer = ptn_internal_expect_integer_arg(
+                runtime,
+                "BcMath\\Number operator",
+                1,
+                "num",
+                value,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                return 0;
+            }
+            return ptn_bcmath_number_parse_int64(integer, out);
+        }
+        case PTN_STRING: {
+            PtnStringOperand operand = ptn_string_operand_borrowed_len(
+                (const char *)value.as.string.data,
+                value.as.string.len
+            );
+            if (!ptn_bc_parse_number_operand(operand, out)) {
+                ptn_throw_exception(
+                    runtime,
+                    "ValueError",
+                    is_left
+                        ? "Left string operand cannot be converted to BcMath\\Number"
+                        : "Right string operand cannot be converted to BcMath\\Number"
+                );
+                return 0;
+            }
+            return 1;
+        }
+        case PTN_NULL:
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
+static PtnValue ptn_bcmath_number_divmod_result(
+    PtnRuntime *runtime,
+    const PtnBcNumber *left,
+    const PtnBcNumber *right,
+    int scale,
+    size_t line
+) {
+    if (right->sign == 0) {
+        ptn_throw_exception(runtime, "DivisionByZeroError", "Division by zero");
+        return ptn_null();
+    }
+    char *quotient = ptn_bc_div_abs_digits(left, right, 0);
+    int q_sign = left->sign == 0 || ptn_bc_digits_is_zero(quotient) ? 0 : left->sign * right->sign;
+    PtnValue quotient_value = ptn_bc_format_digits_value(quotient, q_sign, 0, 0);
+    PtnValue quotient_object = ptn_bcmath_number_object_from_result(runtime, quotient_value, 0, line);
+    ptn_value_destroy(&quotient_value);
+    free(quotient);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnValue remainder_value = ptn_bc_mod_value(runtime, left, right, scale);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&quotient_object);
+        return ptn_null();
+    }
+    PtnValue remainder_object = ptn_bcmath_number_object_from_result(runtime, remainder_value, scale, line);
+    ptn_value_destroy(&remainder_value);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&quotient_object);
+        return ptn_null();
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), quotient_object);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), remainder_object);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_bcmath_number_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "BcMath\\Number::__construct() expects exactly 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnBcNumber number;
+    if (!ptn_bcmath_number_expect_constructor_operand(runtime, args[0], line, &number)) {
+        return ptn_null();
+    }
+    PtnValue object = ptn_bcmath_number_object_from_parsed(runtime, &number, line);
+    ptn_bc_number_free(&number);
+    return object;
+}
+
+static int ptn_bcmath_number_argc_between(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t argc,
+    size_t min,
+    size_t max
+) {
+    if (argc >= min && argc <= max) {
+        return 1;
+    }
+    char message[160];
+    int written = min == max
+        ? snprintf(message, sizeof(message), "%s() expects exactly %zu argument%s, %zu given", function_name, min, min == 1 ? "" : "s", argc)
+        : snprintf(message, sizeof(message), "%s() expects between %zu and %zu arguments, %zu given", function_name, min, max, argc);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+    return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::__construct", argc, 1, 1)) {
+            return ptn_null();
+        }
+        PtnBcNumber number;
+        if (!ptn_bcmath_number_expect_constructor_operand(runtime, args[0], line, &number)) {
+            return ptn_null();
+        }
+        PtnValue value = ptn_bc_format_digits_value(number.digits, number.sign, number.scale, number.scale);
+        PtnValue result = ptn_bcmath_number_initialize_from_value(runtime, receiver, value, (int)number.scale, line);
+        ptn_value_destroy(&value);
+        ptn_bc_number_free(&number);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : result;
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::__toString", argc, 0, 0)) {
+            return ptn_null();
+        }
+        return ptn_bcmath_number_value_clone(receiver);
+    }
+    if (ptn_ascii_case_equal(name, "__serialize")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::__serialize", argc, 0, 0)) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("value"), ptn_bcmath_number_value_clone(receiver));
+        return result;
+    }
+
+    PtnBcNumber left;
+    if (!ptn_bcmath_number_read(receiver, &left)) {
+        ptn_throw_exception(runtime, "Error", "Invalid BcMath\\Number object");
+        return ptn_null();
+    }
+
+    if (ptn_ascii_case_equal(name, "add") ||
+        ptn_ascii_case_equal(name, "sub") ||
+        ptn_ascii_case_equal(name, "mul") ||
+        ptn_ascii_case_equal(name, "div") ||
+        ptn_ascii_case_equal(name, "mod") ||
+        ptn_ascii_case_equal(name, "pow")) {
+        char function_name[48];
+        int written = snprintf(function_name, sizeof(function_name), "BcMath\\Number::%s", name);
+        if (written < 0 || (size_t)written >= sizeof(function_name)) {
+            ptn_abort_out_of_memory();
+        }
+        if (!ptn_bcmath_number_argc_between(runtime, function_name, argc, 1, 2)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        const char *argument_name = ptn_ascii_case_equal(name, "pow") ? "exponent" : "num";
+        PtnBcNumber right;
+        if (!ptn_bcmath_number_expect_operand(runtime, function_name, 1, argument_name, args[0], line, 1, &right)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        int scale = 0;
+        int explicit_scale = argc >= 2;
+        if (explicit_scale &&
+            !ptn_bcmath_number_expect_scale(runtime, function_name, 2, args[1], line, 0, &scale)) {
+            ptn_bc_number_free(&left);
+            ptn_bc_number_free(&right);
+            return ptn_null();
+        }
+        const char *operator = ptn_ascii_case_equal(name, "add") ? "+"
+            : (ptn_ascii_case_equal(name, "sub") ? "-"
+            : (ptn_ascii_case_equal(name, "mul") ? "*"
+            : (ptn_ascii_case_equal(name, "div") ? "/"
+            : (ptn_ascii_case_equal(name, "mod") ? "%" : "**"))));
+        PtnValue result = ptn_bcmath_number_binary_result(
+            runtime,
+            operator,
+            function_name,
+            &left,
+            &right,
+            explicit_scale,
+            scale,
+            line
+        );
+        ptn_bc_number_free(&left);
+        ptn_bc_number_free(&right);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "divmod")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::divmod", argc, 1, 2)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        PtnBcNumber right;
+        if (!ptn_bcmath_number_expect_operand(runtime, "BcMath\\Number::divmod", 1, "num", args[0], line, 1, &right)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        int scale = (int)left.scale;
+        if (argc >= 2 &&
+            !ptn_bcmath_number_expect_scale(runtime, "BcMath\\Number::divmod", 2, args[1], line, scale, &scale)) {
+            ptn_bc_number_free(&left);
+            ptn_bc_number_free(&right);
+            return ptn_null();
+        }
+        PtnValue result = ptn_bcmath_number_divmod_result(runtime, &left, &right, scale, line);
+        ptn_bc_number_free(&left);
+        ptn_bc_number_free(&right);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "powmod")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::powmod", argc, 2, 3)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        PtnBcNumber exponent;
+        if (!ptn_bcmath_number_expect_operand(runtime, "BcMath\\Number::powmod", 1, "exponent", args[0], line, 1, &exponent)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        PtnBcNumber modulus;
+        if (!ptn_bcmath_number_expect_operand(runtime, "BcMath\\Number::powmod", 2, "modulus", args[1], line, 1, &modulus)) {
+            ptn_bc_number_free(&left);
+            ptn_bc_number_free(&exponent);
+            return ptn_null();
+        }
+        int scale = 0;
+        if (argc >= 3 &&
+            !ptn_bcmath_number_expect_scale(runtime, "BcMath\\Number::powmod", 3, args[2], line, 0, &scale)) {
+            ptn_bc_number_free(&left);
+            ptn_bc_number_free(&exponent);
+            ptn_bc_number_free(&modulus);
+            return ptn_null();
+        }
+        PtnValue value = ptn_bc_powmod_value(runtime, &left, &exponent, &modulus, scale);
+        ptn_bc_number_free(&left);
+        ptn_bc_number_free(&exponent);
+        ptn_bc_number_free(&modulus);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_bcmath_number_object_from_result(runtime, value, scale, line);
+        ptn_value_destroy(&value);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "sqrt")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::sqrt", argc, 0, 1)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        int scale = (int)left.scale + 10;
+        if (argc >= 1 &&
+            !ptn_bcmath_number_expect_scale(runtime, "BcMath\\Number::sqrt", 1, args[0], line, scale, &scale)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        PtnValue value = ptn_bc_sqrt_value(runtime, &left, scale);
+        ptn_bc_number_free(&left);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_bcmath_number_object_from_result(runtime, value, scale, line);
+        ptn_value_destroy(&value);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "ceil") || ptn_ascii_case_equal(name, "floor")) {
+        char function_name[48];
+        int written = snprintf(function_name, sizeof(function_name), "BcMath\\Number::%s", name);
+        if (written < 0 || (size_t)written >= sizeof(function_name)) {
+            ptn_abort_out_of_memory();
+        }
+        if (!ptn_bcmath_number_argc_between(runtime, function_name, argc, 0, 0)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        PtnValue value = ptn_bc_ceil_floor_value(&left, ptn_ascii_case_equal(name, "ceil"));
+        ptn_bc_number_free(&left);
+        PtnValue result = ptn_bcmath_number_object_from_result(runtime, value, 0, line);
+        ptn_value_destroy(&value);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "round")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::round", argc, 0, 2)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        int64_t precision_value = 0;
+        if (argc >= 1) {
+            precision_value = ptn_internal_expect_integer_arg(runtime, "BcMath\\Number::round", 1, "precision", args[0], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_bc_number_free(&left);
+                return ptn_null();
+            }
+            if (precision_value < INT_MIN || precision_value > INT_MAX) {
+                ptn_bc_number_free(&left);
+                ptn_throw_exception(runtime, "ValueError", "BcMath\\Number::round(): Argument #1 ($precision) is out of range");
+                return ptn_null();
+            }
+        }
+        const char *mode = argc >= 2 ? ptn_bc_rounding_mode_name(args[1]) : "HalfAwayFromZero";
+        PtnValue value = ptn_bc_round_value(&left, (int)precision_value, mode);
+        ptn_bc_number_free(&left);
+        int scale = precision_value > 0 ? (int)precision_value : 0;
+        PtnValue result = ptn_bcmath_number_object_from_result(runtime, value, scale, line);
+        ptn_value_destroy(&value);
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "compare")) {
+        if (!ptn_bcmath_number_argc_between(runtime, "BcMath\\Number::compare", argc, 1, 2)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        PtnBcNumber right;
+        if (!ptn_bcmath_number_expect_operand(runtime, "BcMath\\Number::compare", 1, "num", args[0], line, 1, &right)) {
+            ptn_bc_number_free(&left);
+            return ptn_null();
+        }
+        int scale = (int)(left.scale > right.scale ? left.scale : right.scale);
+        if (argc >= 2 &&
+            !ptn_bcmath_number_expect_scale(runtime, "BcMath\\Number::compare", 2, args[1], line, scale, &scale)) {
+            ptn_bc_number_free(&left);
+            ptn_bc_number_free(&right);
+            return ptn_null();
+        }
+        int cmp = ptn_bc_compare_at_scale(&left, &right, (size_t)scale);
+        ptn_bc_number_free(&left);
+        ptn_bc_number_free(&right);
+        return ptn_int(cmp < 0 ? -1 : (cmp > 0 ? 1 : 0));
+    }
+    ptn_bc_number_free(&left);
+    ptn_throw_exception(runtime, "Error", "Call to undefined method BcMath\\Number");
+    return ptn_null();
+}
+
+static PTN_UNUSED int ptn_bcmath_number_cast_array(PtnValue value, PtnValue *array_out) {
+    if (!ptn_bcmath_number_is_object(value)) {
+        return 0;
+    }
+    PtnBcNumber number;
+    if (!ptn_bcmath_number_read(value, &number)) {
+        return 0;
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("value"), ptn_bcmath_number_value_clone(value));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("scale"), ptn_int((int64_t)number.scale));
+    ptn_bc_number_free(&number);
+    *array_out = result;
+    return 1;
+}
+
+static PTN_UNUSED int ptn_bcmath_number_is_truthy(PtnValue value, int *truthy_out) {
+    if (!ptn_bcmath_number_is_object(value)) {
+        return 0;
+    }
+    PtnBcNumber number;
+    if (!ptn_bcmath_number_read(value, &number)) {
+        *truthy_out = 1;
+        return 1;
+    }
+    *truthy_out = number.sign != 0;
+    ptn_bc_number_free(&number);
+    return 1;
+}
+
+static int ptn_bcmath_number_compare_operand(PtnValue value, PtnBcNumber *out) {
+    value = ptn_value_deref(value);
+    if (ptn_bcmath_number_is_object(value)) {
+        return ptn_bcmath_number_read(value, out);
+    }
+    switch (value.type) {
+        case PTN_NULL:
+            return ptn_bcmath_number_parse_int64(0, out);
+        case PTN_BOOL:
+            return ptn_bcmath_number_parse_int64(value.as.boolean ? 1 : 0, out);
+        case PTN_INT:
+            return ptn_bcmath_number_parse_int64(value.as.integer, out);
+        case PTN_FLOAT:
+            return ptn_bcmath_number_parse_int64((int64_t)value.as.floating, out);
+        case PTN_STRING: {
+            PtnStringOperand operand = ptn_string_operand_borrowed_len(
+                (const char *)value.as.string.data,
+                value.as.string.len
+            );
+            return ptn_bc_parse_number_operand(operand, out);
+        }
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_bcmath_number_compare(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int *compared
+) {
+    (void)runtime;
+    (void)line;
+    if (!ptn_bcmath_number_is_object(left) && !ptn_bcmath_number_is_object(right)) {
+        return 0;
+    }
+    PtnBcNumber left_number;
+    if (!ptn_bcmath_number_compare_operand(left, &left_number)) {
+        *compared = PTN_COMPARE_UNORDERED;
+        return 1;
+    }
+    PtnBcNumber right_number;
+    if (!ptn_bcmath_number_compare_operand(right, &right_number)) {
+        ptn_bc_number_free(&left_number);
+        *compared = PTN_COMPARE_UNORDERED;
+        return 1;
+    }
+    size_t scale = left_number.scale > right_number.scale ? left_number.scale : right_number.scale;
+    int cmp = ptn_bc_compare_at_scale(&left_number, &right_number, scale);
+    ptn_bc_number_free(&left_number);
+    ptn_bc_number_free(&right_number);
+    *compared = cmp < 0 ? PTN_COMPARE_LESS : (cmp > 0 ? PTN_COMPARE_GREATER : PTN_COMPARE_EQUAL);
+    return 1;
+}
+
+static PTN_UNUSED int ptn_bcmath_number_binary_op(
+    PtnRuntime *runtime,
+    const char *operator,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnValue *result_out
+) {
+    if (!ptn_bcmath_number_is_object(left) && !ptn_bcmath_number_is_object(right)) {
+        return 0;
+    }
+    PtnBcNumber left_number;
+    if (!ptn_bcmath_number_operator_operand(runtime, left, 1, line, &left_number)) {
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_throw_unsupported_operand_types(runtime, left, operator, right, line);
+        }
+        *result_out = ptn_null();
+        return 1;
+    }
+    PtnBcNumber right_number;
+    if (!ptn_bcmath_number_operator_operand(runtime, right, 0, line, &right_number)) {
+        ptn_bc_number_free(&left_number);
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_throw_unsupported_operand_types(runtime, left, operator, right, line);
+        }
+        *result_out = ptn_null();
+        return 1;
+    }
+    *result_out = ptn_bcmath_number_binary_result(
+        runtime,
+        operator,
+        "BcMath\\Number operator",
+        &left_number,
+        &right_number,
+        0,
+        0,
+        line
+    );
+    ptn_bc_number_free(&left_number);
+    ptn_bc_number_free(&right_number);
+    return 1;
+}
+
+static PTN_UNUSED int ptn_bcmath_number_inc_dec(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int increment,
+    size_t line,
+    PtnValue *result_out
+) {
+    if (!ptn_bcmath_number_is_object(value)) {
+        return 0;
+    }
+    PtnBcNumber number;
+    if (!ptn_bcmath_number_read(value, &number)) {
+        *result_out = ptn_null();
+        ptn_throw_exception(runtime, "Error", "Invalid BcMath\\Number object");
+        return 1;
+    }
+    PtnBcNumber one;
+    ptn_bcmath_number_parse_int64(1, &one);
+    PtnValue result_value = ptn_bc_add_or_sub_values(&number, &one, increment ? 0 : 1, (int)number.scale);
+    ptn_bc_number_free(&one);
+    ptn_bc_number_free(&number);
+    *result_out = ptn_bcmath_number_object_from_result(runtime, result_value, (int)ptn_value_deref(result_value).as.string.len, line);
+    PtnStringOperand result_operand = ptn_string_operand_borrowed_len(
+        (const char *)ptn_value_deref(result_value).as.string.data,
+        ptn_value_deref(result_value).as.string.len
+    );
+    PtnBcNumber parsed;
+    int parsed_scale = 0;
+    if (ptn_bc_parse_number_operand(result_operand, &parsed)) {
+        parsed_scale = (int)parsed.scale;
+        ptn_bc_number_free(&parsed);
+    }
+    ptn_value_destroy(result_out);
+    *result_out = ptn_bcmath_number_object_from_result(runtime, result_value, parsed_scale, line);
+    ptn_value_destroy(&result_value);
+    return 1;
+}
+
 static PtnValue ptn_internal_bcadd(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnBcNumber left, right;
     int scale = ptn_bc_current_scale(runtime);
