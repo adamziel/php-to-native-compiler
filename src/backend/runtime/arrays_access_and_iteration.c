@@ -10038,6 +10038,57 @@ static PTN_UNUSED void ptn_value_array_path_set_from_overloaded_assign_op(
     }
 }
 
+static PTN_UNUSED void ptn_value_array_path_prepare_value_root_for_inc_dec(
+    PtnRuntime *runtime,
+    PtnValue *target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (target == NULL || target->type == PTN_REFERENCE || segment_count == 0) {
+        return;
+    }
+
+    PtnValue target_value = ptn_value_deref(*target);
+    if (target_value.type != PTN_ARRAY) {
+        return;
+    }
+
+    PtnArray *array = ptn_array_detach_value(target);
+    if (array == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            return;
+        }
+
+        PtnArrayKey key;
+        if (!ptn_array_path_segment_key(runtime, array, segment, line, &key)) {
+            return;
+        }
+        PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+        if (entry != NULL && entry->value.type == PTN_REFERENCE) {
+            PtnValue old_value = entry->value;
+            entry->value = ptn_value_clone(ptn_value_deref(old_value));
+            ptn_value_destroy(&old_value);
+            ptn_array_note_mutation(array);
+        }
+        ptn_array_key_free(key);
+
+        if (i + 1 == segment_count) {
+            return;
+        }
+
+        array = ptn_array_descend_for_write(runtime, array, segment, line, 0);
+        if (array == NULL) {
+            return;
+        }
+    }
+}
+
 static PTN_UNUSED void ptn_value_array_path_set_from_inc_dec(
     PtnRuntime *runtime,
     PtnValue *target,

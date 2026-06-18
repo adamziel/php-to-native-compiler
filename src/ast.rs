@@ -671,6 +671,11 @@ pub enum IncDecTarget {
         dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
+    ValueArrayDim {
+        array: Box<Expr>,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,

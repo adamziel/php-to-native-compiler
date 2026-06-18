@@ -2007,16 +2007,34 @@ fn phpt_classifier_keeps_debug_backtrace_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_function_call_array_lvalue_assignment() {
+fn phpt_classifier_keeps_function_call_array_lvalue_assignment_runnable() {
     let classification = classify(
-        "--TEST--\nfunction call lvalue\n--FILE--\n<?php\ndebug_backtrace()[1]['args'][0] = 'Modified';\n--EXPECT--\n",
+        "--TEST--\nfunction call lvalue\n--FILE--\n<?php\nfunction &items() { static $x = []; return $x; }\nitems()[0] = 42;\n--EXPECT--\n",
     );
     assert!(
-        classification.starts_with("unsupported-lvalue-runtime\t"),
+        classification.starts_with("runnable\t"),
         "{classification:?}"
     );
+}
+
+#[test]
+fn phpt_classifier_keeps_method_call_array_lvalue_assignment_runnable() {
+    let classification = classify(
+        "--TEST--\nmethod call lvalue\n--FILE--\n<?php\nclass C { public function &items() { static $x = []; return $x; } }\n$c = new C;\n$c->items()[0] = 42;\n--EXPECT--\n",
+    );
     assert!(
-        classification.contains("function-call array-dimension"),
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_keeps_static_method_call_array_lvalue_assignment_runnable() {
+    let classification = classify(
+        "--TEST--\nstatic method call lvalue\n--FILE--\n<?php\nclass C { public static function items() { return null; } }\nC::items()[0] = 42;\n--EXPECT--\n",
+    );
+    assert!(
+        classification.starts_with("runnable\t"),
         "{classification:?}"
     );
 }

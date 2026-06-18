@@ -9627,6 +9627,16 @@ fn collect_arrow_captures_from_inc_dec_target(
                 }
             }
         }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_arrow_captures_from_expr(array, exclusions, seen, captures);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
         IncDecTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
@@ -15164,6 +15174,12 @@ fn validate_control_transfers_in_inc_dec_target(target: &IncDecTarget) -> Result
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_optional_exprs(dimensions)?;
         }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            validate_control_transfers_in_expr(array)?;
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
         IncDecTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
@@ -16121,6 +16137,9 @@ fn inc_dec_target_contains_yield(target: &IncDecTarget) -> bool {
             dimensions,
             ..
         } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => expr_contains_yield(array) || dimensions.iter().flatten().any(expr_contains_yield),
         IncDecTarget::Property { receiver, .. } => expr_contains_yield(receiver),
         IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => false,
     }
@@ -16308,6 +16327,17 @@ fn validate_anonymous_functions_in_inc_dec_target(
             ..
         } => {
             validate_anonymous_functions_in_expr(receiver, functions)?;
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    validate_anonymous_functions_in_expr(dimension, functions)?;
+                }
+            }
+            Ok(())
+        }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            validate_anonymous_functions_in_expr(array, functions)?;
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     validate_anonymous_functions_in_expr(dimension, functions)?;
@@ -18205,6 +18235,15 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             dimensions,
             span,
         }),
+        AssignmentTarget::ValueArrayDim {
+            array,
+            dimensions,
+            span,
+        } => Ok(IncDecTarget::ValueArrayDim {
+            array,
+            dimensions,
+            span,
+        }),
         AssignmentTarget::StaticPropertyArrayDim { span, .. } => Err(Diagnostic::new(
             "increment/decrement expression target must be a variable, array offset, or property",
             Some(span),
@@ -18241,6 +18280,7 @@ fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
         IncDecTarget::DynamicArrayDim { span, .. } => *span,
         IncDecTarget::ArrayDim(target) => target.span,
         IncDecTarget::PropertyArrayDim { span, .. } => *span,
+        IncDecTarget::ValueArrayDim { span, .. } => *span,
         IncDecTarget::Property { span, .. } => *span,
         IncDecTarget::StaticProperty { span, .. } => *span,
     }
@@ -19195,6 +19235,16 @@ fn reject_standalone_list_expr_in_inc_dec_target(target: &IncDecTarget) -> Resul
                 }
             }
         }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            reject_standalone_list_expr(array)?;
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_standalone_list_expr(dimension)?;
+                }
+            }
+        }
         IncDecTarget::DynamicVariable { name, .. } => reject_standalone_list_expr(name)?,
         IncDecTarget::Property { receiver, .. } => {
             reject_standalone_list_expr(receiver)?;
@@ -19457,6 +19507,23 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
             ..
         } => {
             reject_append_array_read(receiver)?;
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_append_array_read(dimension)?;
+                } else {
+                    return Err(Diagnostic::new(
+                        "increment/decrement cannot use append array access",
+                        Some(*span),
+                    ));
+                }
+            }
+        }
+        IncDecTarget::ValueArrayDim {
+            array,
+            dimensions,
+            span,
+        } => {
+            reject_append_array_read(array)?;
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     reject_append_array_read(dimension)?;
@@ -20611,6 +20678,15 @@ fn inc_dec_target_uses_this_property(target: &IncDecTarget, property_name: &str)
         } => {
             receiver_is_this_property(receiver, name, property_name)
                 || expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            expr_uses_this_property(array, property_name)
                 || dimensions
                     .iter()
                     .flatten()

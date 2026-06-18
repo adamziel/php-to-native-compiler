@@ -815,6 +815,11 @@ pub enum ReferenceTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    ValueArrayDim {
+        array: Box<ValueExpr>,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     Property {
         receiver: Box<ValueExpr>,
         name: String,
@@ -823,6 +828,11 @@ pub enum ReferenceTarget {
     DynamicProperty {
         receiver: Box<ValueExpr>,
         name: Box<ValueExpr>,
+        line: usize,
+    },
+    StaticProperty {
+        class_name: String,
+        name: String,
         line: usize,
     },
 }
@@ -1022,6 +1032,11 @@ pub enum IncDecTarget {
     PropertyArrayDim {
         receiver: Box<ValueExpr>,
         name: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+    ValueArrayDim {
+        array: Box<ValueExpr>,
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
@@ -3138,6 +3153,22 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: span.line,
             },
+            AstIncDecTarget::ValueArrayDim {
+                array,
+                dimensions,
+                span,
+            } => IncDecTarget::ValueArrayDim {
+                array: Box::new(self.lower_expr(array)),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstIncDecTarget::Property {
                 receiver,
                 name,
@@ -4730,6 +4761,19 @@ fn assertion_inc_dec_target_text(target: &AstIncDecTarget) -> String {
             ..
         } => {
             let mut text = format!("{}->{name}", assertion_expr_text(receiver));
+            for dimension in dimensions {
+                text.push('[');
+                if let Some(dimension) = dimension {
+                    text.push_str(&assertion_expr_text(dimension));
+                }
+                text.push(']');
+            }
+            text
+        }
+        AstIncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            let mut text = assertion_expr_text(array);
             for dimension in dimensions {
                 text.push('[');
                 if let Some(dimension) = dimension {

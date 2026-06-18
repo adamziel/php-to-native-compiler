@@ -2155,6 +2155,15 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
             raw = tolower($0)
             line = ptn_php_code_line($0)
             if (line ~ /\)[[:space:]]*\[[^]]*\]([[:space:]]*\[[^]]*\])*[[:space:]]*([+*\/%.&|^-]?=|<<=|>>=)/) {
+                if (line ~ /->[[:space:]]*[[:alnum:]_]+[[:space:]]*\(/) {
+                    next
+                }
+                if (line ~ /[[:alnum:]_\\]+::[[:space:]]*[[:alnum:]_]+[[:space:]]*\([^)]*\)[[:space:]]*\[/) {
+                    next
+                }
+                if (line ~ /(^|[^[:alnum:]_$>:])[\\]?[[:alpha:]_][[:alnum:]_\\]*[[:space:]]*\([^)]*\)[[:space:]]*\[/ && line !~ /(^|[^[:alnum:]_$>:])(array|isset|empty|list|print|echo|include|include_once|require|require_once|unset|eval|exit|die)[[:space:]]*\(/) {
+                    next
+                }
                 print "unsupported-lvalue-runtime\trequires writable function-call array-dimension temporaries, outside PTN modeled assignment target set"
                 found = 1
                 exit

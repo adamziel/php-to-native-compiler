@@ -28768,6 +28768,114 @@ string:9\n"
 }
 
 #[test]
+fn compile_by_reference_return_static_property_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-return-static-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-return-static-property.php");
+    let output = root.join("by-reference-return-static-property-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Foo {\n\
+    static $x = array();\n\
+    public function &a() {\n\
+        self::$x = array(1, 2, 3);\n\
+        return self::$x;\n\
+    }\n\
+    public function b() {\n\
+        $x = array(1);\n\
+        $x[] = 2;\n\
+        return $x;\n\
+    }\n\
+}\n\
+$foo = new Foo;\n\
+$foo->a()[0] = 2;\n\
+var_dump($foo::$x);\n\
+$foo->b()[] = new stdClass;\n\
+$h = $foo->b();\n\
+var_dump($h);\n\
+$h[0] = 3;\n\
+var_dump($h);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [0]=>\n  int(2)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n}\narray(2) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n}\narray(2) {\n  [0]=>\n  int(3)\n  [1]=>\n  int(2)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_reference_for_static_property(&runtime, "));
+}
+
+#[test]
+fn compile_method_call_array_dim_inc_dec_to_native_binary() {
+    let root = temp_dir("ptn-native-method-call-array-dim-inc-dec");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("method-call-array-dim-inc-dec.php");
+    let output = root.join("method-call-array-dim-inc-dec-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Box {\n\
+    public $items = array(2);\n\
+    public function copy() {\n\
+        return $this->items;\n\
+    }\n\
+    public function &ref() {\n\
+        return $this->items;\n\
+    }\n\
+    public function take(&$value) {\n\
+        $value = 7;\n\
+        var_dump($value);\n\
+    }\n\
+}\n\
+$box = new Box;\n\
+$copyPost = $box->copy()[0]++;\n\
+var_dump($copyPost);\n\
+var_dump($box->items[0]);\n\
+$refPost = $box->ref()[0]++;\n\
+var_dump($refPost);\n\
+var_dump($box->items[0]);\n\
+$pre = ++$box->ref()[0];\n\
+var_dump($pre);\n\
+var_dump($box->items[0]);\n\
+$box->items = array(5);\n\
+$box->take($box->copy()[0]);\n\
+var_dump($box->items[0]);\n\
+$box->take($box->ref()[0]);\n\
+var_dump($box->items[0]);\n\
+$copyAfterRef = $box->copy()[0]++;\n\
+var_dump($copyAfterRef);\n\
+var_dump($box->items[0]);\n\
+$box->ref()[0]++;\n\
+var_dump($box->items[0]);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nint(2)\nint(2)\nint(3)\nint(4)\nint(4)\nint(7)\nint(5)\nint(7)\nint(7)\nint(7)\nint(7)\nint(8)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_read_for_assign_op(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_prepare_value_root_for_inc_dec(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_set_from_inc_dec(&runtime"));
+    assert!(c_source.contains("ptn_value_reference_for_array_path(&runtime"));
+}
+
+#[test]
 fn compile_array_offset_compound_assignment_undef_to_native_binary() {
     let root = temp_dir("ptn-native-array-offset-compound-undef");
     fs::create_dir_all(&root).unwrap();
