@@ -1266,6 +1266,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(7);
         return 1;
     }
+    if (strcmp(name, "INI_SCANNER_NORMAL") == 0) {
+        *out = ptn_int(PTN_INI_SCANNER_NORMAL);
+        return 1;
+    }
+    if (strcmp(name, "INI_SCANNER_RAW") == 0) {
+        *out = ptn_int(PTN_INI_SCANNER_RAW);
+        return 1;
+    }
+    if (strcmp(name, "INI_SCANNER_TYPED") == 0) {
+        *out = ptn_int(PTN_INI_SCANNER_TYPED);
+        return 1;
+    }
     if (strcmp(name, "BC_MATH_NUMBER") == 0) {
         *out = ptn_int(1);
         return 1;

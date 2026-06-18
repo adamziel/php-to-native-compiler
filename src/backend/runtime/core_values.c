@@ -94,6 +94,9 @@ typedef struct {
 #define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_EXTENSION_DIR "."
 #define PTN_PHP_BINARY "phpc"
+#define PTN_INI_SCANNER_NORMAL 0
+#define PTN_INI_SCANNER_RAW 1
+#define PTN_INI_SCANNER_TYPED 2
 #ifdef PATH_MAX
 #define PTN_PHP_MAXPATHLEN PATH_MAX
 #else
