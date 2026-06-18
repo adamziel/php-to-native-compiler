@@ -2609,6 +2609,17 @@ static PTN_UNUSED int ptn_value_is_missing(PtnValue value) {
     return value.type == PTN_NULL && value.owned == -1;
 }
 
+static PTN_UNUSED int ptn_value_is_return_reference_failure(PtnValue value) {
+    return value.owned == -2;
+}
+
+static PTN_UNUSED PtnValue ptn_value_mark_return_reference_failure(PtnValue value) {
+    if (value.type != PTN_REFERENCE) {
+        value.owned = -2;
+    }
+    return value;
+}
+
 static PTN_UNUSED PtnValue ptn_bool(int boolean) {
     PtnValue value;
     value.type = PTN_BOOL;

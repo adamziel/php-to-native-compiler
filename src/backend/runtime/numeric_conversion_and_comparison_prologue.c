@@ -834,23 +834,31 @@ static PTN_UNUSED PtnValue ptn_reference_source_or_value(PtnRuntime *runtime, Pt
     if (value.type == PTN_REFERENCE) {
         return ptn_value_clone(value);
     }
-    ptn_emit_only_variable_references_returned_by_reference_notice_at(runtime, line);
-    return ptn_reference_value(ptn_reference_new_owned(ptn_value_clone(value)));
+    if (!ptn_value_is_return_reference_failure(value)) {
+        ptn_emit_only_variable_references_returned_by_reference_notice_at(runtime, line);
+    }
+    return ptn_reference_value(ptn_reference_new_owned(ptn_value_clone_deref(value)));
 }
 
 static PTN_UNUSED PtnValue ptn_return_reference_source_or_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     if (value.type == PTN_REFERENCE) {
         return ptn_value_clone(value);
     }
-    ptn_emit_only_variable_references_returned_by_reference_notice_at(runtime, line);
-    return ptn_value_clone_deref(value);
+    if (!ptn_value_is_return_reference_failure(value)) {
+        ptn_emit_only_variable_references_returned_by_reference_notice_at(runtime, line);
+    }
+    return ptn_value_mark_return_reference_failure(ptn_value_clone_deref(value));
 }
 
 static PTN_UNUSED PtnValue ptn_return_reference_source_or_plain_value(PtnValue value) {
     if (value.type == PTN_REFERENCE) {
         return ptn_value_clone(value);
     }
-    return ptn_value_clone_deref(value);
+    PtnValue result = ptn_value_clone_deref(value);
+    if (ptn_value_is_return_reference_failure(value)) {
+        result = ptn_value_mark_return_reference_failure(result);
+    }
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_by_ref_argument_source_or_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {

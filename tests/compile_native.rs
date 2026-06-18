@@ -30388,6 +30388,85 @@ string:9\n",
 }
 
 #[test]
+fn compile_by_reference_return_failure_suppresses_outer_notices_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-return-failure-notice-propagation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-return-failure-notice-propagation.php");
+    let output = root.join("by-reference-return-failure-notice-propagation-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function value() {\n\
+    return 1;\n\
+}\n\
+function &bad_ref() {\n\
+    return value();\n\
+}\n\
+function &wrap_bad_ref() {\n\
+    return bad_ref();\n\
+}\n\
+function &dynamic_wrap($name) {\n\
+    return $name();\n\
+}\n\
+$direct =& bad_ref();\n\
+echo \"direct:$direct\\n\";\n\
+$wrapped =& wrap_bad_ref();\n\
+echo \"wrapped:$wrapped\\n\";\n\
+$dynamic =& dynamic_wrap(\"bad_ref\");\n\
+echo \"dynamic:$dynamic\\n\";\n\
+class Box {\n\
+    function value() {\n\
+        return 4;\n\
+    }\n\
+    function &bad() {\n\
+        return $this->value();\n\
+    }\n\
+    function &wrap() {\n\
+        return $this->bad();\n\
+    }\n\
+}\n\
+$box = new Box();\n\
+$method =& $box->bad();\n\
+echo \"method:$method\\n\";\n\
+$methodWrapped =& $box->wrap();\n\
+echo \"methodWrapped:$methodWrapped\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nNotice: Only variable references should be returned by reference in {} on line 6\n",
+                "direct:1\n",
+                "\nNotice: Only variable references should be returned by reference in {} on line 6\n",
+                "wrapped:1\n",
+                "\nNotice: Only variable references should be returned by reference in {} on line 6\n",
+                "dynamic:1\n",
+                "\nNotice: Only variable references should be returned by reference in {} on line 25\n",
+                "method:4\n",
+                "\nNotice: Only variable references should be returned by reference in {} on line 25\n",
+                "methodWrapped:4\n",
+            ),
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_mark_return_reference_failure"));
+    assert!(c_source.contains("ptn_value_is_return_reference_failure"));
+}
+
+#[test]
 fn compile_by_reference_magic_set_value_return_stays_plain_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-magic-set-value-return");
     fs::create_dir_all(&root).unwrap();
