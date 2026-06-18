@@ -1333,7 +1333,7 @@ static int ptn_object_property_metadata_dumps_uninitialized(
     if (object == NULL || metadata == NULL) {
         return 0;
     }
-    if (metadata->lazy_skip) {
+    if (metadata->lazy_skip && ptn_object_property_storage_initialized(object, metadata->storage_name)) {
         return 0;
     }
     if (object->lazy_uninitialized &&
@@ -1402,6 +1402,19 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
 static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 static size_t ptn_class_name_dump_len(const char *class_name);
 
+static PtnArrayEntry *ptn_object_property_entry_for_metadata(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (object == NULL || object->properties == NULL || metadata == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
 static int ptn_debug_array_is_packed(PtnArray *array) {
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayKey key = array->entries[i].key;
@@ -1460,24 +1473,35 @@ static void ptn_var_dump_object_initialized_properties(
     size_t indent,
     PtnDumpSeenArrays *seen
 ) {
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (ptn_object_metadata_is_array_object_storage(metadata)) {
+            continue;
+        }
+        PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+        if (entry == NULL) {
+            continue;
+        }
+        if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
+            continue;
+        }
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_object_property_metadata_key(metadata);
+        ptn_var_dump_value_indented(entry->value, indent + 1, seen);
+    }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
         const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
             ? ptn_object_property_metadata(object, entry->key.as.string)
             : NULL;
-        if (ptn_object_metadata_is_array_object_storage(metadata)) {
+        if (metadata != NULL) {
             continue;
         }
-        if (object->lazy_uninitialized && !object->lazy_initializing &&
-            (metadata == NULL || !metadata->lazy_skip)) {
+        if (object->lazy_uninitialized && !object->lazy_initializing) {
             continue;
         }
         ptn_var_dump_indent(indent + 1);
-        if (metadata != NULL) {
-            ptn_var_dump_object_property_metadata_key(metadata);
-        } else {
-            ptn_var_dump_object_property_key(object, entry->key);
-        }
+        ptn_var_dump_object_property_key(object, entry->key);
         ptn_var_dump_value_indented(entry->value, indent + 1, seen);
     }
     for (size_t i = 0; i < object->property_metadata_len; i++) {
@@ -1485,9 +1509,7 @@ static void ptn_var_dump_object_initialized_properties(
         if (!ptn_object_metadata_is_array_object_storage(metadata)) {
             continue;
         }
-        PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
-        ptn_array_key_free(key);
+        PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
         if (entry == NULL) {
             continue;
         }
@@ -1505,24 +1527,35 @@ static void ptn_debug_zval_dump_object_initialized_properties(
     size_t indent,
     PtnDumpSeenArrays *seen
 ) {
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (ptn_object_metadata_is_array_object_storage(metadata)) {
+            continue;
+        }
+        PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
+        if (entry == NULL) {
+            continue;
+        }
+        if (object->lazy_uninitialized && !object->lazy_initializing && !metadata->lazy_skip) {
+            continue;
+        }
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_object_property_metadata_key(metadata);
+        ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
+    }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
         const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
             ? ptn_object_property_metadata(object, entry->key.as.string)
             : NULL;
-        if (ptn_object_metadata_is_array_object_storage(metadata)) {
+        if (metadata != NULL) {
             continue;
         }
-        if (object->lazy_uninitialized && !object->lazy_initializing &&
-            (metadata == NULL || !metadata->lazy_skip)) {
+        if (object->lazy_uninitialized && !object->lazy_initializing) {
             continue;
         }
         ptn_var_dump_indent(indent + 1);
-        if (metadata != NULL) {
-            ptn_var_dump_object_property_metadata_key(metadata);
-        } else {
-            ptn_var_dump_object_property_key(object, entry->key);
-        }
+        ptn_var_dump_object_property_key(object, entry->key);
         ptn_debug_zval_dump_value_indented(entry->value, indent + 1, seen);
     }
     for (size_t i = 0; i < object->property_metadata_len; i++) {
@@ -1530,9 +1563,7 @@ static void ptn_debug_zval_dump_object_initialized_properties(
         if (!ptn_object_metadata_is_array_object_storage(metadata)) {
             continue;
         }
-        PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
-        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
-        ptn_array_key_free(key);
+        PtnArrayEntry *entry = ptn_object_property_entry_for_metadata(object, metadata);
         if (entry == NULL) {
             continue;
         }

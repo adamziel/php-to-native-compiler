@@ -1341,8 +1341,38 @@ static PTN_UNUSED PtnValue ptn_cast_array(PtnValue value) {
 
     if (value.type == PTN_OBJECT) {
         PtnArray *properties = value.as.object->properties;
+        for (size_t i = 0; i < value.as.object->property_metadata_len; i++) {
+            const PtnObjectPropertyMetadata *metadata = &value.as.object->property_metadata[i];
+            if (value.as.object->lazy_uninitialized &&
+                !value.as.object->lazy_initializing &&
+                !metadata->lazy_skip) {
+                continue;
+            }
+            PtnArrayKey object_key = ptn_array_string_key(metadata->storage_name);
+            PtnArrayEntry *entry = ptn_array_entry_for_key(properties, object_key);
+            if (entry != NULL) {
+                PtnArrayKey array_key =
+                    ptn_cast_array_object_property_key(value.as.object, object_key);
+                ptn_array_set_entry(
+                    array,
+                    array_key,
+                    ptn_value_clone_deref(entry->value)
+                );
+            }
+            ptn_array_key_free(object_key);
+        }
         for (size_t i = 0; i < properties->len; i++) {
             PtnArrayEntry *entry = &properties->entries[i];
+            const PtnObjectPropertyMetadata *metadata =
+                entry->key.type == PTN_ARRAY_KEY_STRING
+                    ? ptn_object_property_metadata(value.as.object, entry->key.as.string)
+                    : NULL;
+            if (metadata != NULL) {
+                continue;
+            }
+            if (value.as.object->lazy_uninitialized && !value.as.object->lazy_initializing) {
+                continue;
+            }
             PtnArrayKey array_key =
                 ptn_cast_array_object_property_key(value.as.object, entry->key);
             ptn_array_set_entry(
