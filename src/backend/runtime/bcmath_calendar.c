@@ -760,6 +760,20 @@ static int ptn_bc_parse_exponent(
     return 1;
 }
 
+static int ptn_bc_number_has_nonzero_fraction(const PtnBcNumber *number) {
+    if (number->scale == 0) {
+        return 0;
+    }
+    size_t len = strlen(number->digits);
+    size_t start = len > number->scale ? len - number->scale : 0;
+    for (size_t i = start; i < len; i++) {
+        if (number->digits[i] != '0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnBcNumber ptn_bc_pow_nonnegative(const PtnBcNumber *base, int64_t exponent) {
     PtnBcNumber result = ptn_bc_number_from_owned(ptn_bc_duplicate_range("1", 1), 1, 0);
     PtnBcNumber factor = ptn_bc_number_from_owned(ptn_bc_duplicate_range(base->digits, strlen(base->digits)), base->sign, base->scale);
@@ -813,11 +827,11 @@ static PtnValue ptn_bc_powmod_value(PtnRuntime *runtime, const PtnBcNumber *base
         ptn_throw_exception(runtime, "DivisionByZeroError", "Modulo by zero");
         return ptn_null();
     }
-    if (base->scale != 0) {
+    if (ptn_bc_number_has_nonzero_fraction(base)) {
         ptn_throw_exception(runtime, "ValueError", "bcpowmod(): Argument #1 ($num) cannot have a fractional part");
         return ptn_null();
     }
-    if (modulus->scale != 0) {
+    if (ptn_bc_number_has_nonzero_fraction(modulus)) {
         ptn_throw_exception(runtime, "ValueError", "bcpowmod(): Argument #3 ($modulus) cannot have a fractional part");
         return ptn_null();
     }
@@ -1696,7 +1710,7 @@ static PtnValue ptn_bcmath_number_binary_result(
                 if (runtime->exceptions->active_exception != NULL) {
                     return ptn_null();
                 }
-                PtnValue trimmed = ptn_bcmath_number_trim_value(value, 0, &object_scale);
+                PtnValue trimmed = ptn_bcmath_number_trim_value(value, left->scale, &object_scale);
                 ptn_value_destroy(&value);
                 value = trimmed;
             }
@@ -2261,14 +2275,20 @@ static PTN_UNUSED int ptn_bcmath_number_binary_op(
         *result_out = ptn_null();
         return 1;
     }
+    int explicit_scale = 0;
+    int scale = 0;
+    if (strcmp(operator, "%") == 0) {
+        explicit_scale = 1;
+        scale = (int)(left_number.scale > right_number.scale ? left_number.scale : right_number.scale);
+    }
     *result_out = ptn_bcmath_number_binary_result(
         runtime,
         operator,
         "BcMath\\Number operator",
         &left_number,
         &right_number,
-        0,
-        0,
+        explicit_scale,
+        scale,
         line
     );
     ptn_bc_number_free(&left_number);

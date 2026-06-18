@@ -2778,6 +2778,26 @@ static PTN_UNUSED void ptn_throw_readonly_property_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED void ptn_throw_readonly_property_unset_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot unset readonly property %s::$%s",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_throw_readonly_property_initialize_error(
     PtnRuntime *runtime,
     const char *declaring_class,
@@ -3333,6 +3353,20 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
                     static_declaring_class,
                     property,
                     line
+                );
+            }
+            return NULL;
+        }
+        if (
+            (access_mode == PTN_PROPERTY_ACCESS_WRITE ||
+             access_mode == PTN_PROPERTY_ACCESS_INDIRECT_WRITE) &&
+            ptn_ascii_case_equal(object->class_name, "BcMath\\Number")
+        ) {
+            if (!quiet) {
+                ptn_throw_dynamic_property_readonly_class_error(
+                    runtime,
+                    object->class_name,
+                    property
                 );
             }
             return NULL;
@@ -4464,6 +4498,12 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         }
     }
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
+        if (ptn_ascii_case_equal(receiver.as.object->class_name, "BcMath\\Number")) {
+            PtnValue current = ptn_value_clone_deref(entry->value);
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_reference_value(ptn_reference_new_owned(current));
+        }
         ptn_array_key_free(key);
         free(storage_key);
         ptn_throw_readonly_property_error(
@@ -4564,9 +4604,21 @@ static PTN_UNUSED void ptn_object_unset_property(
         return;
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
-    ptn_array_unset_entry(receiver.as.object->properties, key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
+    if (mutable_metadata != NULL && mutable_metadata->is_readonly && entry != NULL) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_readonly_property_unset_error(
+            runtime,
+            mutable_metadata->declaring_class,
+            mutable_metadata->display_name,
+            line
+        );
+        return;
+    }
+    ptn_array_unset_entry(receiver.as.object->properties, key);
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 1;
         if (
