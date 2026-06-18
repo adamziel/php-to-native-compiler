@@ -4403,6 +4403,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
+    out.push_str("static int ptn_declared_class_is_final(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_call_magic(const char *class_name);\n");
     out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
     out.push_str(

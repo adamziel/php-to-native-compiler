@@ -27927,6 +27927,33 @@ try {\n\
 }
 
 #[test]
+fn compile_exception_subclasses_check_final_parent_to_native_binary() {
+    let root = temp_dir("ptn-native-exception-subclass-final-parent-check");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("exception-subclass-final-parent-check.php");
+    let output = root.join("exception-subclass-final-parent-check-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Exception1 extends Exception {}\n\
+class Exception2 extends Exception {}\n\
+try {\n\
+    throw new Exception2;\n\
+} catch (Exception1 | Exception2 $e) {\n\
+    echo get_class($e), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "Exception2\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_recursive_reference_lvalues_to_native_binary() {
     let root = temp_dir("ptn-native-nested-recursive-reference-lvalues");
     fs::create_dir_all(&root).unwrap();
