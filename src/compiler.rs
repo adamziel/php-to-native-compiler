@@ -3,15 +3,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    ArrayDimTarget, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CatchClause, Expr,
-    GlobalTarget, IncDecTarget, InstanceOfTarget, ListAssignmentElementTarget, MagicConstantKind,
-    Program, ReferenceTarget, Statement, StringPart, SwitchCase, UnaryOp, UnsetTarget,
+    ArrayDimTarget, ArrayElementValue, AssignmentOp, AssignmentTarget, BinaryOp, CatchClause,
+    ClassDecl, Expr, GlobalTarget, IncDecTarget, InstanceOfTarget, ListAssignmentElementTarget,
+    MagicConstantKind, Program, ReferenceTarget, Statement, StringPart, SwitchCase, TraitDecl,
+    UnaryOp, UnsetTarget,
 };
 use crate::backend::{compile_c, emit_c};
 use crate::diagnostic::{Diagnostic, Result};
 use crate::ir::{lower_with_source_and_includes, IncludeResolutionMap, IncludeSource};
 use crate::lexer::decode_php_source_bytes;
-use crate::parser::{parse_for_include_collection, parse_with_runtime_class_aliases};
+use crate::parser::{parse_for_include_collection, parse_with_runtime_class_aliases_and_symbols};
 
 const MAX_BOUNDED_INCLUDE_CANDIDATES: usize = 32;
 
@@ -47,7 +48,13 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         .unwrap_or_default();
     let mut includes = IncludeCollector::new();
     includes.collect_program(&include_program, &source_file, &source_dir)?;
-    let program = parse_with_runtime_class_aliases(&source, &includes.runtime_class_aliases)?;
+    let (included_classes, included_traits) = includes.validation_symbols(None);
+    let program = parse_with_runtime_class_aliases_and_symbols(
+        &source,
+        &includes.runtime_class_aliases,
+        &included_classes,
+        &included_traits,
+    )?;
     let include_sources = includes.sources;
     let include_resolutions = includes.resolutions;
     let module = lower_with_source_and_includes(
@@ -1087,9 +1094,30 @@ impl IncludeCollector {
             program: program.clone(),
         });
         self.collect_program(&program, &source_file, &source_dir)?;
-        self.sources[index].program =
-            parse_with_runtime_class_aliases(&source, &self.runtime_class_aliases)?;
+        let (included_classes, included_traits) = self.validation_symbols(Some(index));
+        self.sources[index].program = parse_with_runtime_class_aliases_and_symbols(
+            &source,
+            &self.runtime_class_aliases,
+            &included_classes,
+            &included_traits,
+        )?;
         Ok(index)
+    }
+
+    fn validation_symbols(
+        &self,
+        excluded_source: Option<usize>,
+    ) -> (Vec<ClassDecl>, Vec<TraitDecl>) {
+        let mut classes = Vec::new();
+        let mut traits = Vec::new();
+        for (index, source) in self.sources.iter().enumerate() {
+            if excluded_source == Some(index) {
+                continue;
+            }
+            classes.extend(source.program.classes.iter().cloned());
+            traits.extend(source.program.traits.iter().cloned());
+        }
+        (classes, traits)
     }
 
     fn apply_include_path_env_effects(&mut self, candidates: &[usize]) -> Result<()> {

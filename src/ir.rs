@@ -1131,12 +1131,15 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
         let previous_strict_types =
             std::mem::replace(&mut self.strict_types, include.program.strict_types);
-        let classes = include
+        let mut classes: Vec<_> = include
             .program
             .classes
             .iter()
             .map(|class| self.lower_class(class))
             .collect();
+        for class in &mut classes {
+            class.initially_declared = false;
+        }
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
         self.strict_types = previous_strict_types;
@@ -1226,7 +1229,21 @@ impl<'a> LoweringContext<'a> {
         );
         let previous_constant_values =
             std::mem::replace(&mut self.constant_values, include_constant_values);
-        let instructions = self.lower_statements(&include.program.statements);
+        let mut instructions = Vec::new();
+        for class in include
+            .program
+            .classes
+            .iter()
+            .filter(|class| !class.is_conditionally_declared)
+        {
+            if let Some(class_index) = self.class_index_by_name(&class.name) {
+                instructions.push(Instruction::DeclareClass {
+                    class_index,
+                    line: class.span.line,
+                });
+            }
+        }
+        instructions.extend(self.lower_statements(&include.program.statements));
         self.constant_deprecations = previous_constant_deprecations;
         self.constant_values = previous_constant_values;
         self.source_file = previous_source_file;
