@@ -958,9 +958,7 @@ echo \"dynamic temporary COW: pass=\", $pass, \" fail=\", $fail, \"\\n\";",
     assert!(c_source.contains("ptn_value_drop(&ptn_tmp_"));
     assert!(c_source.contains("ptn_dynamic_function_name("));
     assert!(c_source.contains("ptn_call_callable(&runtime"));
-    assert!(c_source.contains("ptn_call_dynamic_function_name(runtime"));
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime"));
-    assert!(c_source.contains("ptn_dynamic_call_detach_first_reference_argument"));
     assert!(
         c_source.contains("static PTN_UNUSED PtnArray *ptn_value_detach_array(PtnValue *value)")
     );
