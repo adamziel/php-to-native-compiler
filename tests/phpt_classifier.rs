@@ -1346,6 +1346,8 @@ fn phpt_classifier_keeps_supported_class_contract_rows_runnable() {
         "--TEST--\nfinal abstract method\n--FILE--\n<?php\nclass Base { final abstract function run(); }\n--EXPECTF--\n",
         "--TEST--\nfinal abstract class\n--FILE--\n<?php\nfinal abstract class Base { private function hidden() {} }\n--EXPECTF--\n",
         "--TEST--\nnon-public method\n--FILE--\n<?php\nclass Box { private function hidden() {} protected static function guarded() {} }\n--EXPECT--\n",
+        "--TEST--\nfinal class constant\n--FILE--\n<?php\nclass Box { final public const NAME = 'box'; public final const OTHER = 'other'; }\n--EXPECT--\n",
+        "--TEST--\nfinal interface constant override\n--FILE--\n<?php\ninterface Contract { final public const NAME = 'base'; } class Impl implements Contract { public const NAME = 'child'; }\n--EXPECTF--\n",
     ] {
         assert_eq!(
             classify(source),

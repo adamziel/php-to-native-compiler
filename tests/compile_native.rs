@@ -5072,6 +5072,26 @@ fn parser_rejects_invalid_final_class_constant_overrides() {
             "Child::NAME cannot override final constant Base::NAME",
         ),
         (
+            "direct final interface override",
+            "<?php interface Contract { final public const NAME = 'base'; } class Impl implements Contract { public const NAME = 'child'; }",
+            "Impl::NAME cannot override final constant Contract::NAME",
+        ),
+        (
+            "inherited final interface override",
+            "<?php interface Contract { final public const NAME = 'base'; } interface ChildContract extends Contract {} class Impl implements ChildContract { public const NAME = 'child'; }",
+            "Impl::NAME cannot override final constant Contract::NAME",
+        ),
+        (
+            "parent interface final override",
+            "<?php interface Contract { final public const NAME = 'base'; } class Impl implements Contract {} class Child extends Impl { public const NAME = 'child'; }",
+            "Child::NAME cannot override final constant Contract::NAME",
+        ),
+        (
+            "interface final override",
+            "<?php interface Contract { final public const NAME = 'base'; } interface ChildContract extends Contract { public const NAME = 'child'; }",
+            "ChildContract::NAME cannot override final constant Contract::NAME",
+        ),
+        (
             "narrow public",
             "<?php class Base { public const NAME = 'base'; } class Child extends Base { protected const NAME = 'child'; }",
             "Access level to Child::NAME must be public (as in class Base)",

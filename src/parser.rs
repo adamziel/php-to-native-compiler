@@ -13276,6 +13276,18 @@ fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
                 ));
             }
 
+            if let Some((interface, interface_constant)) =
+                find_final_interface_constant_for_class(class, &constant.name, classes)
+            {
+                return Err(Diagnostic::new(
+                    format!(
+                        "{}::{} cannot override final constant {}::{}",
+                        class.name, constant.name, interface.name, interface_constant.name
+                    ),
+                    Some(constant.span),
+                ));
+            }
+
             let mut parent_name = class.parent_name.as_deref();
             while let Some(name) = parent_name {
                 let Some(parent) = classes
@@ -13358,6 +13370,67 @@ fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn find_final_interface_constant_for_class<'a>(
+    class: &ClassDecl,
+    constant_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a ClassConstantDecl)> {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        for interface_name in &candidate.interfaces {
+            if let Some(final_constant) = find_final_interface_constant(
+                interface_name,
+                constant_name,
+                classes,
+                &mut seen_interfaces,
+            ) {
+                return Some(final_constant);
+            }
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+    None
+}
+
+fn find_final_interface_constant<'a>(
+    interface_name: &str,
+    constant_name: &str,
+    classes: &'a [ClassDecl],
+    seen: &mut HashSet<String>,
+) -> Option<(&'a ClassDecl, &'a ClassConstantDecl)> {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return None;
+    }
+    let interface = find_class(classes, interface_name)?;
+    if !interface.is_interface {
+        return None;
+    }
+    if let Some(constant) = interface
+        .constants
+        .iter()
+        .find(|constant| constant.name == constant_name && constant.is_final)
+    {
+        return Some((interface, constant));
+    }
+    for parent_interface in &interface.interfaces {
+        if let Some(final_constant) =
+            find_final_interface_constant(parent_interface, constant_name, classes, seen)
+        {
+            return Some(final_constant);
+        }
+    }
+    None
 }
 
 fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {

@@ -1862,7 +1862,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 implemented_modifier_diagnostic_seen = 1
                 next
             }
+            final_class_constant_modifier = line ~ /(^|[^[:alnum:]_$])final[[:space:]]+((public|protected|private)[[:space:]]+)?const([^[:alnum:]_$]|$)/ ||
+                line ~ /(^|[^[:alnum:]_$])(public|protected|private)[[:space:]]+final[[:space:]]+const([^[:alnum:]_$]|$)/
             if (!implemented_modifier_diagnostic &&
+                !final_class_constant_modifier &&
                 line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(function|static|public|protected|private|abstract)([^[:alnum:]_$]|$)/) {
                 print "unsupported-class-contract-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
                 found = 1
