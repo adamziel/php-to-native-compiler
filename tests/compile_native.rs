@@ -849,6 +849,97 @@ echo new DateTimeZoneExt('Europe/Kyiv'), "\n";
 }
 
 #[test]
+fn compile_uri_whatwg_url_semantics_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-whatwg-url-semantics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-whatwg-url-semantics.php");
+    let output = root.join("uri-whatwg-url-semantics-bin");
+    fs::write(
+        &input,
+        r##"<?php
+$url = Uri\WhatWg\Url::parse("https://user:info@example.com:443/foo/bar?abc=123#hash");
+var_dump(
+    $url->getScheme(),
+    $url->getUsername(),
+    $url->getPassword(),
+    $url->getAsciiHost(),
+    $url->getPort(),
+    $url->getPath(),
+    $url->getQuery(),
+    $url->getFragment(),
+    $url->toAsciiString()
+);
+
+$idn = Uri\WhatWg\Url::parse("https://éxämple.com/");
+var_dump($idn->getAsciiHost(), $idn->getUnicodeHost(), $idn->toUnicodeString());
+
+$modified = $url->withHost("exḁmple.com")
+    ->withPath("next step")
+    ->withQuery("?x=1")
+    ->withFragment("#frag");
+var_dump($modified->toAsciiString(), $modified->toUnicodeString());
+
+var_dump(Uri\WhatWg\Url::parse("file:///E:/Documents%20and%20Settings")->toAsciiString());
+var_dump($url->equals(Uri\WhatWg\Url::parse("https://user:info@example.com/foo/bar?abc=123#other")));
+var_dump($url->equals(Uri\WhatWg\Url::parse("https://user:info@example.com/foo/bar?abc=123#other"), Uri\UriComparisonMode::IncludeFragment));
+var_dump($url->isSpecialScheme(), $url->getHostType());
+var_dump(Uri\WhatWg\Url::parse("scheme://example.com")->isSpecialScheme());
+var_dump(Uri\WhatWg\Url::parse("scheme://example.com")->getHostType());
+var_dump(Uri\WhatWg\Url::parse("test://")->getUnicodeHost());
+
+try {
+    Uri\WhatWg\Url::parse("https://ex[a]mple.com");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+    var_dump($e->errors);
+}
+"##,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"https\"\n",
+            "string(4) \"user\"\n",
+            "string(4) \"info\"\n",
+            "string(11) \"example.com\"\n",
+            "NULL\n",
+            "string(8) \"/foo/bar\"\n",
+            "string(7) \"abc=123\"\n",
+            "string(4) \"hash\"\n",
+            "string(50) \"https://user:info@example.com/foo/bar?abc=123#hash\"\n",
+            "string(19) \"xn--xmple-gra7a.com\"\n",
+            "string(13) \"éxämple.com\"\n",
+            "string(22) \"https://éxämple.com/\"\n",
+            "string(58) \"https://user:info@xn--exmple-xf7b.com/next%20step?x=1#frag\"\n",
+            "string(52) \"https://user:info@exḁmple.com/next%20step?x=1#frag\"\n",
+            "string(37) \"file:///E:/Documents%20and%20Settings\"\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "enum(Uri\\WhatWg\\UrlHostType::Domain)\n",
+            "bool(false)\n",
+            "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
+            "string(0) \"\"\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
+            "array(0) {\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_validates_traversable_interface_combinations() {
     let direct = parser::parse("<?php class T implements Traversable {}").unwrap_err();
     assert_eq!(

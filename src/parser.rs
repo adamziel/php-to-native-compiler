@@ -9784,6 +9784,7 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
             | "reflectionexception"
             | "jsonexception"
             | "soapfault"
+            | "uri\\whatwg\\invalidurlexception"
             | "runtimeexception"
             | "invalidargumentexception"
             | "unexpectedvalueexception"
@@ -9887,6 +9888,13 @@ fn is_modeled_archive_network_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
         "phar" | "ziparchive" | "soapclient" | "soapserver" | "xmlwriter"
+    )
+}
+
+fn is_modeled_builtin_uri_class_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "uri\\whatwg\\url" | "uri\\uricomparisonmode" | "uri\\whatwg\\urlhosttype"
     )
 }
 
@@ -11190,6 +11198,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || is_modeled_builtin_exception_class_name(name)
         || is_modeled_builtin_reflection_class_name(name)
         || is_modeled_archive_network_class_name(name)
+        || is_modeled_builtin_uri_class_name(name)
         || find_class(classes, name).is_some()
 }
 
