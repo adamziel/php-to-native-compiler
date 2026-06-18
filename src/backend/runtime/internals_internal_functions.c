@@ -715,6 +715,97 @@ static PTN_UNUSED void ptn_direct_var_dump_array_key(PtnRuntime *runtime, PtnArr
     ptn_direct_dump_write_cstr(runtime, "\"]=>\n");
 }
 
+static PTN_UNUSED int ptn_debug_info_key_parts(
+    PtnArrayKey key,
+    const char **name,
+    size_t *name_len,
+    const char **scope,
+    size_t *scope_len,
+    int *visibility
+) {
+    if (key.type != PTN_ARRAY_KEY_STRING) {
+        return 0;
+    }
+    *name = key.as.string;
+    *name_len = key.string_len;
+    *scope = NULL;
+    *scope_len = 0;
+    *visibility = PTN_PROPERTY_PUBLIC;
+    if (key.string_len >= 3 && key.as.string[0] == '\0') {
+        if (key.as.string[1] == '*' && key.as.string[2] == '\0') {
+            *name = key.as.string + 3;
+            *name_len = key.string_len - 3;
+            *visibility = PTN_PROPERTY_PROTECTED;
+            return 1;
+        }
+        for (size_t i = 1; i < key.string_len; i++) {
+            if (key.as.string[i] == '\0') {
+                *scope = key.as.string + 1;
+                *scope_len = i - 1;
+                *name = key.as.string + i + 1;
+                *name_len = key.string_len - i - 1;
+                *visibility = PTN_PROPERTY_PRIVATE;
+                return 1;
+            }
+        }
+    }
+    return 1;
+}
+
+static PTN_UNUSED void ptn_direct_var_dump_debug_info_key(PtnRuntime *runtime, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_direct_dump_printf(runtime, "[%lld]=>\n", (long long)key.as.integer);
+        return;
+    }
+    const char *name = NULL;
+    const char *scope = NULL;
+    size_t name_len = 0;
+    size_t scope_len = 0;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    ptn_debug_info_key_parts(key, &name, &name_len, &scope, &scope_len, &visibility);
+    ptn_direct_dump_write_cstr(runtime, "[\"");
+    ptn_direct_dump_write(runtime, name, name_len);
+    if (visibility == PTN_PROPERTY_PROTECTED) {
+        ptn_direct_dump_write_cstr(runtime, "\":protected]=>\n");
+        return;
+    }
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        ptn_direct_dump_write_cstr(runtime, "\":\"");
+        ptn_direct_dump_write(runtime, scope, scope_len);
+        ptn_direct_dump_write_cstr(runtime, "\":private]=>\n");
+        return;
+    }
+    ptn_direct_dump_write_cstr(runtime, "\"]=>\n");
+}
+
+static PTN_UNUSED char *ptn_magic_debug_info_null_deprecation_message(const char *class_name) {
+    const char *name = class_name == NULL ? "" : class_name;
+    int needed = snprintf(
+        NULL,
+        0,
+        "Returning null from %s::__debugInfo() is deprecated, return an empty array instead",
+        name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "Returning null from %s::__debugInfo() is deprecated, return an empty array instead",
+        name
+    );
+    if (written < 0 || written > needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
 static PTN_UNUSED void ptn_direct_var_dump_object_key(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -911,6 +1002,64 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     }
 }
 
+static PTN_UNUSED int ptn_direct_var_dump_magic_debug_info(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnDirectDumpSeen *seen
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT ||
+        runtime == NULL ||
+        runtime->magic_debug_info == NULL) {
+        return 0;
+    }
+    PtnValue debug_info = ptn_null();
+    if (!runtime->magic_debug_info(runtime, resolved, line, &debug_info)) {
+        return 0;
+    }
+    PtnValue debug_value = ptn_value_deref(debug_info);
+    PtnArray *properties = NULL;
+    size_t property_count = 0;
+    if (debug_value.type == PTN_NULL) {
+        char *message = ptn_magic_debug_info_null_deprecation_message(resolved.as.object->class_name);
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+        free(message);
+    } else if (debug_value.type != PTN_ARRAY) {
+        ptn_value_destroy(&debug_info);
+        ptn_emit_fatal_error_at(
+            runtime,
+            "__debuginfo() must return an array",
+            runtime->source_path,
+            line
+        );
+        return 1;
+    } else {
+        properties = debug_value.as.array;
+        property_count = properties->len;
+    }
+    PtnObject *object = resolved.as.object;
+    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+    ptn_direct_dump_printf(
+        runtime,
+        "object(%.*s)#%zu (%zu) {\n",
+        (int)class_len,
+        object->class_name,
+        object->object_id,
+        property_count
+    );
+    ptn_direct_dump_seen_object_push(seen, object);
+    for (size_t i = 0; properties != NULL && i < properties->len; i++) {
+        ptn_direct_var_dump_indent(runtime, 1);
+        ptn_direct_var_dump_debug_info_key(runtime, properties->entries[i].key);
+        ptn_direct_var_dump_value_indented(runtime, properties->entries[i].value, 1, seen);
+    }
+    ptn_direct_dump_seen_object_pop(seen);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    ptn_value_destroy(&debug_info);
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
     PtnRuntime *runtime,
     size_t argc,
@@ -930,7 +1079,9 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
     for (size_t i = 0; i < argc; i++) {
         PtnDirectDumpSeen seen;
         ptn_direct_dump_seen_init(&seen);
-        ptn_direct_var_dump_value_indented(runtime, args[i], 0, &seen);
+        if (!ptn_direct_var_dump_magic_debug_info(runtime, args[i], line, &seen)) {
+            ptn_direct_var_dump_value_indented(runtime, args[i], 0, &seen);
+        }
         ptn_direct_dump_seen_free(&seen);
     }
     return ptn_null();
@@ -3014,6 +3165,32 @@ static void ptn_var_dump_array_key(PtnArrayKey key) {
     fputs("\"]=>\n", stdout);
 }
 
+static void ptn_var_dump_debug_info_key(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        printf("[%lld]=>\n", (long long)key.as.integer);
+        return;
+    }
+    const char *name = NULL;
+    const char *scope = NULL;
+    size_t name_len = 0;
+    size_t scope_len = 0;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    ptn_debug_info_key_parts(key, &name, &name_len, &scope, &scope_len, &visibility);
+    fputs("[\"", stdout);
+    fwrite(name, 1, name_len, stdout);
+    if (visibility == PTN_PROPERTY_PROTECTED) {
+        fputs("\":protected]=>\n", stdout);
+        return;
+    }
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        fputs("\":\"", stdout);
+        fwrite(scope, 1, scope_len, stdout);
+        fputs("\":private]=>\n", stdout);
+        return;
+    }
+    fputs("\"]=>\n", stdout);
+}
+
 static int ptn_debug_array_is_packed(PtnArray *array) {
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayKey key = array->entries[i].key;
@@ -4086,17 +4263,31 @@ static int ptn_var_dump_magic_debug_info(
         return 0;
     }
     PtnValue debug_value = ptn_value_deref(debug_info);
-    if (debug_value.type != PTN_ARRAY) {
+    PtnArray *properties = NULL;
+    size_t property_count = 0;
+    if (debug_value.type == PTN_NULL) {
+        char *message = ptn_magic_debug_info_null_deprecation_message(resolved.as.object->class_name);
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+        free(message);
+    } else if (debug_value.type != PTN_ARRAY) {
         ptn_value_destroy(&debug_info);
-        return 0;
+        ptn_emit_fatal_error_at(
+            runtime,
+            "__debuginfo() must return an array",
+            runtime->source_path,
+            line
+        );
+        return 1;
+    } else {
+        properties = debug_value.as.array;
+        property_count = properties->len;
     }
     PtnObject *object = resolved.as.object;
-    PtnArray *properties = debug_value.as.array;
-    ptn_var_dump_object_header(object, properties->len, 0);
+    ptn_var_dump_object_header(object, property_count, 0);
     ptn_dump_seen_objects_push(seen, object);
-    for (size_t i = 0; i < properties->len; i++) {
+    for (size_t i = 0; properties != NULL && i < properties->len; i++) {
         ptn_var_dump_indent(1);
-        ptn_var_dump_array_key(properties->entries[i].key);
+        ptn_var_dump_debug_info_key(properties->entries[i].key);
         ptn_var_dump_value_indented(properties->entries[i].value, 1, seen);
     }
     ptn_dump_seen_objects_pop(seen);
