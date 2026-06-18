@@ -3496,6 +3496,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
             );
             return ptn_null();
         }
+        PtnValue magic_value;
+        if (
+            metadata == NULL &&
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+        ) {
+            return magic_value;
+        }
         if (metadata != NULL && metadata->type_kind == PTN_PROPERTY_TYPE_ARRAY) {
             return ptn_array_from_literal_entries(0, NULL);
         }

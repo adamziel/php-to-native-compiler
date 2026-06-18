@@ -736,7 +736,30 @@ impl Parser<'_> {
             ));
         }
         self.expect_left_brace()?;
+        let item_expectation = if outer_kind == UseDeclarationKind::Class {
+            "identifier or namespaced name or \"function\" or \"const\""
+        } else {
+            "identifier or namespaced name"
+        };
+        let mut parsed_any_item = false;
         loop {
+            if matches!(self.peek().kind, TokenKind::RightBrace) {
+                if parsed_any_item {
+                    break;
+                }
+                return Err(Diagnostic::parse_error(
+                    format!("syntax error, unexpected token \"}}\", expecting {item_expectation}"),
+                    Some(self.peek().span),
+                ));
+            }
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                let message = if !parsed_any_item {
+                    format!("syntax error, unexpected token \",\", expecting {item_expectation}")
+                } else {
+                    "syntax error, unexpected token \",\", expecting \"}\"".to_string()
+                };
+                return Err(Diagnostic::parse_error(message, Some(self.peek().span)));
+            }
             if outer_kind != UseDeclarationKind::Class
                 && (matches!(self.peek().kind, TokenKind::Function)
                     || matches!(self.peek().kind, TokenKind::Const))
@@ -773,6 +796,7 @@ impl Parser<'_> {
             } else {
                 outer_kind
             };
+            parsed_any_item = true;
             let item = self.parse_name("expected imported name")?;
             if item.resolution == NameResolution::FullyQualified {
                 let text = self
@@ -781,7 +805,7 @@ impl Parser<'_> {
                     .unwrap_or("");
                 return Err(Diagnostic::parse_error(
                     format!(
-                        "syntax error, unexpected fully qualified name \"{text}\", expecting identifier or namespaced name or \"function\" or \"const\""
+                        "syntax error, unexpected fully qualified name \"{text}\", expecting {item_expectation}"
                     ),
                     Some(item.span),
                 ));
@@ -3256,6 +3280,7 @@ impl Parser<'_> {
         self.function_depth -= 1;
         self.return_by_ref_stack.pop();
         let body = body?;
+        validate_closure_use_static_names(&captures, &body)?;
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             attributes,
             parameters,
@@ -4028,7 +4053,7 @@ impl Parser<'_> {
                     return Err(syntax_error_unexpected(&name_token, Some("identifier")));
                 };
                 self.expect_equal()?;
-                let value = self.parse_declare_literal_value()?;
+                let value = self.parse_declare_literal_value(&name, name_token.span)?;
                 if name.eq_ignore_ascii_case("strict_types") {
                     self.strict_types = value != 0;
                 }
@@ -4047,12 +4072,20 @@ impl Parser<'_> {
         Ok(Statement::Empty { span: start_span })
     }
 
-    fn parse_declare_literal_value(&mut self) -> Result<i64> {
+    fn parse_declare_literal_value(
+        &mut self,
+        directive_name: &str,
+        directive_span: SourceSpan,
+    ) -> Result<i64> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Int(value) => Ok(value),
             TokenKind::True => Ok(1),
             TokenKind::False => Ok(0),
+            _ if directive_name.eq_ignore_ascii_case("ticks") => Err(Diagnostic::new(
+                "declare(ticks) value must be a literal",
+                Some(directive_span),
+            )),
             _ => Err(syntax_error_unexpected(&token, Some("literal"))),
         }
     }
@@ -8043,6 +8076,141 @@ fn validate_closure_use_parameter_names(
         }
     }
     Ok(())
+}
+
+fn validate_closure_use_static_names(
+    captures: &[ClosureUseCapture],
+    body: &[Statement],
+) -> Result<()> {
+    if captures.is_empty() {
+        return Ok(());
+    }
+    let capture_names = captures
+        .iter()
+        .map(|capture| capture.name.as_str())
+        .collect::<HashSet<_>>();
+    if let Some(declaration) = find_static_local_declaration_matching(body, &capture_names) {
+        return Err(Diagnostic::new(
+            format!(
+                "Duplicate declaration of static variable ${}",
+                declaration.name
+            ),
+            Some(declaration.span),
+        ));
+    }
+    Ok(())
+}
+
+fn find_static_local_declaration_matching<'a>(
+    statements: &'a [Statement],
+    capture_names: &HashSet<&str>,
+) -> Option<&'a StaticLocalDeclaration> {
+    for statement in statements {
+        match statement {
+            Statement::Static { declarations, .. } => {
+                if let Some(declaration) = declarations
+                    .iter()
+                    .find(|declaration| capture_names.contains(declaration.name.as_str()))
+                {
+                    return Some(declaration);
+                }
+            }
+            Statement::Block { statements, .. } => {
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(statements, capture_names)
+                {
+                    return Some(declaration);
+                }
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(then_body, capture_names)
+                {
+                    return Some(declaration);
+                }
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(else_body, capture_names)
+                {
+                    return Some(declaration);
+                }
+            }
+            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(body, capture_names)
+                {
+                    return Some(declaration);
+                }
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(initializers, capture_names)
+                {
+                    return Some(declaration);
+                }
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(updates, capture_names)
+                {
+                    return Some(declaration);
+                }
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(body, capture_names)
+                {
+                    return Some(declaration);
+                }
+            }
+            Statement::Foreach { body, .. } => {
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(body, capture_names)
+                {
+                    return Some(declaration);
+                }
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    if let Some(declaration) =
+                        find_static_local_declaration_matching(&case.body, capture_names)
+                    {
+                        return Some(declaration);
+                    }
+                }
+            }
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(body, capture_names)
+                {
+                    return Some(declaration);
+                }
+                for catch in catches {
+                    if let Some(declaration) =
+                        find_static_local_declaration_matching(&catch.body, capture_names)
+                    {
+                        return Some(declaration);
+                    }
+                }
+                if let Some(declaration) =
+                    find_static_local_declaration_matching(finally_body, capture_names)
+                {
+                    return Some(declaration);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn is_auto_global_name(name: &str) -> bool {

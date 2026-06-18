@@ -69,6 +69,9 @@ pub fn emit_c(module: &Module) -> String {
     if runtime_requirements.request_context {
         runtime_requirements.internal_function_dispatch = true;
     }
+    if module_uses_callable_type_hint(module) {
+        runtime_requirements.internal_function_dispatch = true;
+    }
     let legacy_dollar_brace_deprecations = collect_module_legacy_dollar_brace_deprecations(module);
     let parameter_default_diagnostics = collect_module_parameter_default_diagnostics(module);
     let serializable_deprecations = collect_module_serializable_deprecations(module);
@@ -800,7 +803,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("    const char *throw_path = declaration_path != NULL ? declaration_path : runtime->source_path;\n");
     out.push_str("    size_t throw_line = declaration_line != 0 ? declaration_line : line;\n");
-    out.push_str("    int include_definition = runtime->exceptions->try_frame == NULL && throw_path != NULL && throw_line != 0;\n");
+    out.push_str("    int include_definition = throw_path != NULL && throw_line != 0;\n");
     out.push_str("    int needed;\n");
     out.push_str("    if (line != 0 && has_parameter_name && include_definition) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu and defined in %s:%zu\", function_name, position, parameter_name, expected_class_name, given, path, line, throw_path != NULL ? throw_path : \"ptn\", throw_line);\n");
@@ -2881,14 +2884,11 @@ fn emit_declaration_fatals(out: &mut String, fatals: &[DeclarationFatal], source
 }
 
 fn return_type_needs_runtime_context(return_type: &TypeHint) -> bool {
-    !matches!(return_type, TypeHint::Callable | TypeHint::Void)
+    !matches!(return_type, TypeHint::Void)
 }
 
 fn return_type_needs_return_value_was_set(return_type: &TypeHint) -> bool {
-    !matches!(
-        return_type,
-        TypeHint::Callable | TypeHint::Void | TypeHint::Never
-    )
+    !matches!(return_type, TypeHint::Void | TypeHint::Never)
 }
 
 fn emit_return_type_boundary(
@@ -2989,12 +2989,13 @@ fn emit_return_type_boundary(
         }
         TypeHint::Object
         | TypeHint::Iterable
+        | TypeHint::Callable
         | TypeHint::Static
         | TypeHint::Union(_)
         | TypeHint::Intersection(_) => {
             emit_generic_return_type_boundary(out, return_type, function_name)
         }
-        TypeHint::Callable | TypeHint::Void => {}
+        TypeHint::Void => {}
     }
 }
 
@@ -3016,7 +3017,7 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
         TypeHint::Iterable => {
             format!("ptn_value_satisfies_iterable_type_hint({runtime_expr}, {value_expr})")
         }
-        TypeHint::Callable => "1".to_string(),
+        TypeHint::Callable => format!("ptn_callable_is_valid({runtime_expr}, {value_expr}, 0)"),
         TypeHint::Mixed => "1".to_string(),
         TypeHint::Void | TypeHint::Never => "0".to_string(),
         TypeHint::Static => format!(
@@ -3345,12 +3346,27 @@ fn emit_generic_return_type_boundary(
     return_type: &TypeHint,
     function_name: &str,
 ) {
-    out.push_str("    if (!(");
-    out.push_str(&type_hint_condition(
-        "ptn_return_value",
-        "&runtime",
-        return_type,
-    ));
+    let condition = type_hint_condition("ptn_return_value", "&runtime", return_type);
+    if union_return_uses_bool_only_scalar_coercion(return_type) {
+        out.push_str("    if (!(");
+        out.push_str(&condition);
+        out.push_str(") && (ptn_value_deref(ptn_return_value).type == PTN_INT || ptn_value_deref(ptn_return_value).type == PTN_FLOAT || ptn_value_deref(ptn_return_value).type == PTN_STRING)) {\n");
+        out.push_str("        PtnValue ptn_typed_return_value;\n");
+        out.push_str("        if (!ptn_coerce_user_return_bool(&runtime, \"");
+        out.push_str(&c_string(function_name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&type_hint_label(return_type)));
+        out.push_str("\", ptn_return_value, ptn_return_value_was_set, ptn_return_line, &ptn_typed_return_value)) {\n");
+        out.push_str("            ptn_value_destroy(&ptn_return_value);\n");
+        out.push_str("            ptn_runtime_free(&runtime);\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
+        out.push_str("        ptn_value_drop(&ptn_return_value);\n");
+        out.push_str("        ptn_return_value = ptn_typed_return_value;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    if (!ptn_return_value_was_set || !(");
+    out.push_str(&condition);
     out.push_str(")) {\n");
     let free_expected_label = emit_return_type_error_label(out, return_type);
     out.push_str("        ptn_throw_user_return_type_error(&runtime, \"");
@@ -3369,6 +3385,7 @@ fn type_hint_uses_generic_runtime_check(type_hint: &TypeHint) -> bool {
     match type_hint {
         TypeHint::Object
         | TypeHint::Iterable
+        | TypeHint::Callable
         | TypeHint::True
         | TypeHint::False
         | TypeHint::Static
@@ -3381,12 +3398,26 @@ fn type_hint_uses_generic_runtime_check(type_hint: &TypeHint) -> bool {
         | TypeHint::Float
         | TypeHint::String
         | TypeHint::Bool
-        | TypeHint::Callable
         | TypeHint::Mixed
         | TypeHint::Void
         | TypeHint::Never
         | TypeHint::Class(_) => false,
     }
+}
+
+fn union_return_uses_bool_only_scalar_coercion(type_hint: &TypeHint) -> bool {
+    let TypeHint::Union(types) = type_hint else {
+        return false;
+    };
+    types
+        .iter()
+        .any(|type_hint| matches!(type_hint, TypeHint::Bool))
+        && !types.iter().any(|type_hint| {
+            matches!(
+                type_hint,
+                TypeHint::Int | TypeHint::Float | TypeHint::String
+            )
+        })
 }
 
 fn emit_return_scalar_cast_boundary(
@@ -10939,19 +10970,27 @@ fn emit_instruction(
             if let Some(value) = value {
                 let initial_value = values.emit_materialized_value(out, value);
                 out.push_str("        ");
+                out.push_str("if (");
+                out.push_str(&slot);
+                out.push_str(" == NULL) {\n");
+                out.push_str("            ");
                 out.push_str(&slot);
                 out.push_str(" = ptn_reference_new_owned(ptn_value_clone_deref(");
                 out.push_str(&initial_value);
                 out.push_str("));\n");
+                out.push_str("            ptn_runtime_register_static_local(&runtime, ");
+                out.push_str(&slot);
+                out.push_str(");\n");
+                out.push_str("        }\n");
                 emit_value_cleanup(out, "        ", &initial_value);
             } else {
                 out.push_str("        ");
                 out.push_str(&slot);
                 out.push_str(" = ptn_reference_new_owned(ptn_null());\n");
+                out.push_str("        ptn_runtime_register_static_local(&runtime, ");
+                out.push_str(&slot);
+                out.push_str(");\n");
             }
-            out.push_str("        ptn_runtime_register_static_local(&runtime, ");
-            out.push_str(&slot);
-            out.push_str(");\n");
             out.push_str("    }\n");
             out.push_str("    ptn_runtime_bind_variable_reference(&runtime, \"");
             out.push_str(&c_string(name));
@@ -14010,6 +14049,50 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
         );
     }
     requirements
+}
+
+fn module_uses_callable_type_hint(module: &Module) -> bool {
+    module
+        .functions
+        .iter()
+        .any(function_uses_callable_type_hint)
+}
+
+fn function_uses_callable_type_hint(function: &FunctionDecl) -> bool {
+    function.parameters.iter().any(|parameter| {
+        parameter
+            .type_hint
+            .as_ref()
+            .is_some_and(type_hint_contains_callable)
+    }) || function
+        .return_type
+        .as_ref()
+        .is_some_and(type_hint_contains_callable)
+}
+
+fn type_hint_contains_callable(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Callable => true,
+        TypeHint::Nullable(inner) => type_hint_contains_callable(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            types.iter().any(type_hint_contains_callable)
+        }
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Static
+        | TypeHint::Class(_) => false,
+    }
 }
 
 fn collect_instructions_runtime_requirements(

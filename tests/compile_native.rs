@@ -56,6 +56,14 @@ fn parser_records_strict_types_declare_directive() {
 }
 
 #[test]
+fn parser_reports_non_literal_declare_ticks_as_fatal() {
+    let error = parser::parse("<?php declare(ticks=UNKNOWN_CONST);").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "declare(ticks) value must be a literal");
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
 fn parser_accepts_direct_assignment_and_variable_reads() {
     let program = parser::parse("<?php $greeting = \"hi\"; echo $greeting;").unwrap();
     assert_eq!(program.statements.len(), 2);
@@ -2244,6 +2252,38 @@ fn parser_accepts_function_static_local_declarations() {
 }
 
 #[test]
+fn compile_recursive_static_local_initializer_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-static-local-initializer");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-static-local-initializer.php");
+    let output = root.join("recursive-static-local-initializer-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function foo($i) {
+    static $a = $i <= 10 ? foo($i + 1) : "Done $i";
+    var_dump($a);
+    return $i;
+}
+
+foo(0);
+foo(5);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(7) \"Done 11\"\n".repeat(13)
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_scalar_parameter_return_hints_and_by_ref_returns() {
     let program = parser::parse(
         "<?php function &test(int $a, string &$b): string { return $b; } var_dump(test(1, $x));",
@@ -2515,6 +2555,10 @@ fn parser_validates_closure_use_lists() {
             "<?php $fn = function($a) use ($a) {};",
             "Cannot use lexical variable $a as a parameter name",
         ),
+        (
+            "<?php $a = null; $fn = function () use (&$a) { if (true) { static $a; } };",
+            "Duplicate declaration of static variable $a",
+        ),
     ];
 
     for (source, message) in cases {
@@ -2715,6 +2759,21 @@ fn parser_reports_group_use_parse_errors_with_php_shapes() {
         (
             "<?php\nuse Foo\\Bar\\{\\Baz};\n",
             "syntax error, unexpected fully qualified name \"\\Baz\", expecting identifier or namespaced name or \"function\" or \"const\"",
+            2,
+        ),
+        (
+            "<?php\nuse function Foo\\Bar\\{};\n",
+            "syntax error, unexpected token \"}\", expecting identifier or namespaced name",
+            2,
+        ),
+        (
+            "<?php\nuse function Foo\\Bar\\{, Baz};\n",
+            "syntax error, unexpected token \",\", expecting identifier or namespaced name",
+            2,
+        ),
+        (
+            "<?php\nuse function Foo\\Bar\\{\\Baz};\n",
+            "syntax error, unexpected fully qualified name \"\\Baz\", expecting identifier or namespaced name",
             2,
         ),
     ];
@@ -18393,6 +18452,42 @@ foreach ($callables as $callable) {
 }
 
 #[test]
+fn compile_reflection_parameter_is_callable_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-parameter-is-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-parameter-is-callable.php");
+    let output = root.join("reflection-parameter-is-callable-bin");
+    fs::write(
+        &input,
+        "<?php
+function callable_param(callable $callback) {}
+function plain_param($value) {}
+
+$callable = (new ReflectionFunction('callable_param'))->getParameters()[0];
+$plain = (new ReflectionFunction('plain_param'))->getParameters()[0];
+var_dump($callable->isCallable());
+var_dump($plain->isCallable());
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead in ptn on line 7\n",
+            "bool(true)\n",
+            "\nDeprecated: Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead in ptn on line 8\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_object_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-object-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -20221,6 +20316,92 @@ fn compile_array_type_errors_to_native_binary() {
 }
 
 #[test]
+fn compile_callable_type_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-callable-type-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("callable-type-boundaries.php");
+    let output = root.join("callable-type-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php
+class CallableTypeBox {
+    public function instance() {}
+    public static function stat() {}
+}
+function accept_callable(callable $callback): callable { return $callback; }
+function bad_callable_return(): callable { return ['CallableTypeBox', 'instance']; }
+
+var_dump(accept_callable('strlen'));
+var_dump(accept_callable(['CallableTypeBox', 'stat']));
+try {
+    accept_callable(['CallableTypeBox', 'instance']);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    bad_callable_return();
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(concat!(
+        "string(6) \"strlen\"\n",
+        "array(2) {\n",
+        "  [0]=>\n",
+        "  string(15) \"CallableTypeBox\"\n",
+        "  [1]=>\n",
+        "  string(4) \"stat\"\n",
+        "}\n",
+    )));
+    assert!(stdout.contains(
+        "accept_callable(): Argument #1 ($callback) must be of type callable, array given"
+    ));
+    assert!(stdout
+        .contains("bad_callable_return(): Return value must be of type callable, array returned"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_union_bool_return_coercion_to_native_binary() {
+    let root = temp_dir("ptn-native-union-bool-return-coercion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("union-bool-return-coercion.php");
+    let output = root.join("union-bool-return-coercion-bin");
+    fs::write(
+        &input,
+        "<?php
+function weak_bool($value): array|bool { return $value; }
+function literal_false($value): array|false { return $value; }
+function literal_true($value): array|true { return $value; }
+
+var_dump(weak_bool(0));
+var_dump(weak_bool(1));
+try { literal_false(0); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+try { literal_true(1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\nliteral_false(): Return value must be of type array|false, int returned\nliteral_true(): Return value must be of type array|true, int returned\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iterable_default_value_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-iterable-default-value-diagnostics");
     fs::create_dir_all(&root).unwrap();
@@ -20256,6 +20437,46 @@ echo \"unreachable\\n\";
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("Cannot use int as default value for parameter $iterable"));
+}
+
+#[test]
+fn compile_nullable_iterable_type_error_strings_to_native_binary() {
+    let root = temp_dir("ptn-native-nullable-iterable-type-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nullable-iterable-type-errors.php");
+    let output = root.join("nullable-iterable-type-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+function takes_iterable(?iterable $param) {}
+try {
+    takes_iterable(1);
+} catch (TypeError $e) {
+    echo $e, \"\\n\";
+}
+function missing_iterable(): ?iterable {}
+try {
+    missing_iterable();
+} catch (TypeError $e) {
+    echo $e, \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "takes_iterable(): Argument #1 ($param) must be of type Traversable|array|null, int given, called in "
+    ));
+    assert!(stdout.contains(" and defined in "));
+    assert!(stdout.contains(
+        "missing_iterable(): Return value must be of type Traversable|array|null, none returned"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -46027,6 +46248,57 @@ var_dump($test);
             "  [\"c\":protected]=>\n",
             "  int(0)\n",
             "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_magic_get_nested_property_write_receivers_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-get-nested-property-write");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-get-nested-property-write.php");
+    let output = root.join("magic-get-nested-property-write-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicChain {
+    public $items = array();
+
+    public function __construct() {
+        $this->items[] = $this;
+    }
+
+    public function __get($name) {
+        var_dump($name);
+        return $this;
+    }
+
+    public function __set($name, $value) {
+        var_dump($name, $value);
+    }
+}
+
+$chain = new MagicChain();
+$chain->branch->leaf = 1;
+$chain->branch->items[0]->leaf = 2;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(6) \"branch\"\n",
+            "string(4) \"leaf\"\n",
+            "int(1)\n",
+            "string(6) \"branch\"\n",
+            "string(4) \"leaf\"\n",
+            "int(2)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

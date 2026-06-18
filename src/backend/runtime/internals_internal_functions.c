@@ -44256,9 +44256,11 @@ static PtnValue ptn_call_frame_arg_value(PtnRuntime *runtime, PtnCallFrame *fram
         if (ptn_symbols_get(&runtime->symbols, frame->parameter_names[position], &value)) {
             return ptn_value_clone_deref(value);
         }
-        return ptn_null();
     }
-    return ptn_value_clone_deref(frame->args[position]);
+    if (position < frame->argc) {
+        return ptn_value_clone_deref(frame->args[position]);
+    }
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_func_num_args(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -53762,6 +53764,7 @@ static int ptn_reflection_parameter_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getPosition")
         || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "hasType")
+        || ptn_ascii_case_equal(method_name, "isCallable")
         || ptn_ascii_case_equal(method_name, "isPassedByReference")
         || ptn_ascii_case_equal(method_name, "isVariadic");
 }
@@ -54514,6 +54517,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getPosition",
             "getType",
             "hasType",
+            "isCallable",
             "isPassedByReference",
             "isVariadic",
         };
@@ -66071,6 +66075,15 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
             ptn_function_metadata_parameter_type_allows_null(metadata, index),
             ptn_function_metadata_parameter_type_is_builtin(metadata, index)
         );
+    }
+    if (ptn_ascii_case_equal(name, "isCallable")) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Method ReflectionParameter::isCallable() is deprecated since 8.0, use ReflectionParameter::getType() instead",
+            line
+        );
+        const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
+        return ptn_bool(type_name != NULL && ptn_ascii_case_equal(type_name, "callable"));
     }
     if (ptn_ascii_case_equal(name, "isPassedByReference")) {
         return ptn_bool(ptn_function_metadata_parameter_by_ref(metadata, index));
