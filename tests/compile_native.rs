@@ -4973,6 +4973,73 @@ fn parser_rejects_unsupported_class_constant_boundaries() {
 }
 
 #[test]
+fn parser_reports_compile_time_constant_expression_diagnostics() {
+    let cases = [
+        (
+            "static class constant",
+            "<?php const C = static::FOO;",
+            "\"static::\" is not allowed in compile-time constants",
+        ),
+        (
+            "expression class name fetch",
+            "<?php const C = [0]::class;",
+            "(expression)::class cannot be used in constant expressions",
+        ),
+        (
+            "property new",
+            "<?php class Test { public $prop = new stdClass; }",
+            "New expressions are not supported in this context",
+        ),
+        (
+            "property object cast",
+            "<?php class Test { public $prop = (object) []; }",
+            "Object casts are not supported in this context",
+        ),
+    ];
+
+    for (name, source, message) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, message, "{name}");
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
+    }
+}
+
+#[test]
+fn compile_constexpr_ternary_and_property_coalesce_to_native_binary() {
+    let root = temp_dir("ptn-native-constexpr-ternary-property-coalesce");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("constexpr-ternary-property-coalesce.php");
+    let output = root.join("constexpr-ternary-property-coalesce-bin");
+    fs::write(
+        &input,
+        "<?php
+const A = [1 => [[]]];
+const T = (-1 ?: 1) + (0 ? 2 : 3);
+
+class SampleConstexprDefaults {
+    public $value = null ?? A[1][0][2] ?? 3;
+    public static $staticValue = A[1][0][2] ?? 4;
+}
+
+echo T, \"\\n\";
+$sample = new SampleConstexprDefaults();
+var_dump($sample->value, SampleConstexprDefaults::$staticValue);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "2\nint(3)\nint(4)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_non_public_class_constants() {
     let program = parser::parse(
         "<?php

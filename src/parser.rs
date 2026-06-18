@@ -2361,6 +2361,7 @@ impl Parser<'_> {
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
         validate_constant_expression_closures(&value)?;
+        validate_constant_expression_runtime_restrictions(&value)?;
         if const_expr_contains_new_object(&value) {
             return Err(Diagnostic::new(
                 "New expressions are not supported in this context",
@@ -2642,6 +2643,19 @@ impl Parser<'_> {
             self.advance();
             let value = self.parse_expr()?;
             validate_constant_expression_closures(&value)?;
+            validate_constant_expression_runtime_restrictions(&value)?;
+            if const_expr_contains_new_object(&value) {
+                return Err(Diagnostic::new(
+                    "New expressions are not supported in this context",
+                    Some(value.span()),
+                ));
+            }
+            if const_expr_contains_object_cast(&value) {
+                return Err(Diagnostic::new(
+                    "Object casts are not supported in this context",
+                    Some(value.span()),
+                ));
+            }
             if !is_supported_property_default_expr(&value) {
                 return Err(Diagnostic::new(
                     "property default value must be a supported constant expression",
@@ -2712,6 +2726,19 @@ impl Parser<'_> {
             self.advance();
             let value = self.parse_expr()?;
             validate_constant_expression_closures(&value)?;
+            validate_constant_expression_runtime_restrictions(&value)?;
+            if const_expr_contains_new_object(&value) {
+                return Err(Diagnostic::new(
+                    "New expressions are not supported in this context",
+                    Some(value.span()),
+                ));
+            }
+            if const_expr_contains_object_cast(&value) {
+                return Err(Diagnostic::new(
+                    "Object casts are not supported in this context",
+                    Some(value.span()),
+                ));
+            }
             if !is_supported_property_default_expr(&value) {
                 return Err(Diagnostic::new(
                     "static property default value must be a supported constant expression",
@@ -4270,6 +4297,7 @@ impl Parser<'_> {
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
         validate_constant_expression_closures(&value)?;
+        validate_constant_expression_runtime_restrictions(&value)?;
         if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "constant expression contains invalid operation",
@@ -18916,6 +18944,28 @@ fn is_supported_global_const_expr_with_options(
                 allow_array_access,
             )
         }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            is_supported_global_const_expr_with_options(
+                condition,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+            ) && if_true.as_ref().is_none_or(|if_true| {
+                is_supported_global_const_expr_with_options(
+                    if_true,
+                    allow_const_array_unpack_error_operands,
+                    allow_array_access,
+                )
+            }) && is_supported_global_const_expr_with_options(
+                if_false,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+            )
+        }
         Expr::ArrayAccess {
             array,
             index: Some(index),
@@ -18931,7 +18981,14 @@ fn is_supported_global_const_expr_with_options(
                 allow_array_access,
             )
         }
-        Expr::Ternary { .. } | Expr::Match { .. } => false,
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
+            is_supported_global_const_expr_with_options(
+                receiver,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+            )
+        }
+        Expr::Match { .. } => false,
         Expr::InterpolatedString(_, _)
         | Expr::ShellExec { .. }
         | Expr::Variable(_, _)
@@ -18952,8 +19009,6 @@ fn is_supported_global_const_expr_with_options(
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
-        | Expr::PropertyFetch { .. }
-        | Expr::NullsafePropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
@@ -19001,6 +19056,35 @@ fn const_expr_contains_new_object(expr: &Expr) -> bool {
         Expr::Binary { left, right, .. } => {
             const_expr_contains_new_object(left) || const_expr_contains_new_object(right)
         }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            const_expr_contains_new_object(condition)
+                || if_true
+                    .as_ref()
+                    .is_some_and(|if_true| const_expr_contains_new_object(if_true))
+                || const_expr_contains_new_object(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            const_expr_contains_new_object(subject)
+                || arms.iter().any(|arm| {
+                    arm.conditions.iter().any(const_expr_contains_new_object)
+                        || const_expr_contains_new_object(&arm.value)
+                })
+        }
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            receiver
+                .as_ref()
+                .is_some_and(|receiver| const_expr_contains_new_object(receiver))
+                || const_expr_contains_new_object(name)
+        }
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
+            const_expr_contains_new_object(receiver)
+        }
+        Expr::DynamicClassNameFetch { receiver, .. } => const_expr_contains_new_object(receiver),
         Expr::Array { elements, .. } => elements.iter().any(|element| {
             element
                 .key
@@ -19048,10 +19132,114 @@ fn reference_target_contains_new_object(target: &ReferenceTarget) -> bool {
     }
 }
 
+fn const_expr_contains_object_cast(expr: &Expr) -> bool {
+    match expr {
+        Expr::Cast {
+            kind: CastKind::Object,
+            ..
+        } => true,
+        Expr::Grouped { expr, .. }
+        | Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::ArrayAccess {
+            array: expr,
+            index: None,
+            ..
+        }
+        | Expr::DynamicClassNameFetch { receiver: expr, .. } => {
+            const_expr_contains_object_cast(expr)
+        }
+        Expr::ArrayAccess {
+            array,
+            index: Some(index),
+            ..
+        } => const_expr_contains_object_cast(array) || const_expr_contains_object_cast(index),
+        Expr::Binary { left, right, .. } => {
+            const_expr_contains_object_cast(left) || const_expr_contains_object_cast(right)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            const_expr_contains_object_cast(condition)
+                || if_true
+                    .as_ref()
+                    .is_some_and(|if_true| const_expr_contains_object_cast(if_true))
+                || const_expr_contains_object_cast(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            const_expr_contains_object_cast(subject)
+                || arms.iter().any(|arm| {
+                    arm.conditions.iter().any(const_expr_contains_object_cast)
+                        || const_expr_contains_object_cast(&arm.value)
+                })
+        }
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            receiver
+                .as_ref()
+                .is_some_and(|receiver| const_expr_contains_object_cast(receiver))
+                || const_expr_contains_object_cast(name)
+        }
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
+            const_expr_contains_object_cast(receiver)
+        }
+        Expr::Array { elements, .. } => elements.iter().any(|element| {
+            element
+                .key
+                .as_ref()
+                .is_some_and(const_expr_contains_object_cast)
+                || match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        const_expr_contains_object_cast(value)
+                    }
+                    ArrayElementValue::Reference(target) => {
+                        reference_target_contains_object_cast(target)
+                    }
+                    ArrayElementValue::Hole(_) => false,
+                }
+        }),
+        Expr::NewObject { arguments, .. } | Expr::DynamicNewObject { arguments, .. } => {
+            arguments.iter().any(const_expr_contains_object_cast)
+        }
+        Expr::FirstClassCallable { callable, .. } => const_expr_contains_object_cast(callable),
+        _ => false,
+    }
+}
+
+fn reference_target_contains_object_cast(target: &ReferenceTarget) -> bool {
+    match target {
+        ReferenceTarget::DynamicVariable { name, .. } => const_expr_contains_object_cast(name),
+        ReferenceTarget::ArrayDim(target) => target.dimensions.iter().any(|dimension| {
+            dimension
+                .as_ref()
+                .is_some_and(const_expr_contains_object_cast)
+        }),
+        ReferenceTarget::Property { receiver, .. } => const_expr_contains_object_cast(receiver),
+        ReferenceTarget::DynamicProperty { receiver, name, .. } => {
+            const_expr_contains_object_cast(receiver) || const_expr_contains_object_cast(name)
+        }
+        ReferenceTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            const_expr_contains_object_cast(receiver)
+                || dimensions.iter().any(|dimension| {
+                    dimension
+                        .as_ref()
+                        .is_some_and(const_expr_contains_object_cast)
+                })
+        }
+        ReferenceTarget::Variable { .. } => false,
+    }
+}
+
 fn is_supported_property_default_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Grouped { expr, .. } => is_supported_property_default_expr(expr),
-        _ => is_supported_global_const_expr(expr),
+        _ => is_supported_global_const_expr_with_options(expr, false, true),
     }
 }
 
@@ -19106,6 +19294,9 @@ fn validate_constant_expression_closures(expr: &Expr) -> Result<()> {
             validate_constant_expression_closures(array)?;
             validate_constant_expression_closures(index)
         }
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
+            validate_constant_expression_closures(receiver)
+        }
         Expr::Binary { left, right, .. } => {
             validate_constant_expression_closures(left)?;
             validate_constant_expression_closures(right)
@@ -19140,6 +19331,112 @@ fn validate_constant_expression_closures(expr: &Expr) -> Result<()> {
                 validate_constant_expression_closures(argument)?;
             }
             Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+fn validate_constant_expression_runtime_restrictions(expr: &Expr) -> Result<()> {
+    match expr {
+        Expr::ClassConstantFetch {
+            class_name, span, ..
+        } if class_name.eq_ignore_ascii_case("static") => Err(Diagnostic::new(
+            "\"static::\" is not allowed in compile-time constants",
+            Some(*span),
+        )),
+        Expr::DynamicClassConstantFetch {
+            class_name: Some(class_name),
+            span,
+            ..
+        } if class_name.eq_ignore_ascii_case("static") => Err(Diagnostic::new(
+            "\"static::\" is not allowed in compile-time constants",
+            Some(*span),
+        )),
+        Expr::DynamicClassConstantFetch {
+            receiver: Some(_),
+            span,
+            ..
+        } => Err(Diagnostic::new(
+            "Dynamic class names are not allowed in compile-time class constant references",
+            Some(*span),
+        )),
+        Expr::DynamicClassNameFetch { span, .. } => Err(Diagnostic::new(
+            "(expression)::class cannot be used in constant expressions",
+            Some(*span),
+        )),
+        Expr::Array { elements, .. } => {
+            for element in elements {
+                if let Some(key) = &element.key {
+                    validate_constant_expression_runtime_restrictions(key)?;
+                }
+                match &element.value {
+                    ArrayElementValue::Value(value) | ArrayElementValue::Unpack(value) => {
+                        validate_constant_expression_runtime_restrictions(value)?;
+                    }
+                    ArrayElementValue::Hole(_) | ArrayElementValue::Reference(_) => {}
+                }
+            }
+            Ok(())
+        }
+        Expr::Unary { expr, .. }
+        | Expr::Cast { expr, .. }
+        | Expr::Grouped { expr, .. }
+        | Expr::ArrayAccess {
+            array: expr,
+            index: None,
+            ..
+        } => validate_constant_expression_runtime_restrictions(expr),
+        Expr::ArrayAccess {
+            array,
+            index: Some(index),
+            ..
+        } => {
+            validate_constant_expression_runtime_restrictions(array)?;
+            validate_constant_expression_runtime_restrictions(index)
+        }
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
+            validate_constant_expression_runtime_restrictions(receiver)
+        }
+        Expr::Binary { left, right, .. } => {
+            validate_constant_expression_runtime_restrictions(left)?;
+            validate_constant_expression_runtime_restrictions(right)
+        }
+        Expr::FirstClassCallable { callable, .. } => {
+            validate_constant_expression_runtime_restrictions(callable)
+        }
+        Expr::Ternary {
+            condition,
+            if_true,
+            if_false,
+            ..
+        } => {
+            validate_constant_expression_runtime_restrictions(condition)?;
+            if let Some(if_true) = if_true {
+                validate_constant_expression_runtime_restrictions(if_true)?;
+            }
+            validate_constant_expression_runtime_restrictions(if_false)
+        }
+        Expr::Match { subject, arms, .. } => {
+            validate_constant_expression_runtime_restrictions(subject)?;
+            for arm in arms {
+                for condition in &arm.conditions {
+                    validate_constant_expression_runtime_restrictions(condition)?;
+                }
+                validate_constant_expression_runtime_restrictions(&arm.value)?;
+            }
+            Ok(())
+        }
+        Expr::NewObject { arguments, .. } | Expr::DynamicNewObject { arguments, .. } => {
+            for argument in arguments {
+                validate_constant_expression_runtime_restrictions(argument)?;
+            }
+            Ok(())
+        }
+        Expr::DynamicClassConstantFetch { receiver, name, .. } => {
+            if let Some(receiver) = receiver {
+                validate_constant_expression_runtime_restrictions(receiver)?;
+            }
+            validate_constant_expression_runtime_restrictions(name)
         }
         _ => Ok(()),
     }
