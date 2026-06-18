@@ -291,6 +291,11 @@ fi
 cargo build --bin phpc
 
 phpc_bin=${PHPC_BIN:-$PWD/target/debug/phpc}
+phpt_test_timeout=${PTN_PHPT_TEST_TIMEOUT:-180}
+if [[ ! "$phpt_test_timeout" =~ ^[0-9]+$ || "$phpt_test_timeout" -le 0 ]]; then
+    echo "PTN_PHPT_TEST_TIMEOUT must be a positive integer number of seconds: $phpt_test_timeout" >&2
+    exit 2
+fi
 commit=$(git rev-parse --short=12 HEAD)
 start_epoch=$(date +%s)
 
@@ -337,7 +342,7 @@ aggregate_run_status=0
     echo "corpus-revision: $corpus_revision"
     echo "manifest: $resolved_manifest"
     echo "runnable-manifest: $runnable_manifest"
-    echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" php $php_src/run-tests.php -q -p \"$phpc_bin\" <bucket manifest paths>"
+    echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" php $php_src/run-tests.php -q --set-timeout \"$phpt_test_timeout\" -p \"$phpc_bin\" <bucket manifest paths>"
     echo "count: $selected_rows selected PHPT rows; $runnable_rows runnable; $excluded_rows excluded by classification in ${#bucket_order[@]} buckets"
     emit_classification_summary
 } | tee "$summary"
@@ -359,7 +364,7 @@ for bucket in "${bucket_order[@]}"; do
     PHPC_BIN="$phpc_bin" \
       TEST_PHP_CGI_EXECUTABLE="$phpc_bin" \
       TEST_PHP_CGI_EXECUTABLE_ESCAPED="'$phpc_bin'" \
-      php "$php_src/run-tests.php" -q -p "$phpc_bin" "${tests[@]}" 2>&1 | tee "$log"
+      php "$php_src/run-tests.php" -q --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${tests[@]}" 2>&1 | tee "$log"
     run_status=${PIPESTATUS[0]}
     set -e
 
