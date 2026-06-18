@@ -4390,6 +4390,17 @@ fn emit_user_function_dispatch(
     out.push_str("            free(ptn_static_call_class);\n");
     out.push_str("            return ptn_internal_static_result;\n");
     out.push_str("        }\n");
+    out.push_str("        if (ptn_internal_class_exists_name(ptn_static_call_resolved_class) && ptn_internal_class_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+    out.push_str("            const char *ptn_internal_declaring_class = ptn_reflection_method_internal_declaring_class(ptn_static_call_resolved_class, ptn_static_call_method);\n");
+    out.push_str("            char ptn_internal_nonstatic_message[512];\n");
+    out.push_str("            int ptn_internal_nonstatic_written = snprintf(ptn_internal_nonstatic_message, sizeof(ptn_internal_nonstatic_message), \"Non-static method %s::%s() cannot be called statically\", ptn_internal_declaring_class, ptn_static_call_method);\n");
+    out.push_str("            if (ptn_internal_nonstatic_written < 0 || (size_t)ptn_internal_nonstatic_written >= sizeof(ptn_internal_nonstatic_message)) {\n");
+    out.push_str("                ptn_abort_out_of_memory();\n");
+    out.push_str("            }\n");
+    out.push_str("            free(ptn_static_call_class);\n");
+    out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_internal_nonstatic_message, runtime->source_path, line);\n");
+    out.push_str("            return ptn_null();\n");
+    out.push_str("        }\n");
     out.push_str("#endif\n");
     out.push_str("        free(ptn_static_call_class);\n");
     out.push_str("    }\n");
@@ -11668,6 +11679,17 @@ fn emit_method_dispatch(
     out.push_str("        *result_out = ptn_internal_class_static_call_method(runtime, target_class_name, method_name, argc, args, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_method_exists(target_class_name, method_name)) {\n");
+    out.push_str("        const char *ptn_internal_declaring_class = ptn_reflection_method_internal_declaring_class(target_class_name, method_name);\n");
+    out.push_str("        char ptn_internal_nonstatic_message[512];\n");
+    out.push_str("        int ptn_internal_nonstatic_written = snprintf(ptn_internal_nonstatic_message, sizeof(ptn_internal_nonstatic_message), \"Non-static method %s::%s() cannot be called statically\", ptn_internal_declaring_class, method_name);\n");
+    out.push_str("        if (ptn_internal_nonstatic_written < 0 || (size_t)ptn_internal_nonstatic_written >= sizeof(ptn_internal_nonstatic_message)) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        ptn_throw_exception_at(runtime, \"Error\", ptn_internal_nonstatic_message, runtime->source_path, line);\n");
+    out.push_str("        *result_out = ptn_null();\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     out.push_str("    if (resolved_receiver.type == PTN_OBJECT && ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_method_exists(target_class_name, method_name) && ptn_declared_class_is_same_or_descendant(resolved_receiver.as.object->class_name, target_class_name)) {\n");
     out.push_str("        if (ptn_ascii_case_equal(target_class_name, \"SplObjectStorage\")) {\n");
     out.push_str("            *result_out = ptn_call_method(runtime, resolved_receiver, method_name, argc, args, line);\n");
@@ -16548,6 +16570,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ReflectionExtension")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
                 || class_name.eq_ignore_ascii_case("ReflectionMethod")
+                || class_name.eq_ignore_ascii_case("ReflectionObject")
                 || class_name.eq_ignore_ascii_case("ReflectionAttribute")
                 || class_name.eq_ignore_ascii_case("ReflectionClassConstant")
                 || class_name.eq_ignore_ascii_case("ReflectionProperty")

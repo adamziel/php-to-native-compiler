@@ -20391,6 +20391,49 @@ var_dump($plain->isCallable());
 }
 
 #[test]
+fn compile_reflection_object_constructor_minimal_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-object-constructor-minimal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-object-constructor-minimal.php");
+    let output = root.join("reflection-object-constructor-minimal-bin");
+    fs::write(
+        &input,
+        "<?php
+$r1 = new ReflectionObject(new stdClass);
+var_dump($r1);
+
+class C {}
+$r2 = new ReflectionObject(new C);
+var_dump($r2);
+
+$r3 = new ReflectionObject($r2);
+var_dump($r3);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(ReflectionObject)#"));
+    assert!(stdout.contains("string(8) \"stdClass\""));
+    assert!(stdout.contains("string(1) \"C\""));
+    assert!(stdout.contains("string(16) \"ReflectionObject\""));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
+    assert!(c_source.contains("ptn_reflection_object_new"));
+}
+
+#[test]
 fn compile_reflection_object_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-object-metadata");
     fs::create_dir_all(&root).unwrap();
