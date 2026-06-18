@@ -1256,6 +1256,7 @@ static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED const char *ptn_declared_class_canonical_name(const char *name);
+static PTN_UNUSED int ptn_declared_class_is_final(const char *name);
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);
 static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);
 static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line);

@@ -39812,6 +39812,54 @@ var_dump(interface_exists('I', false));
 }
 
 #[test]
+fn compile_included_exception_subclasses_match_multicatch_to_native_binary() {
+    let root = temp_dir("ptn-native-include-exception-multicatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("exceptions.inc");
+    let output = root.join("include-exception-multicatch-bin");
+    fs::write(
+        &included,
+        "<?php\n\
+class Exception1 extends Exception {}\n\
+class Exception2 extends Exception {}\n\
+class Exception3 extends Exception {}\n\
+class Exception4 extends Exception {}\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+require_once __DIR__ . '/exceptions.inc';\n\
+\n\
+foreach ([new Exception1, new Exception4] as $exception) {\n\
+    try {\n\
+        throw $exception;\n\
+    } catch (Exception1 | Exception2 $e) {\n\
+        echo 'first:', get_class($e), \"\\n\";\n\
+    } catch (Exception3 | Exception4 $e) {\n\
+        echo 'second:', get_class($e), \"\\n\";\n\
+    }\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "first:Exception1\nsecond:Exception4\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_exception_matches(&runtime, \"Exception1\") || ptn_exception_matches(&runtime, \"Exception2\")"));
+}
+
+#[test]
 fn compile_namespaced_include_class_metadata_appears_after_include_to_native_binary() {
     let root = temp_dir("ptn-native-namespaced-include-class-metadata");
     fs::create_dir_all(&root).unwrap();
