@@ -7807,6 +7807,43 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_property_to_string(PtnRuntime *runtime, const char *class_name, const char *property_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ptn_string(\"");
+            out.push_str(&c_string(&reflection_property_to_string(&entry)));
+            out.push_str("\");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_interfaces(PtnRuntime *runtime, const char *class_name, int objects) {\n",
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
@@ -7856,7 +7893,14 @@ fn reflection_class_to_string(
     functions: &[FunctionDecl],
 ) -> String {
     let mut out = String::new();
-    out.push_str("Class [ <user> ");
+    out.push_str(if class.is_interface {
+        "Interface [ <user> "
+    } else {
+        "Class [ <user> "
+    });
+    if class.properties.iter().any(|property| property.has_hooks) {
+        out.push_str("<iterateable> ");
+    }
     if class.is_abstract && !class.is_interface {
         out.push_str("abstract ");
     }
@@ -7936,9 +7980,16 @@ trait ReflectionPropertySummary {
     fn reflection_set_visibility(&self) -> PropertyVisibility;
     fn reflection_is_static(&self) -> bool;
     fn reflection_is_final(&self) -> bool;
+    fn reflection_is_abstract(&self) -> bool;
     fn reflection_is_virtual(&self) -> bool;
+    fn reflection_has_hooks(&self) -> bool;
+    fn reflection_hook_has_get(&self) -> bool;
+    fn reflection_hook_has_set(&self) -> bool;
+    fn reflection_hook_get_is_abstract(&self) -> bool;
+    fn reflection_hook_set_is_abstract(&self) -> bool;
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint>;
     fn reflection_value(&self) -> Option<&ValueExpr>;
+    fn reflection_has_default(&self) -> bool;
 }
 
 impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
@@ -7962,8 +8013,32 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
         self.is_final
     }
 
+    fn reflection_is_abstract(&self) -> bool {
+        self.is_abstract
+    }
+
     fn reflection_is_virtual(&self) -> bool {
         self.is_virtual
+    }
+
+    fn reflection_has_hooks(&self) -> bool {
+        self.has_hooks
+    }
+
+    fn reflection_hook_has_get(&self) -> bool {
+        self.hook_has_get
+    }
+
+    fn reflection_hook_has_set(&self) -> bool {
+        self.hook_has_set
+    }
+
+    fn reflection_hook_get_is_abstract(&self) -> bool {
+        self.hook_get_is_abstract
+    }
+
+    fn reflection_hook_set_is_abstract(&self) -> bool {
+        self.hook_set_is_abstract
     }
 
     fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
@@ -7972,6 +8047,10 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
 
     fn reflection_value(&self) -> Option<&ValueExpr> {
         self.value
+    }
+
+    fn reflection_has_default(&self) -> bool {
+        self.has_default
     }
 }
 
@@ -7996,7 +8075,31 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
         self.is_final
     }
 
+    fn reflection_is_abstract(&self) -> bool {
+        false
+    }
+
     fn reflection_is_virtual(&self) -> bool {
+        false
+    }
+
+    fn reflection_has_hooks(&self) -> bool {
+        false
+    }
+
+    fn reflection_hook_has_get(&self) -> bool {
+        false
+    }
+
+    fn reflection_hook_has_set(&self) -> bool {
+        false
+    }
+
+    fn reflection_hook_get_is_abstract(&self) -> bool {
+        false
+    }
+
+    fn reflection_hook_set_is_abstract(&self) -> bool {
         false
     }
 
@@ -8007,6 +8110,56 @@ impl ReflectionPropertySummary for StaticPropertyDecl {
     fn reflection_value(&self) -> Option<&ValueExpr> {
         self.value.as_ref()
     }
+
+    fn reflection_has_default(&self) -> bool {
+        self.value.is_some() || self.type_hint.is_none()
+    }
+}
+
+fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> String {
+    let mut out = String::new();
+    out.push_str("Property [ ");
+    if property.reflection_is_abstract() {
+        out.push_str("abstract ");
+    }
+    out.push_str(method_visibility_name(property.reflection_visibility()));
+    if property.reflection_set_visibility() != property.reflection_visibility() {
+        out.push(' ');
+        out.push_str(method_visibility_name(property.reflection_set_visibility()));
+        out.push_str("(set)");
+    }
+    if property.reflection_is_static() {
+        out.push_str(" static");
+    }
+    if property.reflection_is_final() {
+        out.push_str(" final");
+    }
+    if property.reflection_is_virtual() {
+        out.push_str(" virtual");
+    }
+    if let Some(type_hint) = property.reflection_type_hint() {
+        out.push(' ');
+        out.push_str(&type_hint.text);
+    }
+    out.push_str(" $");
+    out.push_str(property.reflection_name());
+    if property.reflection_has_hooks() {
+        out.push_str(" {");
+        if property.reflection_hook_has_get() {
+            out.push_str(" get;");
+        }
+        if property.reflection_hook_has_set() {
+            out.push_str(" set;");
+        }
+        let _ = property.reflection_hook_get_is_abstract();
+        let _ = property.reflection_hook_set_is_abstract();
+        out.push_str(" }");
+    } else if property.reflection_has_default() {
+        out.push_str(" = ");
+        out.push_str(&reflection_default_repr(property.reflection_value()));
+    }
+    out.push_str(" ]\n");
+    out
 }
 
 fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
@@ -8020,33 +8173,8 @@ fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
     out.push_str(&properties.len().to_string());
     out.push_str("] {\n");
     for property in properties {
-        out.push_str("    Property [ ");
-        out.push_str(method_visibility_name(property.reflection_visibility()));
-        if property.reflection_set_visibility() != property.reflection_visibility() {
-            out.push(' ');
-            out.push_str(method_visibility_name(property.reflection_set_visibility()));
-            out.push_str("(set)");
-        }
-        if property.reflection_is_static() {
-            out.push_str(" static");
-        }
-        if property.reflection_is_final() {
-            out.push_str(" final");
-        }
-        if property.reflection_is_virtual() {
-            out.push_str(" virtual");
-        }
-        if let Some(type_hint) = property.reflection_type_hint() {
-            out.push(' ');
-            out.push_str(&type_hint.text);
-        }
-        out.push_str(" $");
-        out.push_str(property.reflection_name());
-        if let Some(value) = property.reflection_value() {
-            out.push_str(" = ");
-            out.push_str(&reflection_default_repr(Some(value)));
-        }
-        out.push_str(" ]\n");
+        out.push_str("    ");
+        out.push_str(&reflection_property_to_string(property));
     }
     out.push_str("  }\n\n");
 }
@@ -8424,8 +8552,14 @@ struct ClassPropertyExistsEntry<'a> {
     set_visibility: PropertyVisibility,
     is_static: bool,
     is_final: bool,
+    is_abstract: bool,
     is_readonly: bool,
+    has_hooks: bool,
     is_virtual: bool,
+    hook_has_get: bool,
+    hook_has_set: bool,
+    hook_get_is_abstract: bool,
+    hook_set_is_abstract: bool,
     type_hint: Option<&'a PropertyTypeHint>,
     value: Option<&'a ValueExpr>,
     has_default: bool,
@@ -8438,6 +8572,7 @@ impl ClassPropertyExistsEntry<'_> {
             self.set_visibility,
             self.is_static,
             self.is_final,
+            self.is_abstract,
             self.is_readonly,
             self.is_virtual,
         )
@@ -8449,6 +8584,7 @@ fn property_reflection_modifiers(
     set_visibility: PropertyVisibility,
     is_static: bool,
     is_final: bool,
+    is_abstract: bool,
     is_readonly: bool,
     is_virtual: bool,
 ) -> i32 {
@@ -8462,6 +8598,9 @@ fn property_reflection_modifiers(
     }
     if is_final || (set_visibility != visibility && set_visibility == PropertyVisibility::Private) {
         modifiers |= 32;
+    }
+    if is_abstract {
+        modifiers |= 64;
     }
     if is_readonly {
         modifiers |= 128;
@@ -8557,8 +8696,14 @@ fn class_property_exists_chain<'a>(
                     set_visibility: property.set_visibility,
                     is_static: false,
                     is_final: property.is_final,
+                    is_abstract: property.is_abstract,
                     is_readonly: property.is_readonly,
+                    has_hooks: property.has_hooks,
                     is_virtual: property.is_virtual,
+                    hook_has_get: property.hook_has_get,
+                    hook_has_set: property.hook_has_set,
+                    hook_get_is_abstract: property.hook_get_is_abstract,
+                    hook_set_is_abstract: property.hook_set_is_abstract,
                     type_hint: property.type_hint.as_ref(),
                     value: property.value.as_ref(),
                     has_default: property.value.is_some() || property.type_hint.is_none(),
@@ -8572,8 +8717,14 @@ fn class_property_exists_chain<'a>(
                 set_visibility: property.set_visibility,
                 is_static: true,
                 is_final: property.is_final,
+                is_abstract: false,
                 is_readonly: false,
+                has_hooks: false,
                 is_virtual: false,
+                hook_has_get: false,
+                hook_has_set: false,
+                hook_get_is_abstract: false,
+                hook_set_is_abstract: false,
                 type_hint: property.type_hint.as_ref(),
                 value: property.value.as_ref(),
                 has_default: property.value.is_some() || property.type_hint.is_none(),

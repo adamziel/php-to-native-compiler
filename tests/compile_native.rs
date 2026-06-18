@@ -41626,7 +41626,7 @@ var_dump($prop->isPublic());
 var_dump($prop->isDefault());
 var_dump($prop->isDynamic());
 var_dump($prop->getValue($object));
-$prop->setValue($object, \"updated\");
+var_dump($prop->setValue($object, \"updated\"));
 var_dump($object->name);
 var_dump(method_exists(\"ReflectionProperty\", \"getRawValue\"));
 var_dump(method_exists(\"ReflectionProperty\", \"setRawValue\"));
@@ -41641,6 +41641,22 @@ var_dump($static->getModifiers());
 var_dump($static->getValue());
 $static->setValue(9);
 var_dump($static->getValue());
+
+#[AllowDynamicProperties]
+class ReflectPropForeign {}
+$foreign = new ReflectPropForeign();
+try {
+    var_dump($prop->getValue($foreign));
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    var_dump($prop->getValue());
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($prop->setValue($foreign, \"dynamic\"));
+var_dump($foreign->name);
 
 $finalInstance = new ReflectionProperty(\"ReflectPropModifiers\", \"finalInstance\");
 var_dump($finalInstance->getModifiers());
@@ -41726,6 +41742,7 @@ try {
             "bool(true)\n",
             "bool(false)\n",
             "NULL\n",
+            "NULL\n",
             "string(7) \"updated\"\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -41738,6 +41755,10 @@ try {
             "\n",
             "Deprecated: Calling ReflectionProperty::setValue() with a single argument is deprecated in ptn on line 56\n",
             "int(9)\n",
+            "Given object is not an instance of the class this property was declared in\n",
+            "ReflectionProperty::getValue(): Argument #1 ($object) must be provided for instance properties\n",
+            "NULL\n",
+            "string(7) \"dynamic\"\n",
             "int(33)\n",
             "bool(true)\n",
             "int(49)\n",
@@ -41845,6 +41866,40 @@ var_dump($protectedSet->isWritable(ReflectAccessChild::class, $obj));
 var_dump($dynamic->isReadable(null, $dynamicObj));
 var_dump($dynamic->isWritable(null, null));
 $prot->setAccessible(false);
+
+class ReflectAccessState {
+    public int $i;
+    public int $j;
+
+    public function __construct() {
+        unset($this->j);
+    }
+
+    public function __get($name) {}
+}
+
+class ReflectLazyAccess {
+    public public(set) readonly int $a;
+    public public(set) readonly int $b;
+
+    public function __construct() {
+        $this->a = 1;
+    }
+}
+
+$state = new ReflectAccessState();
+$stateI = new ReflectionProperty(ReflectAccessState::class, \"i\");
+$stateJ = new ReflectionProperty(ReflectAccessState::class, \"j\");
+var_dump($stateI->isReadable(null, $state));
+var_dump($stateJ->isReadable(null, $state));
+
+$lazy = (new ReflectionClass(ReflectLazyAccess::class))->newLazyProxy(fn() => new ReflectLazyAccess());
+$lazyA = new ReflectionProperty(ReflectLazyAccess::class, \"a\");
+$lazyB = new ReflectionProperty(ReflectLazyAccess::class, \"b\");
+var_dump($lazyA->isReadable(null, $lazy));
+var_dump($lazyB->isReadable(null, $lazy));
+var_dump($lazyA->isWritable(null, $lazy));
+var_dump($lazyB->isWritable(null, $lazy));
 ",
     )
     .unwrap();
@@ -41876,6 +41931,12 @@ $prot->setAccessible(false);
             "bool(true)\n",
             "\n",
             "Deprecated: Method ReflectionProperty::setAccessible() is deprecated since 8.5, as it has no effect since PHP 8.1 in ptn on line 45\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
