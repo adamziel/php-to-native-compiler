@@ -757,6 +757,13 @@ fn compile_and_run(
         exception_ignore_args: ini.exception_ignore_args.clone(),
         exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
     };
+    if ini.default_charset.is_none() {
+        if let Some(internal_encoding) = &ini.internal_encoding {
+            if !internal_encoding.is_empty() {
+                ini.default_charset = Some(internal_encoding.clone());
+            }
+        }
+    }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
     let native = TempPath::new("ptn-phpc-native", "bin");
     compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
@@ -915,6 +922,11 @@ fn compile_and_run(
     }
     if let Some(warning) = memory_limit_warning {
         print!("{warning}");
+    }
+    if ini.mbstring_internal_encoding.is_some() {
+        println!(
+            "Deprecated: PHP Startup: Use of mbstring.internal_encoding is deprecated in Unknown on line 0"
+        );
     }
     let status = command
         .status()

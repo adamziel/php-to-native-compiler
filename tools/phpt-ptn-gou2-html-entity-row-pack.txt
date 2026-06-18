@@ -1,0 +1,44 @@
+# ptn-gou2 focused full-corpus ext/standard HTML entity string row pack.
+# Source bucket: ext/standard/tests/strings from php-src PHPT corpus revision
+# 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+ext/standard/tests/strings/html_entity_decode1.phpt
+ext/standard/tests/strings/html_entity_decode2.phpt
+ext/standard/tests/strings/html_entity_decode3.phpt
+ext/standard/tests/strings/html_entity_decode_cp866.phpt
+ext/standard/tests/strings/html_entity_decode_html4.phpt
+ext/standard/tests/strings/html_entity_decode_html5.phpt
+ext/standard/tests/strings/html_entity_decode_iso8859-15.phpt
+ext/standard/tests/strings/html_entity_decode_iso8859-5.phpt
+ext/standard/tests/strings/html_entity_decode_koi8-r.phpt
+ext/standard/tests/strings/html_entity_decode_macroman.phpt
+ext/standard/tests/strings/html_entity_decode_win1251.phpt
+ext/standard/tests/strings/html_entity_decode_win1252.phpt
+ext/standard/tests/strings/htmlentities.phpt
+ext/standard/tests/strings/htmlentities-utf.phpt
+ext/standard/tests/strings/htmlentities-utf-2.phpt
+ext/standard/tests/strings/htmlentities-utf-3.phpt
+ext/standard/tests/strings/htmlentities01.phpt
+ext/standard/tests/strings/htmlentities02.phpt
+ext/standard/tests/strings/htmlentities03.phpt
+ext/standard/tests/strings/htmlentities05.phpt
+ext/standard/tests/strings/htmlentities06.phpt
+ext/standard/tests/strings/htmlentities07.phpt
+ext/standard/tests/strings/htmlentities08.phpt
+ext/standard/tests/strings/htmlentities09.phpt
+ext/standard/tests/strings/htmlentities10.phpt
+ext/standard/tests/strings/htmlentities11.phpt
+ext/standard/tests/strings/htmlentities12.phpt
+ext/standard/tests/strings/htmlentities13.phpt
+ext/standard/tests/strings/htmlentities14.phpt
+ext/standard/tests/strings/htmlentities16.phpt
+ext/standard/tests/strings/htmlentities17.phpt
+ext/standard/tests/strings/htmlentities18.phpt
+ext/standard/tests/strings/htmlentities19.phpt
+ext/standard/tests/strings/htmlentities20.phpt
+ext/standard/tests/strings/htmlentities21.phpt
+ext/standard/tests/strings/htmlentities22.phpt
+ext/standard/tests/strings/htmlentities23.phpt
+ext/standard/tests/strings/htmlentities24.phpt
+ext/standard/tests/strings/htmlentities25.phpt
+ext/standard/tests/strings/htmlentities_html4.phpt
+ext/standard/tests/strings/htmlentities_html5.phpt
