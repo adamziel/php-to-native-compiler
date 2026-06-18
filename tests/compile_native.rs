@@ -50231,37 +50231,60 @@ echo "bad\n";
 }
 
 #[test]
-fn parser_rejects_unsupported_grouped_namespace_import_forms() {
+fn parser_reports_namespace_relative_grouped_use_parse_errors() {
     let cases = [
         (
             "<?php use namespace\\Lib\\{Foo};",
-            DiagnosticKind::Fatal,
-            "namespace-relative grouped use prefixes are unsupported",
+            "syntax error, unexpected namespace-relative name \"namespace\\Lib\"",
+        ),
+        (
+            "<?php use function namespace\\Lib\\{foo};",
+            "syntax error, unexpected namespace-relative name \"namespace\\Lib\", expecting identifier or fully qualified name or namespaced name",
+        ),
+        (
+            "<?php use const namespace\\Lib\\{FOO};",
+            "syntax error, unexpected namespace-relative name \"namespace\\Lib\", expecting identifier or fully qualified name or namespaced name",
         ),
         (
             "<?php use Lib\\{\\Foo};",
-            DiagnosticKind::ParseError,
             "syntax error, unexpected fully qualified name \"\\Foo\", expecting identifier or namespaced name or \"function\" or \"const\"",
         ),
         (
             "<?php use Lib\\{namespace\\Foo};",
-            DiagnosticKind::Fatal,
-            "namespace-relative grouped use items are unsupported",
+            "syntax error, unexpected namespace-relative name \"namespace\\Foo\", expecting identifier or namespaced name or \"function\" or \"const\"",
+        ),
+        (
+            "<?php use function Lib\\{namespace\\foo};",
+            "syntax error, unexpected namespace-relative name \"namespace\\foo\", expecting identifier or namespaced name",
+        ),
+        (
+            "<?php use const Lib\\{namespace\\FOO};",
+            "syntax error, unexpected namespace-relative name \"namespace\\FOO\", expecting identifier or namespaced name",
+        ),
+        (
+            "<?php use Lib\\{function namespace\\foo};",
+            "syntax error, unexpected namespace-relative name \"namespace\\foo\", expecting identifier or namespaced name",
+        ),
+        (
+            "<?php use Lib\\{const namespace\\FOO};",
+            "syntax error, unexpected namespace-relative name \"namespace\\FOO\", expecting identifier or namespaced name",
+        ),
+        (
+            "<?php use Lib\\{function \\foo};",
+            "syntax error, unexpected fully qualified name \"\\foo\", expecting identifier or namespaced name",
         ),
         (
             "<?php use Foo\\Bar\\{A, B { C }};",
-            DiagnosticKind::ParseError,
             "syntax error, unexpected token \"{\", expecting \"}\"",
         ),
         (
             "<?php use const Foo\\Bar\\{A, const B};",
-            DiagnosticKind::ParseError,
             "syntax error, unexpected token \"const\", expecting \"}\"",
         ),
     ];
-    for (source, kind, expected) in cases {
+    for (source, expected) in cases {
         let error = parser::parse(source).unwrap_err();
-        assert_eq!(error.kind, kind);
+        assert_eq!(error.kind, DiagnosticKind::ParseError);
         assert_eq!(error.message, expected);
     }
 }

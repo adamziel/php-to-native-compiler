@@ -732,10 +732,15 @@ impl Parser<'_> {
         prefix: ParsedName,
     ) -> Result<()> {
         if prefix.resolution == NameResolution::NamespaceRelative {
-            return Err(Diagnostic::new(
-                "namespace-relative grouped use prefixes are unsupported",
-                Some(prefix.span),
-            ));
+            let text = self.parsed_name_source_text(&prefix);
+            let message = if outer_kind == UseDeclarationKind::Class {
+                format!("syntax error, unexpected namespace-relative name \"{text}\"")
+            } else {
+                format!(
+                    "syntax error, unexpected namespace-relative name \"{text}\", expecting identifier or fully qualified name or namespaced name"
+                )
+            };
+            return Err(Diagnostic::parse_error(message, Some(prefix.span)));
         }
         self.expect_left_brace()?;
         let item_expectation = if outer_kind == UseDeclarationKind::Class {
@@ -798,6 +803,13 @@ impl Parser<'_> {
             } else {
                 outer_kind
             };
+            let name_expectation = if outer_kind == UseDeclarationKind::Class
+                && item_kind == UseDeclarationKind::Class
+            {
+                item_expectation
+            } else {
+                "identifier or namespaced name"
+            };
             parsed_any_item = true;
             let item = self.parse_name("expected imported name")?;
             if item.resolution == NameResolution::FullyQualified {
@@ -807,14 +819,17 @@ impl Parser<'_> {
                     .unwrap_or("");
                 return Err(Diagnostic::parse_error(
                     format!(
-                        "syntax error, unexpected fully qualified name \"{text}\", expecting {item_expectation}"
+                        "syntax error, unexpected fully qualified name \"{text}\", expecting {name_expectation}"
                     ),
                     Some(item.span),
                 ));
             }
             if item.resolution == NameResolution::NamespaceRelative {
-                return Err(Diagnostic::new(
-                    "namespace-relative grouped use items are unsupported",
+                let text = self.parsed_name_source_text(&item);
+                return Err(Diagnostic::parse_error(
+                    format!(
+                        "syntax error, unexpected namespace-relative name \"{text}\", expecting {name_expectation}"
+                    ),
                     Some(item.span),
                 ));
             }
