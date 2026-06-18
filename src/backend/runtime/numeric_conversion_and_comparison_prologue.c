@@ -1455,7 +1455,15 @@ static PTN_UNUSED PtnStringOperand ptn_exception_to_string_operand(
         ptn_string_buffer_append(&buffer, ": ");
         ptn_string_buffer_append_len(&buffer, exception->message, exception->message_len);
     }
-    ptn_string_buffer_append(&buffer, " in ");
+    if (
+        strcmp(exception->class_name, "TypeError") == 0 &&
+        exception->message != NULL &&
+        strstr(exception->message, ", called in ") != NULL
+    ) {
+        ptn_string_buffer_append(&buffer, " and defined in ");
+    } else {
+        ptn_string_buffer_append(&buffer, " in ");
+    }
     ptn_string_buffer_append(&buffer, exception->path == NULL ? "ptn" : exception->path);
     ptn_string_buffer_append_format(&buffer, ":%zu\nStack trace:\n", exception->line);
     PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
