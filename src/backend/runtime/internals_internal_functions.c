@@ -414,6 +414,7 @@ static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_s
 static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
@@ -38127,6 +38128,12 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "Core")) {
         return "Core";
     }
+    if (ptn_string_operand_ascii_case_equal(extension, "bcmath")) {
+        return "bcmath";
+    }
+    if (ptn_string_operand_ascii_case_equal(extension, "calendar")) {
+        return "calendar";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "ctype")) {
         return "ctype";
     }
@@ -38216,6 +38223,10 @@ static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
 static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue *out) {
     if (ptn_string_operand_ascii_case_equal(option, "date.timezone")) {
         *out = ptn_string("UTC");
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "bcmath.scale")) {
+        *out = ptn_ini_int_string(ptn_runtime_config_root(runtime)->bcmath_scale);
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "assert.exception")) {
@@ -38616,6 +38627,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "bcmath.scale")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        root->bcmath_scale = root->initial_bcmath_scale;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.assertions")) {
         PtnRuntime *root = ptn_runtime_config_root(runtime);
         root->zend_assertions = root->initial_zend_assertions;
@@ -38847,6 +38864,19 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
             ptn_string_operand_free(option);
             return ptn_bool(0);
         }
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "bcmath.scale")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        PtnValue previous = ptn_ini_int_string(root->bcmath_scale);
+        int64_t requested = ptn_value_to_integer(args[1]);
+        if (requested < 0 || requested > INT_MAX) {
+            ptn_value_destroy(&previous);
+            ptn_string_operand_free(option);
+            return ptn_bool(0);
+        }
+        root->bcmath_scale = (int)requested;
         ptn_string_operand_free(option);
         return previous;
     }
@@ -39265,31 +39295,33 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
         return result;
     }
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("ctype"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("curl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("date"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("dom"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("filter"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(6), ptn_string("hash"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(7), ptn_string("iconv"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(8), ptn_string("intl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(9), ptn_string("json"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(10), ptn_string("libxml"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(11), ptn_string("mbstring"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("openssl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(13), ptn_string("pcre"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(14), ptn_string("Phar"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(15), ptn_string("Reflection"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(16), ptn_string("sockets"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(17), ptn_string("soap"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(18), ptn_string("SPL"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(19), ptn_string("standard"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(20), ptn_string("tokenizer"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(21), ptn_string("xml"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(22), ptn_string("xmlreader"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(23), ptn_string("xmlwriter"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(24), ptn_string("zip"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(25), ptn_string("zlib"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("bcmath"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("calendar"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("ctype"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("curl"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("date"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(6), ptn_string("dom"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(7), ptn_string("filter"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(8), ptn_string("hash"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(9), ptn_string("iconv"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(10), ptn_string("intl"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(11), ptn_string("json"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("libxml"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(13), ptn_string("mbstring"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(14), ptn_string("openssl"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(15), ptn_string("pcre"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(16), ptn_string("Phar"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(17), ptn_string("Reflection"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(18), ptn_string("sockets"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(19), ptn_string("soap"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(20), ptn_string("SPL"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(21), ptn_string("standard"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(22), ptn_string("tokenizer"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(23), ptn_string("xml"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(24), ptn_string("xmlreader"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(25), ptn_string("xmlwriter"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(26), ptn_string("zip"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(27), ptn_string("zlib"));
     return result;
 }
 
@@ -39687,6 +39719,12 @@ static int ptn_reflection_constant_is_soap(const char *name) {
 }
 
 static const char *ptn_reflection_constant_extension_name(const char *name) {
+    if (ptn_reflection_constant_is_bcmath(name)) {
+        return "bcmath";
+    }
+    if (ptn_reflection_constant_is_calendar(name)) {
+        return "calendar";
+    }
     if (ptn_reflection_constant_is_json(name)) {
         return "json";
     }
@@ -39725,6 +39763,8 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("Core"), core);
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("libxml"), ptn_defined_constants_libxml_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("xml"), ptn_defined_constants_xml_table());
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("bcmath"), ptn_defined_constants_bcmath_table());
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("calendar"), ptn_defined_constants_calendar_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("json"), ptn_defined_constants_json_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("pcre"), ptn_defined_constants_pcre_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("sockets"), ptn_defined_constants_sockets_table());
@@ -39734,6 +39774,8 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
     }
     ptn_defined_constants_add_libxml(core);
     ptn_defined_constants_add_xml(core);
+    ptn_defined_constants_add_bcmath(core);
+    ptn_defined_constants_add_calendar(core);
     ptn_defined_constants_add_json(core);
     ptn_defined_constants_add_pcre(core);
     ptn_defined_constants_add_sockets(core);
@@ -47683,6 +47725,38 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return ptn_internal_phar_can_compress(runtime, argc, args, line);
         }
     }
+    if (ptn_internal_class_name_is_rounding_mode(class_name)) {
+        if (ptn_ascii_case_equal(name, "cases")) {
+            if (argc != 0) {
+                char message[128];
+                int written = snprintf(message, sizeof(message), "RoundingMode::cases() expects exactly 0 arguments, %zu given", argc);
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "ArgumentCountError", message);
+                return ptn_null();
+            }
+            static const char *const names[] = {
+                "HalfAwayFromZero",
+                "HalfTowardsZero",
+                "HalfEven",
+                "HalfOdd",
+                "TowardsZero",
+                "AwayFromZero",
+                "NegativeInfinity",
+                "PositiveInfinity",
+            };
+            PtnValue result = ptn_array_from_literal_entries(0, NULL);
+            for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+                ptn_array_set_entry(
+                    result.as.array,
+                    ptn_array_int_key((int64_t)i),
+                    ptn_enum_case(runtime, "RoundingMode", names[i])
+                );
+            }
+            return result;
+        }
+    }
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
         if (ptn_ascii_case_equal(name, "listIdentifiers")) {
             int64_t group = 2047;
@@ -48390,11 +48464,29 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "base_convert", 3, 3, ptn_internal_base_convert },
         { "base64_decode", 1, 2, ptn_internal_base64_decode },
         { "base64_encode", 1, 1, ptn_internal_base64_encode },
+        { "bcadd", 2, 3, ptn_internal_bcadd },
+        { "bcceil", 1, 1, ptn_internal_bcceil },
+        { "bccomp", 2, 3, ptn_internal_bccomp },
+        { "bcdiv", 2, 3, ptn_internal_bcdiv },
+        { "bcdivmod", 2, 3, ptn_internal_bcdivmod },
+        { "bcfloor", 1, 1, ptn_internal_bcfloor },
+        { "bcmod", 2, 3, ptn_internal_bcmod },
+        { "bcmul", 2, 3, ptn_internal_bcmul },
+        { "bcpow", 2, 3, ptn_internal_bcpow },
+        { "bcpowmod", 3, 4, ptn_internal_bcpowmod },
+        { "bcround", 1, 3, ptn_internal_bcround },
+        { "bcscale", 0, 1, ptn_internal_bcscale },
+        { "bcsqrt", 1, 2, ptn_internal_bcsqrt },
+        { "bcsub", 2, 3, ptn_internal_bcsub },
         { "bin2hex", 1, 1, ptn_internal_bin2hex },
         { "bindec", 1, 1, ptn_internal_bindec },
         { "boolval", 1, 1, ptn_internal_boolval },
         { "call_user_func", 1, PTN_VARIADIC_ARGS, ptn_internal_call_user_func },
         { "call_user_func_array", 2, 2, ptn_internal_call_user_func_array },
+        { "cal_days_in_month", 3, 3, ptn_internal_cal_days_in_month },
+        { "cal_from_jd", 2, 2, ptn_internal_cal_from_jd },
+        { "cal_info", 0, 1, ptn_internal_cal_info },
+        { "cal_to_jd", 4, 4, ptn_internal_cal_to_jd },
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chdir", 1, 1, ptn_internal_chdir },
         { "checkdate", 3, 3, ptn_internal_checkdate },
@@ -48459,6 +48551,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "error_log", 1, 4, ptn_internal_error_log },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "escapeshellarg", 1, 1, ptn_internal_escapeshellarg },
+        { "easter_date", 0, 2, ptn_internal_easter_date },
+        { "easter_days", 0, 2, ptn_internal_easter_days },
         { "exit", 0, 1, ptn_internal_exit },
         { "exec", 1, 3, ptn_internal_exec },
         { "explode", 2, 3, ptn_internal_explode },
@@ -48498,6 +48592,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fprintf", 2, PTN_VARIADIC_ARGS, ptn_internal_fprintf },
         { "fputcsv", 2, 6, ptn_internal_fputcsv },
         { "fputs", 2, 3, ptn_internal_fputs },
+        { "frenchtojd", 3, 3, ptn_internal_frenchtojd },
         { "fread", 2, 2, ptn_internal_fread },
         { "fseek", 2, 3, ptn_internal_fseek },
         { "fstat", 1, 1, ptn_internal_fstat },
@@ -48544,6 +48639,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "glob", 1, 2, ptn_internal_glob },
         { "gmdate", 1, 2, ptn_internal_gmdate },
         { "gmmktime", 0, 6, ptn_internal_gmmktime },
+        { "gregoriantojd", 3, 3, ptn_internal_gregoriantojd },
         { "hebrev", 1, 2, ptn_internal_hebrev },
         { "hex2bin", 1, 1, ptn_internal_hex2bin },
         { "hexdec", 1, 1, ptn_internal_hexdec },
@@ -48610,7 +48706,17 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "is_subclass_of", 2, 3, ptn_internal_is_subclass_of },
         { "is_writable", 1, 1, ptn_internal_is_writable },
         { "is_writeable", 1, 1, ptn_internal_is_writeable },
+        { "jddayofweek", 1, 2, ptn_internal_jddayofweek },
+        { "jdmonthname", 2, 2, ptn_internal_jdmonthname },
+        { "jdtofrench", 1, 1, ptn_internal_jdtofrench },
+        { "jdtogregorian", 1, 1, ptn_internal_jdtogregorian },
+        { "jdtojewish", 1, 3, ptn_internal_jdtojewish },
+        { "jdtojulian", 1, 1, ptn_internal_jdtojulian },
+        { "jdtomonthname", 2, 2, ptn_internal_jdtomonthname },
+        { "jdtounix", 1, 1, ptn_internal_jdtounix },
+        { "jewishtojd", 3, 3, ptn_internal_jewishtojd },
         { "join", 1, 2, ptn_internal_join },
+        { "juliantojd", 3, 3, ptn_internal_juliantojd },
         { "json_decode", 1, 4, ptn_internal_json_decode },
         { "json_encode", 1, 3, ptn_internal_json_encode },
         { "json_last_error", 0, 0, ptn_internal_json_last_error },
@@ -48736,6 +48842,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
+        { "RoundingMode::cases", 0, 0, ptn_internal_rounding_mode_cases },
         { "SplFileObject::fgetcsv", 0, 3, ptn_internal_method_metadata_stub },
         { "SplFileObject::fputcsv", 1, 5, ptn_internal_method_metadata_stub },
         { "SplFileObject::setCsvControl", 0, 3, ptn_internal_method_metadata_stub },
@@ -48856,6 +48963,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ucwords", 1, 2, ptn_internal_ucwords },
         { "uksort", 2, 2, ptn_internal_uksort },
         { "umask", 0, 1, ptn_internal_umask },
+        { "unixtojd", 0, 1, ptn_internal_unixtojd },
         { "uniqid", 0, 2, ptn_internal_uniqid },
         { "unlink", 1, 2, ptn_internal_unlink },
         { "unpack", 2, 3, ptn_internal_unpack },
@@ -48983,6 +49091,27 @@ static const char *ptn_internal_function_extension_name(const char *name) {
             return "xmlwriter";
         }
         return "Core";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "bc")) {
+        return "bcmath";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "cal_") ||
+        ptn_ascii_case_equal(name, "easter_date") ||
+        ptn_ascii_case_equal(name, "easter_days") ||
+        ptn_ascii_case_equal(name, "frenchtojd") ||
+        ptn_ascii_case_equal(name, "gregoriantojd") ||
+        ptn_ascii_case_equal(name, "jddayofweek") ||
+        ptn_ascii_case_equal(name, "jdmonthname") ||
+        ptn_ascii_case_equal(name, "jdtofrench") ||
+        ptn_ascii_case_equal(name, "jdtogregorian") ||
+        ptn_ascii_case_equal(name, "jdtojewish") ||
+        ptn_ascii_case_equal(name, "jdtojulian") ||
+        ptn_ascii_case_equal(name, "jdtomonthname") ||
+        ptn_ascii_case_equal(name, "jdtounix") ||
+        ptn_ascii_case_equal(name, "jewishtojd") ||
+        ptn_ascii_case_equal(name, "juliantojd") ||
+        ptn_ascii_case_equal(name, "unixtojd")) {
+        return "calendar";
     }
     if (ptn_internal_function_name_has_prefix(name, "curl_")) {
         return "curl";
@@ -51152,6 +51281,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
         return ptn_ascii_case_equal(method_name, "toMemory")
             || ptn_ascii_case_equal(method_name, "toStream")
             || ptn_ascii_case_equal(method_name, "toUri");
+    }
+    if (ptn_internal_class_name_is_rounding_mode(class_name)) {
+        return ptn_ascii_case_equal(method_name, "cases");
     }
     return 0;
 }
@@ -58268,6 +58400,10 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "date.timezone");
         return result;
     }
+    if (ptn_ascii_case_equal(extension_name, "bcmath")) {
+        ptn_extension_ini_set_entry(runtime, result, "bcmath.scale");
+        return result;
+    }
     if (ptn_ascii_case_equal(extension_name, "pcre")) {
         ptn_extension_ini_set_entry(runtime, result, "pcre.backtrack_limit");
         ptn_extension_ini_set_entry(runtime, result, "pcre.jit");
@@ -58287,6 +58423,12 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
 static PtnValue ptn_reflection_extension_constants(const char *extension_name) {
     if (ptn_ascii_case_equal(extension_name, "Core")) {
         return ptn_defined_constants_core_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "bcmath")) {
+        return ptn_defined_constants_bcmath_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "calendar")) {
+        return ptn_defined_constants_calendar_table();
     }
     if (ptn_ascii_case_equal(extension_name, "json")) {
         return ptn_defined_constants_json_table();

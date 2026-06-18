@@ -209,6 +209,7 @@ struct RuntimeIni {
     pcre_backtrack_limit: Option<String>,
     pcre_jit: Option<String>,
     opcache_save_comments: Option<String>,
+    bcmath_scale: Option<String>,
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
     output_encoding: Option<String>,
@@ -380,6 +381,12 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("opcache.save_comments") {
         ini.opcache_save_comments = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("bcmath.scale") {
+        if let Ok(parsed) = raw_value.parse::<i64>() {
+            if (0..=2_147_483_647).contains(&parsed) {
+                ini.bcmath_scale = Some(parsed.to_string());
+            }
+        }
     } else if name.eq_ignore_ascii_case("output_handler") {
         ini.output_handler = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("internal_encoding") {
@@ -709,6 +716,7 @@ fn compile_and_run(
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
         opcache_save_comments: ini.opcache_save_comments.clone(),
+        bcmath_scale: ini.bcmath_scale.clone(),
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
         output_encoding: ini.output_encoding.clone(),
@@ -795,6 +803,9 @@ fn compile_and_run(
     }
     if let Some(opcache_save_comments) = &ini.opcache_save_comments {
         command.env("PTN_OPCACHE_SAVE_COMMENTS", opcache_save_comments);
+    }
+    if let Some(bcmath_scale) = &ini.bcmath_scale {
+        command.env("PTN_BCMATH_SCALE", bcmath_scale);
     }
     if let Some(internal_encoding) = &ini.internal_encoding {
         command.env("PTN_INTERNAL_ENCODING", internal_encoding);

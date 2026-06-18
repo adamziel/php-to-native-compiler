@@ -1134,6 +1134,8 @@ struct PtnRuntime {
     int serialize_precision;
     int initial_precision;
     int initial_serialize_precision;
+    int bcmath_scale;
+    int initial_bcmath_scale;
     int exception_ignore_args;
     size_t exception_string_param_max_len;
     int strict_types;

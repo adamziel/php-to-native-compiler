@@ -1250,6 +1250,94 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(7);
         return 1;
     }
+    if (strcmp(name, "BC_MATH_NUMBER") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "CAL_GREGORIAN") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "CAL_JULIAN") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "CAL_JEWISH") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "CAL_FRENCH") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(name, "CAL_NUM_CALS") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "CAL_DOW_DAYNO") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "CAL_DOW_LONG") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "CAL_DOW_SHORT") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "CAL_MONTH_GREGORIAN_SHORT") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "CAL_MONTH_GREGORIAN_LONG") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "CAL_MONTH_JULIAN_SHORT") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "CAL_MONTH_JULIAN_LONG") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(name, "CAL_MONTH_JEWISH") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "CAL_MONTH_FRENCH") == 0) {
+        *out = ptn_int(5);
+        return 1;
+    }
+    if (strcmp(name, "CAL_EASTER_DEFAULT") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "CAL_EASTER_ROMAN") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "CAL_EASTER_ALWAYS_GREGORIAN") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "CAL_EASTER_ALWAYS_JULIAN") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(name, "CAL_JEWISH_ADD_ALAFIM_GERESH") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "CAL_JEWISH_ADD_ALAFIM") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "CAL_JEWISH_ADD_GERESHAYIM") == 0) {
+        *out = ptn_int(8);
+        return 1;
+    }
     if (strcmp(name, "TCP_NODELAY") == 0) {
         *out = ptn_int(1);
         return 1;

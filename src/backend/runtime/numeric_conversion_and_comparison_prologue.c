@@ -157,6 +157,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->serialize_precision = caller_runtime->serialize_precision;
     runtime->initial_precision = caller_runtime->initial_precision;
     runtime->initial_serialize_precision = caller_runtime->initial_serialize_precision;
+    runtime->bcmath_scale = caller_runtime->bcmath_scale;
+    runtime->initial_bcmath_scale = caller_runtime->initial_bcmath_scale;
     runtime->exception_ignore_args = caller_runtime->exception_ignore_args;
     runtime->exception_string_param_max_len = caller_runtime->exception_string_param_max_len;
     runtime->strict_types = caller_runtime->strict_types;
@@ -2816,6 +2818,25 @@ static PTN_UNUSED int ptn_ascii_case_equal_span_to_string(
     return 1;
 }
 
+static PTN_UNUSED const char *ptn_rounding_mode_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "HalfAwayFromZero",
+        "HalfTowardsZero",
+        "HalfEven",
+        "HalfOdd",
+        "TowardsZero",
+        "AwayFromZero",
+        "NegativeInfinity",
+        "PositiveInfinity",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
 static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     const char *class_name,
     size_t class_len,
@@ -3513,6 +3534,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
     }
     PtnValue builtin_value;
+    const char *rounding_case = ptn_ascii_case_equal(resolved_class_name, "RoundingMode")
+        ? ptn_rounding_mode_case_name(constant)
+        : NULL;
+    if (rounding_case != NULL) {
+        return ptn_enum_case(runtime, "RoundingMode", rounding_case);
+    }
     if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
         return builtin_value;
     }

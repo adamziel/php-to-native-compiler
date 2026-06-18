@@ -1668,6 +1668,13 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->initial_precision = PTN_DEFAULT_PRECISION;
     runtime->initial_serialize_precision = PTN_DEFAULT_SERIALIZE_PRECISION;
+    runtime->bcmath_scale = 0;
+    int64_t configured_bcmath_scale = 0;
+    if (ptn_parse_int64_env("PTN_BCMATH_SCALE", &configured_bcmath_scale) &&
+        configured_bcmath_scale >= 0 && configured_bcmath_scale <= INT_MAX) {
+        runtime->bcmath_scale = (int)configured_bcmath_scale;
+    }
+    runtime->initial_bcmath_scale = runtime->bcmath_scale;
     runtime->exception_ignore_args = 0;
     int configured_exception_ignore_args = 0;
     if (ptn_parse_bool_env("PTN_EXCEPTION_IGNORE_ARGS", &configured_exception_ignore_args)) {
