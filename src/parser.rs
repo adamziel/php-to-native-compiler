@@ -736,7 +736,22 @@ impl Parser<'_> {
             ));
         }
         self.expect_left_brace()?;
+        let mut parsed_any = false;
         loop {
+            if matches!(self.peek().kind, TokenKind::RightBrace) {
+                return Err(syntax_error_unexpected(
+                    self.peek(),
+                    Some(grouped_use_import_expected(outer_kind)),
+                ));
+            }
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                let expecting = if parsed_any {
+                    "\"}\""
+                } else {
+                    grouped_use_import_expected(outer_kind)
+                };
+                return Err(syntax_error_unexpected(self.peek(), Some(expecting)));
+            }
             if outer_kind != UseDeclarationKind::Class
                 && (matches!(self.peek().kind, TokenKind::Function)
                     || matches!(self.peek().kind, TokenKind::Const))
@@ -821,10 +836,17 @@ impl Parser<'_> {
                 resolution: prefix.resolution,
             };
             self.register_use_import(item_kind, grouped_target, alias, alias_span)?;
+            parsed_any = true;
             if !matches!(self.peek().kind, TokenKind::Comma) {
                 break;
             }
             self.advance();
+            if matches!(self.peek().kind, TokenKind::RightBrace) {
+                break;
+            }
+            if matches!(self.peek().kind, TokenKind::Comma) {
+                return Err(syntax_error_unexpected(self.peek(), Some("\"}\"")));
+            }
         }
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
             return Err(Diagnostic::parse_error(
@@ -8006,6 +8028,15 @@ fn syntax_error_unexpected(token: &Token, expecting: Option<&str>) -> Diagnostic
         None => format!("syntax error, unexpected {unexpected}"),
     };
     Diagnostic::parse_error(message, Some(token.span))
+}
+
+fn grouped_use_import_expected(kind: UseDeclarationKind) -> &'static str {
+    match kind {
+        UseDeclarationKind::Class => "identifier or namespaced name or \"function\" or \"const\"",
+        UseDeclarationKind::Function | UseDeclarationKind::Constant => {
+            "identifier or namespaced name"
+        }
+    }
 }
 
 fn validate_closure_use_name(name: &str, span: SourceSpan) -> Result<()> {

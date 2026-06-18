@@ -28173,6 +28173,7 @@ fn push_c_string_byte(out: &mut String, byte: u8) {
     match byte {
         b'\\' => out.push_str("\\\\"),
         b'"' => out.push_str("\\\""),
+        b'?' => out.push_str("\\?"),
         b'\n' => out.push_str("\\n"),
         b'\r' => out.push_str("\\r"),
         b'\t' => out.push_str("\\t"),

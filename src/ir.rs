@@ -1871,13 +1871,17 @@ impl<'a> LoweringContext<'a> {
                     else_body,
                     ..
                 } => {
-                    if let Some(value) = ast_compile_time_condition_truth(condition) {
-                        if value {
-                            instructions.extend(self.lower_statements(then_body));
-                        } else {
-                            instructions.extend(self.lower_statements(else_body));
+                    let has_user_labels_or_gotos = statements_contain_label_or_goto(then_body)
+                        || statements_contain_label_or_goto(else_body);
+                    if !has_user_labels_or_gotos {
+                        if let Some(value) = ast_compile_time_condition_truth(condition) {
+                            if value {
+                                instructions.extend(self.lower_statements(then_body));
+                            } else {
+                                instructions.extend(self.lower_statements(else_body));
+                            }
+                            continue;
                         }
-                        continue;
                     }
                     instructions.push(Instruction::Branch {
                         condition: self.lower_expr(condition),
@@ -2657,6 +2661,54 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         | Statement::Label { .. }
         | Statement::Goto { .. }
         | Statement::InlineHtml { .. } => false,
+    }
+}
+
+fn statements_contain_label_or_goto(statements: &[Statement]) -> bool {
+    statements.iter().any(statement_contains_label_or_goto)
+}
+
+fn statement_contains_label_or_goto(statement: &Statement) -> bool {
+    match statement {
+        Statement::Label { .. } | Statement::Goto { .. } => true,
+        Statement::Block { statements, .. } => statements_contain_label_or_goto(statements),
+        Statement::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            statements_contain_label_or_goto(then_body)
+                || statements_contain_label_or_goto(else_body)
+        }
+        Statement::While { body, .. }
+        | Statement::DoWhile { body, .. }
+        | Statement::Foreach { body, .. } => statements_contain_label_or_goto(body),
+        Statement::For {
+            initializers,
+            updates,
+            body,
+            ..
+        } => {
+            statements_contain_label_or_goto(initializers)
+                || statements_contain_label_or_goto(updates)
+                || statements_contain_label_or_goto(body)
+        }
+        Statement::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| statements_contain_label_or_goto(&case.body)),
+        Statement::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            statements_contain_label_or_goto(body)
+                || catches
+                    .iter()
+                    .any(|catch| statements_contain_label_or_goto(&catch.body))
+                || statements_contain_label_or_goto(finally_body)
+        }
+        _ => false,
     }
 }
 
