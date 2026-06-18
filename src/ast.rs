@@ -445,7 +445,7 @@ pub enum Statement {
     },
     For {
         initializers: Vec<Statement>,
-        condition: Option<Expr>,
+        conditions: Vec<Expr>,
         updates: Vec<Statement>,
         body: Vec<Statement>,
         span: SourceSpan,

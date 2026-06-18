@@ -12372,7 +12372,7 @@ fn emit_instruction(
         }
         Instruction::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
         } => {
@@ -12392,7 +12392,11 @@ fn emit_instruction(
             let continue_label = values.next_label("ptn_loop_continue");
             emit_label_reference(out, &end_label);
             out.push_str("    while (1) {\n");
-            if let Some(condition) = condition {
+            if let Some((condition, side_effects)) = conditions.split_last() {
+                for side_effect in side_effects {
+                    let side_effect_temp = values.emit_materialized_value(out, side_effect);
+                    emit_value_cleanup(out, "        ", &side_effect_temp);
+                }
                 let condition_predicate = values.emit_condition(out, condition);
                 out.push_str("        if (!(");
                 out.push_str(&condition_predicate);
@@ -14352,12 +14356,12 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         }
         Instruction::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
         } => {
             collect_instructions_legacy_dollar_brace_deprecations(initializers, deprecations);
-            if let Some(condition) = condition {
+            for condition in conditions {
                 collect_value_legacy_dollar_brace_deprecations(condition, deprecations);
             }
             collect_instructions_legacy_dollar_brace_deprecations(updates, deprecations);
@@ -15060,12 +15064,12 @@ fn collect_instruction_runtime_requirements(
         }
         Instruction::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
         } => {
             collect_instructions_runtime_requirements(initializers, functions, requirements);
-            if let Some(condition) = condition {
+            for condition in conditions {
                 collect_value_runtime_requirements(condition, functions, requirements);
             }
             collect_instructions_runtime_requirements(updates, functions, requirements);
@@ -17370,7 +17374,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::DoWhile { condition, .. } => value_expr_runtime_line(condition),
         Instruction::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
         } => initializers
@@ -17378,7 +17382,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
             .chain(updates)
             .chain(body)
             .find_map(instruction_runtime_line)
-            .or_else(|| condition.as_ref().and_then(value_expr_runtime_line)),
+            .or_else(|| conditions.iter().find_map(value_expr_runtime_line)),
         Instruction::Switch { expression, .. } => value_expr_runtime_line(expression),
         Instruction::Try { body, .. } => body.iter().find_map(instruction_runtime_line),
         Instruction::UnsetVariable { .. }
@@ -17993,12 +17997,12 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         }
         Instruction::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
         } => {
             instructions_use_this(initializers)
-                || condition.as_ref().is_some_and(value_expr_uses_this)
+                || conditions.iter().any(value_expr_uses_this)
                 || instructions_use_this(updates)
                 || instructions_use_this(body)
         }

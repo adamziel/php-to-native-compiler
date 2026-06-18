@@ -1358,13 +1358,11 @@ fn parser_accepts_assignment_expressions_in_branch_conditions() {
     };
     assert_eq!(*op, AssignmentOp::ConcatAssign);
 
-    let Statement::For {
-        condition: Some(condition),
-        ..
-    } = &program.statements[2]
-    else {
+    let Statement::For { conditions, .. } = &program.statements[2] else {
         panic!("expected for statement condition");
     };
+    assert_eq!(conditions.len(), 1);
+    let condition = &conditions[0];
     let Expr::Assign { op, .. } = condition else {
         panic!("expected assignment expression in for condition");
     };
@@ -1439,7 +1437,7 @@ fn parser_accepts_braced_for_statements() {
     let program = parser::parse("<?php for ($i = 0; $i < 3; ++$i) { echo $i; }").unwrap();
     let Statement::For {
         initializers,
-        condition,
+        conditions,
         updates,
         body,
         ..
@@ -1450,26 +1448,104 @@ fn parser_accepts_braced_for_statements() {
     assert_eq!(initializers.len(), 1);
     assert!(matches!(
         &initializers[0],
-        Statement::Assign {
-            op: AssignmentOp::Assign,
+        Statement::Expression {
+            expression: Expr::Assign {
+                op: AssignmentOp::Assign,
+                ..
+            },
             ..
         }
     ));
     assert!(matches!(
-        condition,
-        Some(Expr::Binary {
+        conditions.as_slice(),
+        [Expr::Binary {
             op: BinaryOp::Less,
             ..
-        })
+        }]
     ));
     assert!(matches!(
         &updates[0],
-        Statement::Increment {
-            op: IncDecOp::Increment,
+        Statement::Expression {
+            expression: Expr::IncDec {
+                op: IncDecOp::Increment,
+                ..
+            },
             ..
         }
     ));
     assert_eq!(body.len(), 1);
+}
+
+#[test]
+fn parser_accepts_general_for_clause_expressions() {
+    let program = parser::parse(
+        "<?php for ($box = new Box, $box->i = 0; $box->i < 3; $box->i = $box->i + 1, mark($box->i)) { echo $box->i; }",
+    )
+    .unwrap();
+    let Statement::For {
+        initializers,
+        conditions,
+        updates,
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected for statement");
+    };
+    assert_eq!(initializers.len(), 2);
+    assert_eq!(conditions.len(), 1);
+    assert_eq!(updates.len(), 2);
+    assert!(matches!(
+        &initializers[1],
+        Statement::Expression {
+            expression: Expr::Assign {
+                target: AssignmentTarget::Property { .. },
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        &updates[0],
+        Statement::Expression {
+            expression: Expr::Assign {
+                target: AssignmentTarget::Property { .. },
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        &updates[1],
+        Statement::Expression {
+            expression: Expr::Call { name, .. },
+            ..
+        } if name == "mark"
+    ));
+}
+
+#[test]
+fn parser_accepts_comma_separated_for_conditions() {
+    let program = parser::parse("<?php for ($i = 0; mark($i), $i < 3; $i++) { echo $i; }").unwrap();
+    let Statement::For {
+        initializers,
+        conditions,
+        updates,
+        ..
+    } = &program.statements[0]
+    else {
+        panic!("expected for statement");
+    };
+    assert_eq!(initializers.len(), 1);
+    assert_eq!(conditions.len(), 2);
+    assert_eq!(updates.len(), 1);
+    assert!(matches!(&conditions[0], Expr::Call { name, .. } if name == "mark"));
+    assert!(matches!(
+        &conditions[1],
+        Expr::Binary {
+            op: BinaryOp::Less,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -39386,6 +39462,63 @@ fn compile_braced_for_loop_to_native_binary() {
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), "0123\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_general_for_clause_expressions_to_native_binary() {
+    let root = temp_dir("ptn-native-for-clause-expressions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("for-clause-expressions.php");
+    let output = root.join("for-clause-expressions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class Box { public $i = 0; }\n\
+function mark($value) { echo \"u$value;\"; }\n\
+for ($box = new Box, $box->i = 0; $box->i < 3; $box->i = $box->i + 1, mark($box->i)) {\n\
+    echo \"b\", $box->i, \";\";\n\
+}\n\
+echo \"done:\", $box->i, \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "b0;u1;b1;u2;b2;u3;done:3\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_comma_separated_for_conditions_to_native_binary() {
+    let root = temp_dir("ptn-native-for-comma-conditions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("for-comma-conditions.php");
+    let output = root.join("for-comma-conditions-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function mark($value) { echo \"c$value;\"; return true; }\n\
+for ($i = 0; mark($i), $i < 3; $i++) {\n\
+    echo \"b$i;\";\n\
+}\n\
+echo \"done:$i\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "c0;b0;c1;b1;c2;b2;c3;done:3\n"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

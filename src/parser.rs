@@ -4619,10 +4619,10 @@ impl Parser<'_> {
         };
         self.expect_semicolon()?;
 
-        let condition = if matches!(self.peek().kind, TokenKind::Semicolon) {
-            None
+        let conditions = if matches!(self.peek().kind, TokenKind::Semicolon) {
+            Vec::new()
         } else {
-            Some(self.parse_expr()?)
+            self.parse_for_condition_list()?
         };
         self.expect_semicolon()?;
 
@@ -4644,7 +4644,7 @@ impl Parser<'_> {
 
         Ok(Statement::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
             span,
@@ -4738,122 +4738,19 @@ impl Parser<'_> {
         Ok(clauses)
     }
 
+    fn parse_for_condition_list(&mut self) -> Result<Vec<Expr>> {
+        let mut conditions = vec![self.parse_expr()?];
+        while matches!(self.peek().kind, TokenKind::Comma) {
+            self.advance();
+            conditions.push(self.parse_expr()?);
+        }
+        Ok(conditions)
+    }
+
     fn parse_for_clause(&mut self) -> Result<Statement> {
-        match self.peek().kind {
-            TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_clause(),
-            TokenKind::Identifier(_) => self.parse_call_clause(),
-            TokenKind::Variable(_) => self.parse_variable_clause(),
-            _ => Err(Diagnostic::new(
-                "expected for clause",
-                Some(self.peek().span),
-            )),
-        }
-    }
-
-    fn parse_variable_clause(&mut self) -> Result<Statement> {
-        let start = self.index;
-        let token = self.advance().clone();
-        let TokenKind::Variable(name) = token.kind else {
-            return Err(Diagnostic::new("expected variable", Some(token.span)));
-        };
-        if matches!(self.peek().kind, TokenKind::LeftBracket) {
-            let target = self.parse_array_dim_target(name, token.span)?;
-            return match self.peek().kind {
-                TokenKind::PlusPlus => {
-                    self.advance();
-                    let target = IncDecTarget::ArrayDim(target);
-                    reject_append_array_read_in_inc_dec_target(&target)?;
-                    Ok(Statement::Increment {
-                        target,
-                        op: IncDecOp::Increment,
-                        span: token.span,
-                    })
-                }
-                TokenKind::MinusMinus => {
-                    self.advance();
-                    let target = IncDecTarget::ArrayDim(target);
-                    reject_append_array_read_in_inc_dec_target(&target)?;
-                    Ok(Statement::Increment {
-                        target,
-                        op: IncDecOp::Decrement,
-                        span: token.span,
-                    })
-                }
-                _ => Err(Diagnostic::new(
-                    "array offset for clauses currently support increment/decrement updates",
-                    Some(target.span),
-                )),
-            };
-        }
-        match self.peek().kind {
-            TokenKind::PlusPlus => {
-                self.advance();
-                Ok(Statement::Increment {
-                    target: IncDecTarget::Variable {
-                        name,
-                        span: token.span,
-                    },
-                    op: IncDecOp::Increment,
-                    span: token.span,
-                })
-            }
-            TokenKind::MinusMinus => {
-                self.advance();
-                Ok(Statement::Increment {
-                    target: IncDecTarget::Variable {
-                        name,
-                        span: token.span,
-                    },
-                    op: IncDecOp::Decrement,
-                    span: token.span,
-                })
-            }
-            _ => {
-                if !self.peek_is_assignment_op() {
-                    self.index = start;
-                    let expression = self.parse_expr()?;
-                    let span = expression.span();
-                    return Ok(Statement::Expression { expression, span });
-                }
-                let op = self.expect_assignment_op()?;
-                let value = self.parse_assignment_value_expr()?;
-                Ok(Statement::Assign {
-                    name,
-                    op,
-                    value,
-                    span: token.span,
-                })
-            }
-        }
-    }
-
-    fn parse_prefix_increment_clause(&mut self) -> Result<Statement> {
-        let op_token = self.advance().clone();
-        let op = match op_token.kind {
-            TokenKind::PlusPlus => IncDecOp::Increment,
-            TokenKind::MinusMinus => IncDecOp::Decrement,
-            _ => return Err(Diagnostic::new("expected increment", Some(op_token.span))),
-        };
-        let target = inc_dec_target_from_expr(self.parse_postfix_expr()?, op_token.span)?;
-        reject_append_array_read_in_inc_dec_target(&target)?;
-        Ok(Statement::Increment {
-            target,
-            op,
-            span: op_token.span,
-        })
-    }
-
-    fn parse_call_clause(&mut self) -> Result<Statement> {
-        let (name, token_span) = self.parse_resolved_function_name("expected function name")?;
-        let (arguments, argument_names, argument_unpacks, _) = self.parse_call_arguments()?;
-        validate_mutating_array_internal_call(&name, &arguments, token_span)?;
-        Ok(Statement::Call {
-            name,
-            arguments,
-            argument_names,
-            argument_unpacks,
-            span: token_span,
-        })
+        let expression = self.parse_expr()?;
+        let span = expression.span();
+        Ok(Statement::Expression { expression, span })
     }
 
     fn parse_switch(&mut self) -> Result<Statement> {
@@ -5826,17 +5723,6 @@ impl Parser<'_> {
             value: Box::new(value),
             span,
         })
-    }
-
-    fn parse_assignment_value_expr(&mut self) -> Result<Expr> {
-        let value = self.parse_assignment_expr_without_keyword_boolean()?;
-        if self.peek_is_keyword_boolean_operator() {
-            return Err(Diagnostic::new(
-                "assignment expressions with keyword boolean operators are unsupported",
-                Some(self.peek().span),
-            ));
-        }
-        Ok(value)
     }
 
     fn parse_keyword_boolean_tail_from_left(
@@ -14692,7 +14578,7 @@ fn validate_control_transfers_in_statements_inner(
             }
             Statement::For {
                 initializers,
-                condition,
+                conditions,
                 updates,
                 body,
                 ..
@@ -14702,7 +14588,7 @@ fn validate_control_transfers_in_statements_inner(
                     control_depth,
                     finally_control_depths,
                 )?;
-                if let Some(condition) = condition {
+                for condition in conditions {
                     validate_control_transfers_in_expr(condition)?;
                 }
                 validate_control_transfers_in_statements_inner(
@@ -15844,13 +15730,13 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         } => statements_contain_yield(body) || expr_contains_yield(condition),
         Statement::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
             ..
         } => {
             statements_contain_yield(initializers)
-                || condition.as_ref().is_some_and(expr_contains_yield)
+                || conditions.iter().any(expr_contains_yield)
                 || statements_contain_yield(updates)
                 || statements_contain_yield(body)
         }
@@ -16215,13 +16101,13 @@ fn validate_anonymous_functions_in_statements(
             }
             Statement::For {
                 initializers,
-                condition,
+                conditions,
                 updates,
                 body,
                 ..
             } => {
                 validate_anonymous_functions_in_statements(initializers, functions)?;
-                if let Some(condition) = condition {
+                for condition in conditions {
                     validate_anonymous_functions_in_expr(condition, functions)?;
                 }
                 validate_anonymous_functions_in_statements(updates, functions)?;

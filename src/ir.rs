@@ -409,7 +409,7 @@ pub enum Instruction {
     },
     For {
         initializers: Vec<Instruction>,
-        condition: Option<ValueExpr>,
+        conditions: Vec<ValueExpr>,
         updates: Vec<Instruction>,
         body: Vec<Instruction>,
     },
@@ -1925,16 +1925,17 @@ impl<'a> LoweringContext<'a> {
                 }
                 Statement::For {
                     initializers,
-                    condition,
+                    conditions,
                     updates,
                     body,
                     ..
                 } => {
                     instructions.push(Instruction::For {
                         initializers: self.lower_statements(initializers),
-                        condition: condition
-                            .as_ref()
-                            .map(|condition| self.lower_expr(condition)),
+                        conditions: conditions
+                            .iter()
+                            .map(|condition| self.lower_expr(condition))
+                            .collect(),
                         updates: self.lower_statements(updates),
                         body: self.lower_statements(body),
                     });
@@ -2758,13 +2759,13 @@ fn statement_contains_yield(statement: &Statement) -> bool {
         } => statements_contain_yield(statements),
         Statement::For {
             initializers,
-            condition,
+            conditions,
             updates,
             body,
             ..
         } => {
             statements_contain_yield(initializers)
-                || condition.as_ref().is_some_and(expr_contains_yield)
+                || conditions.iter().any(expr_contains_yield)
                 || statements_contain_yield(updates)
                 || statements_contain_yield(body)
         }
