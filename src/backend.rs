@@ -17815,12 +17815,12 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
         )
     })?;
     let optimization_args = cc_optimization_args(c_source.len())?;
+    let warning_args = cc_warning_args(c_source.len())?;
     let mut command = Command::new("cc");
-    command
-        .arg("-std=c11")
-        .arg("-Wall")
-        .arg("-Wextra")
-        .arg("-Wno-uninitialized");
+    command.arg("-std=c11");
+    for arg in warning_args {
+        command.arg(arg);
+    }
     for arg in optimization_args {
         command.arg(arg);
     }
@@ -17846,6 +17846,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
 }
 
 const CC_OPT_LEVEL_ENV: &str = "PTN_CC_OPT_LEVEL";
+const CC_WARNINGS_ENV: &str = "PTN_CC_WARNINGS";
 const LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD: usize = 1_000_000;
 
 fn cc_optimization_args(c_source_len: usize) -> Result<Vec<&'static str>> {
@@ -17868,7 +17869,13 @@ fn cc_optimization_args_for_source(
 ) -> Result<Vec<&'static str>> {
     let has_explicit_profile = value.map(str::trim).is_some_and(|value| !value.is_empty());
     if !has_explicit_profile && c_source_len >= LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD {
-        return Ok(vec!["-O0", "-g0", "-w"]);
+        return Ok(vec![
+            "-pipe",
+            "-O0",
+            "-g0",
+            "-fno-asynchronous-unwind-tables",
+            "-fno-unwind-tables",
+        ]);
     }
     cc_optimization_args_for(value)
 }
@@ -17888,6 +17895,43 @@ fn cc_optimization_args_for(value: Option<&str>) -> Result<Vec<&'static str>> {
             format!(
                 "invalid {CC_OPT_LEVEL_ENV} value `{raw}`; expected 0, 1, 2, 3, s, z, or debug"
             ),
+            None,
+        )),
+    }
+}
+
+fn cc_warning_args(c_source_len: usize) -> Result<Vec<&'static str>> {
+    let value = match env::var(CC_WARNINGS_ENV) {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(Diagnostic::new(
+                format!("{CC_WARNINGS_ENV} must be valid Unicode"),
+                None,
+            ))
+        }
+    };
+    cc_warning_args_for_source(value.as_deref(), c_source_len)
+}
+
+fn cc_warning_args_for_source(
+    value: Option<&str>,
+    c_source_len: usize,
+) -> Result<Vec<&'static str>> {
+    let Some(raw) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return if c_source_len >= LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD {
+            Ok(vec![])
+        } else {
+            Ok(vec!["-Wall", "-Wextra", "-Wno-uninitialized"])
+        };
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "0" | "off" | "false" | "no" | "none" => Ok(vec![]),
+        "1" | "on" | "true" | "yes" | "default" => {
+            Ok(vec!["-Wall", "-Wextra", "-Wno-uninitialized"])
+        }
+        _ => Err(Diagnostic::new(
+            format!("invalid {CC_WARNINGS_ENV} value `{raw}`; expected on, off, 1, or 0"),
             None,
         )),
     }
@@ -30772,7 +30816,8 @@ fn display_os(value: &OsStr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cc_optimization_args_for, cc_optimization_args_for_source, emit_c,
+        cc_optimization_args_for, cc_optimization_args_for_source, cc_warning_args_for_source,
+        emit_c,
         LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
     };
     use crate::{ir, parser};
@@ -30793,12 +30838,24 @@ mod tests {
     fn default_c_compiler_profile_uses_fast_profile_for_large_sources() {
         assert_eq!(
             cc_optimization_args_for_source(None, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).unwrap(),
-            vec!["-O0", "-g0", "-w"]
+            vec![
+                "-pipe",
+                "-O0",
+                "-g0",
+                "-fno-asynchronous-unwind-tables",
+                "-fno-unwind-tables"
+            ]
         );
         assert_eq!(
             cc_optimization_args_for_source(Some(""), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
                 .unwrap(),
-            vec!["-O0", "-g0", "-w"]
+            vec![
+                "-pipe",
+                "-O0",
+                "-g0",
+                "-fno-asynchronous-unwind-tables",
+                "-fno-unwind-tables"
+            ]
         );
         assert_eq!(
             cc_optimization_args_for_source(Some("2"), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
@@ -30828,6 +30885,33 @@ mod tests {
     fn c_compiler_profile_rejects_unknown_values() {
         let error = cc_optimization_args_for(Some("fast")).unwrap_err();
         assert!(error.message.contains("invalid PTN_CC_OPT_LEVEL value"));
+    }
+
+    #[test]
+    fn default_c_compiler_warnings_are_disabled_for_large_sources() {
+        assert_eq!(
+            cc_warning_args_for_source(None, 0).unwrap(),
+            vec!["-Wall", "-Wextra", "-Wno-uninitialized"]
+        );
+        assert_eq!(
+            cc_warning_args_for_source(None, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).unwrap(),
+            Vec::<&'static str>::new()
+        );
+    }
+
+    #[test]
+    fn c_compiler_warnings_accept_explicit_profiles() {
+        assert_eq!(
+            cc_warning_args_for_source(Some("on"), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).unwrap(),
+            vec!["-Wall", "-Wextra", "-Wno-uninitialized"]
+        );
+        assert_eq!(
+            cc_warning_args_for_source(Some("0"), 0).unwrap(),
+            Vec::<&'static str>::new()
+        );
+
+        let error = cc_warning_args_for_source(Some("maybe"), 0).unwrap_err();
+        assert!(error.message.contains("invalid PTN_CC_WARNINGS value"));
     }
 
     #[test]
