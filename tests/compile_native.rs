@@ -9674,6 +9674,48 @@ fn compile_var_dump_recursive_object_to_native_binary() {
 }
 
 #[test]
+fn compile_var_dump_magic_debug_info_by_ref_return_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-debug-info-by-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-debug-info-by-ref.php");
+    let output = root.join("var-dump-debug-info-by-ref-bin");
+    fs::write(
+        &input,
+        "<?php
+class DebugInfoByRef {
+    private $tmp = ['x' => 1];
+
+    public function &__debugInfo(): array {
+        return $this->tmp;
+    }
+}
+
+var_dump(new DebugInfoByRef);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(DebugInfoByRef)#1 (1) {\n",
+            "  [\"x\"]=>\n",
+            "  int(1)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump_magic_debug_info"));
+    assert!(c_source.contains("ptn_declared_magic_debug_info"));
+}
+
+#[test]
 fn compile_debug_zval_dump_binary_keys_and_resource_refcounts_to_native_binary() {
     let root = temp_dir("ptn-native-debug-zval-dump-binary-keys-resources");
     fs::create_dir_all(&root).unwrap();
@@ -20388,6 +20430,103 @@ var_dump($plain->isCallable());
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reflection_parameter_constructor_optional_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-parameter-constructor-optional");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-parameter-constructor-optional.php");
+    let output = root.join("reflection-parameter-constructor-optional-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectionParameterConstructorSubject {
+    function func($x, $y = null) {}
+}
+
+$method = new ReflectionMethod('ReflectionParameterConstructorSubject', 'func');
+var_dump($method->getNumberOfParameters());
+var_dump($method->getNumberOfRequiredParameters());
+
+$required = new ReflectionParameter(array('ReflectionParameterConstructorSubject', 'func'), 'x');
+$optional = new ReflectionParameter(array('ReflectionParameterConstructorSubject', 'func'), 1);
+var_dump($required->isOptional());
+var_dump($optional->isOptional());
+
+try {
+    new ReflectionParameter(array('ReflectionParameterConstructorSubject', 'func'), -1);
+} catch (ValueError $e) {
+    var_dump($e->getMessage());
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(91) \"ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_parameter_new"));
+    assert!(c_source.contains("ptn_reflection_method_call_method"));
+}
+
+#[test]
+fn compile_reflection_object_constructor_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-object-constructor-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-object-constructor-dump.php");
+    let output = root.join("reflection-object-constructor-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+$r1 = new ReflectionObject(new stdClass);
+var_dump($r1);
+
+class ReflectionObjectDumpSubject {}
+$subject = new ReflectionObjectDumpSubject;
+$r2 = new ReflectionObject($subject);
+var_dump($r2);
+
+$r3 = new ReflectionObject($r2);
+var_dump($r3);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(ReflectionObject)#"), "{stdout}");
+    assert!(stdout.contains("string(8) \"stdClass\""), "{stdout}");
+    assert!(
+        stdout.contains("string(27) \"ReflectionObjectDumpSubject\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(16) \"ReflectionObject\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_object_new"));
+    assert!(c_source.contains("ptn_internal_class_exists_name"));
 }
 
 #[test]
@@ -48805,6 +48944,61 @@ var_dump($d);
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_set_asymmetric_typed_property_var_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-set-var-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-set-var-dump.php");
+    let output = root.join("asymmetric-set-var-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public private(set) int $a = 1;
+
+    public function __construct() {
+        unset($this->a);
+    }
+}
+
+class D extends C {
+    public function __set($name, $value) {
+        $this->a = $value;
+    }
+}
+
+$d = new D();
+try {
+    $d->a = 2;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($d);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot modify private(set) property C::$a from scope D\n",
+            "object(D)#1 (0) {\n",
+            "  [\"a\"]=>\n",
+            "  uninitialized(int)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump_object_uninitialized_properties"));
+    assert!(c_source.contains("ptn_declared_magic_property_set"));
 }
 
 #[test]
