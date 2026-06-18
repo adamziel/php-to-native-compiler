@@ -19271,7 +19271,10 @@ fn compile_c_with_ada_url(
     if !c_status.success() {
         let _ = fs::remove_file(&c_object);
         return Err(Diagnostic::new(
-            format!("cc failed compiling {} to object", display_os(c_path.as_os_str())),
+            format!(
+                "cc failed compiling {} to object",
+                display_os(c_path.as_os_str())
+            ),
             None,
         ));
     }
@@ -32976,7 +32979,9 @@ mod tests {
 
     #[test]
     fn c_compiler_detects_ada_url_runtime_requirement() {
-        assert!(c_source_uses_ada_url("#define PTN_USE_ADA_URL 1\nint main(void) { return 0; }\n"));
+        assert!(c_source_uses_ada_url(
+            "#define PTN_USE_ADA_URL 1\nint main(void) { return 0; }\n"
+        ));
         assert!(!c_source_uses_ada_url("int main(void) { return 0; }\n"));
     }
 

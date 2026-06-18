@@ -1018,7 +1018,7 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
             "array(0) {\n",
             "}\n",
         )
@@ -52446,6 +52446,8 @@ var_dump($url->toAsciiString());
 var_dump($url->getPort());
 var_dump($url->getHostType());
 var_dump($url->withPath("foo#bar")->toAsciiString());
+var_dump($url->withPath("/p^th#")->toAsciiString());
+var_dump(Uri\WhatWg\Url::parse("https://example.com/foo\"/<bar>/^{baz}")->getPath());
 var_dump($url->withUsername("u:s/r")->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
 var_dump($url->equals($normalized));
@@ -52482,11 +52484,13 @@ try {
             "NULL\n",
             "enum(Uri\\WhatWg\\UrlHostType::Domain)\n",
             "string(52) \"https://user:info@example.com/foo%23bar?abc=123#hash\"\n",
+            "string(27) \"https://example.com/p^th%23\"\n",
+            "string(28) \"/foo%22/%3Cbar%3E/^%7Bbaz%7D\"\n",
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
