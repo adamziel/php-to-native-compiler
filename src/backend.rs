@@ -11118,6 +11118,67 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
     out.push_str("}\n");
 }
 
+fn emit_declare_class_dependency_check(
+    out: &mut String,
+    resolved_name_temp: &str,
+    dependency_label: &str,
+    runtime_exists_fn: &str,
+    internal_exists_fn: &str,
+    source_path: &str,
+    line: usize,
+) {
+    out.push_str("        if (!");
+    out.push_str(runtime_exists_fn);
+    out.push_str("(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")) {\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            if (!");
+    out.push_str(internal_exists_fn);
+    out.push('(');
+    out.push_str(resolved_name_temp);
+    out.push_str(")) {\n");
+    out.push_str("#endif\n");
+    out.push_str("                ptn_runtime_autoload_class(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
+    out.push_str("                    ptn_rethrow_exception(&runtime);\n");
+    out.push_str("                }\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            }\n");
+    out.push_str("#endif\n");
+    out.push_str("        }\n");
+    out.push_str("        if (!");
+    out.push_str(runtime_exists_fn);
+    out.push_str("(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            && !");
+    out.push_str(internal_exists_fn);
+    out.push('(');
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#endif\n");
+    out.push_str("        ) {\n");
+    out.push_str("            char dependency_message[1024];\n");
+    out.push_str("            snprintf(dependency_message, sizeof(dependency_message), \"");
+    out.push_str(dependency_label);
+    out.push_str(" \\\"%s\\\" not found\", ");
+    out.push_str(resolved_name_temp);
+    out.push_str(");\n");
+    out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", dependency_message, \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str("            ptn_rethrow_exception(&runtime);\n");
+    out.push_str("        }\n");
+}
+
 fn emit_instruction(
     out: &mut String,
     values: &mut ValueEmitter,
@@ -11363,6 +11424,41 @@ fn emit_instruction(
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("        }\n");
+            if let Some(parent_name) = &class.parent_name {
+                let parent_temp = format!("ptn_declared_parent_{}", class_index);
+                out.push_str("        const char *");
+                out.push_str(&parent_temp);
+                out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+                out.push_str(&c_string(parent_name));
+                out.push_str("\");\n");
+                emit_declare_class_dependency_check(
+                    out,
+                    &parent_temp,
+                    "Class",
+                    "ptn_declared_runtime_class_exists",
+                    "ptn_internal_class_exists_name",
+                    source_path,
+                    *line,
+                );
+            }
+            for (interface_index, interface_name) in class.interfaces.iter().enumerate() {
+                let interface_temp =
+                    format!("ptn_declared_interface_{}_{}", class_index, interface_index);
+                out.push_str("        const char *");
+                out.push_str(&interface_temp);
+                out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+                out.push_str(&c_string(interface_name));
+                out.push_str("\");\n");
+                emit_declare_class_dependency_check(
+                    out,
+                    &interface_temp,
+                    "Interface",
+                    "ptn_declared_runtime_interface_exists",
+                    "ptn_internal_interface_exists_name",
+                    source_path,
+                    *line,
+                );
+            }
             out.push_str("        runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
             out.push_str("] = 1;\n");
@@ -22423,7 +22519,7 @@ impl ValueEmitter {
         if let Some(declared_class) = compile_time_class_name.as_deref().and_then(|name| {
             self.classes
                 .iter()
-                .find(|class| class.name.eq_ignore_ascii_case(name))
+                .find(|class| class.initially_declared && class.name.eq_ignore_ascii_case(name))
                 .cloned()
         }) {
             self.emit_declared_new_object(
@@ -22473,7 +22569,9 @@ impl ValueEmitter {
                 out.push_str(&class_lookup_temp);
                 out.push_str(", \"");
                 out.push_str(&c_string(&declared_class.name));
-                out.push_str("\")) {\n");
+                out.push_str("\") && ptn_declared_runtime_class_exists(&runtime, ");
+                out.push_str(&class_lookup_temp);
+                out.push_str(")) {\n");
                 self.emit_declared_new_object(
                     out,
                     &result_temp,
@@ -22554,7 +22652,9 @@ impl ValueEmitter {
             out.push_str(&class_resolved_temp);
             out.push_str(", \"");
             out.push_str(&c_string(&declared_class.name));
-            out.push_str("\")) {\n");
+            out.push_str("\") && ptn_declared_runtime_class_exists(&runtime, ");
+            out.push_str(&class_resolved_temp);
+            out.push_str(")) {\n");
             self.emit_declared_new_object(
                 out,
                 &result_temp,

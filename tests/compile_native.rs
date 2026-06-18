@@ -18330,6 +18330,52 @@ echo \"Value is $value\\n\";
 }
 
 #[test]
+fn compile_autoload_interface_failure_in_conditional_class_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-conditional-interface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-conditional-interface.php");
+    let output = root.join("autoload-conditional-interface-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($className) {
+    var_dump($className);
+
+    if ($className == 'Foo') {
+        class Foo implements Bar {}
+    } else {
+        throw new Exception($className);
+    }
+});
+
+try {
+    new Foo();
+} catch (Exception $e) {
+}
+
+var_dump(new Foo());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(3) \"Foo\"\nstring(3) \"Bar\"\nstring(3) \"Foo\"\nstring(3) \"Bar\"\n"
+    );
+    assert!(String::from_utf8(execution.stderr)
+        .unwrap()
+        .contains("Fatal error: Uncaught Exception: Bar"),);
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_autoload_class(&runtime"));
+    assert!(c_source.contains("Interface \\\"%s\\\" not found"));
+}
+
+#[test]
 fn compile_get_defined_functions_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-get-defined-functions-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -18449,6 +18495,42 @@ class_alias('SourceAlias', '_');
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_append_declared_alias_names"));
     assert!(c_source.contains("ptn_runtime_class_alias_source_kind"));
+}
+
+#[test]
+fn compile_class_alias_autoloads_conditional_source_to_native_binary() {
+    let root = temp_dir("ptn-native-class-alias-autoload-conditional-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-autoload-conditional-source.php");
+    let output = root.join("class-alias-autoload-conditional-source-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($className) {
+    echo \"autoload $className\\n\";
+    class foo {}
+});
+
+var_dump(class_alias('foo', 'bar', true));
+var_dump(get_class(new foo));
+var_dump(get_class(new bar));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "autoload foo\nbool(true)\nstring(3) \"foo\"\nstring(3) \"foo\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_register_class_alias"));
+    assert!(c_source.contains("ptn_runtime_autoload_class"));
 }
 
 #[test]

@@ -10639,6 +10639,9 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
             continue;
         }
         if !names.contains(&parent_name.to_ascii_lowercase()) {
+            if class.is_conditionally_declared {
+                continue;
+            }
             return Err(Diagnostic::new(
                 format!("Class \"{parent_name}\" not found"),
                 Some(class.span),
@@ -10687,10 +10690,12 @@ fn validate_interface_references(
             {
                 continue;
             }
-            return Err(Diagnostic::new(
-                format!("Interface \"{interface_name}\" not found"),
-                Some(class.span),
-            ));
+            if !class.is_conditionally_declared {
+                return Err(Diagnostic::new(
+                    format!("Interface \"{interface_name}\" not found"),
+                    Some(class.span),
+                ));
+            }
         }
     }
     Ok(())

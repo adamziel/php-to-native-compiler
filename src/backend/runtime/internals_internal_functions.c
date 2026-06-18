@@ -58725,10 +58725,10 @@ enum {
 
 static int ptn_runtime_class_alias_source_kind(PtnRuntime *runtime, const char *class_name) {
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
-    if (ptn_declared_class_exists(resolved_name) || ptn_internal_class_exists_name(resolved_name)) {
+    if (ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_internal_class_exists_name(resolved_name)) {
         return PTN_CLASS_ALIAS_SOURCE_CLASS;
     }
-    if (ptn_declared_interface_exists(resolved_name) || ptn_internal_interface_exists_name(resolved_name)) {
+    if (ptn_declared_runtime_interface_exists(runtime, resolved_name) || ptn_internal_interface_exists_name(resolved_name)) {
         return PTN_CLASS_ALIAS_SOURCE_INTERFACE;
     }
     if (ptn_declared_trait_exists(resolved_name)) {
@@ -59219,11 +59219,20 @@ static PTN_UNUSED int ptn_runtime_register_class_alias(
     PtnRuntime *runtime,
     const char *source_name,
     const char *alias_name,
+    int autoload,
     size_t line
 ) {
     const char *source_lookup_name = ptn_symbol_name_without_leading_slash(source_name);
     const char *source_resolved_name = ptn_runtime_resolve_class_alias(runtime, source_lookup_name);
     int source_kind = ptn_runtime_class_alias_source_kind(runtime, source_resolved_name);
+    if (source_kind == PTN_CLASS_ALIAS_SOURCE_MISSING && autoload) {
+        ptn_runtime_autoload_class(runtime, source_resolved_name, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return 0;
+        }
+        source_resolved_name = ptn_runtime_resolve_class_alias(runtime, source_lookup_name);
+        source_kind = ptn_runtime_class_alias_source_kind(runtime, source_resolved_name);
+    }
     if (source_kind == PTN_CLASS_ALIAS_SOURCE_MISSING) {
         ptn_emit_class_alias_warning(runtime, "Class \"%s\" not found", source_lookup_name, line);
         return 0;
@@ -75160,10 +75169,10 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
 }
 
 static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     char *source_name = ptn_value_to_string(args[0]);
     char *alias_name = ptn_value_to_string(args[1]);
-    int registered = ptn_runtime_register_class_alias(runtime, source_name, alias_name, line);
+    int autoload = argc < 3 || ptn_is_truthy(args[2]);
+    int registered = ptn_runtime_register_class_alias(runtime, source_name, alias_name, autoload, line);
     free(alias_name);
     free(source_name);
     return ptn_bool(registered);
