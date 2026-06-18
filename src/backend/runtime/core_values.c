@@ -40,6 +40,9 @@
 #include <utime.h>
 #include <unistd.h>
 #endif
+#ifdef PTN_USE_ADA_URL
+#include "ada_c.h"
+#endif
 
 #if !defined(_WIN32)
 extern char *realpath(const char *path, char *resolved_path);

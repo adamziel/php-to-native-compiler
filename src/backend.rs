@@ -568,6 +568,7 @@ struct RuntimeRequirements {
     direct_internal_helpers: bool,
     compact_internal_helpers: bool,
     request_context: bool,
+    ada_url: bool,
     known_array_variables: HashSet<String>,
 }
 
@@ -591,6 +592,9 @@ fn variable_needs_request_context(name: &str) -> bool {
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.internal_function_dispatch {
         out.push_str("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1\n");
+    }
+    if requirements.ada_url {
+        out.push_str("#define PTN_USE_ADA_URL 1\n");
     }
     let runtime_c = runtime::runtime_c();
     let direct_helpers = runtime_chunk_range(
@@ -16850,6 +16854,9 @@ fn collect_value_runtime_requirements(
             if name.eq_ignore_ascii_case("parse") || is_uri_whatwg_url_method_name(name) {
                 requirements.internal_function_dispatch = true;
             }
+            if is_uri_whatwg_url_method_name(name) {
+                requirements.ada_url = true;
+            }
             if name.eq_ignore_ascii_case("__invoke") {
                 requirements.closure_invoke_method_dispatch = true;
                 requirements.internal_function_dispatch = true;
@@ -16955,6 +16962,9 @@ fn collect_value_runtime_requirements(
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
+                if is_uri_whatwg_url_class_name(class_name) {
+                    requirements.ada_url = true;
+                }
             }
             if class_name.eq_ignore_ascii_case("CallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("RecursiveCallbackFilterIterator")
@@ -17071,6 +17081,8 @@ fn collect_call_runtime_requirements(
         requirements.method_dispatch = true;
     }
     if is_uri_whatwg_url_static_call_name(name) {
+        requirements.ada_url = true;
+        requirements.internal_function_dispatch = true;
         requirements.method_dispatch = true;
     }
     let has_named_arguments = argument_names.iter().any(Option::is_some);
@@ -19196,6 +19208,9 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     })?;
     let optimization_args = cc_optimization_args(c_source.len())?;
     let warning_args = cc_warning_args(c_source.len())?;
+    if c_source_uses_ada_url(c_source) {
+        return compile_c_with_ada_url(&c_path, output, &optimization_args, &warning_args);
+    }
     let mut command = Command::new("cc");
     command.arg("-std=c11");
     for arg in warning_args {
@@ -19223,6 +19238,98 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
             None,
         ))
     }
+}
+
+fn compile_c_with_ada_url(
+    c_path: &Path,
+    output: &Path,
+    optimization_args: &[&str],
+    warning_args: &[&str],
+) -> Result<()> {
+    let ada_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("third_party/ada-url-3.4.5");
+    let ada_cpp = ada_dir.join("ada.cpp");
+    let c_object = output.with_extension("ptn-c.o");
+    let ada_object = output.with_extension("ptn-ada-url.o");
+
+    let mut c_command = Command::new("cc");
+    c_command.arg("-std=c11");
+    for arg in warning_args {
+        c_command.arg(arg);
+    }
+    for arg in optimization_args {
+        c_command.arg(arg);
+    }
+    let c_status = c_command
+        .arg("-I")
+        .arg(&ada_dir)
+        .arg("-c")
+        .arg(c_path)
+        .arg("-o")
+        .arg(&c_object)
+        .status()
+        .map_err(|error| Diagnostic::new(format!("failed to launch cc: {error}"), None))?;
+    if !c_status.success() {
+        let _ = fs::remove_file(&c_object);
+        return Err(Diagnostic::new(
+            format!("cc failed compiling {} to object", display_os(c_path.as_os_str())),
+            None,
+        ));
+    }
+
+    let mut ada_command = Command::new("c++");
+    ada_command
+        .arg("-std=c++20")
+        .arg("-DADA_INCLUDE_URL_PATTERN=0");
+    for arg in optimization_args {
+        ada_command.arg(arg);
+    }
+    let ada_status = ada_command
+        .arg("-I")
+        .arg(&ada_dir)
+        .arg("-c")
+        .arg(&ada_cpp)
+        .arg("-o")
+        .arg(&ada_object)
+        .status()
+        .map_err(|error| Diagnostic::new(format!("failed to launch c++: {error}"), None))?;
+    if !ada_status.success() {
+        let _ = fs::remove_file(&c_object);
+        let _ = fs::remove_file(&ada_object);
+        return Err(Diagnostic::new(
+            format!(
+                "c++ failed compiling vendored Ada URL parser {}",
+                display_os(ada_cpp.as_os_str())
+            ),
+            None,
+        ));
+    }
+
+    let link_status = Command::new("c++")
+        .arg(&c_object)
+        .arg(&ada_object)
+        .arg("-o")
+        .arg(output)
+        .arg("-lm")
+        .status()
+        .map_err(|error| Diagnostic::new(format!("failed to launch c++ linker: {error}"), None))?;
+    let _ = fs::remove_file(&c_object);
+    let _ = fs::remove_file(&ada_object);
+    if link_status.success() {
+        Ok(())
+    } else {
+        Err(Diagnostic::new(
+            format!(
+                "c++ failed linking {} to {}",
+                display_os(c_path.as_os_str()),
+                display_os(output.as_os_str())
+            ),
+            None,
+        ))
+    }
+}
+
+fn c_source_uses_ada_url(c_source: &str) -> bool {
+    c_source.contains("#define PTN_USE_ADA_URL 1\n")
 }
 
 const CC_OPT_LEVEL_ENV: &str = "PTN_CC_OPT_LEVEL";
@@ -32850,8 +32957,8 @@ fn display_os(value: &OsStr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cc_optimization_args_for, cc_optimization_args_for_source, cc_warning_args_for_source,
-        emit_c, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
+        c_source_uses_ada_url, cc_optimization_args_for, cc_optimization_args_for_source,
+        cc_warning_args_for_source, emit_c, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
     };
     use crate::{ir, parser};
 
@@ -32865,6 +32972,12 @@ mod tests {
             cc_optimization_args_for_source(Some(""), 0).unwrap(),
             vec!["-O2"]
         );
+    }
+
+    #[test]
+    fn c_compiler_detects_ada_url_runtime_requirement() {
+        assert!(c_source_uses_ada_url("#define PTN_USE_ADA_URL 1\nint main(void) { return 0; }\n"));
+        assert!(!c_source_uses_ada_url("int main(void) { return 0; }\n"));
     }
 
     #[test]
