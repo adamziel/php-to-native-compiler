@@ -54590,6 +54590,40 @@ static int ptn_date_days_in_month(int year, int month) {
     return month >= 1 && month <= 12 ? days[month - 1] : 31;
 }
 
+static int ptn_date_weekday_for_date(int year, int month, int day) {
+    static const int offsets[] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+    if (month < 3) {
+        year--;
+    }
+    int weekday = (year + year / 4 - year / 100 + year / 400 + offsets[month - 1] + day) % 7;
+    return weekday < 0 ? weekday + 7 : weekday;
+}
+
+static int ptn_date_iso_weeks_in_year(int year) {
+    int jan1 = ptn_date_weekday_for_date(year, 1, 1);
+    int jan1_iso = jan1 == 0 ? 7 : jan1;
+    return jan1_iso == 4 || (jan1_iso == 3 && ptn_date_is_leap_year(year)) ? 53 : 52;
+}
+
+static void ptn_date_iso_week_info(const struct tm *parts, int *iso_year_out, int *iso_week_out) {
+    int year = parts->tm_year + 1900;
+    int iso_weekday = parts->tm_wday == 0 ? 7 : parts->tm_wday;
+    int ordinal = parts->tm_yday + 1;
+    int week = (ordinal - iso_weekday + 10) / 7;
+    if (week < 1) {
+        year--;
+        week = ptn_date_iso_weeks_in_year(year);
+    } else {
+        int weeks_in_year = ptn_date_iso_weeks_in_year(year);
+        if (week > weeks_in_year) {
+            year++;
+            week = 1;
+        }
+    }
+    *iso_year_out = year;
+    *iso_week_out = week;
+}
+
 static const char *ptn_date_day_suffix(int day) {
     if (day >= 11 && day <= 13) {
         return "th";
@@ -54751,6 +54785,22 @@ static PtnValue ptn_format_date_value(PtnRuntime *runtime, const char *function_
             case 'z':
                 ptn_string_buffer_append_format(&buffer, "%d", parts->tm_yday);
                 break;
+            case 'W': {
+                int iso_year = 0;
+                int iso_week = 0;
+                ptn_date_iso_week_info(parts, &iso_year, &iso_week);
+                (void)iso_year;
+                ptn_string_buffer_append_format(&buffer, "%02d", iso_week);
+                break;
+            }
+            case 'o': {
+                int iso_year = 0;
+                int iso_week = 0;
+                ptn_date_iso_week_info(parts, &iso_year, &iso_week);
+                (void)iso_week;
+                ptn_string_buffer_append_format(&buffer, "%04d", iso_year);
+                break;
+            }
             case 'c':
                 ptn_string_buffer_append_format(&buffer, "%04d-%02d-%02dT%02d:%02d:%02d", year, month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
                 ptn_date_append_offset(&buffer, offset, 1);
@@ -54939,6 +54989,22 @@ static PtnValue ptn_format_date_value_for_timezone(
             case 'z':
                 ptn_string_buffer_append_format(&buffer, "%d", parts->tm_yday);
                 break;
+            case 'W': {
+                int iso_year = 0;
+                int iso_week = 0;
+                ptn_date_iso_week_info(parts, &iso_year, &iso_week);
+                (void)iso_year;
+                ptn_string_buffer_append_format(&buffer, "%02d", iso_week);
+                break;
+            }
+            case 'o': {
+                int iso_year = 0;
+                int iso_week = 0;
+                ptn_date_iso_week_info(parts, &iso_year, &iso_week);
+                (void)iso_week;
+                ptn_string_buffer_append_format(&buffer, "%04d", iso_year);
+                break;
+            }
             case 'c':
                 ptn_string_buffer_append_format(&buffer, "%04d-%02d-%02dT%02d:%02d:%02d", year, month, parts->tm_mday, parts->tm_hour, parts->tm_min, parts->tm_sec);
                 ptn_date_append_offset(&buffer, offset, 1);
@@ -55314,6 +55380,14 @@ static int ptn_idate_value(char token, const struct tm *parts, time_t timestamp,
         case 'w':
             *out = parts->tm_wday;
             return 1;
+        case 'W': {
+            int iso_year = 0;
+            int iso_week = 0;
+            ptn_date_iso_week_info(parts, &iso_year, &iso_week);
+            (void)iso_year;
+            *out = iso_week;
+            return 1;
+        }
         case 'y':
             *out = year % 100;
             return 1;
@@ -55441,6 +55515,9 @@ static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "America/Los_Angeles", 2, 0 },
     { "America/New_York", 2, 0 },
     { "America/Sao_Paulo", 2, 0 },
+    { "Asia/Calcutta", 16, 1 },
+    { "Asia/Jerusalem", 16, 0 },
+    { "Asia/Kolkata", 16, 0 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
     { "Europe/Kyiv", 128, 0 },
@@ -55645,6 +55722,13 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     if (ptn_ascii_case_equal(name, "America/Sao_Paulo")) {
         return -7200;
     }
+    if (ptn_ascii_case_equal(name, "Asia/Calcutta") ||
+        ptn_ascii_case_equal(name, "Asia/Kolkata")) {
+        return 19800;
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
+        return ptn_datetime_timestamp_dst_month(timestamp) ? 10800 : 7200;
+    }
     if (ptn_ascii_case_equal(name, "CET")) {
         return 3600;
     }
@@ -55709,6 +55793,13 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     }
     if (ptn_ascii_case_equal(name, "America/Halifax")) {
         return us_dst ? "ADT" : "AST";
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Calcutta") ||
+        ptn_ascii_case_equal(name, "Asia/Kolkata")) {
+        return "IST";
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
+        return europe_dst ? "IDT" : "IST";
     }
     if (ptn_ascii_case_equal(name, "CET") ||
         ptn_ascii_case_equal(name, "CEST") ||
@@ -56003,13 +56094,46 @@ static int ptn_date_month_number_from_name(const char *name) {
     if (name == NULL || name[0] == '\0') {
         return 0;
     }
+    char normalized[32];
+    size_t len = strlen(name);
+    while (len > 0 && (name[len - 1] == '.' || name[len - 1] == ',')) {
+        len--;
+    }
+    if (len == 0 || len >= sizeof(normalized)) {
+        return 0;
+    }
+    memcpy(normalized, name, len);
+    normalized[len] = '\0';
     for (int i = 0; i < 12; i++) {
-        if (ptn_ascii_case_equal(name, ptn_date_month_short(i)) ||
-            ptn_ascii_case_equal(name, ptn_date_month_long(i))) {
+        if (ptn_ascii_case_equal(normalized, ptn_date_month_short(i)) ||
+            ptn_ascii_case_equal(normalized, ptn_date_month_long(i))) {
             return i + 1;
         }
     }
     return 0;
+}
+
+static int ptn_datetime_day_number_from_token(const char *token) {
+    if (token == NULL || !isdigit((unsigned char)token[0])) {
+        return 0;
+    }
+    char *end = NULL;
+    long day = strtol(token, &end, 10);
+    if (end == token || day < 1 || day > 31) {
+        return 0;
+    }
+    unsigned char suffix0 = (unsigned char)tolower((unsigned char)end[0]);
+    unsigned char suffix1 = suffix0 == '\0' ? '\0' : (unsigned char)tolower((unsigned char)end[1]);
+    if ((suffix0 == 's' && suffix1 == 't') ||
+        (suffix0 == 'n' && suffix1 == 'd') ||
+        (suffix0 == 'r' && suffix1 == 'd') ||
+        (suffix0 == 't' && suffix1 == 'h')) {
+        end += 2;
+    }
+    while (*end == '.' || *end == ',') {
+        end++;
+    }
+    return *end == '\0' ? (int)day : 0;
 }
 
 static int ptn_datetime_normalize_year(int year) {
@@ -56085,7 +56209,9 @@ static int ptn_datetime_parse_textual_date_string(
 ) {
     char weekday[32];
     char month_name[32];
+    char day_token[32];
     char timezone_suffix[128];
+    char trailing_timezone[128];
     int day = 0;
     int year = 0;
     int hour = 0;
@@ -56093,11 +56219,37 @@ static int ptn_datetime_parse_textual_date_string(
     int second = 0;
     int consumed = 0;
     timezone_suffix[0] = '\0';
+    trailing_timezone[0] = '\0';
 
     if (sscanf(input, " %31s %31s %d %d %d:%d:%d %127s %n", weekday, month_name, &day, &year, &hour, &minute, &second, timezone_suffix, &consumed) == 8 &&
         ptn_datetime_tail_is_space(input, consumed)) {
         int month = ptn_date_month_number_from_name(month_name);
         if (month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                ptn_datetime_normalize_year(year),
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                0,
+                timezone_suffix,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
+    timezone_suffix[0] = '\0';
+    trailing_timezone[0] = '\0';
+    if (sscanf(input, " %31s %31s %31s %d %d:%d:%d %127s %127s %n", weekday, day_token, month_name, &year, &hour, &minute, &second, timezone_suffix, trailing_timezone, &consumed) == 9 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
             return ptn_datetime_components_to_timestamp(
                 ptn_datetime_normalize_year(year),
                 month,
@@ -56139,6 +56291,29 @@ static int ptn_datetime_parse_textual_date_string(
     }
 
     consumed = 0;
+    if (sscanf(input, " %31s %31s %31s %d %d:%d %n", weekday, day_token, month_name, &year, &hour, &minute, &consumed) == 6 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                ptn_datetime_normalize_year(year),
+                month,
+                day,
+                hour,
+                minute,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
     timezone_suffix[0] = '\0';
     if (sscanf(input, " %d %31s %d %d:%d:%d %127s %n", &day, month_name, &year, &hour, &minute, &second, timezone_suffix, &consumed) == 7 &&
         ptn_datetime_tail_is_space(input, consumed)) {
@@ -56162,6 +56337,75 @@ static int ptn_datetime_parse_textual_date_string(
     }
 
     consumed = 0;
+    if (sscanf(input, " %d:%d %31s %31s %d %n", &hour, &minute, month_name, day_token, &year, &consumed) == 5 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                ptn_datetime_normalize_year(year),
+                month,
+                day,
+                hour,
+                minute,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
+    if (sscanf(input, " %31s %31s %d:%d %d %n", month_name, day_token, &hour, &minute, &year, &consumed) == 5 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                ptn_datetime_normalize_year(year),
+                month,
+                day,
+                hour,
+                minute,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
+    if (sscanf(input, " %31s %31s %d %n", month_name, day_token, &year, &consumed) == 3 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                ptn_datetime_normalize_year(year),
+                month,
+                day,
+                0,
+                0,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
     timezone_suffix[0] = '\0';
     if (sscanf(input, " %d %31s %d %d:%d:%d %n", &day, month_name, &year, &hour, &minute, &second, &consumed) == 6 &&
         ptn_datetime_tail_is_space(input, consumed)) {
@@ -56174,6 +56418,29 @@ static int ptn_datetime_parse_textual_date_string(
                 hour,
                 minute,
                 second,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
+    if (sscanf(input, " %31s %31s %d %n", day_token, month_name, &year, &consumed) == 3 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                ptn_datetime_normalize_year(year),
+                month,
+                day,
+                0,
+                0,
+                0,
                 0,
                 NULL,
                 default_timezone,
@@ -56284,6 +56551,69 @@ static int ptn_datetime_parse_date_string(
         microsecond_out,
         timezone_out
     );
+}
+
+static int ptn_datetime_parse_partial_textual_date_string(
+    const char *input,
+    int64_t base_timestamp,
+    const char *default_timezone,
+    time_t *timestamp_out,
+    int *microsecond_out,
+    char **timezone_out
+) {
+    time_t base_time = (time_t)base_timestamp;
+    struct tm *base_parts = localtime(&base_time);
+    int year = base_parts == NULL ? 1970 : base_parts->tm_year + 1900;
+    char month_name[32];
+    char day_token[32];
+    int consumed = 0;
+
+    if (sscanf(input, " %31s %31s %n", day_token, month_name, &consumed) == 2 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        int day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                year,
+                month,
+                day,
+                0,
+                0,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    consumed = 0;
+    if (sscanf(input, " %31s %31s %n", month_name, day_token, &consumed) == 2 &&
+        ptn_datetime_tail_is_space(input, consumed)) {
+        int day = ptn_datetime_day_number_from_token(day_token);
+        int month = ptn_date_month_number_from_name(month_name);
+        if (day != 0 && month != 0) {
+            return ptn_datetime_components_to_timestamp(
+                year,
+                month,
+                day,
+                0,
+                0,
+                0,
+                0,
+                NULL,
+                default_timezone,
+                timestamp_out,
+                microsecond_out,
+                timezone_out
+            );
+        }
+    }
+
+    return 0;
 }
 
 static void ptn_datetime_split_timestamp(double timestamp, time_t *seconds_out, int *microsecond_out) {
@@ -58279,6 +58609,7 @@ static PtnValue ptn_internal_strtotime(PtnRuntime *runtime, size_t argc, const P
     }
     if (ptn_datetime_parse_timestamp_literal(datetime, &timestamp, &microsecond) ||
         ptn_datetime_parse_date_string(datetime, ptn_current_timezone_name(), &timestamp, &microsecond, &parsed_timezone) ||
+        ptn_datetime_parse_partial_textual_date_string(datetime, base_timestamp, ptn_current_timezone_name(), &timestamp, &microsecond, &parsed_timezone) ||
         ptn_datetime_parse_relative_seconds(datetime, base_timestamp, &timestamp)) {
         free(parsed_timezone);
         free(datetime);

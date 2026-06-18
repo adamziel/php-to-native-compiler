@@ -13867,6 +13867,72 @@ echo $set->format('D M j'), "\n";
 }
 
 #[test]
+fn compile_iso_week_and_textual_strtotime_dates_to_native_binary() {
+    let root = temp_dir("ptn-native-iso-week-textual-strtotime");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iso-week-textual-strtotime.php");
+    let output = root.join("iso-week-textual-strtotime-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+echo date('o-\WW-N', strtotime('2 January 2005')), "\n";
+echo date('o-\WW-N', strtotime('9 January 2005')), "\n";
+echo date('W o', strtotime('1992-12-28')), "\n";
+echo date('W o', strtotime('1993-01-04')), "\n";
+var_dump(idate('W', strtotime('1993-01-04')));
+
+date_default_timezone_set('Asia/Jerusalem');
+echo date('G Z', 1151366400), "\n";
+date_default_timezone_set('Asia/Calcutta');
+echo date('G Z', 1151366400), "\n";
+
+date_default_timezone_set('UTC');
+echo date(DATE_ISO8601, strtotime('Sat 26th Nov 2005 18:18')), "\n";
+echo date(DATE_ISO8601, strtotime('26th Nov', 1134340285)), "\n";
+echo date(DATE_ISO8601, strtotime('Dec. 4th, 2005')), "\n";
+echo strtotime('19:30 Dec 17 2005'), "\n";
+echo strtotime('Dec 17 19:30 2005'), "\n";
+echo gmdate('Y-m-d H:i:s', strtotime('Sun, 21 Dec 2003 20:38:33 +0000 GMT')), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2004-W53-7\n",
+            "2005-W01-7\n",
+            "53 1992\n",
+            "01 1993\n",
+            "int(1)\n",
+            "3 10800\n",
+            "5 19800\n",
+            "2005-11-26T18:18:00+0000\n",
+            "2005-11-26T00:00:00+0000\n",
+            "2005-12-04T00:00:00+0000\n",
+            "1134847800\n",
+            "1134847800\n",
+            "2003-12-21 20:38:33\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_iso_week_info"));
+    assert!(c_source.contains("ptn_datetime_parse_partial_textual_date_string"));
+}
+
+#[test]
 fn compile_sleep_usleep_internals_to_native_binary() {
     let root = temp_dir("ptn-native-sleep-usleep-internals");
     fs::create_dir_all(&root).unwrap();
