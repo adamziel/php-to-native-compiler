@@ -708,6 +708,40 @@ static PTN_UNUSED int ptn_runtime_autoloading_class(PtnRuntime *runtime, const c
     return 0;
 }
 
+static PTN_UNUSED int ptn_class_name_autoload_start_byte(unsigned char ch) {
+    return ch == '_' || isalpha(ch) || ch >= 0x80;
+}
+
+static PTN_UNUSED int ptn_class_name_autoload_body_byte(unsigned char ch) {
+    return ptn_class_name_autoload_start_byte(ch) || isdigit(ch);
+}
+
+static PTN_UNUSED int ptn_class_name_can_autoload(const char *class_name) {
+    if (class_name == NULL || class_name[0] == '\0') {
+        return 0;
+    }
+    const unsigned char *cursor = (const unsigned char *)class_name;
+    for (;;) {
+        if (!ptn_class_name_autoload_start_byte(*cursor)) {
+            return 0;
+        }
+        cursor++;
+        while (ptn_class_name_autoload_body_byte(*cursor)) {
+            cursor++;
+        }
+        if (*cursor == '\0') {
+            return 1;
+        }
+        if (*cursor != '\\') {
+            return 0;
+        }
+        cursor++;
+        if (*cursor == '\0') {
+            return 0;
+        }
+    }
+}
+
 static PTN_UNUSED void ptn_runtime_push_autoloading_class(PtnRuntime *runtime, const char *class_name) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL || class_name == NULL) {
@@ -755,6 +789,7 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL ||
         class_name == NULL ||
+        !ptn_class_name_can_autoload(class_name) ||
         root->autoload_callbacks_len == 0 ||
         ptn_runtime_autoloading_class(root, class_name)) {
         return;

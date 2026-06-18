@@ -991,6 +991,7 @@ struct LoweringContext<'a> {
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
     current_function_display_name: Option<String>,
+    declarations_initially_available: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1064,6 +1065,7 @@ impl<'a> LoweringContext<'a> {
             current_class_name: None,
             current_trait_name: None,
             current_function_display_name: None,
+            declarations_initially_available: true,
         };
         for function in &program.functions {
             context.declare_function(function);
@@ -1092,10 +1094,13 @@ impl<'a> LoweringContext<'a> {
                 std::mem::replace(&mut self.source_dir, include.source_dir.clone());
             let previous_strict_types =
                 std::mem::replace(&mut self.strict_types, include.program.strict_types);
+            let previous_declarations_initially_available =
+                std::mem::replace(&mut self.declarations_initially_available, false);
             starts.push(self.functions.len());
             for function in &include.program.functions {
                 self.declare_function(function);
             }
+            self.declarations_initially_available = previous_declarations_initially_available;
             self.source_file = previous_source_file;
             self.source_dir = previous_source_dir;
             self.strict_types = previous_strict_types;
@@ -1131,12 +1136,15 @@ impl<'a> LoweringContext<'a> {
             std::mem::replace(&mut self.source_dir, include.source_dir.clone());
         let previous_strict_types =
             std::mem::replace(&mut self.strict_types, include.program.strict_types);
+        let previous_declarations_initially_available =
+            std::mem::replace(&mut self.declarations_initially_available, false);
         let classes = include
             .program
             .classes
             .iter()
             .map(|class| self.lower_class(class))
             .collect();
+        self.declarations_initially_available = previous_declarations_initially_available;
         self.source_file = previous_source_file;
         self.source_dir = previous_source_dir;
         self.strict_types = previous_strict_types;
@@ -1191,7 +1199,8 @@ impl<'a> LoweringContext<'a> {
             return_by_ref: function.return_by_ref,
             is_generator: statements_contain_yield(&function.body),
             is_anonymous: false,
-            initially_declared: !function.is_conditionally_declared,
+            initially_declared: self.declarations_initially_available
+                && !function.is_conditionally_declared,
             body: Vec::new(),
         });
     }
@@ -1226,7 +1235,31 @@ impl<'a> LoweringContext<'a> {
         );
         let previous_constant_values =
             std::mem::replace(&mut self.constant_values, include_constant_values);
-        let instructions = self.lower_statements(&include.program.statements);
+        let mut instructions = Vec::new();
+        for function in include
+            .program
+            .functions
+            .iter()
+            .filter(|function| !function.is_conditionally_declared)
+        {
+            if let Some(function_index) = self.function_index_by_name(&function.name) {
+                instructions.push(Instruction::DeclareFunction { function_index });
+            }
+        }
+        for class in include
+            .program
+            .classes
+            .iter()
+            .filter(|class| !class.is_conditionally_declared)
+        {
+            if let Some(class_index) = self.class_index_by_name(&class.name) {
+                instructions.push(Instruction::DeclareClass {
+                    class_index,
+                    line: class.span.line,
+                });
+            }
+        }
+        instructions.extend(self.lower_statements(&include.program.statements));
         self.constant_deprecations = previous_constant_deprecations;
         self.constant_values = previous_constant_values;
         self.source_file = previous_source_file;
@@ -1711,7 +1744,8 @@ impl<'a> LoweringContext<'a> {
             attributes: class_attributes,
             line: class.span.line,
             end_line: class.span.end_line,
-            initially_declared: !class.is_conditionally_declared,
+            initially_declared: self.declarations_initially_available
+                && !class.is_conditionally_declared,
             is_abstract: class.is_abstract,
             is_final: class.is_final,
             is_interface: class.is_interface,

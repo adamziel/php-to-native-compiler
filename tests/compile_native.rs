@@ -18784,6 +18784,114 @@ echo \"Value is $value\\n\";
 }
 
 #[test]
+fn compile_dynamic_new_autoloaded_user_class_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-new-autoloaded-user-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-new-autoload.php");
+    let output = root.join("dynamic-new-autoload-bin");
+
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($className) {
+    echo \"autoload:$className\\n\";
+    if ($className === 'PlainDynamic') {
+        class PlainDynamic {
+            public function __construct() {
+                echo \"plain constructed\\n\";
+            }
+        }
+    }
+    if ($className === 'SlashDynamic') {
+        class SlashDynamic {
+            public function __construct() {
+                echo \"slash constructed\\n\";
+            }
+        }
+    }
+});
+
+$plain = 'PlainDynamic';
+$plainObject = new $plain();
+echo get_class($plainObject), \"\\n\";
+
+$slash = '\\\\SlashDynamic';
+$slashObject = new $slash();
+echo get_class($slashObject), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "autoload:PlainDynamic\n",
+            "plain constructed\n",
+            "PlainDynamic\n",
+            "autoload:SlashDynamic\n",
+            "slash constructed\n",
+            "SlashDynamic\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_autoload_class(&runtime"));
+    assert!(c_source.contains("ptn_declared_runtime_class_exists(&runtime"));
+}
+
+#[test]
+fn compile_dynamic_new_autoloaded_include_class_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-new-autoloaded-include-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-new-autoload-include.php");
+    let include = root.join("dynamic-new-autoload-include.inc.php");
+    let output = root.join("dynamic-new-autoload-include-bin");
+
+    fs::write(
+        &include,
+        "<?php
+namespace Foo\\Bar;
+class Baz {
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($className) {
+    var_dump($className);
+    require __DIR__ . '/dynamic-new-autoload-include.inc.php';
+});
+
+$baz = '\\\\Foo\\\\Bar\\\\Baz';
+$object = new $baz();
+echo get_class($object), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(11) \"Foo\\Bar\\Baz\"\nFoo\\Bar\\Baz\n",
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains(" = { 0 };\n    runtime.declared_user_classes"));
+    assert!(c_source.contains("runtime.declared_user_classes["));
+}
+
+#[test]
 fn compile_autoload_interface_failure_in_conditional_class_to_native_binary() {
     let root = temp_dir("ptn-native-autoload-conditional-interface");
     fs::create_dir_all(&root).unwrap();

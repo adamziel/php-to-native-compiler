@@ -23236,6 +23236,26 @@ impl ValueEmitter {
         out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, ");
         out.push_str(&class_lookup_temp);
         out.push_str(");\n");
+        out.push_str("    if (!ptn_declared_runtime_class_exists(&runtime, ");
+        out.push_str(&class_resolved_temp);
+        out.push_str(")\n");
+        out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+        out.push_str("        && !ptn_internal_class_exists_name(");
+        out.push_str(&class_resolved_temp);
+        out.push_str(")\n");
+        out.push_str("#endif\n");
+        out.push_str("    ) {\n");
+        out.push_str("        ptn_runtime_autoload_class(&runtime, ");
+        out.push_str(&class_resolved_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&class_resolved_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, ");
+        out.push_str(&class_lookup_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
 
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
@@ -23268,6 +23288,64 @@ impl ValueEmitter {
         }
         if emitted_branch {
             out.push_str("    } else {\n");
+            out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, ");
+            out.push_str(&class_resolved_temp);
+            out.push_str(")\n");
+            out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+            out.push_str("            && !ptn_internal_class_exists_name(");
+            out.push_str(&class_resolved_temp);
+            out.push_str(")\n");
+            out.push_str("#endif\n");
+            out.push_str("        ) {\n");
+            out.push_str("            char ptn_dynamic_new_error[192];\n");
+            out.push_str("            int ptn_dynamic_new_error_written = snprintf(ptn_dynamic_new_error, sizeof(ptn_dynamic_new_error), \"Class \\\"%s\\\" not found\", ");
+            out.push_str(&class_resolved_temp);
+            out.push_str(");\n");
+            out.push_str("            if (ptn_dynamic_new_error_written < 0 || (size_t)ptn_dynamic_new_error_written >= sizeof(ptn_dynamic_new_error)) {\n");
+            out.push_str("                ptn_abort_out_of_memory();\n");
+            out.push_str("            }\n");
+            out.push_str("            ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", ptn_dynamic_new_error, runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        } else {\n");
+            self.emit_runtime_new_object(
+                out,
+                &result_temp,
+                &class_resolved_temp,
+                arguments,
+                argument_unpacks,
+                line,
+                false,
+            );
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+        } else {
+            out.push_str("    if (!ptn_declared_runtime_class_exists(&runtime, ");
+            out.push_str(&class_resolved_temp);
+            out.push_str(")\n");
+            out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+            out.push_str("        && !ptn_internal_class_exists_name(");
+            out.push_str(&class_resolved_temp);
+            out.push_str(")\n");
+            out.push_str("#endif\n");
+            out.push_str("    ) {\n");
+            out.push_str("        char ptn_dynamic_new_error[192];\n");
+            out.push_str("        int ptn_dynamic_new_error_written = snprintf(ptn_dynamic_new_error, sizeof(ptn_dynamic_new_error), \"Class \\\"%s\\\" not found\", ");
+            out.push_str(&class_resolved_temp);
+            out.push_str(");\n");
+            out.push_str("        if (ptn_dynamic_new_error_written < 0 || (size_t)ptn_dynamic_new_error_written >= sizeof(ptn_dynamic_new_error)) {\n");
+            out.push_str("            ptn_abort_out_of_memory();\n");
+            out.push_str("        }\n");
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", ptn_dynamic_new_error, runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    } else {\n");
             self.emit_runtime_new_object(
                 out,
                 &result_temp,
@@ -23278,16 +23356,6 @@ impl ValueEmitter {
                 false,
             );
             out.push_str("    }\n");
-        } else {
-            self.emit_runtime_new_object(
-                out,
-                &result_temp,
-                &class_resolved_temp,
-                arguments,
-                argument_unpacks,
-                line,
-                false,
-            );
         }
         out.push_str("    free(");
         out.push_str(&class_name_temp);
