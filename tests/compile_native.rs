@@ -12917,6 +12917,46 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_var_dump_sprintf_formats_without_full_internal_dispatch() {
+    let root = temp_dir("ptn-native-var-dump-sprintf-direct");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-sprintf-direct.php");
+    let output = root.join("var-dump-sprintf-direct-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$format = \"%   d\";\n\
+var_dump(sprintf($format, 1234));\n\
+var_dump(sprintf(\"% b\", 1234));\n\
+var_dump(sprintf(\"% e\", 1234));\n\
+var_dump(sprintf(\"% E\", 1234));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(4) \"1234\"\n\
+string(11) \"10011010010\"\n\
+string(11) \"1.234000e+3\"\n\
+string(11) \"1.234000E+3\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH"));
+    assert!(c_source.contains("static PtnValue ptn_internal_sprintf("));
+    assert!(c_source.contains("static PtnValue ptn_direct_var_dump_scalar("));
+    assert!(c_source.contains("ptn_internal_sprintf(&runtime"));
+    assert!(c_source.contains("ptn_direct_var_dump_scalar(&runtime"));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"sprintf\""));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"var_dump\""));
+}
+
+#[test]
 fn compile_sprintf_positional_specifier_errors_to_native_binary() {
     let root = temp_dir("ptn-native-sprintf-positional-specifier-errors");
     fs::create_dir_all(&root).unwrap();

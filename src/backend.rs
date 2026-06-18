@@ -554,6 +554,7 @@ struct RuntimeRequirements {
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     direct_internal_helpers: bool,
+    direct_sprintf_helpers: bool,
     request_context: bool,
 }
 
@@ -589,9 +590,19 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         runtime::INTERNAL_FUNCTIONS_START,
         runtime::INTERNAL_FUNCTIONS_END,
     );
+    let sprintf_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::SPRINTF_HELPERS_START,
+        runtime::SPRINTF_HELPERS_END,
+    );
     assert!(
         direct_helpers.after_end <= internal_functions.start,
         "runtime direct-helper chunk should precede internal-function chunk"
+    );
+    assert!(
+        internal_functions.after_start <= sprintf_helpers.start
+            && sprintf_helpers.after_end <= internal_functions.end,
+        "runtime sprintf-helper chunk should be inside internal-function chunk"
     );
 
     out.push_str(&runtime_c[..direct_helpers.start]);
@@ -601,6 +612,8 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     out.push_str(&runtime_c[direct_helpers.after_end..internal_functions.start]);
     if requirements.internal_function_dispatch {
         out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
+    } else if requirements.direct_sprintf_helpers {
+        out.push_str(&runtime_c[sprintf_helpers.after_start..sprintf_helpers.end]);
     }
     out.push_str(&runtime_c[internal_functions.after_end..]);
 }
@@ -15010,12 +15023,14 @@ fn collect_instruction_runtime_requirements(
             name,
             arguments,
             argument_names,
+            argument_unpacks,
             ..
         } => {
             collect_call_runtime_requirements(
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 functions,
                 requirements,
             );
@@ -15413,12 +15428,14 @@ fn collect_value_runtime_requirements(
             name,
             arguments,
             argument_names,
+            argument_unpacks,
             ..
         } => {
             collect_call_runtime_requirements(
                 name,
                 arguments,
                 argument_names,
+                argument_unpacks,
                 functions,
                 requirements,
             );
@@ -15650,6 +15667,7 @@ fn collect_call_runtime_requirements(
     name: &str,
     arguments: &[ValueExpr],
     argument_names: &[Option<String>],
+    argument_unpacks: &[bool],
     functions: &[FunctionDecl],
     requirements: &mut RuntimeRequirements,
 ) {
@@ -15673,9 +15691,24 @@ fn collect_call_runtime_requirements(
     if is_uri_whatwg_url_static_call_name(name) {
         requirements.method_dispatch = true;
     }
-    if argument_names.iter().all(Option::is_none)
-        && is_direct_internal_helper_call(name, arguments.len())
+    let has_only_positional_arguments = argument_names.iter().all(Option::is_none)
+        && argument_unpacks.iter().all(|unpack| !*unpack);
+    if has_only_positional_arguments
+        && name.eq_ignore_ascii_case("sprintf")
+        && !arguments.is_empty()
     {
+        requirements.direct_internal_helpers = true;
+        requirements.direct_sprintf_helpers = true;
+        return;
+    }
+    if has_only_positional_arguments
+        && name.eq_ignore_ascii_case("var_dump")
+        && can_emit_direct_var_dump_scalar_call(arguments)
+    {
+        requirements.direct_internal_helpers = true;
+        return;
+    }
+    if has_only_positional_arguments && is_direct_internal_helper_call(name, arguments.len()) {
         requirements.direct_internal_helpers = true;
         return;
     }
@@ -15739,6 +15772,36 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+}
+
+fn can_emit_direct_var_dump_scalar_call(arguments: &[ValueExpr]) -> bool {
+    !arguments.is_empty()
+        && arguments
+            .iter()
+            .all(value_expr_has_direct_var_dump_scalar_result)
+}
+
+fn value_expr_has_direct_var_dump_scalar_result(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null => true,
+        ValueExpr::InternalCall {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } => {
+            name.eq_ignore_ascii_case("sprintf")
+                && !arguments.is_empty()
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack)
+        }
+        _ => false,
+    }
 }
 
 enum NamedArgumentBindingError {
@@ -26936,6 +26999,62 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_direct_internal_runtime_call(
+        &mut self,
+        out: &mut String,
+        function_name: &str,
+        c_function_name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, function_name, argument_index, argument));
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+        out.push_str("        ptn_value_destroy(&");
+        out.push_str(&result_temp);
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(c_function_name);
+        out.push_str("(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
     fn emit_internal_call(
         &mut self,
         out: &mut String,
@@ -26998,6 +27117,26 @@ impl ValueEmitter {
                 self.emit_variable_array_mutator_call(out, name, arguments, line)
             {
                 return result_temp;
+            }
+            if name.eq_ignore_ascii_case("sprintf") && !arguments.is_empty() {
+                return self.emit_direct_internal_runtime_call(
+                    out,
+                    "sprintf",
+                    "ptn_internal_sprintf",
+                    arguments,
+                    line,
+                );
+            }
+            if name.eq_ignore_ascii_case("var_dump")
+                && can_emit_direct_var_dump_scalar_call(arguments)
+            {
+                return self.emit_direct_internal_runtime_call(
+                    out,
+                    "var_dump",
+                    "ptn_direct_var_dump_scalar",
+                    arguments,
+                    line,
+                );
             }
         }
 

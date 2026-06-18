@@ -393,9 +393,226 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     ptn_array_key_free(key);
     return ptn_bool(exists);
 }
+
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static const char *ptn_direct_internal_string_arg_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT) {
+        return value.as.object->class_name;
+    }
+    if (value.type == PTN_EXCEPTION) {
+        return value.as.exception->class_name;
+    }
+    if (value.type == PTN_CLOSURE) {
+        return "Closure";
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static void ptn_direct_internal_throw_string_arg_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type string, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_direct_internal_string_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PtnStringOperand ptn_internal_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        if (runtime != NULL && runtime->strict_types) {
+            ptn_direct_internal_throw_string_arg_type_error(
+                runtime,
+                function_name,
+                position,
+                argument_name,
+                value
+            );
+            return ptn_string_operand_borrowed("");
+        }
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing null to parameter #%zu ($%s) of type string is deprecated",
+            function_name,
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    } else if (value.type == PTN_OBJECT) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            return object_string;
+        }
+        ptn_direct_internal_throw_string_arg_type_error(
+            runtime,
+            function_name,
+            position,
+            argument_name,
+            value
+        );
+        return ptn_string_operand_borrowed("");
+    } else if (
+        value.type == PTN_ARRAY ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION ||
+        value.type == PTN_RESOURCE
+    ) {
+        ptn_direct_internal_throw_string_arg_type_error(
+            runtime,
+            function_name,
+            position,
+            argument_name,
+            value
+        );
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static double ptn_value_to_double(PtnValue value) {
+    double fast_number = 0.0;
+    if (ptn_fast_scalar_double(value, &fast_number)) {
+        return fast_number;
+    }
+
+    PtnNumber number = ptn_to_number(value);
+    return number.floating;
+}
+
+static void ptn_direct_var_dump_write_format(PtnRuntime *runtime, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int needed = vsnprintf(NULL, 0, format, args_copy);
+    va_end(args_copy);
+    if (needed < 0) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc((size_t)needed + 1);
+    if (buffer == NULL) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    int written = vsnprintf(buffer, (size_t)needed + 1, format, args);
+    va_end(args);
+    if (written < 0 || written > needed) {
+        free(buffer);
+        ptn_abort_out_of_memory();
+    }
+    ptn_output_write(runtime, buffer, (size_t)written);
+    free(buffer);
+}
+
+static void ptn_direct_var_dump_scalar_value(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_output_write(runtime, "NULL\n", 5);
+            break;
+        case PTN_BOOL:
+            if (value.as.boolean) {
+                ptn_output_write(runtime, "bool(true)\n", 11);
+            } else {
+                ptn_output_write(runtime, "bool(false)\n", 12);
+            }
+            break;
+        case PTN_INT:
+            ptn_direct_var_dump_write_format(runtime, "int(%lld)\n", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_var_dump_float(
+                value.as.floating,
+                ptn_runtime_serialize_precision(runtime),
+                formatted,
+                sizeof(formatted)
+            );
+            ptn_direct_var_dump_write_format(runtime, "float(%s)\n", formatted);
+            break;
+        }
+        case PTN_STRING:
+            ptn_direct_var_dump_write_format(runtime, "string(%zu) \"", value.as.string.len);
+            ptn_output_write(runtime, (const char *)value.as.string.data, value.as.string.len);
+            ptn_output_write(runtime, "\"\n", 2);
+            break;
+        case PTN_ARRAY:
+            ptn_direct_var_dump_write_format(runtime, "array(%zu) {\n}\n", value.as.array->len);
+            break;
+        case PTN_OBJECT:
+            ptn_direct_var_dump_write_format(
+                runtime,
+                "object(%s)#%zu (0) {\n}\n",
+                value.as.object->class_name,
+                value.as.object->object_id
+            );
+            break;
+        case PTN_CLOSURE:
+            ptn_output_write(runtime, "object(Closure)#0 (0) {\n}\n", 24);
+            break;
+        case PTN_EXCEPTION:
+            ptn_direct_var_dump_write_format(
+                runtime,
+                "object(%s)#%zu (0) {\n}\n",
+                value.as.exception->class_name,
+                value.as.exception->object_id
+            );
+            break;
+        case PTN_RESOURCE:
+            ptn_direct_var_dump_write_format(
+                runtime,
+                "resource(%lld) of type (%s)\n",
+                (long long)value.as.resource->id,
+                value.as.resource->type_name
+            );
+            break;
+        case PTN_REFERENCE:
+            ptn_output_write(runtime, "NULL\n", 5);
+            break;
+    }
+}
+
+static PtnValue ptn_direct_var_dump_scalar(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    for (size_t i = 0; i < argc; i++) {
+        ptn_direct_var_dump_scalar_value(runtime, args[i]);
+    }
+    return ptn_null();
+}
+#endif
+
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
 /* PTN_INTERNAL_FUNCTIONS_START */
+
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_pdo_drivers_value(void);
@@ -1775,6 +1992,13 @@ static int ptn_var_dump_spl_fixed_array_object(
     PtnDumpSeenArrays *seen,
     int debug
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    (void)indent;
+    (void)seen;
+    (void)debug;
+    return 0;
+#else
     if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
         return 0;
     }
@@ -1802,6 +2026,7 @@ static int ptn_var_dump_spl_fixed_array_object(
     fputs("}\n", stdout);
     ptn_value_destroy(&array);
     return 1;
+#endif
 }
 
 static int ptn_var_dump_object_proxy_instance(
@@ -1839,6 +2064,13 @@ static int ptn_var_dump_weak_reference_object(
     PtnDumpSeenArrays *seen,
     int debug
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    (void)indent;
+    (void)seen;
+    (void)debug;
+    return 0;
+#else
     if (object == NULL || !ptn_internal_class_name_is_weak_reference(object->class_name)) {
         return 0;
     }
@@ -1866,6 +2098,7 @@ static int ptn_var_dump_weak_reference_object(
     ptn_var_dump_indent(indent);
     fputs("}\n", stdout);
     return 1;
+#endif
 }
 
 static int ptn_internal_function_first_parameter_is_array_reference(const char *name) {
@@ -2215,10 +2448,12 @@ static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata meta
         return metadata.parameters[index].name;
     }
     if (metadata.is_internal) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         const char *name = ptn_internal_function_parameter_name(metadata.name, index);
         if (name != NULL) {
             return name;
         }
+#endif
     }
     int written = snprintf(fallback, fallback_len, "param%zu", index + 1);
     if (written < 0 || (size_t)written >= fallback_len) {
@@ -2232,7 +2467,11 @@ static int ptn_function_metadata_parameter_by_ref(PtnFunctionMetadata metadata, 
         return metadata.parameters[index].by_ref;
     }
     if (metadata.is_internal) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         return ptn_internal_function_parameter_by_ref(metadata.name, index);
+#else
+        return 0;
+#endif
     }
     return 0;
 }
@@ -2242,7 +2481,11 @@ static int ptn_function_metadata_parameter_can_be_passed_by_value(PtnFunctionMet
         return metadata.parameters[index].can_be_passed_by_value;
     }
     if (metadata.is_internal) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         return ptn_internal_function_parameter_can_be_passed_by_value(metadata.name, index);
+#else
+        return 1;
+#endif
     }
     return !ptn_function_metadata_parameter_by_ref(metadata, index);
 }
@@ -2448,6 +2691,13 @@ static int ptn_var_dump_weak_map_object(
     PtnDumpSeenArrays *seen,
     int debug
 ) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    (void)indent;
+    (void)seen;
+    (void)debug;
+    return 0;
+#else
     PtnValue properties_value = ptn_null();
     if (!ptn_weak_map_debug_properties(object, &properties_value)) {
         return 0;
@@ -2475,6 +2725,7 @@ static int ptn_var_dump_weak_map_object(
     fputs("}\n", stdout);
     ptn_value_destroy(&properties_value);
     return 1;
+#endif
 }
 
 static size_t ptn_class_name_dump_len(const char *class_name) {
@@ -20221,6 +20472,8 @@ static PtnValue ptn_internal_join(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_internal_implode_named(runtime, "join", argc, args, line);
 }
 
+/* PTN_SPRINTF_HELPERS_START */
+
 typedef struct {
     int left_adjust;
     int show_sign;
@@ -21263,6 +21516,8 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
 static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_sprintf_named(runtime, "sprintf", argc, args, line);
 }
+
+/* PTN_SPRINTF_HELPERS_END */
 
 static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue formatted = ptn_internal_sprintf_named(runtime, "printf", argc, args, line);
