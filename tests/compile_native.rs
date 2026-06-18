@@ -4182,6 +4182,9 @@ fn parser_models_final_class_and_modifier_diagnostics() {
         .message
         .contains("Cannot use the final modifier on an abstract class"));
 
+    let err = parser::parse("<?php interface Bad { final function run(); }").unwrap_err();
+    assert_eq!(err.message, "Interface method Bad::run() must not be final");
+
     let err = parser::parse("<?php class Bad { abstract abstract function run() {} }").unwrap_err();
     assert!(err
         .message
@@ -27713,6 +27716,48 @@ fn compile_const_array_literal_unpack_non_array_error_to_native_binary() {
 }
 
 #[test]
+fn compile_class_constant_array_unpack_and_recursive_constant_error_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-array-unpack");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-array-unpack.php");
+    let output = root.join("class-constant-array-unpack-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public const FOO = [0, ...self::ARR, 4];
+    public const ARR = [1, 2, 3];
+    public static $bar = [...self::ARR];
+}
+
+class D {
+    public const A = [...self::B];
+    public const B = [...self::A];
+}
+
+var_dump(C::FOO);
+var_dump(C::$bar);
+try {
+    var_dump(D::A);
+} catch (Error $ex) {
+    echo \"Exception: \", $ex->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(5) {\n  [0]=>\n  int(0)\n  [1]=>\n  int(1)\n  [2]=>\n  int(2)\n  [3]=>\n  int(3)\n  [4]=>\n  int(4)\n}\narray(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n}\nException: Cannot declare self-referencing constant self::B\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_append_expression_with_reference_list_assignment_to_native_binary() {
     let root = temp_dir("ptn-native-append-reference-list-assignment-expression");
     fs::create_dir_all(&root).unwrap();
@@ -30786,10 +30831,18 @@ function report($callback) {
 class CallbackTarget {
     public static function ok($value) { return $value; }
 }
+class PrivateCallbackTarget {
+    private static function hide($value) { return $value; }
+}
+class ProtectedCallbackTarget {
+    protected static function hide($value) { return $value; }
+}
 
 report(fn() => array_map(\"missing_map\", [1]));
 report(fn() => array_map([\"MissingCallbackTarget\", \"ok\"], [1]));
 report(fn() => array_map([\"CallbackTarget\", \"missing\"], [1]));
+report(fn() => array_map([\"PrivateCallbackTarget\", \"hide\"], [1]));
+report(fn() => array_map([\"ProtectedCallbackTarget\", \"hide\"], [1]));
 report(fn() => array_map(123, [1]));
 report(fn() => array_map([1, 2], [1]));
 report(fn() => array_map(new CallbackTarget(), [1]));
@@ -30816,6 +30869,8 @@ echo \"done\\n\";
             "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"missing_map\" not found or invalid function name\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, class \"MissingCallbackTarget\" not found\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, class CallbackTarget does not have a method \"missing\"\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, cannot access private method PrivateCallbackTarget::hide()\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, cannot access protected method ProtectedCallbackTarget::hide()\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, first array member is not a valid class name or object\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, no array or string given\n",

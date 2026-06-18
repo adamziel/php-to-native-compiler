@@ -2080,8 +2080,19 @@ impl Parser<'_> {
         if class_is_interface {
             modifiers.is_abstract = true;
         }
+        let method_is_final = modifiers.is_final;
+        let final_span = modifiers.final_span;
         let method =
             self.parse_method_decl(attributes, modifiers, class_is_readonly, class_name)?;
+        if class_is_interface && method_is_final {
+            return Err(Diagnostic::new(
+                format!(
+                    "Interface method {class_name}::{}() must not be final",
+                    method.name
+                ),
+                final_span,
+            ));
+        }
         if class_is_interface && method.visibility != PropertyVisibility::Public {
             return Err(Diagnostic::new(
                 format!(

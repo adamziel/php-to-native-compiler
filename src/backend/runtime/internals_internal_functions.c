@@ -457,7 +457,77 @@ static char *ptn_format_missing_method_callback_reason(const char *class_name, c
     return reason;
 }
 
-static char *ptn_invalid_array_callback_reason(PtnValue resolved) {
+static const char *ptn_callback_visibility_name(int visibility) {
+    if (visibility == PTN_PROPERTY_PRIVATE) {
+        return "private";
+    }
+    if (visibility == PTN_PROPERTY_PROTECTED) {
+        return "protected";
+    }
+    return "public";
+}
+
+static char *ptn_format_inaccessible_method_callback_reason(
+    int visibility,
+    const char *class_name,
+    const char *method_name
+) {
+    const char *visibility_name = ptn_callback_visibility_name(visibility);
+    int needed = snprintf(
+        NULL,
+        0,
+        "cannot access %s method %s::%s()",
+        visibility_name,
+        class_name,
+        method_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *reason = malloc((size_t)needed + 1);
+    if (reason == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        reason,
+        (size_t)needed + 1,
+        "cannot access %s method %s::%s()",
+        visibility_name,
+        class_name,
+        method_name
+    );
+    return reason;
+}
+
+static char *ptn_inaccessible_declared_method_callback_reason(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name
+) {
+    int is_static = 0;
+    int visibility = PTN_PROPERTY_PUBLIC;
+    int is_abstract = 0;
+    if (
+        !ptn_declared_class_reflection_method_metadata(
+            class_name,
+            method_name,
+            &is_static,
+            &visibility,
+            &is_abstract
+        )
+    ) {
+        return NULL;
+    }
+    (void)is_static;
+    (void)is_abstract;
+    const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
+    if (ptn_declared_method_visibility_allows(access_scope, class_name, visibility)) {
+        return NULL;
+    }
+    return ptn_format_inaccessible_method_callback_reason(visibility, class_name, method_name);
+}
+
+static char *ptn_invalid_array_callback_reason(PtnRuntime *runtime, PtnValue resolved) {
     if (resolved.type != PTN_ARRAY || resolved.as.array->len != 2) {
         return ptn_duplicate_string("array callback must have exactly two members");
     }
@@ -492,12 +562,14 @@ static char *ptn_invalid_array_callback_reason(PtnValue resolved) {
         char *class_name = ptn_value_to_string(scope);
         if (!ptn_declared_class_exists(class_name) && !ptn_internal_class_exists_name(class_name)) {
             reason = ptn_format_missing_class_callback_reason(class_name);
+        } else if ((reason = ptn_inaccessible_declared_method_callback_reason(runtime, class_name, method_name)) != NULL) {
         } else if (!ptn_internal_class_method_exists(class_name, method_name)) {
             reason = ptn_format_missing_method_callback_reason(class_name, method_name);
         }
         free(class_name);
     } else if (scope.type == PTN_OBJECT) {
-        if (!ptn_internal_class_method_exists(scope.as.object->class_name, method_name)) {
+        reason = ptn_inaccessible_declared_method_callback_reason(runtime, scope.as.object->class_name, method_name);
+        if (reason == NULL && !ptn_internal_class_method_exists(scope.as.object->class_name, method_name)) {
             reason = ptn_format_missing_method_callback_reason(scope.as.object->class_name, method_name);
         }
     } else if (scope.type == PTN_EXCEPTION) {
@@ -514,6 +586,7 @@ static char *ptn_invalid_array_callback_reason(PtnValue resolved) {
 }
 
 static char *ptn_invalid_callback_message(
+    PtnRuntime *runtime,
     const char *function_name,
     size_t position,
     const char *parameter_name,
@@ -547,7 +620,7 @@ static char *ptn_invalid_callback_message(
     } else if (resolved.type == PTN_ARRAY && resolved.as.array->len != 2) {
         reason = ptn_duplicate_string("array callback must have exactly two members");
     } else if (resolved.type == PTN_ARRAY) {
-        reason = ptn_invalid_array_callback_reason(resolved);
+        reason = ptn_invalid_array_callback_reason(runtime, resolved);
     } else {
         reason = ptn_duplicate_string("no array or string given");
     }
@@ -645,6 +718,7 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
         return checked;
     }
     char *message = ptn_invalid_callback_message(
+        runtime,
         function_name,
         position,
         parameter_name,
@@ -49571,7 +49645,7 @@ static PtnValue ptn_internal_assert_options(PtnRuntime *runtime, size_t argc, co
     }
 }
 
-static char *ptn_assert_invalid_callback_reason(PtnValue callback) {
+static char *ptn_assert_invalid_callback_reason(PtnRuntime *runtime, PtnValue callback) {
     PtnValue resolved = ptn_value_deref(callback);
     if (resolved.type == PTN_STRING) {
         char *name = ptn_value_to_string(resolved);
@@ -49598,7 +49672,7 @@ static char *ptn_assert_invalid_callback_reason(PtnValue callback) {
         return reason;
     }
     if (resolved.type == PTN_ARRAY) {
-        char *reason = ptn_invalid_array_callback_reason(resolved);
+        char *reason = ptn_invalid_array_callback_reason(runtime, resolved);
         return reason == NULL ? ptn_duplicate_string("not a valid method callback") : reason;
     }
     return ptn_duplicate_string("no array or string given");
@@ -49606,7 +49680,7 @@ static char *ptn_assert_invalid_callback_reason(PtnValue callback) {
 
 static void ptn_assert_set_invalid_callback_exception(PtnRuntime *runtime, PtnValue callback, size_t line) {
     char *name = ptn_callable_output_name(callback);
-    char *reason = ptn_assert_invalid_callback_reason(callback);
+    char *reason = ptn_assert_invalid_callback_reason(runtime, callback);
     int needed = snprintf(NULL, 0, "Invalid callback %s, %s", name, reason);
     if (needed < 0) {
         ptn_abort_out_of_memory();
@@ -60681,6 +60755,7 @@ static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t a
     }
     if (!ptn_callable_is_valid(runtime, callable, 0)) {
         char *message = ptn_invalid_callback_message(
+            runtime,
             "Closure::fromCallable",
             1,
             "callback",

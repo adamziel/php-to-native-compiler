@@ -9,6 +9,12 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_constants = caller_runtime->class_constants;
     ptn_symbols_init(&runtime->owned_class_constant_deprecations);
     runtime->class_constant_deprecations = caller_runtime->class_constant_deprecations;
+    ptn_symbols_init(&runtime->owned_class_constant_initializing);
+    runtime->class_constant_initializing = caller_runtime->class_constant_initializing;
+    runtime->current_class_constant_initializing_class_name =
+        caller_runtime->current_class_constant_initializing_class_name;
+    runtime->current_class_constant_initializing_constant_name =
+        caller_runtime->current_class_constant_initializing_constant_name;
     runtime->class_constant_deprecation_suppress_class =
         caller_runtime->class_constant_deprecation_suppress_class;
     runtime->class_constant_deprecation_suppress_constant =
@@ -397,6 +403,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);
     ptn_symbols_free(&runtime->owned_static_property_initialized);
     ptn_symbols_free(&runtime->owned_static_properties);
+    ptn_symbols_free(&runtime->owned_class_constant_initializing);
     ptn_symbols_free(&runtime->owned_class_constant_deprecations);
     ptn_symbols_free(&runtime->owned_class_constants);
     ptn_symbols_free(&runtime->owned_class_aliases);
@@ -2645,6 +2652,12 @@ static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_deprecation_table(P
         : runtime->class_constant_deprecations;
 }
 
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_initializing_table(PtnRuntime *runtime) {
+    return runtime->class_constant_initializing == NULL
+        ? &runtime->owned_class_constant_initializing
+        : runtime->class_constant_initializing;
+}
+
 static PTN_UNUSED int ptn_property_class_names_equal(const char *left, const char *right) {
     if (left == NULL || right == NULL) {
         return 0;
@@ -3832,6 +3845,43 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
             );
             free(key);
             return ptn_value_clone_deref(value);
+        }
+        PtnValue initializing;
+        if (
+            ptn_symbols_get(
+                ptn_runtime_class_constant_initializing_table(runtime),
+                key,
+                &initializing
+            ) &&
+            ptn_is_truthy(initializing)
+        ) {
+            const char *message_class = runtime->current_class_constant_initializing_class_name == NULL
+                ? lookup_class_name
+                : runtime->current_class_constant_initializing_class_name;
+            const char *message_constant = runtime->current_class_constant_initializing_constant_name == NULL
+                ? constant
+                : runtime->current_class_constant_initializing_constant_name;
+            char message[256];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot declare self-referencing constant %s::%s",
+                message_class,
+                message_constant
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                free(key);
+                ptn_abort_out_of_memory();
+            }
+            free(key);
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                message,
+                runtime != NULL ? runtime->source_path : NULL,
+                line
+            );
+            return ptn_null();
         }
         if (runtime->class_constant_initializer != NULL &&
             runtime->class_constant_initializer(runtime, lookup_class_name, constant)) {

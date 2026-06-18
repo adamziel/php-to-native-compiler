@@ -2660,6 +2660,73 @@ fn emit_class_constant_initializer_helper(
             out.push_str("        if (strcmp(constant_name, \"");
             out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");
+            let initializing_key_temp = values.next_temp();
+            let initializing_table_temp = values.next_temp();
+            let initializing_frame_temp = values.next_temp();
+            let previous_initializing_class_temp = values.next_temp();
+            let previous_initializing_constant_temp = values.next_temp();
+            out.push_str("            char *");
+            out.push_str(&initializing_key_temp);
+            out.push_str(" = ptn_class_constant_key(\"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\");\n");
+            out.push_str("            PtnSymbolTable *");
+            out.push_str(&initializing_table_temp);
+            out.push_str(" = ptn_runtime_class_constant_initializing_table(&runtime);\n");
+            out.push_str("            const char *");
+            out.push_str(&previous_initializing_class_temp);
+            out.push_str(" = runtime.current_class_constant_initializing_class_name;\n");
+            out.push_str("            const char *");
+            out.push_str(&previous_initializing_constant_temp);
+            out.push_str(" = runtime.current_class_constant_initializing_constant_name;\n");
+            out.push_str("            ptn_symbols_set(");
+            out.push_str(&initializing_table_temp);
+            out.push_str(", ");
+            out.push_str(&initializing_key_temp);
+            out.push_str(", ptn_bool(1));\n");
+            out.push_str(
+                "            runtime.current_class_constant_initializing_class_name = \"self\";\n",
+            );
+            out.push_str(
+                "            runtime.current_class_constant_initializing_constant_name = \"",
+            );
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\";\n");
+            out.push_str("            PtnTryFrame ");
+            out.push_str(&initializing_frame_temp);
+            out.push_str(";\n");
+            out.push_str("            ptn_try_frame_push(&runtime, &");
+            out.push_str(&initializing_frame_temp);
+            out.push_str(");\n");
+            out.push_str("            if (setjmp(");
+            out.push_str(&initializing_frame_temp);
+            out.push_str(".jump) != 0) {\n");
+            out.push_str("                ptn_try_frame_pop(&runtime, &");
+            out.push_str(&initializing_frame_temp);
+            out.push_str(");\n");
+            out.push_str("                ptn_symbols_unset(");
+            out.push_str(&initializing_table_temp);
+            out.push_str(", ");
+            out.push_str(&initializing_key_temp);
+            out.push_str(");\n");
+            out.push_str(
+                "                runtime.current_class_constant_initializing_class_name = ",
+            );
+            out.push_str(&previous_initializing_class_temp);
+            out.push_str(";\n");
+            out.push_str(
+                "                runtime.current_class_constant_initializing_constant_name = ",
+            );
+            out.push_str(&previous_initializing_constant_temp);
+            out.push_str(";\n");
+            out.push_str("                free(");
+            out.push_str(&initializing_key_temp);
+            out.push_str(");\n");
+            out.push_str("                ptn_rethrow_exception(&runtime);\n");
+            out.push_str("                return 0;\n");
+            out.push_str("            }\n");
             let mut extra_cleanup_temps = Vec::new();
             let value_temp = if constant.is_enum_case {
                 if let Some(message) = enum_duplicate_message(class) {
@@ -2754,6 +2821,25 @@ fn emit_class_constant_initializer_helper(
             for temp in extra_cleanup_temps {
                 emit_value_cleanup(out, "            ", &temp);
             }
+            out.push_str("            ptn_try_frame_pop(&runtime, &");
+            out.push_str(&initializing_frame_temp);
+            out.push_str(");\n");
+            out.push_str("            ptn_symbols_unset(");
+            out.push_str(&initializing_table_temp);
+            out.push_str(", ");
+            out.push_str(&initializing_key_temp);
+            out.push_str(");\n");
+            out.push_str("            runtime.current_class_constant_initializing_class_name = ");
+            out.push_str(&previous_initializing_class_temp);
+            out.push_str(";\n");
+            out.push_str(
+                "            runtime.current_class_constant_initializing_constant_name = ",
+            );
+            out.push_str(&previous_initializing_constant_temp);
+            out.push_str(";\n");
+            out.push_str("            free(");
+            out.push_str(&initializing_key_temp);
+            out.push_str(");\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
