@@ -2139,6 +2139,20 @@ static PTN_UNUSED int ptn_property_type_text_coerce_atom(
         }
         return 0;
     }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "true")) {
+        if (resolved.type == PTN_BOOL && resolved.as.boolean) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        return 0;
+    }
+    if (ptn_ascii_case_equal_span_to_string(start, len, "false")) {
+        if (resolved.type == PTN_BOOL && !resolved.as.boolean) {
+            *out = ptn_value_clone(resolved);
+            return 1;
+        }
+        return 0;
+    }
     char *class_name = ptn_property_type_span_to_string(start, len);
     int matches = ptn_value_satisfies_class_type_hint(runtime, resolved, class_name);
     free(class_name);

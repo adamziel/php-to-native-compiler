@@ -7215,6 +7215,51 @@ fn parser_rejects_mixed_as_reserved_class_name() {
 }
 
 #[test]
+fn parser_rejects_type_names_as_class_names_and_import_aliases() {
+    let class_cases = [
+        ("<?php class int {}", "int"),
+        ("<?php class float {}", "float"),
+        ("<?php class string {}", "string"),
+        ("<?php class bool {}", "bool"),
+        ("<?php namespace Foo; class int {}", "int"),
+    ];
+    for (source, reserved) in class_cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(
+            error.message,
+            format!("Cannot use \"{reserved}\" as a class name as it is reserved"),
+            "{source}"
+        );
+        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
+    }
+
+    let error = parser::parse("<?php use foobar as int;").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot use foobar as int because 'int' is a special class name"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
+fn parser_rejects_static_parameter_and_property_types() {
+    let parameter =
+        parser::parse("<?php class Test { public function test(static $param) {} }").unwrap_err();
+    assert_eq!(
+        parameter.message,
+        "Cannot use the static modifier on a parameter"
+    );
+    assert_eq!(parameter.kind, DiagnosticKind::Fatal);
+
+    let property = parser::parse("<?php class Test { public ?static $foo; }").unwrap_err();
+    assert_eq!(
+        property.message,
+        "syntax error, unexpected token \"static\""
+    );
+    assert_eq!(property.kind, DiagnosticKind::ParseError);
+}
+
+#[test]
 fn parser_accepts_dnf_property_type_equivalence() {
     parser::parse(
         "<?php
@@ -23006,6 +23051,41 @@ try { literal_true(1); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; 
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(false)\nbool(true)\nliteral_false(): Return value must be of type array|false, int returned\nliteral_true(): Return value must be of type array|true, int returned\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_literal_false_typed_property_to_native_binary() {
+    let root = temp_dir("ptn-native-literal-false-typed-property");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("literal-false-typed-property.php");
+    let output = root.join("literal-false-typed-property-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public false $value;
+}
+
+$foo = new Foo();
+$foo->value = false;
+try {
+    $foo->value = true;
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Cannot assign true to property Foo::$value of type false\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -771,7 +771,7 @@ impl Parser<'_> {
         let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
             self.advance();
             let token = self.advance().clone();
-            let TokenKind::Identifier(alias) = token.kind else {
+            let Some(alias) = name_segment_from_token(&token.kind) else {
                 return Err(Diagnostic::new("expected import alias", Some(token.span)));
             };
             (alias, token.span)
@@ -918,7 +918,7 @@ impl Parser<'_> {
             let (alias, alias_span) = if matches!(self.peek().kind, TokenKind::As) {
                 self.advance();
                 let token = self.advance().clone();
-                let TokenKind::Identifier(alias) = token.kind else {
+                let Some(alias) = name_segment_from_token(&token.kind) else {
                     return Err(Diagnostic::new("expected import alias", Some(token.span)));
                 };
                 (alias, token.span)
@@ -972,6 +972,16 @@ impl Parser<'_> {
             NameResolution::Unqualified | NameResolution::Qualified => target.name,
         };
         let alias_key = import_alias_key(kind, &alias);
+        if kind == UseDeclarationKind::Class {
+            if let Some(reserved_name) = reserved_class_name_segment(&alias_key) {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot use {target_name} as {alias} because '{reserved_name}' is a special class name"
+                    ),
+                    Some(alias_span),
+                ));
+            }
+        }
         let seen_symbols = self.seen_symbols_for_import(kind);
         if seen_symbols.contains_key(&alias_key) {
             return Err(Diagnostic::new(
@@ -8858,6 +8868,16 @@ fn validate_property_type_allowed(
     let Some(type_hint) = type_hint else {
         return Ok(());
     };
+    if type_hint
+        .semantic_type
+        .as_ref()
+        .is_some_and(type_hint_contains_static)
+    {
+        return Err(Diagnostic::parse_error(
+            "syntax error, unexpected token \"static\"",
+            Some(span),
+        ));
+    }
     let normalized = type_hint
         .text
         .trim()
@@ -8962,6 +8982,10 @@ fn validate_parameter_type_hint(type_hint: &TypeHint, span: SourceSpan) -> Resul
             "never cannot be used as a parameter type",
             Some(span),
         )),
+        TypeHint::Static => Err(Diagnostic::new(
+            "Cannot use the static modifier on a parameter",
+            Some(span),
+        )),
         TypeHint::Nullable(inner) => validate_parameter_type_hint(inner, span),
         TypeHint::Union(types) | TypeHint::Intersection(types) => {
             for type_hint in types {
@@ -8970,6 +8994,17 @@ fn validate_parameter_type_hint(type_hint: &TypeHint, span: SourceSpan) -> Resul
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+fn type_hint_contains_static(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Static => true,
+        TypeHint::Nullable(inner) => type_hint_contains_static(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            types.iter().any(type_hint_contains_static)
+        }
+        _ => false,
     }
 }
 
@@ -11947,7 +11982,27 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
 
 fn reserved_class_name_segment(name: &str) -> Option<&str> {
     let segment = name.rsplit('\\').next().unwrap_or(name);
-    matches!(segment, "mixed" | "self" | "parent" | "static").then_some(segment)
+    matches!(
+        segment,
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "object"
+            | "parent"
+            | "self"
+            | "static"
+            | "string"
+            | "true"
+            | "void"
+    )
+    .then_some(segment)
 }
 
 fn reject_reserved_parent_class_name(name: &str, span: SourceSpan) -> Result<()> {
