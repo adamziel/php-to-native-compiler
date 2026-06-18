@@ -106,6 +106,38 @@ fn compile_dynamic_variable_unset_to_native_binary() {
 }
 
 #[test]
+fn direct_var_dump_internal_first_class_callable_metadata() {
+    let root = temp_dir("ptn-native-direct-var-dump-internal-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-var-dump-internal-callable.php");
+    let output = root.join("direct-var-dump-internal-callable-bin");
+    fs::write(&input, "<?php var_dump(sprintf(...));").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(Closure)#"));
+    assert!(stdout.contains("  [\"function\"]=>\n  string(7) \"sprintf\"\n"));
+    assert!(stdout.contains(concat!(
+        "  [\"parameter\"]=>\n",
+        "  array(2) {\n",
+        "    [\"$format\"]=>\n",
+        "    string(10) \"<required>\"\n",
+        "    [\"$values\"]=>\n",
+        "    string(10) \"<optional>\"\n",
+        "  }\n",
+    )));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iterator_protocol_and_array_backed_spl_to_native_binary() {
     let root = temp_dir("ptn-native-iterator-protocol-spl");
     fs::create_dir_all(&root).unwrap();

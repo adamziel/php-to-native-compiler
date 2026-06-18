@@ -969,6 +969,7 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     size_t indent,
     PtnDirectDumpSeen *seen
 );
+static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata metadata, size_t index, char *fallback, size_t fallback_len);
 
 static PTN_UNUSED void ptn_direct_var_dump_exception(
     PtnRuntime *runtime,
@@ -1008,6 +1009,71 @@ static PTN_UNUSED void ptn_direct_var_dump_exception(
     ptn_direct_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"previous\":\"Exception\":private]=>\n");
     ptn_direct_var_dump_value_indented(runtime, exception->previous, indent + 1, seen);
+    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+}
+
+static PTN_UNUSED size_t ptn_direct_closure_dump_field_count(PtnClosure *closure) {
+    if (closure == NULL || !closure->has_wrapped_callable) {
+        return 0;
+    }
+    PtnFunctionMetadata metadata = closure->metadata;
+    size_t count = 0;
+    if (metadata.found && metadata.name != NULL) {
+        count++;
+    }
+    if (metadata.found && metadata.parameter_count > 0) {
+        count++;
+    }
+    return count;
+}
+
+static PTN_UNUSED void ptn_direct_var_dump_closure_parameters(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata,
+    size_t indent
+) {
+    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_dump_printf(runtime, "array(%zu) {\n", metadata.parameter_count);
+    for (size_t i = 0; i < metadata.parameter_count; i++) {
+        char fallback[32];
+        const char *parameter_name = ptn_function_metadata_parameter_name(
+            metadata,
+            i,
+            fallback,
+            sizeof(fallback)
+        );
+        const char *requiredness = i < metadata.required_parameter_count
+            ? "<required>"
+            : "<optional>";
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_printf(runtime, "[\"$%s\"]=>\n", parameter_name);
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_printf(runtime, "string(10) \"%s\"\n", requiredness);
+    }
+    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+}
+
+static PTN_UNUSED void ptn_direct_var_dump_closure(
+    PtnRuntime *runtime,
+    PtnClosure *closure,
+    size_t indent
+) {
+    PtnFunctionMetadata metadata = closure->metadata;
+    size_t field_count = ptn_direct_closure_dump_field_count(closure);
+    ptn_direct_dump_printf(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
+    if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"function\"]=>\n");
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_printf(runtime, "string(%zu) \"%s\"\n", strlen(metadata.name), metadata.name);
+    }
+    if (closure->has_wrapped_callable && metadata.found && metadata.parameter_count > 0) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"parameter\"]=>\n");
+        ptn_direct_var_dump_closure_parameters(runtime, metadata, indent + 1);
+    }
     ptn_direct_var_dump_indent(runtime, indent);
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
@@ -1109,13 +1175,7 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
             break;
         }
         case PTN_CLOSURE:
-            ptn_direct_dump_printf(
-                runtime,
-                "object(Closure)#%zu (0) {\n",
-                value.as.closure->object_id
-            );
-            ptn_direct_var_dump_indent(runtime, indent);
-            ptn_direct_dump_write_cstr(runtime, "}\n");
+            ptn_direct_var_dump_closure(runtime, value.as.closure, indent);
             break;
         case PTN_EXCEPTION:
             ptn_direct_var_dump_exception(runtime, value.as.exception, indent, seen);
