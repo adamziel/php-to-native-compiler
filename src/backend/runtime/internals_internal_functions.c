@@ -1218,8 +1218,26 @@ typedef struct {
     size_t index;
 } PtnSplFixedArrayData;
 
+typedef struct {
+    PtnValue objects;
+    PtnValue infos;
+    size_t index;
+} PtnSplObjectStorageData;
+
+typedef struct {
+    PtnValue values;
+    PtnValue priorities;
+    int64_t extract_flags;
+    int is_min;
+    int is_priority_queue;
+    int is_corrupted;
+} PtnSplHeapData;
+
 #define PTN_ARRAY_OBJECT_STD_PROP_LIST 1
 #define PTN_ARRAY_OBJECT_ARRAY_AS_PROPS 2
+#define PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH 3
+#define PTN_SPL_PRIORITY_QUEUE_EXTR_PRIORITY 2
+#define PTN_SPL_PRIORITY_QUEUE_EXTR_DATA 1
 
 typedef struct {
     PtnValue storage;
@@ -2995,6 +3013,61 @@ static void ptn_serialize_append_spl_array_backed_object(
     ptn_string_buffer_append_char(buffer, '}');
 }
 
+static int ptn_serialize_object_is_spl_object_storage(PtnObject *object) {
+    return object != NULL && ptn_declared_class_is_same_or_descendant(object->class_name, "SplObjectStorage");
+}
+
+static void ptn_serialize_append_spl_object_storage_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    PtnSplObjectStorageData *data = object->native_data == NULL
+        ? NULL
+        : (PtnSplObjectStorageData *)object->native_data;
+    PtnValue objects_value = data == NULL ? ptn_null() : ptn_value_deref(data->objects);
+    PtnValue infos_value = data == NULL ? ptn_null() : ptn_value_deref(data->infos);
+    PtnArray *objects = objects_value.type == PTN_ARRAY ? objects_value.as.array : NULL;
+    PtnArray *infos = infos_value.type == PTN_ARRAY ? infos_value.as.array : NULL;
+    size_t count = objects == NULL ? 0 : objects->len;
+    if (infos == NULL || infos->len < count) {
+        count = 0;
+    }
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":2:{i:0;a:%zu:{",
+        strlen(object->class_name),
+        object->class_name,
+        count
+    );
+    for (size_t i = 0; i < count; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_buffer_append_format(buffer, "i:%zu;a:2:{i:0;", i);
+        ptn_serialize_append_value_with_id(buffer, objects->entries[i].value, state, 0);
+        ptn_string_buffer_append(buffer, "i:1;");
+        ptn_serialize_append_value_with_id(buffer, infos->entries[i].value, state, 0);
+        ptn_string_buffer_append_char(buffer, '}');
+    }
+    ptn_string_buffer_append(buffer, "}i:1;a:0:{}}");
+}
+
+static int ptn_serialize_object_is_spl_heap(PtnObject *object) {
+    return object != NULL &&
+        (ptn_declared_class_is_same_or_descendant(object->class_name, "SplHeap") ||
+         ptn_declared_class_is_same_or_descendant(object->class_name, "SplPriorityQueue"));
+}
+
+static void ptn_serialize_append_spl_heap_object(PtnStringBuffer *buffer, PtnObject *object) {
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":0:{}",
+        strlen(object->class_name),
+        object->class_name
+    );
+}
+
 static int ptn_serialize_append_serializable_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -3046,6 +3119,14 @@ static void ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *obje
     }
     if (ptn_serialize_object_is_spl_array_backed(object)) {
         ptn_serialize_append_spl_array_backed_object(buffer, object, state);
+        return;
+    }
+    if (ptn_serialize_object_is_spl_object_storage(object)) {
+        ptn_serialize_append_spl_object_storage_object(buffer, object, state);
+        return;
+    }
+    if (ptn_serialize_object_is_spl_heap(object)) {
+        ptn_serialize_append_spl_heap_object(buffer, object);
         return;
     }
     if (ptn_serialize_append_serializable_object(buffer, object, state)) {
@@ -54842,6 +54923,22 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *
     return ptn_ascii_case_equal(class_name, "SplObjectStorage");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_spl_heap(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplHeap");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_spl_max_heap(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplMaxHeap");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_spl_min_heap(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplMinHeap");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_spl_priority_queue(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SplPriorityQueue");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "LimitIterator");
 }
@@ -55027,6 +55124,10 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_no_rewind_iterator(class_name)
         || ptn_internal_class_name_is_recursive_iterator_iterator(class_name)
         || ptn_internal_class_name_is_spl_object_storage(class_name)
+        || ptn_internal_class_name_is_spl_heap(class_name)
+        || ptn_internal_class_name_is_spl_max_heap(class_name)
+        || ptn_internal_class_name_is_spl_min_heap(class_name)
+        || ptn_internal_class_name_is_spl_priority_queue(class_name)
         || ptn_internal_class_name_is_limit_iterator(class_name)
         || ptn_internal_class_name_is_spl_doubly_linked_list(class_name)
         || ptn_internal_class_name_is_spl_queue(class_name)
@@ -56004,6 +56105,59 @@ static int ptn_spl_fixed_array_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "valid");
 }
 
+static int ptn_spl_object_storage_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__debugInfo")
+        || ptn_ascii_case_equal(method_name, "__serialize")
+        || ptn_ascii_case_equal(method_name, "__unserialize")
+        || ptn_ascii_case_equal(method_name, "addAll")
+        || ptn_ascii_case_equal(method_name, "attach")
+        || ptn_ascii_case_equal(method_name, "contains")
+        || ptn_ascii_case_equal(method_name, "count")
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "detach")
+        || ptn_ascii_case_equal(method_name, "getHash")
+        || ptn_ascii_case_equal(method_name, "getInfo")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "offsetExists")
+        || ptn_ascii_case_equal(method_name, "offsetGet")
+        || ptn_ascii_case_equal(method_name, "offsetSet")
+        || ptn_ascii_case_equal(method_name, "offsetUnset")
+        || ptn_ascii_case_equal(method_name, "removeAll")
+        || ptn_ascii_case_equal(method_name, "removeAllExcept")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "seek")
+        || ptn_ascii_case_equal(method_name, "serialize")
+        || ptn_ascii_case_equal(method_name, "setInfo")
+        || ptn_ascii_case_equal(method_name, "unserialize")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
+static int ptn_spl_heap_method_exists(const char *method_name) {
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__debugInfo")
+        || ptn_ascii_case_equal(method_name, "compare")
+        || ptn_ascii_case_equal(method_name, "count")
+        || ptn_ascii_case_equal(method_name, "current")
+        || ptn_ascii_case_equal(method_name, "extract")
+        || ptn_ascii_case_equal(method_name, "insert")
+        || ptn_ascii_case_equal(method_name, "isCorrupted")
+        || ptn_ascii_case_equal(method_name, "isEmpty")
+        || ptn_ascii_case_equal(method_name, "key")
+        || ptn_ascii_case_equal(method_name, "next")
+        || ptn_ascii_case_equal(method_name, "recoverFromCorruption")
+        || ptn_ascii_case_equal(method_name, "rewind")
+        || ptn_ascii_case_equal(method_name, "top")
+        || ptn_ascii_case_equal(method_name, "valid");
+}
+
+static int ptn_spl_priority_queue_method_exists(const char *method_name) {
+    return ptn_spl_heap_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "getExtractFlags")
+        || ptn_ascii_case_equal(method_name, "setExtractFlags");
+}
+
 static int ptn_iterator_iterator_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "current")
         || ptn_ascii_case_equal(method_name, "getInnerIterator")
@@ -56217,6 +56371,17 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
         return ptn_ascii_case_equal(property_name, "flags")
             || ptn_ascii_case_equal(property_name, "dllist");
     }
+    if (ptn_internal_class_name_is_spl_object_storage(class_name)) {
+        return ptn_ascii_case_equal(property_name, "storage");
+    }
+    if (ptn_internal_class_name_is_spl_heap(class_name) ||
+        ptn_internal_class_name_is_spl_max_heap(class_name) ||
+        ptn_internal_class_name_is_spl_min_heap(class_name) ||
+        ptn_internal_class_name_is_spl_priority_queue(class_name)) {
+        return ptn_ascii_case_equal(property_name, "flags")
+            || ptn_ascii_case_equal(property_name, "isCorrupted")
+            || ptn_ascii_case_equal(property_name, "heap");
+    }
     if (ptn_internal_class_name_is_spl_file_info(class_name) ||
         ptn_internal_class_name_is_spl_file_object(class_name)) {
         return ptn_ascii_case_equal(property_name, "pathName")
@@ -56297,6 +56462,17 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_spl_fixed_array(class_name)) {
         return ptn_spl_fixed_array_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_spl_object_storage(class_name)) {
+        return ptn_spl_object_storage_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_spl_heap(class_name) ||
+        ptn_internal_class_name_is_spl_max_heap(class_name) ||
+        ptn_internal_class_name_is_spl_min_heap(class_name)) {
+        return ptn_spl_heap_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_spl_priority_queue(class_name)) {
+        return ptn_spl_priority_queue_method_exists(method_name);
     }
     if (ptn_internal_class_name_is_append_iterator(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct");
@@ -56832,6 +57008,84 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "setSize",
             "toArray",
             "valid",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_spl_object_storage(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "attach",
+            "detach",
+            "contains",
+            "addAll",
+            "removeAll",
+            "removeAllExcept",
+            "getInfo",
+            "setInfo",
+            "count",
+            "rewind",
+            "seek",
+            "valid",
+            "key",
+            "current",
+            "next",
+            "unserialize",
+            "serialize",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "getHash",
+            "__serialize",
+            "__unserialize",
+            "__debugInfo",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_spl_heap(class_name) ||
+        ptn_internal_class_name_is_spl_max_heap(class_name) ||
+        ptn_internal_class_name_is_spl_min_heap(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "extract",
+            "insert",
+            "top",
+            "count",
+            "isEmpty",
+            "rewind",
+            "current",
+            "key",
+            "next",
+            "valid",
+            "recoverFromCorruption",
+            "compare",
+            "isCorrupted",
+            "__debugInfo",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_spl_priority_queue(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "compare",
+            "insert",
+            "setExtractFlags",
+            "top",
+            "extract",
+            "count",
+            "isEmpty",
+            "rewind",
+            "current",
+            "key",
+            "next",
+            "valid",
+            "recoverFromCorruption",
+            "isCorrupted",
+            "getExtractFlags",
+            "__debugInfo",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -61465,6 +61719,11 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_iterator_iterator(class_name) ||
         ptn_internal_class_name_is_limit_iterator(class_name) ||
         ptn_internal_class_name_is_spl_fixed_array(class_name) ||
+        ptn_internal_class_name_is_spl_object_storage(class_name) ||
+        ptn_internal_class_name_is_spl_heap(class_name) ||
+        ptn_internal_class_name_is_spl_max_heap(class_name) ||
+        ptn_internal_class_name_is_spl_min_heap(class_name) ||
+        ptn_internal_class_name_is_spl_priority_queue(class_name) ||
         ptn_internal_class_name_is_spl_doubly_linked_list(class_name) ||
         ptn_internal_class_name_is_spl_queue(class_name) ||
         ptn_internal_class_name_is_spl_stack(class_name) ||
@@ -61526,6 +61785,12 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("READ_AHEAD"), ptn_int(2));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("SKIP_EMPTY"), ptn_int(4));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("READ_CSV"), ptn_int(8));
+        return;
+    }
+    if (ptn_internal_class_name_is_spl_priority_queue(class_name)) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("EXTR_BOTH"), ptn_int(3));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("EXTR_PRIORITY"), ptn_int(2));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("EXTR_DATA"), ptn_int(1));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "IntlPartsIterator")) {
@@ -62890,6 +63155,26 @@ static void ptn_spl_fixed_array_data_free(void *data) {
     free(fixed_data);
 }
 
+static void ptn_spl_object_storage_data_free(void *data) {
+    PtnSplObjectStorageData *storage_data = (PtnSplObjectStorageData *)data;
+    if (storage_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&storage_data->objects);
+    ptn_value_destroy(&storage_data->infos);
+    free(storage_data);
+}
+
+static void ptn_spl_heap_data_free(void *data) {
+    PtnSplHeapData *heap_data = (PtnSplHeapData *)data;
+    if (heap_data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&heap_data->values);
+    ptn_value_destroy(&heap_data->priorities);
+    free(heap_data);
+}
+
 static void ptn_spl_doubly_linked_list_data_free(void *data) {
     PtnSplDoublyLinkedListData *list_data = (PtnSplDoublyLinkedListData *)data;
     if (list_data == NULL) {
@@ -63044,6 +63329,18 @@ static void ptn_spl_declare_storage_property(
     PtnValue storage,
     size_t line
 );
+static void ptn_spl_object_storage_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplObjectStorageData *data,
+    size_t line
+);
+static void ptn_spl_heap_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplHeapData *data,
+    size_t line
+);
 
 static PtnArrayIteratorData *ptn_array_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
     receiver = ptn_value_deref(receiver);
@@ -63117,6 +63414,58 @@ static PtnSplFixedArrayData *ptn_spl_fixed_array_data(PtnRuntime *runtime, PtnVa
         ptn_spl_declare_storage_property(runtime, receiver, "SplFixedArray", data->storage, 0);
     }
     return (PtnSplFixedArrayData *)receiver.as.object->native_data;
+}
+
+static PtnSplObjectStorageData *ptn_spl_object_storage_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplObjectStorage")
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid SplObjectStorage object");
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        PtnSplObjectStorageData *data = malloc(sizeof(PtnSplObjectStorageData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->objects = ptn_array_from_literal_entries(0, NULL);
+        data->infos = ptn_array_from_literal_entries(0, NULL);
+        data->index = 0;
+        receiver.as.object->native_data = data;
+        receiver.as.object->native_data_free = ptn_spl_object_storage_data_free;
+        ptn_spl_object_storage_sync_properties(runtime, receiver, data, 0);
+    }
+    return (PtnSplObjectStorageData *)receiver.as.object->native_data;
+}
+
+static PtnSplHeapData *ptn_spl_heap_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !(ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplHeap") ||
+             ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplPriorityQueue"))
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid SplHeap object");
+        return NULL;
+    }
+    if (receiver.as.object->native_data == NULL) {
+        PtnSplHeapData *data = malloc(sizeof(PtnSplHeapData));
+        if (data == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        data->values = ptn_array_from_literal_entries(0, NULL);
+        data->priorities = ptn_array_from_literal_entries(0, NULL);
+        data->extract_flags = PTN_SPL_PRIORITY_QUEUE_EXTR_DATA;
+        data->is_min = ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplMinHeap");
+        data->is_priority_queue = ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "SplPriorityQueue");
+        data->is_corrupted = 0;
+        receiver.as.object->native_data = data;
+        receiver.as.object->native_data_free = ptn_spl_heap_data_free;
+        ptn_spl_heap_sync_properties(runtime, receiver, data, 0);
+    }
+    return (PtnSplHeapData *)receiver.as.object->native_data;
 }
 
 static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, PtnValue receiver) {
@@ -66104,6 +66453,1056 @@ static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
     if (ptn_ascii_case_equal(name, "next")) {
         if (data->index < data->size) {
             data->index++;
+        }
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static size_t ptn_spl_object_storage_count(PtnSplObjectStorageData *data) {
+    PtnValue objects = data == NULL ? ptn_null() : ptn_value_deref(data->objects);
+    return objects.type == PTN_ARRAY ? objects.as.array->len : 0;
+}
+
+static int ptn_spl_object_storage_object_arg(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue value,
+    size_t line,
+    size_t *id_out
+) {
+    if (ptn_spl_object_id(value, id_out)) {
+        return 1;
+    }
+    PtnValue resolved = ptn_value_deref(value);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "SplObjectStorage::%s(): Argument #%zu ($%s) must be of type object, %s given",
+        method_name,
+        position,
+        parameter_name,
+        ptn_offset_container_type_name(resolved)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    (void)line;
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
+static ssize_t ptn_spl_object_storage_find_id(PtnSplObjectStorageData *data, size_t object_id) {
+    PtnValue objects = data == NULL ? ptn_null() : ptn_value_deref(data->objects);
+    PtnArray *array = objects.type == PTN_ARRAY ? objects.as.array : NULL;
+    if (array == NULL) {
+        return -1;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        size_t current_id = 0;
+        if (ptn_spl_object_id(array->entries[i].value, &current_id) && current_id == object_id) {
+            return (ssize_t)i;
+        }
+    }
+    return -1;
+}
+
+static PtnValue ptn_spl_object_storage_info_at(PtnSplObjectStorageData *data, size_t index) {
+    PtnValue infos = data == NULL ? ptn_null() : ptn_value_deref(data->infos);
+    PtnArray *array = infos.type == PTN_ARRAY ? infos.as.array : NULL;
+    if (array == NULL || index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(array->entries[index].value);
+}
+
+static PtnValue ptn_spl_object_storage_object_at(PtnSplObjectStorageData *data, size_t index) {
+    PtnValue objects = data == NULL ? ptn_null() : ptn_value_deref(data->objects);
+    PtnArray *array = objects.type == PTN_ARRAY ? objects.as.array : NULL;
+    if (array == NULL || index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(array->entries[index].value);
+}
+
+static PtnValue ptn_spl_object_storage_pairs_array(PtnSplObjectStorageData *data) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t count = ptn_spl_object_storage_count(data);
+    for (size_t i = 0; i < count; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        PtnValue pair = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(
+            pair.as.array,
+            ptn_array_int_key(0),
+            ptn_spl_object_storage_object_at(data, i)
+        );
+        ptn_array_set_entry(
+            pair.as.array,
+            ptn_array_int_key(1),
+            ptn_spl_object_storage_info_at(data, i)
+        );
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), pair);
+    }
+    return result;
+}
+
+static PtnArrayKey ptn_spl_private_debug_key(const char *class_name, const char *property_name) {
+    size_t class_len = strlen(class_name);
+    size_t property_len = strlen(property_name);
+    size_t key_len = class_len + property_len + 2;
+    char *key = malloc(key_len + 1);
+    if (key == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    key[0] = '\0';
+    memcpy(key + 1, class_name, class_len);
+    key[class_len + 1] = '\0';
+    memcpy(key + class_len + 2, property_name, property_len);
+    key[key_len] = '\0';
+    PtnArrayKey array_key = ptn_array_string_key_len(key, key_len);
+    free(key);
+    return array_key;
+}
+
+static void ptn_spl_object_storage_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplObjectStorageData *data,
+    size_t line
+) {
+    PtnValue storage = ptn_spl_object_storage_pairs_array(data);
+    ptn_spl_declare_private_value_property(runtime, object, "storage", "SplObjectStorage", storage, line);
+    ptn_value_destroy(&storage);
+}
+
+static void ptn_spl_object_storage_attach_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    PtnValue object,
+    PtnValue info,
+    size_t line
+) {
+    size_t object_id = 0;
+    if (!ptn_spl_object_id(object, &object_id)) {
+        return;
+    }
+    ssize_t existing = ptn_spl_object_storage_find_id(data, object_id);
+    PtnArray *objects = ptn_value_deref(data->objects).as.array;
+    PtnArray *infos = ptn_value_deref(data->infos).as.array;
+    if (existing >= 0) {
+        size_t index = (size_t)existing;
+        ptn_value_destroy(&infos->entries[index].value);
+        infos->entries[index].value = ptn_value_clone_deref(info);
+    } else {
+        if (objects->len > (size_t)INT64_MAX || infos->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            objects,
+            ptn_array_int_key((int64_t)objects->len),
+            ptn_value_clone_deref(object)
+        );
+        ptn_array_set_entry(
+            infos,
+            ptn_array_int_key((int64_t)infos->len),
+            ptn_value_clone_deref(info)
+        );
+    }
+    ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+}
+
+static void ptn_spl_object_storage_remove_index(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    size_t remove_index,
+    size_t line
+) {
+    size_t count = ptn_spl_object_storage_count(data);
+    if (remove_index >= count) {
+        return;
+    }
+    PtnValue objects = ptn_array_from_literal_entries(0, NULL);
+    PtnValue infos = ptn_array_from_literal_entries(0, NULL);
+    int64_t next = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (i == remove_index) {
+            continue;
+        }
+        ptn_array_set_entry(
+            objects.as.array,
+            ptn_array_int_key(next),
+            ptn_spl_object_storage_object_at(data, i)
+        );
+        ptn_array_set_entry(
+            infos.as.array,
+            ptn_array_int_key(next),
+            ptn_spl_object_storage_info_at(data, i)
+        );
+        next++;
+    }
+    ptn_value_destroy(&data->objects);
+    ptn_value_destroy(&data->infos);
+    data->objects = objects;
+    data->infos = infos;
+    if (data->index > (size_t)next) {
+        data->index = (size_t)next;
+    }
+    ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+}
+
+static PtnSplObjectStorageData *ptn_spl_object_storage_data_from_arg(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        !ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SplObjectStorage") ||
+        value.as.object->native_data == NULL) {
+        return NULL;
+    }
+    return (PtnSplObjectStorageData *)value.as.object->native_data;
+}
+
+static PtnValue ptn_spl_object_storage_serialized_payload(
+    PtnRuntime *runtime,
+    PtnSplObjectStorageData *data,
+    size_t line
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    size_t count = ptn_spl_object_storage_count(data);
+    ptn_string_buffer_append_format(&buffer, "x:i:%zu;", count);
+    for (size_t i = 0; i < count; i++) {
+        PtnValue object = ptn_spl_object_storage_object_at(data, i);
+        PtnValue object_serialized = ptn_internal_serialize(runtime, 1, &object, line);
+        ptn_value_destroy(&object);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&object_serialized);
+            free(buffer.data);
+            return ptn_null();
+        }
+        PtnStringOperand object_payload = ptn_value_to_string_operand(object_serialized);
+        ptn_string_buffer_append_len(&buffer, object_payload.data, object_payload.len);
+        ptn_string_buffer_append_char(&buffer, ',');
+        ptn_string_operand_free(object_payload);
+        ptn_value_destroy(&object_serialized);
+
+        PtnValue info = ptn_spl_object_storage_info_at(data, i);
+        PtnValue info_serialized = ptn_internal_serialize(runtime, 1, &info, line);
+        ptn_value_destroy(&info);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&info_serialized);
+            free(buffer.data);
+            return ptn_null();
+        }
+        PtnStringOperand info_payload = ptn_value_to_string_operand(info_serialized);
+        ptn_string_buffer_append_len(&buffer, info_payload.data, info_payload.len);
+        ptn_string_buffer_append_char(&buffer, ';');
+        ptn_string_operand_free(info_payload);
+        ptn_value_destroy(&info_serialized);
+    }
+    ptn_string_buffer_append(&buffer, ";m:a:0:{}");
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static PTN_UNUSED PtnValue ptn_spl_object_storage_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SplObjectStorage::__construct() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnSplObjectStorageData *data = malloc(sizeof(PtnSplObjectStorageData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->objects = ptn_array_from_literal_entries(0, NULL);
+    data->infos = ptn_array_from_literal_entries(0, NULL);
+    data->index = 0;
+    PtnValue object = ptn_object_new_shell(runtime, "SplObjectStorage");
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_spl_object_storage_data_free;
+    ptn_spl_object_storage_sync_properties(runtime, object, data, line);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_spl_object_storage_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnSplObjectStorageData *source_data = ptn_spl_object_storage_data(runtime, source);
+    if (source_data == NULL) {
+        return ptn_null();
+    }
+    PtnValue clone = ptn_spl_object_storage_new(runtime, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || clone.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    PtnSplObjectStorageData *clone_data = (PtnSplObjectStorageData *)clone.as.object->native_data;
+    ptn_value_destroy(&clone_data->objects);
+    ptn_value_destroy(&clone_data->infos);
+    clone_data->objects = ptn_array(ptn_array_clone(ptn_value_deref(source_data->objects).as.array));
+    clone_data->infos = ptn_array(ptn_array_clone(ptn_value_deref(source_data->infos).as.array));
+    clone_data->index = source_data->index;
+    ptn_spl_object_storage_sync_properties(runtime, clone, clone_data, line);
+    return clone;
+}
+
+static PtnValue ptn_spl_object_storage_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnSplObjectStorageData *data = ptn_spl_object_storage_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_spl_object_storage_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnSplObjectStorageData *new_data = (PtnSplObjectStorageData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_spl_object_storage_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_spl_object_storage_data_free;
+            ptn_spl_object_storage_sync_properties(runtime, resolved_receiver, new_data, line);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "attach") || ptn_ascii_case_equal(name, "offsetSet")) {
+        if (argc < 1 || argc > 2) {
+            char message[176];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplObjectStorage::%s() expects between 1 and 2 arguments, %zu given",
+                name,
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        size_t object_id = 0;
+        if (!ptn_spl_object_storage_object_arg(runtime, name, 1, "object", args[0], line, &object_id)) {
+            return ptn_null();
+        }
+        (void)object_id;
+        PtnValue info = argc >= 2 ? args[1] : ptn_null();
+        ptn_spl_object_storage_attach_value(runtime, receiver, data, args[0], info, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "detach") || ptn_ascii_case_equal(name, "offsetUnset")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplObjectStorage::%s() expects exactly 1 argument, %zu given",
+                name,
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        size_t object_id = 0;
+        if (!ptn_spl_object_storage_object_arg(runtime, name, 1, "object", args[0], line, &object_id)) {
+            return ptn_null();
+        }
+        ssize_t index = ptn_spl_object_storage_find_id(data, object_id);
+        if (index >= 0) {
+            ptn_spl_object_storage_remove_index(runtime, receiver, data, (size_t)index, line);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "contains") || ptn_ascii_case_equal(name, "offsetExists")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplObjectStorage::%s() expects exactly 1 argument, %zu given",
+                name,
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        size_t object_id = 0;
+        if (!ptn_spl_object_storage_object_arg(runtime, name, 1, "object", args[0], line, &object_id)) {
+            return ptn_null();
+        }
+        return ptn_bool(ptn_spl_object_storage_find_id(data, object_id) >= 0);
+    }
+    if (ptn_ascii_case_equal(name, "offsetGet")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::offsetGet() expects exactly 1 argument");
+            return ptn_null();
+        }
+        size_t object_id = 0;
+        if (!ptn_spl_object_storage_object_arg(runtime, name, 1, "object", args[0], line, &object_id)) {
+            return ptn_null();
+        }
+        ssize_t index = ptn_spl_object_storage_find_id(data, object_id);
+        if (index < 0) {
+            ptn_throw_exception(runtime, "UnexpectedValueException", "Object not found");
+            return ptn_null();
+        }
+        return ptn_spl_object_storage_info_at(data, (size_t)index);
+    }
+    if (ptn_ascii_case_equal(name, "addAll") ||
+        ptn_ascii_case_equal(name, "removeAll") ||
+        ptn_ascii_case_equal(name, "removeAllExcept")) {
+        if (argc != 1) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplObjectStorage::%s() expects exactly 1 argument",
+                name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnSplObjectStorageData *other = ptn_spl_object_storage_data_from_arg(args[0]);
+        if (other == NULL) {
+            ptn_throw_exception(runtime, "TypeError", "SplObjectStorage argument must be of type SplObjectStorage");
+            return ptn_null();
+        }
+        size_t other_count = ptn_spl_object_storage_count(other);
+        if (ptn_ascii_case_equal(name, "addAll")) {
+            for (size_t i = 0; i < other_count; i++) {
+                PtnValue object = ptn_spl_object_storage_object_at(other, i);
+                PtnValue info = ptn_spl_object_storage_info_at(other, i);
+                ptn_spl_object_storage_attach_value(runtime, receiver, data, object, info, line);
+                ptn_value_destroy(&object);
+                ptn_value_destroy(&info);
+            }
+            return ptn_null();
+        }
+        PtnValue objects = ptn_array_from_literal_entries(0, NULL);
+        PtnValue infos = ptn_array_from_literal_entries(0, NULL);
+        int64_t next = 0;
+        size_t count = ptn_spl_object_storage_count(data);
+        for (size_t i = 0; i < count; i++) {
+            PtnValue object = ptn_spl_object_storage_object_at(data, i);
+            size_t object_id = 0;
+            (void)ptn_spl_object_id(object, &object_id);
+            int in_other = ptn_spl_object_storage_find_id(other, object_id) >= 0;
+            int keep = ptn_ascii_case_equal(name, "removeAllExcept") ? in_other : !in_other;
+            if (keep) {
+                ptn_array_set_entry(objects.as.array, ptn_array_int_key(next), object);
+                ptn_array_set_entry(
+                    infos.as.array,
+                    ptn_array_int_key(next),
+                    ptn_spl_object_storage_info_at(data, i)
+                );
+                next++;
+            } else {
+                ptn_value_destroy(&object);
+            }
+        }
+        ptn_value_destroy(&data->objects);
+        ptn_value_destroy(&data->infos);
+        data->objects = objects;
+        data->infos = infos;
+        if (data->index > (size_t)next) {
+            data->index = (size_t)next;
+        }
+        ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getInfo")) {
+        ptn_reflection_check_no_arguments(runtime, "SplObjectStorage", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_object_storage_info_at(data, data->index);
+    }
+    if (ptn_ascii_case_equal(name, "setInfo")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::setInfo() expects exactly 1 argument");
+            return ptn_null();
+        }
+        if (data->index < ptn_spl_object_storage_count(data)) {
+            PtnArray *infos = ptn_value_deref(data->infos).as.array;
+            ptn_value_destroy(&infos->entries[data->index].value);
+            infos->entries[data->index].value = ptn_value_clone_deref(args[0]);
+            ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getHash")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::getHash() expects exactly 1 argument");
+            return ptn_null();
+        }
+        size_t object_id = 0;
+        if (!ptn_spl_object_storage_object_arg(runtime, name, 1, "object", args[0], line, &object_id)) {
+            return ptn_null();
+        }
+        char buffer[33];
+        int written = snprintf(buffer, sizeof(buffer), "%016llx0000000000000000", (unsigned long long)object_id);
+        if (written < 0 || written != 32) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_owned_string(ptn_duplicate_string(buffer));
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        ptn_reflection_check_no_arguments(runtime, "SplObjectStorage", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_int((int64_t)ptn_spl_object_storage_count(data));
+    }
+    if (ptn_ascii_case_equal(name, "serialize")) {
+        ptn_reflection_check_no_arguments(runtime, "SplObjectStorage", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_spl_object_storage_serialized_payload(runtime, data, line);
+    }
+    if (ptn_ascii_case_equal(name, "unserialize")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::unserialize() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnStringOperand payload = ptn_internal_expect_string_arg(
+            runtime,
+            "SplObjectStorage::unserialize",
+            1,
+            "data",
+            args[0],
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(payload);
+            return ptn_null();
+        }
+        ptn_spl_object_storage_validate_payload(runtime, payload.data, payload.len, line);
+        ptn_string_operand_free(payload);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__serialize") || ptn_ascii_case_equal(name, "__debugInfo")) {
+        ptn_reflection_check_no_arguments(runtime, "SplObjectStorage", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (ptn_ascii_case_equal(name, "__debugInfo")) {
+            PtnValue result = ptn_array_from_literal_entries(0, NULL);
+            ptn_array_set_entry(
+                result.as.array,
+                ptn_spl_private_debug_key("SplObjectStorage", "storage"),
+                ptn_spl_object_storage_pairs_array(data)
+            );
+            return result;
+        }
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_spl_object_storage_pairs_array(data));
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_array_from_literal_entries(0, NULL));
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::__unserialize() expects exactly 1 argument");
+            return ptn_null();
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "seek")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::seek() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t position = ptn_value_to_integer(args[0]);
+        size_t count = ptn_spl_object_storage_count(data);
+        if (position < 0 || (size_t)position >= count) {
+            char message[128];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Seek position %lld is out of range",
+                (long long)position
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "OutOfBoundsException", message);
+            return ptn_null();
+        }
+        data->index = (size_t)position;
+        return ptn_null();
+    }
+    ptn_reflection_check_no_arguments(runtime, "SplObjectStorage", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        data->index = 0;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        return ptn_bool(data->index < ptn_spl_object_storage_count(data));
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        return ptn_int((int64_t)data->index);
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        if (data->index >= ptn_spl_object_storage_count(data)) {
+            ptn_throw_exception(runtime, "RuntimeException", "Called current() on invalid iterator");
+            return ptn_null();
+        }
+        return ptn_spl_object_storage_object_at(data, data->index);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        if (data->index < ptn_spl_object_storage_count(data)) {
+            data->index++;
+        }
+        return ptn_null();
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
+static size_t ptn_spl_heap_count(PtnSplHeapData *data) {
+    PtnValue values = data == NULL ? ptn_null() : ptn_value_deref(data->values);
+    return values.type == PTN_ARRAY ? values.as.array->len : 0;
+}
+
+static PtnValue ptn_spl_heap_value_at(PtnSplHeapData *data, size_t index) {
+    PtnValue values = data == NULL ? ptn_null() : ptn_value_deref(data->values);
+    PtnArray *array = values.type == PTN_ARRAY ? values.as.array : NULL;
+    if (array == NULL || index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(array->entries[index].value);
+}
+
+static PtnValue ptn_spl_heap_priority_at(PtnSplHeapData *data, size_t index) {
+    PtnValue priorities = data == NULL ? ptn_null() : ptn_value_deref(data->priorities);
+    PtnArray *array = priorities.type == PTN_ARRAY ? priorities.as.array : NULL;
+    if (array == NULL || index >= array->len) {
+        return ptn_null();
+    }
+    return ptn_value_clone_deref(array->entries[index].value);
+}
+
+static int ptn_spl_heap_best_index(
+    PtnRuntime *runtime,
+    PtnSplHeapData *data,
+    size_t line,
+    size_t *index_out
+) {
+    size_t count = ptn_spl_heap_count(data);
+    if (count == 0) {
+        return 0;
+    }
+    size_t best = 0;
+    for (size_t i = 1; i < count; i++) {
+        PtnValue current_priority = ptn_spl_heap_priority_at(data, i);
+        PtnValue best_priority = ptn_spl_heap_priority_at(data, best);
+        int compared = ptn_compare_order(runtime, current_priority, best_priority, line);
+        ptn_value_destroy(&current_priority);
+        ptn_value_destroy(&best_priority);
+        if (runtime->exceptions->active_exception != NULL) {
+            return 0;
+        }
+        if ((!data->is_min && compared == PTN_COMPARE_GREATER) ||
+            (data->is_min && compared == PTN_COMPARE_LESS)) {
+            best = i;
+        }
+    }
+    *index_out = best;
+    return 1;
+}
+
+static PtnValue ptn_spl_heap_entry_result(PtnSplHeapData *data, size_t index) {
+    if (!data->is_priority_queue) {
+        return ptn_spl_heap_value_at(data, index);
+    }
+    if (data->extract_flags == PTN_SPL_PRIORITY_QUEUE_EXTR_PRIORITY) {
+        return ptn_spl_heap_priority_at(data, index);
+    }
+    if (data->extract_flags == PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH) {
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("data"), ptn_spl_heap_value_at(data, index));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("priority"), ptn_spl_heap_priority_at(data, index));
+        return result;
+    }
+    return ptn_spl_heap_value_at(data, index);
+}
+
+static void ptn_spl_heap_remove_index(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplHeapData *data,
+    size_t remove_index,
+    size_t line
+) {
+    size_t count = ptn_spl_heap_count(data);
+    PtnValue values = ptn_array_from_literal_entries(0, NULL);
+    PtnValue priorities = ptn_array_from_literal_entries(0, NULL);
+    int64_t next = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (i == remove_index) {
+            continue;
+        }
+        ptn_array_set_entry(values.as.array, ptn_array_int_key(next), ptn_spl_heap_value_at(data, i));
+        ptn_array_set_entry(priorities.as.array, ptn_array_int_key(next), ptn_spl_heap_priority_at(data, i));
+        next++;
+    }
+    ptn_value_destroy(&data->values);
+    ptn_value_destroy(&data->priorities);
+    data->values = values;
+    data->priorities = priorities;
+    ptn_spl_heap_sync_properties(runtime, receiver, data, line);
+}
+
+static PtnValue ptn_spl_heap_debug_heap_array(PtnSplHeapData *data) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t count = ptn_spl_heap_count(data);
+    for (size_t i = 0; i < count; i++) {
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        if (data->is_priority_queue) {
+            PtnValue entry = ptn_array_from_literal_entries(0, NULL);
+            ptn_array_set_entry(entry.as.array, ptn_array_string_key("data"), ptn_spl_heap_value_at(data, i));
+            ptn_array_set_entry(entry.as.array, ptn_array_string_key("priority"), ptn_spl_heap_priority_at(data, i));
+            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), entry);
+        } else {
+            ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_spl_heap_value_at(data, i));
+        }
+    }
+    return result;
+}
+
+static void ptn_spl_heap_sync_properties(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnSplHeapData *data,
+    size_t line
+) {
+    const char *declaring_class = data != NULL && data->is_priority_queue ? "SplPriorityQueue" : "SplHeap";
+    PtnValue flags = ptn_int(data != NULL && data->is_priority_queue ? data->extract_flags : 0);
+    PtnValue is_corrupted = ptn_bool(data != NULL && data->is_corrupted);
+    PtnValue heap = ptn_spl_heap_debug_heap_array(data);
+    ptn_spl_declare_private_value_property(runtime, object, "flags", declaring_class, flags, line);
+    ptn_spl_declare_private_value_property(runtime, object, "isCorrupted", declaring_class, is_corrupted, line);
+    ptn_spl_declare_private_value_property(runtime, object, "heap", declaring_class, heap, line);
+    ptn_value_destroy(&flags);
+    ptn_value_destroy(&is_corrupted);
+    ptn_value_destroy(&heap);
+}
+
+static PTN_UNUSED PtnValue ptn_spl_heap_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s::__construct() expects exactly 0 arguments, %zu given",
+            class_name,
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnSplHeapData *data = malloc(sizeof(PtnSplHeapData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->values = ptn_array_from_literal_entries(0, NULL);
+    data->priorities = ptn_array_from_literal_entries(0, NULL);
+    data->extract_flags = PTN_SPL_PRIORITY_QUEUE_EXTR_DATA;
+    data->is_min = ptn_ascii_case_equal(class_name, "SplMinHeap");
+    data->is_priority_queue = ptn_ascii_case_equal(class_name, "SplPriorityQueue");
+    data->is_corrupted = 0;
+    PtnValue object = ptn_object_new_shell(runtime, class_name);
+    object.as.object->native_data = data;
+    object.as.object->native_data_free = ptn_spl_heap_data_free;
+    ptn_spl_heap_sync_properties(runtime, object, data, line);
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_spl_heap_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    PtnSplHeapData *source_data = ptn_spl_heap_data(runtime, source);
+    if (source_data == NULL) {
+        return ptn_null();
+    }
+    PtnValue resolved = ptn_value_deref(source);
+    PtnValue clone = ptn_spl_heap_new(runtime, resolved.as.object->class_name, 0, NULL, line);
+    if (runtime->exceptions->active_exception != NULL || clone.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    PtnSplHeapData *clone_data = (PtnSplHeapData *)clone.as.object->native_data;
+    ptn_value_destroy(&clone_data->values);
+    ptn_value_destroy(&clone_data->priorities);
+    clone_data->values = ptn_array(ptn_array_clone(ptn_value_deref(source_data->values).as.array));
+    clone_data->priorities = ptn_array(ptn_array_clone(ptn_value_deref(source_data->priorities).as.array));
+    clone_data->extract_flags = source_data->extract_flags;
+    clone_data->is_min = source_data->is_min;
+    clone_data->is_priority_queue = source_data->is_priority_queue;
+    clone_data->is_corrupted = source_data->is_corrupted;
+    ptn_spl_heap_sync_properties(runtime, clone, clone_data, line);
+    return clone;
+}
+
+static PtnValue ptn_spl_heap_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnSplHeapData *data = ptn_spl_heap_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    const char *class_name = resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object->class_name : "SplHeap";
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_spl_heap_new(runtime, class_name, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            PtnSplHeapData *new_data = (PtnSplHeapData *)replacement.as.object->native_data;
+            replacement.as.object->native_data = NULL;
+            replacement.as.object->native_data_free = NULL;
+            ptn_spl_heap_data_free(resolved_receiver.as.object->native_data);
+            resolved_receiver.as.object->native_data = new_data;
+            resolved_receiver.as.object->native_data_free = ptn_spl_heap_data_free;
+            ptn_spl_heap_sync_properties(runtime, resolved_receiver, new_data, line);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "insert")) {
+        size_t expected = data->is_priority_queue ? 2 : 1;
+        if (argc != expected) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s::insert() expects exactly %zu argument%s, %zu given",
+                data->is_priority_queue ? "SplPriorityQueue" : "SplHeap",
+                expected,
+                expected == 1 ? "" : "s",
+                argc
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ArgumentCountError", message);
+            return ptn_null();
+        }
+        PtnArray *values = ptn_value_deref(data->values).as.array;
+        PtnArray *priorities = ptn_value_deref(data->priorities).as.array;
+        if (values->len > (size_t)INT64_MAX || priorities->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(values, ptn_array_int_key((int64_t)values->len), ptn_value_clone_deref(args[0]));
+        ptn_array_set_entry(
+            priorities,
+            ptn_array_int_key((int64_t)priorities->len),
+            data->is_priority_queue ? ptn_value_clone_deref(args[1]) : ptn_value_clone_deref(args[0])
+        );
+        ptn_spl_heap_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "top") || ptn_ascii_case_equal(name, "extract")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        size_t best = 0;
+        if (!ptn_spl_heap_best_index(runtime, data, line, &best)) {
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_throw_exception(
+                    runtime,
+                    "RuntimeException",
+                    ptn_ascii_case_equal(name, "top") ? "Can't peek at an empty heap" : "Can't extract from an empty heap"
+                );
+            }
+            return ptn_null();
+        }
+        PtnValue result = ptn_spl_heap_entry_result(data, best);
+        if (ptn_ascii_case_equal(name, "extract")) {
+            ptn_spl_heap_remove_index(runtime, receiver, data, best, line);
+        }
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "count")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int((int64_t)ptn_spl_heap_count(data));
+    }
+    if (ptn_ascii_case_equal(name, "isEmpty")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_spl_heap_count(data) == 0);
+    }
+    if (ptn_ascii_case_equal(name, "compare")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplHeap::compare() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        int compared = ptn_compare_order(runtime, args[0], args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        return ptn_int(compared == PTN_COMPARE_GREATER ? 1 : (compared == PTN_COMPARE_LESS ? -1 : 0));
+    }
+    if (data->is_priority_queue && ptn_ascii_case_equal(name, "setExtractFlags")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "SplPriorityQueue::setExtractFlags() expects exactly 1 argument");
+            return ptn_null();
+        }
+        int64_t flags = ptn_internal_expect_integer_arg(runtime, "SplPriorityQueue::setExtractFlags", 1, "flags", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        flags &= PTN_SPL_PRIORITY_QUEUE_EXTR_BOTH;
+        if (flags == 0) {
+            ptn_throw_exception(runtime, "RuntimeException", "Must specify at least one extract flag");
+            return ptn_null();
+        }
+        data->extract_flags = flags;
+        ptn_spl_heap_sync_properties(runtime, receiver, data, line);
+        return ptn_null();
+    }
+    if (data->is_priority_queue && ptn_ascii_case_equal(name, "getExtractFlags")) {
+        ptn_reflection_check_no_arguments(runtime, "SplPriorityQueue", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_int(data->extract_flags);
+    }
+    if (ptn_ascii_case_equal(name, "recoverFromCorruption")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception == NULL) {
+            data->is_corrupted = 0;
+            ptn_spl_heap_sync_properties(runtime, receiver, data, line);
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "isCorrupted")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(data->is_corrupted);
+    }
+    if (ptn_ascii_case_equal(name, "__debugInfo")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *declaring_class = data->is_priority_queue ? "SplPriorityQueue" : "SplHeap";
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_spl_private_debug_key(declaring_class, "flags"),
+            ptn_int(data->is_priority_queue ? data->extract_flags : 0)
+        );
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_spl_private_debug_key(declaring_class, "isCorrupted"),
+            ptn_bool(data->is_corrupted)
+        );
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_spl_private_debug_key(declaring_class, "heap"),
+            ptn_spl_heap_debug_heap_array(data)
+        );
+        return result;
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_spl_heap_count(data) > 0);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        size_t count = ptn_spl_heap_count(data);
+        return ptn_int(count == 0 ? 0 : (int64_t)(count - 1));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        size_t best = 0;
+        if (!ptn_spl_heap_best_index(runtime, data, line, &best)) {
+            return ptn_null();
+        }
+        return ptn_spl_heap_entry_result(data, best);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_reflection_check_no_arguments(runtime, data->is_priority_queue ? "SplPriorityQueue" : "SplHeap", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        size_t best = 0;
+        if (ptn_spl_heap_best_index(runtime, data, line, &best)) {
+            ptn_spl_heap_remove_index(runtime, receiver, data, best, line);
         }
         return ptn_null();
     }

@@ -897,6 +897,15 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_spl_fixed_array(lookup_class_name)) {
         return ptn_spl_fixed_array_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_spl_object_storage(lookup_class_name)) {
+        return ptn_spl_object_storage_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_spl_heap(lookup_class_name) ||
+        ptn_internal_class_name_is_spl_max_heap(lookup_class_name) ||
+        ptn_internal_class_name_is_spl_min_heap(lookup_class_name) ||
+        ptn_internal_class_name_is_spl_priority_queue(lookup_class_name)) {
+        return ptn_spl_heap_new(runtime, lookup_class_name, argc, args, line);
+    }
     if (ptn_internal_class_name_is_append_iterator(lookup_class_name)) {
         return ptn_append_iterator_new(runtime, argc, args, line);
     }
@@ -1052,6 +1061,13 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplFixedArray")) {
         return ptn_spl_fixed_array_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplObjectStorage")) {
+        return ptn_spl_object_storage_clone(runtime, resolved, line);
+    }
+    if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplHeap") ||
+        ptn_declared_class_is_same_or_descendant(source->class_name, "SplPriorityQueue")) {
+        return ptn_spl_heap_clone(runtime, resolved, line);
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "ArrayIterator") ||
         ptn_declared_class_is_same_or_descendant(source->class_name, "RecursiveArrayIterator")) {
@@ -6917,6 +6933,12 @@ static PTN_UNUSED int ptn_arrayaccess_can_dispatch(
     if (
         ptn_object_is_internal_or_descendant(container, "SplFixedArray") &&
         ptn_internal_class_method_exists("SplFixedArray", method_name)
+    ) {
+        return 1;
+    }
+    if (
+        ptn_object_is_internal_or_descendant(container, "SplObjectStorage") &&
+        ptn_internal_class_method_exists("SplObjectStorage", method_name)
     ) {
         return 1;
     }

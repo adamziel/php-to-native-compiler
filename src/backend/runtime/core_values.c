@@ -1439,6 +1439,11 @@ static PTN_UNUSED int ptn_internal_class_name_is_no_rewind_iterator(const char *
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_iterator_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_limit_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_recursive_array_iterator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_heap(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_max_heap(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_min_heap(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_priority_queue(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_doubly_linked_list(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_queue(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_stack(const char *class_name);
@@ -1762,6 +1767,45 @@ static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
     size_t line
 );
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
+static PTN_UNUSED PtnValue ptn_spl_object_storage_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_object_storage_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_object_storage_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_heap_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_heap_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_spl_heap_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_spl_doubly_linked_list_new(
     PtnRuntime *runtime,
     const char *class_name,

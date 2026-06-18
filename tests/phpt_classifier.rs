@@ -1642,6 +1642,9 @@ fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
     let cases = [
         "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_shift($items); }\n--EXPECT--\n",
         "--TEST--\nforeach mutation\n--FILE--\n<?php\nforeach ($items as &$item) { array_unshift($items, 0); }\n--EXPECT--\n",
+        "--TEST--\nspl object storage\n--FILE--\n<?php\n$s = new SplObjectStorage();\n$s->attach(new stdClass(), 'info');\nforeach ($s as $object) { var_dump($s->getInfo()); }\n--EXPECT--\n",
+        "--TEST--\nspl heap\n--FILE--\n<?php\n$h = new SplMaxHeap();\n$h->insert(2);\n$h->insert(3);\nforeach ($h as $value) { echo $value; }\n--EXPECT--\n",
+        "--TEST--\nspl priority queue\n--FILE--\n<?php\n$q = new SplPriorityQueue();\n$q->insert('a', 2);\n$q->setExtractFlags(SplPriorityQueue::EXTR_BOTH);\nvar_dump($q->extract());\n--EXPECT--\n",
     ];
 
     for phpt in cases {
@@ -1651,6 +1654,11 @@ fn phpt_classifier_keeps_supported_foreach_internal_surfaces_runnable() {
         );
         assert_eq!(classify(phpt), classify_with_section_cache(phpt));
     }
+
+    let unsupported = classify(
+        "--TEST--\ndirectory iterator still blocked\n--FILE--\n<?php\nnew DirectoryIterator(__DIR__);\n--EXPECT--\n",
+    );
+    assert!(unsupported.starts_with("unsupported-spl-surface\t"));
 }
 
 #[test]

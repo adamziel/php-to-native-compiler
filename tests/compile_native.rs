@@ -9650,6 +9650,124 @@ try {
 }
 
 #[test]
+fn compile_spl_object_storage_and_heaps_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-storage-heaps");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-storage-heaps.php");
+    let output = root.join("spl-storage-heaps-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$first = new stdClass();
+$second = new stdClass();
+$storage = new SplObjectStorage();
+$storage->attach($first, "one");
+$storage[$second] = "two";
+var_dump($storage->contains($first), $storage[$second], $storage->count());
+foreach ($storage as $key => $object) {
+    echo $key, ":", $storage->getInfo(), ":", get_class($object), "\n";
+}
+$storage->detach($first);
+var_dump($storage->count(), $storage->contains($first));
+$storage->seek(0);
+var_dump($storage->key(), $storage->current() === $second);
+echo serialize(new SplObjectStorage()), "\n";
+
+class ChildStorage extends SplObjectStorage {}
+$childStorage = new ChildStorage();
+$childStorage[$first] = "child";
+var_dump($childStorage[$first]);
+
+$max = new SplMaxHeap();
+foreach ([1, 3, 2] as $value) {
+    $max->insert($value);
+}
+foreach ($max as $key => $value) {
+    echo $key, ":", $value, "\n";
+}
+echo "heap-count=", $max->count(), "\n";
+
+$min = new SplMinHeap();
+foreach ([1, 3, 2] as $value) {
+    $min->insert($value);
+}
+echo "min=", $min->extract(), $min->extract(), $min->extract(), "\n";
+
+class ChildHeap extends SplHeap {
+    public function compare($a, $b): int {
+        return $a <=> $b;
+    }
+}
+$childHeap = new ChildHeap();
+var_dump($childHeap->isEmpty());
+$childHeap->insert(9);
+var_dump($childHeap->isEmpty(), $childHeap->top());
+$childHeap->extract();
+var_dump($childHeap->isEmpty());
+
+$queue = new SplPriorityQueue();
+$queue->insert("a", 2);
+$queue->insert("b", 1);
+var_dump(
+    $queue->getExtractFlags(),
+    SplPriorityQueue::EXTR_PRIORITY,
+    SplPriorityQueue::EXTR_BOTH
+);
+$queue->setExtractFlags(SplPriorityQueue::EXTR_BOTH);
+var_dump($queue->extract());
+echo serialize($queue), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "string(3) \"two\"\n",
+            "int(2)\n",
+            "0:one:stdClass\n",
+            "1:two:stdClass\n",
+            "int(1)\n",
+            "bool(false)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "O:16:\"SplObjectStorage\":2:{i:0;a:0:{}i:1;a:0:{}}\n",
+            "string(5) \"child\"\n",
+            "2:3\n",
+            "1:2\n",
+            "0:1\n",
+            "heap-count=0\n",
+            "min=123\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(9)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "array(2) {\n",
+            "  [\"data\"]=>\n",
+            "  string(1) \"a\"\n",
+            "  [\"priority\"]=>\n",
+            "  int(2)\n",
+            "}\n",
+            "O:16:\"SplPriorityQueue\":0:{}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_print_expression_contexts_to_native_binary() {
     let root = temp_dir("ptn-native-print-expression-contexts");
     fs::create_dir_all(&root).unwrap();

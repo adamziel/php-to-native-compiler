@@ -649,6 +649,21 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplObjectStorage\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplHeap\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"SplMaxHeap\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"SplMinHeap\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"SplPriorityQueue\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplDoublyLinkedList\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"SplQueue\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"SplStack\")) {\n");
@@ -4193,6 +4208,11 @@ fn emit_class_metadata_helpers(
         "ArrayIterator",
         "RecursiveArrayIterator",
         "SplFixedArray",
+        "SplObjectStorage",
+        "SplHeap",
+        "SplMaxHeap",
+        "SplMinHeap",
+        "SplPriorityQueue",
         "AppendIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
@@ -4584,6 +4604,11 @@ fn emit_class_metadata_helpers(
         "ArrayIterator",
         "RecursiveArrayIterator",
         "ArrayObject",
+        "SplObjectStorage",
+        "SplHeap",
+        "SplMaxHeap",
+        "SplMinHeap",
+        "SplPriorityQueue",
         "SplFixedArray",
         "AppendIterator",
         "CallbackFilterIterator",
@@ -4874,6 +4899,8 @@ fn emit_class_metadata_helpers(
         ("ReflectionMethod", "ReflectionFunctionAbstract"),
         ("ReflectionObject", "ReflectionClass"),
         ("SplFileObject", "SplFileInfo"),
+        ("SplMaxHeap", "SplHeap"),
+        ("SplMinHeap", "SplHeap"),
         ("SplQueue", "SplDoublyLinkedList"),
         ("SplStack", "SplDoublyLinkedList"),
         ("IntlRuleBasedBreakIterator", "IntlBreakIterator"),
@@ -9103,6 +9130,11 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "recursivearrayiterator" => Some("RecursiveArrayIterator"),
         "spldoublylinkedlist" => Some("SplDoublyLinkedList"),
         "splfixedarray" => Some("SplFixedArray"),
+        "splobjectstorage" => Some("SplObjectStorage"),
+        "splheap" => Some("SplHeap"),
+        "splmaxheap" => Some("SplMaxHeap"),
+        "splminheap" => Some("SplMinHeap"),
+        "splpriorityqueue" => Some("SplPriorityQueue"),
         "splqueue" => Some("SplQueue"),
         "splstack" => Some("SplStack"),
         "splfileinfo" => Some("SplFileInfo"),
@@ -14738,6 +14770,11 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("RecursiveArrayIterator")
                 || class_name.eq_ignore_ascii_case("SplDoublyLinkedList")
                 || class_name.eq_ignore_ascii_case("SplFixedArray")
+                || class_name.eq_ignore_ascii_case("SplObjectStorage")
+                || class_name.eq_ignore_ascii_case("SplHeap")
+                || class_name.eq_ignore_ascii_case("SplMaxHeap")
+                || class_name.eq_ignore_ascii_case("SplMinHeap")
+                || class_name.eq_ignore_ascii_case("SplPriorityQueue")
                 || class_name.eq_ignore_ascii_case("SplQueue")
                 || class_name.eq_ignore_ascii_case("SplStack")
                 || class_name.eq_ignore_ascii_case("SplFileInfo")

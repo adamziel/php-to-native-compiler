@@ -9839,6 +9839,11 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
             | "spldoublylinkedlist"
             | "splfileinfo"
             | "splfileobject"
+            | "splheap"
+            | "splmaxheap"
+            | "splminheap"
+            | "splobjectstorage"
+            | "splpriorityqueue"
             | "splqueue"
             | "splstack"
     )
@@ -11168,6 +11173,12 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("ArrayIterator")
         || name.eq_ignore_ascii_case("IteratorIterator")
         || name.eq_ignore_ascii_case("ArrayObject")
+        || name.eq_ignore_ascii_case("SplFixedArray")
+        || name.eq_ignore_ascii_case("SplObjectStorage")
+        || name.eq_ignore_ascii_case("SplHeap")
+        || name.eq_ignore_ascii_case("SplMaxHeap")
+        || name.eq_ignore_ascii_case("SplMinHeap")
+        || name.eq_ignore_ascii_case("SplPriorityQueue")
         || name.eq_ignore_ascii_case("SplDoublyLinkedList")
         || name.eq_ignore_ascii_case("SplQueue")
         || name.eq_ignore_ascii_case("SplStack")
@@ -11548,6 +11559,12 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
     {
         return true;
     }
+    if target_name.eq_ignore_ascii_case("SplHeap")
+        && (candidate_name.eq_ignore_ascii_case("SplMaxHeap")
+            || candidate_name.eq_ignore_ascii_case("SplMinHeap"))
+    {
+        return true;
+    }
     let implemented = if candidate_name.eq_ignore_ascii_case("ArrayIterator") {
         &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("IteratorIterator") {
@@ -11559,6 +11576,22 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
             "IteratorAggregate",
             "Traversable",
         ][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplFixedArray") {
+        &[
+            "ArrayAccess",
+            "Countable",
+            "Iterator",
+            "SeekableIterator",
+            "Traversable",
+        ][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplObjectStorage") {
+        &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("SplHeap")
+        || candidate_name.eq_ignore_ascii_case("SplMaxHeap")
+        || candidate_name.eq_ignore_ascii_case("SplMinHeap")
+        || candidate_name.eq_ignore_ascii_case("SplPriorityQueue")
+    {
+        &["Countable", "Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("SplDoublyLinkedList")
         || candidate_name.eq_ignore_ascii_case("SplQueue")
         || candidate_name.eq_ignore_ascii_case("SplStack")

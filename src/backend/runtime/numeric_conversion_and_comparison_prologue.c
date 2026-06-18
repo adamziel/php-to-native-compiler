@@ -2940,6 +2940,20 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "SplPriorityQueue")) {
+        if (strcmp(constant, "EXTR_BOTH") == 0) {
+            *out = ptn_int(3);
+            return 1;
+        }
+        if (strcmp(constant, "EXTR_PRIORITY") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+        if (strcmp(constant, "EXTR_DATA") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlPartsIterator")) {
         if (strcmp(constant, "KEY_SEQUENTIAL") == 0) {
             *out = ptn_int(PTN_INTL_PARTS_KEY_SEQUENTIAL);
@@ -4660,6 +4674,22 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("SplFixedArray", name)
     ) {
         return ptn_spl_fixed_array_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "SplObjectStorage")
+        && ptn_internal_class_method_exists("SplObjectStorage", name)
+    ) {
+        return ptn_spl_object_storage_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && (ptn_object_is_internal_or_descendant(receiver, "SplHeap") ||
+            ptn_object_is_internal_or_descendant(receiver, "SplPriorityQueue"))
+        && (ptn_internal_class_method_exists("SplHeap", name) ||
+            ptn_internal_class_method_exists("SplPriorityQueue", name))
+    ) {
+        return ptn_spl_heap_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT
