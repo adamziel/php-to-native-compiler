@@ -3792,7 +3792,9 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     if (blocked_metadata != NULL) {
         PtnValue magic_value = ptn_null();
         if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
-            return magic_value;
+            PtnValue read_value = ptn_value_clone_deref(magic_value);
+            ptn_value_destroy(&magic_value);
+            return read_value;
         }
     }
     char *storage_key = ptn_object_resolve_property_storage_key(
@@ -3811,7 +3813,9 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
         ) {
-            return magic_value;
+            PtnValue read_value = ptn_value_clone_deref(magic_value);
+            ptn_value_destroy(&magic_value);
+            return read_value;
         }
         storage_key = ptn_object_resolve_property_storage_key(
             runtime,
@@ -3876,7 +3880,9 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
         ) {
-            return magic_value;
+            PtnValue read_value = ptn_value_clone_deref(magic_value);
+            ptn_value_destroy(&magic_value);
+            return read_value;
         }
         if (static_property_as_instance) {
             ptn_emit_static_property_non_static_notice(

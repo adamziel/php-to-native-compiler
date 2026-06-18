@@ -1992,7 +1992,7 @@ fn emit_user_functions(
         }
         if function.return_by_ref {
             out.push_str("    if (ptn_return_value.type != PTN_REFERENCE) {\n");
-            out.push_str("        PtnValue ptn_return_reference = ptn_reference_source_or_value(&runtime, ptn_return_value, ptn_return_line);\n");
+            out.push_str("        PtnValue ptn_return_reference = ptn_return_reference_source_or_value(&runtime, ptn_return_value, ptn_return_line);\n");
             out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
             out.push_str("        ptn_return_value = ptn_return_reference;\n");
             out.push_str("    }\n");
@@ -12945,20 +12945,28 @@ fn emit_instruction(
                 if values.current_function_tracks_return_value_was_set {
                     out.push_str("    ptn_return_value_was_set = 1;\n");
                 }
-                if let Some(value) = value {
-                    if values.current_function_return_by_ref {
-                        let reference_value = values.emit_reference_source(out, value, *line);
-                        out.push_str("    ptn_return_value = ptn_value_share(");
-                        out.push_str(&reference_value);
-                        out.push_str(");\n");
-                        emit_value_cleanup(out, "    ", &reference_value);
-                    } else {
-                        let result_value = values.emit_materialized_value(out, value);
-                        out.push_str("    ptn_return_value = ptn_value_clone(ptn_value_deref(");
-                        out.push_str(&result_value);
-                        out.push_str("));\n");
-                        emit_value_cleanup(out, "    ", &result_value);
+                if values.current_function_return_by_ref {
+                    if let Some(value) = value {
+                        if let Some(target) = reference_target_from_value(value) {
+                            let reference_value = values.emit_reference_target(out, &target);
+                            out.push_str("    ptn_return_value = ptn_value_share(");
+                            out.push_str(&reference_value);
+                            out.push_str(");\n");
+                            emit_value_cleanup(out, "    ", &reference_value);
+                        } else {
+                            let result_value = values.emit_materialized_value(out, value);
+                            out.push_str("    ptn_return_value = ptn_return_reference_source_or_plain_value(");
+                            out.push_str(&result_value);
+                            out.push_str(");\n");
+                            emit_value_cleanup(out, "    ", &result_value);
+                        }
                     }
+                } else if let Some(value) = value {
+                    let result_value = values.emit_materialized_value(out, value);
+                    out.push_str("    ptn_return_value = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&result_value);
+                    out.push_str("));\n");
+                    emit_value_cleanup(out, "    ", &result_value);
                 }
                 let context_indices = return_cleanup_context_indices(finally_stack);
                 emit_jump_through_finally_contexts(out, finally_stack, &context_indices, target);
@@ -17551,6 +17559,9 @@ fn temporary_array_dim_by_ref_argument_path(
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
             | ValueExpr::DynamicMethodCall { .. } => {
+                if dimensions.is_empty() {
+                    return None;
+                }
                 dimensions.reverse();
                 return Some((current, dimensions, line));
             }
@@ -21931,7 +21942,7 @@ impl ValueEmitter {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_value_clone(");
+            out.push_str(" = ptn_value_clone_deref(");
             out.push_str(&source_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &source_temp);
@@ -21943,11 +21954,177 @@ impl ValueEmitter {
             let result_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_value_clone(");
+            out.push_str(" = ptn_value_clone_deref(");
             out.push_str(&source_temp);
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &source_temp);
             return result_temp;
+        }
+
+        let source_temp = self.emit_materialized_value(out, source);
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    if (");
+        out.push_str(&source_temp);
+        out.push_str(".type == PTN_REFERENCE) {\n");
+        self.emit_bind_assignment_target_reference(out, target, &source_temp);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_value_clone_deref(");
+        out.push_str(&source_temp);
+        out.push_str(");\n");
+        out.push_str("    } else {\n");
+        let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
+        if !self.source_is_declared_by_ref_call(source) {
+            emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
+        }
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&stored_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &source_temp);
+        result_temp
+    }
+
+    fn emit_assignment_target_reference(
+        &mut self,
+        out: &mut String,
+        target: &AssignmentTarget,
+    ) -> String {
+        match target {
+            AssignmentTarget::Variable { name, line } => self.emit_reference_target(
+                out,
+                &ReferenceTarget::Variable {
+                    name: name.clone(),
+                    line: *line,
+                },
+            ),
+            AssignmentTarget::DynamicVariable { name, line } => self.emit_reference_target(
+                out,
+                &ReferenceTarget::DynamicVariable {
+                    name: name.clone(),
+                    line: *line,
+                },
+            ),
+            AssignmentTarget::DynamicArrayDim {
+                name,
+                dimensions,
+                line,
+            } => {
+                let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+                let path = emit_array_path_segments(out, self, dimensions);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_runtime_reference_for_array_path(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                temp
+            }
+            AssignmentTarget::ArrayDim {
+                array,
+                dimensions,
+                line,
+            } => self.emit_reference_target(
+                out,
+                &ReferenceTarget::ArrayDim(crate::ir::ArrayDimTarget {
+                    array: array.clone(),
+                    dimensions: dimensions.clone(),
+                    line: *line,
+                }),
+            ),
+            AssignmentTarget::PropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                line,
+            } => self.emit_reference_target(
+                out,
+                &ReferenceTarget::PropertyArrayDim {
+                    receiver: receiver.clone(),
+                    name: name.clone(),
+                    dimensions: dimensions.clone(),
+                    line: *line,
+                },
+            ),
+            AssignmentTarget::Property {
+                receiver,
+                name,
+                line,
+            } => self.emit_reference_target(
+                out,
+                &ReferenceTarget::Property {
+                    receiver: receiver.clone(),
+                    name: name.clone(),
+                    line: *line,
+                },
+            ),
+            AssignmentTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => self.emit_reference_target(
+                out,
+                &ReferenceTarget::DynamicProperty {
+                    receiver: receiver.clone(),
+                    name: name.clone(),
+                    line: *line,
+                },
+            ),
+            AssignmentTarget::StaticProperty {
+                class_name,
+                name,
+                line,
+            } => self.emit_static_property_reference(out, class_name, name, *line),
+            AssignmentTarget::StaticPropertyArrayDim { .. }
+            | AssignmentTarget::DynamicStaticPropertyArrayDim { .. }
+            | AssignmentTarget::ValueArrayDim { .. }
+            | AssignmentTarget::DynamicStaticProperty { .. }
+            | AssignmentTarget::List(_) => {
+                unreachable!("parser rejects by-reference assignment to this target")
+            }
+        }
+    }
+
+    fn emit_reference_assignment_argument_reference(
+        &mut self,
+        out: &mut String,
+        target: &AssignmentTarget,
+        source: &ValueExpr,
+        line: usize,
+    ) -> String {
+        if let ValueExpr::StaticPropertyFetch {
+            class_name,
+            name,
+            line,
+        } = source
+        {
+            let source_temp = self.emit_static_property_reference(out, class_name, name, *line);
+            self.emit_bind_assignment_target_reference(out, target, &source_temp);
+            return source_temp;
+        }
+        if let Some(source_target) = reference_target_from_value(source) {
+            let source_temp = self.emit_reference_target(out, &source_target);
+            self.emit_bind_assignment_target_reference(out, target, &source_temp);
+            return source_temp;
         }
 
         let source_temp = self.emit_materialized_value(out, source);
@@ -21966,14 +22143,24 @@ impl ValueEmitter {
         out.push_str(");\n");
         out.push_str("    } else {\n");
         let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
-        if !self.source_is_declared_by_ref_call(source) {
+        if self.source_is_declared_by_ref_call(source) {
+            let target_reference_temp = self.emit_assignment_target_reference(out, target);
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&target_reference_temp);
+            out.push_str(";\n");
+        } else {
             emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
+            out.push_str("        ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_by_ref_argument_source_or_temporary(&runtime, ");
+            out.push_str(&stored_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
         }
-        out.push_str("        ");
-        out.push_str(&result_temp);
-        out.push_str(" = ");
-        out.push_str(&stored_temp);
-        out.push_str(";\n");
+        emit_value_cleanup(out, "        ", &stored_temp);
         out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &source_temp);
         result_temp
@@ -30367,9 +30554,11 @@ impl ValueEmitter {
         match reference_target_from_value(argument) {
             Some(target) => self.emit_reference_target(out, &target),
             None => {
-                if self.source_is_declared_by_ref_call(argument)
-                    || matches!(argument, ValueExpr::AssignRef { .. })
-                {
+                if let ValueExpr::AssignRef { target, source } = argument {
+                    return self
+                        .emit_reference_assignment_argument_reference(out, target, source, line);
+                }
+                if self.source_is_declared_by_ref_call(argument) {
                     return self.emit_reference_source(out, argument, line);
                 }
                 if allow_temporary && by_ref_temporary_argument_allowed(argument) {

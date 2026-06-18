@@ -29793,11 +29793,93 @@ $foo->run();\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "\nNotice: Only variables should be assigned by reference in ptn on line 3\n",
-            "1\n",
-            "\nNotice: Only variables should be assigned by reference in ptn on line 7\n",
-            "foo\n",
+        format!(
+            concat!(
+                "\nNotice: Only variables should be assigned by reference in {} on line 3\n",
+                "1\n",
+                "\nNotice: Only variables should be assigned by reference in {} on line 7\n",
+                "foo\n",
+            ),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reference_assignment_expression_derefs_result_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-assignment-expression-deref-result");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-assignment-expression-deref-result.php");
+    let output = root.join("reference-assignment-expression-deref-result-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL);\n\
+$a = [];\n\
+function &a() {\n\
+    return $GLOBALS['a'];\n\
+}\n\
+var_dump($h =& a());\n\
+$h[] = 1;\n\
+var_dump(a()[0]);\n\
+$h[] = [$h];\n\
+var_dump(a()[1][0][0]);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(0) {\n}\nint(1)\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_clone_deref("));
+}
+
+#[test]
+fn compile_reference_assignment_by_ref_argument_keeps_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-assignment-by-ref-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-assignment-by-ref-argument.php");
+    let output = root.join("reference-assignment-by-ref-argument-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function test(&$param) {\n\
+    $param = 7;\n\
+}\n\
+$bar = 2;\n\
+test($baz =& $bar);\n\
+var_dump($bar, $baz);\n\
+function value() { return 3; }\n\
+test($copy =& value());\n\
+var_dump($copy);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "int(7)\n",
+                "int(7)\n",
+                "\nNotice: Only variables should be assigned by reference in {} on line 9\n",
+                "\nNotice: Only variables should be passed by reference in {} on line 9\n",
+                "int(3)\n"
+            ),
+            input.display(),
+            input.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -29890,19 +29972,101 @@ echo gettype($typed), \":\", $typed, \"\\n\";\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "2|2\n\
+        format!(
+            "2|2\n\
 2|3\n\
 \n\
-Notice: Only variable references should be returned by reference in ptn on line 12\n\
+Notice: Only variable references should be returned by reference in {} on line 12\n\
 9\n\
 \n\
-Notice: Only variable references should be returned by reference in ptn on line 15\n\
-string:9\n"
+Notice: Only variable references should be returned by reference in {} on line 15\n\
+string:9\n",
+            input.display(),
+            input.display()
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_reference_source_or_value(&runtime, "));
+    assert!(c_source.contains("ptn_return_reference_source_or_value(&runtime, "));
+}
+
+#[test]
+fn compile_by_reference_magic_set_value_return_stays_plain_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-magic-set-value-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-magic-set-value-return.php");
+    let output = root.join("by-reference-magic-set-value-return-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class A\n\
+{\n\
+    var $_stdObject;\n\
+    function __construct()\n\
+    {\n\
+        $this->_stdObject = new stdClass;\n\
+    }\n\
+    function &__get($property)\n\
+    {\n\
+        if (isset($this->_stdObject->$property)) {\n\
+            $retval =& $this->_stdObject->$property;\n\
+            return $retval;\n\
+        }\n\
+        return NULL;\n\
+    }\n\
+    function &__set($property, $value)\n\
+    {\n\
+        return $this->_stdObject->{$property} = $value;\n\
+    }\n\
+    function __isset($property)\n\
+    {\n\
+        return isset($this->_stdObject->{$property});\n\
+    }\n\
+}\n\
+class B extends A\n\
+{\n\
+    function &__get($property)\n\
+    {\n\
+        if (isset($this->settings) && isset($this->settings[$property])) {\n\
+            $retval =& $this->settings[$property];\n\
+            return $retval;\n\
+        }\n\
+        return parent::__get($property);\n\
+    }\n\
+}\n\
+$b = new B();\n\
+$b->settings = [\"foo\" => \"bar\", \"name\" => \"abc\"];\n\
+var_dump($b->name);\n\
+var_dump($b->settings);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nNotice: Only variable references should be returned by reference in {} on line 19\n",
+                "string(3) \"abc\"\n",
+                "array(2) {{\n",
+                "  [\"foo\"]=>\n",
+                "  string(3) \"bar\"\n",
+                "  [\"name\"]=>\n",
+                "  string(3) \"abc\"\n",
+                "}}\n"
+            ),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_return_reference_source_or_plain_value"));
+    assert!(c_source.contains("ptn_return_reference_source_or_value"));
 }
 
 #[test]
@@ -47048,7 +47212,7 @@ echo $wrapped, \"|\", $wrapped_copy, \"\\n\";
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"value\")"));
     assert!(c_source.contains("ptn_runtime_reference_for_array_path(&runtime, \"items\""));
-    assert!(c_source.contains("ptn_reference_source_or_value"));
+    assert!(c_source.contains("ptn_return_reference_source_or_value"));
     assert!(c_source.contains("ptn_value_clone(ptn_value_deref("));
 }
 
