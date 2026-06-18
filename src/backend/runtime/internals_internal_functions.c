@@ -68858,6 +68858,50 @@ static PtnArrayEntry *ptn_spl_storage_visible_entry(
     return NULL;
 }
 
+static PTN_UNUSED int ptn_internal_array_iterator_current_reference(
+    PtnRuntime *runtime,
+    PtnValue iterator_object,
+    size_t line,
+    PtnValue *out
+) {
+    PtnArrayIteratorData *data = ptn_spl_array_iterator_data_from_value(iterator_object);
+    if (data == NULL || out == NULL) {
+        return 0;
+    }
+
+    PtnArrayEntry *entry = ptn_spl_storage_visible_entry(runtime, data->storage, data->index, NULL);
+    if (entry == NULL) {
+        *out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        return 1;
+    }
+
+    PtnObject *object = ptn_spl_storage_object(data->storage);
+    const PtnObjectPropertyMetadata *metadata = NULL;
+    if (object != NULL && entry->key.type == PTN_ARRAY_KEY_STRING) {
+        metadata = ptn_object_property_metadata(object, entry->key.as.string);
+        if (metadata != NULL && metadata->is_readonly) {
+            ptn_throw_readonly_property_reference_error(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            *out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            return 1;
+        }
+    }
+
+    if (entry->value.type != PTN_REFERENCE) {
+        PtnValue current = entry->value;
+        entry->value = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    if (metadata != NULL) {
+        ptn_reference_adopt_property_type(entry->value.as.reference, metadata);
+    }
+    *out = ptn_value_clone(entry->value);
+    return 1;
+}
+
 static PtnArrayKey ptn_spl_object_property_key_from_array_key(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_STRING) {
         return ptn_array_key_clone(key);

@@ -29955,6 +29955,116 @@ var_dump($obj->prop);
 }
 
 #[test]
+fn compile_typed_property_reference_foreach_sources_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-property-reference-foreach-sources");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-property-reference-foreach-sources.php");
+    let output = root.join("typed-property-reference-foreach-sources-bin");
+    fs::write(
+        &input,
+        "<?php
+class RefBox {
+    public int $i = 1;
+    public string $s = \"ok\";
+}
+
+$box = new RefBox();
+foreach ($box as $k => &$v) {
+    try {
+        $v = [];
+    } catch (Throwable $e) {
+        echo $k, \": \", $e->getMessage(), \"\\n\";
+    }
+}
+
+class NeedsInit {
+    public int $i;
+    public ?string $s;
+}
+
+$needs = new NeedsInit();
+try {
+    $ref =& $needs->i;
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$nullable =& $needs->s;
+var_dump($nullable);
+
+class IteratorBox implements IteratorAggregate {
+    public string $foo = \"bar\";
+
+    public function getIterator(): Traversable {
+        return new ArrayIterator($this);
+    }
+}
+
+$iter = new IteratorBox();
+foreach ($iter as $k => &$v) {
+    try {
+        $v = [];
+    } catch (Throwable $e) {
+        echo $k, \": \", $e->getMessage(), \"\\n\";
+    }
+}
+var_dump($iter);
+
+class ReadonlyIteratorBox implements IteratorAggregate {
+    public readonly string $foo;
+
+    public function __construct() {
+        $this->foo = \"bar\";
+    }
+
+    public function getIterator(): Traversable {
+        return new ArrayIterator($this);
+    }
+}
+
+$readonly = new ReadonlyIteratorBox();
+try {
+    foreach ($readonly as $k => &$v) {}
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($readonly);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout
+        .contains("i: Cannot assign array to reference held by property RefBox::$i of type int"));
+    assert!(stdout.contains(
+        "s: Cannot assign array to reference held by property RefBox::$s of type string"
+    ));
+    assert!(stdout
+        .contains("Cannot access uninitialized non-nullable property NeedsInit::$i by reference"));
+    assert!(stdout.contains("NULL\n"));
+    assert!(stdout.contains(
+        "foo: Cannot assign array to reference held by property IteratorBox::$foo of type string"
+    ));
+    assert!(
+        stdout.contains("Cannot acquire reference to readonly property ReadonlyIteratorBox::$foo")
+    );
+    assert!(stdout.contains("&string(3) \"bar\""));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_reference_for_property"));
+    assert!(c_source.contains("ptn_internal_array_iterator_current_reference"));
+}
+
+#[test]
 fn compile_typed_property_reference_overflow_and_union_sources_to_native_binary() {
     let root = temp_dir("ptn-native-typed-property-reference-overflow-union");
     fs::create_dir_all(&root).unwrap();

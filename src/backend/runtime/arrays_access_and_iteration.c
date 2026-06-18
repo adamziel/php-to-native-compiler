@@ -2798,6 +2798,26 @@ static PTN_UNUSED void ptn_throw_readonly_property_unset_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED void ptn_throw_readonly_property_reference_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot acquire reference to readonly property %s::$%s",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_throw_readonly_property_initialize_error(
     PtnRuntime *runtime,
     const char *declaring_class,
@@ -2847,6 +2867,26 @@ static PTN_UNUSED void ptn_throw_uninitialized_typed_property_error(
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "Error", message);
+}
+
+static PTN_UNUSED void ptn_throw_uninitialized_typed_property_reference_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot access uninitialized non-nullable property %s::$%s by reference",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
@@ -4087,7 +4127,6 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     size_t line,
     int indirect_write
 ) {
-    (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         if (indirect_write) {
@@ -4288,7 +4327,6 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     PtnValue reference,
     size_t line
 ) {
-    (void)line;
     receiver = ptn_value_deref(receiver);
     if (receiver.type != PTN_OBJECT) {
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
@@ -4516,6 +4554,19 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     }
     if (entry == NULL) {
+        if (metadata != NULL &&
+            ptn_property_type_is_declared(metadata->type_kind) &&
+            !metadata->type_allows_null) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_uninitialized_typed_property_reference_error(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
         PtnValue reference = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
         if (metadata != NULL) {
             ptn_reference_adopt_property_type(reference.as.reference, metadata);
@@ -5228,6 +5279,14 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
 static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *iterator);
 static PTN_UNUSED void ptn_array_iterator_advance(PtnArrayIterator *iterator);
 static PTN_UNUSED void ptn_array_iterator_destroy(PtnArrayIterator *iterator);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_internal_array_iterator_current_reference(
+    PtnRuntime *runtime,
+    PtnValue iterator_object,
+    size_t line,
+    PtnValue *out
+);
+#endif
 
 static PTN_UNUSED int ptn_value_is_unpack_traversable(PtnValue value) {
     value = ptn_value_deref(value);
@@ -6605,6 +6664,17 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *it
 
 static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator *iterator) {
     if (iterator->protocol_iterator) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        PtnValue reference = ptn_null();
+        if (ptn_internal_array_iterator_current_reference(
+            iterator->runtime,
+            iterator->iterator_object,
+            iterator->line,
+            &reference
+        )) {
+            return reference;
+        }
+#endif
         PtnValue current = ptn_protocol_iterator_call(iterator, "current");
         if (current.type == PTN_REFERENCE) {
             return current;
@@ -6620,6 +6690,26 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_reference(PtnArrayIterator
         entry->value = ptn_reference_value(ptn_reference_new_owned(current));
     }
     iterator->current_reference = entry->value.as.reference;
+    if (
+        iterator->object != NULL &&
+        iterator->generator == NULL &&
+        entry->key.type == PTN_ARRAY_KEY_STRING
+    ) {
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(iterator->object, entry->key.as.string);
+        if (metadata != NULL) {
+            if (metadata->is_readonly) {
+                ptn_throw_readonly_property_reference_error(
+                    iterator->runtime,
+                    metadata->declaring_class,
+                    metadata->display_name,
+                    iterator->line
+                );
+                return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            }
+            ptn_reference_adopt_property_type(entry->value.as.reference, metadata);
+        }
+    }
     return ptn_value_clone(entry->value);
 }
 
