@@ -12976,9 +12976,15 @@ fn compile_highlight_file_reads_source_to_native_binary() {
         &input,
         "<?php\n\
 $file = __DIR__ . \"/source-to-highlight.php\";\n\
-var_dump(file_put_contents($file, \"<A&>\\n\"));\n\
+var_dump(file_put_contents($file, \"<?php\\n\\$value = \\\"<A&>\\\";\\n// note\\n?>\\n\") > 0);\n\
 $result = highlight_file($file, true);\n\
-var_dump(is_string($result), str_contains($result, \"&lt;A&amp;&gt;\"), ob_get_contents());\n\
+var_dump(\n\
+    is_string($result),\n\
+    str_contains($result, \"<pre><code style=\\\"color: #000000\\\"><span style=\\\"color: #0000BB\\\">&lt;?php\\n\\$value </span>\"),\n\
+    str_contains($result, \"<span style=\\\"color: #DD0000\\\">\\\"&lt;A&amp;&gt;\\\"</span>\"),\n\
+    str_contains($result, \"<span style=\\\"color: #FF8000\\\">// note\\n</span>\"),\n\
+    ob_get_contents()\n\
+);\n\
 var_dump(highlight_file($file, false));\n",
     )
     .unwrap();
@@ -12989,9 +12995,13 @@ var_dump(highlight_file($file, false));\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(5)\n\
-bool(true)\nbool(true)\nbool(false)\n\
-<code><span style=\"color: #000000\">\n&lt;A&amp;&gt;\n</span>\n</code>bool(true)\n"
+        "bool(true)\n\
+bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(false)\n\
+<pre><code style=\"color: #000000\"><span style=\"color: #0000BB\">&lt;?php\n\
+$value </span><span style=\"color: #007700\">= </span><span style=\"color: #DD0000\">\"&lt;A&amp;&gt;\"</span><span style=\"color: #007700\">;\n\
+</span><span style=\"color: #FF8000\">// note\n\
+</span><span style=\"color: #0000BB\">?&gt;\n\
+</span></code></pre>bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
