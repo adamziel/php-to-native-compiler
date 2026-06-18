@@ -162,6 +162,249 @@ static PTN_UNUSED PtnValue ptn_environment_snapshot(void) {
     return result;
 }
 
+static int ptn_internal_function_first_parameter_is_array_reference(const char *name) {
+    if (name == NULL) {
+        return 0;
+    }
+    return ptn_ascii_case_equal(name, "array_pop") ||
+        ptn_ascii_case_equal(name, "array_push") ||
+        ptn_ascii_case_equal(name, "array_shift") ||
+        ptn_ascii_case_equal(name, "array_splice") ||
+        ptn_ascii_case_equal(name, "array_unshift") ||
+        ptn_ascii_case_equal(name, "array_walk") ||
+        ptn_ascii_case_equal(name, "array_walk_recursive") ||
+        ptn_ascii_case_equal(name, "arsort") ||
+        ptn_ascii_case_equal(name, "asort") ||
+        ptn_ascii_case_equal(name, "end") ||
+        ptn_ascii_case_equal(name, "krsort") ||
+        ptn_ascii_case_equal(name, "ksort") ||
+        ptn_ascii_case_equal(name, "natcasesort") ||
+        ptn_ascii_case_equal(name, "natsort") ||
+        ptn_ascii_case_equal(name, "next") ||
+        ptn_ascii_case_equal(name, "prev") ||
+        ptn_ascii_case_equal(name, "reset") ||
+        ptn_ascii_case_equal(name, "rsort") ||
+        ptn_ascii_case_equal(name, "shuffle") ||
+        ptn_ascii_case_equal(name, "sort") ||
+        ptn_ascii_case_equal(name, "uasort") ||
+        ptn_ascii_case_equal(name, "uksort") ||
+        ptn_ascii_case_equal(name, "usort");
+}
+
+static const char *ptn_internal_function_parameter_name(const char *name, size_t index) {
+    if (name == NULL) {
+        return NULL;
+    }
+    if (index == 0) {
+        if (ptn_ascii_case_equal(name, "array_multisort") ||
+            ptn_internal_function_first_parameter_is_array_reference(name)) {
+            return "array";
+        }
+        if (ptn_ascii_case_equal(name, "strlen") ||
+            ptn_ascii_case_equal(name, "mb_strlen") ||
+            ptn_ascii_case_equal(name, "strrev") ||
+            ptn_ascii_case_equal(name, "strtolower") ||
+            ptn_ascii_case_equal(name, "mb_strtolower") ||
+            ptn_ascii_case_equal(name, "strtoupper")) {
+            return "string";
+        }
+        if (ptn_ascii_case_equal(name, "settype")) {
+            return "var";
+        }
+        if (ptn_ascii_case_equal(name, "sprintf") ||
+            ptn_ascii_case_equal(name, "printf") ||
+            ptn_ascii_case_equal(name, "vprintf") ||
+            ptn_ascii_case_equal(name, "vsprintf")) {
+            return "format";
+        }
+    }
+    if (index == 1) {
+        if (ptn_ascii_case_equal(name, "array_multisort")) {
+            return "rest";
+        }
+        if (ptn_ascii_case_equal(name, "sort")) {
+            return "flags";
+        }
+        if (ptn_ascii_case_equal(name, "sprintf") ||
+            ptn_ascii_case_equal(name, "printf")) {
+            return "values";
+        }
+        if (ptn_ascii_case_equal(name, "vprintf") ||
+            ptn_ascii_case_equal(name, "vsprintf")) {
+            return "values";
+        }
+        if (ptn_ascii_case_equal(name, "settype")) {
+            return "type";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "mb_convert_encoding")) {
+        if (index == 0) {
+            return "string";
+        }
+        if (index == 1) {
+            return "to_encoding";
+        }
+        if (index == 2) {
+            return "from_encoding";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "mb_strlen") ||
+        ptn_ascii_case_equal(name, "mb_strtolower") ||
+        ptn_ascii_case_equal(name, "mb_strtoupper") ||
+        ptn_ascii_case_equal(name, "mb_convert_case") ||
+        ptn_ascii_case_equal(name, "mb_scrub")) {
+        if (index == 0) {
+            return "string";
+        }
+        if (index == 1 && !ptn_ascii_case_equal(name, "mb_convert_case")) {
+            return "encoding";
+        }
+        if (index == 1) {
+            return "mode";
+        }
+        if (index == 2) {
+            return "encoding";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "mb_substr") || ptn_ascii_case_equal(name, "mb_strcut")) {
+        if (index == 0) {
+            return "string";
+        }
+        if (index == 1) {
+            return "start";
+        }
+        if (index == 2) {
+            return "length";
+        }
+        if (index == 3) {
+            return "encoding";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "mb_strpos") ||
+        ptn_ascii_case_equal(name, "mb_stripos") ||
+        ptn_ascii_case_equal(name, "mb_strrpos") ||
+        ptn_ascii_case_equal(name, "mb_strripos")) {
+        if (index == 0) {
+            return "haystack";
+        }
+        if (index == 1) {
+            return "needle";
+        }
+        if (index == 2) {
+            return "offset";
+        }
+        if (index == 3) {
+            return "encoding";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "mb_strstr") ||
+        ptn_ascii_case_equal(name, "mb_stristr") ||
+        ptn_ascii_case_equal(name, "mb_strrchr") ||
+        ptn_ascii_case_equal(name, "mb_strrichr")) {
+        if (index == 0) {
+            return "haystack";
+        }
+        if (index == 1) {
+            return "needle";
+        }
+        if (index == 2) {
+            return "before_needle";
+        }
+        if (index == 3) {
+            return "encoding";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "mb_str_pad")) {
+        if (index == 0) {
+            return "string";
+        }
+        if (index == 1) {
+            return "length";
+        }
+        if (index == 2) {
+            return "pad_string";
+        }
+        if (index == 3) {
+            return "pad_type";
+        }
+        if (index == 4) {
+            return "encoding";
+        }
+    }
+    if (ptn_ascii_case_equal(name, "mb_chr")) {
+        return index == 0 ? "codepoint" : (index == 1 ? "encoding" : NULL);
+    }
+    if (ptn_ascii_case_equal(name, "mb_ord")) {
+        return index == 0 ? "string" : (index == 1 ? "encoding" : NULL);
+    }
+    if (ptn_ascii_case_equal(name, "mb_parse_str") && index == 1) {
+        return "result";
+    }
+    if ((ptn_ascii_case_equal(name, "mb_ereg") || ptn_ascii_case_equal(name, "mb_eregi")) && index == 2) {
+        return "matches";
+    }
+    if (index == 2) {
+        if (ptn_ascii_case_equal(name, "preg_match") ||
+            ptn_ascii_case_equal(name, "preg_match_all")) {
+            return "matches";
+        }
+        if (ptn_ascii_case_equal(name, "xml_parse_into_struct")) {
+            return "values";
+        }
+        if (ptn_ascii_case_equal(name, "similar_text")) {
+            return "percent";
+        }
+        if (ptn_ascii_case_equal(name, "getopt")) {
+            return "rest_index";
+        }
+    }
+    if (index == 3 && ptn_ascii_case_equal(name, "xml_parse_into_struct")) {
+        return "index";
+    }
+    if (index == 1 && ptn_ascii_case_equal(name, "parse_str")) {
+        return "result";
+    }
+    if (index == 2 && ptn_ascii_case_equal(name, "is_callable")) {
+        return "callable_name";
+    }
+    if (index == 3 &&
+        (ptn_ascii_case_equal(name, "str_replace") ||
+            ptn_ascii_case_equal(name, "str_ireplace"))) {
+        return "count";
+    }
+    if (index == 4 &&
+        (ptn_ascii_case_equal(name, "preg_filter") ||
+            ptn_ascii_case_equal(name, "preg_replace") ||
+            ptn_ascii_case_equal(name, "preg_replace_callback"))) {
+        return "count";
+    }
+    if (index == 3 && ptn_ascii_case_equal(name, "preg_replace_callback_array")) {
+        return "count";
+    }
+    if (index >= 2 &&
+        (ptn_ascii_case_equal(name, "sscanf") || ptn_ascii_case_equal(name, "fscanf"))) {
+        return "";
+    }
+    return NULL;
+}
+
+static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata metadata, size_t index, char *fallback, size_t fallback_len) {
+    if (metadata.parameters != NULL && index < metadata.parameter_count && metadata.parameters[index].name != NULL) {
+        return metadata.parameters[index].name;
+    }
+    if (metadata.is_internal) {
+        const char *name = ptn_internal_function_parameter_name(metadata.name, index);
+        if (name != NULL) {
+            return name;
+        }
+    }
+    int written = snprintf(fallback, fallback_len, "param%zu", index + 1);
+    if (written < 0 || (size_t)written >= fallback_len) {
+        ptn_abort_out_of_memory();
+    }
+    return fallback;
+}
+
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
 static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -601,9 +844,9 @@ typedef struct {
     PtnObject **objects;
     size_t object_len;
     size_t object_capacity;
-} PtnDirectDumpSeen;
+} PtnDirectValueDumpSeen;
 
-static PTN_UNUSED void ptn_direct_dump_seen_init(PtnDirectDumpSeen *seen) {
+static PTN_UNUSED void ptn_direct_value_dump_seen_init(PtnDirectValueDumpSeen *seen) {
     seen->arrays = NULL;
     seen->array_len = 0;
     seen->array_capacity = 0;
@@ -612,7 +855,7 @@ static PTN_UNUSED void ptn_direct_dump_seen_init(PtnDirectDumpSeen *seen) {
     seen->object_capacity = 0;
 }
 
-static PTN_UNUSED void ptn_direct_dump_seen_free(PtnDirectDumpSeen *seen) {
+static PTN_UNUSED void ptn_direct_value_dump_seen_free(PtnDirectValueDumpSeen *seen) {
     free(seen->arrays);
     seen->arrays = NULL;
     seen->array_len = 0;
@@ -623,7 +866,7 @@ static PTN_UNUSED void ptn_direct_dump_seen_free(PtnDirectDumpSeen *seen) {
     seen->object_capacity = 0;
 }
 
-static PTN_UNUSED int ptn_direct_dump_seen_array_contains(PtnDirectDumpSeen *seen, PtnArray *array) {
+static PTN_UNUSED int ptn_direct_value_dump_seen_array_contains(PtnDirectValueDumpSeen *seen, PtnArray *array) {
     for (size_t i = 0; i < seen->array_len; i++) {
         if (seen->arrays[i] == array) {
             return 1;
@@ -632,7 +875,7 @@ static PTN_UNUSED int ptn_direct_dump_seen_array_contains(PtnDirectDumpSeen *see
     return 0;
 }
 
-static PTN_UNUSED void ptn_direct_dump_seen_array_push(PtnDirectDumpSeen *seen, PtnArray *array) {
+static PTN_UNUSED void ptn_direct_value_dump_seen_array_push(PtnDirectValueDumpSeen *seen, PtnArray *array) {
     if (seen->array_len == seen->array_capacity) {
         size_t new_capacity = seen->array_capacity == 0 ? 8 : seen->array_capacity * 2;
         if (new_capacity < seen->array_capacity) {
@@ -648,13 +891,13 @@ static PTN_UNUSED void ptn_direct_dump_seen_array_push(PtnDirectDumpSeen *seen, 
     seen->arrays[seen->array_len++] = array;
 }
 
-static PTN_UNUSED void ptn_direct_dump_seen_array_pop(PtnDirectDumpSeen *seen) {
+static PTN_UNUSED void ptn_direct_value_dump_seen_array_pop(PtnDirectValueDumpSeen *seen) {
     if (seen->array_len > 0) {
         seen->array_len--;
     }
 }
 
-static PTN_UNUSED int ptn_direct_dump_seen_object_contains(PtnDirectDumpSeen *seen, PtnObject *object) {
+static PTN_UNUSED int ptn_direct_value_dump_seen_object_contains(PtnDirectValueDumpSeen *seen, PtnObject *object) {
     for (size_t i = 0; i < seen->object_len; i++) {
         if (seen->objects[i] == object) {
             return 1;
@@ -663,7 +906,7 @@ static PTN_UNUSED int ptn_direct_dump_seen_object_contains(PtnDirectDumpSeen *se
     return 0;
 }
 
-static PTN_UNUSED void ptn_direct_dump_seen_object_push(PtnDirectDumpSeen *seen, PtnObject *object) {
+static PTN_UNUSED void ptn_direct_value_dump_seen_object_push(PtnDirectValueDumpSeen *seen, PtnObject *object) {
     if (seen->object_len == seen->object_capacity) {
         size_t new_capacity = seen->object_capacity == 0 ? 8 : seen->object_capacity * 2;
         if (new_capacity < seen->object_capacity) {
@@ -679,7 +922,7 @@ static PTN_UNUSED void ptn_direct_dump_seen_object_push(PtnDirectDumpSeen *seen,
     seen->objects[seen->object_len++] = object;
 }
 
-static PTN_UNUSED void ptn_direct_dump_seen_object_pop(PtnDirectDumpSeen *seen) {
+static PTN_UNUSED void ptn_direct_value_dump_seen_object_pop(PtnDirectValueDumpSeen *seen) {
     if (seen->object_len > 0) {
         seen->object_len--;
     }
@@ -719,7 +962,7 @@ static PTN_UNUSED void ptn_direct_dump_printf(PtnRuntime *runtime, const char *f
     free(buffer);
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_indent(PtnRuntime *runtime, size_t indent) {
+static PTN_UNUSED void ptn_direct_value_var_dump_indent(PtnRuntime *runtime, size_t indent) {
     for (size_t i = 0; i < indent; i++) {
         ptn_direct_dump_write_cstr(runtime, "  ");
     }
@@ -733,7 +976,7 @@ static PTN_UNUSED size_t ptn_direct_class_name_dump_len(const char *class_name) 
     return class_name == NULL ? 0 : strlen(class_name);
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_array_key(PtnRuntime *runtime, PtnArrayKey key) {
+static PTN_UNUSED void ptn_direct_value_var_dump_array_key(PtnRuntime *runtime, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         ptn_direct_dump_printf(runtime, "[%lld]=>\n", (long long)key.as.integer);
         return;
@@ -780,7 +1023,7 @@ static PTN_UNUSED int ptn_debug_info_key_parts(
     return 1;
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_debug_info_key(PtnRuntime *runtime, PtnArrayKey key) {
+static PTN_UNUSED void ptn_direct_value_var_dump_debug_info_key(PtnRuntime *runtime, PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         ptn_direct_dump_printf(runtime, "[%lld]=>\n", (long long)key.as.integer);
         return;
@@ -834,7 +1077,7 @@ static PTN_UNUSED char *ptn_magic_debug_info_null_deprecation_message(const char
     return message;
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_object_key(
+static PTN_UNUSED void ptn_direct_value_var_dump_object_key(
     PtnRuntime *runtime,
     PtnObject *object,
     PtnArrayKey key
@@ -860,7 +1103,7 @@ static PTN_UNUSED void ptn_direct_var_dump_object_key(
     }
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_object_metadata_key(
+static PTN_UNUSED void ptn_direct_value_var_dump_object_metadata_key(
     PtnRuntime *runtime,
     const PtnObjectPropertyMetadata *metadata
 ) {
@@ -942,7 +1185,7 @@ static PTN_UNUSED int ptn_object_property_metadata_dumps_uninitialized(
         ptn_property_metadata_uninitialized_type_name(metadata) != NULL;
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_object_uninitialized_properties(
+static PTN_UNUSED void ptn_direct_value_var_dump_object_uninitialized_properties(
     PtnRuntime *runtime,
     PtnObject *object,
     size_t indent
@@ -956,60 +1199,59 @@ static PTN_UNUSED void ptn_direct_var_dump_object_uninitialized_properties(
         if (type_name == NULL) {
             continue;
         }
-        ptn_direct_var_dump_indent(runtime, indent + 1);
-        ptn_direct_var_dump_object_metadata_key(runtime, metadata);
-        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "uninitialized(%s)\n", type_name);
     }
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_value_indented(
+static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
     size_t indent,
-    PtnDirectDumpSeen *seen
+    PtnDirectValueDumpSeen *seen
 );
-static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata metadata, size_t index, char *fallback, size_t fallback_len);
 
-static PTN_UNUSED void ptn_direct_var_dump_exception(
+static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     PtnRuntime *runtime,
     PtnException *exception,
     size_t indent,
-    PtnDirectDumpSeen *seen
+    PtnDirectValueDumpSeen *seen
 ) {
     const char *path = exception->path == NULL ? "" : exception->path;
     ptn_direct_dump_printf(runtime, "object(%s)#%zu (7) {\n", exception->class_name, exception->object_id);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"message\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_printf(runtime, "string(%zu) \"", exception->message_len);
     ptn_direct_dump_write(runtime, exception->message, exception->message_len);
     ptn_direct_dump_write_cstr(runtime, "\"\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"string\":\"Exception\":private]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "string(0) \"\"\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"code\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_printf(runtime, "int(%lld)\n", (long long)exception->code);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"file\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_printf(runtime, "string(%zu) \"", strlen(path));
     ptn_direct_dump_write_cstr(runtime, path);
     ptn_direct_dump_write_cstr(runtime, "\"\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"line\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_printf(runtime, "int(%zu)\n", exception->line);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"trace\":\"Exception\":private]=>\n");
-    ptn_direct_var_dump_value_indented(runtime, exception->trace, indent + 1, seen);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
+    ptn_direct_value_var_dump_value_indented(runtime, exception->trace, indent + 1, seen);
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
     ptn_direct_dump_write_cstr(runtime, "[\"previous\":\"Exception\":private]=>\n");
-    ptn_direct_var_dump_value_indented(runtime, exception->previous, indent + 1, seen);
-    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_value_var_dump_value_indented(runtime, exception->previous, indent + 1, seen);
+    ptn_direct_value_var_dump_indent(runtime, indent);
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
 
@@ -1028,12 +1270,12 @@ static PTN_UNUSED size_t ptn_direct_closure_dump_field_count(PtnClosure *closure
     return count;
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_closure_parameters(
+static PTN_UNUSED void ptn_direct_value_var_dump_closure_parameters(
     PtnRuntime *runtime,
     PtnFunctionMetadata metadata,
     size_t indent
 ) {
-    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_value_var_dump_indent(runtime, indent);
     ptn_direct_dump_printf(runtime, "array(%zu) {\n", metadata.parameter_count);
     for (size_t i = 0; i < metadata.parameter_count; i++) {
         char fallback[32];
@@ -1046,16 +1288,16 @@ static PTN_UNUSED void ptn_direct_var_dump_closure_parameters(
         const char *requiredness = i < metadata.required_parameter_count
             ? "<required>"
             : "<optional>";
-        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "[\"$%s\"]=>\n", parameter_name);
-        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "string(10) \"%s\"\n", requiredness);
     }
-    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_value_var_dump_indent(runtime, indent);
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_closure(
+static PTN_UNUSED void ptn_direct_value_var_dump_closure(
     PtnRuntime *runtime,
     PtnClosure *closure,
     size_t indent
@@ -1064,42 +1306,42 @@ static PTN_UNUSED void ptn_direct_var_dump_closure(
     size_t field_count = ptn_direct_closure_dump_field_count(closure);
     ptn_direct_dump_printf(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
-        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "[\"function\"]=>\n");
-        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "string(%zu) \"%s\"\n", strlen(metadata.name), metadata.name);
     }
     if (closure->has_wrapped_callable && metadata.found && metadata.parameter_count > 0) {
-        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_write_cstr(runtime, "[\"parameter\"]=>\n");
-        ptn_direct_var_dump_closure_parameters(runtime, metadata, indent + 1);
+        ptn_direct_value_var_dump_closure_parameters(runtime, metadata, indent + 1);
     }
-    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_value_var_dump_indent(runtime, indent);
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_value_indented(
+static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
     size_t indent,
-    PtnDirectDumpSeen *seen
+    PtnDirectValueDumpSeen *seen
 ) {
     int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
     if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
     }
-    if (value.type == PTN_ARRAY && ptn_direct_dump_seen_array_contains(seen, value.as.array)) {
-        ptn_direct_var_dump_indent(runtime, indent);
+    if (value.type == PTN_ARRAY && ptn_direct_value_dump_seen_array_contains(seen, value.as.array)) {
+        ptn_direct_value_var_dump_indent(runtime, indent);
         ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
         return;
     }
-    if (value.type == PTN_OBJECT && ptn_direct_dump_seen_object_contains(seen, value.as.object)) {
-        ptn_direct_var_dump_indent(runtime, indent);
+    if (value.type == PTN_OBJECT && ptn_direct_value_dump_seen_object_contains(seen, value.as.object)) {
+        ptn_direct_value_var_dump_indent(runtime, indent);
         ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
         return;
     }
 
-    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_value_var_dump_indent(runtime, indent);
     if (print_reference) {
         ptn_direct_dump_write_cstr(runtime, "&");
     }
@@ -1132,14 +1374,14 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
         case PTN_ARRAY: {
             PtnArray *array = value.as.array;
             ptn_direct_dump_printf(runtime, "array(%zu) {\n", array->len);
-            ptn_direct_dump_seen_array_push(seen, array);
+            ptn_direct_value_dump_seen_array_push(seen, array);
             for (size_t i = 0; i < array->len; i++) {
-                ptn_direct_var_dump_indent(runtime, indent + 1);
-                ptn_direct_var_dump_array_key(runtime, array->entries[i].key);
-                ptn_direct_var_dump_value_indented(runtime, array->entries[i].value, indent + 1, seen);
+                ptn_direct_value_var_dump_indent(runtime, indent + 1);
+                ptn_direct_value_var_dump_array_key(runtime, array->entries[i].key);
+                ptn_direct_value_var_dump_value_indented(runtime, array->entries[i].value, indent + 1, seen);
             }
-            ptn_direct_dump_seen_array_pop(seen);
-            ptn_direct_var_dump_indent(runtime, indent);
+            ptn_direct_value_dump_seen_array_pop(seen);
+            ptn_direct_value_var_dump_indent(runtime, indent);
             ptn_direct_dump_write_cstr(runtime, "}\n");
             break;
         }
@@ -1159,26 +1401,26 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
                 object->object_id,
                 property_count
             );
-            ptn_direct_dump_seen_object_push(seen, object);
+            ptn_direct_value_dump_seen_object_push(seen, object);
             if (object->properties != NULL) {
                 for (size_t i = 0; i < object->properties->len; i++) {
                     PtnArrayEntry *entry = &object->properties->entries[i];
-                    ptn_direct_var_dump_indent(runtime, indent + 1);
-                    ptn_direct_var_dump_object_key(runtime, object, entry->key);
-                    ptn_direct_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
+                    ptn_direct_value_var_dump_indent(runtime, indent + 1);
+                    ptn_direct_value_var_dump_object_key(runtime, object, entry->key);
+                    ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
                 }
             }
-            ptn_direct_var_dump_object_uninitialized_properties(runtime, object, indent);
-            ptn_direct_dump_seen_object_pop(seen);
-            ptn_direct_var_dump_indent(runtime, indent);
+            ptn_direct_value_var_dump_object_uninitialized_properties(runtime, object, indent);
+            ptn_direct_value_dump_seen_object_pop(seen);
+            ptn_direct_value_var_dump_indent(runtime, indent);
             ptn_direct_dump_write_cstr(runtime, "}\n");
             break;
         }
         case PTN_CLOSURE:
-            ptn_direct_var_dump_closure(runtime, value.as.closure, indent);
+            ptn_direct_value_var_dump_closure(runtime, value.as.closure, indent);
             break;
         case PTN_EXCEPTION:
-            ptn_direct_var_dump_exception(runtime, value.as.exception, indent, seen);
+            ptn_direct_value_var_dump_exception(runtime, value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE:
             ptn_direct_dump_printf(
@@ -1194,11 +1436,11 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     }
 }
 
-static PTN_UNUSED int ptn_direct_var_dump_magic_debug_info(
+static PTN_UNUSED int ptn_direct_value_var_dump_magic_debug_info(
     PtnRuntime *runtime,
     PtnValue value,
     size_t line,
-    PtnDirectDumpSeen *seen
+    PtnDirectValueDumpSeen *seen
 ) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type != PTN_OBJECT ||
@@ -1240,13 +1482,13 @@ static PTN_UNUSED int ptn_direct_var_dump_magic_debug_info(
         object->object_id,
         property_count
     );
-    ptn_direct_dump_seen_object_push(seen, object);
+    ptn_direct_value_dump_seen_object_push(seen, object);
     for (size_t i = 0; properties != NULL && i < properties->len; i++) {
-        ptn_direct_var_dump_indent(runtime, 1);
-        ptn_direct_var_dump_debug_info_key(runtime, properties->entries[i].key);
-        ptn_direct_var_dump_value_indented(runtime, properties->entries[i].value, 1, seen);
+        ptn_direct_value_var_dump_indent(runtime, 1);
+        ptn_direct_value_var_dump_debug_info_key(runtime, properties->entries[i].key);
+        ptn_direct_value_var_dump_value_indented(runtime, properties->entries[i].value, 1, seen);
     }
-    ptn_direct_dump_seen_object_pop(seen);
+    ptn_direct_value_dump_seen_object_pop(seen);
     ptn_direct_dump_write_cstr(runtime, "}\n");
     ptn_value_destroy(&debug_info);
     return 1;
@@ -1269,12 +1511,12 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
         return ptn_null();
     }
     for (size_t i = 0; i < argc; i++) {
-        PtnDirectDumpSeen seen;
-        ptn_direct_dump_seen_init(&seen);
-        if (!ptn_direct_var_dump_magic_debug_info(runtime, args[i], line, &seen)) {
-            ptn_direct_var_dump_value_indented(runtime, args[i], 0, &seen);
+        PtnDirectValueDumpSeen seen;
+        ptn_direct_value_dump_seen_init(&seen);
+        if (!ptn_direct_value_var_dump_magic_debug_info(runtime, args[i], line, &seen)) {
+            ptn_direct_value_var_dump_value_indented(runtime, args[i], 0, &seen);
         }
-        ptn_direct_dump_seen_free(&seen);
+        ptn_direct_value_dump_seen_free(&seen);
     }
     return ptn_null();
 }
@@ -3669,232 +3911,6 @@ static int ptn_var_dump_weak_reference_object(
     return 1;
 }
 
-static int ptn_internal_function_first_parameter_is_array_reference(const char *name) {
-    if (name == NULL) {
-        return 0;
-    }
-    return ptn_ascii_case_equal(name, "array_pop") ||
-        ptn_ascii_case_equal(name, "array_push") ||
-        ptn_ascii_case_equal(name, "array_shift") ||
-        ptn_ascii_case_equal(name, "array_splice") ||
-        ptn_ascii_case_equal(name, "array_unshift") ||
-        ptn_ascii_case_equal(name, "array_walk") ||
-        ptn_ascii_case_equal(name, "array_walk_recursive") ||
-        ptn_ascii_case_equal(name, "arsort") ||
-        ptn_ascii_case_equal(name, "asort") ||
-        ptn_ascii_case_equal(name, "end") ||
-        ptn_ascii_case_equal(name, "krsort") ||
-        ptn_ascii_case_equal(name, "ksort") ||
-        ptn_ascii_case_equal(name, "natcasesort") ||
-        ptn_ascii_case_equal(name, "natsort") ||
-        ptn_ascii_case_equal(name, "next") ||
-        ptn_ascii_case_equal(name, "prev") ||
-        ptn_ascii_case_equal(name, "reset") ||
-        ptn_ascii_case_equal(name, "rsort") ||
-        ptn_ascii_case_equal(name, "shuffle") ||
-        ptn_ascii_case_equal(name, "sort") ||
-        ptn_ascii_case_equal(name, "uasort") ||
-        ptn_ascii_case_equal(name, "uksort") ||
-        ptn_ascii_case_equal(name, "usort");
-}
-
-static const char *ptn_internal_function_parameter_name(const char *name, size_t index) {
-    if (name == NULL) {
-        return NULL;
-    }
-    if (index == 0) {
-        if (ptn_ascii_case_equal(name, "array_multisort") ||
-            ptn_internal_function_first_parameter_is_array_reference(name)) {
-            return "array";
-        }
-        if (ptn_ascii_case_equal(name, "strlen") ||
-            ptn_ascii_case_equal(name, "mb_strlen") ||
-            ptn_ascii_case_equal(name, "strrev") ||
-            ptn_ascii_case_equal(name, "strtolower") ||
-            ptn_ascii_case_equal(name, "mb_strtolower") ||
-            ptn_ascii_case_equal(name, "strtoupper")) {
-            return "string";
-        }
-        if (ptn_ascii_case_equal(name, "settype")) {
-            return "var";
-        }
-        if (ptn_ascii_case_equal(name, "sprintf") ||
-            ptn_ascii_case_equal(name, "printf") ||
-            ptn_ascii_case_equal(name, "vprintf") ||
-            ptn_ascii_case_equal(name, "vsprintf")) {
-            return "format";
-        }
-    }
-    if (index == 1) {
-        if (ptn_ascii_case_equal(name, "array_multisort")) {
-            return "rest";
-        }
-        if (ptn_ascii_case_equal(name, "sort")) {
-            return "flags";
-        }
-        if (ptn_ascii_case_equal(name, "sprintf") ||
-            ptn_ascii_case_equal(name, "printf")) {
-            return "values";
-        }
-        if (ptn_ascii_case_equal(name, "vprintf") ||
-            ptn_ascii_case_equal(name, "vsprintf")) {
-            return "values";
-        }
-        if (ptn_ascii_case_equal(name, "settype")) {
-            return "type";
-        }
-    }
-    if (ptn_ascii_case_equal(name, "mb_convert_encoding")) {
-        if (index == 0) {
-            return "string";
-        }
-        if (index == 1) {
-            return "to_encoding";
-        }
-        if (index == 2) {
-            return "from_encoding";
-        }
-    }
-    if (ptn_ascii_case_equal(name, "mb_strlen") ||
-        ptn_ascii_case_equal(name, "mb_strtolower") ||
-        ptn_ascii_case_equal(name, "mb_strtoupper") ||
-        ptn_ascii_case_equal(name, "mb_convert_case") ||
-        ptn_ascii_case_equal(name, "mb_scrub")) {
-        if (index == 0) {
-            return "string";
-        }
-        if (index == 1 && !ptn_ascii_case_equal(name, "mb_convert_case")) {
-            return "encoding";
-        }
-        if (index == 1) {
-            return "mode";
-        }
-        if (index == 2) {
-            return "encoding";
-        }
-    }
-    if (ptn_ascii_case_equal(name, "mb_substr") || ptn_ascii_case_equal(name, "mb_strcut")) {
-        if (index == 0) {
-            return "string";
-        }
-        if (index == 1) {
-            return "start";
-        }
-        if (index == 2) {
-            return "length";
-        }
-        if (index == 3) {
-            return "encoding";
-        }
-    }
-    if (ptn_ascii_case_equal(name, "mb_strpos") ||
-        ptn_ascii_case_equal(name, "mb_stripos") ||
-        ptn_ascii_case_equal(name, "mb_strrpos") ||
-        ptn_ascii_case_equal(name, "mb_strripos")) {
-        if (index == 0) {
-            return "haystack";
-        }
-        if (index == 1) {
-            return "needle";
-        }
-        if (index == 2) {
-            return "offset";
-        }
-        if (index == 3) {
-            return "encoding";
-        }
-    }
-    if (ptn_ascii_case_equal(name, "mb_strstr") ||
-        ptn_ascii_case_equal(name, "mb_stristr") ||
-        ptn_ascii_case_equal(name, "mb_strrchr") ||
-        ptn_ascii_case_equal(name, "mb_strrichr")) {
-        if (index == 0) {
-            return "haystack";
-        }
-        if (index == 1) {
-            return "needle";
-        }
-        if (index == 2) {
-            return "before_needle";
-        }
-        if (index == 3) {
-            return "encoding";
-        }
-    }
-    if (ptn_ascii_case_equal(name, "mb_str_pad")) {
-        if (index == 0) {
-            return "string";
-        }
-        if (index == 1) {
-            return "length";
-        }
-        if (index == 2) {
-            return "pad_string";
-        }
-        if (index == 3) {
-            return "pad_type";
-        }
-        if (index == 4) {
-            return "encoding";
-        }
-    }
-    if (ptn_ascii_case_equal(name, "mb_chr")) {
-        return index == 0 ? "codepoint" : (index == 1 ? "encoding" : NULL);
-    }
-    if (ptn_ascii_case_equal(name, "mb_ord")) {
-        return index == 0 ? "string" : (index == 1 ? "encoding" : NULL);
-    }
-    if (ptn_ascii_case_equal(name, "mb_parse_str") && index == 1) {
-        return "result";
-    }
-    if ((ptn_ascii_case_equal(name, "mb_ereg") || ptn_ascii_case_equal(name, "mb_eregi")) && index == 2) {
-        return "matches";
-    }
-    if (index == 2) {
-        if (ptn_ascii_case_equal(name, "preg_match") ||
-            ptn_ascii_case_equal(name, "preg_match_all")) {
-            return "matches";
-        }
-        if (ptn_ascii_case_equal(name, "xml_parse_into_struct")) {
-            return "values";
-        }
-        if (ptn_ascii_case_equal(name, "similar_text")) {
-            return "percent";
-        }
-        if (ptn_ascii_case_equal(name, "getopt")) {
-            return "rest_index";
-        }
-    }
-    if (index == 3 && ptn_ascii_case_equal(name, "xml_parse_into_struct")) {
-        return "index";
-    }
-    if (index == 1 && ptn_ascii_case_equal(name, "parse_str")) {
-        return "result";
-    }
-    if (index == 2 && ptn_ascii_case_equal(name, "is_callable")) {
-        return "callable_name";
-    }
-    if (index == 3 &&
-        (ptn_ascii_case_equal(name, "str_replace") ||
-            ptn_ascii_case_equal(name, "str_ireplace"))) {
-        return "count";
-    }
-    if (index == 4 &&
-        (ptn_ascii_case_equal(name, "preg_filter") ||
-            ptn_ascii_case_equal(name, "preg_replace") ||
-            ptn_ascii_case_equal(name, "preg_replace_callback"))) {
-        return "count";
-    }
-    if (index == 3 && ptn_ascii_case_equal(name, "preg_replace_callback_array")) {
-        return "count";
-    }
-    if (index >= 2 &&
-        (ptn_ascii_case_equal(name, "sscanf") || ptn_ascii_case_equal(name, "fscanf"))) {
-        return "";
-    }
-    return NULL;
-}
-
 static int ptn_internal_function_parameter_by_ref(const char *name, size_t index) {
     if (name == NULL) {
         return 0;
@@ -4015,23 +4031,6 @@ static const char *ptn_internal_function_parameter_default_display(PtnFunctionMe
         }
     }
     return NULL;
-}
-
-static const char *ptn_function_metadata_parameter_name(PtnFunctionMetadata metadata, size_t index, char *fallback, size_t fallback_len) {
-    if (metadata.parameters != NULL && index < metadata.parameter_count && metadata.parameters[index].name != NULL) {
-        return metadata.parameters[index].name;
-    }
-    if (metadata.is_internal) {
-        const char *name = ptn_internal_function_parameter_name(metadata.name, index);
-        if (name != NULL) {
-            return name;
-        }
-    }
-    int written = snprintf(fallback, fallback_len, "param%zu", index + 1);
-    if (written < 0 || (size_t)written >= fallback_len) {
-        ptn_abort_out_of_memory();
-    }
-    return fallback;
 }
 
 static int ptn_function_metadata_parameter_by_ref(PtnFunctionMetadata metadata, size_t index) {

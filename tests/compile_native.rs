@@ -138,6 +138,31 @@ fn direct_var_dump_internal_first_class_callable_metadata() {
 }
 
 #[test]
+fn direct_internal_helper_with_full_dispatch_compiles_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-helper-with-full-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-helper-with-full-dispatch.php");
+    let output = root.join("direct-helper-with-full-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php echo str_repeat(\"a\", 2), \":\", strlen(\"xyz\"), \"\\n\";",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "aa:3\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_iterator_protocol_and_array_backed_spl_to_native_binary() {
     let root = temp_dir("ptn-native-iterator-protocol-spl");
     fs::create_dir_all(&root).unwrap();

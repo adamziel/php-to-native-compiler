@@ -32671,7 +32671,7 @@ mod tests {
 
         assert!(c_source.contains("ptn_str_repeat_value(&runtime"));
         assert!(c_source.contains("ptn_get_class_value(&runtime"));
-        assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
+        assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
         assert!(!c_source.contains("ptn_call_function(&runtime, \"str_repeat\""));
         assert!(!c_source.contains("ptn_call_function(&runtime, \"get_class\""));
         assert!(!c_source.contains("ptn_call_function(&runtime, \"var_dump\""));
