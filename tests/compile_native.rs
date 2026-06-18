@@ -12561,6 +12561,34 @@ str_replace(): Argument #1 ($search) must be of type array|string, resource give
 }
 
 #[test]
+fn compile_str_replace_count_temporary_argument_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-str-replace-count-temporary-argument-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("str-replace-count-temporary-argument-fatal.php");
+    let output = root.join("str-replace-count-temporary-argument-fatal-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+str_replace('a', 'b', 'abc', strlen('x'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Uncaught Error: str_replace(): Argument #4 ($count) could not be passed by reference in {}:2\nStack trace:\n#0 {{main}}\n  thrown in {} on line 2\n",
+            input.display(),
+            input.display()
+        )
+    );
+}
+
+#[test]
 fn compile_str_replace_array_operands_to_native_binary() {
     let root = temp_dir("ptn-native-str-replace-array-operands");
     fs::create_dir_all(&root).unwrap();
@@ -29554,8 +29582,9 @@ echo $value, \"|\", $alias, \"\\n\";\n\
 $copy = chain($value);\n\
 $copy = 3;\n\
 echo $value, \"|\", $copy, \"\\n\";\n\
+var_dump(value_chain());\n\
 $fallback =& value_chain();\n\
-echo $fallback, \"\\n\";\n\
+var_dump($fallback);\n\
 $typed =& typed_value_chain();\n\
 echo gettype($typed), \":\", $typed, \"\\n\";\n",
     )
@@ -29567,14 +29596,22 @@ echo gettype($typed), \":\", $typed, \"\\n\";\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "2|2\n\
+        format!(
+            "2|2\n\
 2|3\n\
 \n\
-Notice: Only variable references should be returned by reference in ptn on line 12\n\
-9\n\
+Notice: Only variable references should be returned by reference in {} on line 12\n\
+int(9)\n\
 \n\
-Notice: Only variable references should be returned by reference in ptn on line 15\n\
-string:9\n"
+Notice: Only variable references should be returned by reference in {} on line 12\n\
+int(9)\n\
+\n\
+Notice: Only variable references should be returned by reference in {} on line 15\n\
+string:9\n",
+            input.display(),
+            input.display(),
+            input.display()
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -49544,6 +49581,89 @@ echo $a->func2(), \"\\n\";
     assert!(c_source.contains("ptn_declared_magic_property_read"));
     assert!(c_source.contains("(void)require_isset;"));
     assert!(c_source.contains("ptn_object_read_property_no_magic"));
+}
+
+#[test]
+fn compile_by_ref_magic_get_reads_plain_values_to_native_binary() {
+    let root = temp_dir("ptn-native-by-ref-magic-get-plain-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-ref-magic-get-plain-values.php");
+    let output = root.join("by-ref-magic-get-plain-values-bin");
+    fs::write(
+        &input,
+        "<?php
+
+class A
+{
+    var $_stdObject;
+    function __construct()
+    {
+        $this->_stdObject = new stdClass;
+    }
+    function &__get($property)
+    {
+        if (isset($this->_stdObject->{$property})) {
+            $retval =& $this->_stdObject->{$property};
+            return $retval;
+        } else {
+            return NULL;
+        }
+    }
+    function &__set($property, $value)
+    {
+        return $this->_stdObject->{$property} = $value;
+    }
+    function __isset($property_name)
+    {
+        return isset($this->_stdObject->{$property_name});
+    }
+}
+
+class B extends A
+{
+    function &__get($property)
+    {
+        if (isset($this->settings) && isset($this->settings[$property])) {
+            $retval =& $this->settings[$property];
+            return $retval;
+        } else {
+            return parent::__get($property);
+        }
+    }
+}
+
+$b = new B();
+$b->settings = [ \"foo\" => \"bar\", \"name\" => \"abc\" ];
+var_dump($b->name);
+var_dump($b->settings);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nNotice: Only variable references should be returned by reference in {} on line 21\n",
+                "string(3) \"abc\"\n",
+                "array(2) {{\n",
+                "  [\"foo\"]=>\n",
+                "  string(3) \"bar\"\n",
+                "  [\"name\"]=>\n",
+                "  string(3) \"abc\"\n",
+                "}}\n",
+            ),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_magic_property_read_value"));
 }
 
 #[test]

@@ -12925,11 +12925,19 @@ fn emit_instruction(
                 }
                 if let Some(value) = value {
                     if values.current_function_return_by_ref {
-                        let reference_value = values.emit_reference_source(out, value, *line);
-                        out.push_str("    ptn_return_value = ptn_value_share(");
-                        out.push_str(&reference_value);
-                        out.push_str(");\n");
-                        emit_value_cleanup(out, "    ", &reference_value);
+                        if let Some(target) = reference_target_from_value(value) {
+                            let reference_value = values.emit_reference_target(out, &target);
+                            out.push_str("    ptn_return_value = ptn_value_share(");
+                            out.push_str(&reference_value);
+                            out.push_str(");\n");
+                            emit_value_cleanup(out, "    ", &reference_value);
+                        } else {
+                            let result_value = values.emit_materialized_value(out, value);
+                            out.push_str("    ptn_return_value = ptn_value_share(");
+                            out.push_str(&result_value);
+                            out.push_str(");\n");
+                            emit_value_cleanup(out, "    ", &result_value);
+                        }
                     } else {
                         let result_value = values.emit_materialized_value(out, value);
                         out.push_str("    ptn_return_value = ptn_value_clone(ptn_value_deref(");
@@ -17527,6 +17535,9 @@ fn temporary_array_dim_by_ref_argument_path(
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
             | ValueExpr::DynamicMethodCall { .. } => {
+                if dimensions.is_empty() {
+                    return None;
+                }
                 dimensions.reverse();
                 return Some((current, dimensions, line));
             }

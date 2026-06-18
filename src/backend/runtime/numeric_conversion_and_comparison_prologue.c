@@ -832,7 +832,7 @@ static PTN_UNUSED PtnValue ptn_reference_source_or_value(PtnRuntime *runtime, Pt
         return ptn_value_clone(value);
     }
     ptn_emit_only_variable_references_returned_by_reference_notice_at(runtime, line);
-    return ptn_reference_value(ptn_reference_new_owned(ptn_value_clone(value)));
+    return ptn_value_clone(value);
 }
 
 static PTN_UNUSED PtnValue ptn_by_ref_argument_source_or_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {

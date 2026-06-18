@@ -3717,6 +3717,16 @@ static PTN_UNUSED int ptn_exception_public_property_read(
     return 0;
 }
 
+static PTN_UNUSED PtnValue ptn_magic_property_read_value(PtnValue magic_value) {
+    PtnValue value = ptn_value_clone_deref(magic_value);
+    ptn_value_destroy(&magic_value);
+    return value;
+}
+
+static PTN_UNUSED PtnLookupResult ptn_magic_property_lookup_value(PtnValue magic_value) {
+    return ptn_lookup_found(ptn_magic_property_read_value(magic_value));
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3792,7 +3802,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     if (blocked_metadata != NULL) {
         PtnValue magic_value = ptn_null();
         if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
-            return magic_value;
+            return ptn_magic_property_read_value(magic_value);
         }
     }
     char *storage_key = ptn_object_resolve_property_storage_key(
@@ -3811,7 +3821,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
         ) {
-            return magic_value;
+            return ptn_magic_property_read_value(magic_value);
         }
         storage_key = ptn_object_resolve_property_storage_key(
             runtime,
@@ -3876,7 +3886,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
         ) {
-            return magic_value;
+            return ptn_magic_property_read_value(magic_value);
         }
         if (static_property_as_instance) {
             ptn_emit_static_property_non_static_notice(
@@ -4174,7 +4184,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
         if (metadata == NULL || metadata->is_unset) {
             PtnValue magic_value = ptn_null();
             if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
-                return magic_value;
+                return ptn_magic_property_read_value(magic_value);
             }
         }
         if (static_property_as_instance) {
@@ -4247,7 +4257,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
         ) {
-            return ptn_lookup_found(magic_value);
+            return ptn_magic_property_lookup_value(magic_value);
         }
         return ptn_lookup_missing();
     }
@@ -4262,7 +4272,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
         ) {
-            return ptn_lookup_found(magic_value);
+            return ptn_magic_property_lookup_value(magic_value);
         }
         return ptn_lookup_missing();
     }
@@ -4305,7 +4315,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
         ) {
-            return ptn_lookup_found(magic_value);
+            return ptn_magic_property_lookup_value(magic_value);
         }
         return ptn_lookup_missing();
     }
@@ -4320,7 +4330,7 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
             runtime->magic_property_read != NULL &&
             runtime->magic_property_read(runtime, receiver, property, line, 1, &magic_value)
         ) {
-            return ptn_lookup_found(magic_value);
+            return ptn_magic_property_lookup_value(magic_value);
         }
         return ptn_lookup_missing();
     }
