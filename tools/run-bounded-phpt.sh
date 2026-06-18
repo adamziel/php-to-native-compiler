@@ -12,6 +12,10 @@ Usage: tools/run-bounded-phpt.sh [--classify-only] [--classify-harness-programs]
 
 Classify a PHPT manifest, then run runnable rows through php-src run-tests.php.
 
+Environment:
+  PTN_PHPT_TEST_TIMEOUT        Per-test run-tests.php timeout. Defaults to 180
+                               seconds to allow native compile startup latency.
+
 Options:
   --classify-only              write classification and blocker manifests without
                                building phpc or running runnable PHPT rows
@@ -343,6 +347,7 @@ aggregate_run_status=0
     echo "manifest: $resolved_manifest"
     echo "runnable-manifest: $runnable_manifest"
     echo "command: cargo build --bin phpc; PHPC_BIN=\"$phpc_bin\" php $php_src/run-tests.php -q --set-timeout \"$phpt_test_timeout\" -p \"$phpc_bin\" <bucket manifest paths>"
+    echo "timeout-seconds: $phpt_test_timeout"
     echo "count: $selected_rows selected PHPT rows; $runnable_rows runnable; $excluded_rows excluded by classification in ${#bucket_order[@]} buckets"
     emit_classification_summary
 } | tee "$summary"
