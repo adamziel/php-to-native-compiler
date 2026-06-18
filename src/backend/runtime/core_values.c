@@ -915,6 +915,9 @@ struct PtnTraceFrame {
     const PtnValue *args;
     size_t parameter_count;
     const char *const *parameter_names;
+    size_t sensitive_parameter_count;
+    const unsigned char *sensitive_parameters;
+    size_t sensitive_variadic_position;
     int has_receiver;
     PtnValue receiver;
     PtnTraceFrame *previous;

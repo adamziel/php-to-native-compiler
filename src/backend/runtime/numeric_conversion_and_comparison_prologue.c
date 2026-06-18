@@ -44,6 +44,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_trace_frame.args = NULL;
     runtime->owned_trace_frame.parameter_count = 0;
     runtime->owned_trace_frame.parameter_names = NULL;
+    runtime->owned_trace_frame.sensitive_parameter_count = 0;
+    runtime->owned_trace_frame.sensitive_parameters = NULL;
+    runtime->owned_trace_frame.sensitive_variadic_position = (size_t)-1;
     runtime->owned_trace_frame.has_receiver = 0;
     runtime->owned_trace_frame.receiver = ptn_null();
     runtime->owned_trace_frame.previous = NULL;
@@ -193,7 +196,10 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     size_t argc,
     const PtnValue *args,
     size_t parameter_count,
-    const char *const *parameter_names
+    const char *const *parameter_names,
+    size_t sensitive_parameter_count,
+    const unsigned char *sensitive_parameters,
+    size_t sensitive_variadic_position
 ) {
     runtime->owned_call_frame.argc = argc;
     runtime->owned_call_frame.args = args;
@@ -210,6 +216,9 @@ static PTN_UNUSED void ptn_runtime_set_call_frame(
     runtime->owned_trace_frame.args = args;
     runtime->owned_trace_frame.parameter_count = parameter_count;
     runtime->owned_trace_frame.parameter_names = parameter_names;
+    runtime->owned_trace_frame.sensitive_parameter_count = sensitive_parameter_count;
+    runtime->owned_trace_frame.sensitive_parameters = sensitive_parameters;
+    runtime->owned_trace_frame.sensitive_variadic_position = sensitive_variadic_position;
     runtime->owned_trace_frame.has_receiver = runtime->has_current_receiver;
     runtime->owned_trace_frame.receiver = runtime->current_receiver;
     runtime->owned_trace_frame.previous = runtime->trace_frame;
@@ -234,6 +243,9 @@ static PTN_UNUSED void ptn_runtime_push_trace_frame(
     frame->args = args;
     frame->parameter_count = 0;
     frame->parameter_names = NULL;
+    frame->sensitive_parameter_count = 0;
+    frame->sensitive_parameters = NULL;
+    frame->sensitive_variadic_position = (size_t)-1;
     frame->has_receiver = 0;
     frame->receiver = ptn_null();
     frame->previous = runtime->trace_frame;
@@ -927,7 +939,22 @@ static PTN_UNUSED PtnValue ptn_trace_value_snapshot(PtnValue value) {
     return ptn_trace_value_snapshot_depth(value, 0);
 }
 
+static PTN_UNUSED int ptn_trace_frame_arg_is_sensitive(PtnTraceFrame *frame, size_t position) {
+    if (frame->sensitive_parameters == NULL) {
+        return 0;
+    }
+    if (
+        frame->sensitive_variadic_position != (size_t)-1 &&
+        position >= frame->sensitive_variadic_position
+    ) {
+        return 1;
+    }
+    return position < frame->sensitive_parameter_count && frame->sensitive_parameters[position] != 0;
+}
+
 static PTN_UNUSED PtnValue ptn_trace_frame_arg_value(PtnTraceFrame *frame, size_t position) {
+    int is_sensitive = ptn_trace_frame_arg_is_sensitive(frame, position);
+    PtnValue result = ptn_null();
     if (
         frame->runtime != NULL &&
         frame->parameter_names != NULL &&
@@ -935,13 +962,32 @@ static PTN_UNUSED PtnValue ptn_trace_frame_arg_value(PtnTraceFrame *frame, size_
     ) {
         PtnValue value;
         if (ptn_symbols_get(&frame->runtime->symbols, frame->parameter_names[position], &value)) {
-            return ptn_trace_value_snapshot(value);
+            result = ptn_trace_value_snapshot(value);
+            goto wrap_if_sensitive;
         }
     }
     if (position < frame->argc) {
-        return ptn_trace_value_snapshot(frame->args[position]);
+        result = ptn_trace_value_snapshot(frame->args[position]);
+        goto wrap_if_sensitive;
     }
-    return ptn_null();
+
+wrap_if_sensitive:
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    if (is_sensitive && frame->runtime != NULL) {
+        PtnValue wrapper_args[1] = { result };
+        PtnValue wrapped = ptn_sensitive_parameter_value_new(
+            frame->runtime,
+            1,
+            wrapper_args,
+            frame->line
+        );
+        ptn_value_destroy(&result);
+        return wrapped;
+    }
+#else
+    (void)is_sensitive;
+#endif
+    return result;
 }
 
 static PTN_UNUSED PtnValue ptn_trace_frame_args_array(PtnTraceFrame *frame) {
