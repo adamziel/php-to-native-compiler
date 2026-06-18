@@ -4024,6 +4024,23 @@ fn emit_user_function_dispatch(
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
             out.push_str("        *found = 1;\n");
+            out.push_str("        if (runtime->has_current_receiver) {\n");
+            out.push_str(
+                "            PtnValue ptn_scoped_receiver = ptn_value_deref(runtime->current_receiver);\n",
+            );
+            out.push_str("            if (ptn_scoped_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(ptn_scoped_receiver.as.object->class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            out.push_str("                PtnValue ptn_scoped_result;\n");
+            out.push_str("                if (ptn_call_declared_method_in_scope(runtime, ptn_scoped_receiver, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", ptn_scoped_receiver.as.object->class_name, argc, args, line, &ptn_scoped_result)) {\n");
+            out.push_str("                    return ptn_scoped_result;\n");
+            out.push_str("                }\n");
+            out.push_str("            }\n");
+            out.push_str("        }\n");
             out.push_str("        char ptn_nonstatic_message[512];\n");
             out.push_str("        int ptn_nonstatic_written = snprintf(ptn_nonstatic_message, sizeof(ptn_nonstatic_message), \"Non-static method %s::%s() cannot be called statically\", \"");
             out.push_str(&c_string(&class.name));

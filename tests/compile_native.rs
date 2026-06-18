@@ -41013,6 +41013,53 @@ echo $propertyText();
 }
 
 #[test]
+fn compile_arrow_class_style_nonstatic_call_uses_bound_this_to_native_binary() {
+    let root = temp_dir("ptn-native-arrow-bound-nonstatic-class-call");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrow-bound-nonstatic-class-call.php");
+    let output = root.join("arrow-bound-nonstatic-class-call-bin");
+    fs::write(
+        &input,
+        "<?php
+class ArrowBoundNonstaticCall {
+    public $name = \"box\";
+
+    public function run() {
+        $direct = fn() => ArrowBoundNonstaticCall::label(\"direct\");
+        $callback = fn() => call_user_func(\"ArrowBoundNonstaticCall::label\", \"callback\");
+        echo $direct(), \"\\n\";
+        echo $callback(), \"\\n\";
+
+        $static = static fn() => ArrowBoundNonstaticCall::label(\"static\");
+        try {
+            $static();
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+
+    public function label($prefix) {
+        return $prefix . \":\" . $this->name;
+    }
+}
+
+(new ArrowBoundNonstaticCall())->run();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "direct:box\ncallback:box\nNon-static method ArrowBoundNonstaticCall::label() cannot be called statically\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_walk_closure_use_capture_global_swap_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-closure-use-global-swap");
     fs::create_dir_all(&root).unwrap();
