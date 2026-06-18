@@ -153,6 +153,7 @@ pub fn emit_c(module: &Module) -> String {
     if !module.includes.is_empty() {
         emit_include_runtime_helpers(&mut out);
     }
+    emit_source_snapshots(&mut out, module);
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
@@ -328,9 +329,9 @@ pub fn emit_c(module: &Module) -> String {
             "    runtime.new_instance_without_constructor = ptn_declared_class_new_instance_without_constructor;\n",
         );
     }
-    out.push_str("    runtime.source_path = \"");
+    out.push_str("    ptn_runtime_use_compiled_source_snapshot(&runtime, \"");
     out.push_str(&c_string(&module.source_file));
-    out.push_str("\";\n");
+    out.push_str("\");\n");
     out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
     let mut values = ValueEmitter::new(
         &module.source_file,
@@ -603,6 +604,79 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
     }
     out.push_str(&runtime_c[internal_functions.after_end..]);
+}
+
+fn emit_source_snapshots(out: &mut String, module: &Module) {
+    emit_source_snapshot_array(out, "ptn_source_snapshot_main", &module.source_bytes);
+    for (index, include) in module.includes.iter().enumerate() {
+        emit_source_snapshot_array(
+            out,
+            &include_source_snapshot_c_name(index),
+            &include.source_bytes,
+        );
+    }
+
+    out.push_str("\nstatic PTN_UNUSED void ptn_runtime_use_compiled_source_snapshot(PtnRuntime *runtime, const char *source_path) {\n");
+    out.push_str("    runtime->source_path = source_path;\n");
+    out.push_str("    runtime->source_bytes = NULL;\n");
+    out.push_str("    runtime->source_bytes_len = 0;\n");
+    out.push_str("    if (source_path == NULL) {\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+    emit_source_snapshot_branch(
+        out,
+        &module.source_file,
+        "ptn_source_snapshot_main",
+        module.source_bytes.len(),
+    );
+    for (index, include) in module.includes.iter().enumerate() {
+        emit_source_snapshot_branch(
+            out,
+            &include.source_file,
+            &include_source_snapshot_c_name(index),
+            include.source_bytes.len(),
+        );
+    }
+    out.push_str("}\n");
+}
+
+fn emit_source_snapshot_array(out: &mut String, name: &str, bytes: &[u8]) {
+    out.push_str("\nstatic const unsigned char ");
+    out.push_str(name);
+    out.push_str("[] = {");
+    if bytes.is_empty() {
+        out.push_str("\n    0");
+    } else {
+        for (index, byte) in bytes.iter().enumerate() {
+            if index == 0 {
+                out.push_str("\n    ");
+            } else if index % 16 == 0 {
+                out.push_str(",\n    ");
+            } else {
+                out.push_str(", ");
+            }
+            out.push_str(&byte.to_string());
+        }
+    }
+    out.push_str("\n};\n");
+}
+
+fn emit_source_snapshot_branch(out: &mut String, source_file: &str, array_name: &str, len: usize) {
+    out.push_str("    if (strcmp(source_path, \"");
+    out.push_str(&c_string(source_file));
+    out.push_str("\") == 0) {\n");
+    out.push_str("        runtime->source_bytes = ");
+    out.push_str(array_name);
+    out.push_str(";\n");
+    out.push_str("        runtime->source_bytes_len = ");
+    out.push_str(&len.to_string());
+    out.push_str(";\n");
+    out.push_str("        return;\n");
+    out.push_str("    }\n");
+}
+
+fn include_source_snapshot_c_name(index: usize) -> String {
+    format!("ptn_source_snapshot_include_{index}")
 }
 
 fn emit_type_hint_runtime_helpers(out: &mut String) {
@@ -1351,6 +1425,9 @@ fn emit_user_functions(
         out.push_str("    (void)line;\n");
         out.push_str("    PtnRuntime runtime;\n");
         out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+        out.push_str("    ptn_runtime_use_compiled_source_snapshot(&runtime, \"");
+        out.push_str(&c_string(&function.source_file));
+        out.push_str("\");\n");
         out.push_str("    runtime.current_function_name = \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str("\";\n");
@@ -2490,9 +2567,13 @@ fn emit_include_helpers(
         out.push_str("    (void)include_runtime;\n");
         out.push_str("#define runtime (*include_runtime)\n");
         out.push_str("    const char *ptn_previous_source_path = runtime.source_path;\n");
-        out.push_str("    runtime.source_path = \"");
+        out.push_str(
+            "    const unsigned char *ptn_previous_source_bytes = runtime.source_bytes;\n",
+        );
+        out.push_str("    size_t ptn_previous_source_bytes_len = runtime.source_bytes_len;\n");
+        out.push_str("    ptn_runtime_use_compiled_source_snapshot(&runtime, \"");
         out.push_str(&c_string(&include.source_file));
-        out.push_str("\";\n");
+        out.push_str("\");\n");
         out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
         emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
@@ -2526,6 +2607,8 @@ fn emit_include_helpers(
         out.push_str(&return_label);
         out.push_str(":\n");
         out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
+        out.push_str("    runtime.source_bytes = ptn_previous_source_bytes;\n");
+        out.push_str("    runtime.source_bytes_len = ptn_previous_source_bytes_len;\n");
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
@@ -16776,8 +16859,12 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
         )
     })?;
     let optimization_args = cc_optimization_args(c_source.len())?;
+    let warning_args = cc_warning_args(c_source.len());
     let mut command = Command::new("cc");
-    command.arg("-std=c11").arg("-Wall").arg("-Wextra");
+    command.arg("-std=c11");
+    for arg in warning_args {
+        command.arg(arg);
+    }
     for arg in optimization_args {
         command.arg(arg);
     }
@@ -16804,6 +16891,14 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
 
 const CC_OPT_LEVEL_ENV: &str = "PTN_CC_OPT_LEVEL";
 const LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD: usize = 1_000_000;
+
+fn cc_warning_args(c_source_len: usize) -> Vec<&'static str> {
+    if c_source_len >= LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD {
+        Vec::new()
+    } else {
+        vec!["-Wall", "-Wextra"]
+    }
+}
 
 fn cc_optimization_args(c_source_len: usize) -> Result<Vec<&'static str>> {
     let value = match env::var(CC_OPT_LEVEL_ENV) {
@@ -29587,7 +29682,7 @@ fn display_os(value: &OsStr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cc_optimization_args_for, cc_optimization_args_for_source,
+        cc_optimization_args_for, cc_optimization_args_for_source, cc_warning_args,
         LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
     };
 
@@ -29642,5 +29737,15 @@ mod tests {
     fn c_compiler_profile_rejects_unknown_values() {
         let error = cc_optimization_args_for(Some("fast")).unwrap_err();
         assert!(error.message.contains("invalid PTN_CC_OPT_LEVEL value"));
+    }
+
+    #[test]
+    fn c_compiler_warning_profile_skips_large_sources() {
+        assert_eq!(cc_warning_args(0), vec!["-Wall", "-Wextra"]);
+        assert_eq!(
+            cc_warning_args(LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD - 1),
+            vec!["-Wall", "-Wextra"]
+        );
+        assert!(cc_warning_args(LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).is_empty());
     }
 }

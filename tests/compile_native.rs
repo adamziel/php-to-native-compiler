@@ -48435,6 +48435,39 @@ get_resource_type(): Argument #1 ($resource) must be of type resource, string gi
 }
 
 #[test]
+fn compile_fopen_file_uses_compiled_source_snapshot_to_native_binary() {
+    let root = temp_dir("ptn-native-fopen-file-source-snapshot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fopen-file-source-snapshot.php");
+    let output = root.join("fopen-file-source-snapshot-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function read_self_prefix() {\n\
+    $fp = fopen(__FILE__, 'r', true);\n\
+    var_dump(is_resource($fp), get_resource_type($fp));\n\
+    echo bin2hex(fread($fp, 5)), \"\\n\";\n\
+    fclose($fp);\n\
+}\n\
+read_self_prefix();\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    fs::remove_file(&input).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+string(6) \"stream\"\n\
+3c3f706870\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_directory_resources_to_native_binary() {
     let root = temp_dir("ptn-native-directory-resources");
     fs::create_dir_all(&root).unwrap();

@@ -31642,6 +31642,46 @@ static int ptn_try_open_php_input_stream(PtnRuntime *runtime, const char *path, 
     return 1;
 }
 
+static int ptn_fopen_mode_is_read_only(const char *mode) {
+    return mode != NULL &&
+        (mode[0] == 'r' || mode[0] == 'R') &&
+        strchr(mode, '+') == NULL;
+}
+
+static int ptn_try_open_compiled_source_stream(PtnRuntime *runtime, const char *path, const char *mode, PtnValue *out) {
+    if (
+        runtime == NULL ||
+        runtime->source_path == NULL ||
+        runtime->source_bytes == NULL ||
+        path == NULL ||
+        mode == NULL ||
+        !ptn_fopen_mode_is_read_only(mode) ||
+        strcmp(path, runtime->source_path) != 0
+    ) {
+        return 0;
+    }
+
+    PtnResource *resource = ptn_resource_new_memory_stream(
+        runtime->source_path,
+        "rb",
+        PTN_STREAM_BACKEND_MEMORY,
+        SIZE_MAX,
+        1,
+        0
+    );
+    if (runtime->source_bytes_len != 0) {
+        size_t written = ptn_stream_write_bytes(resource, runtime->source_bytes, runtime->source_bytes_len);
+        if (written != runtime->source_bytes_len) {
+            ptn_abort_out_of_memory();
+        }
+    }
+    (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    resource->memory_stream->writable = 0;
+    resource->memory_stream->append = 0;
+    *out = ptn_resource(resource);
+    return 1;
+}
+
 static int ptn_try_open_php_standard_stream(const char *path, PtnValue *out) {
     if (ptn_ascii_case_equal(path, "php://output") ||
         ptn_ascii_case_equal(path, "php://stdout")) {
@@ -31740,6 +31780,12 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     FILE *stream = fopen(path, c_mode);
     free(c_mode);
     if (stream == NULL) {
+        PtnValue source_stream;
+        if (ptn_try_open_compiled_source_stream(runtime, path, mode, &source_stream)) {
+            free(mode);
+            free(path);
+            return source_stream;
+        }
         char detail[192];
         int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
         if (needed < 0 || (size_t)needed >= sizeof(detail)) {

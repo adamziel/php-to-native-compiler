@@ -54,6 +54,7 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         &program,
         source_file,
         source_dir,
+        source_bytes,
         include_sources,
         &include_resolutions,
     );
@@ -1083,6 +1084,7 @@ impl IncludeCollector {
         self.sources.push(IncludeSource {
             source_file: source_file.clone(),
             source_dir: source_dir.clone(),
+            source_bytes,
             path_aliases,
             program: program.clone(),
         });

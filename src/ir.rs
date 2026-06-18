@@ -31,6 +31,7 @@ pub struct Module {
     pub compile_warnings: Vec<CompileWarning>,
     pub source_file: String,
     pub source_dir: String,
+    pub source_bytes: Vec<u8>,
     pub strict_types: bool,
 }
 
@@ -52,6 +53,7 @@ pub enum CompileWarningKind {
 pub struct IncludeFile {
     pub source_file: String,
     pub source_dir: String,
+    pub source_bytes: Vec<u8>,
     pub path_aliases: Vec<String>,
     pub instructions: Vec<Instruction>,
     pub compile_warnings: Vec<CompileWarning>,
@@ -61,6 +63,7 @@ pub struct IncludeFile {
 pub struct IncludeSource {
     pub source_file: String,
     pub source_dir: String,
+    pub source_bytes: Vec<u8>,
     pub path_aliases: Vec<String>,
     pub program: Program,
 }
@@ -916,6 +919,7 @@ pub fn lower_with_source(program: &Program, source_file: String, source_dir: Str
         source_file,
         source_dir,
         Vec::new(),
+        Vec::new(),
         &IncludeResolutionMap::new(),
     )
 }
@@ -924,6 +928,7 @@ pub fn lower_with_source_and_includes(
     program: &Program,
     source_file: String,
     source_dir: String,
+    source_bytes: Vec<u8>,
     include_sources: Vec<IncludeSource>,
     include_resolutions: &IncludeResolutionMap,
 ) -> Module {
@@ -975,6 +980,7 @@ pub fn lower_with_source_and_includes(
         compile_warnings: lower_compile_warnings(&program.compile_warnings),
         source_file,
         source_dir,
+        source_bytes,
         strict_types: program.strict_types,
     }
 }
@@ -1235,6 +1241,7 @@ impl<'a> LoweringContext<'a> {
         IncludeFile {
             source_file: include.source_file.clone(),
             source_dir: include.source_dir.clone(),
+            source_bytes: include.source_bytes.clone(),
             path_aliases: include.path_aliases.clone(),
             instructions,
             compile_warnings: lower_compile_warnings(&include.program.compile_warnings),

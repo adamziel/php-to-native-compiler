@@ -118,6 +118,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         }
     }
     runtime->source_path = caller_runtime->source_path;
+    runtime->source_bytes = caller_runtime->source_bytes;
+    runtime->source_bytes_len = caller_runtime->source_bytes_len;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;
     runtime->current_called_class_name = NULL;
