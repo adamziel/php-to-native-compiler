@@ -12915,8 +12915,8 @@ var_dump(ob_get_contents());\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(true)\n\
-<code><span style=\"color: #000000\">\n&lt;A&amp;&gt;</span>\n</code>\n\
-<code><span style=\"color: #000000\">\nA</span>\n</code>\n\
+<pre><code style=\"color: #000000\">&lt;A&amp;&gt;</code></pre>\n\
+<pre><code style=\"color: #000000\">A</code></pre>\n\
 bool(false)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -12966,7 +12966,8 @@ $file = __DIR__ . \"/source-to-highlight.php\";\n\
 var_dump(file_put_contents($file, \"<A&>\\n\"));\n\
 $result = highlight_file($file, true);\n\
 var_dump(is_string($result), str_contains($result, \"&lt;A&amp;&gt;\"), ob_get_contents());\n\
-var_dump(highlight_file($file, false));\n",
+var_dump(highlight_file($file, false));\n\
+echo highlight_file('data:,<?php echo \"test\"; ?>', true), \"\\n\";\n",
     )
     .unwrap();
 
@@ -12978,7 +12979,8 @@ var_dump(highlight_file($file, false));\n",
         String::from_utf8(execution.stdout).unwrap(),
         "int(5)\n\
 bool(true)\nbool(true)\nbool(false)\n\
-<code><span style=\"color: #000000\">\n&lt;A&amp;&gt;\n</span>\n</code>bool(true)\n"
+<pre><code style=\"color: #000000\">&lt;A&amp;&gt;\n</code></pre>bool(true)\n\
+<pre><code style=\"color: #000000\"><span style=\"color: #0000BB\">&lt;?php </span><span style=\"color: #007700\">echo </span><span style=\"color: #DD0000\">\"test\"</span><span style=\"color: #007700\">; </span><span style=\"color: #0000BB\">?&gt;</span></code></pre>\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

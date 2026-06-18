@@ -37293,13 +37293,263 @@ static void ptn_highlight_append_escaped(PtnStringBuffer *buffer, const char *da
     }
 }
 
-static PtnValue ptn_highlight_string_value(PtnStringOperand input) {
+typedef enum {
+    PTN_HIGHLIGHT_HTML,
+    PTN_HIGHLIGHT_DEFAULT,
+    PTN_HIGHLIGHT_KEYWORD,
+    PTN_HIGHLIGHT_STRING,
+    PTN_HIGHLIGHT_COMMENT,
+} PtnHighlightColor;
+
+static const char *ptn_highlight_color_code(PtnHighlightColor color) {
+    switch (color) {
+        case PTN_HIGHLIGHT_DEFAULT:
+            return "#0000BB";
+        case PTN_HIGHLIGHT_KEYWORD:
+            return "#007700";
+        case PTN_HIGHLIGHT_STRING:
+            return "#DD0000";
+        case PTN_HIGHLIGHT_COMMENT:
+            return "#FF8000";
+        case PTN_HIGHLIGHT_HTML:
+            return NULL;
+    }
+    return NULL;
+}
+
+static void ptn_highlight_set_color(
+    PtnStringBuffer *buffer,
+    PtnHighlightColor *current,
+    PtnHighlightColor color
+) {
+    if (*current == color) {
+        return;
+    }
+    if (*current != PTN_HIGHLIGHT_HTML) {
+        ptn_string_buffer_append(buffer, "</span>");
+    }
+    if (color != PTN_HIGHLIGHT_HTML) {
+        ptn_string_buffer_append_format(
+            buffer,
+            "<span style=\"color: %s\">",
+            ptn_highlight_color_code(color)
+        );
+    }
+    *current = color;
+}
+
+static int ptn_highlight_ascii_case_equal(const char *left, const char *right, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)left[i]) != tolower((unsigned char)right[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_highlight_ident_start(unsigned char byte) {
+    return isalpha(byte) || byte == '_';
+}
+
+static int ptn_highlight_ident_part(unsigned char byte) {
+    return isalnum(byte) || byte == '_';
+}
+
+static int ptn_highlight_keyword(const char *data, size_t len) {
+    static const char *const keywords[] = {
+        "abstract", "and", "array", "as", "break", "case", "catch", "class",
+        "clone", "const", "continue", "declare", "default", "do", "echo",
+        "else", "elseif", "enum", "extends", "final", "finally", "fn", "for",
+        "foreach", "function", "global", "goto", "if", "implements", "include",
+        "include_once", "instanceof", "insteadof", "interface", "match",
+        "namespace", "new", "or", "print", "private", "protected", "public",
+        "readonly", "require", "require_once", "return", "static", "switch",
+        "throw", "trait", "try", "use", "var", "while", "xor", "yield",
+        "yield from",
+    };
+    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
+        size_t keyword_len = strlen(keywords[i]);
+        if (keyword_len == len && ptn_highlight_ascii_case_equal(data, keywords[i], len)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static size_t ptn_highlight_consume_trailing_inline_space(const char *data, size_t len, size_t offset) {
+    while (offset < len && (data[offset] == ' ' || data[offset] == '\t')) {
+        offset++;
+    }
+    return offset;
+}
+
+static size_t ptn_highlight_consume_trailing_whitespace(const char *data, size_t len, size_t offset) {
+    while (offset < len && isspace((unsigned char)data[offset])) {
+        offset++;
+    }
+    return offset;
+}
+
+static size_t ptn_highlight_open_tag_len(const char *data, size_t len, size_t offset) {
+    if (offset + 2 > len || data[offset] != '<' || data[offset + 1] != '?') {
+        return 0;
+    }
+    if (
+        offset + 5 <= len &&
+        ptn_highlight_ascii_case_equal(data + offset + 2, "php", 3) &&
+        (offset + 5 == len || !ptn_highlight_ident_part((unsigned char)data[offset + 5]))
+    ) {
+        size_t end = offset + 5;
+        if (end < len && isspace((unsigned char)data[end])) {
+            end++;
+        }
+        return end - offset;
+    }
+    return 2;
+}
+
+static PtnValue ptn_highlight_php_source_value(const char *data, size_t len) {
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    ptn_string_buffer_append(&buffer, "<code><span style=\"color: #000000\">\n");
-    ptn_highlight_append_escaped(&buffer, input.data, input.len);
-    ptn_string_buffer_append(&buffer, "</span>\n</code>");
+    ptn_string_buffer_append(&buffer, "<pre><code style=\"color: #000000\">");
+
+    PtnHighlightColor current = PTN_HIGHLIGHT_HTML;
+    int in_php = 0;
+    size_t i = 0;
+    while (i < len) {
+        if (!in_php) {
+            size_t open_len = ptn_highlight_open_tag_len(data, len, i);
+            if (open_len != 0) {
+                ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_DEFAULT);
+                ptn_highlight_append_escaped(&buffer, data + i, open_len);
+                i += open_len;
+                in_php = 1;
+                continue;
+            }
+            ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_HTML);
+            ptn_highlight_append_escaped(&buffer, data + i, 1);
+            i++;
+            continue;
+        }
+
+        if (i + 2 <= len && data[i] == '?' && data[i + 1] == '>') {
+            size_t end = i + 2;
+            if (end < len && data[end] == '\n') {
+                end++;
+            }
+            ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_DEFAULT);
+            ptn_highlight_append_escaped(&buffer, data + i, end - i);
+            i = end;
+            in_php = 0;
+            continue;
+        }
+
+        if (i + 2 <= len && data[i] == '/' && data[i + 1] == '*') {
+            size_t end = i + 2;
+            while (end + 1 < len && !(data[end] == '*' && data[end + 1] == '/')) {
+                end++;
+            }
+            if (end + 1 < len) {
+                end += 2;
+            } else {
+                end = len;
+            }
+            end = ptn_highlight_consume_trailing_whitespace(data, len, end);
+            ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_COMMENT);
+            ptn_highlight_append_escaped(&buffer, data + i, end - i);
+            i = end;
+            continue;
+        }
+
+        if (
+            (i + 2 <= len && data[i] == '/' && data[i + 1] == '/') ||
+            data[i] == '#'
+        ) {
+            size_t end = i;
+            while (end < len && data[end] != '\n') {
+                end++;
+            }
+            if (end < len) {
+                end++;
+            }
+            ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_COMMENT);
+            ptn_highlight_append_escaped(&buffer, data + i, end - i);
+            i = end;
+            continue;
+        }
+
+        if (data[i] == '\'' || data[i] == '"') {
+            char quote = data[i];
+            size_t end = i + 1;
+            while (end < len) {
+                if (data[end] == '\\' && end + 1 < len) {
+                    end += 2;
+                    continue;
+                }
+                if (data[end] == quote) {
+                    end++;
+                    break;
+                }
+                end++;
+            }
+            end = ptn_highlight_consume_trailing_inline_space(data, len, end);
+            ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_STRING);
+            ptn_highlight_append_escaped(&buffer, data + i, end - i);
+            i = end;
+            continue;
+        }
+
+        if (data[i] == '$' && i + 1 < len && ptn_highlight_ident_start((unsigned char)data[i + 1])) {
+            size_t end = i + 2;
+            while (end < len && ptn_highlight_ident_part((unsigned char)data[end])) {
+                end++;
+            }
+            end = ptn_highlight_consume_trailing_inline_space(data, len, end);
+            ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_DEFAULT);
+            ptn_highlight_append_escaped(&buffer, data + i, end - i);
+            i = end;
+            continue;
+        }
+
+        if (ptn_highlight_ident_start((unsigned char)data[i])) {
+            size_t token_end = i + 1;
+            while (token_end < len && ptn_highlight_ident_part((unsigned char)data[token_end])) {
+                token_end++;
+            }
+            size_t emit_end = ptn_highlight_consume_trailing_inline_space(data, len, token_end);
+            PtnHighlightColor color = ptn_highlight_keyword(data + i, token_end - i)
+                ? PTN_HIGHLIGHT_KEYWORD
+                : PTN_HIGHLIGHT_DEFAULT;
+            ptn_highlight_set_color(&buffer, &current, color);
+            ptn_highlight_append_escaped(&buffer, data + i, emit_end - i);
+            i = emit_end;
+            continue;
+        }
+
+        if (isdigit((unsigned char)data[i])) {
+            size_t end = i + 1;
+            while (end < len && (isalnum((unsigned char)data[end]) || data[end] == '.' || data[end] == '_')) {
+                end++;
+            }
+            end = ptn_highlight_consume_trailing_inline_space(data, len, end);
+            ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_DEFAULT);
+            ptn_highlight_append_escaped(&buffer, data + i, end - i);
+            i = end;
+            continue;
+        }
+
+        ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_KEYWORD);
+        ptn_highlight_append_escaped(&buffer, data + i, 1);
+        i++;
+    }
+
+    ptn_highlight_set_color(&buffer, &current, PTN_HIGHLIGHT_HTML);
+    ptn_string_buffer_append(&buffer, "</code></pre>");
     return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static PtnValue ptn_highlight_string_value(PtnStringOperand input) {
+    return ptn_highlight_php_source_value(input.data, input.len);
 }
 
 static void ptn_guard_source_highlight_output_buffer_handler(
@@ -37371,6 +37621,28 @@ static void ptn_guard_source_highlight_output_buffer_handler(
     }
 }
 
+static int ptn_highlight_read_data_url(const char *path, unsigned char **data_out, size_t *len_out) {
+    if (strncmp(path, "data:", 5) != 0) {
+        return 0;
+    }
+    const char *comma = strchr(path + 5, ',');
+    if (comma == NULL) {
+        return -1;
+    }
+    const char *payload = comma + 1;
+    size_t payload_len = strlen(payload);
+    unsigned char *data = malloc(payload_len == 0 ? 1 : payload_len);
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (payload_len != 0) {
+        memcpy(data, payload, payload_len);
+    }
+    *data_out = data;
+    *len_out = payload_len;
+    return 1;
+}
+
 static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     ptn_guard_source_highlight_output_buffer_handler(runtime, "highlight_file", line);
     PtnStringOperand path_operand = ptn_internal_expect_string_arg(runtime, "highlight_file", 1, "filename", args[0], line);
@@ -37383,7 +37655,10 @@ static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, co
 
     unsigned char *data = NULL;
     size_t data_len = 0;
-    int read_result = ptn_read_file_bytes(path, &data, &data_len);
+    int read_result = ptn_highlight_read_data_url(path, &data, &data_len);
+    if (read_result == 0) {
+        read_result = ptn_read_file_bytes(path, &data, &data_len);
+    }
     if (read_result <= 0) {
         const char *reason = read_result == 0 ? strerror(errno) : "Failed to read stream";
         ptn_emit_highlight_file_open_warnings(runtime, path, reason, line);

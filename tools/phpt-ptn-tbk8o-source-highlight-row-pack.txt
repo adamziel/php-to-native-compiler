@@ -1,0 +1,8 @@
+# ptn-tbk8o focused ext/standard source highlighter row pack.
+# Source bucket: full php-src PHPT corpus revision
+# 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+ext/standard/tests/strings/005.phpt
+ext/standard/tests/strings/006.phpt
+ext/standard/tests/strings/show_source_basic.phpt
+ext/standard/tests/strings/show_source_variation1.phpt
+ext/standard/tests/strings/show_source_variation2.phpt
