@@ -972,6 +972,13 @@ fn lexer_decodes_ascii_double_quoted_octal_and_hex_escapes() {
 }
 
 #[test]
+fn lexer_decodes_double_quoted_unicode_codepoint_escapes() {
+    let tokens = lexer::lex("<?php \"\\u{20bb7}\" \"\\u{41}\"").unwrap();
+    assert!(matches!(&tokens[1].kind, TokenKind::String(value) if value == "𠮷"));
+    assert!(matches!(&tokens[2].kind, TokenKind::String(value) if value == "A"));
+}
+
+#[test]
 fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
     let source = concat!(
         "<?php $left = <<<TXT\n",
@@ -10160,6 +10167,29 @@ fn compile_flush_and_binary_prefixed_strings_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "string(6) \"binary\"\nstring(6) \"binary\"\nxy\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unicode_codepoint_string_escape_to_native_binary() {
+    let root = temp_dir("ptn-native-unicode-codepoint-string-escape");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unicode-codepoint-string-escape.php");
+    let output = root.join("unicode-codepoint-string-escape-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(bin2hex(\"\\u{20bb7}\"), strlen(\"\\u{20bb7}\"), \"\\u{41}\", bin2hex(\"\\u{d800}\"));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"f0a0aeb7\"\nint(4)\nstring(1) \"A\"\nstring(6) \"eda080\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

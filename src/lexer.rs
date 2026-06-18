@@ -806,6 +806,31 @@ impl<'a> Lexer<'a> {
                         }
                         continue;
                     }
+                    'u' if self.rest().starts_with("u{") => {
+                        self.bump_char();
+                        self.bump_char();
+                        let mut digits = String::new();
+                        while let Some(hex) = self.peek_char() {
+                            if hex.is_ascii_hexdigit() {
+                                digits.push(hex);
+                                self.bump_char();
+                            } else {
+                                break;
+                            }
+                        }
+                        if !digits.is_empty() && self.peek_char() == Some('}') {
+                            self.bump_char();
+                            if let Ok(value) = u32::from_str_radix(&digits, 16) {
+                                if value <= 0x10ffff {
+                                    push_php_codepoint_escape(&mut literal, value);
+                                    continue;
+                                }
+                            }
+                        }
+                        literal.push_str("\\u{");
+                        literal.push_str(&digits);
+                        continue;
+                    }
                     '0'..='7' => {
                         let mut digits = String::new();
                         for _ in 0..3 {
@@ -1830,5 +1855,27 @@ fn push_php_string_byte(value: &mut String, byte: u8) {
             char::from_u32(PHP_BINARY_BYTE_SENTINEL_BASE + byte as u32)
                 .expect("PHP binary-byte sentinel must be a Unicode scalar"),
         );
+    }
+}
+
+fn push_php_codepoint_escape(value: &mut String, codepoint: u32) {
+    if let Some(ch) = char::from_u32(codepoint) {
+        value.push(ch);
+        return;
+    }
+    if codepoint <= 0x7f {
+        push_php_string_byte(value, codepoint as u8);
+    } else if codepoint <= 0x7ff {
+        push_php_string_byte(value, (0xc0 | (codepoint >> 6)) as u8);
+        push_php_string_byte(value, (0x80 | (codepoint & 0x3f)) as u8);
+    } else if codepoint <= 0xffff {
+        push_php_string_byte(value, (0xe0 | (codepoint >> 12)) as u8);
+        push_php_string_byte(value, (0x80 | ((codepoint >> 6) & 0x3f)) as u8);
+        push_php_string_byte(value, (0x80 | (codepoint & 0x3f)) as u8);
+    } else {
+        push_php_string_byte(value, (0xf0 | (codepoint >> 18)) as u8);
+        push_php_string_byte(value, (0x80 | ((codepoint >> 12) & 0x3f)) as u8);
+        push_php_string_byte(value, (0x80 | ((codepoint >> 6) & 0x3f)) as u8);
+        push_php_string_byte(value, (0x80 | (codepoint & 0x3f)) as u8);
     }
 }

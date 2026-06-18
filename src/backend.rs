@@ -2293,11 +2293,13 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("mb_parse_str") && argument_index == 1 {
         return Some("result");
     }
-    if name.eq_ignore_ascii_case("mb_ereg") && argument_index == 2 {
-        return Some("regs");
+    if (name.eq_ignore_ascii_case("mb_ereg") || name.eq_ignore_ascii_case("mb_eregi"))
+        && argument_index == 2
+    {
+        return Some("matches");
     }
     if name.eq_ignore_ascii_case("mb_convert_variables") && argument_index >= 2 {
-        return Some("vars");
+        return Some("var");
     }
     if name.eq_ignore_ascii_case("xml_parse_into_struct") && argument_index == 2 {
         return Some("values");

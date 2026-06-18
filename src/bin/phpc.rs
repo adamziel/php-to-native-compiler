@@ -213,6 +213,11 @@ struct RuntimeIni {
     internal_encoding: Option<String>,
     input_encoding: Option<String>,
     output_encoding: Option<String>,
+    mbstring_internal_encoding: Option<String>,
+    mbstring_http_output: Option<String>,
+    mbstring_language: Option<String>,
+    mbstring_detect_order: Option<String>,
+    mbstring_substitute_character: Option<String>,
     zend_assertions: Option<String>,
     memory_limit: Option<String>,
     max_memory_limit: Option<String>,
@@ -395,6 +400,16 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.input_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("output_encoding") {
         ini.output_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mbstring.internal_encoding") {
+        ini.mbstring_internal_encoding = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mbstring.http_output") {
+        ini.mbstring_http_output = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mbstring.language") {
+        ini.mbstring_language = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mbstring.detect_order") {
+        ini.mbstring_detect_order = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("mbstring.substitute_character") {
+        ini.mbstring_substitute_character = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.assertions") {
         ini.zend_assertions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("zend.exception_ignore_args") {
@@ -720,6 +735,11 @@ fn compile_and_run(
         internal_encoding: ini.internal_encoding.clone(),
         input_encoding: ini.input_encoding.clone(),
         output_encoding: ini.output_encoding.clone(),
+        mbstring_internal_encoding: ini.mbstring_internal_encoding.clone(),
+        mbstring_http_output: ini.mbstring_http_output.clone(),
+        mbstring_language: ini.mbstring_language.clone(),
+        mbstring_detect_order: ini.mbstring_detect_order.clone(),
+        mbstring_substitute_character: ini.mbstring_substitute_character.clone(),
         zend_assertions: ini.zend_assertions.clone(),
         memory_limit: ini.memory_limit.clone(),
         max_memory_limit: ini.max_memory_limit.clone(),
@@ -815,6 +835,24 @@ fn compile_and_run(
     }
     if let Some(output_encoding) = &ini.output_encoding {
         command.env("PTN_OUTPUT_ENCODING", output_encoding);
+    }
+    if let Some(mbstring_internal_encoding) = &ini.mbstring_internal_encoding {
+        command.env("PTN_MBSTRING_INTERNAL_ENCODING", mbstring_internal_encoding);
+    }
+    if let Some(mbstring_http_output) = &ini.mbstring_http_output {
+        command.env("PTN_MBSTRING_HTTP_OUTPUT", mbstring_http_output);
+    }
+    if let Some(mbstring_language) = &ini.mbstring_language {
+        command.env("PTN_MBSTRING_LANGUAGE", mbstring_language);
+    }
+    if let Some(mbstring_detect_order) = &ini.mbstring_detect_order {
+        command.env("PTN_MBSTRING_DETECT_ORDER", mbstring_detect_order);
+    }
+    if let Some(mbstring_substitute_character) = &ini.mbstring_substitute_character {
+        command.env(
+            "PTN_MBSTRING_SUBSTITUTE_CHARACTER",
+            mbstring_substitute_character,
+        );
     }
     if let Some(zend_assertions) = &ini.zend_assertions {
         command.env("PTN_ZEND_ASSERTIONS", zend_assertions);

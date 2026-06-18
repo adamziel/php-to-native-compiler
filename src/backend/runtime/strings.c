@@ -1718,6 +1718,42 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PREG_JIT_STACKLIMIT_ERROR);
         return 1;
     }
+    if (strcmp(name, "MB_CASE_UPPER") == 0) {
+        *out = ptn_int(PTN_MB_CASE_UPPER);
+        return 1;
+    }
+    if (strcmp(name, "MB_CASE_LOWER") == 0) {
+        *out = ptn_int(PTN_MB_CASE_LOWER);
+        return 1;
+    }
+    if (strcmp(name, "MB_CASE_TITLE") == 0) {
+        *out = ptn_int(PTN_MB_CASE_TITLE);
+        return 1;
+    }
+    if (strcmp(name, "MB_CASE_FOLD") == 0) {
+        *out = ptn_int(PTN_MB_CASE_FOLD);
+        return 1;
+    }
+    if (strcmp(name, "MB_CASE_UPPER_SIMPLE") == 0) {
+        *out = ptn_int(PTN_MB_CASE_UPPER_SIMPLE);
+        return 1;
+    }
+    if (strcmp(name, "MB_CASE_LOWER_SIMPLE") == 0) {
+        *out = ptn_int(PTN_MB_CASE_LOWER_SIMPLE);
+        return 1;
+    }
+    if (strcmp(name, "MB_CASE_TITLE_SIMPLE") == 0) {
+        *out = ptn_int(PTN_MB_CASE_TITLE_SIMPLE);
+        return 1;
+    }
+    if (strcmp(name, "MB_CASE_FOLD_SIMPLE") == 0) {
+        *out = ptn_int(PTN_MB_CASE_FOLD_SIMPLE);
+        return 1;
+    }
+    if (strcmp(name, "MB_ONIGURUMA_VERSION") == 0) {
+        *out = ptn_string(PTN_MB_ONIGURUMA_VERSION);
+        return 1;
+    }
     if (strcmp(name, "HTML_SPECIALCHARS") == 0) {
         *out = ptn_int(PTN_HTML_SPECIALCHARS);
         return 1;
