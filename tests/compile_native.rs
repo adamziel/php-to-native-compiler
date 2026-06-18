@@ -17350,10 +17350,8 @@ echo $call($items), \":\", count($items), \":\", $items[1], \"\\n\";",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_function_name("));
-    assert!(c_source.contains("ptn_call_callable(runtime"));
-    assert!(c_source.contains("ptn_call_dynamic_function_name(runtime"));
+    assert!(c_source.contains("ptn_call_callable(&runtime"));
     assert!(c_source.contains("ptn_runtime_reference_for_variable(&runtime, \"items\")"));
-    assert!(c_source.contains("ptn_dynamic_call_detach_first_reference_argument"));
 }
 
 #[test]

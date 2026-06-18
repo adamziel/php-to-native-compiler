@@ -90,7 +90,7 @@ fi
 
 mkdir -p "$out_dir"
 
-timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+timestamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
 resolved_manifest="$out_dir/manifest-$timestamp.txt"
 runnable_manifest="$out_dir/runnable-$timestamp.txt"
 classification_tsv="$out_dir/classification-$timestamp.tsv"
