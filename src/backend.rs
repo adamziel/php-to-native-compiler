@@ -53,6 +53,8 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("ArgumentCountError", "TypeError"),
     ("ValueError", "Error"),
     ("Uri\\InvalidUriException", "ValueError"),
+    ("DateRangeError", "ValueError"),
+    ("DateObjectError", "Error"),
     ("ArithmeticError", "Error"),
     ("DivisionByZeroError", "ArithmeticError"),
     ("AssertionError", "Error"),
@@ -4057,6 +4059,25 @@ fn emit_user_function_dispatch(
     );
     out.push_str("    if (found) {\n");
     out.push_str("        return result;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_static_call_separator != NULL && ptn_static_call_separator != lookup_name && ptn_static_call_separator[2] != '\\0') {\n");
+    out.push_str("        size_t ptn_static_call_class_len = (size_t)(ptn_static_call_separator - lookup_name);\n");
+    out.push_str("        char *ptn_static_call_class = malloc(ptn_static_call_class_len + 1);\n");
+    out.push_str("        if (ptn_static_call_class == NULL) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str(
+        "        memcpy(ptn_static_call_class, lookup_name, ptn_static_call_class_len);\n",
+    );
+    out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
+    out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
+    out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
+    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+    out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
+    out.push_str("            free(ptn_static_call_class);\n");
+    out.push_str("            return ptn_static_call_result;\n");
+    out.push_str("        }\n");
+    out.push_str("        free(ptn_static_call_class);\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
     out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
@@ -16907,6 +16928,33 @@ fn emit_deprecated_function_warning_parts(
     }
 }
 
+fn builtin_constant_deprecated_warning(name: &str) -> Option<String> {
+    if name
+        .trim_start_matches('\\')
+        .eq_ignore_ascii_case("DATE_RFC7231")
+    {
+        return Some(
+            "Constant DATE_RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
+                .to_string(),
+        );
+    }
+    None
+}
+
+fn builtin_class_constant_deprecated_warning(class_name: &str, name: &str) -> Option<String> {
+    if name.eq_ignore_ascii_case("RFC7231")
+        && (class_name.eq_ignore_ascii_case("DateTime")
+            || class_name.eq_ignore_ascii_case("DateTimeImmutable")
+            || class_name.eq_ignore_ascii_case("DateTimeInterface"))
+    {
+        return Some(
+            "Constant DateTimeInterface::RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
+                .to_string(),
+        );
+    }
+    None
+}
+
 fn emit_dynamic_method_deprecated_warning(
     out: &mut String,
     indent: &str,
@@ -17620,6 +17668,10 @@ impl ValueEmitter {
         name: &str,
     ) -> Option<(String, Option<&DeprecatedMessageDependency>)> {
         let resolved_class_name = self.static_member_class_name(class_name);
+        if let Some(message) = builtin_class_constant_deprecated_warning(&resolved_class_name, name)
+        {
+            return Some((message, None));
+        }
         let class = class_by_name(&self.classes, &resolved_class_name)?;
         let constant = class_constant_lookup_chain(class, &self.classes)
             .into_iter()
@@ -21097,11 +21149,13 @@ impl ValueEmitter {
                 deprecated_message_dependency,
                 line,
             } => {
-                let message = deprecated_warning_message_for_parts(
-                    &format!("Constant {}", name.trim_start_matches('\\')),
-                    deprecated_message.as_deref(),
-                    deprecated_since.as_deref(),
-                );
+                let message = builtin_constant_deprecated_warning(name).or_else(|| {
+                    deprecated_warning_message_for_parts(
+                        &format!("Constant {}", name.trim_start_matches('\\')),
+                        deprecated_message.as_deref(),
+                        deprecated_since.as_deref(),
+                    )
+                });
                 if let Some(dependency) = deprecated_message_dependency {
                     let result_temp = self.next_temp();
                     out.push_str("    PtnValue ");

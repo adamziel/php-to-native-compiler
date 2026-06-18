@@ -12362,6 +12362,169 @@ p=02-00-04 06:08:00 (unknown)\n"
 }
 
 #[test]
+fn compile_date_object_aliases_and_round_trips_to_native_binary() {
+    let root = temp_dir("ptn-native-date-object-aliases-round-trips");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-object-aliases-round-trips.php");
+    let output = root.join("date-object-aliases-round-trips-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+
+$mutable = date_create('2020-01-02 03:04:05');
+echo date_format($mutable, 'Y-m-d H:i:s T e'), "\n";
+date_modify($mutable, '+2 day');
+echo $mutable->format('Y-m-d'), "\n";
+
+$interval = new DateInterval('P1DT2H3M4S');
+date_add($mutable, $interval);
+echo date_format($mutable, 'Y-m-d H:i:s'), "\n";
+date_sub($mutable, new DateInterval('PT4S'));
+echo $mutable->format('Y-m-d H:i:s'), "\n";
+echo date_interval_format($interval, '%D %H:%I:%S'), "\n";
+
+$immutable = date_create_immutable('2020-01-01 00:00:00');
+$next = $immutable->add(new DateInterval('P1D'));
+echo $immutable->format('Y-m-d'), '/', $next->format('Y-m-d'), "\n";
+
+$fromMutable = DateTimeImmutable::createFromMutable($mutable);
+$fromImmutable = DateTime::createFromImmutable($fromMutable);
+var_dump($fromMutable instanceof DateTimeImmutable, $fromImmutable instanceof DateTime);
+
+$payload = serialize($mutable);
+$roundTrip = unserialize($payload);
+echo $roundTrip->format('Y-m-d H:i:s T e'), "\n";
+
+$tz = new DateTimeZone('Europe/Berlin');
+$tzRoundTrip = unserialize(serialize($tz));
+$tzPayload = $tzRoundTrip->__serialize();
+var_dump($tzRoundTrip->getName(), $tzPayload['timezone']);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2020-01-02 03:04:05 UTC UTC\n",
+            "2020-01-04\n",
+            "2020-01-05 05:07:09\n",
+            "2020-01-05 05:07:05\n",
+            "01 02:03:04\n",
+            "2020-01-01/2020-01-02\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "2020-01-05 05:07:05 UTC UTC\n",
+            "string(13) \"Europe/Berlin\"\n",
+            "string(13) \"Europe/Berlin\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_date_create_immutable"));
+    assert!(c_source.contains("ptn_internal_date_interval_format"));
+    assert!(c_source.contains("createFromMutable"));
+}
+
+#[test]
+fn compile_datetime_timestamp_microseconds_and_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-datetime-timestamp-microseconds-offsets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("datetime-timestamp-microseconds-offsets.php");
+    let output = root.join("datetime-timestamp-microseconds-offsets-bin");
+    fs::write(
+        &input,
+        r#"<?php
+date_default_timezone_set('UTC');
+
+$at = new DateTime('@1217184864');
+echo $at->format('Y-m-d H:i:s.u e p'), "\n";
+
+$factory = DateTimeImmutable::createFromTimestamp(0.123456);
+echo $factory->format('U.u e p'), "\n";
+class MyDateTime extends DateTime {}
+echo get_class(MyDateTime::createFromTimestamp(0)), "\n";
+class MyDateTimeImmutable extends DateTimeImmutable {}
+echo get_class(MyDateTimeImmutable::createFromMutable(new DateTime('2020-01-01 00:00:00'))), "\n";
+try {
+    DateTime::createFromTimestamp(NAN);
+} catch (Throwable $e) {
+    echo get_class($e), "\n";
+}
+
+$clone = clone $at;
+$clone->setTime(1, 2, 3, 456789);
+echo $at->format('H:i:s.u'), '/', $clone->format('H:i:s.u'), "\n";
+
+$immutable = new DateTimeImmutable('2020-03-10T12:13:14.987654Z');
+$changed = $immutable->setTime(5, 6, 7, 890);
+echo $immutable->format('H:i:s.u e p'), '/', $changed->format('H:i:s.u e p'), "\n";
+
+$chicago = new DateTime('2020-03-10 12:00:00 America/Chicago');
+echo date_offset_get($chicago), ' ', $chicago->format('T P p'), "\n";
+
+echo gmdate('Y-m-d H:i:s', strtotime('1 Jul 06 14:27:30 +0200')), "\n";
+$parsed = date_parse('2009-02-27 10:00:00.5');
+echo $parsed['year'], ' ', $parsed['month'], ' ', $parsed['day'], ' ', $parsed['hour'], ' ', $parsed['fraction'], "\n";
+var_dump(date_get_last_errors());
+
+$set = new DateTime('2009-01-30 19:34:10', new DateTimeZone('Europe/London'));
+date_date_set($set, 2008, 2, 1);
+echo $set->format(DateTime::RFC2822), "\n";
+date_isodate_set($set, 2009, 30, 3);
+echo $set->format('D M j'), "\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "2008-07-27 18:54:24.000000 +00:00 +00:00\n",
+            "0.123456 +00:00 +00:00\n",
+            "MyDateTime\n",
+            "MyDateTimeImmutable\n",
+            "DateRangeError\n",
+            "18:54:24.000000/01:02:03.456789\n",
+            "12:13:14.987654 Z Z/05:06:07.000890 Z Z\n",
+            "-18000 CDT -05:00 -05:00\n",
+            "2006-07-01 12:27:30\n",
+            "2009 2 27 10 0.5\n",
+            "bool(false)\n",
+            "Fri, 01 Feb 2008 19:34:10 +0000\n",
+            "Wed Jul 22\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("createFromTimestamp"));
+    assert!(c_source.contains("ptn_internal_date_offset_get"));
+    assert!(c_source.contains("ptn_internal_strtotime"));
+    assert!(c_source.contains("ptn_internal_date_parse"));
+}
+
+#[test]
 fn compile_sleep_usleep_internals_to_native_binary() {
     let root = temp_dir("ptn-native-sleep-usleep-internals");
     fs::create_dir_all(&root).unwrap();

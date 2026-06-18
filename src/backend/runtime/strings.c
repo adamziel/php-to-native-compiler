@@ -2057,8 +2057,12 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_string("D, d M y H:i:s O");
         return 1;
     }
-    if (strcmp(name, "DATE_RFC850") == 0 || strcmp(name, "DATE_RFC1036") == 0) {
+    if (strcmp(name, "DATE_RFC850") == 0) {
         *out = ptn_string("l, d-M-y H:i:s T");
+        return 1;
+    }
+    if (strcmp(name, "DATE_RFC1036") == 0) {
+        *out = ptn_string("D, d M y H:i:s O");
         return 1;
     }
     if (

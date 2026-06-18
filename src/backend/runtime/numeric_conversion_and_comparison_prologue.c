@@ -1575,6 +1575,12 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "Uri\\InvalidUriException")) {
         return "Uri\\InvalidUriException";
     }
+    if (ptn_exception_name_equal(class_name, "DateRangeError")) {
+        return "DateRangeError";
+    }
+    if (ptn_exception_name_equal(class_name, "DateObjectError")) {
+        return "DateObjectError";
+    }
     if (ptn_exception_name_equal(class_name, "ArithmeticError")) {
         return "ArithmeticError";
     }
@@ -1619,6 +1625,8 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "ArgumentCountError") ||
             ptn_exception_name_equal(class_name, "ValueError") ||
             ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
+            ptn_exception_name_equal(class_name, "DateRangeError") ||
+            ptn_exception_name_equal(class_name, "DateObjectError") ||
             ptn_exception_name_equal(class_name, "ArithmeticError") ||
             ptn_exception_name_equal(class_name, "DivisionByZeroError") ||
             ptn_exception_name_equal(class_name, "UnhandledMatchError") ||
@@ -1627,7 +1635,8 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "UnhandledMatchError");
     }
     if (ptn_exception_name_equal(type_name, "ValueError")) {
-        return ptn_exception_name_equal(class_name, "Uri\\InvalidUriException");
+        return ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
+            ptn_exception_name_equal(class_name, "DateRangeError");
     }
     if (ptn_exception_name_equal(type_name, "TypeError")) {
         return ptn_exception_name_equal(class_name, "ArgumentCountError");
@@ -3180,6 +3189,10 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_string("Y-m-d\\TH:i:sO");
             return 1;
         }
+        if (strcmp(constant, "ISO8601_EXPANDED") == 0) {
+            *out = ptn_string("X-m-d\\TH:i:sP");
+            return 1;
+        }
         if (strcmp(constant, "RFC3339_EXTENDED") == 0) {
             *out = ptn_string("Y-m-d\\TH:i:s.vP");
             return 1;
@@ -3192,8 +3205,16 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_string("l, d-M-y H:i:s T");
             return 1;
         }
-        if (strcmp(constant, "RFC1036") == 0 || strcmp(constant, "RFC1123") == 0 || strcmp(constant, "RFC2822") == 0 || strcmp(constant, "RSS") == 0) {
+        if (strcmp(constant, "RFC1036") == 0) {
+            *out = ptn_string("D, d M y H:i:s O");
+            return 1;
+        }
+        if (strcmp(constant, "RFC1123") == 0 || strcmp(constant, "RFC2822") == 0 || strcmp(constant, "RSS") == 0) {
             *out = ptn_string("D, d M Y H:i:s O");
+            return 1;
+        }
+        if (strcmp(constant, "RFC7231") == 0) {
+            *out = ptn_string("D, d M Y H:i:s \\G\\M\\T");
             return 1;
         }
     }
