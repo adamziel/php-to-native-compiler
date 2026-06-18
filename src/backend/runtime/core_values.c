@@ -680,6 +680,7 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
     const PtnReference *reference,
     PtnValue value,
     int reference_context,
+    size_t line,
     PtnValue *out
 );
 static PTN_UNUSED PtnValue ptn_cast_string(PtnValue value);

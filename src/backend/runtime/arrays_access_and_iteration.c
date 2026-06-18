@@ -1790,7 +1790,8 @@ static PTN_UNUSED void ptn_throw_property_type_assignment_error(
     const char *property,
     const char *type_text,
     PtnValue value,
-    int reference_context
+    int reference_context,
+    size_t line
 ) {
     char message[384];
     const char *given = ptn_property_assignment_given_name(value);
@@ -1820,7 +1821,7 @@ static PTN_UNUSED void ptn_throw_property_type_assignment_error(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "TypeError", message);
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED int ptn_property_string_is_numeric(PtnString string, double *number) {
@@ -2252,9 +2253,11 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
     const char *property,
     PtnValue value,
     int reference_context,
+    size_t line,
     PtnValue *out
 ) {
     PtnValue resolved = ptn_value_deref(value);
+    int weak_scalar_coercion = runtime == NULL || !runtime->strict_types;
     if (kind == PTN_PROPERTY_TYPE_NONE) {
         *out = ptn_value_clone(resolved);
         return 1;
@@ -2274,7 +2277,8 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
             property,
             type_text,
             resolved,
-            reference_context
+            reference_context,
+            line
         );
         return 0;
     }
@@ -2292,15 +2296,17 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
                 *out = ptn_value_clone(resolved);
                 return 1;
             }
-            if (resolved.type == PTN_BOOL) {
+            if (weak_scalar_coercion && resolved.type == PTN_BOOL) {
                 *out = ptn_cast_int(resolved);
                 return 1;
             }
-            if (resolved.type == PTN_FLOAT && ptn_property_double_fits_int(resolved.as.floating)) {
+            if (weak_scalar_coercion &&
+                resolved.type == PTN_FLOAT &&
+                ptn_property_double_fits_int(resolved.as.floating)) {
                 *out = ptn_cast_int(resolved);
                 return 1;
             }
-            if (resolved.type == PTN_STRING) {
+            if (weak_scalar_coercion && resolved.type == PTN_STRING) {
                 double number = 0.0;
                 if (ptn_property_string_is_numeric(resolved.as.string, &number) &&
                     ptn_property_double_fits_int(number)) {
@@ -2314,11 +2320,12 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
                 *out = ptn_value_clone(resolved);
                 return 1;
             }
-            if (resolved.type == PTN_INT || resolved.type == PTN_BOOL) {
+            if (resolved.type == PTN_INT ||
+                (weak_scalar_coercion && resolved.type == PTN_BOOL)) {
                 *out = ptn_cast_float(resolved);
                 return 1;
             }
-            if (resolved.type == PTN_STRING) {
+            if (weak_scalar_coercion && resolved.type == PTN_STRING) {
                 double number = 0.0;
                 if (ptn_property_string_is_numeric(resolved.as.string, &number)) {
                     *out = ptn_float(number);
@@ -2328,11 +2335,22 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
             break;
         case PTN_PROPERTY_TYPE_STRING:
             if (resolved.type == PTN_STRING ||
-                resolved.type == PTN_INT ||
-                resolved.type == PTN_FLOAT ||
-                resolved.type == PTN_BOOL) {
+                (weak_scalar_coercion &&
+                 (resolved.type == PTN_INT ||
+                  resolved.type == PTN_FLOAT ||
+                  resolved.type == PTN_BOOL))) {
                 *out = ptn_cast_string(resolved);
                 return 1;
+            }
+            if (weak_scalar_coercion && resolved.type == PTN_OBJECT) {
+                PtnStringOperand object_string;
+                if (ptn_try_object_to_string_operand(runtime, resolved, line, &object_string)) {
+                    char *copy = ptn_duplicate_string_len(object_string.data, object_string.len);
+                    size_t len = object_string.len;
+                    ptn_string_operand_free(object_string);
+                    *out = ptn_owned_string_len(copy, len);
+                    return 1;
+                }
             }
             break;
         case PTN_PROPERTY_TYPE_BOOL:
@@ -2340,9 +2358,10 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
                 *out = ptn_value_clone(resolved);
                 return 1;
             }
-            if (resolved.type == PTN_INT ||
-                resolved.type == PTN_FLOAT ||
-                resolved.type == PTN_STRING) {
+            if (weak_scalar_coercion &&
+                (resolved.type == PTN_INT ||
+                 resolved.type == PTN_FLOAT ||
+                 resolved.type == PTN_STRING)) {
                 *out = ptn_bool(ptn_is_truthy(resolved));
                 return 1;
             }
@@ -2378,8 +2397,183 @@ static PTN_UNUSED int ptn_property_type_coerce_assignment(
         property,
         type_text,
         resolved,
-        reference_context
+        reference_context,
+        line
     );
+    return 0;
+}
+
+static PTN_UNUSED int ptn_property_type_try_coerce_assignment(
+    PtnRuntime *runtime,
+    PtnPropertyTypeKind kind,
+    const char *type_class_name,
+    const char *type_text,
+    int allows_null,
+    PtnValue value,
+    PtnValue *out
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    int weak_scalar_coercion = runtime == NULL || !runtime->strict_types;
+    if (kind == PTN_PROPERTY_TYPE_NONE || kind == PTN_PROPERTY_TYPE_MIXED) {
+        *out = ptn_value_clone(resolved);
+        return 1;
+    }
+    if (resolved.type == PTN_NULL) {
+        if (allows_null || kind == PTN_PROPERTY_TYPE_NULL) {
+            *out = ptn_null();
+            return 1;
+        }
+        return 0;
+    }
+    switch (kind) {
+        case PTN_PROPERTY_TYPE_NULL:
+            return 0;
+        case PTN_PROPERTY_TYPE_ARRAY:
+            if (resolved.type == PTN_ARRAY) {
+                *out = ptn_value_clone(resolved);
+                return 1;
+            }
+            return 0;
+        case PTN_PROPERTY_TYPE_INT:
+            if (resolved.type == PTN_INT) {
+                *out = ptn_value_clone(resolved);
+                return 1;
+            }
+            if (weak_scalar_coercion && resolved.type == PTN_BOOL) {
+                *out = ptn_cast_int(resolved);
+                return 1;
+            }
+            if (weak_scalar_coercion &&
+                resolved.type == PTN_FLOAT &&
+                ptn_property_double_fits_int(resolved.as.floating)) {
+                *out = ptn_cast_int(resolved);
+                return 1;
+            }
+            if (weak_scalar_coercion && resolved.type == PTN_STRING) {
+                double number = 0.0;
+                if (ptn_property_string_is_numeric(resolved.as.string, &number) &&
+                    ptn_property_double_fits_int(number)) {
+                    *out = ptn_int((int64_t)number);
+                    return 1;
+                }
+            }
+            return 0;
+        case PTN_PROPERTY_TYPE_FLOAT:
+            if (resolved.type == PTN_FLOAT) {
+                *out = ptn_value_clone(resolved);
+                return 1;
+            }
+            if (resolved.type == PTN_INT ||
+                (weak_scalar_coercion && resolved.type == PTN_BOOL)) {
+                *out = ptn_cast_float(resolved);
+                return 1;
+            }
+            if (weak_scalar_coercion && resolved.type == PTN_STRING) {
+                double number = 0.0;
+                if (ptn_property_string_is_numeric(resolved.as.string, &number)) {
+                    *out = ptn_float(number);
+                    return 1;
+                }
+            }
+            return 0;
+        case PTN_PROPERTY_TYPE_STRING:
+            if (resolved.type == PTN_STRING ||
+                (weak_scalar_coercion &&
+                 (resolved.type == PTN_INT ||
+                  resolved.type == PTN_FLOAT ||
+                  resolved.type == PTN_BOOL))) {
+                *out = ptn_cast_string(resolved);
+                return 1;
+            }
+            return 0;
+        case PTN_PROPERTY_TYPE_BOOL:
+            if (resolved.type == PTN_BOOL) {
+                *out = ptn_value_clone(resolved);
+                return 1;
+            }
+            if (weak_scalar_coercion &&
+                (resolved.type == PTN_INT ||
+                 resolved.type == PTN_FLOAT ||
+                 resolved.type == PTN_STRING)) {
+                *out = ptn_bool(ptn_is_truthy(resolved));
+                return 1;
+            }
+            return 0;
+        case PTN_PROPERTY_TYPE_OBJECT:
+            if (resolved.type == PTN_OBJECT ||
+                resolved.type == PTN_CLOSURE ||
+                resolved.type == PTN_EXCEPTION) {
+                *out = ptn_value_clone(resolved);
+                return 1;
+            }
+            return 0;
+        case PTN_PROPERTY_TYPE_CLASS:
+            if (type_class_name != NULL &&
+                ptn_value_satisfies_class_type_hint(runtime, resolved, type_class_name)) {
+                *out = ptn_value_clone(resolved);
+                return 1;
+            }
+            return 0;
+        case PTN_PROPERTY_TYPE_TEXT:
+            return ptn_property_type_text_coerce_assignment(runtime, type_text, resolved, out);
+        case PTN_PROPERTY_TYPE_NONE:
+        case PTN_PROPERTY_TYPE_MIXED:
+            *out = ptn_value_clone(resolved);
+            return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_throw_unset_typed_property_magic_get_error(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnObjectPropertyMetadata *metadata,
+    PtnValue value,
+    size_t line
+) {
+    char message[512];
+    PtnValue resolved = ptn_value_deref(value);
+    const char *given = ptn_property_assignment_given_name(resolved);
+    const char *getter_class = receiver.type == PTN_OBJECT
+        ? receiver.as.object->class_name
+        : metadata->declaring_class;
+    const char *declared_type = metadata->type_text == NULL ? "mixed" : metadata->type_text;
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Value of type %s returned from %s::__get() must be compatible with unset property %s::$%s of type %s",
+        given,
+        getter_class,
+        metadata->declaring_class,
+        metadata->display_name,
+        declared_type
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED int ptn_coerce_unset_typed_property_magic_value(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnObjectPropertyMetadata *metadata,
+    PtnValue value,
+    size_t line,
+    PtnValue *out
+) {
+    if (ptn_property_type_try_coerce_assignment(
+        runtime,
+        metadata->type_kind,
+        metadata->type_class_name,
+        metadata->type_text,
+        metadata->type_allows_null,
+        value,
+        out
+    )) {
+        return 1;
+    }
+    ptn_throw_unset_typed_property_magic_get_error(runtime, receiver, metadata, value, line);
     return 0;
 }
 
@@ -2388,6 +2582,7 @@ static PTN_UNUSED int ptn_reference_property_type_source_coerce_assignment(
     const PtnReferencePropertyTypeSource *source,
     PtnValue value,
     int reference_context,
+    size_t line,
     PtnValue *out
 ) {
     return ptn_property_type_coerce_assignment(
@@ -2400,6 +2595,7 @@ static PTN_UNUSED int ptn_reference_property_type_source_coerce_assignment(
         source->property_name,
         value,
         reference_context,
+        line,
         out
     );
 }
@@ -2450,6 +2646,7 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
     const PtnReference *reference,
     PtnValue value,
     int reference_context,
+    size_t line,
     PtnValue *out
 ) {
     if (reference == NULL || reference->property_type_kind == PTN_PROPERTY_TYPE_NONE) {
@@ -2464,6 +2661,7 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
         &primary,
         value,
         reference_context,
+        line,
         &coerced
     )) {
         return 0;
@@ -2475,6 +2673,7 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
             &reference->property_type_sources[i],
             value,
             reference_context,
+            line,
             &next
         )) {
             ptn_value_destroy(&coerced);
@@ -2902,7 +3101,8 @@ static PTN_UNUSED void ptn_throw_readonly_property_initialize_error(
 static PTN_UNUSED void ptn_throw_uninitialized_typed_property_error(
     PtnRuntime *runtime,
     const char *declaring_class,
-    const char *property
+    const char *property,
+    size_t line
 ) {
     char message[256];
     int written = snprintf(
@@ -2915,7 +3115,7 @@ static PTN_UNUSED void ptn_throw_uninitialized_typed_property_error(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    ptn_throw_exception(runtime, "Error", message);
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED void ptn_throw_uninitialized_typed_property_reference_error(
@@ -3643,10 +3843,30 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     free(storage_key);
     if (entry == NULL) {
         if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
+            if (metadata->is_unset) {
+                PtnValue magic_value = ptn_null();
+                if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
+                    PtnValue coerced = ptn_null();
+                    if (!ptn_coerce_unset_typed_property_magic_value(
+                        runtime,
+                        receiver,
+                        metadata,
+                        magic_value,
+                        line,
+                        &coerced
+                    )) {
+                        ptn_value_destroy(&magic_value);
+                        return ptn_null();
+                    }
+                    ptn_value_destroy(&magic_value);
+                    return coerced;
+                }
+            }
             ptn_throw_uninitialized_typed_property_error(
                 runtime,
                 metadata->declaring_class,
-                metadata->display_name
+                metadata->display_name,
+                line
             );
             return ptn_null();
         }
@@ -3784,7 +4004,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
             ptn_throw_uninitialized_typed_property_error(
                 runtime,
                 metadata->declaring_class,
-                metadata->display_name
+                metadata->display_name,
+                line
             );
             return ptn_null();
         }
@@ -3878,7 +4099,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
             ptn_throw_uninitialized_typed_property_error(
                 runtime,
                 metadata->declaring_class,
-                metadata->display_name
+                metadata->display_name,
+                line
             );
             return ptn_null();
         }
@@ -3944,7 +4166,8 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
             ptn_throw_uninitialized_typed_property_error(
                 runtime,
                 metadata->declaring_class,
-                metadata->display_name
+                metadata->display_name,
+                line
             );
             return ptn_null();
         }
@@ -4306,6 +4529,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
             metadata->display_name,
             value,
             0,
+            line,
             &stored
         )) {
         ptn_array_key_free(key);
@@ -4459,6 +4683,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
             metadata->display_name,
             reference,
             0,
+            line,
             &coerced
         )) {
             ptn_array_key_free(key);
@@ -4472,6 +4697,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
                 reference.as.reference,
                 reference,
                 1,
+                line,
                 &existing_coerced
             )) {
                 ptn_value_destroy(&coerced);
@@ -4609,6 +4835,36 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (entry == NULL &&
+        metadata != NULL &&
+        metadata->is_unset &&
+        ptn_property_type_is_declared(metadata->type_kind)) {
+        PtnValue magic_value = ptn_null();
+        if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
+            if (magic_value.type == PTN_REFERENCE) {
+                PtnValue coerced = ptn_null();
+                if (!ptn_coerce_unset_typed_property_magic_value(
+                    runtime,
+                    receiver,
+                    metadata,
+                    magic_value,
+                    line,
+                    &coerced
+                )) {
+                    ptn_value_destroy(&magic_value);
+                    ptn_array_key_free(key);
+                    free(storage_key);
+                    return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+                }
+                ptn_reference_assign_publish_first(runtime, magic_value.as.reference, coerced);
+                ptn_value_destroy(&coerced);
+                ptn_array_key_free(key);
+                free(storage_key);
+                return magic_value;
+            }
+            ptn_value_destroy(&magic_value);
+        }
+    }
     if (metadata == NULL && entry == NULL) {
         PtnValue magic_value = ptn_null();
         if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {

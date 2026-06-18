@@ -2579,9 +2579,19 @@ impl Parser<'_> {
         class_name: &str,
     ) -> Result<(PropertyDecl, bool)> {
         let token = self.advance().clone();
-        let TokenKind::Variable(name) = token.kind else {
-            return Err(Diagnostic::new("expected property name", Some(token.span)));
+        let name = match token.kind {
+            TokenKind::Variable(name) => name,
+            _ => {
+                return Err(Diagnostic::parse_error(
+                    format!(
+                        "syntax error, unexpected {}, expecting variable",
+                        describe_unexpected_property_name_token(&token.kind)
+                    ),
+                    Some(token.span),
+                ));
+            }
         };
+        validate_property_type_allowed(class_name, &name, type_hint.as_ref(), token.span)?;
         validate_asymmetric_property_visibility(
             class_name,
             &name,
@@ -2630,6 +2640,7 @@ impl Parser<'_> {
                     Some(value.span()),
                 ));
             }
+            validate_property_default_value_type(class_name, &name, type_hint.as_ref(), &value)?;
             Some(value)
         } else {
             None
@@ -2758,12 +2769,19 @@ impl Parser<'_> {
         class_name: &str,
     ) -> Result<StaticPropertyDecl> {
         let token = self.advance().clone();
-        let TokenKind::Variable(name) = token.kind else {
-            return Err(Diagnostic::new(
-                "expected static property name",
-                Some(token.span),
-            ));
+        let name = match token.kind {
+            TokenKind::Variable(name) => name,
+            _ => {
+                return Err(Diagnostic::parse_error(
+                    format!(
+                        "syntax error, unexpected {}, expecting variable",
+                        describe_unexpected_property_name_token(&token.kind)
+                    ),
+                    Some(token.span),
+                ));
+            }
         };
+        validate_property_type_allowed(class_name, &name, type_hint.as_ref(), token.span)?;
         validate_asymmetric_property_visibility(
             class_name,
             &name,
@@ -2794,6 +2812,7 @@ impl Parser<'_> {
                     Some(value.span()),
                 ));
             }
+            validate_property_default_value_type(class_name, &name, type_hint.as_ref(), &value)?;
             Some(value)
         } else {
             None
@@ -8515,6 +8534,109 @@ fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
     property_type_hint
 }
 
+fn validate_property_type_allowed(
+    class_name: &str,
+    property_name: &str,
+    type_hint: Option<&PropertyTypeHint>,
+    span: SourceSpan,
+) -> Result<()> {
+    let Some(type_hint) = type_hint else {
+        return Ok(());
+    };
+    let normalized = type_hint
+        .text
+        .trim()
+        .trim_start_matches('?')
+        .to_ascii_lowercase();
+    if matches!(normalized.as_str(), "callable" | "void" | "never") {
+        return Err(Diagnostic::new(
+            format!(
+                "Property {class_name}::${property_name} cannot have type {}",
+                property_type_hint_display(type_hint)
+            ),
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn describe_unexpected_property_name_token(kind: &TokenKind) -> String {
+    match kind {
+        TokenKind::Identifier(name) => format!("identifier \"{name}\""),
+        TokenKind::IntType
+        | TokenKind::IntegerType
+        | TokenKind::FloatType
+        | TokenKind::DoubleType
+        | TokenKind::StringType
+        | TokenKind::BinaryType
+        | TokenKind::BoolType
+        | TokenKind::BooleanType => format!("identifier \"{}\"", token_text(kind)),
+        _ => format!("token \"{}\"", token_text(kind)),
+    }
+}
+
+fn validate_property_default_value_type(
+    class_name: &str,
+    property_name: &str,
+    type_hint: Option<&PropertyTypeHint>,
+    value: &Expr,
+) -> Result<()> {
+    let Some(type_hint) = type_hint else {
+        return Ok(());
+    };
+    let Some(default_type) = property_default_value_type_name(value) else {
+        return Ok(());
+    };
+    if property_default_value_matches_type(type_hint, default_type) {
+        return Ok(());
+    }
+    let declared_type = property_type_hint_display(type_hint);
+    if default_type == "null" {
+        return Err(Diagnostic::new(
+            format!(
+                "Default value for property of type {declared_type} may not be null. Use the nullable type ?{declared_type} to allow null default value"
+            ),
+            Some(value.span()),
+        ));
+    }
+    Err(Diagnostic::new(
+        format!(
+            "Cannot use {default_type} as default value for property {class_name}::${property_name} of type {declared_type}"
+        ),
+        Some(value.span()),
+    ))
+}
+
+fn property_default_value_type_name(value: &Expr) -> Option<&'static str> {
+    match value {
+        Expr::Grouped { expr, .. } => property_default_value_type_name(expr),
+        Expr::String(_, _) | Expr::ShellExec { .. } => Some("string"),
+        Expr::Int(_, _) => Some("int"),
+        Expr::Float(_, _) => Some("float"),
+        Expr::Bool(_, _) => Some("bool"),
+        Expr::Null(_) => Some("null"),
+        Expr::Array { .. } => Some("array"),
+        _ => None,
+    }
+}
+
+fn property_default_value_matches_type(type_hint: &PropertyTypeHint, default_type: &str) -> bool {
+    if default_type == "null" {
+        return type_hint.allows_null || matches!(type_hint.kind, PropertyTypeKind::Null);
+    }
+    match type_hint.kind {
+        PropertyTypeKind::Mixed => true,
+        PropertyTypeKind::Array => default_type == "array",
+        PropertyTypeKind::Int => default_type == "int",
+        PropertyTypeKind::Float => matches!(default_type, "float" | "int"),
+        PropertyTypeKind::String => default_type == "string",
+        PropertyTypeKind::Bool => default_type == "bool",
+        PropertyTypeKind::Null => false,
+        PropertyTypeKind::Object | PropertyTypeKind::Class(_) => false,
+        PropertyTypeKind::Unsupported => true,
+    }
+}
+
 fn validate_parameter_type_hint(type_hint: &TypeHint, span: SourceSpan) -> Result<()> {
     match type_hint {
         TypeHint::Void => Err(Diagnostic::new(
@@ -14071,7 +14193,7 @@ fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
                 class,
                 &property.name,
                 property.type_hint.as_ref(),
-                property.span,
+                class.span,
                 parent_class,
                 parent_property.type_hint.as_ref(),
                 classes,
@@ -14088,7 +14210,7 @@ fn validate_property_type_invariance(classes: &[ClassDecl]) -> Result<()> {
                 class,
                 &property.name,
                 property.type_hint.as_ref(),
-                property.span,
+                class.span,
                 parent_class,
                 parent_property.type_hint.as_ref(),
                 classes,
