@@ -50,19 +50,36 @@ pub(crate) fn parse_for_include_collection(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, false)
+    parse_with_options(source, runtime_class_aliases, &[], &[], false)
 }
 
 pub(crate) fn parse_with_runtime_class_aliases(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
 ) -> Result<Program> {
-    parse_with_options(source, runtime_class_aliases, true)
+    parse_with_options(source, runtime_class_aliases, &[], &[], true)
+}
+
+pub(crate) fn parse_with_runtime_class_aliases_and_symbols(
+    source: &str,
+    runtime_class_aliases: &HashMap<String, String>,
+    external_classes: &[ClassDecl],
+    external_traits: &[TraitDecl],
+) -> Result<Program> {
+    parse_with_options(
+        source,
+        runtime_class_aliases,
+        external_classes,
+        external_traits,
+        true,
+    )
 }
 
 fn parse_with_options(
     source: &str,
     runtime_class_aliases: &HashMap<String, String>,
+    external_classes: &[ClassDecl],
+    external_traits: &[TraitDecl],
     validate_method_signatures: bool,
 ) -> Result<Program> {
     let tokens = lex(source)?;
@@ -81,6 +98,8 @@ fn parse_with_options(
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
         runtime_class_aliases: runtime_class_aliases.clone(),
+        external_classes: external_classes.to_vec(),
+        external_traits: external_traits.to_vec(),
         declared_functions: HashSet::new(),
         declared_constants: HashSet::new(),
         declared_class_names: HashMap::new(),
@@ -114,6 +133,8 @@ struct Parser<'a> {
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
     runtime_class_aliases: HashMap<String, String>,
+    external_classes: Vec<ClassDecl>,
+    external_traits: Vec<TraitDecl>,
     declared_functions: HashSet<String>,
     declared_constants: HashSet<String>,
     declared_class_names: HashMap<String, SourceSpan>,
@@ -319,30 +340,36 @@ impl Parser<'_> {
         functions.append(&mut self.nested_functions);
         classes.append(&mut self.anonymous_classes);
         compose_traits(&mut traits)?;
-        compose_class_traits(&mut classes, &traits)?;
+        let mut trait_lookup = traits.clone();
+        trait_lookup.extend(self.external_traits.iter().cloned());
+        compose_class_traits(&mut classes, &trait_lookup)?;
         validate_class_names(&classes, &traits)?;
         validate_trait_names(&traits)?;
         validate_builtin_attribute_targets(&classes, &traits, &functions)?;
-        validate_parent_class_names(&classes)?;
-        validate_interface_references(&classes, &mut self.compile_warnings)?;
-        validate_interface_method_conflicts(&classes)?;
-        validate_override_attributes(&classes, &traits)?;
-        validate_traversable_implementations(&classes)?;
+        let mut validation_classes = classes.clone();
+        validation_classes.extend(self.external_classes.iter().cloned());
+        let mut validation_traits = traits.clone();
+        validation_traits.extend(self.external_traits.iter().cloned());
         if self.validate_method_signatures {
+            validate_parent_class_names(&validation_classes)?;
+            validate_interface_references(&validation_classes, &mut self.compile_warnings)?;
+            validate_interface_method_conflicts(&validation_classes)?;
+            validate_override_attributes(&validation_classes, &validation_traits)?;
+            validate_traversable_implementations(&validation_classes)?;
             validate_method_signature_compatibility(
-                &classes,
+                &validation_classes,
                 &self.runtime_class_aliases,
                 &mut self.compile_warnings,
             )?;
+            validate_property_interface_set_visibility(&validation_classes)?;
+            validate_abstract_methods(&validation_classes)?;
+            validate_final_class_inheritance(&validation_classes)?;
+            validate_readonly_class_inheritance(&validation_classes)?;
+            validate_property_override_set_visibility(&validation_classes)?;
+            validate_property_type_invariance(&validation_classes)?;
+            validate_class_constant_overrides(&validation_classes)?;
+            validate_class_scoped_constant_exprs(&validation_classes)?;
         }
-        validate_property_interface_set_visibility(&classes)?;
-        validate_abstract_methods(&classes)?;
-        validate_final_class_inheritance(&classes)?;
-        validate_readonly_class_inheritance(&classes)?;
-        validate_property_override_set_visibility(&classes)?;
-        validate_property_type_invariance(&classes)?;
-        validate_class_constant_overrides(&classes)?;
-        validate_class_scoped_constant_exprs(&classes)?;
         for class in &classes {
             validate_method_names(class)?;
             validate_property_names(class)?;

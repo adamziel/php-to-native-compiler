@@ -39308,6 +39308,88 @@ fn compile_include_exports_include_path_variable_to_native_binary() {
 }
 
 #[test]
+fn compile_include_declares_interface_before_implementing_class_to_native_binary() {
+    let root = temp_dir("ptn-native-include-declared-interface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("contract.inc.php");
+    let output = root.join("include-declared-interface-bin");
+    fs::write(
+        &included,
+        "<?php\ninterface I {\n    public function f($a = null);\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+require __DIR__ . '/contract.inc.php';
+
+class C implements I {
+    public function f($a = 2) {
+        var_dump($a);
+    }
+}
+
+$c = new C;
+$c->f();
+var_dump(interface_exists('I', false));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(2)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("runtime.declared_user_classes[1] = 1"));
+}
+
+#[test]
+fn compile_namespaced_include_class_metadata_appears_after_include_to_native_binary() {
+    let root = temp_dir("ptn-native-namespaced-include-class-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("included-class.inc.php");
+    let output = root.join("namespaced-include-class-metadata-bin");
+    fs::write(&included, "<?php\nnamespace Probe;\nclass Included {}\n").unwrap();
+    fs::write(
+        &input,
+        "<?php
+namespace Probe;
+
+var_dump(class_exists(__NAMESPACE__ . '\\\\Included', false));
+require __DIR__ . '/included-class.inc.php';
+var_dump(class_exists(__NAMESPACE__ . '\\\\Included', false));
+$object = new Included;
+echo get_class($object), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(false)\nbool(true)\nProbe\\Included\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static int ptn_declared_user_classes[1] = { 0 }"));
+    assert!(c_source.contains("runtime.declared_user_classes[0] = 1"));
+}
+
+#[test]
 fn compile_internal_class_exists_prunes_fallback_include_to_native_binary() {
     let root = temp_dir("ptn-native-internal-class-exists-fallback-include");
     fs::create_dir_all(&root).unwrap();
