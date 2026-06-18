@@ -1,0 +1,6 @@
+# ptn-7lqhk ext/standard strings focused formatted-output rows.
+# Source bucket: .runtime/ptn-7lqhk/format-family-pack.txt, derived from
+# .runtime/ptn-7lqhk/full-strings-not-legacy.txt and the full ext/standard
+# strings inventory in .runtime/ptn-ml47s-full-before/20260618T144323Z/all-ext-standard.txt.
+ext/standard/tests/strings/fprintf_error.phpt
+ext/standard/tests/strings/sprintf_rope_optimization_001.phpt
