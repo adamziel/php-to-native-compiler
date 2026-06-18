@@ -17759,6 +17759,236 @@ static void ptn_uri_whatwg_throw_malformed(PtnRuntime *runtime, const char *comp
     ptn_throw_exception(runtime, "Uri\\WhatWg\\InvalidUrlException", message);
 }
 
+#ifdef PTN_USE_ADA_URL
+static char *ptn_uri_ada_null_terminated_copy(const char *data, size_t len) {
+    return ptn_uri_duplicate_len(data == NULL ? "" : data, len);
+}
+
+static ada_url ptn_uri_ada_parse_bytes(const char *data, size_t len) {
+    char *input = ptn_uri_ada_null_terminated_copy(data, len);
+    ada_url url = ada_parse(input, len);
+    free(input);
+    return url;
+}
+
+static int ptn_uri_ada_set_bool(
+    ada_url url,
+    const char *data,
+    size_t len,
+    bool (*setter)(ada_url, const char *, size_t)
+) {
+    char *input = ptn_uri_ada_null_terminated_copy(data, len);
+    int ok = setter(url, input, len);
+    free(input);
+    return ok;
+}
+
+static void ptn_uri_ada_set_void(
+    ada_url url,
+    const char *data,
+    size_t len,
+    void (*setter)(ada_url, const char *, size_t)
+) {
+    char *input = ptn_uri_ada_null_terminated_copy(data, len);
+    setter(url, input, len);
+    free(input);
+}
+
+static char *ptn_uri_ada_string_slice(ada_string value, size_t offset, size_t len) {
+    if (offset > value.length) {
+        offset = value.length;
+    }
+    if (len > value.length - offset) {
+        len = value.length - offset;
+    }
+    const char *data = value.data == NULL ? "" : value.data;
+    return ptn_uri_duplicate_len(data + offset, len);
+}
+
+static char *ptn_uri_ada_string_without_prefix(ada_string value, char prefix) {
+    size_t offset = value.length != 0 && value.data != NULL && value.data[0] == prefix ? 1 : 0;
+    return ptn_uri_ada_string_slice(value, offset, value.length - offset);
+}
+
+static char *ptn_uri_ada_string_without_suffix(ada_string value, char suffix) {
+    size_t len = value.length;
+    if (len != 0 && value.data != NULL && value.data[len - 1] == suffix) {
+        len--;
+    }
+    return ptn_uri_ada_string_slice(value, 0, len);
+}
+
+static char *ptn_uri_ada_owned_string_copy(ada_owned_string value) {
+    const char *data = value.data == NULL ? "" : value.data;
+    char *copy = ptn_uri_duplicate_len(data, value.length);
+    ada_free_owned_string(value);
+    return copy;
+}
+
+static int ptn_uri_ada_parse_port(ada_string value, int64_t *port_out) {
+    if (value.length == 0 || value.data == NULL) {
+        return 0;
+    }
+    int64_t port = 0;
+    for (size_t i = 0; i < value.length; i++) {
+        unsigned char byte = (unsigned char)value.data[i];
+        if (!isdigit(byte)) {
+            return 0;
+        }
+        port = port * 10 + (int64_t)(byte - '0');
+    }
+    *port_out = port;
+    return 1;
+}
+
+static int ptn_uri_ada_scheme_type_is_special(uint8_t scheme_type) {
+    return scheme_type != 1;
+}
+
+static char *ptn_uri_ada_unicode_host(ada_string host, int host_type) {
+    if (host_type != PTN_URI_HOST_TYPE_DOMAIN || host.length == 0) {
+        return ptn_uri_ada_string_slice(host, 0, host.length);
+    }
+    ada_owned_string unicode = ada_idna_to_unicode(host.data == NULL ? "" : host.data, host.length);
+    if (unicode.length == 0 && host.length != 0) {
+        ada_free_owned_string(unicode);
+        return ptn_uri_ada_string_slice(host, 0, host.length);
+    }
+    return ptn_uri_ada_owned_string_copy(unicode);
+}
+
+static int ptn_uri_ada_input_had_empty_password_marker(PtnStringOperand input) {
+    const char *data = input.data;
+    size_t len = input.len;
+    size_t scheme_colon = len;
+    for (size_t i = 0; i < len; i++) {
+        char byte = data[i];
+        if (byte == ':') {
+            scheme_colon = i;
+            break;
+        }
+        if (byte == '/' || byte == '?' || byte == '#') {
+            return 0;
+        }
+    }
+    if (scheme_colon + 2 >= len || data[scheme_colon + 1] != '/' || data[scheme_colon + 2] != '/') {
+        return 0;
+    }
+    size_t authority_start = scheme_colon + 3;
+    size_t authority_end = authority_start;
+    while (authority_end < len &&
+        data[authority_end] != '/' &&
+        data[authority_end] != '?' &&
+        data[authority_end] != '#') {
+        authority_end++;
+    }
+    size_t at = authority_end;
+    for (size_t i = authority_end; i > authority_start; i--) {
+        if (data[i - 1] == '@') {
+            at = i - 1;
+            break;
+        }
+    }
+    if (at == authority_end) {
+        return 0;
+    }
+    for (size_t i = authority_start; i < at; i++) {
+        if (data[i] == ':') {
+            return i + 1 == at;
+        }
+    }
+    return 0;
+}
+
+static PtnUriData *ptn_uri_ada_data_from_url(ada_url url) {
+    PtnUriData *data = ptn_uri_data_new();
+    data->whatwg = 1;
+
+    data->scheme = ptn_uri_ada_string_without_suffix(ada_get_protocol(url), ':');
+
+    if (ada_has_hostname(url)) {
+        ada_string host = ada_get_hostname(url);
+        data->host = ptn_uri_ada_string_slice(host, 0, host.length);
+        data->unicode_host = NULL;
+        data->authority_present = 1;
+        uint8_t scheme_type = ada_get_scheme_type(url);
+        uint8_t ada_host_type = ada_get_host_type(url);
+        if (host.length == 0) {
+            data->host_type = PTN_URI_HOST_TYPE_EMPTY;
+        } else if (!ptn_uri_ada_scheme_type_is_special(scheme_type)) {
+            data->host_type = PTN_URI_HOST_TYPE_OPAQUE;
+        } else if (ada_host_type == 1) {
+            data->host_type = PTN_URI_HOST_TYPE_IPV4;
+        } else if (ada_host_type == 2) {
+            data->host_type = PTN_URI_HOST_TYPE_IPV6;
+        } else {
+            data->host_type = PTN_URI_HOST_TYPE_DOMAIN;
+        }
+        data->unicode_host = ptn_uri_ada_unicode_host(host, data->host_type);
+    } else {
+        data->host_type = PTN_URI_HOST_TYPE_NONE;
+    }
+
+    if (ada_has_credentials(url)) {
+        ada_string username = ada_get_username(url);
+        data->username = ptn_uri_ada_string_slice(username, 0, username.length);
+        data->userinfo_present = 1;
+        if (ada_has_password(url)) {
+            ada_string password = ada_get_password(url);
+            data->password = ptn_uri_ada_string_slice(password, 0, password.length);
+            data->userinfo_colon_present = password.length != 0;
+        }
+    }
+
+    if (ada_has_port(url)) {
+        int64_t port = 0;
+        if (ptn_uri_ada_parse_port(ada_get_port(url), &port)) {
+            data->port = port;
+            data->port_present = 1;
+            data->port_separator_present = 1;
+        }
+    }
+
+    free(data->path);
+    ada_string pathname = ada_get_pathname(url);
+    data->path = ptn_uri_ada_string_slice(pathname, 0, pathname.length);
+
+    if (ada_has_search(url)) {
+        data->query = ptn_uri_ada_string_without_prefix(ada_get_search(url), '?');
+    }
+    if (ada_has_hash(url)) {
+        data->fragment = ptn_uri_ada_string_without_prefix(ada_get_hash(url), '#');
+    }
+    return data;
+}
+
+static int ptn_uri_ada_parse_whatwg(
+    PtnStringOperand input,
+    PtnUriData **result_out,
+    const char **reason_out
+) {
+    *reason_out = NULL;
+    ada_url url = ptn_uri_ada_parse_bytes(input.data, input.len);
+    if (url == NULL || !ada_is_valid(url)) {
+        if (url != NULL) {
+            ada_free(url);
+        }
+        return 0;
+    }
+    PtnUriData *data = ptn_uri_ada_data_from_url(url);
+    if (ptn_uri_ada_input_had_empty_password_marker(input) && data->password == NULL) {
+        if (data->username == NULL) {
+            data->username = ptn_uri_duplicate_len("", 0);
+        }
+        data->password = ptn_uri_duplicate_len("", 0);
+        data->userinfo_present = 1;
+    }
+    ada_free(url);
+    *result_out = data;
+    return 1;
+}
+#endif
+
 static PtnValue ptn_uri_component_property_value(const char *value) {
     return value == NULL
         ? ptn_null()
@@ -18648,85 +18878,14 @@ static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t
 }
 
 static int ptn_uri_parse_whatwg(PtnStringOperand input, PtnUriData **result_out, const char **reason_out) {
-    const char *data = input.data;
-    size_t len = input.len;
-    ptn_uri_whatwg_trim(input.data, input.len, 1, &data, &len);
-    if (len == 0) {
-        *reason_out = "MissingSchemeNonRelativeUrl";
-        return 0;
-    }
-    size_t first_delimiter = ptn_uri_find_remainder_delimiter(data, len, 0);
-    size_t colon = ptn_uri_find_byte(data, first_delimiter, 0, ':');
-    if (colon == 0 || colon >= first_delimiter || !ptn_uri_validate_scheme_component(data, colon)) {
-        *reason_out = "MissingSchemeNonRelativeUrl";
-        return 0;
-    }
-
-    PtnUriData *result = ptn_uri_data_new();
-    result->whatwg = 1;
-    char *scheme = ptn_uri_duplicate_len(data, colon);
-    for (size_t i = 0; i < colon; i++) {
-        scheme[i] = (char)tolower((unsigned char)scheme[i]);
-    }
-    result->scheme = scheme;
-
-    int special = ptn_uri_whatwg_is_special_scheme(result->scheme);
-    size_t offset = colon + 1;
-    if (offset + 1 < len && data[offset] == '/' && data[offset + 1] == '/') {
-        size_t authority_start = offset + 2;
-        size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
-        if (!ptn_uri_whatwg_parse_authority(result, data + authority_start, authority_end - authority_start, reason_out)) {
-            ptn_uri_data_free(result);
-            return 0;
-        }
-        offset = authority_end;
-    } else if (special) {
-        if (offset >= len || data[offset] == '/' || data[offset] == '?' || data[offset] == '#') {
-            *reason_out = "HostMissing";
-            ptn_uri_data_free(result);
-            return 0;
-        }
-        size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, offset);
-        if (!ptn_uri_whatwg_parse_authority(result, data + offset, authority_end - offset, reason_out)) {
-            ptn_uri_data_free(result);
-            return 0;
-        }
-        offset = authority_end;
-    }
-
-    size_t fragment = ptn_uri_find_byte(data, len, offset, '#');
-    size_t query_limit = fragment < len ? fragment : len;
-    size_t query = ptn_uri_find_byte(data, query_limit, offset, '?');
-    size_t path_end = query < query_limit ? query : query_limit;
-    int default_slash = result->host != NULL && special;
-    ptn_uri_whatwg_set_path(result, data + offset, path_end - offset, default_slash);
-    if (query < query_limit) {
-        size_t query_len = 0;
-        result->query = ptn_uri_whatwg_percent_encode_owned(
-            data + query + 1,
-            query_limit - query - 1,
-            PTN_URI_WHATWG_COMPONENT_QUERY,
-            0,
-            &query_len
-        );
-        (void)query_len;
-    }
-    if (fragment < len) {
-        size_t fragment_len = 0;
-        result->fragment = ptn_uri_whatwg_percent_encode_owned(
-            data + fragment + 1,
-            len - fragment - 1,
-            PTN_URI_WHATWG_COMPONENT_FRAGMENT,
-            0,
-            &fragment_len
-        );
-        (void)fragment_len;
-    }
-    if (result->host == NULL) {
-        result->host_type = PTN_URI_HOST_TYPE_NONE;
-    }
-    *result_out = result;
-    return 1;
+#ifdef PTN_USE_ADA_URL
+    return ptn_uri_ada_parse_whatwg(input, result_out, reason_out);
+#else
+    (void)input;
+    *result_out = NULL;
+    *reason_out = "AdaParserUnavailable";
+    return 0;
+#endif
 }
 
 static PtnValue ptn_uri_normalized_string_value(const char *value, int lowercase_ascii, int normalize_path) {
@@ -19035,6 +19194,38 @@ static PtnValue ptn_uri_clone_with(PtnRuntime *runtime, PtnValue receiver, PtnUr
     return ptn_uri_object_from_data(runtime, class_name, data);
 }
 
+#ifdef PTN_USE_ADA_URL
+static ada_url ptn_uri_ada_url_from_data(const PtnUriData *data) {
+    PtnValue href = ptn_uri_whatwg_to_string_value(data, 0, 1);
+    ada_url url = ptn_uri_ada_parse_bytes((const char *)href.as.string.data, href.as.string.len);
+    ptn_value_destroy(&href);
+    if (url == NULL || !ada_is_valid(url)) {
+        if (url != NULL) {
+            ada_free(url);
+        }
+        return NULL;
+    }
+    return url;
+}
+
+static PtnValue ptn_uri_ada_clone_with_url(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    ada_url url,
+    int force_empty_password
+) {
+    PtnUriData *data = ptn_uri_ada_data_from_url(url);
+    if (force_empty_password &&
+        data->password == NULL &&
+        data->username != NULL &&
+        data->username[0] != '\0') {
+        data->password = ptn_uri_duplicate_len("", 0);
+        data->userinfo_present = 1;
+    }
+    return ptn_uri_clone_with(runtime, receiver, data);
+}
+#endif
+
 static PtnValue ptn_uri_with_string_component(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -19194,33 +19385,27 @@ static PtnValue ptn_uri_whatwg_with_scheme(
         ptn_string_operand_free(value);
         return ptn_null();
     }
-    const char *scheme = value.data;
-    size_t scheme_len = value.len;
-    ptn_uri_whatwg_trim(value.data, value.len, 0, &scheme, &scheme_len);
-    size_t stop = scheme_len;
-    for (size_t i = 0; i < scheme_len; i++) {
-        if (scheme[i] == ':' || scheme[i] == '/') {
-            stop = i;
-            break;
+#ifndef PTN_USE_ADA_URL
+    ptn_string_operand_free(value);
+    ptn_uri_whatwg_throw_malformed(runtime, "scheme", "AdaParserUnavailable");
+    return ptn_null();
+#else
+    ada_url url = ptn_uri_ada_url_from_data(ptn_uri_data_from_value(receiver));
+    if (url == NULL ||
+        !ptn_uri_ada_set_bool(url, value.data, value.len, ada_set_protocol) ||
+        !ada_is_valid(url)) {
+        if (url != NULL) {
+            ada_free(url);
         }
-    }
-    if (stop == 0 || !ptn_uri_validate_scheme_component(scheme, stop)) {
         ptn_string_operand_free(value);
         ptn_uri_whatwg_throw_malformed(runtime, "scheme", NULL);
         return ptn_null();
     }
-    PtnUriData *copy = ptn_uri_data_clone(ptn_uri_data_from_value(receiver));
-    free(copy->scheme);
-    copy->scheme = ptn_uri_duplicate_len(scheme, stop);
-    for (size_t i = 0; i < stop; i++) {
-        copy->scheme[i] = (char)tolower((unsigned char)copy->scheme[i]);
-    }
-    ptn_uri_whatwg_clear_default_port(copy);
-    if (ptn_uri_whatwg_is_special_scheme(copy->scheme) && copy->host != NULL && copy->path[0] == '\0') {
-        ptn_uri_replace_string(&copy->path, "/", 1);
-    }
+    PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
+    ada_free(url);
     ptn_string_operand_free(value);
-    return ptn_uri_clone_with(runtime, receiver, copy);
+    return result;
+#endif
 }
 
 static PtnValue ptn_uri_whatwg_with_host(
@@ -19234,53 +19419,48 @@ static PtnValue ptn_uri_whatwg_with_host(
         ptn_throw_exception(runtime, "ArgumentCountError", "Uri\\WhatWg\\Url::withHost() expects exactly 1 argument");
         return ptn_null();
     }
-    PtnUriData *copy = ptn_uri_data_clone(ptn_uri_data_from_value(receiver));
+    PtnUriData *source = ptn_uri_data_from_value(receiver);
     PtnValue value = ptn_value_deref(args[0]);
-    int special = ptn_uri_whatwg_is_special_scheme(copy->scheme);
+    int special = ptn_uri_whatwg_is_special_scheme(source->scheme);
     if (value.type == PTN_NULL) {
         if (special) {
-            ptn_uri_data_free(copy);
             ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
             return ptn_null();
         }
-        free(copy->host);
-        free(copy->unicode_host);
-        copy->host = NULL;
-        copy->unicode_host = NULL;
-        copy->host_type = PTN_URI_HOST_TYPE_NONE;
-        copy->authority_present = 0;
-        return ptn_uri_clone_with(runtime, receiver, copy);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", "AdaParserUnavailable");
+        return ptn_null();
     }
     PtnStringOperand host_arg = ptn_internal_expect_string_arg(runtime, "Uri\\WhatWg\\Url::withHost", 1, "host", value, line);
     if (runtime->exceptions->active_exception != NULL) {
-        ptn_uri_data_free(copy);
         ptn_string_operand_free(host_arg);
         return ptn_null();
     }
-    const char *host_input = host_arg.data;
-    size_t host_len = host_arg.len;
-    ptn_uri_whatwg_trim(host_arg.data, host_arg.len, 0, &host_input, &host_len);
-    char *host = NULL;
-    char *unicode_host = NULL;
-    int host_type = PTN_URI_HOST_TYPE_NONE;
-    const char *reason = NULL;
-    if (!ptn_uri_whatwg_normalize_host(host_input, host_len, special, copy->scheme, &host, &unicode_host, &host_type, &reason)) {
-        ptn_uri_data_free(copy);
+    if (special && host_arg.len == 0) {
         ptn_string_operand_free(host_arg);
-        ptn_uri_whatwg_throw_malformed(runtime, "host", reason);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
         return ptn_null();
     }
-    free(copy->host);
-    free(copy->unicode_host);
-    copy->host = host;
-    copy->unicode_host = unicode_host;
-    copy->host_type = host_type;
-    copy->authority_present = 1;
-    if (special && copy->path[0] == '\0') {
-        ptn_uri_replace_string(&copy->path, "/", 1);
-    }
+#ifndef PTN_USE_ADA_URL
     ptn_string_operand_free(host_arg);
-    return ptn_uri_clone_with(runtime, receiver, copy);
+    ptn_uri_whatwg_throw_malformed(runtime, "host", "AdaParserUnavailable");
+    return ptn_null();
+#else
+    ada_url url = ptn_uri_ada_url_from_data(source);
+    if (url == NULL ||
+        !ptn_uri_ada_set_bool(url, host_arg.data, host_arg.len, ada_set_host) ||
+        !ada_is_valid(url)) {
+        if (url != NULL) {
+            ada_free(url);
+        }
+        ptn_string_operand_free(host_arg);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", special && host_arg.len == 0 ? "HostMissing" : NULL);
+        return ptn_null();
+    }
+    PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
+    ada_free(url);
+    ptn_string_operand_free(host_arg);
+    return result;
+#endif
 }
 
 static PtnValue ptn_uri_whatwg_with_path(
@@ -19299,20 +19479,27 @@ static PtnValue ptn_uri_whatwg_with_path(
         ptn_string_operand_free(value);
         return ptn_null();
     }
-    const char *path = value.data;
-    size_t path_len = value.len;
-    ptn_uri_whatwg_trim(value.data, value.len, 0, &path, &path_len);
-    PtnUriData *copy = ptn_uri_data_clone(ptn_uri_data_from_value(receiver));
-    PtnStringBuffer raw;
-    ptn_string_buffer_init(&raw);
-    if (copy->host != NULL && (path_len == 0 || path[0] != '/')) {
-        ptn_string_buffer_append_char(&raw, '/');
-    }
-    ptn_string_buffer_append_len(&raw, path, path_len);
-    ptn_uri_whatwg_set_path(copy, raw.data == NULL ? "" : raw.data, raw.len, copy->host != NULL);
-    free(raw.data);
+#ifndef PTN_USE_ADA_URL
     ptn_string_operand_free(value);
-    return ptn_uri_clone_with(runtime, receiver, copy);
+    ptn_uri_whatwg_throw_malformed(runtime, "path", "AdaParserUnavailable");
+    return ptn_null();
+#else
+    ada_url url = ptn_uri_ada_url_from_data(ptn_uri_data_from_value(receiver));
+    if (url == NULL ||
+        !ptn_uri_ada_set_bool(url, value.data, value.len, ada_set_pathname) ||
+        !ada_is_valid(url)) {
+        if (url != NULL) {
+            ada_free(url);
+        }
+        ptn_string_operand_free(value);
+        ptn_uri_whatwg_throw_malformed(runtime, "path", NULL);
+        return ptn_null();
+    }
+    PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
+    ada_free(url);
+    ptn_string_operand_free(value);
+    return result;
+#endif
 }
 
 static PtnValue ptn_uri_whatwg_with_query_or_fragment(
@@ -19326,6 +19513,8 @@ static PtnValue ptn_uri_whatwg_with_query_or_fragment(
     const PtnValue *args,
     size_t line
 ) {
+    (void)component;
+    (void)prefix;
     if (argc != 1) {
         char message[128];
         int written = snprintf(message, sizeof(message), "%s() expects exactly 1 argument", function_name);
@@ -19335,40 +19524,51 @@ static PtnValue ptn_uri_whatwg_with_query_or_fragment(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    PtnUriData *copy = ptn_uri_data_clone(ptn_uri_data_from_value(receiver));
     PtnValue value = ptn_value_deref(args[0]);
-    char **slot = strcmp(component_name, "query") == 0 ? &copy->query : &copy->fragment;
+#ifndef PTN_USE_ADA_URL
+    (void)receiver;
+    (void)value;
+    ptn_uri_whatwg_throw_malformed(runtime, component_name, "AdaParserUnavailable");
+    return ptn_null();
+#else
+    ada_url url = ptn_uri_ada_url_from_data(ptn_uri_data_from_value(receiver));
+    if (url == NULL) {
+        ptn_uri_whatwg_throw_malformed(runtime, component_name, NULL);
+        return ptn_null();
+    }
+    int is_query = strcmp(component_name, "query") == 0;
     if (value.type == PTN_NULL) {
-        free(*slot);
-        *slot = NULL;
-        return ptn_uri_clone_with(runtime, receiver, copy);
+        if (is_query) {
+            ada_clear_search(url);
+        } else {
+            ada_clear_hash(url);
+        }
+        PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
+        ada_free(url);
+        return result;
     }
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, function_name, 1, component_name, value, line);
     if (runtime->exceptions->active_exception != NULL) {
-        ptn_uri_data_free(copy);
+        ada_free(url);
         ptn_string_operand_free(string);
         return ptn_null();
     }
-    const char *input = string.data;
-    size_t input_len = string.len;
-    ptn_uri_whatwg_trim(string.data, string.len, 0, &input, &input_len);
-    int had_prefix = input_len != 0 && input[0] == prefix;
-    if (had_prefix) {
-        input++;
-        input_len--;
-    }
-    if (input_len == 0 && !had_prefix) {
-        free(*slot);
-        *slot = NULL;
+    if (is_query) {
+        ptn_uri_ada_set_void(url, string.data, string.len, ada_set_search);
     } else {
-        size_t encoded_len = 0;
-        char *encoded = ptn_uri_whatwg_percent_encode_owned(input, input_len, component, 0, &encoded_len);
-        free(*slot);
-        *slot = encoded;
-        (void)encoded_len;
+        ptn_uri_ada_set_void(url, string.data, string.len, ada_set_hash);
     }
+    if (!ada_is_valid(url)) {
+        ada_free(url);
+        ptn_string_operand_free(string);
+        ptn_uri_whatwg_throw_malformed(runtime, component_name, NULL);
+        return ptn_null();
+    }
+    PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
+    ada_free(url);
     ptn_string_operand_free(string);
-    return ptn_uri_clone_with(runtime, receiver, copy);
+    return result;
+#endif
 }
 
 static PtnValue ptn_uri_whatwg_with_userinfo_part(
@@ -19389,61 +19589,61 @@ static PtnValue ptn_uri_whatwg_with_userinfo_part(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    PtnUriData *copy = ptn_uri_data_clone(ptn_uri_data_from_value(receiver));
+    PtnUriData *source = ptn_uri_data_from_value(receiver);
     PtnValue value = ptn_value_deref(args[0]);
-    char **slot = username_part ? &copy->username : &copy->password;
+#ifndef PTN_USE_ADA_URL
+    (void)source;
+    (void)value;
+    ptn_uri_whatwg_throw_malformed(runtime, username_part ? "username" : "password", "AdaParserUnavailable");
+    return ptn_null();
+#else
+    ada_url url = ptn_uri_ada_url_from_data(source);
+    if (url == NULL) {
+        ptn_uri_whatwg_throw_malformed(runtime, username_part ? "username" : "password", NULL);
+        return ptn_null();
+    }
+    int force_empty_password = 0;
     if (value.type == PTN_NULL) {
         if (username_part) {
-            if (copy->password != NULL && copy->password[0] != '\0') {
-                ptn_uri_replace_string(&copy->username, "", 0);
-            } else {
-                free(copy->username);
-                copy->username = NULL;
-                if (copy->password != NULL && copy->password[0] == '\0') {
-                    free(copy->password);
-                    copy->password = NULL;
-                }
-            }
+            (void)ptn_uri_ada_set_bool(url, "", 0, ada_set_username);
         } else {
-            if (copy->username != NULL && copy->username[0] != '\0') {
-                ptn_uri_replace_string(&copy->password, "", 0);
-            } else {
-                free(copy->password);
-                copy->password = NULL;
-                if (copy->username != NULL && copy->username[0] == '\0') {
-                    free(copy->username);
-                    copy->username = NULL;
-                }
-            }
+            (void)ptn_uri_ada_set_bool(url, "", 0, ada_set_password);
+            force_empty_password = source->username != NULL &&
+                source->username[0] != '\0' &&
+                source->password != NULL;
         }
-        ptn_uri_whatwg_refresh_userinfo(copy);
-        return ptn_uri_clone_with(runtime, receiver, copy);
+        if (!ada_is_valid(url)) {
+            ada_free(url);
+            ptn_uri_whatwg_throw_malformed(runtime, username_part ? "username" : "password", NULL);
+            return ptn_null();
+        }
+        PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, force_empty_password);
+        ada_free(url);
+        return result;
     }
     PtnStringOperand string = ptn_internal_expect_string_arg(runtime, function_name, 1, username_part ? "username" : "password", value, line);
     if (runtime->exceptions->active_exception != NULL) {
-        ptn_uri_data_free(copy);
+        ada_free(url);
         ptn_string_operand_free(string);
         return ptn_null();
     }
-    size_t encoded_len = 0;
-    char *encoded = ptn_uri_whatwg_percent_encode_owned(
-        string.data,
-        string.len,
-        PTN_URI_WHATWG_COMPONENT_USERINFO,
-        1,
-        &encoded_len
-    );
-    free(*slot);
-    *slot = encoded;
-    if (!username_part && encoded_len != 0 && copy->username == NULL) {
-        copy->username = ptn_uri_duplicate_len("", 0);
+    int ok = username_part
+        ? ptn_uri_ada_set_bool(url, string.data, string.len, ada_set_username)
+        : ptn_uri_ada_set_bool(url, string.data, string.len, ada_set_password);
+    if (!username_part && string.len == 0 && source->username != NULL && source->username[0] != '\0') {
+        force_empty_password = 1;
     }
-    if (username_part && copy->password == NULL) {
-        copy->password = ptn_uri_duplicate_len("", 0);
+    if (!ok || !ada_is_valid(url)) {
+        ada_free(url);
+        ptn_string_operand_free(string);
+        ptn_uri_whatwg_throw_malformed(runtime, username_part ? "username" : "password", NULL);
+        return ptn_null();
     }
-    ptn_uri_whatwg_refresh_userinfo(copy);
+    PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, force_empty_password);
+    ada_free(url);
     ptn_string_operand_free(string);
-    return ptn_uri_clone_with(runtime, receiver, copy);
+    return result;
+#endif
 }
 
 static PtnValue ptn_uri_with_port(
@@ -19500,39 +19700,54 @@ static PtnValue ptn_uri_whatwg_with_port(
         ptn_throw_exception(runtime, "ArgumentCountError", "Uri\\WhatWg\\Url::withPort() expects exactly 1 argument");
         return ptn_null();
     }
-    PtnUriData *copy = ptn_uri_data_clone(ptn_uri_data_from_value(receiver));
     PtnValue value = ptn_value_deref(args[0]);
+#ifndef PTN_USE_ADA_URL
+    (void)receiver;
+    (void)value;
+    ptn_uri_whatwg_throw_malformed(runtime, "port", "AdaParserUnavailable");
+    return ptn_null();
+#else
+    ada_url url = ptn_uri_ada_url_from_data(ptn_uri_data_from_value(receiver));
+    if (url == NULL) {
+        ptn_uri_whatwg_throw_malformed(runtime, "port", NULL);
+        return ptn_null();
+    }
     if (value.type == PTN_NULL) {
-        copy->port_present = 0;
-        copy->port_separator_present = 0;
-        return ptn_uri_clone_with(runtime, receiver, copy);
+        ada_clear_port(url);
+        PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
+        ada_free(url);
+        return result;
     }
     int64_t port = ptn_internal_expect_integer_arg(runtime, "Uri\\WhatWg\\Url::withPort", 1, "port", value, line);
     if (runtime->exceptions->active_exception != NULL) {
-        ptn_uri_data_free(copy);
+        ada_free(url);
         return ptn_null();
     }
     if (port < 0) {
-        ptn_uri_data_free(copy);
+        ada_free(url);
         ptn_uri_whatwg_throw_malformed(runtime, "port", NULL);
         return ptn_null();
     }
     if (port > 65535) {
-        ptn_uri_data_free(copy);
+        ada_free(url);
         ptn_uri_whatwg_throw_malformed(runtime, "port", "PortOutOfRange");
         return ptn_null();
     }
-    copy->port = port;
-    copy->port_present = 1;
-    copy->port_separator_present = 1;
-    copy->authority_present = 1;
-    if (copy->host == NULL) {
-        copy->host = ptn_uri_duplicate_len("", 0);
-        copy->unicode_host = ptn_uri_duplicate_len("", 0);
-        copy->host_type = PTN_URI_HOST_TYPE_EMPTY;
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)port);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ada_free(url);
+        ptn_abort_out_of_memory();
     }
-    ptn_uri_whatwg_clear_default_port(copy);
-    return ptn_uri_clone_with(runtime, receiver, copy);
+    if (!ptn_uri_ada_set_bool(url, buffer, (size_t)written, ada_set_port) || !ada_is_valid(url)) {
+        ada_free(url);
+        ptn_uri_whatwg_throw_malformed(runtime, "port", NULL);
+        return ptn_null();
+    }
+    PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
+    ada_free(url);
+    return result;
+#endif
 }
 
 static PtnValue ptn_uri_construct_data(
