@@ -44851,6 +44851,68 @@ var_dump($box[0]['name']);
 }
 
 #[test]
+fn compile_arrayaccess_object_by_ref_argument_stays_silent_to_native_binary() {
+    let root = temp_dir("ptn-native-arrayaccess-object-by-ref-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrayaccess-object-by-ref-argument.php");
+    let output = root.join("arrayaccess-object-by-ref-argument-bin");
+    fs::write(
+        &input,
+        "<?php
+function compareByRef(&$first, &$second) {
+    return $first === $second;
+}
+
+class MyTree implements ArrayAccess {
+    public $parent;
+    public $children = [];
+
+    public function offsetExists($offset): bool {
+        return array_key_exists(strtolower($offset), $this->children);
+    }
+
+    public function offsetUnset($offset): void {
+        unset($this->children[strtolower($offset)]);
+    }
+
+    public function offsetSet($offset, $value): void {
+        echo \"offsetSet()\\n\";
+        $canonicalName = strtolower($offset);
+        $this->children[$canonicalName] = $value;
+        $value->parent = $this;
+    }
+
+    public function offsetGet($offset): mixed {
+        echo \"offsetGet()\\n\";
+        $canonicalName = strtolower($offset);
+        return $this->children[$canonicalName];
+    }
+}
+
+$id = 'Test';
+$root = new MyTree();
+$child = new MyTree();
+$root[$id] = $child;
+var_dump(compareByRef($root[$id], $child));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "offsetSet()\noffsetGet()\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_reference_for_array_path(&runtime"));
+}
+
+#[test]
 fn compile_static_property_undeclared_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-static-property-diagnostics");
     fs::create_dir_all(&root).unwrap();
