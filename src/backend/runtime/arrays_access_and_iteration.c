@@ -1005,7 +1005,8 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_xml_writer(lookup_class_name)) {
         return ptn_xmlwriter_new(runtime, argc, args, line);
     }
-    if (ptn_internal_class_name_is_uri_rfc3986_uri(lookup_class_name)) {
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(lookup_class_name) ||
+        ptn_internal_class_name_is_uri_whatwg_url(lookup_class_name)) {
         return ptn_uri_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_uri_whatwg_url(lookup_class_name)) {
@@ -3295,6 +3296,23 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     return NULL;
 }
 
+static PTN_UNUSED int ptn_exception_public_property_read(
+    PtnValue receiver,
+    const char *property,
+    PtnValue *out
+) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type == PTN_EXCEPTION &&
+        ptn_ascii_case_equal(receiver.as.exception->class_name, "Uri\\WhatWg\\InvalidUrlException") &&
+        ptn_ascii_case_equal(property, "errors")
+    ) {
+        *out = ptn_value_clone_deref(receiver.as.exception->errors);
+        return 1;
+    }
+    return 0;
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3303,15 +3321,9 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     size_t line
 ) {
     receiver = ptn_value_deref(receiver);
-    if (receiver.type == PTN_EXCEPTION) {
-        if (
-            ptn_exception_name_equal(receiver.as.exception->class_name, "Uri\\WhatWg\\InvalidUrlException") &&
-            ptn_exception_name_equal(property, "errors")
-        ) {
-            return ptn_array_from_literal_entries(0, NULL);
-        }
-        ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
-        return ptn_null();
+    PtnValue exception_property = ptn_null();
+    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+        return exception_property;
     }
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
@@ -3688,6 +3700,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
     size_t line
 ) {
     receiver = ptn_value_deref(receiver);
+    PtnValue exception_property = ptn_null();
+    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+        return exception_property;
+    }
     if (receiver.type != PTN_OBJECT) {
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
@@ -3764,6 +3780,10 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     size_t line
 ) {
     receiver = ptn_value_deref(receiver);
+    PtnValue exception_property = ptn_null();
+    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+        return ptn_lookup_found(exception_property);
+    }
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
@@ -3830,6 +3850,10 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     size_t line
 ) {
     receiver = ptn_value_deref(receiver);
+    PtnValue exception_property = ptn_null();
+    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+        return ptn_lookup_found(exception_property);
+    }
     if (receiver.type != PTN_OBJECT) {
         return ptn_lookup_missing();
     }
@@ -3884,6 +3908,12 @@ static PTN_UNUSED int ptn_object_property_is_set(
     size_t line
 ) {
     receiver = ptn_value_deref(receiver);
+    PtnValue exception_property = ptn_null();
+    if (ptn_exception_public_property_read(receiver, property, &exception_property)) {
+        int is_set = ptn_value_deref(exception_property).type != PTN_NULL;
+        ptn_value_destroy(&exception_property);
+        return is_set;
+    }
     if (receiver.type != PTN_OBJECT) {
         return 0;
     }

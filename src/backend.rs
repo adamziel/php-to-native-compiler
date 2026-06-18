@@ -34,6 +34,7 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "SoapServer",
     "XMLWriter",
     "Uri\\Rfc3986\\Uri",
+    "Uri\\WhatWg\\Url",
 ];
 const SERIALIZABLE_DEPRECATION_SUFFIX: &str =
     " implements the Serializable interface, which is deprecated. Implement __serialize() and __unserialize() instead (or in addition, if support for old PHP versions is necessary)";
@@ -61,7 +62,11 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("AssertionError", "Error"),
     ("ParseError", "Error"),
 ];
-const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &["RoundingMode"];
+const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
+    "RoundingMode",
+    "Uri\\UriComparisonMode",
+    "Uri\\WhatWg\\UrlHostType",
+];
 
 pub fn emit_c(module: &Module) -> String {
     let mut out = String::new();
@@ -713,7 +718,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    }\n");
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return ptn_ascii_case_equal(interface_name, \"UnitEnum\") ||\n");
         out.push_str("            ptn_ascii_case_equal(interface_name, \"BackedEnum\");\n");
@@ -4477,7 +4482,7 @@ fn emit_class_metadata_helpers(
     }
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
-        out.push_str(class_name);
+        out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
@@ -9275,6 +9280,9 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "soapserver" => Some("SoapServer"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
+                "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
+                "uri\\uricomparisonmode" => Some("Uri\\UriComparisonMode"),
+                "uri\\whatwg\\urlhosttype" => Some("Uri\\WhatWg\\UrlHostType"),
                 "ziparchive" => Some("ZipArchive"),
                 _ => None,
             },
@@ -10161,7 +10169,9 @@ fn emit_method_dispatch(
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
-    out.push_str("        return ptn_uri_whatwg_url_call_method(runtime, resolved, method_name, argc, args, line);\n");
+    out.push_str(
+        "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
     out.push_str("    }\n");
     out.push_str(
         "    if (resolved.type == PTN_OBJECT && !ptn_internal_class_exists_name(class_name)) {\n",
@@ -14886,6 +14896,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("XMLParser")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
                 || is_uri_whatwg_url_class_name(class_name)
+                || class_name.eq_ignore_ascii_case("Uri\\UriComparisonMode")
+                || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType")
             {
                 requirements.internal_function_dispatch = true;
                 requirements.method_dispatch = true;
@@ -15032,11 +15044,13 @@ fn is_uri_whatwg_url_static_call_name(name: &str) -> bool {
 
 fn is_uri_whatwg_url_method_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("__construct")
+        || name.eq_ignore_ascii_case("__toString")
         || name.eq_ignore_ascii_case("equals")
         || name.eq_ignore_ascii_case("getScheme")
         || name.eq_ignore_ascii_case("isSpecialScheme")
         || name.eq_ignore_ascii_case("getUsername")
         || name.eq_ignore_ascii_case("getPassword")
+        || name.eq_ignore_ascii_case("getHost")
         || name.eq_ignore_ascii_case("getAsciiHost")
         || name.eq_ignore_ascii_case("getUnicodeHost")
         || name.eq_ignore_ascii_case("getHostType")
@@ -15046,6 +15060,7 @@ fn is_uri_whatwg_url_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("getFragment")
         || name.eq_ignore_ascii_case("toAsciiString")
         || name.eq_ignore_ascii_case("toUnicodeString")
+        || name.eq_ignore_ascii_case("toString")
         || name.eq_ignore_ascii_case("withScheme")
         || name.eq_ignore_ascii_case("withUsername")
         || name.eq_ignore_ascii_case("withPassword")

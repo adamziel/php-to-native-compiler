@@ -11,6 +11,7 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
     exception->message_len = 0;
     ptn_value_destroy(&exception->trace);
     ptn_value_destroy(&exception->previous);
+    ptn_value_destroy(&exception->errors);
     free(exception);
 }
 

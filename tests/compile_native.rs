@@ -48491,6 +48491,68 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_uri_whatwg_url_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-whatwg-core");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-whatwg-core.php");
+    let output = root.join("uri-whatwg-core-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(class_exists("Uri\\WhatWg\\Url"));
+var_dump(class_exists("Uri\\UriComparisonMode"));
+$url = Uri\WhatWg\Url::parse("https://user:info@example.com:443/foo/bar?abc=123#hash");
+var_dump($url->toAsciiString());
+var_dump($url->getPort());
+var_dump($url->getHostType());
+var_dump($url->withPath("foo#bar")->toAsciiString());
+var_dump($url->withUsername("u:s/r")->toAsciiString());
+$normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
+var_dump($url->equals($normalized));
+var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
+try {
+    Uri\WhatWg\Url::parse("foo");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new Uri\WhatWg\Url("https://");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(50) \"https://user:info@example.com/foo/bar?abc=123#hash\"\n",
+            "NULL\n",
+            "enum(Uri\\WhatWg\\UrlHostType::Domain)\n",
+            "string(52) \"https://user:info@example.com/foo%23bar?abc=123#hash\"\n",
+            "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

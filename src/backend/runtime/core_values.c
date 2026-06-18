@@ -856,6 +856,7 @@ struct PtnException {
     PtnValue trace;
     PtnValue previous;
     int64_t severity;
+    PtnValue errors;
 };
 
 struct PtnResource {
@@ -1477,6 +1478,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_na
 static PTN_UNUSED int ptn_internal_class_name_is_xml_parser(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uri_comparison_mode(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url_host_type(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static int ptn_internal_interface_exists_name(const char *name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);

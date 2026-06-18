@@ -1526,6 +1526,9 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->trace = ptn_exception_capture_trace(runtime);
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
+    exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
+        ? ptn_array_from_literal_entries(0, NULL)
+        : ptn_null();
     return exception;
 }
 
@@ -1643,6 +1646,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "Uri\\InvalidUriException")) {
         return "Uri\\InvalidUriException";
     }
+    if (ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")) {
+        return "Uri\\WhatWg\\InvalidUrlException";
+    }
     if (ptn_exception_name_equal(class_name, "DateRangeError")) {
         return "DateRangeError";
     }
@@ -1693,6 +1699,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "ArgumentCountError") ||
             ptn_exception_name_equal(class_name, "ValueError") ||
             ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
+            ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException") ||
             ptn_exception_name_equal(class_name, "DateRangeError") ||
             ptn_exception_name_equal(class_name, "DateObjectError") ||
             ptn_exception_name_equal(class_name, "ArithmeticError") ||
@@ -1704,6 +1711,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
     }
     if (ptn_exception_name_equal(type_name, "ValueError")) {
         return ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
+            ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException") ||
             ptn_exception_name_equal(class_name, "DateRangeError");
     }
     if (ptn_exception_name_equal(type_name, "TypeError")) {
@@ -2965,6 +2973,32 @@ static PTN_UNUSED const char *ptn_rounding_mode_case_name(const char *case_name)
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_uri_url_host_type_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "Domain",
+        "IPv4",
+        "IPv6",
+        "Opaque",
+        "Empty",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
+static PTN_UNUSED const char *ptn_uri_comparison_mode_case_name(const char *case_name) {
+    if (strcmp(case_name, "IncludeFragment") == 0) {
+        return "IncludeFragment";
+    }
+    if (strcmp(case_name, "ExcludeFragment") == 0) {
+        return "ExcludeFragment";
+    }
+    return NULL;
+}
+
 static PTN_UNUSED int ptn_builtin_class_constant_value_span(
     const char *class_name,
     size_t class_len,
@@ -3703,6 +3737,18 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (rounding_case != NULL) {
         return ptn_enum_case(runtime, "RoundingMode", rounding_case);
+    }
+    const char *url_host_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\WhatWg\\UrlHostType")
+        ? ptn_uri_url_host_type_case_name(constant)
+        : NULL;
+    if (url_host_type_case != NULL) {
+        return ptn_enum_case(runtime, "Uri\\WhatWg\\UrlHostType", url_host_type_case);
+    }
+    const char *comparison_mode_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\UriComparisonMode")
+        ? ptn_uri_comparison_mode_case_name(constant)
+        : NULL;
+    if (comparison_mode_case != NULL) {
+        return ptn_enum_case(runtime, "Uri\\UriComparisonMode", comparison_mode_case);
     }
     if (ptn_builtin_class_constant_value(resolved_class_name, constant, &builtin_value)) {
         return builtin_value;
@@ -4930,7 +4976,8 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_internal_class_name_is_uri_rfc3986_uri(receiver.as.object->class_name)
+        && (ptn_internal_class_name_is_uri_rfc3986_uri(receiver.as.object->class_name) ||
+            ptn_internal_class_name_is_uri_whatwg_url(receiver.as.object->class_name))
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_uri_call_method(runtime, receiver, name, argc, args, line);
