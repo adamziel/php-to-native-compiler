@@ -40568,8 +40568,8 @@ var_dump(array_reduce($array, \"pick_reduce_value\", 0));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_array_reduce_direct(&runtime"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("carry = ptn_value_clone_deref(callback_result);"));
 }
 
@@ -41148,8 +41148,8 @@ echo array_reduce([6], [1 => \"combine\", 0 => \"Reducer\"], 0), \"\\n\";
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_array_reduce_direct(&runtime"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("Reducer::combine"));
 }
 
@@ -41182,8 +41182,8 @@ echo array_reduce([\"a\", \"b\"], [$reducer, \"combine\"], \"seed\"), \"\\n\";
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_array_reduce_direct(&runtime"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("receiver.type == PTN_OBJECT || receiver.type == PTN_EXCEPTION"));
     assert!(c_source.contains("ptn_call_declared_method(runtime, receiver"));
 }
@@ -41274,8 +41274,8 @@ var_dump(array_reduce($array, function &($carry, $value) {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_internal_array_reduce"));
-    assert!(c_source.contains("ptn_internal_call_callback(runtime, callback, 2, callback_args"));
+    assert!(c_source.contains("ptn_internal_array_reduce_direct(&runtime"));
+    assert!(c_source.contains("ptn_call_callable(runtime, callback, 2, callback_args"));
     assert!(c_source.contains("ptn_closure("));
 }
 

@@ -101,14 +101,15 @@ pub fn emit_c(module: &Module) -> String {
     let magic_visibility_warnings = collect_module_magic_visibility_warnings(module);
     let magic_debug_info_deprecations = collect_module_magic_debug_info_return_deprecations(module);
     let needs_direct_callable_dispatch = runtime_requirements.internal_function_dispatch
-        || runtime_requirements.dynamic_function_dispatch;
+        || runtime_requirements.dynamic_function_dispatch
+        || runtime_requirements.direct_callable_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
     let needs_method_dispatch = runtime_requirements.method_dispatch
         || runtime_requirements.internal_function_dispatch
         || has_declared_methods
         || needs_direct_callable_dispatch;
     let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
-    if needs_callable_dispatch {
+    if needs_callable_dispatch && !runtime_requirements.direct_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
     let needs_magic_property_read = module.classes.iter().any(|class| {
@@ -156,7 +157,9 @@ pub fn emit_c(module: &Module) -> String {
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
-        runtime_requirements.internal_function_dispatch,
+        runtime_requirements.internal_function_dispatch
+            || runtime_requirements.direct_callable_dispatch
+            || runtime_requirements.dynamic_function_dispatch,
         runtime_requirements.dynamic_function_dispatch,
         needs_method_dispatch,
     );
@@ -174,7 +177,10 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_file,
         &module.source_dir,
     );
-    if runtime_requirements.internal_function_dispatch {
+    if runtime_requirements.internal_function_dispatch
+        || runtime_requirements.direct_callable_dispatch
+        || runtime_requirements.dynamic_function_dispatch
+    {
         emit_user_function_dispatch(&mut out, &module.functions, &module.classes);
     }
     emit_class_metadata_helpers(
@@ -551,9 +557,12 @@ fn emit_include_runtime_helpers(out: &mut String) {
 struct RuntimeRequirements {
     internal_function_dispatch: bool,
     dynamic_function_dispatch: bool,
+    direct_callable_dispatch: bool,
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     direct_internal_helpers: bool,
+    direct_array_reduce_helper: bool,
+    direct_dump_helpers: bool,
     request_context: bool,
 }
 
@@ -577,6 +586,12 @@ fn variable_needs_request_context(name: &str) -> bool {
 fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     if requirements.internal_function_dispatch {
         out.push_str("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1\n");
+    }
+    if requirements.direct_array_reduce_helper {
+        out.push_str("#define PTN_HAS_DIRECT_ARRAY_REDUCE_HELPER 1\n");
+    }
+    if requirements.direct_dump_helpers {
+        out.push_str("#define PTN_HAS_DIRECT_DUMP_HELPERS 1\n");
     }
     let runtime_c = runtime::runtime_c();
     let direct_helpers = runtime_chunk_range(
@@ -3850,7 +3865,7 @@ fn emit_user_function_dispatch(
     classes: &[ClassDecl],
 ) {
     out.push_str(
-        "\nstatic int ptn_user_function_exists(PtnRuntime *runtime, const char *name) {\n",
+        "\nstatic PTN_UNUSED int ptn_user_function_exists(PtnRuntime *runtime, const char *name) {\n",
     );
     if functions
         .iter()
@@ -3874,7 +3889,7 @@ fn emit_user_function_dispatch(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
-    out.push_str("\nstatic PtnValue ptn_user_function_names(PtnRuntime *runtime) {\n");
+    out.push_str("\nstatic PTN_UNUSED PtnValue ptn_user_function_names(PtnRuntime *runtime) {\n");
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     let has_global_functions = functions
         .iter()
@@ -4176,7 +4191,10 @@ fn emit_user_function_dispatch(
     out.push_str("        const char *ptn_static_magic_class = ptn_static_magic_name;\n");
     out.push_str("        const char *ptn_static_magic_method = ptn_static_magic_separator + 2;\n");
     out.push_str("        const char *ptn_static_magic_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_magic_class);\n");
-    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class) || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
+    out.push_str("        int ptn_static_magic_class_exists = ptn_declared_class_exists(ptn_static_magic_resolved_class);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("        ptn_static_magic_class_exists = ptn_static_magic_class_exists || ptn_internal_class_exists_name(ptn_static_magic_resolved_class);\n");
+    out.push_str("#endif\n");
     out.push_str("        if (!ptn_static_magic_class_exists) {\n");
     out.push_str("            char ptn_class_not_found_message[512];\n");
     out.push_str("            int ptn_class_not_found_written = snprintf(ptn_class_not_found_message, sizeof(ptn_class_not_found_message), \"Class \\\"%s\\\" not found\", ptn_static_magic_class);\n");
@@ -4247,7 +4265,11 @@ fn emit_user_function_dispatch(
     );
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
-    out.push_str("        if (!ptn_declared_runtime_class_exists(runtime, ptn_static_call_resolved_class) && !ptn_internal_class_exists_name(ptn_static_call_resolved_class)) {\n");
+    out.push_str("        int ptn_static_call_class_exists = ptn_declared_runtime_class_exists(runtime, ptn_static_call_resolved_class);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("        ptn_static_call_class_exists = ptn_static_call_class_exists || ptn_internal_class_exists_name(ptn_static_call_resolved_class);\n");
+    out.push_str("#endif\n");
+    out.push_str("        if (!ptn_static_call_class_exists) {\n");
     out.push_str(
         "            ptn_runtime_autoload_class(runtime, ptn_static_call_resolved_class, line);\n",
     );
@@ -4285,13 +4307,19 @@ fn emit_user_function_dispatch(
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
     out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
     out.push_str("            free(ptn_static_call_class);\n");
     out.push_str("            return ptn_static_call_result;\n");
     out.push_str("        }\n");
+    out.push_str("#else\n");
+    out.push_str("        (void)ptn_static_call_resolved_class;\n");
+    out.push_str("        (void)ptn_static_call_method;\n");
+    out.push_str("#endif\n");
     out.push_str("        free(ptn_static_call_class);\n");
     out.push_str("    }\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("    if (ptn_find_internal_function(lookup_name) != NULL) {\n");
     out.push_str("        return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
     out.push_str("    }\n");
@@ -4302,6 +4330,22 @@ fn emit_user_function_dispatch(
     );
     out.push_str("    }\n");
     out.push_str("    return ptn_call_internal(runtime, lookup_name, argc, args, line);\n");
+    out.push_str("#else\n");
+    out.push_str("    (void)argc;\n");
+    out.push_str("    (void)args;\n");
+    out.push_str("    const char *undefined_kind = strstr(lookup_name, \"::\") == NULL ? \"function\" : \"method\";\n");
+    out.push_str("    int ptn_undefined_needed = snprintf(NULL, 0, \"Call to undefined %s %s()\", undefined_kind, lookup_name);\n");
+    out.push_str("    if (ptn_undefined_needed < 0) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    char *ptn_undefined_message = malloc((size_t)ptn_undefined_needed + 1);\n");
+    out.push_str("    if (ptn_undefined_message == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    snprintf(ptn_undefined_message, (size_t)ptn_undefined_needed + 1, \"Call to undefined %s %s()\", undefined_kind, lookup_name);\n");
+    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"Error\", ptn_undefined_message, runtime->source_path, line);\n");
+    out.push_str("    return ptn_null();\n");
+    out.push_str("#endif\n");
     out.push_str("}\n");
 }
 
@@ -10958,6 +11002,7 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
         "\nstatic PTN_UNUSED const char *ptn_dynamic_call_effective_internal_name(PtnRuntime *runtime, const char *name) {\n",
     );
     out.push_str("    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("    if (ptn_user_function_exists(runtime, lookup_name) || ptn_find_internal_function(lookup_name) != NULL) {\n");
     out.push_str("        return lookup_name;\n");
     out.push_str("    }\n");
@@ -10965,6 +11010,9 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str("    if (namespace_separator != NULL && ptn_find_internal_function(namespace_separator + 1) != NULL) {\n");
     out.push_str("        return namespace_separator + 1;\n");
     out.push_str("    }\n");
+    out.push_str("#else\n");
+    out.push_str("    (void)runtime;\n");
+    out.push_str("#endif\n");
     out.push_str("    return lookup_name;\n");
     out.push_str("}\n");
 
@@ -11051,6 +11099,7 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str(
         "\nstatic PTN_UNUSED void ptn_dynamic_call_warn_reference_argument_mismatches(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str(
         "    if (!runtime->warn_by_ref_argument_mismatch || argc == 0 || args == NULL) {\n",
     );
@@ -11076,6 +11125,13 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     out.push_str("        const char *parameter_name = ptn_function_metadata_parameter_name(metadata, i, fallback, sizeof(fallback));\n");
     out.push_str("        ptn_emit_by_reference_argument_warning(runtime, metadata.name != NULL ? metadata.name : name, i + 1, parameter_name, line);\n");
     out.push_str("    }\n");
+    out.push_str("#else\n");
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)name;\n");
+    out.push_str("    (void)argc;\n");
+    out.push_str("    (void)args;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("#endif\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_dynamic_call_forbidden_name(const char *name) {\n");
@@ -11288,9 +11344,15 @@ fn emit_callable_dispatch(
     out.push_str(
         "        const char *lookup_name = ptn_symbol_name_without_leading_slash(callable_name);\n",
     );
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str(
         "        PtnFunctionMetadata metadata = ptn_find_function_metadata(lookup_name);\n",
     );
+    out.push_str("#else\n");
+    out.push_str(
+        "        PtnFunctionMetadata metadata = ptn_user_function_metadata(lookup_name);\n",
+    );
+    out.push_str("#endif\n");
     out.push_str("        const char *parameter_name = ptn_function_metadata_parameter_name(metadata, argument_index, fallback, fallback_len);\n");
     out.push_str("        free(callable_name);\n");
     out.push_str("        return parameter_name;\n");
@@ -14786,18 +14848,18 @@ fn collect_value_legacy_dollar_brace_deprecations(
 
 fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
     let mut requirements = RuntimeRequirements::default();
+    if module.classes.iter().any(|class| !class.methods.is_empty()) {
+        requirements.method_dispatch = true;
+    }
     if module.classes.iter().any(|class| {
-        !class.methods.is_empty()
-            || !class.properties.is_empty()
-            || !class.static_properties.is_empty()
-            || !class.interfaces.is_empty()
-            || class
-                .parent_name
-                .as_deref()
-                .and_then(modeled_internal_class_name)
-                .is_some()
+        class
+            .parent_name
+            .as_deref()
+            .and_then(modeled_internal_class_name)
+            .is_some()
     }) {
         requirements.internal_function_dispatch = true;
+        requirements.method_dispatch = true;
     }
     if module
         .classes
@@ -15674,6 +15736,22 @@ fn collect_call_runtime_requirements(
         requirements.method_dispatch = true;
     }
     if argument_names.iter().all(Option::is_none)
+        && array_reduce_can_use_direct_helper(name, arguments, functions)
+    {
+        requirements.direct_internal_helpers = true;
+        requirements.direct_array_reduce_helper = true;
+        requirements.direct_callable_dispatch = true;
+        requirements.method_dispatch = true;
+        return;
+    }
+    if argument_names.iter().all(Option::is_none)
+        && direct_dump_can_use_helper(name, arguments, functions)
+    {
+        requirements.direct_internal_helpers = true;
+        requirements.direct_dump_helpers = true;
+        return;
+    }
+    if argument_names.iter().all(Option::is_none)
         && is_direct_internal_helper_call(name, arguments.len())
     {
         requirements.direct_internal_helpers = true;
@@ -15739,6 +15817,69 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+        || (name.eq_ignore_ascii_case("debug_zval_dump") && argument_count >= 1)
+}
+
+fn array_reduce_can_use_direct_helper(
+    name: &str,
+    arguments: &[ValueExpr],
+    functions: &[FunctionDecl],
+) -> bool {
+    if !name.eq_ignore_ascii_case("array_reduce") || !(arguments.len() == 2 || arguments.len() == 3)
+    {
+        return false;
+    }
+    let callback = &arguments[1];
+    match callback {
+        ValueExpr::Closure { .. } => true,
+        ValueExpr::String(name) => is_generated_user_function_call(name, functions),
+        ValueExpr::Array(elements) => elements
+            .iter()
+            .all(|element| matches!(&element.value, IrArrayElementValue::Value(_))),
+        _ => false,
+    }
+}
+
+fn array_reduce_callback_needs_direct_dump(arguments: &[ValueExpr]) -> bool {
+    matches!(
+        arguments.get(1),
+        Some(ValueExpr::Closure { .. } | ValueExpr::Array(_))
+    )
+}
+
+fn var_dump_argument_can_use_direct_helper(
+    argument: &ValueExpr,
+    functions: &[FunctionDecl],
+) -> bool {
+    let ValueExpr::InternalCall {
+        name,
+        arguments,
+        argument_names,
+        argument_unpacks,
+        ..
+    } = argument
+    else {
+        return false;
+    };
+    argument_names.iter().all(Option::is_none)
+        && argument_unpacks.iter().all(|unpack| !*unpack)
+        && array_reduce_can_use_direct_helper(name, arguments, functions)
+        && array_reduce_callback_needs_direct_dump(arguments)
+}
+
+fn direct_dump_can_use_helper(
+    name: &str,
+    arguments: &[ValueExpr],
+    functions: &[FunctionDecl],
+) -> bool {
+    if name.eq_ignore_ascii_case("debug_zval_dump") {
+        return !arguments.is_empty();
+    }
+    name.eq_ignore_ascii_case("var_dump")
+        && !arguments.is_empty()
+        && arguments
+            .iter()
+            .all(|argument| var_dump_argument_can_use_direct_helper(argument, functions))
 }
 
 enum NamedArgumentBindingError {
@@ -26936,6 +27077,101 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_array_reduce_direct_call(
+        &mut self,
+        out: &mut String,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, "array_reduce", argument_index, argument));
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_internal_array_reduce_direct(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
+    fn emit_direct_dump_call(
+        &mut self,
+        out: &mut String,
+        name: &str,
+        arguments: &[ValueExpr],
+        line: usize,
+    ) -> String {
+        let mut temps = Vec::with_capacity(arguments.len());
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            temps.push(self.emit_call_argument(out, name, argument_index, argument));
+        }
+
+        let args_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&args_temp);
+        out.push_str("[] = { ");
+        for (index, temp) in temps.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str("ptn_value_share(");
+            out.push_str(temp);
+            out.push(')');
+        }
+        out.push_str(" };\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        if name.eq_ignore_ascii_case("debug_zval_dump") {
+            out.push_str("ptn_direct_internal_debug_zval_dump");
+        } else {
+            out.push_str("ptn_direct_internal_var_dump");
+        }
+        out.push_str("(&runtime, ");
+        out.push_str(&arguments.len().to_string());
+        out.push_str(", ");
+        out.push_str(&args_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        for index in 0..temps.len() {
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+        }
+        for temp in temps {
+            emit_value_cleanup(out, "    ", &temp);
+        }
+        result_temp
+    }
+
     fn emit_internal_call(
         &mut self,
         out: &mut String,
@@ -26998,6 +27234,12 @@ impl ValueEmitter {
                 self.emit_variable_array_mutator_call(out, name, arguments, line)
             {
                 return result_temp;
+            }
+            if array_reduce_can_use_direct_helper(name, arguments, &self.user_functions) {
+                return self.emit_array_reduce_direct_call(out, arguments, line);
+            }
+            if direct_dump_can_use_helper(name, arguments, &self.user_functions) {
+                return self.emit_direct_dump_call(out, name, arguments, line);
             }
         }
 
