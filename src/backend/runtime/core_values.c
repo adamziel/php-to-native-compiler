@@ -1145,6 +1145,11 @@ struct PtnRuntime {
     char *default_charset;
     char *arg_separator_input;
     char *arg_separator_output;
+    char *highlight_comment;
+    char *highlight_default;
+    char *highlight_html;
+    char *highlight_keyword;
+    char *highlight_string;
     char *output_handler;
     char *filter_default;
     char *pcre_backtrack_limit;

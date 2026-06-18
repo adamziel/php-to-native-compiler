@@ -196,6 +196,11 @@ struct RuntimeIni {
     serialize_precision: Option<String>,
     default_charset: Option<String>,
     arg_separator_input: Option<String>,
+    highlight_comment: Option<String>,
+    highlight_default: Option<String>,
+    highlight_html: Option<String>,
+    highlight_keyword: Option<String>,
+    highlight_string: Option<String>,
     date_timezone: Option<String>,
     assert_active: Option<String>,
     assert_bail: Option<String>,
@@ -238,6 +243,7 @@ struct RuntimeIni {
     user_agent: Option<String>,
     exception_ignore_args: Option<String>,
     exception_string_param_max_len: Option<String>,
+    allow_url_include_deprecated: bool,
 }
 
 impl Invocation {
@@ -376,6 +382,16 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.default_charset = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("display_errors") {
         ini.display_errors = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("highlight.comment") {
+        ini.highlight_comment = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("highlight.default") {
+        ini.highlight_default = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("highlight.html") {
+        ini.highlight_html = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("highlight.keyword") {
+        ini.highlight_keyword = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("highlight.string") {
+        ini.highlight_string = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("error_reporting") {
         if let Some(parsed) = parse_error_reporting_level(raw_value) {
             ini.error_reporting = Some(parsed);
@@ -461,7 +477,21 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.expose_php = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("user_agent") {
         ini.user_agent = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("allow_url_include") {
+        ini.allow_url_include_deprecated =
+            ini.allow_url_include_deprecated || ini_scalar_truthy(raw_value);
     }
+}
+
+fn ini_scalar_truthy(raw_value: &str) -> bool {
+    let normalized = raw_value.trim();
+    if normalized.is_empty() {
+        return false;
+    }
+    !matches!(
+        normalized.to_ascii_lowercase().as_str(),
+        "0" | "off" | "false" | "no"
+    )
 }
 
 fn canonical_opcache_ini_name(name: &str) -> Option<&'static str> {
@@ -758,6 +788,11 @@ fn compile_and_run(
         serialize_precision: ini.serialize_precision.clone(),
         default_charset: ini.default_charset.clone(),
         arg_separator_input: ini.arg_separator_input.clone(),
+        highlight_comment: ini.highlight_comment.clone(),
+        highlight_default: ini.highlight_default.clone(),
+        highlight_html: ini.highlight_html.clone(),
+        highlight_keyword: ini.highlight_keyword.clone(),
+        highlight_string: ini.highlight_string.clone(),
         date_timezone: ini.date_timezone.clone(),
         assert_active: ini.assert_active.clone(),
         assert_bail: ini.assert_bail.clone(),
@@ -800,6 +835,7 @@ fn compile_and_run(
         user_agent: ini.user_agent.clone(),
         exception_ignore_args: ini.exception_ignore_args.clone(),
         exception_string_param_max_len: ini.exception_string_param_max_len.clone(),
+        allow_url_include_deprecated: ini.allow_url_include_deprecated,
     };
     if ini.default_charset.is_none() {
         if let Some(internal_encoding) = &ini.internal_encoding {
@@ -809,17 +845,6 @@ fn compile_and_run(
         }
     }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
-    let native = TempPath::new("ptn-phpc-native", "bin");
-    compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
-        if error.span.is_some() {
-            PhpcError::SourceFatal {
-                diagnostic: error,
-                script: script.to_path_buf(),
-            }
-        } else {
-            PhpcError::Message(error.to_string())
-        }
-    })?;
     let runtime_source_name = script
         .file_name()
         .and_then(|name| name.to_str())
@@ -832,6 +857,17 @@ fn compile_and_run(
             Err(_) => None,
         }
     };
+    let native = TempPath::new("ptn-phpc-native", "bin");
+    compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
+        if error.span.is_some() {
+            PhpcError::SourceFatal {
+                diagnostic: error,
+                script: script.to_path_buf(),
+            }
+        } else {
+            PhpcError::Message(error.to_string())
+        }
+    })?;
 
     let mut command = Command::new(native.path());
     command.args(args);
@@ -853,6 +889,21 @@ fn compile_and_run(
     }
     if let Some(arg_separator_input) = &ini.arg_separator_input {
         command.env("PTN_ARG_SEPARATOR_INPUT", arg_separator_input);
+    }
+    if let Some(highlight_comment) = &ini.highlight_comment {
+        command.env("PTN_HIGHLIGHT_COMMENT", highlight_comment);
+    }
+    if let Some(highlight_default) = &ini.highlight_default {
+        command.env("PTN_HIGHLIGHT_DEFAULT", highlight_default);
+    }
+    if let Some(highlight_html) = &ini.highlight_html {
+        command.env("PTN_HIGHLIGHT_HTML", highlight_html);
+    }
+    if let Some(highlight_keyword) = &ini.highlight_keyword {
+        command.env("PTN_HIGHLIGHT_KEYWORD", highlight_keyword);
+    }
+    if let Some(highlight_string) = &ini.highlight_string {
+        command.env("PTN_HIGHLIGHT_STRING", highlight_string);
     }
     if let Some(assert_active) = &ini.assert_active {
         command.env("PTN_ASSERT_ACTIVE", assert_active);
@@ -993,8 +1044,17 @@ fn compile_and_run(
     } else {
         command.env("PTN_REQUEST_MODE", "cli");
     }
+    let startup_warning_emitted = memory_limit_warning.is_some()
+        || ini.mbstring_internal_encoding.is_some()
+        || ini.allow_url_include_deprecated;
+    if startup_warning_emitted {
+        command.env("PTN_STARTUP_WARNING_EMITTED", "1");
+    }
     if let Some(warning) = memory_limit_warning {
         print!("{warning}");
+    }
+    if ini.allow_url_include_deprecated {
+        println!("Deprecated: Directive 'allow_url_include' is deprecated in Unknown on line 0");
     }
     if ini.mbstring_internal_encoding.is_some() {
         println!(

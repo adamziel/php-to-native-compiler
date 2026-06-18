@@ -1521,6 +1521,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->static_property_set_visibility = &runtime->owned_static_property_set_visibility;
     ptn_diagnostics_init(&runtime->diagnostics, NULL);
     runtime->diagnostics.runtime = runtime;
+    if (getenv("PTN_STARTUP_WARNING_EMITTED") != NULL) {
+        runtime->diagnostics.emitted_warning = 1;
+    }
     runtime->owned_exceptions.active_exception = NULL;
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);
@@ -1623,6 +1626,11 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_default_charset = getenv("PTN_DEFAULT_CHARSET");
     const char *configured_arg_separator_input = getenv("PTN_ARG_SEPARATOR_INPUT");
     const char *configured_arg_separator_output = getenv("PTN_ARG_SEPARATOR_OUTPUT");
+    const char *configured_highlight_comment = getenv("PTN_HIGHLIGHT_COMMENT");
+    const char *configured_highlight_default = getenv("PTN_HIGHLIGHT_DEFAULT");
+    const char *configured_highlight_html = getenv("PTN_HIGHLIGHT_HTML");
+    const char *configured_highlight_keyword = getenv("PTN_HIGHLIGHT_KEYWORD");
+    const char *configured_highlight_string = getenv("PTN_HIGHLIGHT_STRING");
     const char *configured_output_handler = getenv("PTN_OUTPUT_HANDLER");
     const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
@@ -1673,6 +1681,21 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->arg_separator_output = ptn_duplicate_string(
         configured_arg_separator_output == NULL ? "&" : configured_arg_separator_output
+    );
+    runtime->highlight_comment = ptn_duplicate_string(
+        configured_highlight_comment == NULL ? "#FF8000" : configured_highlight_comment
+    );
+    runtime->highlight_default = ptn_duplicate_string(
+        configured_highlight_default == NULL ? "#0000BB" : configured_highlight_default
+    );
+    runtime->highlight_html = ptn_duplicate_string(
+        configured_highlight_html == NULL ? "#000000" : configured_highlight_html
+    );
+    runtime->highlight_keyword = ptn_duplicate_string(
+        configured_highlight_keyword == NULL ? "#007700" : configured_highlight_keyword
+    );
+    runtime->highlight_string = ptn_duplicate_string(
+        configured_highlight_string == NULL ? "#DD0000" : configured_highlight_string
     );
     runtime->output_handler = ptn_duplicate_string(
         configured_output_handler == NULL ? "" : configured_output_handler

@@ -1870,6 +1870,11 @@ static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *c
 static const char *ptn_runtime_default_charset(PtnRuntime *runtime);
 static const char *ptn_runtime_arg_separator_input(PtnRuntime *runtime);
 static const char *ptn_runtime_arg_separator_output(PtnRuntime *runtime);
+static const char *ptn_runtime_highlight_comment(PtnRuntime *runtime);
+static const char *ptn_runtime_highlight_default(PtnRuntime *runtime);
+static const char *ptn_runtime_highlight_html(PtnRuntime *runtime);
+static const char *ptn_runtime_highlight_keyword(PtnRuntime *runtime);
+static const char *ptn_runtime_highlight_string(PtnRuntime *runtime);
 static const char *ptn_runtime_internal_encoding(PtnRuntime *runtime);
 static const char *ptn_runtime_output_encoding(PtnRuntime *runtime);
 static int ptn_string_operand_ascii_case_equal(PtnStringOperand value, const char *literal);
@@ -33118,6 +33123,8 @@ static int64_t ptn_internal_expect_integer_arg(
     size_t line
 );
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
+static int ptn_base64_decode_value(unsigned char byte);
+static int ptn_base64_is_space(unsigned char byte);
 static int ptn_lstat_path(const char *path, struct stat *info);
 static const char *ptn_runtime_current_include_path(PtnRuntime *runtime);
 static char *ptn_internal_non_empty_path_arg_c_string_or_value_error(
@@ -35796,7 +35803,161 @@ static PtnValue ptn_internal_get_included_files(PtnRuntime *runtime, size_t argc
     return result;
 }
 
+static int ptn_data_url_ascii_ci_equal(const char *data, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)data[i]) != tolower((unsigned char)literal[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_data_url_has_scheme(const char *path) {
+    return path != NULL &&
+        strlen(path) >= 5 &&
+        ptn_data_url_ascii_ci_equal(path, 5, "data:");
+}
+
+static int ptn_data_url_metadata_has_base64(const char *metadata, size_t metadata_len) {
+    size_t start = 0;
+    while (start <= metadata_len) {
+        size_t end = start;
+        while (end < metadata_len && metadata[end] != ';') {
+            end++;
+        }
+        if (ptn_data_url_ascii_ci_equal(metadata + start, end - start, "base64")) {
+            return 1;
+        }
+        if (end == metadata_len) {
+            break;
+        }
+        start = end + 1;
+    }
+    return 0;
+}
+
+static int ptn_data_url_decode_base64(
+    const char *input,
+    size_t input_len,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    if (input_len > SIZE_MAX / sizeof(int)) {
+        ptn_abort_out_of_memory();
+    }
+    int *values = input_len == 0 ? NULL : malloc(input_len * sizeof(int));
+    if (input_len != 0 && values == NULL) {
+        ptn_abort_out_of_memory();
+    }
+
+    size_t value_len = 0;
+    size_t padding_len = 0;
+    int saw_padding = 0;
+    int invalid = 0;
+    for (size_t i = 0; i < input_len; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        if (ptn_base64_is_space(byte)) {
+            continue;
+        }
+        int value = ptn_base64_decode_value(byte);
+        if (value >= 0) {
+            if (saw_padding) {
+                invalid = 1;
+                break;
+            }
+            values[value_len++] = value;
+            continue;
+        }
+        if (byte == '=') {
+            saw_padding = 1;
+            padding_len++;
+            continue;
+        }
+        invalid = 1;
+        break;
+    }
+
+    if (!invalid) {
+        size_t significant_len = value_len + padding_len;
+        if (padding_len > 0) {
+            if (padding_len > 2 || significant_len % 4 != 0 ||
+                (padding_len == 1 && value_len % 4 != 3) ||
+                (padding_len == 2 && value_len % 4 != 2)) {
+                invalid = 1;
+            }
+        } else if (value_len % 4 == 1) {
+            invalid = 1;
+        }
+    }
+    if (invalid) {
+        free(values);
+        errno = EINVAL;
+        return -1;
+    }
+
+    unsigned char *output = malloc(input_len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    size_t out = 0;
+    size_t i = 0;
+    while (i + 4 <= value_len) {
+        output[out++] = (unsigned char)((values[i] << 2) | (values[i + 1] >> 4));
+        output[out++] = (unsigned char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+        output[out++] = (unsigned char)(((values[i + 2] & 0x03) << 6) | values[i + 3]);
+        i += 4;
+    }
+    size_t remainder = value_len - i;
+    if (remainder >= 2) {
+        output[out++] = (unsigned char)((values[i] << 2) | (values[i + 1] >> 4));
+    }
+    if (remainder >= 3) {
+        output[out++] = (unsigned char)(((values[i + 1] & 0x0f) << 4) | (values[i + 2] >> 2));
+    }
+    output[out] = '\0';
+    free(values);
+    *data_out = output;
+    *len_out = out;
+    return 1;
+}
+
+static int ptn_try_read_data_url_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    if (!ptn_data_url_has_scheme(path)) {
+        return 0;
+    }
+    const char *metadata = path + 5;
+    const char *comma = strchr(metadata, ',');
+    if (comma == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    size_t metadata_len = (size_t)(comma - metadata);
+    const char *payload = comma + 1;
+    size_t payload_len = strlen(payload);
+    size_t decoded_len = 0;
+    char *decoded = ptn_url_decode_bytes(payload, payload_len, 0, &decoded_len);
+    if (!ptn_data_url_metadata_has_base64(metadata, metadata_len)) {
+        *data_out = (unsigned char *)decoded;
+        *len_out = decoded_len;
+        return 1;
+    }
+
+    int result = ptn_data_url_decode_base64(decoded, decoded_len, data_out, len_out);
+    free(decoded);
+    return result;
+}
+
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out) {
+    int data_url_result = ptn_try_read_data_url_bytes(path, data_out, len_out);
+    if (data_url_result != 0) {
+        return data_url_result;
+    }
+
     FILE *stream = fopen(path, "rb");
     if (stream == NULL) {
         return 0;
@@ -38195,12 +38356,522 @@ static void ptn_highlight_append_escaped(PtnStringBuffer *buffer, const char *da
     }
 }
 
-static PtnValue ptn_highlight_string_value(PtnStringOperand input) {
+typedef enum {
+    PTN_HIGHLIGHT_NONE = 0,
+    PTN_HIGHLIGHT_DEFAULT,
+    PTN_HIGHLIGHT_KEYWORD,
+    PTN_HIGHLIGHT_STRING,
+    PTN_HIGHLIGHT_COMMENT
+} PtnHighlightClass;
+
+typedef struct {
+    const char *html;
+    const char *default_color;
+    const char *keyword;
+    const char *string;
+    const char *comment;
+} PtnHighlightColors;
+
+static const char *ptn_highlight_color_for_class(PtnHighlightClass klass, const PtnHighlightColors *colors) {
+    switch (klass) {
+        case PTN_HIGHLIGHT_DEFAULT:
+            return colors->default_color;
+        case PTN_HIGHLIGHT_KEYWORD:
+            return colors->keyword;
+        case PTN_HIGHLIGHT_STRING:
+            return colors->string;
+        case PTN_HIGHLIGHT_COMMENT:
+            return colors->comment;
+        case PTN_HIGHLIGHT_NONE:
+            return colors->html;
+    }
+    return colors->html;
+}
+
+static void ptn_highlight_close_span(PtnStringBuffer *buffer, PtnHighlightClass *current) {
+    if (*current != PTN_HIGHLIGHT_NONE) {
+        ptn_string_buffer_append(buffer, "</span>");
+        *current = PTN_HIGHLIGHT_NONE;
+    }
+}
+
+static void ptn_highlight_switch_span(
+    PtnStringBuffer *buffer,
+    PtnHighlightClass *current,
+    PtnHighlightClass next,
+    const PtnHighlightColors *colors
+) {
+    if (*current == next) {
+        return;
+    }
+    ptn_highlight_close_span(buffer, current);
+    if (next != PTN_HIGHLIGHT_NONE) {
+        ptn_string_buffer_append(buffer, "<span style=\"color: ");
+        ptn_string_buffer_append(buffer, ptn_highlight_color_for_class(next, colors));
+        ptn_string_buffer_append(buffer, "\">");
+        *current = next;
+    }
+}
+
+static void ptn_highlight_append_colored(
+    PtnStringBuffer *buffer,
+    PtnHighlightClass *current,
+    PtnHighlightClass klass,
+    const PtnHighlightColors *colors,
+    const char *data,
+    size_t len
+) {
+    ptn_highlight_switch_span(buffer, current, klass, colors);
+    ptn_highlight_append_escaped(buffer, data, len);
+}
+
+static int ptn_highlight_ascii_ci_equal(const char *data, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)data[i]) != tolower((unsigned char)literal[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_highlight_starts_with_ci(const char *data, size_t len, size_t offset, const char *literal) {
+    size_t literal_len = strlen(literal);
+    return offset <= len &&
+        literal_len <= len - offset &&
+        ptn_highlight_ascii_ci_equal(data + offset, literal_len, literal);
+}
+
+static int ptn_highlight_is_ident_start(unsigned char byte) {
+    return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z') || byte == '_';
+}
+
+static int ptn_highlight_is_ident_part(unsigned char byte) {
+    return ptn_highlight_is_ident_start(byte) || (byte >= '0' && byte <= '9');
+}
+
+static int ptn_highlight_is_keyword(const char *data, size_t len) {
+    return ptn_highlight_ascii_ci_equal(data, len, "abstract") ||
+        ptn_highlight_ascii_ci_equal(data, len, "and") ||
+        ptn_highlight_ascii_ci_equal(data, len, "array") ||
+        ptn_highlight_ascii_ci_equal(data, len, "as") ||
+        ptn_highlight_ascii_ci_equal(data, len, "break") ||
+        ptn_highlight_ascii_ci_equal(data, len, "callable") ||
+        ptn_highlight_ascii_ci_equal(data, len, "case") ||
+        ptn_highlight_ascii_ci_equal(data, len, "catch") ||
+        ptn_highlight_ascii_ci_equal(data, len, "class") ||
+        ptn_highlight_ascii_ci_equal(data, len, "clone") ||
+        ptn_highlight_ascii_ci_equal(data, len, "const") ||
+        ptn_highlight_ascii_ci_equal(data, len, "continue") ||
+        ptn_highlight_ascii_ci_equal(data, len, "declare") ||
+        ptn_highlight_ascii_ci_equal(data, len, "default") ||
+        ptn_highlight_ascii_ci_equal(data, len, "die") ||
+        ptn_highlight_ascii_ci_equal(data, len, "do") ||
+        ptn_highlight_ascii_ci_equal(data, len, "echo") ||
+        ptn_highlight_ascii_ci_equal(data, len, "else") ||
+        ptn_highlight_ascii_ci_equal(data, len, "elseif") ||
+        ptn_highlight_ascii_ci_equal(data, len, "empty") ||
+        ptn_highlight_ascii_ci_equal(data, len, "enddeclare") ||
+        ptn_highlight_ascii_ci_equal(data, len, "endfor") ||
+        ptn_highlight_ascii_ci_equal(data, len, "endforeach") ||
+        ptn_highlight_ascii_ci_equal(data, len, "endif") ||
+        ptn_highlight_ascii_ci_equal(data, len, "endswitch") ||
+        ptn_highlight_ascii_ci_equal(data, len, "endwhile") ||
+        ptn_highlight_ascii_ci_equal(data, len, "enum") ||
+        ptn_highlight_ascii_ci_equal(data, len, "eval") ||
+        ptn_highlight_ascii_ci_equal(data, len, "exit") ||
+        ptn_highlight_ascii_ci_equal(data, len, "extends") ||
+        ptn_highlight_ascii_ci_equal(data, len, "final") ||
+        ptn_highlight_ascii_ci_equal(data, len, "finally") ||
+        ptn_highlight_ascii_ci_equal(data, len, "fn") ||
+        ptn_highlight_ascii_ci_equal(data, len, "for") ||
+        ptn_highlight_ascii_ci_equal(data, len, "foreach") ||
+        ptn_highlight_ascii_ci_equal(data, len, "function") ||
+        ptn_highlight_ascii_ci_equal(data, len, "global") ||
+        ptn_highlight_ascii_ci_equal(data, len, "goto") ||
+        ptn_highlight_ascii_ci_equal(data, len, "if") ||
+        ptn_highlight_ascii_ci_equal(data, len, "implements") ||
+        ptn_highlight_ascii_ci_equal(data, len, "include") ||
+        ptn_highlight_ascii_ci_equal(data, len, "include_once") ||
+        ptn_highlight_ascii_ci_equal(data, len, "instanceof") ||
+        ptn_highlight_ascii_ci_equal(data, len, "insteadof") ||
+        ptn_highlight_ascii_ci_equal(data, len, "interface") ||
+        ptn_highlight_ascii_ci_equal(data, len, "isset") ||
+        ptn_highlight_ascii_ci_equal(data, len, "list") ||
+        ptn_highlight_ascii_ci_equal(data, len, "match") ||
+        ptn_highlight_ascii_ci_equal(data, len, "namespace") ||
+        ptn_highlight_ascii_ci_equal(data, len, "new") ||
+        ptn_highlight_ascii_ci_equal(data, len, "or") ||
+        ptn_highlight_ascii_ci_equal(data, len, "print") ||
+        ptn_highlight_ascii_ci_equal(data, len, "private") ||
+        ptn_highlight_ascii_ci_equal(data, len, "protected") ||
+        ptn_highlight_ascii_ci_equal(data, len, "public") ||
+        ptn_highlight_ascii_ci_equal(data, len, "readonly") ||
+        ptn_highlight_ascii_ci_equal(data, len, "require") ||
+        ptn_highlight_ascii_ci_equal(data, len, "require_once") ||
+        ptn_highlight_ascii_ci_equal(data, len, "return") ||
+        ptn_highlight_ascii_ci_equal(data, len, "static") ||
+        ptn_highlight_ascii_ci_equal(data, len, "switch") ||
+        ptn_highlight_ascii_ci_equal(data, len, "throw") ||
+        ptn_highlight_ascii_ci_equal(data, len, "trait") ||
+        ptn_highlight_ascii_ci_equal(data, len, "try") ||
+        ptn_highlight_ascii_ci_equal(data, len, "unset") ||
+        ptn_highlight_ascii_ci_equal(data, len, "use") ||
+        ptn_highlight_ascii_ci_equal(data, len, "var") ||
+        ptn_highlight_ascii_ci_equal(data, len, "while") ||
+        ptn_highlight_ascii_ci_equal(data, len, "xor") ||
+        ptn_highlight_ascii_ci_equal(data, len, "yield");
+}
+
+static size_t ptn_highlight_scan_trailing_whitespace(const char *data, size_t len, size_t offset) {
+    while (offset < len && isspace((unsigned char)data[offset])) {
+        offset++;
+    }
+    return offset;
+}
+
+static size_t ptn_highlight_scan_quoted_string(const char *data, size_t len, size_t offset) {
+    char quote = data[offset++];
+    while (offset < len) {
+        if (data[offset] == '\\' && offset + 1 < len) {
+            offset += 2;
+            continue;
+        }
+        if (data[offset++] == quote) {
+            break;
+        }
+    }
+    return ptn_highlight_scan_trailing_whitespace(data, len, offset);
+}
+
+static void ptn_highlight_append_double_quoted_string(
+    PtnStringBuffer *buffer,
+    PtnHighlightClass *current,
+    const PtnHighlightColors *colors,
+    const char *data,
+    size_t len
+) {
+    size_t segment_start = 0;
+    size_t i = 1;
+    while (i < len) {
+        if (data[i] == '\\' && i + 1 < len) {
+            i += 2;
+            continue;
+        }
+        if (data[i] == '$' && i + 1 < len && ptn_highlight_is_ident_start((unsigned char)data[i + 1])) {
+            if (i > segment_start) {
+                ptn_highlight_append_colored(
+                    buffer,
+                    current,
+                    PTN_HIGHLIGHT_STRING,
+                    colors,
+                    data + segment_start,
+                    i - segment_start
+                );
+            }
+            size_t variable_start = i;
+            i += 2;
+            while (i < len && ptn_highlight_is_ident_part((unsigned char)data[i])) {
+                i++;
+            }
+            ptn_highlight_append_colored(
+                buffer,
+                current,
+                PTN_HIGHLIGHT_DEFAULT,
+                colors,
+                data + variable_start,
+                i - variable_start
+            );
+            segment_start = i;
+            continue;
+        }
+        i++;
+    }
+    if (len > segment_start) {
+        ptn_highlight_append_colored(
+            buffer,
+            current,
+            PTN_HIGHLIGHT_STRING,
+            colors,
+            data + segment_start,
+            len - segment_start
+        );
+    }
+}
+
+static size_t ptn_highlight_scan_line_comment(const char *data, size_t len, size_t offset) {
+    while (offset < len && data[offset] != '\n') {
+        offset++;
+    }
+    if (offset < len && data[offset] == '\n') {
+        offset++;
+    }
+    return ptn_highlight_scan_trailing_whitespace(data, len, offset);
+}
+
+static size_t ptn_highlight_scan_block_comment(const char *data, size_t len, size_t offset) {
+    offset += 2;
+    while (offset + 1 < len && !(data[offset] == '*' && data[offset + 1] == '/')) {
+        offset++;
+    }
+    if (offset + 1 < len) {
+        offset += 2;
+    } else {
+        offset = len;
+    }
+    return ptn_highlight_scan_trailing_whitespace(data, len, offset);
+}
+
+static size_t ptn_highlight_open_tag_len(const char *data, size_t len, size_t offset) {
+    if (offset + 2 > len || data[offset] != '<' || data[offset + 1] != '?') {
+        return 0;
+    }
+    if (offset + 3 <= len && data[offset + 2] == '=') {
+        return 3;
+    }
+    if (ptn_highlight_starts_with_ci(data, len, offset, "<?php")) {
+        size_t end = offset + 5;
+        return ptn_highlight_scan_trailing_whitespace(data, len, end) - offset;
+    }
+    return 2;
+}
+
+static size_t ptn_highlight_close_tag_len(const char *data, size_t len, size_t offset) {
+    if (offset + 2 > len || data[offset] != '?' || data[offset + 1] != '>') {
+        return 0;
+    }
+    size_t end = offset + 2;
+    if (end < len && data[end] == '\r') {
+        end++;
+        if (end < len && data[end] == '\n') {
+            end++;
+        }
+    } else if (end < len && data[end] == '\n') {
+        end++;
+    }
+    return end - offset;
+}
+
+static size_t ptn_highlight_operator_len(const char *data, size_t len, size_t offset) {
+    static const char *const operators[] = {
+        "===", "!==", "<=>", "?""?=", "<<=", ">>=", "...",
+        "==", "!=", "<>", "<=", ">=", "++", "--", "&&", "||", "?""?",
+        "+=", "-=", "*=", "/=", ".=", "%=", "&=", "|=", "^=", "=>", "->", "::", "<<", ">>",
+    };
+    for (size_t i = 0; i < sizeof(operators) / sizeof(operators[0]); i++) {
+        size_t op_len = strlen(operators[i]);
+        if (offset <= len && op_len <= len - offset && memcmp(data + offset, operators[i], op_len) == 0) {
+            return op_len;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_highlight_string_value(PtnRuntime *runtime, PtnStringOperand input, int wrap_pre) {
+    PtnHighlightColors colors = {
+        ptn_runtime_highlight_html(runtime),
+        ptn_runtime_highlight_default(runtime),
+        ptn_runtime_highlight_keyword(runtime),
+        ptn_runtime_highlight_string(runtime),
+        ptn_runtime_highlight_comment(runtime),
+    };
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
-    ptn_string_buffer_append(&buffer, "<code><span style=\"color: #000000\">\n");
-    ptn_highlight_append_escaped(&buffer, input.data, input.len);
-    ptn_string_buffer_append(&buffer, "</span>\n</code>");
+    if (wrap_pre) {
+        ptn_string_buffer_append(&buffer, "<pre><code style=\"color: ");
+        ptn_string_buffer_append(&buffer, colors.html);
+        ptn_string_buffer_append(&buffer, "\">");
+    } else {
+        ptn_string_buffer_append(&buffer, "<code><span style=\"color: ");
+        ptn_string_buffer_append(&buffer, colors.html);
+        ptn_string_buffer_append(&buffer, "\">\n");
+    }
+
+    PtnHighlightClass current = PTN_HIGHLIGHT_NONE;
+    const char *data = input.data;
+    size_t len = input.len;
+    size_t i = 0;
+    int in_php = 0;
+    while (i < len) {
+        if (!in_php) {
+            size_t open_len = ptn_highlight_open_tag_len(data, len, i);
+            if (open_len != 0) {
+                in_php = 1;
+                ptn_highlight_append_colored(
+                    &buffer,
+                    &current,
+                    PTN_HIGHLIGHT_DEFAULT,
+                    &colors,
+                    data + i,
+                    open_len
+                );
+                i += open_len;
+                continue;
+            }
+            size_t start = i++;
+            while (i < len && ptn_highlight_open_tag_len(data, len, i) == 0) {
+                i++;
+            }
+            ptn_highlight_append_colored(
+                &buffer,
+                &current,
+                PTN_HIGHLIGHT_NONE,
+                &colors,
+                data + start,
+                i - start
+            );
+            continue;
+        }
+
+        size_t close_len = ptn_highlight_close_tag_len(data, len, i);
+        if (close_len != 0) {
+            ptn_highlight_append_colored(
+                &buffer,
+                &current,
+                PTN_HIGHLIGHT_DEFAULT,
+                &colors,
+                data + i,
+                close_len
+            );
+            i += close_len;
+            in_php = 0;
+            ptn_highlight_close_span(&buffer, &current);
+            continue;
+        }
+
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == '\'' || byte == '"') {
+            size_t end = ptn_highlight_scan_quoted_string(data, len, i);
+            if (byte == '"') {
+                ptn_highlight_append_double_quoted_string(&buffer, &current, &colors, data + i, end - i);
+            } else {
+                ptn_highlight_append_colored(
+                    &buffer,
+                    &current,
+                    PTN_HIGHLIGHT_STRING,
+                    &colors,
+                    data + i,
+                    end - i
+                );
+            }
+            i = end;
+            continue;
+        }
+        if (byte == '/' && i + 1 < len && data[i + 1] == '*') {
+            size_t end = ptn_highlight_scan_block_comment(data, len, i);
+            ptn_highlight_append_colored(
+                &buffer,
+                &current,
+                PTN_HIGHLIGHT_COMMENT,
+                &colors,
+                data + i,
+                end - i
+            );
+            i = end;
+            continue;
+        }
+        if ((byte == '/' && i + 1 < len && data[i + 1] == '/') || byte == '#') {
+            size_t end = ptn_highlight_scan_line_comment(data, len, i);
+            ptn_highlight_append_colored(
+                &buffer,
+                &current,
+                PTN_HIGHLIGHT_COMMENT,
+                &colors,
+                data + i,
+                end - i
+            );
+            i = end;
+            continue;
+        }
+        if (byte == '$' && i + 1 < len && ptn_highlight_is_ident_start((unsigned char)data[i + 1])) {
+            size_t start = i;
+            i += 2;
+            while (i < len && ptn_highlight_is_ident_part((unsigned char)data[i])) {
+                i++;
+            }
+            i = ptn_highlight_scan_trailing_whitespace(data, len, i);
+            ptn_highlight_append_colored(
+                &buffer,
+                &current,
+                PTN_HIGHLIGHT_DEFAULT,
+                &colors,
+                data + start,
+                i - start
+            );
+            continue;
+        }
+        if (isdigit(byte)) {
+            size_t start = i;
+            for (;;) {
+                i++;
+                while (i < len && (isalnum((unsigned char)data[i]) || data[i] == '_' || data[i] == '.')) {
+                    i++;
+                }
+                size_t after_space = ptn_highlight_scan_trailing_whitespace(data, len, i);
+                if (after_space < len && isdigit((unsigned char)data[after_space])) {
+                    i = after_space;
+                    continue;
+                }
+                break;
+            }
+            ptn_highlight_append_colored(
+                &buffer,
+                &current,
+                PTN_HIGHLIGHT_DEFAULT,
+                &colors,
+                data + start,
+                i - start
+            );
+            continue;
+        }
+        if (ptn_highlight_is_ident_start(byte)) {
+            size_t start = i++;
+            while (i < len && ptn_highlight_is_ident_part((unsigned char)data[i])) {
+                i++;
+            }
+            PtnHighlightClass klass = ptn_highlight_is_keyword(data + start, i - start)
+                ? PTN_HIGHLIGHT_KEYWORD
+                : PTN_HIGHLIGHT_DEFAULT;
+            i = ptn_highlight_scan_trailing_whitespace(data, len, i);
+            ptn_highlight_append_colored(&buffer, &current, klass, &colors, data + start, i - start);
+            continue;
+        }
+        if (isspace(byte)) {
+            size_t start = i;
+            i = ptn_highlight_scan_trailing_whitespace(data, len, i);
+            ptn_highlight_append_colored(
+                &buffer,
+                &current,
+                PTN_HIGHLIGHT_KEYWORD,
+                &colors,
+                data + start,
+                i - start
+            );
+            continue;
+        }
+
+        size_t op_len = ptn_highlight_operator_len(data, len, i);
+        size_t end = ptn_highlight_scan_trailing_whitespace(data, len, i + op_len);
+        ptn_highlight_append_colored(
+            &buffer,
+            &current,
+            PTN_HIGHLIGHT_KEYWORD,
+            &colors,
+            data + i,
+            end - i
+        );
+        i = end;
+    }
+
+    ptn_highlight_close_span(&buffer, &current);
+    if (wrap_pre) {
+        ptn_string_buffer_append(&buffer, "</code></pre>");
+    } else {
+        ptn_string_buffer_append(&buffer, "</span>\n</code>");
+    }
     return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
@@ -38214,7 +38885,7 @@ static PtnValue ptn_internal_highlight_string(PtnRuntime *runtime, size_t argc, 
     ptn_guard_source_highlight_output_buffer_handler(runtime, "highlight_string", line);
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "highlight_string", 1, "string", args[0], line);
     int return_output = argc >= 2 && ptn_is_truthy(args[1]);
-    PtnValue highlighted = ptn_highlight_string_value(input);
+    PtnValue highlighted = ptn_highlight_string_value(runtime, input, 1);
     ptn_string_operand_free(input);
     if (return_output) {
         return highlighted;
@@ -38234,14 +38905,21 @@ static void ptn_emit_highlight_file_open_warnings(
         return;
     }
     const char *source_path = runtime->source_path == NULL ? "ptn" : runtime->source_path;
-    printf(
+    FILE *stream = runtime->diagnostics.stream == NULL ? stdout : runtime->diagnostics.stream;
+    if (runtime->diagnostics.emitted_warning) {
+        fputc('\n', stream);
+    }
+    runtime->diagnostics.emitted_warning = 1;
+    fprintf(
+        stream,
         "Warning: highlight_file(%s): Failed to open stream: %s in %s on line %zu\n\n",
         path,
         reason,
         source_path,
         line
     );
-    printf(
+    fprintf(
+        stream,
         "Warning: highlight_file(): Failed opening '%s' for highlighting in %s on line %zu\n",
         path,
         source_path,
@@ -38296,7 +38974,7 @@ static PtnValue ptn_internal_highlight_file(PtnRuntime *runtime, size_t argc, co
 
     PtnStringOperand input = ptn_string_operand_owned_len((char *)data, data_len);
     int return_output = argc >= 2 && ptn_is_truthy(args[1]);
-    PtnValue highlighted = ptn_highlight_string_value(input);
+    PtnValue highlighted = ptn_highlight_string_value(runtime, input, 1);
     ptn_string_operand_free(input);
     free(path);
     if (return_output) {
@@ -46703,6 +47381,46 @@ static const char *ptn_runtime_arg_separator_output(PtnRuntime *runtime) {
     return root->arg_separator_output;
 }
 
+static const char *ptn_runtime_highlight_comment(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->highlight_comment == NULL) {
+        return "#FF8000";
+    }
+    return root->highlight_comment;
+}
+
+static const char *ptn_runtime_highlight_default(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->highlight_default == NULL) {
+        return "#0000BB";
+    }
+    return root->highlight_default;
+}
+
+static const char *ptn_runtime_highlight_html(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->highlight_html == NULL) {
+        return "#000000";
+    }
+    return root->highlight_html;
+}
+
+static const char *ptn_runtime_highlight_keyword(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->highlight_keyword == NULL) {
+        return "#007700";
+    }
+    return root->highlight_keyword;
+}
+
+static const char *ptn_runtime_highlight_string(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->highlight_string == NULL) {
+        return "#DD0000";
+    }
+    return root->highlight_string;
+}
+
 static const char *ptn_runtime_output_handler(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->output_handler == NULL) {
@@ -47550,6 +48268,26 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_default_charset(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.comment")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_comment(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.default")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_default(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.html")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_html(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.keyword")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_keyword(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.string")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_string(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "extension_dir")) {
         *out = ptn_string(PTN_PHP_EXTENSION_DIR);
         return 1;
@@ -47764,6 +48502,31 @@ static void ptn_runtime_set_arg_separator_output(PtnRuntime *runtime, const char
     ptn_runtime_set_ini_string(&root->arg_separator_output, value);
 }
 
+static void ptn_runtime_set_highlight_comment(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->highlight_comment, value);
+}
+
+static void ptn_runtime_set_highlight_default(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->highlight_default, value);
+}
+
+static void ptn_runtime_set_highlight_html(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->highlight_html, value);
+}
+
+static void ptn_runtime_set_highlight_keyword(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->highlight_keyword, value);
+}
+
+static void ptn_runtime_set_highlight_string(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->highlight_string, value);
+}
+
 static void ptn_runtime_set_output_handler(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->output_handler, value);
@@ -47913,6 +48676,31 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "default_charset")) {
         ptn_runtime_set_default_charset(runtime, "UTF-8");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.comment")) {
+        ptn_runtime_set_highlight_comment(runtime, "#FF8000");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.default")) {
+        ptn_runtime_set_highlight_default(runtime, "#0000BB");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.html")) {
+        ptn_runtime_set_highlight_html(runtime, "#000000");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.keyword")) {
+        ptn_runtime_set_highlight_keyword(runtime, "#007700");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.string")) {
+        ptn_runtime_set_highlight_string(runtime, "#DD0000");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -48119,6 +48907,56 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_default_charset(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.comment")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_comment(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_highlight_comment(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.default")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_default(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_highlight_default(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.html")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_html(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_highlight_html(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.keyword")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_keyword(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_highlight_keyword(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "highlight.string")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_highlight_string(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_highlight_string(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
