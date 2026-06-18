@@ -16769,9 +16769,13 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
             None,
         )
     })?;
+    let warning_args = cc_warning_args(c_source.len())?;
     let optimization_args = cc_optimization_args(c_source.len())?;
     let mut command = Command::new("cc");
-    command.arg("-std=c11").arg("-Wall").arg("-Wextra");
+    command.arg("-std=c11");
+    for arg in warning_args {
+        command.arg(arg);
+    }
     for arg in optimization_args {
         command.arg(arg);
     }
@@ -16796,8 +16800,50 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     }
 }
 
+const CC_WARNINGS_ENV: &str = "PTN_CC_WARNINGS";
 const CC_OPT_LEVEL_ENV: &str = "PTN_CC_OPT_LEVEL";
 const LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD: usize = 1_000_000;
+
+fn cc_warning_args(c_source_len: usize) -> Result<Vec<&'static str>> {
+    let value = match env::var(CC_WARNINGS_ENV) {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
+        Err(env::VarError::NotUnicode(_)) => {
+            return Err(Diagnostic::new(
+                format!("{CC_WARNINGS_ENV} must be valid Unicode"),
+                None,
+            ))
+        }
+    };
+    cc_warning_args_for_source(value.as_deref(), c_source_len)
+}
+
+fn cc_warning_args_for_source(
+    value: Option<&str>,
+    c_source_len: usize,
+) -> Result<Vec<&'static str>> {
+    let has_explicit_profile = value.map(str::trim).is_some_and(|value| !value.is_empty());
+    if !has_explicit_profile && c_source_len >= LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD {
+        return Ok(Vec::new());
+    }
+    cc_warning_args_for(value)
+}
+
+fn cc_warning_args_for(value: Option<&str>) -> Result<Vec<&'static str>> {
+    let Some(raw) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(vec!["-Wall", "-Wextra"]);
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "0" | "off" | "false" | "no" => Ok(Vec::new()),
+        "1" | "on" | "true" | "yes" => Ok(vec!["-Wall", "-Wextra"]),
+        _ => Err(Diagnostic::new(
+            format!(
+                "invalid {CC_WARNINGS_ENV} value `{raw}`; expected 0, 1, off, on, false, true, no, or yes"
+            ),
+            None,
+        )),
+    }
+}
 
 fn cc_optimization_args(c_source_len: usize) -> Result<Vec<&'static str>> {
     let value = match env::var(CC_OPT_LEVEL_ENV) {
@@ -29581,9 +29627,73 @@ fn display_os(value: &OsStr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cc_optimization_args_for, cc_optimization_args_for_source,
-        LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
+        cc_optimization_args_for, cc_optimization_args_for_source, cc_warning_args_for,
+        cc_warning_args_for_source, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
     };
+
+    #[test]
+    fn default_c_compiler_warnings_stay_enabled_for_small_sources() {
+        assert_eq!(
+            cc_warning_args_for_source(None, 0).unwrap(),
+            vec!["-Wall", "-Wextra"]
+        );
+        assert_eq!(
+            cc_warning_args_for_source(Some(""), 0).unwrap(),
+            vec!["-Wall", "-Wextra"]
+        );
+    }
+
+    #[test]
+    fn default_c_compiler_warnings_are_skipped_for_large_sources() {
+        assert_eq!(
+            cc_warning_args_for_source(None, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).unwrap(),
+            Vec::<&'static str>::new()
+        );
+        assert_eq!(
+            cc_warning_args_for_source(Some(""), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
+                .unwrap(),
+            Vec::<&'static str>::new()
+        );
+        assert_eq!(
+            cc_warning_args_for_source(Some("on"), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
+                .unwrap(),
+            vec!["-Wall", "-Wextra"]
+        );
+    }
+
+    #[test]
+    fn c_compiler_warning_profile_accepts_on_off_values() {
+        assert_eq!(
+            cc_warning_args_for(Some("1")).unwrap(),
+            vec!["-Wall", "-Wextra"]
+        );
+        assert_eq!(
+            cc_warning_args_for(Some("true")).unwrap(),
+            vec!["-Wall", "-Wextra"]
+        );
+        assert_eq!(
+            cc_warning_args_for(Some("yes")).unwrap(),
+            vec!["-Wall", "-Wextra"]
+        );
+        assert_eq!(
+            cc_warning_args_for(Some("0")).unwrap(),
+            Vec::<&'static str>::new()
+        );
+        assert_eq!(
+            cc_warning_args_for(Some("false")).unwrap(),
+            Vec::<&'static str>::new()
+        );
+        assert_eq!(
+            cc_warning_args_for(Some("no")).unwrap(),
+            Vec::<&'static str>::new()
+        );
+    }
+
+    #[test]
+    fn c_compiler_warning_profile_rejects_unknown_values() {
+        let error = cc_warning_args_for(Some("sometimes")).unwrap_err();
+        assert!(error.message.contains("invalid PTN_CC_WARNINGS value"));
+    }
 
     #[test]
     fn default_c_compiler_profile_uses_o2_for_small_sources() {
