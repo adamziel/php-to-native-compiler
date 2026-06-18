@@ -1415,6 +1415,16 @@ static PtnArrayEntry *ptn_object_property_entry_for_metadata(
     return entry;
 }
 
+static void ptn_var_dump_array_key(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        printf("[%lld]=>\n", (long long)key.as.integer);
+        return;
+    }
+    fputs("[\"", stdout);
+    fwrite(key.as.string, 1, key.string_len, stdout);
+    fputs("\"]=>\n", stdout);
+}
+
 static int ptn_debug_array_is_packed(PtnArray *array) {
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayKey key = array->entries[i].key;
@@ -1856,8 +1866,12 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         return "count";
     }
     if (index == 4 &&
-        (ptn_ascii_case_equal(name, "preg_replace") ||
+        (ptn_ascii_case_equal(name, "preg_filter") ||
+            ptn_ascii_case_equal(name, "preg_replace") ||
             ptn_ascii_case_equal(name, "preg_replace_callback"))) {
+        return "count";
+    }
+    if (index == 3 && ptn_ascii_case_equal(name, "preg_replace_callback_array")) {
         return "count";
     }
     if (index >= 2 &&
@@ -1909,8 +1923,12 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
         return 1;
     }
     if (index == 4 &&
-        (ptn_ascii_case_equal(name, "preg_replace") ||
+        (ptn_ascii_case_equal(name, "preg_filter") ||
+            ptn_ascii_case_equal(name, "preg_replace") ||
             ptn_ascii_case_equal(name, "preg_replace_callback"))) {
+        return 1;
+    }
+    if (index == 3 && ptn_ascii_case_equal(name, "preg_replace_callback_array")) {
         return 1;
     }
     if (index >= 2 &&
@@ -2283,14 +2301,7 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             ptn_dump_seen_arrays_push(seen, array);
             for (size_t i = 0; i < array->len; i++) {
                 ptn_var_dump_indent(indent + 1);
-                PtnArrayKey key = array->entries[i].key;
-                if (key.type == PTN_ARRAY_KEY_INT) {
-                    printf("[%lld]=>\n", (long long)key.as.integer);
-                } else {
-                    fputs("[\"", stdout);
-                    fwrite(key.as.string, 1, key.string_len, stdout);
-                    fputs("\"]=>\n", stdout);
-                }
+                ptn_var_dump_array_key(array->entries[i].key);
                 ptn_var_dump_value_indented(array->entries[i].value, indent + 1, seen);
             }
             ptn_dump_seen_arrays_pop(seen);
@@ -2371,14 +2382,7 @@ static int ptn_var_dump_magic_debug_info(
     ptn_dump_seen_objects_push(seen, object);
     for (size_t i = 0; i < properties->len; i++) {
         ptn_var_dump_indent(1);
-        PtnArrayKey key = properties->entries[i].key;
-        if (key.type == PTN_ARRAY_KEY_INT) {
-            printf("[%lld]=>\n", (long long)key.as.integer);
-        } else {
-            fputs("[\"", stdout);
-            fwrite(key.as.string, 1, key.string_len, stdout);
-            fputs("\"]=>\n", stdout);
-        }
+        ptn_var_dump_array_key(properties->entries[i].key);
         ptn_var_dump_value_indented(properties->entries[i].value, 1, seen);
     }
     ptn_dump_seen_objects_pop(seen);
@@ -2434,12 +2438,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             ptn_dump_seen_arrays_push(seen, array);
             for (size_t i = 0; i < array->len; i++) {
                 ptn_var_dump_indent(indent + 1);
-                PtnArrayKey key = array->entries[i].key;
-                if (key.type == PTN_ARRAY_KEY_INT) {
-                    printf("[%lld]=>\n", (long long)key.as.integer);
-                } else {
-                    printf("[\"%s\"]=>\n", key.as.string);
-                }
+                ptn_var_dump_array_key(array->entries[i].key);
                 ptn_debug_zval_dump_value_indented(array->entries[i].value, indent + 1, seen);
             }
             ptn_dump_seen_arrays_pop(seen);
@@ -2494,7 +2493,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             if (value.as.string.payload == NULL) {
                 fputs("\" interned\n", stdout);
             } else {
-                fputs("\"\n", stdout);
+                printf("\" refcount(%zu)\n", value.as.string.payload->refcount);
             }
             break;
         case PTN_CLOSURE:
@@ -2504,7 +2503,12 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             ptn_var_dump_exception_indented(value.as.exception, indent, seen);
             break;
         case PTN_RESOURCE:
-            printf("resource(%lld) of type (%s)\n", (long long)value.as.resource->id, value.as.resource->type_name);
+            printf(
+                "resource(%lld) of type (%s) refcount(%zu)\n",
+                (long long)value.as.resource->id,
+                value.as.resource->type_name,
+                value.as.resource->refcount
+            );
             break;
     }
 }
@@ -28153,7 +28157,7 @@ static int ptn_regex_delimiter_end(PtnStringOperand pattern, size_t *end_out) {
         return 0;
     }
     char delimiter = pattern.data[0];
-    if (isalnum((unsigned char)delimiter) || delimiter == '\\' || isspace((unsigned char)delimiter)) {
+    if (isalnum((unsigned char)delimiter) || delimiter == '\\' || delimiter == '\0' || isspace((unsigned char)delimiter)) {
         return 0;
     }
     char closing_delimiter = delimiter;
@@ -28302,7 +28306,33 @@ static char *ptn_pcre_pattern_to_posix(
 
     size_t end = 0;
     if (!ptn_regex_delimiter_end(pattern, &end)) {
-        *error_out = ptn_duplicate_string("Compilation failed");
+        if (pattern.len == 0) {
+            *error_out = ptn_duplicate_string("Empty regular expression");
+        } else {
+            char delimiter = pattern.data[0];
+            if (isalnum((unsigned char)delimiter) || delimiter == '\\' || delimiter == '\0' || isspace((unsigned char)delimiter)) {
+                *error_out = ptn_duplicate_string("Delimiter must not be alphanumeric, backslash, or NUL byte");
+            } else {
+                char closing_delimiter = delimiter;
+                switch (delimiter) {
+                    case '(':
+                        closing_delimiter = ')';
+                        break;
+                    case '[':
+                        closing_delimiter = ']';
+                        break;
+                    case '{':
+                        closing_delimiter = '}';
+                        break;
+                    case '<':
+                        closing_delimiter = '>';
+                        break;
+                    default:
+                        break;
+                }
+                *error_out = ptn_preg_format_error("No ending delimiter '%c' found", closing_delimiter);
+            }
+        }
         return NULL;
     }
 
@@ -28590,7 +28620,20 @@ static PtnValue ptn_preg_capture_value(
         size_t start = base_offset + (size_t)matches[match_index].rm_so;
         size_t len = (size_t)(matches[match_index].rm_eo - matches[match_index].rm_so);
         offset = start > (size_t)INT64_MAX ? INT64_MAX : (int64_t)start;
-        value = ptn_owned_string_len(ptn_duplicate_string_len(subject + start, len), len);
+        if (!offset_capture && len == 1) {
+            static char ptn_preg_single_byte_literals[256][2];
+            static int ptn_preg_single_byte_literals_initialized = 0;
+            if (!ptn_preg_single_byte_literals_initialized) {
+                for (size_t i = 0; i < 256; i++) {
+                    ptn_preg_single_byte_literals[i][0] = (char)i;
+                    ptn_preg_single_byte_literals[i][1] = '\0';
+                }
+                ptn_preg_single_byte_literals_initialized = 1;
+            }
+            value = ptn_string_literal(ptn_preg_single_byte_literals[(unsigned char)subject[start]], 1);
+        } else {
+            value = ptn_owned_string_len(ptn_duplicate_string_len(subject + start, len), len);
+        }
     }
 
     if (!offset_capture) {
@@ -29272,14 +29315,27 @@ static PtnStringOperand ptn_preg_apply_replacement_callback(
     PtnRuntime *runtime,
     PtnValue callback,
     const char *subject,
+    size_t base_offset,
     regmatch_t *matches,
     PtnPregCapture *captures,
     size_t capture_count,
+    int offset_capture,
+    int unmatched_as_null,
     size_t line
 ) {
-    PtnValue match_array = ptn_preg_match_array_value(subject, matches, captures, capture_count, 0, 0, 0);
+    PtnValue match_array = ptn_preg_match_array_value(
+        subject,
+        matches,
+        captures,
+        capture_count,
+        base_offset,
+        offset_capture,
+        unmatched_as_null
+    );
+    ptn_value_debug_hide_ref(match_array);
     PtnValue callback_args[] = { match_array };
     PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 1, callback_args, line);
+    ptn_value_debug_unhide_ref(match_array);
     ptn_value_destroy(&match_array);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&callback_result);
@@ -29303,6 +29359,8 @@ static PtnValue ptn_preg_replace_apply_to_string(
     PtnStringOperand replacement,
     PtnValue callback,
     int use_callback,
+    int offset_capture,
+    int unmatched_as_null,
     PtnStringOperand subject,
     int64_t limit,
     int64_t *replacement_count,
@@ -29366,10 +29424,13 @@ static PtnValue ptn_preg_replace_apply_to_string(
             callback_replacement = ptn_preg_apply_replacement_callback(
                 runtime,
                 callback,
-                subject_c + offset,
+                subject_c,
+                offset,
                 matches,
                 captures,
                 capture_count,
+                offset_capture,
+                unmatched_as_null,
                 line
             );
             if (runtime->exceptions->active_exception != NULL) {
@@ -29442,6 +29503,8 @@ static PtnValue ptn_internal_preg_replace(PtnRuntime *runtime, size_t argc, cons
                 replacement,
                 ptn_null(),
                 0,
+                0,
+                0,
                 subject,
                 limit,
                 &replacement_count,
@@ -29464,12 +29527,87 @@ static PtnValue ptn_internal_preg_replace(PtnRuntime *runtime, size_t argc, cons
             replacement,
             ptn_null(),
             0,
+            0,
+            0,
             subject,
             limit,
             &replacement_count,
             line
         );
         ptn_string_operand_free(subject);
+    }
+
+    if (argc >= 5 && args[4].type == PTN_REFERENCE) {
+        PtnValue count_value = ptn_int(replacement_count);
+        ptn_reference_assign(runtime, args[4].as.reference, count_value);
+    }
+    ptn_string_operand_free(pattern);
+    ptn_string_operand_free(replacement);
+    return result;
+}
+
+static PtnValue ptn_internal_preg_filter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand pattern = ptn_internal_expect_string_arg(runtime, "preg_filter", 1, "pattern", args[0], line);
+    PtnStringOperand replacement = ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+    int64_t limit = argc >= 4 ? ptn_internal_expect_integer_arg(runtime, "preg_filter", 4, "limit", args[3], line) : -1;
+    int64_t replacement_count = 0;
+
+    PtnValue subject_value = ptn_value_deref(args[2]);
+    PtnValue result;
+    if (subject_value.type == PTN_ARRAY) {
+        result = ptn_array_from_literal_entries(0, NULL);
+        for (size_t i = 0; i < subject_value.as.array->len; i++) {
+            PtnArrayEntry *entry = &subject_value.as.array->entries[i];
+            PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
+            int64_t before = replacement_count;
+            PtnValue replaced = ptn_preg_replace_apply_to_string(
+                runtime,
+                "preg_filter",
+                pattern,
+                replacement,
+                ptn_null(),
+                0,
+                0,
+                0,
+                subject,
+                limit,
+                &replacement_count,
+                line
+            );
+            ptn_string_operand_free(subject);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&result);
+                result = ptn_null();
+                break;
+            }
+            if (replacement_count != before) {
+                ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), replaced);
+            } else {
+                ptn_value_destroy(&replaced);
+            }
+        }
+    } else {
+        PtnStringOperand subject = ptn_internal_expect_string_arg(runtime, "preg_filter", 3, "subject", args[2], line);
+        int64_t before = replacement_count;
+        result = ptn_preg_replace_apply_to_string(
+            runtime,
+            "preg_filter",
+            pattern,
+            replacement,
+            ptn_null(),
+            0,
+            0,
+            0,
+            subject,
+            limit,
+            &replacement_count,
+            line
+        );
+        ptn_string_operand_free(subject);
+        if (replacement_count == before && runtime->exceptions->active_exception == NULL) {
+            ptn_value_destroy(&result);
+            result = ptn_null();
+        }
     }
 
     if (argc >= 5 && args[4].type == PTN_REFERENCE) {
@@ -29491,6 +29629,9 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
     }
 
     int64_t limit = argc >= 4 ? ptn_internal_expect_integer_arg(runtime, "preg_replace_callback", 4, "limit", args[3], line) : -1;
+    int64_t flags = argc >= 6 ? ptn_internal_expect_integer_arg(runtime, "preg_replace_callback", 6, "flags", args[5], line) : 0;
+    int offset_capture = (flags & 256) != 0;
+    int unmatched_as_null = (flags & 512) != 0;
     int64_t replacement_count = 0;
     PtnStringOperand empty_replacement = ptn_string_operand_borrowed("");
 
@@ -29508,6 +29649,8 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
                 empty_replacement,
                 callback,
                 1,
+                offset_capture,
+                unmatched_as_null,
                 subject,
                 limit,
                 &replacement_count,
@@ -29531,6 +29674,8 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
             empty_replacement,
             callback,
             1,
+            offset_capture,
+            unmatched_as_null,
             subject,
             limit,
             &replacement_count,
@@ -29546,6 +29691,143 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
     ptn_value_destroy(&callback);
     ptn_string_operand_free(pattern);
     return result;
+}
+
+static PtnValue ptn_preg_replace_callback_array_apply_subject(
+    PtnRuntime *runtime,
+    PtnStringOperand pattern,
+    PtnValue callback,
+    PtnValue subject_arg,
+    int64_t limit,
+    int offset_capture,
+    int unmatched_as_null,
+    int64_t *replacement_count,
+    size_t line
+) {
+    PtnStringOperand empty_replacement = ptn_string_operand_borrowed("");
+    PtnValue subject_value = ptn_value_deref(subject_arg);
+    if (subject_value.type == PTN_ARRAY) {
+        PtnValue result = ptn_array_from_literal_entries(0, NULL);
+        for (size_t i = 0; i < subject_value.as.array->len; i++) {
+            PtnArrayEntry *entry = &subject_value.as.array->entries[i];
+            PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
+            PtnValue replaced = ptn_preg_replace_apply_to_string(
+                runtime,
+                "preg_replace_callback_array",
+                pattern,
+                empty_replacement,
+                callback,
+                1,
+                offset_capture,
+                unmatched_as_null,
+                subject,
+                limit,
+                replacement_count,
+                line
+            );
+            ptn_string_operand_free(subject);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_value_destroy(&result);
+                return ptn_null();
+            }
+            ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), replaced);
+        }
+        return result;
+    }
+
+    PtnStringOperand subject =
+        ptn_internal_expect_string_arg(runtime, "preg_replace_callback_array", 2, "subject", subject_arg, line);
+    PtnValue result = ptn_preg_replace_apply_to_string(
+        runtime,
+        "preg_replace_callback_array",
+        pattern,
+        empty_replacement,
+        callback,
+        1,
+        offset_capture,
+        unmatched_as_null,
+        subject,
+        limit,
+        replacement_count,
+        line
+    );
+    ptn_string_operand_free(subject);
+    return result;
+}
+
+static PtnValue ptn_internal_preg_replace_callback_array(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnArray *patterns = ptn_internal_expect_array_arg(runtime, "preg_replace_callback_array", 1, "pattern", args[0]);
+    int64_t limit = argc >= 3 ? ptn_internal_expect_integer_arg(runtime, "preg_replace_callback_array", 3, "limit", args[2], line) : -1;
+    int64_t flags = argc >= 5 ? ptn_internal_expect_integer_arg(runtime, "preg_replace_callback_array", 5, "flags", args[4], line) : 0;
+    int offset_capture = (flags & 256) != 0;
+    int unmatched_as_null = (flags & 512) != 0;
+    int64_t replacement_count = 0;
+
+    for (size_t i = 0; i < patterns->len; i++) {
+        PtnArrayEntry *entry = &patterns->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "preg_replace_callback_array(): Argument #1 ($pattern) must contain only string patterns as keys",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
+        PtnValue callback = ptn_value_clone_deref(entry->value);
+        if (!ptn_callable_is_valid(runtime, callback, 0)) {
+            ptn_value_destroy(&callback);
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
+        ptn_value_destroy(&callback);
+    }
+
+    PtnValue current = ptn_value_clone_deref(args[1]);
+    for (size_t i = 0; i < patterns->len; i++) {
+        PtnArrayEntry *entry = &patterns->entries[i];
+        PtnValue pattern_value = ptn_array_key_value(entry->key);
+        PtnStringOperand pattern =
+            ptn_value_to_string_operand_with_runtime(runtime, pattern_value, line);
+        PtnValue callback = ptn_value_clone_deref(entry->value);
+
+        PtnValue next = ptn_preg_replace_callback_array_apply_subject(
+            runtime,
+            pattern,
+            callback,
+            current,
+            limit,
+            offset_capture,
+            unmatched_as_null,
+            &replacement_count,
+            line
+        );
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&pattern_value);
+        ptn_value_destroy(&callback);
+        ptn_value_destroy(&current);
+        current = next;
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&current);
+            return ptn_null();
+        }
+        if (current.type == PTN_NULL) {
+            return current;
+        }
+    }
+
+    if (argc >= 4 && args[3].type == PTN_REFERENCE) {
+        PtnValue count_value = ptn_int(replacement_count);
+        ptn_reference_assign(runtime, args[3].as.reference, count_value);
+    }
+    return current;
 }
 
 static int ptn_quotemeta_needs_escape(unsigned char byte) {
@@ -57187,11 +57469,13 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "pi", 0, 0, ptn_internal_pi },
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
         { "pow", 2, 2, ptn_internal_pow },
+        { "preg_filter", 3, 5, ptn_internal_preg_filter },
         { "preg_match", 2, 5, ptn_internal_preg_match },
         { "preg_match_all", 2, 5, ptn_internal_preg_match_all },
         { "preg_quote", 1, 2, ptn_internal_preg_quote },
         { "preg_replace", 3, 5, ptn_internal_preg_replace },
         { "preg_replace_callback", 3, 6, ptn_internal_preg_replace_callback },
+        { "preg_replace_callback_array", 2, 5, ptn_internal_preg_replace_callback_array },
         { "preg_split", 2, 4, ptn_internal_preg_split },
         { "prev", 1, 1, ptn_internal_prev },
         { "print_r", 1, 2, ptn_internal_print_r },

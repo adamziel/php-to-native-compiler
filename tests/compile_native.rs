@@ -9191,6 +9191,36 @@ fn compile_var_dump_recursive_object_to_native_binary() {
 }
 
 #[test]
+fn compile_debug_zval_dump_binary_keys_and_resource_refcounts_to_native_binary() {
+    let root = temp_dir("ptn-native-debug-zval-dump-binary-keys-resources");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("debug-zval-dump-binary-keys-resources.php");
+    let output = root.join("debug-zval-dump-binary-keys-resources-bin");
+    fs::write(
+        &input,
+        "<?php
+$test = [\"A\\0B\" => \"Hello world\"];
+debug_zval_dump($test);
+$fp = fopen('php://temp', 'w+');
+debug_zval_dump($fp);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("array(1) refcount(2){"), "{stdout:?}");
+    assert!(stdout.contains("[\"A\0B\"]=>"), "{stdout:?}");
+    assert!(stdout.contains("string(11) \"Hello world\""), "{stdout:?}");
+    assert!(stdout.contains("resource("), "{stdout:?}");
+    assert!(stdout.contains("of type (stream) refcount("), "{stdout:?}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serialize_unserialize_reference_identity_to_native_binary() {
     let root = temp_dir("ptn-native-serialize-reference-identity");
     fs::create_dir_all(&root).unwrap();
@@ -14755,6 +14785,49 @@ var_dump(mb_split(\"b\", \"abc\"));\n",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_mb_split"));
     assert!(c_source.contains("pattern.len == 0"));
+}
+
+#[test]
+fn compile_preg_replace_callback_array_and_match_debug_refcounts_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-replace-callback-array-debug");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-replace-callback-array-debug.php");
+    let output = root.join("preg-replace-callback-array-debug-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(function_exists('preg_replace_callback_array'));
+var_dump(preg_replace_callback('/(.)(.)(.)/', static function ($matches) {
+    debug_zval_dump($matches);
+    return '';
+}, 'abc'));
+$count = 0;
+var_dump(preg_replace_callback_array([
+    '/a/' => static function ($matches) { return 'A'; },
+    '/b/' => static function ($matches) { return 'B'; },
+], 'abc', -1, $count));
+var_dump($count);
+var_dump(preg_replace_callback_array(['/(.)(.)(.)/' => static function ($matches) {
+    debug_zval_dump($matches);
+    return '';
+}], 'abc'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("bool(true)\n"), "{stdout:?}");
+    assert_eq!(stdout.matches("array(4) packed refcount(2){").count(), 2);
+    assert_eq!(stdout.matches("string(1) \"a\" interned").count(), 2);
+    assert_eq!(stdout.matches("string(1) \"b\" interned").count(), 2);
+    assert_eq!(stdout.matches("string(1) \"c\" interned").count(), 2);
+    assert!(stdout.contains("string(3) \"ABc\"\nint(2)\n"), "{stdout:?}");
+    assert_eq!(stdout.matches("string(0) \"\"").count(), 2);
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

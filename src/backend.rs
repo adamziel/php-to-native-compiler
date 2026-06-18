@@ -2373,10 +2373,14 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     {
         return Some("matches");
     }
-    if (name.eq_ignore_ascii_case("preg_replace")
+    if (name.eq_ignore_ascii_case("preg_filter")
+        || name.eq_ignore_ascii_case("preg_replace")
         || name.eq_ignore_ascii_case("preg_replace_callback"))
         && argument_index == 4
     {
+        return Some("count");
+    }
+    if name.eq_ignore_ascii_case("preg_replace_callback_array") && argument_index == 3 {
         return Some("count");
     }
     if name.eq_ignore_ascii_case("parse_str") && argument_index == 1 {
@@ -15521,6 +15525,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
         || name.eq_ignore_ascii_case("preg_replace_callback")
+        || name.eq_ignore_ascii_case("preg_replace_callback_array")
         || name.eq_ignore_ascii_case("register_shutdown_function")
         || name.eq_ignore_ascii_case("spl_autoload_call")
         || name.eq_ignore_ascii_case("spl_autoload_register")
