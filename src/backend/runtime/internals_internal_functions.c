@@ -3795,6 +3795,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         if (ptn_ascii_case_equal(name, "similar_text")) {
             return "percent";
         }
+        if (ptn_ascii_case_equal(name, "getopt")) {
+            return "rest_index";
+        }
     }
     if (index == 3 && ptn_ascii_case_equal(name, "xml_parse_into_struct")) {
         return "index";
@@ -3854,6 +3857,9 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
         return 1;
     }
     if (index == 1 && ptn_ascii_case_equal(name, "mb_parse_str")) {
+        return 1;
+    }
+    if (index == 2 && ptn_ascii_case_equal(name, "getopt")) {
         return 1;
     }
     if (index == 2 &&
@@ -40440,6 +40446,246 @@ static PtnValue ptn_internal_gethostname(PtnRuntime *runtime, size_t argc, const
 #endif
 }
 
+typedef struct {
+    char *name;
+    size_t name_len;
+    int mode;
+} PtnGetoptSpec;
+
+typedef struct {
+    PtnGetoptSpec *items;
+    size_t len;
+    size_t capacity;
+} PtnGetoptSpecList;
+
+static void ptn_getopt_specs_free(PtnGetoptSpecList *list) {
+    if (list == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < list->len; i++) {
+        free(list->items[i].name);
+    }
+    free(list->items);
+    list->items = NULL;
+    list->len = 0;
+    list->capacity = 0;
+}
+
+static PtnGetoptSpec *ptn_getopt_find_spec(PtnGetoptSpecList *list, const char *name, size_t name_len) {
+    for (size_t i = 0; i < list->len; i++) {
+        PtnGetoptSpec *spec = &list->items[i];
+        if (spec->name_len == name_len && memcmp(spec->name, name, name_len) == 0) {
+            return spec;
+        }
+    }
+    return NULL;
+}
+
+static void ptn_getopt_specs_add(PtnGetoptSpecList *list, const char *name, size_t name_len, int mode) {
+    if (name_len == 0) {
+        return;
+    }
+    PtnGetoptSpec *existing = ptn_getopt_find_spec(list, name, name_len);
+    if (existing != NULL) {
+        existing->mode = mode;
+        return;
+    }
+    if (list->len == list->capacity) {
+        size_t new_capacity = list->capacity == 0 ? 8 : list->capacity * 2;
+        if (new_capacity < list->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnGetoptSpec *new_items = realloc(list->items, new_capacity * sizeof(PtnGetoptSpec));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+    list->items[list->len].name = ptn_duplicate_string_len(name, name_len);
+    list->items[list->len].name_len = name_len;
+    list->items[list->len].mode = mode;
+    list->len++;
+}
+
+static void ptn_getopt_parse_short_specs(PtnGetoptSpecList *list, const char *spec, size_t spec_len) {
+    for (size_t i = 0; i < spec_len; i++) {
+        if (spec[i] == ':') {
+            continue;
+        }
+        char name = spec[i];
+        int mode = 0;
+        if (i + 1 < spec_len && spec[i + 1] == ':') {
+            mode = 1;
+            i++;
+            if (i + 1 < spec_len && spec[i + 1] == ':') {
+                mode = 2;
+                i++;
+            }
+        }
+        ptn_getopt_specs_add(list, &name, 1, mode);
+    }
+}
+
+static void ptn_getopt_parse_long_spec(PtnGetoptSpecList *list, const char *spec, size_t spec_len) {
+    int mode = 0;
+    if (spec_len > 0 && spec[spec_len - 1] == ':') {
+        mode = 1;
+        spec_len--;
+        if (spec_len > 0 && spec[spec_len - 1] == ':') {
+            mode = 2;
+            spec_len--;
+        }
+    }
+    ptn_getopt_specs_add(list, spec, spec_len, mode);
+}
+
+static PtnArrayKey ptn_getopt_result_key(const char *name, size_t name_len) {
+    PtnValue key_value = ptn_owned_string_len(ptn_duplicate_string_len(name, name_len), name_len);
+    PtnArrayKey key = ptn_array_key_from_value(key_value);
+    ptn_value_destroy(&key_value);
+    return key;
+}
+
+static void ptn_getopt_add_result(PtnValue *result, const char *name, size_t name_len, PtnValue value) {
+    PtnArrayKey key = ptn_getopt_result_key(name, name_len);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(result->as.array, key);
+    if (entry == NULL) {
+        ptn_array_set_entry(result->as.array, key, value);
+        return;
+    }
+    ptn_array_key_free(key);
+    if (entry->value.type == PTN_ARRAY) {
+        ptn_array_set_entry(entry->value.as.array, ptn_array_int_key(entry->value.as.array->next_auto_key), value);
+        return;
+    }
+
+    PtnValue repeated = ptn_array_from_literal_entries(0, NULL);
+    PtnValue first = entry->value;
+    ptn_array_set_entry(repeated.as.array, ptn_array_int_key(0), first);
+    ptn_array_set_entry(repeated.as.array, ptn_array_int_key(1), value);
+    entry->value = repeated;
+    ptn_array_note_mutation(result->as.array);
+}
+
+static void ptn_getopt_record_value(
+    PtnValue *result,
+    PtnGetoptSpec *spec,
+    const char *value,
+    size_t value_len,
+    int has_value
+) {
+    PtnValue entry_value = has_value
+        ? ptn_owned_string_len(ptn_duplicate_string_len(value, value_len), value_len)
+        : ptn_bool(0);
+    ptn_getopt_add_result(result, spec->name, spec->name_len, entry_value);
+}
+
+static PtnValue ptn_internal_getopt(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnGetoptSpecList specs = { NULL, 0, 0 };
+    PtnStringOperand short_options = ptn_internal_expect_string_arg(runtime, "getopt", 1, "short_options", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(short_options);
+        return ptn_null();
+    }
+    ptn_getopt_parse_short_specs(&specs, short_options.data, short_options.len);
+    ptn_string_operand_free(short_options);
+
+    if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
+        PtnArray *long_options = ptn_internal_expect_array_arg(runtime, "getopt", 2, "long_options", args[1]);
+        if (long_options == NULL || runtime->exceptions->active_exception != NULL) {
+            ptn_getopt_specs_free(&specs);
+            return ptn_null();
+        }
+        for (size_t i = 0; i < long_options->len; i++) {
+            PtnStringOperand option = ptn_value_to_string_operand_with_runtime(
+                runtime,
+                long_options->entries[i].value,
+                line
+            );
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(option);
+                ptn_getopt_specs_free(&specs);
+                return ptn_null();
+            }
+            ptn_getopt_parse_long_spec(&specs, option.data, option.len);
+            ptn_string_operand_free(option);
+        }
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int native_argc = runtime == NULL ? 0 : runtime->native_argc;
+    char **native_argv = runtime == NULL ? NULL : runtime->native_argv;
+    int rest_index = native_argc;
+    for (int i = 1; i < native_argc; i++) {
+        const char *arg = native_argv[i] == NULL ? "" : native_argv[i];
+        if (strcmp(arg, "--") == 0) {
+            rest_index = i + 1;
+            break;
+        }
+        if (arg[0] != '-' || arg[1] == '\0') {
+            rest_index = i;
+            break;
+        }
+        if (arg[1] == '-') {
+            const char *name = arg + 2;
+            const char *equals = strchr(name, '=');
+            size_t name_len = equals == NULL ? strlen(name) : (size_t)(equals - name);
+            PtnGetoptSpec *spec = ptn_getopt_find_spec(&specs, name, name_len);
+            if (spec == NULL) {
+                continue;
+            }
+            if (spec->mode == 0) {
+                ptn_getopt_record_value(&result, spec, NULL, 0, 0);
+            } else if (equals != NULL) {
+                ptn_getopt_record_value(&result, spec, equals + 1, strlen(equals + 1), 1);
+            } else if (spec->mode == 1) {
+                if (i + 1 < native_argc) {
+                    i++;
+                    ptn_getopt_record_value(&result, spec, native_argv[i], strlen(native_argv[i]), 1);
+                }
+            } else {
+                ptn_getopt_record_value(&result, spec, NULL, 0, 0);
+            }
+            continue;
+        }
+
+        const char *cluster = arg + 1;
+        for (size_t offset = 0; cluster[offset] != '\0'; offset++) {
+            PtnGetoptSpec *spec = ptn_getopt_find_spec(&specs, &cluster[offset], 1);
+            if (spec == NULL) {
+                continue;
+            }
+            const char *attached = &cluster[offset + 1];
+            if (spec->mode == 0) {
+                ptn_getopt_record_value(&result, spec, NULL, 0, 0);
+                continue;
+            }
+            if (*attached == '=') {
+                attached++;
+            }
+            if (*attached != '\0') {
+                ptn_getopt_record_value(&result, spec, attached, strlen(attached), 1);
+                break;
+            }
+            if (spec->mode == 1) {
+                if (i + 1 < native_argc) {
+                    i++;
+                    ptn_getopt_record_value(&result, spec, native_argv[i], strlen(native_argv[i]), 1);
+                }
+                break;
+            }
+            ptn_getopt_record_value(&result, spec, NULL, 0, 0);
+        }
+    }
+
+    if (argc >= 3 && args[2].type == PTN_REFERENCE) {
+        ptn_reference_assign(runtime, args[2].as.reference, ptn_int(rest_index));
+    }
+    ptn_getopt_specs_free(&specs);
+    return result;
+}
+
 static PtnValue ptn_internal_gethostbyname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "gethostbyname", 1, "hostname", args[0], line);
@@ -63249,6 +63495,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_defined_constants", 0, 1, ptn_internal_get_defined_constants },
         { "get_defined_functions", 0, 1, ptn_internal_get_defined_functions },
         { "get_extension_funcs", 1, 1, ptn_internal_get_extension_funcs },
+        { "getopt", 1, 3, ptn_internal_getopt },
         { "get_error_handler", 0, 0, ptn_internal_get_error_handler },
         { "get_exception_handler", 0, 0, ptn_internal_get_exception_handler },
         { "get_html_translation_table", 0, 3, ptn_internal_get_html_translation_table },

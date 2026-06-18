@@ -1177,6 +1177,8 @@ struct PtnRuntime {
     char *variables_order;
     char *register_argc_argv;
     char *enable_post_data_reading;
+    int native_argc;
+    char **native_argv;
     char *file_uploads;
     char *max_input_vars;
     char *max_input_nesting_level;

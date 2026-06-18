@@ -1778,6 +1778,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->enable_post_data_reading = ptn_duplicate_string(
         configured_enable_post_data_reading == NULL ? "1" : configured_enable_post_data_reading
     );
+    runtime->native_argc = 0;
+    runtime->native_argv = NULL;
     runtime->file_uploads = ptn_duplicate_string(
         configured_file_uploads == NULL ? "1" : configured_file_uploads
     );

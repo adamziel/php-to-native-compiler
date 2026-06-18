@@ -38434,6 +38434,43 @@ echo $argv === $_SERVER['argv'] ? \"same\\n\" : \"different\\n\";\n",
 }
 
 #[test]
+fn phpc_cli_getopt_reads_forwarded_script_arguments() {
+    let root = temp_dir("ptn-phpc-cli-getopt");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cli-getopt.php");
+    fs::write(
+        &input,
+        "<?php\n\
+$rest = null;\n\
+var_dump(getopt('a:b::v', ['arg:', 'flag', 'opt::'], $rest));\n\
+var_dump($rest);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .arg("--")
+        .arg("-v")
+        .arg("-a")
+        .arg("one")
+        .arg("-b=two")
+        .arg("--arg")
+        .arg("value")
+        .arg("--flag")
+        .arg("--opt=maybe")
+        .arg("tail")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(6) {\n  [\"v\"]=>\n  bool(false)\n  [\"a\"]=>\n  string(3) \"one\"\n  [\"b\"]=>\n  string(3) \"two\"\n  [\"arg\"]=>\n  string(5) \"value\"\n  [\"flag\"]=>\n  bool(false)\n  [\"opt\"]=>\n  string(5) \"maybe\"\n}\nint(9)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_variables_order_controls_env_and_server_superglobals() {
     let root = temp_dir("ptn-phpc-variables-order-gpc");
     fs::create_dir_all(&root).unwrap();

@@ -238,13 +238,13 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    out.push_str("    runtime.native_argc = ptn_native_argc;\n");
+    out.push_str("    runtime.native_argv = ptn_native_argv;\n");
     if runtime_requirements.request_context {
         out.push_str(
             "    ptn_initialize_request_context(&runtime, ptn_native_argc, ptn_native_argv);\n",
         );
     } else {
-        out.push_str("    (void)ptn_native_argc;\n");
-        out.push_str("    (void)ptn_native_argv;\n");
         out.push_str("    PtnValue ptn_env_superglobal = ptn_environment_snapshot();\n");
         out.push_str(
             "    ptn_runtime_write_global_variable(&runtime, \"_ENV\", ptn_env_superglobal);\n",
@@ -2544,6 +2544,9 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     }
     if name.eq_ignore_ascii_case("is_callable") && argument_index == 2 {
         return Some("callable_name");
+    }
+    if name.eq_ignore_ascii_case("getopt") && argument_index == 2 {
+        return Some("rest_index");
     }
     if name.eq_ignore_ascii_case("settype") && argument_index == 0 {
         return Some("var");
