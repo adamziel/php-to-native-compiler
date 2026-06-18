@@ -1039,6 +1039,87 @@ static PTN_UNUSED PtnValue ptn_new_object(
     return ptn_object_new_shell(runtime, "stdClass");
 }
 
+static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnObject *source) {
+    ptn_array_free(cloned->properties);
+    PtnValue cloned_properties = ptn_array_from_literal_entries(0, NULL);
+    cloned->properties = cloned_properties.as.array;
+    for (size_t i = 0; i < source->properties->len; i++) {
+        PtnArrayEntry *entry = &source->properties->entries[i];
+        ptn_array_set_entry(
+            cloned->properties,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone_deref(entry->value)
+        );
+    }
+    cloned->properties->current_index =
+        source->properties->current_index <= source->properties->len
+            ? source->properties->current_index
+            : source->properties->len;
+    cloned->properties->next_auto_key = source->properties->next_auto_key;
+    for (size_t i = 0; i < source->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &source->property_metadata[i];
+        ptn_object_register_property_metadata(
+            cloned,
+            metadata->display_name,
+            metadata->declaring_class,
+            metadata->read_visibility,
+            metadata->set_visibility,
+            metadata->is_readonly,
+            metadata->type_kind,
+            metadata->type_class_name,
+            metadata->type_text,
+            metadata->type_allows_null
+        );
+        PtnObjectPropertyMetadata *cloned_metadata = NULL;
+        for (size_t metadata_index = 0; metadata_index < cloned->property_metadata_len; metadata_index++) {
+            if (strcmp(cloned->property_metadata[metadata_index].storage_name, metadata->storage_name) == 0) {
+                cloned_metadata = &cloned->property_metadata[metadata_index];
+                break;
+            }
+        }
+        if (cloned_metadata != NULL) {
+            cloned_metadata->is_unset = metadata->is_unset;
+            cloned_metadata->lazy_skip = metadata->lazy_skip;
+            if (metadata->last_type_name != NULL) {
+                cloned_metadata->last_type_name = ptn_duplicate_string(metadata->last_type_name);
+            }
+        }
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_object_clone_storage_without_magic(
+    PtnRuntime *runtime,
+    PtnObject *source
+) {
+    PtnValue clone = ptn_object_new_shell(runtime, source->class_name);
+    ptn_object_copy_storage_for_clone(clone.as.object, source);
+    return clone;
+}
+
+static PTN_UNUSED void ptn_lazy_object_copy_clone_state(
+    PtnRuntime *runtime,
+    PtnObject *cloned,
+    PtnObject *source
+) {
+    if (cloned == NULL || source == NULL || !source->lazy_is_proxy) {
+        return;
+    }
+    cloned->lazy_is_proxy = 1;
+    cloned->lazy_uninitialized = source->lazy_uninitialized;
+    cloned->lazy_options = source->lazy_options;
+    cloned->lazy_initializing = 0;
+    ptn_value_destroy(&cloned->lazy_initializer);
+    ptn_value_destroy(&cloned->lazy_proxy_instance);
+    cloned->lazy_initializer = ptn_value_clone_deref(source->lazy_initializer);
+    PtnValue real = ptn_value_deref(source->lazy_proxy_instance);
+    if (!source->lazy_uninitialized && real.type == PTN_OBJECT && real.as.object != NULL) {
+        cloned->lazy_proxy_instance =
+            ptn_object_clone_storage_without_magic(runtime, real.as.object);
+    } else {
+        cloned->lazy_proxy_instance = ptn_value_clone_deref(source->lazy_proxy_instance);
+    }
+}
+
 static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type != PTN_OBJECT) {
@@ -1056,6 +1137,12 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         return ptn_null();
     }
     PtnObject *source = resolved.as.object;
+    if (source->lazy_uninitialized && !source->lazy_initializing) {
+        if (!ptn_lazy_object_initialize(runtime, resolved, line)) {
+            return ptn_null();
+        }
+        source = resolved.as.object;
+    }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_internal_class_name_is_sensitive_parameter_value(source->class_name)) {
         return ptn_sensitive_parameter_value_clone(runtime, resolved, line);
@@ -1112,53 +1199,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         return ptn_null();
     }
 
-    PtnValue clone = ptn_object_new_shell(runtime, source->class_name);
+    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, source);
     PtnObject *cloned = clone.as.object;
-    ptn_array_free(cloned->properties);
-    PtnValue cloned_properties = ptn_array_from_literal_entries(0, NULL);
-    cloned->properties = cloned_properties.as.array;
-    for (size_t i = 0; i < source->properties->len; i++) {
-        PtnArrayEntry *entry = &source->properties->entries[i];
-        ptn_array_set_entry(
-            cloned->properties,
-            ptn_array_key_clone(entry->key),
-            ptn_value_clone_deref(entry->value)
-        );
-    }
-    cloned->properties->current_index =
-        source->properties->current_index <= source->properties->len
-            ? source->properties->current_index
-            : source->properties->len;
-    cloned->properties->next_auto_key = source->properties->next_auto_key;
-    for (size_t i = 0; i < source->property_metadata_len; i++) {
-        PtnObjectPropertyMetadata *metadata = &source->property_metadata[i];
-        ptn_object_register_property_metadata(
-            cloned,
-            metadata->display_name,
-            metadata->declaring_class,
-            metadata->read_visibility,
-            metadata->set_visibility,
-            metadata->is_readonly,
-            metadata->type_kind,
-            metadata->type_class_name,
-            metadata->type_text,
-            metadata->type_allows_null
-        );
-        PtnObjectPropertyMetadata *cloned_metadata = NULL;
-        for (size_t metadata_index = 0; metadata_index < cloned->property_metadata_len; metadata_index++) {
-            if (strcmp(cloned->property_metadata[metadata_index].storage_name, metadata->storage_name) == 0) {
-                cloned_metadata = &cloned->property_metadata[metadata_index];
-                break;
-            }
-        }
-        if (cloned_metadata != NULL) {
-            cloned_metadata->is_unset = metadata->is_unset;
-            cloned_metadata->lazy_skip = metadata->lazy_skip;
-            if (metadata->last_type_name != NULL) {
-                cloned_metadata->last_type_name = ptn_duplicate_string(metadata->last_type_name);
-            }
-        }
-    }
+    ptn_lazy_object_copy_clone_state(runtime, cloned, source);
 
     PtnRuntime *root = runtime == NULL || runtime->lifecycle_root == NULL
         ? runtime

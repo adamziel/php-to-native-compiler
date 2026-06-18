@@ -1333,6 +1333,9 @@ static int ptn_object_property_metadata_dumps_uninitialized(
     if (object == NULL || metadata == NULL) {
         return 0;
     }
+    if (metadata->lazy_skip) {
+        return 0;
+    }
     if (object->lazy_uninitialized &&
         !object->lazy_initializing &&
         ptn_property_type_is_declared(metadata->type_kind) &&
@@ -7670,11 +7673,17 @@ static PtnArray *ptn_array_walk_slot_array_for_write(
     PtnRuntime *runtime,
     const char *function_name,
     PtnValue *slot,
-    PtnValue value
+    PtnValue value,
+    size_t line
 ) {
     PtnValue current_value = slot == NULL ? value : *slot;
     PtnValue resolved = ptn_value_deref(current_value);
     if (resolved.type == PTN_OBJECT && resolved.as.object != NULL) {
+        if (resolved.as.object->lazy_uninitialized && !resolved.as.object->lazy_initializing) {
+            if (!ptn_lazy_object_initialize(runtime, resolved, line)) {
+                return NULL;
+            }
+        }
         return resolved.as.object->properties;
     }
     PtnArray *array = ptn_internal_expect_array_arg(
@@ -7853,6 +7862,9 @@ static void ptn_array_walk_call_function(
             ptn_value_unwrap_reference_slots(&array->entries[i].value, created_walk_reference, 0);
         }
     }
+    if (object != NULL) {
+        ptn_lazy_object_sync_proxy_instance_properties(object);
+    }
 }
 
 static PtnArrayKey *ptn_array_walk_snapshot_keys(PtnArray *array, size_t *count_out) {
@@ -7897,7 +7909,17 @@ static PtnValue ptn_array_walk_slot(
 
     for (;;) {
         PtnValue *slot = ptn_array_walk_current_slot(runtime, name, local_slot);
-        PtnArray *array = ptn_array_walk_slot_array_for_write(runtime, "array_walk", slot, value);
+        PtnArray *array = ptn_array_walk_slot_array_for_write(
+            runtime,
+            "array_walk",
+            slot,
+            value,
+            line
+        );
+        if (array == NULL) {
+            ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
+            return ptn_null();
+        }
         PtnObject *object = ptn_array_walk_slot_object(slot, value);
         if (array != last_array) {
             ptn_array_walk_free_snapshot_keys(snapshot_keys, snapshot_count);
@@ -8184,8 +8206,13 @@ static PtnValue ptn_array_walk_recursive_checked(
         runtime,
         "array_walk_recursive",
         slot,
-        value
+        value,
+        line
     );
+    if (array == NULL) {
+        ptn_value_destroy(&checked_callback);
+        return ptn_null();
+    }
     PtnObject *object = ptn_array_walk_slot_object(slot, value);
     int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int previous_throw_argument_count_errors = runtime->throw_argument_count_errors;
@@ -11789,22 +11816,32 @@ static void ptn_array_splice_note_iterator_mutation(
 }
 
 static PtnValue ptn_array_splice_values(
+    PtnRuntime *runtime,
     PtnArray *array,
     int64_t offset,
     int has_length,
     int64_t length,
     int has_replacement,
-    PtnValue replacement
+    PtnValue replacement,
+    size_t line
 ) {
     size_t start = ptn_array_slice_start_offset(array->len, offset);
     size_t count = ptn_array_slice_count(array->len, start, has_length, length);
     PtnValue removed = ptn_array_from_literal_entries(0, NULL);
     PtnValue rebuilt = ptn_array_from_literal_entries(0, NULL);
     PtnArray *replacement_array = NULL;
+    PtnValue replacement_array_value = ptn_null();
     PtnValue replacement_value = ptn_value_deref(replacement);
     if (has_replacement && replacement_value.type == PTN_ARRAY) {
         replacement_array = replacement_value.as.array;
+    } else if (has_replacement && replacement_value.type == PTN_OBJECT) {
+        replacement_array_value = ptn_cast_array(replacement_value);
+        if (replacement_array_value.type == PTN_ARRAY) {
+            replacement_array = replacement_array_value.as.array;
+        }
     }
+    (void)runtime;
+    (void)line;
     size_t replacement_count = 0;
     if (replacement_array != NULL) {
         replacement_count = replacement_array->len;
@@ -11837,6 +11874,7 @@ static PtnValue ptn_array_splice_values(
 
     ptn_array_adopt_storage(array, rebuilt.as.array);
     ptn_array_splice_note_iterator_mutation(array, start, count, replacement_count);
+    ptn_value_destroy(&replacement_array_value);
     free(rebuilt.as.array);
     return removed;
 }
@@ -11921,14 +11959,15 @@ static PtnValue ptn_internal_array_splice(PtnRuntime *runtime, size_t argc, cons
         : 0;
     int has_length = argc >= 3 && !length_is_null;
     PtnValue replacement = argc >= 4 ? args[3] : ptn_null();
-    (void)line;
     return ptn_array_splice_values(
+        runtime,
         array,
         offset,
         has_length,
         length,
         argc >= 4,
-        replacement
+        replacement,
+        line
     );
 }
 
@@ -59135,6 +59174,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isDynamic")
         || ptn_ascii_case_equal(method_name, "isFinal")
         || ptn_ascii_case_equal(method_name, "isInitialized")
+        || ptn_ascii_case_equal(method_name, "isLazy")
         || ptn_ascii_case_equal(method_name, "isPrivate")
         || ptn_ascii_case_equal(method_name, "isProtected")
         || ptn_ascii_case_equal(method_name, "isPublic")
@@ -60043,6 +60083,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isDefault",
             "isDynamic",
             "isFinal",
+            "isLazy",
             "isPrivate",
             "isProtected",
             "isPublic",
@@ -63515,6 +63556,44 @@ static int ptn_reflection_property_initialize_lazy_target(
     return 1;
 }
 
+static int ptn_reflection_property_is_lazy_object_depth(
+    PtnValue target,
+    const char *property_name,
+    const char *declaring_class,
+    size_t depth
+) {
+    target = ptn_value_deref(target);
+    if (target.type != PTN_OBJECT || target.as.object == NULL || depth > 64) {
+        return 0;
+    }
+    PtnObject *object = target.as.object;
+    if (!object->lazy_uninitialized && object->lazy_is_proxy) {
+        PtnValue real = ptn_value_deref(object->lazy_proxy_instance);
+        if (real.type == PTN_OBJECT && real.as.object != NULL && real.as.object != object) {
+            return ptn_reflection_property_is_lazy_object_depth(
+                real,
+                property_name,
+                declaring_class,
+                depth + 1
+            );
+        }
+    }
+    if (!object->lazy_uninitialized || object->lazy_initializing) {
+        return 0;
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_reflection_property_object_metadata(target, property_name, declaring_class);
+    return metadata != NULL && !metadata->lazy_skip;
+}
+
+static int ptn_reflection_property_is_lazy_object(
+    PtnValue target,
+    const char *property_name,
+    const char *declaring_class
+) {
+    return ptn_reflection_property_is_lazy_object_depth(target, property_name, declaring_class, 0);
+}
+
 static int ptn_reflection_property_target_has_method(PtnValue target, const char *method_name) {
     target = ptn_value_deref(target);
     const char *target_class = NULL;
@@ -64305,6 +64384,64 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         }
         return ptn_bool(
             ptn_reflection_property_object_storage_initialized(
+                target,
+                data->name,
+                storage_declaring_class
+            )
+        );
+    }
+    if (ptn_ascii_case_equal(name, "isLazy")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (is_static || data->is_dynamic || (modifiers & 512) != 0) {
+            PtnValue target = ptn_value_deref(args[0]);
+            if (target.type != PTN_OBJECT && target.type != PTN_EXCEPTION) {
+                char message[192];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "ReflectionProperty::isLazy(): Argument #1 ($object) must be of type object, %s given",
+                    ptn_offset_container_type_name(target)
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "TypeError", message);
+                return ptn_null();
+            }
+            return ptn_bool(0);
+        }
+        PtnValue target = ptn_value_deref(args[0]);
+        if (target.type != PTN_OBJECT && target.type != PTN_EXCEPTION) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "ReflectionProperty::isLazy(): Argument #1 ($object) must be of type object, %s given",
+                ptn_offset_container_type_name(target)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        const char *storage_declaring_class = declaring_class == NULL ? data->class_name : declaring_class;
+        if (!ptn_reflection_property_target_is_compatible(target, storage_declaring_class)) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Given object is not an instance of the class this property was declared in"
+            );
+            return ptn_null();
+        }
+        if (target.type == PTN_EXCEPTION) {
+            return ptn_bool(0);
+        }
+        return ptn_bool(
+            ptn_reflection_property_is_lazy_object(
                 target,
                 data->name,
                 storage_declaring_class
