@@ -594,155 +594,6 @@ static PTN_UNUSED PtnValue ptn_get_class_value(PtnRuntime *runtime, PtnValue val
     return ptn_null();
 }
 
-typedef struct {
-    PtnArray **arrays;
-    size_t array_len;
-    size_t array_capacity;
-    PtnObject **objects;
-    size_t object_len;
-    size_t object_capacity;
-} PtnDirectDumpSeen;
-
-static PTN_UNUSED void ptn_direct_dump_seen_init(PtnDirectDumpSeen *seen) {
-    seen->arrays = NULL;
-    seen->array_len = 0;
-    seen->array_capacity = 0;
-    seen->objects = NULL;
-    seen->object_len = 0;
-    seen->object_capacity = 0;
-}
-
-static PTN_UNUSED void ptn_direct_dump_seen_free(PtnDirectDumpSeen *seen) {
-    free(seen->arrays);
-    seen->arrays = NULL;
-    seen->array_len = 0;
-    seen->array_capacity = 0;
-    free(seen->objects);
-    seen->objects = NULL;
-    seen->object_len = 0;
-    seen->object_capacity = 0;
-}
-
-static PTN_UNUSED int ptn_direct_dump_seen_array_contains(PtnDirectDumpSeen *seen, PtnArray *array) {
-    for (size_t i = 0; i < seen->array_len; i++) {
-        if (seen->arrays[i] == array) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static PTN_UNUSED void ptn_direct_dump_seen_array_push(PtnDirectDumpSeen *seen, PtnArray *array) {
-    if (seen->array_len == seen->array_capacity) {
-        size_t new_capacity = seen->array_capacity == 0 ? 8 : seen->array_capacity * 2;
-        if (new_capacity < seen->array_capacity) {
-            ptn_abort_out_of_memory();
-        }
-        PtnArray **new_arrays = realloc(seen->arrays, new_capacity * sizeof(PtnArray *));
-        if (new_arrays == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        seen->arrays = new_arrays;
-        seen->array_capacity = new_capacity;
-    }
-    seen->arrays[seen->array_len++] = array;
-}
-
-static PTN_UNUSED void ptn_direct_dump_seen_array_pop(PtnDirectDumpSeen *seen) {
-    if (seen->array_len > 0) {
-        seen->array_len--;
-    }
-}
-
-static PTN_UNUSED int ptn_direct_dump_seen_object_contains(PtnDirectDumpSeen *seen, PtnObject *object) {
-    for (size_t i = 0; i < seen->object_len; i++) {
-        if (seen->objects[i] == object) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static PTN_UNUSED void ptn_direct_dump_seen_object_push(PtnDirectDumpSeen *seen, PtnObject *object) {
-    if (seen->object_len == seen->object_capacity) {
-        size_t new_capacity = seen->object_capacity == 0 ? 8 : seen->object_capacity * 2;
-        if (new_capacity < seen->object_capacity) {
-            ptn_abort_out_of_memory();
-        }
-        PtnObject **new_objects = realloc(seen->objects, new_capacity * sizeof(PtnObject *));
-        if (new_objects == NULL) {
-            ptn_abort_out_of_memory();
-        }
-        seen->objects = new_objects;
-        seen->object_capacity = new_capacity;
-    }
-    seen->objects[seen->object_len++] = object;
-}
-
-static PTN_UNUSED void ptn_direct_dump_seen_object_pop(PtnDirectDumpSeen *seen) {
-    if (seen->object_len > 0) {
-        seen->object_len--;
-    }
-}
-
-static PTN_UNUSED void ptn_direct_dump_write(PtnRuntime *runtime, const char *data, size_t len) {
-    ptn_output_write(runtime, data, len);
-}
-
-static PTN_UNUSED void ptn_direct_dump_write_cstr(PtnRuntime *runtime, const char *data) {
-    ptn_direct_dump_write(runtime, data, data == NULL ? 0 : strlen(data));
-}
-
-static PTN_UNUSED void ptn_direct_dump_printf(PtnRuntime *runtime, const char *format, ...) {
-    va_list args;
-    va_start(args, format);
-    va_list copy;
-    va_copy(copy, args);
-    int needed = vsnprintf(NULL, 0, format, copy);
-    va_end(copy);
-    if (needed < 0) {
-        va_end(args);
-        ptn_abort_out_of_memory();
-    }
-    char *buffer = malloc((size_t)needed + 1);
-    if (buffer == NULL) {
-        va_end(args);
-        ptn_abort_out_of_memory();
-    }
-    int written = vsnprintf(buffer, (size_t)needed + 1, format, args);
-    va_end(args);
-    if (written < 0 || written > needed) {
-        free(buffer);
-        ptn_abort_out_of_memory();
-    }
-    ptn_direct_dump_write(runtime, buffer, (size_t)written);
-    free(buffer);
-}
-
-static PTN_UNUSED void ptn_direct_var_dump_indent(PtnRuntime *runtime, size_t indent) {
-    for (size_t i = 0; i < indent; i++) {
-        ptn_direct_dump_write_cstr(runtime, "  ");
-    }
-}
-
-static PTN_UNUSED size_t ptn_direct_class_name_dump_len(const char *class_name) {
-    const char *anonymous_suffix = class_name == NULL ? NULL : strstr(class_name, "@anonymous#");
-    if (anonymous_suffix != NULL) {
-        return (size_t)(anonymous_suffix - class_name) + strlen("@anonymous");
-    }
-    return class_name == NULL ? 0 : strlen(class_name);
-}
-
-static PTN_UNUSED void ptn_direct_var_dump_array_key(PtnRuntime *runtime, PtnArrayKey key) {
-    if (key.type == PTN_ARRAY_KEY_INT) {
-        ptn_direct_dump_printf(runtime, "[%lld]=>\n", (long long)key.as.integer);
-        return;
-    }
-    ptn_direct_dump_write_cstr(runtime, "[\"");
-    ptn_direct_dump_write(runtime, key.as.string, key.string_len);
-    ptn_direct_dump_write_cstr(runtime, "\"]=>\n");
-}
-
 static PTN_UNUSED int ptn_debug_info_key_parts(
     PtnArrayKey key,
     const char **name,
@@ -780,32 +631,6 @@ static PTN_UNUSED int ptn_debug_info_key_parts(
     return 1;
 }
 
-static PTN_UNUSED void ptn_direct_var_dump_debug_info_key(PtnRuntime *runtime, PtnArrayKey key) {
-    if (key.type == PTN_ARRAY_KEY_INT) {
-        ptn_direct_dump_printf(runtime, "[%lld]=>\n", (long long)key.as.integer);
-        return;
-    }
-    const char *name = NULL;
-    const char *scope = NULL;
-    size_t name_len = 0;
-    size_t scope_len = 0;
-    int visibility = PTN_PROPERTY_PUBLIC;
-    ptn_debug_info_key_parts(key, &name, &name_len, &scope, &scope_len, &visibility);
-    ptn_direct_dump_write_cstr(runtime, "[\"");
-    ptn_direct_dump_write(runtime, name, name_len);
-    if (visibility == PTN_PROPERTY_PROTECTED) {
-        ptn_direct_dump_write_cstr(runtime, "\":protected]=>\n");
-        return;
-    }
-    if (visibility == PTN_PROPERTY_PRIVATE) {
-        ptn_direct_dump_write_cstr(runtime, "\":\"");
-        ptn_direct_dump_write(runtime, scope, scope_len);
-        ptn_direct_dump_write_cstr(runtime, "\":private]=>\n");
-        return;
-    }
-    ptn_direct_dump_write_cstr(runtime, "\"]=>\n");
-}
-
 static PTN_UNUSED char *ptn_magic_debug_info_null_deprecation_message(const char *class_name) {
     const char *name = class_name == NULL ? "" : class_name;
     int needed = snprintf(
@@ -832,52 +657,6 @@ static PTN_UNUSED char *ptn_magic_debug_info_null_deprecation_message(const char
         ptn_abort_out_of_memory();
     }
     return message;
-}
-
-static PTN_UNUSED void ptn_direct_var_dump_object_key(
-    PtnRuntime *runtime,
-    PtnObject *object,
-    PtnArrayKey key
-) {
-    if (key.type == PTN_ARRAY_KEY_INT) {
-        ptn_direct_dump_printf(runtime, "[%lld]=>\n", (long long)key.as.integer);
-        return;
-    }
-    const PtnObjectPropertyMetadata *metadata =
-        object == NULL ? NULL : ptn_object_property_metadata(object, key.as.string);
-    const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
-    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
-        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", display_name);
-    } else if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
-        ptn_direct_dump_printf(runtime, "[\"%s\":protected]=>\n", display_name);
-    } else {
-        ptn_direct_dump_printf(
-            runtime,
-            "[\"%s\":\"%s\":private]=>\n",
-            display_name,
-            metadata->declaring_class
-        );
-    }
-}
-
-static PTN_UNUSED void ptn_direct_var_dump_object_metadata_key(
-    PtnRuntime *runtime,
-    const PtnObjectPropertyMetadata *metadata
-) {
-    if (metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
-        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", metadata->display_name);
-        return;
-    }
-    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
-        ptn_direct_dump_printf(runtime, "[\"%s\":protected]=>\n", metadata->display_name);
-        return;
-    }
-    ptn_direct_dump_printf(
-        runtime,
-        "[\"%s\":\"%s\":private]=>\n",
-        metadata->display_name,
-        metadata->declaring_class
-    );
 }
 
 static PTN_UNUSED const char *ptn_property_metadata_uninitialized_type_name(
@@ -940,283 +719,6 @@ static PTN_UNUSED int ptn_object_property_metadata_dumps_uninitialized(
     }
     return (metadata->is_unset || ptn_property_type_is_declared(metadata->type_kind)) &&
         ptn_property_metadata_uninitialized_type_name(metadata) != NULL;
-}
-
-static PTN_UNUSED void ptn_direct_var_dump_object_uninitialized_properties(
-    PtnRuntime *runtime,
-    PtnObject *object,
-    size_t indent
-) {
-    for (size_t i = 0; i < object->property_metadata_len; i++) {
-        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
-        if (!ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
-            continue;
-        }
-        const char *type_name = ptn_property_metadata_uninitialized_type_name(metadata);
-        if (type_name == NULL) {
-            continue;
-        }
-        ptn_direct_var_dump_indent(runtime, indent + 1);
-        ptn_direct_var_dump_object_metadata_key(runtime, metadata);
-        ptn_direct_var_dump_indent(runtime, indent + 1);
-        ptn_direct_dump_printf(runtime, "uninitialized(%s)\n", type_name);
-    }
-}
-
-static PTN_UNUSED void ptn_direct_var_dump_value_indented(
-    PtnRuntime *runtime,
-    PtnValue value,
-    size_t indent,
-    PtnDirectDumpSeen *seen
-);
-
-static PTN_UNUSED void ptn_direct_var_dump_exception(
-    PtnRuntime *runtime,
-    PtnException *exception,
-    size_t indent,
-    PtnDirectDumpSeen *seen
-) {
-    const char *path = exception->path == NULL ? "" : exception->path;
-    ptn_direct_dump_printf(runtime, "object(%s)#%zu (7) {\n", exception->class_name, exception->object_id);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"message\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_printf(runtime, "string(%zu) \"", exception->message_len);
-    ptn_direct_dump_write(runtime, exception->message, exception->message_len);
-    ptn_direct_dump_write_cstr(runtime, "\"\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"string\":\"Exception\":private]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "string(0) \"\"\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"code\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_printf(runtime, "int(%lld)\n", (long long)exception->code);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"file\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_printf(runtime, "string(%zu) \"", strlen(path));
-    ptn_direct_dump_write_cstr(runtime, path);
-    ptn_direct_dump_write_cstr(runtime, "\"\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"line\":protected]=>\n");
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_printf(runtime, "int(%zu)\n", exception->line);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"trace\":\"Exception\":private]=>\n");
-    ptn_direct_var_dump_value_indented(runtime, exception->trace, indent + 1, seen);
-    ptn_direct_var_dump_indent(runtime, indent + 1);
-    ptn_direct_dump_write_cstr(runtime, "[\"previous\":\"Exception\":private]=>\n");
-    ptn_direct_var_dump_value_indented(runtime, exception->previous, indent + 1, seen);
-    ptn_direct_var_dump_indent(runtime, indent);
-    ptn_direct_dump_write_cstr(runtime, "}\n");
-}
-
-static PTN_UNUSED void ptn_direct_var_dump_value_indented(
-    PtnRuntime *runtime,
-    PtnValue value,
-    size_t indent,
-    PtnDirectDumpSeen *seen
-) {
-    int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
-    if (value.type == PTN_REFERENCE) {
-        value = ptn_value_deref(value);
-    }
-    if (value.type == PTN_ARRAY && ptn_direct_dump_seen_array_contains(seen, value.as.array)) {
-        ptn_direct_var_dump_indent(runtime, indent);
-        ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
-        return;
-    }
-    if (value.type == PTN_OBJECT && ptn_direct_dump_seen_object_contains(seen, value.as.object)) {
-        ptn_direct_var_dump_indent(runtime, indent);
-        ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
-        return;
-    }
-
-    ptn_direct_var_dump_indent(runtime, indent);
-    if (print_reference) {
-        ptn_direct_dump_write_cstr(runtime, "&");
-    }
-    switch (value.type) {
-        case PTN_NULL:
-            ptn_direct_dump_write_cstr(runtime, "NULL\n");
-            break;
-        case PTN_BOOL:
-            ptn_direct_dump_write_cstr(runtime, value.as.boolean ? "bool(true)\n" : "bool(false)\n");
-            break;
-        case PTN_INT:
-            ptn_direct_dump_printf(runtime, "int(%lld)\n", (long long)value.as.integer);
-            break;
-        case PTN_FLOAT: {
-            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
-            ptn_format_var_dump_float(
-                value.as.floating,
-                ptn_runtime_serialize_precision(runtime),
-                formatted,
-                sizeof(formatted)
-            );
-            ptn_direct_dump_printf(runtime, "float(%s)\n", formatted);
-            break;
-        }
-        case PTN_STRING:
-            ptn_direct_dump_printf(runtime, "string(%zu) \"", value.as.string.len);
-            ptn_direct_dump_write(runtime, (const char *)value.as.string.data, value.as.string.len);
-            ptn_direct_dump_write_cstr(runtime, "\"\n");
-            break;
-        case PTN_ARRAY: {
-            PtnArray *array = value.as.array;
-            ptn_direct_dump_printf(runtime, "array(%zu) {\n", array->len);
-            ptn_direct_dump_seen_array_push(seen, array);
-            for (size_t i = 0; i < array->len; i++) {
-                ptn_direct_var_dump_indent(runtime, indent + 1);
-                ptn_direct_var_dump_array_key(runtime, array->entries[i].key);
-                ptn_direct_var_dump_value_indented(runtime, array->entries[i].value, indent + 1, seen);
-            }
-            ptn_direct_dump_seen_array_pop(seen);
-            ptn_direct_var_dump_indent(runtime, indent);
-            ptn_direct_dump_write_cstr(runtime, "}\n");
-            break;
-        }
-        case PTN_OBJECT: {
-            PtnObject *object = value.as.object;
-            if (object->enum_case_name != NULL) {
-                ptn_direct_dump_printf(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
-                break;
-            }
-            size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
-            size_t property_count = object->properties == NULL ? 0 : object->properties->len;
-            ptn_direct_dump_printf(
-                runtime,
-                "object(%.*s)#%zu (%zu) {\n",
-                (int)class_len,
-                object->class_name,
-                object->object_id,
-                property_count
-            );
-            ptn_direct_dump_seen_object_push(seen, object);
-            if (object->properties != NULL) {
-                for (size_t i = 0; i < object->properties->len; i++) {
-                    PtnArrayEntry *entry = &object->properties->entries[i];
-                    ptn_direct_var_dump_indent(runtime, indent + 1);
-                    ptn_direct_var_dump_object_key(runtime, object, entry->key);
-                    ptn_direct_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
-                }
-            }
-            ptn_direct_var_dump_object_uninitialized_properties(runtime, object, indent);
-            ptn_direct_dump_seen_object_pop(seen);
-            ptn_direct_var_dump_indent(runtime, indent);
-            ptn_direct_dump_write_cstr(runtime, "}\n");
-            break;
-        }
-        case PTN_CLOSURE:
-            ptn_direct_dump_printf(
-                runtime,
-                "object(Closure)#%zu (0) {\n",
-                value.as.closure->object_id
-            );
-            ptn_direct_var_dump_indent(runtime, indent);
-            ptn_direct_dump_write_cstr(runtime, "}\n");
-            break;
-        case PTN_EXCEPTION:
-            ptn_direct_var_dump_exception(runtime, value.as.exception, indent, seen);
-            break;
-        case PTN_RESOURCE:
-            ptn_direct_dump_printf(
-                runtime,
-                "resource(%lld) of type (%s)\n",
-                (long long)value.as.resource->id,
-                value.as.resource->type_name
-            );
-            break;
-        case PTN_REFERENCE:
-            ptn_direct_dump_write_cstr(runtime, "NULL\n");
-            break;
-    }
-}
-
-static PTN_UNUSED int ptn_direct_var_dump_magic_debug_info(
-    PtnRuntime *runtime,
-    PtnValue value,
-    size_t line,
-    PtnDirectDumpSeen *seen
-) {
-    PtnValue resolved = ptn_value_deref(value);
-    if (resolved.type != PTN_OBJECT ||
-        runtime == NULL ||
-        runtime->magic_debug_info == NULL) {
-        return 0;
-    }
-    PtnValue debug_info = ptn_null();
-    if (!runtime->magic_debug_info(runtime, resolved, line, &debug_info)) {
-        return 0;
-    }
-    PtnValue debug_value = ptn_value_deref(debug_info);
-    PtnArray *properties = NULL;
-    size_t property_count = 0;
-    if (debug_value.type == PTN_NULL) {
-        char *message = ptn_magic_debug_info_null_deprecation_message(resolved.as.object->class_name);
-        ptn_emit_deprecation(&runtime->diagnostics, message, line);
-        free(message);
-    } else if (debug_value.type != PTN_ARRAY) {
-        ptn_value_destroy(&debug_info);
-        ptn_emit_fatal_error_at(
-            runtime,
-            "__debuginfo() must return an array",
-            runtime->source_path,
-            line
-        );
-        return 1;
-    } else {
-        properties = debug_value.as.array;
-        property_count = properties->len;
-    }
-    PtnObject *object = resolved.as.object;
-    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
-    ptn_direct_dump_printf(
-        runtime,
-        "object(%.*s)#%zu (%zu) {\n",
-        (int)class_len,
-        object->class_name,
-        object->object_id,
-        property_count
-    );
-    ptn_direct_dump_seen_object_push(seen, object);
-    for (size_t i = 0; properties != NULL && i < properties->len; i++) {
-        ptn_direct_var_dump_indent(runtime, 1);
-        ptn_direct_var_dump_debug_info_key(runtime, properties->entries[i].key);
-        ptn_direct_var_dump_value_indented(runtime, properties->entries[i].value, 1, seen);
-    }
-    ptn_direct_dump_seen_object_pop(seen);
-    ptn_direct_dump_write_cstr(runtime, "}\n");
-    ptn_value_destroy(&debug_info);
-    return 1;
-}
-
-static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
-    PtnRuntime *runtime,
-    size_t argc,
-    const PtnValue *args,
-    size_t line
-) {
-    if (argc == 0) {
-        ptn_throw_exception_at(
-            runtime,
-            "ArgumentCountError",
-            "var_dump() expects at least 1 argument, 0 given",
-            runtime->source_path == NULL ? "ptn" : runtime->source_path,
-            line
-        );
-        return ptn_null();
-    }
-    for (size_t i = 0; i < argc; i++) {
-        PtnDirectDumpSeen seen;
-        ptn_direct_dump_seen_init(&seen);
-        if (!ptn_direct_var_dump_magic_debug_info(runtime, args[i], line, &seen)) {
-            ptn_direct_var_dump_value_indented(runtime, args[i], 0, &seen);
-        }
-        ptn_direct_dump_seen_free(&seen);
-    }
-    return ptn_null();
 }
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
@@ -2139,7 +1641,7 @@ static int ptn_declared_class_is_same_or_descendant(const char *class_name, cons
 static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
-static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
+static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
 static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_scope, const char *declaring_class, int visibility);
 static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
@@ -2238,7 +1740,6 @@ static char *ptn_inaccessible_declared_method_callback_reason(
 ) {
     int is_static = 0;
     int visibility = PTN_PROPERTY_PUBLIC;
-    int is_final = 0;
     int is_abstract = 0;
     if (
         !ptn_declared_class_reflection_method_metadata(
@@ -2246,14 +1747,12 @@ static char *ptn_inaccessible_declared_method_callback_reason(
             method_name,
             &is_static,
             &visibility,
-            &is_final,
             &is_abstract
         )
     ) {
         return NULL;
     }
     (void)is_static;
-    (void)is_final;
     (void)is_abstract;
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     if (ptn_declared_method_visibility_allows(access_scope, class_name, visibility)) {
@@ -63057,7 +62556,7 @@ static PtnValue ptn_declared_trait_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name);
 static int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
-static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
+static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
 static int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
@@ -64459,10 +63958,8 @@ static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, 
 
         int is_static = 0;
         int visibility = PTN_PROPERTY_PUBLIC;
-        int is_final = 0;
         int is_abstract = 0;
-        if (ptn_declared_class_reflection_method_metadata(class_name, method_name, &is_static, &visibility, &is_final, &is_abstract)) {
-            (void)is_final;
+        if (ptn_declared_class_reflection_method_metadata(class_name, method_name, &is_static, &visibility, &is_abstract)) {
             if (is_abstract) {
                 ptn_first_class_callable_throw_error(
                     runtime,
@@ -65868,7 +65365,6 @@ static int ptn_reflection_parameter_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getPosition")
         || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "hasType")
-        || ptn_ascii_case_equal(method_name, "isArray")
         || ptn_ascii_case_equal(method_name, "isCallable")
         || ptn_ascii_case_equal(method_name, "isPassedByReference")
         || ptn_ascii_case_equal(method_name, "isVariadic");
@@ -66923,7 +66419,6 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getPosition",
             "getType",
             "hasType",
-            "isArray",
             "isCallable",
             "isPassedByReference",
             "isVariadic",
@@ -67951,7 +67446,6 @@ static PtnValue ptn_reflection_class_instantiate(
     if (ptn_declared_class_exists(class_name)) {
         int is_static = 0;
         int visibility = PTN_PROPERTY_PUBLIC;
-        int is_final = 0;
         int is_abstract = 0;
         if (
             argc != 0 &&
@@ -67960,7 +67454,6 @@ static PtnValue ptn_reflection_class_instantiate(
                 "__construct",
                 &is_static,
                 &visibility,
-                &is_final,
                 &is_abstract
             )
         ) {
@@ -68618,44 +68111,16 @@ static PtnValue ptn_reflection_class_constant_object_from_name(
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionClassConstant");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_class_constant_data_free;
-    PtnValue name_value = ptn_owned_string(ptn_duplicate_string(constant_name));
-    PtnValue assigned = ptn_object_declare_property(
-        runtime,
-        object,
-        "name",
-        "ReflectionClassConstant",
-        PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_STRING,
-        NULL,
-        "string",
-        0,
-        1,
-        name_value,
-        0
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("name"),
+        ptn_owned_string(ptn_duplicate_string(constant_name))
     );
-    ptn_value_destroy(&assigned);
-    ptn_value_destroy(&name_value);
-    PtnValue class_value = ptn_owned_string(ptn_duplicate_string(class_name));
-    assigned = ptn_object_declare_property(
-        runtime,
-        object,
-        "class",
-        "ReflectionClassConstant",
-        PTN_PROPERTY_PUBLIC,
-        PTN_PROPERTY_PUBLIC,
-        0,
-        PTN_PROPERTY_TYPE_STRING,
-        NULL,
-        "string",
-        0,
-        1,
-        class_value,
-        0
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("class"),
+        ptn_owned_string(ptn_duplicate_string(class_name))
     );
-    ptn_value_destroy(&assigned);
-    ptn_value_destroy(&class_value);
     return object;
 }
 
@@ -69710,7 +69175,6 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         || ptn_declared_trait_exists(data->class_name));
     int is_static = 0;
     int visibility = PTN_PROPERTY_PUBLIC;
-    int is_final = 0;
     int is_abstract = 0;
     if (!is_internal) {
         ptn_declared_class_reflection_method_metadata(
@@ -69718,7 +69182,6 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             data->name,
             &is_static,
             &visibility,
-            &is_final,
             &is_abstract
         );
     }
@@ -69956,9 +69419,6 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         }
         if (is_static) {
             modifiers |= 16;
-        }
-        if (is_final) {
-            modifiers |= 32;
         }
         if (is_abstract) {
             modifiers |= 64;
@@ -72375,19 +71835,6 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         return "zip";
     }
-    if (ptn_ascii_case_equal(class_name, "DOMNode") ||
-        ptn_ascii_case_equal(class_name, "DOMDocument") ||
-        ptn_ascii_case_equal(class_name, "DOMDocumentFragment") ||
-        ptn_ascii_case_equal(class_name, "DOMElement") ||
-        ptn_ascii_case_equal(class_name, "DOMAttr") ||
-        ptn_ascii_case_equal(class_name, "DOMCharacterData") ||
-        ptn_ascii_case_equal(class_name, "DOMText") ||
-        ptn_ascii_case_equal(class_name, "DOMCdataSection") ||
-        ptn_ascii_case_equal(class_name, "DOMCDataSection") ||
-        ptn_ascii_case_equal(class_name, "DOMComment") ||
-        ptn_ascii_case_equal(class_name, "DOMNodeList")) {
-        return "dom";
-    }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
         ptn_internal_class_name_is_soap_server(class_name) ||
         ptn_exception_name_equal(class_name, "SoapFault")) {
@@ -73473,14 +72920,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     }
     if (ptn_ascii_case_equal(name, "isCloneable")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
-        return runtime->exceptions->active_exception != NULL
-            ? ptn_null()
-            : ptn_bool(
-                !ptn_reflection_class_is_interface_name(class_name) &&
-                !ptn_declared_trait_exists(class_name) &&
-                !ptn_declared_class_is_abstract(class_name) &&
-                !ptn_internal_reflection_metadata_class_exists(class_name)
-            );
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(!ptn_internal_reflection_metadata_class_exists(class_name));
     }
     if (ptn_ascii_case_equal(name, "isIterable") || ptn_ascii_case_equal(name, "isIterateable")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
@@ -73665,16 +73105,15 @@ static const char *ptn_reflection_class_constant_value_type_name(PtnValue value)
 
 static PtnValue ptn_reflection_class_constant_to_string(
     PtnRuntime *runtime,
-    const char *class_name,
-    const char *constant_name,
+    PtnReflectionClassConstantData *data,
     size_t line
 ) {
-    PtnValue value = ptn_runtime_read_class_constant(runtime, class_name, constant_name, line);
+    PtnValue value = ptn_runtime_read_class_constant(runtime, data->class_name, data->name, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&value);
         return ptn_null();
     }
-    int modifiers = ptn_declared_class_reflection_constant_modifiers(class_name, constant_name);
+    int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name);
     const char *visibility_name = "public";
     if ((modifiers & 4) != 0) {
         visibility_name = "private";
@@ -73691,7 +73130,7 @@ static PtnValue ptn_reflection_class_constant_to_string(
             : "Constant [ %s %s %s ] { %s }\n",
         visibility_name,
         type_name,
-        constant_name,
+        data->name,
         value_repr
     );
     if (needed < 0) {
@@ -73713,33 +73152,12 @@ static PtnValue ptn_reflection_class_constant_to_string(
             : "Constant [ %s %s %s ] { %s }\n",
         visibility_name,
         type_name,
-        constant_name,
+        data->name,
         value_repr
     );
     free(value_repr);
     ptn_value_destroy(&value);
     return ptn_owned_string(result);
-}
-
-static char *ptn_reflection_class_constant_current_name(
-    PtnRuntime *runtime,
-    PtnValue receiver,
-    size_t line
-) {
-    PtnValue value = ptn_object_read_property(
-        runtime,
-        receiver,
-        "name",
-        "ReflectionClassConstant",
-        line
-    );
-    if (runtime->exceptions->active_exception != NULL) {
-        ptn_value_destroy(&value);
-        return NULL;
-    }
-    char *name = ptn_value_to_string(value);
-    ptn_value_destroy(&value);
-    return name;
 }
 
 static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
@@ -73804,100 +73222,37 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__toString")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        PtnValue result = ptn_reflection_class_constant_to_string(
-            runtime,
-            data->class_name,
-            constant_name,
-            line
-        );
-        free(constant_name);
-        return result;
+        return ptn_reflection_class_constant_to_string(runtime, data, line);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        return ptn_owned_string(constant_name);
+        return ptn_owned_string(ptn_duplicate_string(data->name));
     }
     if (ptn_ascii_case_equal(name, "getDeclaringClass")) {
         return ptn_reflection_class_object_from_name(runtime, data->class_name);
     }
     if (ptn_ascii_case_equal(name, "getValue")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        PtnValue result = ptn_runtime_read_class_constant(runtime, data->class_name, constant_name, line);
-        free(constant_name);
-        return result;
+        return ptn_runtime_read_class_constant(runtime, data->class_name, data->name, line);
     }
     if (ptn_ascii_case_equal(name, "isDeprecated")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        int result = ptn_declared_class_reflection_constant_is_deprecated(data->class_name, constant_name);
-        free(constant_name);
-        return ptn_bool(result);
+        return ptn_bool(ptn_declared_class_reflection_constant_is_deprecated(data->class_name, data->name));
     }
     if (ptn_ascii_case_equal(name, "isEnumCase")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        int result = ptn_declared_class_reflection_constant_is_enum_case(data->class_name, constant_name);
-        free(constant_name);
-        return ptn_bool(result);
+        return ptn_bool(ptn_declared_class_reflection_constant_is_enum_case(data->class_name, data->name));
     }
     if (ptn_ascii_case_equal(name, "getModifiers")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        int result = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
-        free(constant_name);
-        return ptn_int(result);
+        return ptn_int(ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name));
     }
     if (ptn_ascii_case_equal(name, "isFinal")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
-        free(constant_name);
-        return ptn_bool((modifiers & 32) != 0);
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 32) != 0);
     }
     if (ptn_ascii_case_equal(name, "isPublic")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
-        free(constant_name);
-        return ptn_bool((modifiers & 1) != 0);
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 1) != 0);
     }
     if (ptn_ascii_case_equal(name, "isProtected")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
-        free(constant_name);
-        return ptn_bool((modifiers & 2) != 0);
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 2) != 0);
     }
     if (ptn_ascii_case_equal(name, "isPrivate")) {
-        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
-        if (constant_name == NULL) {
-            return ptn_null();
-        }
-        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
-        free(constant_name);
-        return ptn_bool((modifiers & 4) != 0);
+        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 4) != 0);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -83040,15 +82395,6 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         );
         const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
         return ptn_bool(type_name != NULL && ptn_ascii_case_equal(type_name, "callable"));
-    }
-    if (ptn_ascii_case_equal(name, "isArray")) {
-        ptn_emit_deprecation(
-            &runtime->diagnostics,
-            "Method ReflectionParameter::isArray() is deprecated since 8.0, use ReflectionParameter::getType() instead",
-            line
-        );
-        const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
-        return ptn_bool(type_name != NULL && ptn_ascii_case_equal(type_name, "array"));
     }
     if (ptn_ascii_case_equal(name, "isPassedByReference")) {
         return ptn_bool(ptn_function_metadata_parameter_by_ref(metadata, index));

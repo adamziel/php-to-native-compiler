@@ -48815,8 +48815,79 @@ var_dump(new Foo());
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
+    assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
     assert!(c_source.contains("ptn_declared_magic_debug_info"));
+}
+
+#[test]
+fn compile_expression_var_dump_in_try_uses_compact_helper_chunk() {
+    let root = temp_dir("ptn-native-expression-var-dump-compact-helper");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("expression-var-dump-compact-helper.php");
+    let output = root.join("expression-var-dump-compact-helper-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new stdClass();
+try {
+    var_dump($object::class);
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(8) \"stdClass\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
+}
+
+#[test]
+fn compile_internal_dispatch_keeps_var_dump_metadata_helpers() {
+    let root = temp_dir("ptn-native-internal-dispatch-var-dump-metadata-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("internal-dispatch-var-dump-metadata-helpers.php");
+    let output = root.join("internal-dispatch-var-dump-metadata-helpers-bin");
+    fs::write(
+        &input,
+        "<?php
+$items = [1, 2];
+echo current($items), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "1\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_current"));
+    assert!(c_source.contains("ptn_object_property_metadata_dumps_uninitialized"));
+    assert!(!c_source.contains("ptn_direct_var_dump_value("));
 }
 
 #[test]

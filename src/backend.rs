@@ -619,7 +619,7 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         out.push_str(&runtime_c[direct_helpers.after_start..direct_helpers.end]);
     }
     out.push_str(&runtime_c[direct_helpers.after_end..compact_helpers.start]);
-    if requirements.compact_internal_helpers && !requirements.internal_function_dispatch {
+    if requirements.compact_internal_helpers {
         out.push_str(&runtime_c[compact_helpers.after_start..compact_helpers.end]);
     }
     out.push_str(&runtime_c[compact_helpers.after_end..internal_functions.start]);
@@ -8540,7 +8540,7 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract) {\n",
     );
     if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
@@ -8555,7 +8555,6 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    (void)method_name;\n");
         out.push_str("    (void)is_static;\n");
         out.push_str("    (void)visibility;\n");
-        out.push_str("    (void)is_final;\n");
         out.push_str("    (void)is_abstract;\n");
     }
     for class in classes {
@@ -8572,9 +8571,6 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(";\n");
             out.push_str("            *visibility = ");
             out.push_str(c_method_visibility(method.visibility));
-            out.push_str(";\n");
-            out.push_str("            *is_final = ");
-            out.push_str(if method.is_final { "1" } else { "0" });
             out.push_str(";\n");
             out.push_str("            *is_abstract = ");
             out.push_str(if method.is_abstract { "1" } else { "0" });
@@ -8598,9 +8594,6 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(";\n");
             out.push_str("            *visibility = ");
             out.push_str(c_method_visibility(method.visibility));
-            out.push_str(";\n");
-            out.push_str("            *is_final = ");
-            out.push_str("0");
             out.push_str(";\n");
             out.push_str("            *is_abstract = ");
             out.push_str(if method.is_abstract { "1" } else { "0" });
@@ -29819,7 +29812,7 @@ impl ValueEmitter {
             if temps.is_empty() {
                 out.push_str("    PtnValue ");
                 out.push_str(&result_temp);
-                out.push_str(" = ptn_direct_var_dump_value(&runtime, 0, NULL, ");
+                out.push_str(" = ptn_direct_var_dump(&runtime, 0, NULL, ");
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 return result_temp;
@@ -29839,7 +29832,7 @@ impl ValueEmitter {
             out.push_str(" };\n");
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
-            out.push_str(" = ptn_direct_var_dump_value(&runtime, ");
+            out.push_str(" = ptn_direct_var_dump(&runtime, ");
             out.push_str(&arguments.len().to_string());
             out.push_str(", ");
             out.push_str(&args_temp);
@@ -32671,7 +32664,7 @@ mod tests {
 
         assert!(c_source.contains("ptn_str_repeat_value(&runtime"));
         assert!(c_source.contains("ptn_get_class_value(&runtime"));
-        assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
+        assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
         assert!(!c_source.contains("ptn_call_function(&runtime, \"str_repeat\""));
         assert!(!c_source.contains("ptn_call_function(&runtime, \"get_class\""));
         assert!(!c_source.contains("ptn_call_function(&runtime, \"var_dump\""));
