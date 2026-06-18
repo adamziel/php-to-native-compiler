@@ -911,6 +911,53 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     }
 }
 
+static PTN_UNUSED int ptn_direct_var_dump_magic_debug_info(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    size_t indent,
+    PtnDirectDumpSeen *seen
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT ||
+        runtime == NULL ||
+        runtime->magic_debug_info == NULL) {
+        return 0;
+    }
+    PtnValue debug_info = ptn_null();
+    if (!runtime->magic_debug_info(runtime, resolved, line, &debug_info)) {
+        return 0;
+    }
+    PtnValue debug_value = ptn_value_deref(debug_info);
+    if (debug_value.type != PTN_ARRAY) {
+        ptn_value_destroy(&debug_info);
+        return 0;
+    }
+    PtnObject *object = resolved.as.object;
+    PtnArray *properties = debug_value.as.array;
+    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_dump_printf(
+        runtime,
+        "object(%.*s)#%zu (%zu) {\n",
+        (int)class_len,
+        object->class_name,
+        object->object_id,
+        properties->len
+    );
+    ptn_direct_dump_seen_object_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_array_key(runtime, properties->entries[i].key);
+        ptn_direct_var_dump_value_indented(runtime, properties->entries[i].value, indent + 1, seen);
+    }
+    ptn_direct_dump_seen_object_pop(seen);
+    ptn_direct_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    ptn_value_destroy(&debug_info);
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
     PtnRuntime *runtime,
     size_t argc,
@@ -934,7 +981,9 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
         if (value.type == PTN_REFERENCE) {
             value = ptn_value_deref(value);
         }
-        ptn_direct_var_dump_value_indented(runtime, value, 0, &seen);
+        if (!ptn_direct_var_dump_magic_debug_info(runtime, value, line, 0, &seen)) {
+            ptn_direct_var_dump_value_indented(runtime, value, 0, &seen);
+        }
         ptn_direct_dump_seen_free(&seen);
     }
     return ptn_null();

@@ -17653,6 +17653,43 @@ try {
 }
 
 #[test]
+fn compile_direct_var_dump_magic_debug_info_by_ref_return_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-var-dump-debug-info-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-var-dump-debug-info-ref.php");
+    let output = root.join("direct-var-dump-debug-info-ref-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    private $tmp = [\"x\" => 1];
+
+    public function &__debugInfo(): array {
+        return $this->tmp;
+    }
+}
+
+var_dump(new Test);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(Test)#1 (1) {\n  [\"x\"]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_magic_debug_info"));
+    assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
+}
+
+#[test]
 fn compile_invokable_object_callables_to_native_binary() {
     let root = temp_dir("ptn-native-invokable-object-callables");
     fs::create_dir_all(&root).unwrap();
