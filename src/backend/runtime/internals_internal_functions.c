@@ -531,6 +531,31 @@ static PTN_UNUSED PtnValue ptn_str_repeat_value(PtnRuntime *runtime, const PtnVa
     return ptn_owned_string_len(output, output_len);
 }
 
+static size_t ptn_class_name_dump_len(const char *class_name) {
+    const char *anonymous_suffix = strstr(class_name, "@anonymous#");
+    if (anonymous_suffix != NULL) {
+        return (size_t)(anonymous_suffix - class_name) + strlen("@anonymous");
+    }
+    return strlen(class_name);
+}
+
+static PtnValue ptn_runtime_class_name_string(const char *class_name) {
+    if (strstr(class_name, "@anonymous") == NULL) {
+        return ptn_owned_string(ptn_duplicate_string(class_name));
+    }
+    size_t visible_len = ptn_class_name_dump_len(class_name);
+    size_t len = visible_len + 4;
+    char *name = malloc(len + 1);
+    if (name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(name, class_name, visible_len);
+    name[visible_len] = '\0';
+    memcpy(name + visible_len + 1, "ptn", 3);
+    name[len] = '\0';
+    return ptn_owned_string_len(name, len);
+}
+
 static PTN_UNUSED PtnValue ptn_get_class_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     const char *class_name = NULL;
@@ -542,7 +567,7 @@ static PTN_UNUSED PtnValue ptn_get_class_value(PtnRuntime *runtime, PtnValue val
         class_name = "Closure";
     }
     if (class_name != NULL) {
-        return ptn_owned_string(ptn_duplicate_string(class_name));
+        return ptn_runtime_class_name_string(class_name);
     }
 
     const char *given = ptn_direct_internal_string_arg_type_name(value);
@@ -832,6 +857,109 @@ static PTN_UNUSED void ptn_direct_var_dump_object_key(
     }
 }
 
+static PTN_UNUSED void ptn_direct_var_dump_object_metadata_key(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", metadata->display_name);
+        return;
+    }
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        ptn_direct_dump_printf(runtime, "[\"%s\":protected]=>\n", metadata->display_name);
+        return;
+    }
+    ptn_direct_dump_printf(
+        runtime,
+        "[\"%s\":\"%s\":private]=>\n",
+        metadata->display_name,
+        metadata->declaring_class
+    );
+}
+
+static PTN_UNUSED const char *ptn_property_metadata_uninitialized_type_name(
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (metadata == NULL) {
+        return NULL;
+    }
+    if (metadata->last_type_name != NULL) {
+        return metadata->last_type_name;
+    }
+    if (metadata->type_text != NULL) {
+        return metadata->type_text;
+    }
+    switch (metadata->type_kind) {
+        case PTN_PROPERTY_TYPE_NULL:
+            return "null";
+        case PTN_PROPERTY_TYPE_ARRAY:
+            return "array";
+        case PTN_PROPERTY_TYPE_INT:
+            return "int";
+        case PTN_PROPERTY_TYPE_FLOAT:
+            return "float";
+        case PTN_PROPERTY_TYPE_STRING:
+            return "string";
+        case PTN_PROPERTY_TYPE_BOOL:
+            return "bool";
+        case PTN_PROPERTY_TYPE_MIXED:
+            return "mixed";
+        case PTN_PROPERTY_TYPE_OBJECT:
+            return "object";
+        case PTN_PROPERTY_TYPE_CLASS:
+            return metadata->type_class_name;
+        case PTN_PROPERTY_TYPE_TEXT:
+            return NULL;
+        case PTN_PROPERTY_TYPE_NONE:
+            return NULL;
+    }
+    return NULL;
+}
+
+static PTN_UNUSED int ptn_object_property_metadata_dumps_uninitialized(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (object == NULL || metadata == NULL) {
+        return 0;
+    }
+    if (metadata->lazy_skip && ptn_object_property_storage_initialized(object, metadata->storage_name)) {
+        return 0;
+    }
+    if (object->lazy_uninitialized &&
+        !object->lazy_initializing &&
+        ptn_property_type_is_declared(metadata->type_kind) &&
+        ptn_property_metadata_uninitialized_type_name(metadata) != NULL) {
+        return 1;
+    }
+    if (ptn_object_property_storage_initialized(object, metadata->storage_name)) {
+        return 0;
+    }
+    return (metadata->is_unset || ptn_property_type_is_declared(metadata->type_kind)) &&
+        ptn_property_metadata_uninitialized_type_name(metadata) != NULL;
+}
+
+static PTN_UNUSED void ptn_direct_var_dump_object_uninitialized_properties(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent
+) {
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        if (!ptn_object_property_metadata_dumps_uninitialized(object, metadata)) {
+            continue;
+        }
+        const char *type_name = ptn_property_metadata_uninitialized_type_name(metadata);
+        if (type_name == NULL) {
+            continue;
+        }
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_var_dump_object_metadata_key(runtime, metadata);
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_printf(runtime, "uninitialized(%s)\n", type_name);
+    }
+}
+
 static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
@@ -971,6 +1099,7 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
                     ptn_direct_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
                 }
             }
+            ptn_direct_var_dump_object_uninitialized_properties(runtime, object, indent);
             ptn_direct_dump_seen_object_pop(seen);
             ptn_direct_var_dump_indent(runtime, indent);
             ptn_direct_dump_write_cstr(runtime, "}\n");
@@ -3069,29 +3198,6 @@ static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMe
         strcmp(metadata->display_name, "storage") == 0;
 }
 
-static int ptn_object_property_metadata_dumps_uninitialized(
-    PtnObject *object,
-    const PtnObjectPropertyMetadata *metadata
-) {
-    if (object == NULL || metadata == NULL) {
-        return 0;
-    }
-    if (metadata->lazy_skip && ptn_object_property_storage_initialized(object, metadata->storage_name)) {
-        return 0;
-    }
-    if (object->lazy_uninitialized &&
-        !object->lazy_initializing &&
-        ptn_property_type_is_declared(metadata->type_kind) &&
-        metadata->type_text != NULL) {
-        return 1;
-    }
-    if (ptn_object_property_storage_initialized(object, metadata->storage_name)) {
-        return 0;
-    }
-    return (metadata->is_unset && metadata->last_type_name != NULL) ||
-        (ptn_property_type_is_declared(metadata->type_kind) && metadata->type_text != NULL);
-}
-
 static PTN_UNUSED size_t ptn_object_uninitialized_property_dump_count(PtnObject *object) {
     size_t count = 0;
     for (size_t i = 0; i < object->property_metadata_len; i++) {
@@ -3131,17 +3237,16 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
         ptn_var_dump_indent(indent + 1);
         ptn_var_dump_object_property_metadata_key(metadata);
         ptn_var_dump_indent(indent + 1);
-        printf(
-            "uninitialized(%s)\n",
-            metadata->last_type_name == NULL ? metadata->type_text : metadata->last_type_name
-        );
+        const char *type_name = ptn_property_metadata_uninitialized_type_name(metadata);
+        if (type_name == NULL) {
+            continue;
+        }
+        printf("uninitialized(%s)\n", type_name);
     }
 }
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
-static size_t ptn_class_name_dump_len(const char *class_name);
-
 static PtnArrayEntry *ptn_object_property_entry_for_metadata(
     PtnObject *object,
     const PtnObjectPropertyMetadata *metadata
@@ -4105,31 +4210,6 @@ static int ptn_var_dump_weak_map_object(
     fputs("}\n", stdout);
     ptn_value_destroy(&properties_value);
     return 1;
-}
-
-static size_t ptn_class_name_dump_len(const char *class_name) {
-    const char *anonymous_suffix = strstr(class_name, "@anonymous#");
-    if (anonymous_suffix != NULL) {
-        return (size_t)(anonymous_suffix - class_name) + strlen("@anonymous");
-    }
-    return strlen(class_name);
-}
-
-static PtnValue ptn_runtime_class_name_string(const char *class_name) {
-    if (strstr(class_name, "@anonymous") == NULL) {
-        return ptn_owned_string(ptn_duplicate_string(class_name));
-    }
-    size_t visible_len = ptn_class_name_dump_len(class_name);
-    size_t len = visible_len + 4;
-    char *name = malloc(len + 1);
-    if (name == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    memcpy(name, class_name, visible_len);
-    name[visible_len] = '\0';
-    memcpy(name + visible_len + 1, "ptn", 3);
-    name[len] = '\0';
-    return ptn_owned_string_len(name, len);
 }
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {

@@ -18518,6 +18518,56 @@ var_dump($worker instanceof stdClass);
 }
 
 #[test]
+fn compile_anonymous_class_get_class_uses_php_visible_name_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-get-class-visible-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-get-class-visible-name.php");
+    let output = root.join("anonymous-class-get-class-visible-name-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace DeclaringNS {
+    class Test1 {}
+    interface Test2 {}
+}
+
+namespace UsingNS {
+    function print_name(object $obj) {
+        echo strstr(get_class($obj), \"\\0\", true), \"\\n\";
+    }
+
+    print_name(new class {});
+    print_name(new class extends \\DeclaringNS\\Test1 {});
+    print_name(new class implements \\DeclaringNS\\Test2 {});
+
+    $name = get_class(new class {});
+    echo strpos($name, \"\\0\") === strlen(\"class@anonymous\") ? \"suffix\\n\" : \"missing\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "class@anonymous\n",
+            "DeclaringNS\\Test1@anonymous\n",
+            "DeclaringNS\\Test2@anonymous\n",
+            "suffix\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_get_class_value(&runtime"));
+    assert!(c_source.contains("ptn_runtime_class_name_string"));
+}
+
+#[test]
 fn compile_declared_class_destructor_runs_at_shutdown_to_native_binary() {
     let root = temp_dir("ptn-native-declared-class-destructor-shutdown");
     fs::create_dir_all(&root).unwrap();
@@ -20524,6 +20574,47 @@ try {
     assert!(c_source.contains("ptn_reflection_object_new"));
     assert!(c_source.contains("ptn_internal_class_name_is_reflection_object"));
     assert!(c_source.contains("ptn_reflection_class_call_method"));
+}
+
+#[test]
+fn compile_reflection_object_direct_constructor_var_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-object-direct-constructor-var-dump");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-object-direct-constructor-var-dump.php");
+    let output = root.join("reflection-object-direct-constructor-var-dump-bin");
+    fs::write(
+        &input,
+        "<?php
+class MyClass {}
+
+$r1 = new ReflectionObject(new stdClass);
+var_dump($r1);
+
+$r2 = new ReflectionObject(new MyClass);
+var_dump($r2);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(ReflectionObject)#"), "{stdout}");
+    assert!(
+        stdout.contains("[\"name\"]=>\n  string(8) \"stdClass\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"name\"]=>\n  string(7) \"MyClass\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH 1"));
+    assert!(c_source.contains("ptn_reflection_object_new"));
 }
 
 #[test]

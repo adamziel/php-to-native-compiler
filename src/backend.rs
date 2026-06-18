@@ -16565,7 +16565,8 @@ fn collect_value_runtime_requirements(
             for argument in arguments {
                 collect_value_runtime_requirements(argument, functions, requirements);
             }
-            if class_name.eq_ignore_ascii_case("ReflectionClass")
+            if modeled_internal_class_name(class_name).is_some()
+                || class_name.eq_ignore_ascii_case("ReflectionClass")
                 || class_name.eq_ignore_ascii_case("ReflectionConstant")
                 || class_name.eq_ignore_ascii_case("ReflectionExtension")
                 || class_name.eq_ignore_ascii_case("ReflectionFunction")
@@ -28622,7 +28623,10 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if !has_named_arguments && !has_unpacked_arguments && name.eq_ignore_ascii_case("var_dump")
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("var_dump")
+            && self.full_internal_dispatch
         {
             let mut temps = Vec::with_capacity(arguments.len());
             for (argument_index, argument) in arguments.iter().enumerate() {
