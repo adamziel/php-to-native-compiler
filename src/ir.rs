@@ -53,6 +53,7 @@ pub struct IncludeFile {
     pub source_file: String,
     pub source_dir: String,
     pub path_aliases: Vec<String>,
+    pub strict_types: bool,
     pub instructions: Vec<Instruction>,
     pub compile_warnings: Vec<CompileWarning>,
 }
@@ -1254,6 +1255,7 @@ impl<'a> LoweringContext<'a> {
             source_file: include.source_file.clone(),
             source_dir: include.source_dir.clone(),
             path_aliases: include.path_aliases.clone(),
+            strict_types: include.program.strict_types,
             instructions,
             compile_warnings: lower_compile_warnings(&include.program.compile_warnings),
         }

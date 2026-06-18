@@ -46,7 +46,10 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         .parent()
         .map(|parent| parent.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let mut includes = IncludeCollector::new();
+    let mut includes = IncludeCollector::new(
+        include_program.classes.clone(),
+        include_program.traits.clone(),
+    );
     includes.collect_program(&include_program, &source_file, &source_dir)?;
     let (included_classes, included_traits) = includes.validation_symbols(None);
     let program = parse_with_runtime_class_aliases_and_symbols(
@@ -83,10 +86,12 @@ struct IncludeCollector {
     path_env: IncludePathEnv,
     include_effect_stack: Vec<usize>,
     runtime_class_aliases: HashMap<String, String>,
+    root_classes: Vec<ClassDecl>,
+    root_traits: Vec<TraitDecl>,
 }
 
 impl IncludeCollector {
-    fn new() -> Self {
+    fn new(root_classes: Vec<ClassDecl>, root_traits: Vec<TraitDecl>) -> Self {
         Self {
             sources: Vec::new(),
             by_path: HashMap::new(),
@@ -94,6 +99,8 @@ impl IncludeCollector {
             path_env: IncludePathEnv::new(),
             include_effect_stack: Vec::new(),
             runtime_class_aliases: HashMap::new(),
+            root_classes,
+            root_traits,
         }
     }
 
@@ -1094,7 +1101,7 @@ impl IncludeCollector {
             program: program.clone(),
         });
         self.collect_program(&program, &source_file, &source_dir)?;
-        let (included_classes, included_traits) = self.validation_symbols(Some(index));
+        let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
         self.sources[index].program = parse_with_runtime_class_aliases_and_symbols(
             &source,
             &self.runtime_class_aliases,
@@ -1117,6 +1124,16 @@ impl IncludeCollector {
             classes.extend(source.program.classes.iter().cloned());
             traits.extend(source.program.traits.iter().cloned());
         }
+        (classes, traits)
+    }
+
+    fn include_validation_symbols(
+        &self,
+        excluded_source: Option<usize>,
+    ) -> (Vec<ClassDecl>, Vec<TraitDecl>) {
+        let (mut classes, mut traits) = self.validation_symbols(excluded_source);
+        classes.extend(self.root_classes.iter().cloned());
+        traits.extend(self.root_traits.iter().cloned());
         (classes, traits)
     }
 

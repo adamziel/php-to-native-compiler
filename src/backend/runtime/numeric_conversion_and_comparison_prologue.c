@@ -1309,6 +1309,18 @@ static void ptn_trace_append_arg(PtnStringBuffer *buffer, PtnValue value, size_t
         case PTN_FLOAT: {
             char formatted[128];
             ptn_format_scalar_float(value.as.floating, formatted, sizeof(formatted));
+            if (
+                isfinite(value.as.floating) &&
+                !ptn_formatted_float_has_decimal_or_exponent(formatted)
+            ) {
+                size_t formatted_len = strlen(formatted);
+                if (formatted_len + 2 >= sizeof(formatted)) {
+                    ptn_abort_out_of_memory();
+                }
+                formatted[formatted_len] = '.';
+                formatted[formatted_len + 1] = '0';
+                formatted[formatted_len + 2] = '\0';
+            }
             ptn_string_buffer_append(buffer, formatted);
             break;
         }

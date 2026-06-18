@@ -2580,9 +2580,13 @@ fn emit_include_helpers(
         out.push_str("    (void)include_runtime;\n");
         out.push_str("#define runtime (*include_runtime)\n");
         out.push_str("    const char *ptn_previous_source_path = runtime.source_path;\n");
+        out.push_str("    int ptn_previous_strict_types = runtime.strict_types;\n");
         out.push_str("    runtime.source_path = \"");
         out.push_str(&c_string(&include.source_file));
         out.push_str("\";\n");
+        out.push_str("    runtime.strict_types = ");
+        out.push_str(if include.strict_types { "1" } else { "0" });
+        out.push_str(";\n");
         out.push_str("    ptn_runtime_note_included_file(&runtime, runtime.source_path);\n");
         out.push_str("    PtnValue ptn_return_value = ptn_int(1);\n");
         emit_compile_warnings(out, &include.compile_warnings, &include.source_file);
@@ -2617,6 +2621,7 @@ fn emit_include_helpers(
         out.push_str(&return_label);
         out.push_str(":\n");
         out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
+        out.push_str("    runtime.strict_types = ptn_previous_strict_types;\n");
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
@@ -4451,6 +4456,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
+    out.push_str("static int ptn_declared_class_is_final(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_call_magic(const char *class_name);\n");
     out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
     out.push_str(
@@ -23627,18 +23633,11 @@ impl ValueEmitter {
             ValueExpr::MagicConstant { kind, line } => match kind {
                 MagicConstantKind::Line => format!("ptn_int({line})"),
                 MagicConstantKind::File => {
-                    if self.top_level_scope {
-                        format!(
-                            "ptn_string(ptn_runtime_source_path_or(&runtime, \"{}\"))",
-                            c_string(&self.source_file)
-                        )
-                    } else {
-                        format!(
-                            "ptn_string_literal(\"{}\", {})",
-                            c_string(&self.source_file),
-                            self.source_file.len()
-                        )
-                    }
+                    format!(
+                        "ptn_string_literal(\"{}\", {})",
+                        c_string(&self.source_file),
+                        self.source_file.len()
+                    )
                 }
                 MagicConstantKind::Dir => {
                     format!(
@@ -23830,6 +23829,18 @@ impl ValueEmitter {
                 out.push_str(&candidate.to_string());
                 out.push_str("] = 1;\n");
                 let trace_temp = self.next_temp();
+                let trace_arg_temp = self.next_temp();
+                let trace_args_temp = self.next_temp();
+                out.push_str("            PtnValue ");
+                out.push_str(&trace_arg_temp);
+                out.push_str(" = ptn_owned_string(ptn_duplicate_string(");
+                out.push_str(&resolved_temp);
+                out.push_str("));\n");
+                out.push_str("            PtnValue ");
+                out.push_str(&trace_args_temp);
+                out.push_str("[1] = { ");
+                out.push_str(&trace_arg_temp);
+                out.push_str(" };\n");
                 out.push_str("            PtnTraceFrame ");
                 out.push_str(&trace_temp);
                 out.push_str(";\n");
@@ -23841,7 +23852,9 @@ impl ValueEmitter {
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
-                out.push_str(", 0, NULL);\n");
+                out.push_str(", 1, ");
+                out.push_str(&trace_args_temp);
+                out.push_str(");\n");
                 out.push_str("            ");
                 out.push_str(&result_temp);
                 out.push_str(" = ");
@@ -23850,12 +23863,27 @@ impl ValueEmitter {
                 out.push_str("            ptn_runtime_pop_trace_frame(&runtime, &");
                 out.push_str(&trace_temp);
                 out.push_str(");\n");
+                out.push_str("            ptn_value_destroy(&");
+                out.push_str(&trace_arg_temp);
+                out.push_str(");\n");
                 out.push_str("        }\n");
             } else {
                 out.push_str("        ptn_include_seen[");
                 out.push_str(&candidate.to_string());
                 out.push_str("] = 1;\n");
                 let trace_temp = self.next_temp();
+                let trace_arg_temp = self.next_temp();
+                let trace_args_temp = self.next_temp();
+                out.push_str("        PtnValue ");
+                out.push_str(&trace_arg_temp);
+                out.push_str(" = ptn_owned_string(ptn_duplicate_string(");
+                out.push_str(&resolved_temp);
+                out.push_str("));\n");
+                out.push_str("        PtnValue ");
+                out.push_str(&trace_args_temp);
+                out.push_str("[1] = { ");
+                out.push_str(&trace_arg_temp);
+                out.push_str(" };\n");
                 out.push_str("        PtnTraceFrame ");
                 out.push_str(&trace_temp);
                 out.push_str(";\n");
@@ -23867,7 +23895,9 @@ impl ValueEmitter {
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
-                out.push_str(", 0, NULL);\n");
+                out.push_str(", 1, ");
+                out.push_str(&trace_args_temp);
+                out.push_str(");\n");
                 out.push_str("        ");
                 out.push_str(&result_temp);
                 out.push_str(" = ");
@@ -23875,6 +23905,9 @@ impl ValueEmitter {
                 out.push_str("(&runtime);\n");
                 out.push_str("        ptn_runtime_pop_trace_frame(&runtime, &");
                 out.push_str(&trace_temp);
+                out.push_str(");\n");
+                out.push_str("        ptn_value_destroy(&");
+                out.push_str(&trace_arg_temp);
                 out.push_str(");\n");
             }
         }
