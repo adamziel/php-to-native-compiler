@@ -11621,7 +11621,7 @@ fn validate_composed_constant_compatibility(
 ) -> Result<()> {
     if existing.visibility == imported.visibility
         && existing.is_final == imported.is_final
-        && existing.value == imported.value
+        && const_expr_values_equivalent(&existing.value, &imported.value)
     {
         return Ok(());
     }
@@ -11632,6 +11632,202 @@ fn validate_composed_constant_compatibility(
         ),
         Some(span),
     ))
+}
+
+fn const_expr_values_equivalent(left: &Expr, right: &Expr) -> bool {
+    let left = ungroup_const_expr(left);
+    let right = ungroup_const_expr(right);
+    match (left, right) {
+        (Expr::String(left, _), Expr::String(right, _)) => left == right,
+        (Expr::Int(left, _), Expr::Int(right, _)) => left == right,
+        (Expr::Float(left, _), Expr::Float(right, _)) => left.to_bits() == right.to_bits(),
+        (Expr::Bool(left, _), Expr::Bool(right, _)) => left == right,
+        (Expr::Null(_), Expr::Null(_)) => true,
+        (Expr::Constant(left, _), Expr::Constant(right, _)) => left == right,
+        (Expr::MagicConstant(left, _), Expr::MagicConstant(right, _)) => left == right,
+        (
+            Expr::ClassConstantFetch {
+                class_name: left_class,
+                name: left_name,
+                ..
+            },
+            Expr::ClassConstantFetch {
+                class_name: right_class,
+                name: right_name,
+                ..
+            },
+        ) => left_class == right_class && left_name == right_name,
+        (
+            Expr::DynamicClassConstantFetch {
+                class_name: left_class,
+                receiver: left_receiver,
+                name: left_name,
+                ..
+            },
+            Expr::DynamicClassConstantFetch {
+                class_name: right_class,
+                receiver: right_receiver,
+                name: right_name,
+                ..
+            },
+        ) => {
+            left_class == right_class
+                && const_expr_options_equivalent(
+                    left_receiver.as_deref(),
+                    right_receiver.as_deref(),
+                )
+                && const_expr_values_equivalent(left_name, right_name)
+        }
+        (
+            Expr::Array { elements: left, .. },
+            Expr::Array {
+                elements: right, ..
+            },
+        ) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| array_elements_equivalent(left, right))
+        }
+        (
+            Expr::Unary {
+                op: left_op,
+                expr: left_expr,
+                ..
+            },
+            Expr::Unary {
+                op: right_op,
+                expr: right_expr,
+                ..
+            },
+        ) => left_op == right_op && const_expr_values_equivalent(left_expr, right_expr),
+        (
+            Expr::Cast {
+                kind: left_kind,
+                expr: left_expr,
+                ..
+            },
+            Expr::Cast {
+                kind: right_kind,
+                expr: right_expr,
+                ..
+            },
+        ) => left_kind == right_kind && const_expr_values_equivalent(left_expr, right_expr),
+        (
+            Expr::Binary {
+                op: left_op,
+                left: left_left,
+                right: left_right,
+                ..
+            },
+            Expr::Binary {
+                op: right_op,
+                left: right_left,
+                right: right_right,
+                ..
+            },
+        ) => {
+            left_op == right_op
+                && const_expr_values_equivalent(left_left, right_left)
+                && const_expr_values_equivalent(left_right, right_right)
+        }
+        (
+            Expr::Ternary {
+                condition: left_condition,
+                if_true: left_if_true,
+                if_false: left_if_false,
+                ..
+            },
+            Expr::Ternary {
+                condition: right_condition,
+                if_true: right_if_true,
+                if_false: right_if_false,
+                ..
+            },
+        ) => {
+            const_expr_values_equivalent(left_condition, right_condition)
+                && const_expr_options_equivalent(left_if_true.as_deref(), right_if_true.as_deref())
+                && const_expr_values_equivalent(left_if_false, right_if_false)
+        }
+        (
+            Expr::ArrayAccess {
+                array: left_array,
+                index: left_index,
+                ..
+            },
+            Expr::ArrayAccess {
+                array: right_array,
+                index: right_index,
+                ..
+            },
+        ) => {
+            const_expr_values_equivalent(left_array, right_array)
+                && const_expr_options_equivalent(left_index.as_deref(), right_index.as_deref())
+        }
+        (
+            Expr::PropertyFetch {
+                receiver: left_receiver,
+                name: left_name,
+                ..
+            },
+            Expr::PropertyFetch {
+                receiver: right_receiver,
+                name: right_name,
+                ..
+            },
+        )
+        | (
+            Expr::NullsafePropertyFetch {
+                receiver: left_receiver,
+                name: left_name,
+                ..
+            },
+            Expr::NullsafePropertyFetch {
+                receiver: right_receiver,
+                name: right_name,
+                ..
+            },
+        ) => left_name == right_name && const_expr_values_equivalent(left_receiver, right_receiver),
+        (
+            Expr::FirstClassCallable {
+                callable: left_callable,
+                ..
+            },
+            Expr::FirstClassCallable {
+                callable: right_callable,
+                ..
+            },
+        ) => const_expr_values_equivalent(left_callable, right_callable),
+        _ => false,
+    }
+}
+
+fn ungroup_const_expr(mut expr: &Expr) -> &Expr {
+    while let Expr::Grouped { expr: inner, .. } = expr {
+        expr = inner;
+    }
+    expr
+}
+
+fn const_expr_options_equivalent(left: Option<&Expr>, right: Option<&Expr>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => const_expr_values_equivalent(left, right),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn array_elements_equivalent(left: &ArrayElement, right: &ArrayElement) -> bool {
+    const_expr_options_equivalent(left.key.as_ref(), right.key.as_ref())
+        && match (&left.value, &right.value) {
+            (ArrayElementValue::Value(left), ArrayElementValue::Value(right))
+            | (ArrayElementValue::Unpack(left), ArrayElementValue::Unpack(right)) => {
+                const_expr_values_equivalent(left, right)
+            }
+            (ArrayElementValue::Hole(_), ArrayElementValue::Hole(_)) => true,
+            _ => false,
+        }
 }
 
 fn adapted_original_trait_method(

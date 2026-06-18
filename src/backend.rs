@@ -18386,6 +18386,7 @@ fn by_ref_temporary_argument_allowed(value: &ValueExpr) -> bool {
         ValueExpr::InternalCall { .. }
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
+            | ValueExpr::DynamicMethodCall { .. }
     )
 }
 

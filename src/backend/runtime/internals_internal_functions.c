@@ -540,6 +540,9 @@ static size_t ptn_class_name_dump_len(const char *class_name) {
 }
 
 static PtnValue ptn_runtime_class_name_string(const char *class_name) {
+    if (class_name == NULL) {
+        return ptn_owned_string(ptn_duplicate_string(""));
+    }
     if (strstr(class_name, "@anonymous") == NULL) {
         return ptn_owned_string(ptn_duplicate_string(class_name));
     }
@@ -61379,6 +61382,9 @@ static void ptn_xmlwriter_append_method_names(PtnValue result, int64_t *index) {
     }
 }
 
+static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
     const char *class_name,
@@ -61387,6 +61393,14 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     const PtnValue *args,
     size_t line
 ) {
+    if (ptn_ascii_case_equal(class_name, "Closure")) {
+        if (ptn_ascii_case_equal(name, "bind")) {
+            return ptn_internal_closure_bind(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "fromCallable")) {
+            return ptn_internal_closure_from_callable(runtime, argc, args, line);
+        }
+    }
     if (ptn_ascii_case_equal(class_name, "Reflection")) {
         if (ptn_ascii_case_equal(name, "getModifierNames")) {
             if (argc != 1) {
@@ -66625,6 +66639,10 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
 }
 
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name) {
+    if (ptn_internal_class_name_is_closure(class_name)) {
+        return ptn_ascii_case_equal(method_name, "bind")
+            || ptn_ascii_case_equal(method_name, "fromCallable");
+    }
     if (ptn_ascii_case_equal(class_name, "Reflection")) {
         return ptn_ascii_case_equal(method_name, "getModifierNames");
     }

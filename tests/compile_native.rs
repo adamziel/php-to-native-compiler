@@ -5301,6 +5301,11 @@ fn parser_rejects_invalid_final_class_constant_overrides() {
             "Child::NAME cannot override final constant Base::NAME",
         ),
         (
+            "override final trait constant imported into parent",
+            "<?php trait TestTrait { public final const Constant = 123; } class ComposingClass { use TestTrait; public final const Constant = 123; } class DerivedClass extends ComposingClass { public final const Constant = 456; }",
+            "DerivedClass::Constant cannot override final constant ComposingClass::Constant",
+        ),
+        (
             "direct final interface override",
             "<?php interface Contract { final public const NAME = 'base'; } class Impl implements Contract { public const NAME = 'child'; }",
             "Impl::NAME cannot override final constant Contract::NAME",
@@ -36281,6 +36286,43 @@ print_r(X::getArr());",
         String::from_utf8(execution.stdout).unwrap(),
         format!(
             "\nNotice: Only variables should be passed by reference in {} on line 6\nArray\n(\n    [0] => a\n    [1] => b\n    [2] => c\n)\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_array_splice"));
+    assert!(c_source.contains("ptn_by_ref_argument_source_or_temporary"));
+}
+
+#[test]
+fn compile_array_splice_temporary_dynamic_method_result_to_native_binary() {
+    let root = temp_dir("ptn-native-array-splice-temporary-dynamic-method-result");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-splice-temporary-dynamic-method-result.php");
+    let output = root.join("array-splice-temporary-dynamic-method-result-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class X {\n\
+    private $arr = [\"a\", \"b\", \"c\"];\n\
+    public function getArr() { return $this->arr; }\n\
+}\n\
+$x = new X();\n\
+$method = \"getArr\";\n\
+array_splice($x->$method(), 1, 1);\n\
+print_r($x->$method());",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nNotice: Only variables should be passed by reference in {} on line 8\nArray\n(\n    [0] => a\n    [1] => b\n    [2] => c\n)\n",
             input.display()
         )
     );
