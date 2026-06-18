@@ -1386,7 +1386,7 @@ ptn_phpt_first_unsupported_language_surface() {
             return line ~ /(^|[^[:alnum:]_$\\])(appenditerator|cachingiterator|directoryiterator|emptyiterator|filesystemiterator|globiterator|multipleiterator|norewinditerator|parentiterator|recursivecachingiterator|recursivecallbackfilteriterator|recursivefilteriterator|recursiveiteratoriterator|recursiveregexiterator|recursivetreeiterator|regexiterator|splfixedarray|spltempfileobject)([^[:alnum:]_]|$)/
         }
         function ptn_has_unmodeled_spl_function(line) {
-            return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|spl_classes|class_implements|class_parents|class_uses)[[:space:]]*\(/ ||
+            return line ~ /(^|[^[:alnum:]_$\\])(iterator_apply|iterator_count|spl_classes)[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_autoload(_extensions)?[[:space:]]*\(/ ||
                 line ~ /(^|[^[:alnum:]_$\\])spl_(classes|fixedarray|heap|objectstorage|priorityqueue)[a-z0-9_]*[[:space:]]*\(/
         }

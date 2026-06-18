@@ -2421,7 +2421,17 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
     }
     const char *lookup_class_name = ptn_declared_class_canonical_name(resolved_class_name);
     while (lookup_class_name != NULL) {
-        char *key = ptn_class_constant_key(lookup_class_name, constant_name);
+        const char *metadata_declaring_class = lookup_class_name;
+        int metadata_visibility_int = (int)PTN_PROPERTY_PUBLIC;
+        (void)metadata_visibility_int;
+        int lookup_has_metadata = ptn_declared_class_constant_metadata(
+            lookup_class_name,
+            constant_name,
+            &metadata_declaring_class,
+            &metadata_visibility_int
+        );
+        (void)lookup_has_metadata;
+        char *key = ptn_class_constant_key(metadata_declaring_class, constant_name);
         PtnValue value;
         if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
             *out = ptn_value_borrow(value);
@@ -2430,7 +2440,7 @@ static PTN_UNUSED int ptn_runtime_class_constant_value(
             return 1;
         }
         if (runtime->class_constant_initializer != NULL &&
-            runtime->class_constant_initializer(runtime, lookup_class_name, constant_name)) {
+            runtime->class_constant_initializer(runtime, metadata_declaring_class, constant_name)) {
             if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
                 free(key);
                 free(class_name);

@@ -3806,18 +3806,20 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     const char *target_class_name = ptn_declared_class_canonical_name(resolved_class_name);
     const char *lookup_class_name = target_class_name;
     while (lookup_class_name != NULL) {
-        char *key = ptn_class_constant_key(lookup_class_name, constant);
+        const char *metadata_declaring_class = lookup_class_name;
+        int metadata_visibility_int = (int)PTN_PROPERTY_PUBLIC;
+        int lookup_has_metadata = ptn_declared_class_constant_metadata(
+            target_class_name,
+            constant,
+            &metadata_declaring_class,
+            &metadata_visibility_int
+        );
+        char *key = ptn_class_constant_key(metadata_declaring_class, constant);
         PtnValue value;
         if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
-            const char *declaring_class = lookup_class_name;
-            int visibility_int = (int)PTN_PROPERTY_PUBLIC;
-            int has_metadata = ptn_declared_class_constant_metadata(
-                target_class_name,
-                constant,
-                &declaring_class,
-                &visibility_int
-            );
-            if (!has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
+            const char *declaring_class = lookup_has_metadata ? metadata_declaring_class : lookup_class_name;
+            int visibility_int = lookup_has_metadata ? metadata_visibility_int : (int)PTN_PROPERTY_PUBLIC;
+            if (!lookup_has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
                 free(key);
                 lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
                 continue;
@@ -3884,21 +3886,15 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
             return ptn_null();
         }
         if (runtime->class_constant_initializer != NULL &&
-            runtime->class_constant_initializer(runtime, lookup_class_name, constant)) {
+            runtime->class_constant_initializer(runtime, metadata_declaring_class, constant)) {
             if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
                 free(key);
                 return ptn_null();
             }
             if (ptn_symbols_get(ptn_runtime_class_constant_table(runtime), key, &value)) {
-                const char *declaring_class = lookup_class_name;
-                int visibility_int = (int)PTN_PROPERTY_PUBLIC;
-                int has_metadata = ptn_declared_class_constant_metadata(
-                    target_class_name,
-                    constant,
-                    &declaring_class,
-                    &visibility_int
-                );
-                if (!has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
+                const char *declaring_class = lookup_has_metadata ? metadata_declaring_class : lookup_class_name;
+                int visibility_int = lookup_has_metadata ? metadata_visibility_int : (int)PTN_PROPERTY_PUBLIC;
+                if (!lookup_has_metadata && !ptn_property_class_names_equal(target_class_name, lookup_class_name)) {
                     free(key);
                     lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
                     continue;

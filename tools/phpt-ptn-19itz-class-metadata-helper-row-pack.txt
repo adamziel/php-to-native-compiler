@@ -1,0 +1,18 @@
+# ptn-19itz focused class metadata helper row pack.
+# Source: full php-src PHPT corpus rows for class_parents(),
+# class_implements(), class_uses(), and adjacent get_parent_class()
+# is_a(), is_subclass_of(), and class/interface constant metadata edges.
+Zend/tests/get_parent_class_basic.phpt
+Zend/tests/inheritance/bug53727.phpt
+ext/standard/tests/class_object/get_parent_class_variation_002.phpt
+ext/standard/tests/class_object/is_a.phpt
+ext/spl/tests/bug77360.phpt
+ext/spl/tests/class_implements_basic.phpt
+ext/spl/tests/class_implements_basic2.phpt
+ext/spl/tests/class_implements_variation.phpt
+ext/spl/tests/class_implements_variation1.phpt
+ext/spl/tests/class_uses_basic.phpt
+ext/spl/tests/class_uses_basic2.phpt
+ext/spl/tests/class_uses_variation.phpt
+ext/spl/tests/class_uses_variation1.phpt
+ext/spl/tests/spl_003.phpt
