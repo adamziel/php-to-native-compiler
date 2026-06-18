@@ -111,6 +111,9 @@ fn parse_with_options(
         class_aliases: HashMap::new(),
         function_aliases: HashMap::new(),
         constant_aliases: HashMap::new(),
+        seen_class_symbols: HashMap::new(),
+        seen_function_symbols: HashMap::new(),
+        seen_constant_symbols: HashMap::new(),
         runtime_class_aliases: runtime_class_aliases.clone(),
         external_classes: external_classes.to_vec(),
         external_traits: external_traits.to_vec(),
@@ -146,6 +149,9 @@ struct Parser<'a> {
     class_aliases: HashMap<String, String>,
     function_aliases: HashMap<String, String>,
     constant_aliases: HashMap<String, String>,
+    seen_class_symbols: HashMap<String, String>,
+    seen_function_symbols: HashMap<String, String>,
+    seen_constant_symbols: HashMap<String, String>,
     runtime_class_aliases: HashMap<String, String>,
     external_classes: Vec<ClassDecl>,
     external_traits: Vec<TraitDecl>,
@@ -205,6 +211,36 @@ enum UseDeclarationKind {
     Class,
     Function,
     Constant,
+}
+
+fn import_alias_key(kind: UseDeclarationKind, alias: &str) -> String {
+    match kind {
+        UseDeclarationKind::Constant => alias.to_string(),
+        UseDeclarationKind::Class | UseDeclarationKind::Function => alias.to_ascii_lowercase(),
+    }
+}
+
+fn import_alias_is_no_effect_alias(kind: UseDeclarationKind, alias: &str, target: &str) -> bool {
+    match kind {
+        UseDeclarationKind::Constant => alias == target,
+        UseDeclarationKind::Class | UseDeclarationKind::Function => {
+            alias.eq_ignore_ascii_case(target)
+        }
+    }
+}
+
+fn cannot_use_import_message(kind: UseDeclarationKind, target: &str, alias: &str) -> String {
+    match kind {
+        UseDeclarationKind::Class => {
+            format!("Cannot use {target} as {alias} because the name is already in use")
+        }
+        UseDeclarationKind::Function => {
+            format!("Cannot use function {target} as {alias} because the name is already in use")
+        }
+        UseDeclarationKind::Constant => {
+            format!("Cannot use const {target} as {alias} because the name is already in use")
+        }
+    }
 }
 
 fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
@@ -632,6 +668,9 @@ impl Parser<'_> {
         let saved_class_aliases = self.class_aliases.clone();
         let saved_function_aliases = self.function_aliases.clone();
         let saved_constant_aliases = self.constant_aliases.clone();
+        let saved_seen_class_symbols = self.seen_class_symbols.clone();
+        let saved_seen_function_symbols = self.seen_function_symbols.clone();
+        let saved_seen_constant_symbols = self.seen_constant_symbols.clone();
 
         self.current_namespace = namespace;
         self.clear_namespace_imports();
@@ -651,6 +690,9 @@ impl Parser<'_> {
         self.class_aliases = saved_class_aliases;
         self.function_aliases = saved_function_aliases;
         self.constant_aliases = saved_constant_aliases;
+        self.seen_class_symbols = saved_seen_class_symbols;
+        self.seen_function_symbols = saved_seen_function_symbols;
+        self.seen_constant_symbols = saved_seen_constant_symbols;
 
         result
     }
@@ -744,10 +786,9 @@ impl Parser<'_> {
                 target.span,
             )
         };
-        if kind == UseDeclarationKind::Class
-            && self.current_namespace.is_none()
+        if self.current_namespace.is_none()
             && !target.name.contains('\\')
-            && alias.eq_ignore_ascii_case(&target.name)
+            && import_alias_is_no_effect_alias(kind, &alias, &target.name)
             && matches!(
                 target.resolution,
                 NameResolution::Unqualified | NameResolution::FullyQualified
@@ -930,18 +971,17 @@ impl Parser<'_> {
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
             NameResolution::Unqualified | NameResolution::Qualified => target.name,
         };
-        let alias_key = alias.to_ascii_lowercase();
+        let alias_key = import_alias_key(kind, &alias);
+        let seen_symbols = self.seen_symbols_for_import(kind);
+        if seen_symbols.contains_key(&alias_key) {
+            return Err(Diagnostic::new(
+                cannot_use_import_message(kind, &target_name, &alias),
+                Some(alias_span),
+            ));
+        }
+        seen_symbols.insert(alias_key.clone(), target_name.clone());
         match kind {
             UseDeclarationKind::Class => {
-                let declared_key = self.qualify_current_namespace(&alias).to_ascii_lowercase();
-                if self.declared_class_names.contains_key(&declared_key) {
-                    return Err(Diagnostic::new(
-                        format!(
-                            "Cannot use {target_name} as {alias} because the name is already in use"
-                        ),
-                        Some(alias_span),
-                    ));
-                }
                 self.class_aliases.insert(alias_key, target_name);
             }
             UseDeclarationKind::Function => {
@@ -972,9 +1012,51 @@ impl Parser<'_> {
                 Some(class.span),
             ));
         }
+        self.seen_class_symbols
+            .insert(local_name.to_ascii_lowercase(), class.name.clone());
         self.declared_class_names
             .insert(class.name.to_ascii_lowercase(), class.span);
         Ok(())
+    }
+
+    fn register_declared_function_name(&mut self, name: &str, span: SourceSpan) -> Result<()> {
+        let local_name = name.rsplit('\\').next().unwrap_or(name);
+        let local_key = local_name.to_ascii_lowercase();
+        if self.function_aliases.contains_key(&local_key) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare function {local_name}() (previously declared as local import)"),
+                Some(span),
+            ));
+        }
+        self.seen_function_symbols
+            .insert(local_key, name.to_string());
+        self.declared_functions.insert(name.to_ascii_lowercase());
+        Ok(())
+    }
+
+    fn register_declared_constant_name(&mut self, name: &str, span: SourceSpan) -> Result<()> {
+        let local_name = name.rsplit('\\').next().unwrap_or(name);
+        if self.constant_aliases.contains_key(local_name) {
+            return Err(Diagnostic::new(
+                format!("Cannot declare const {local_name} because the name is already in use"),
+                Some(span),
+            ));
+        }
+        self.seen_constant_symbols
+            .insert(local_name.to_string(), name.to_string());
+        self.declared_constants.insert(name.to_ascii_lowercase());
+        Ok(())
+    }
+
+    fn seen_symbols_for_import(
+        &mut self,
+        kind: UseDeclarationKind,
+    ) -> &mut HashMap<String, String> {
+        match kind {
+            UseDeclarationKind::Class => &mut self.seen_class_symbols,
+            UseDeclarationKind::Function => &mut self.seen_function_symbols,
+            UseDeclarationKind::Constant => &mut self.seen_constant_symbols,
+        }
     }
 
     fn parse_use_name(&mut self, expected: &str) -> Result<ParsedName> {
@@ -1044,6 +1126,9 @@ impl Parser<'_> {
         self.class_aliases.clear();
         self.function_aliases.clear();
         self.constant_aliases.clear();
+        self.seen_class_symbols.clear();
+        self.seen_function_symbols.clear();
+        self.seen_constant_symbols.clear();
     }
 
     fn parse_declaration_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
@@ -1227,7 +1312,7 @@ impl Parser<'_> {
             NameResolution::FullyQualified => parsed.name.clone(),
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
             NameResolution::Unqualified => {
-                let alias_key = parsed.name.to_ascii_lowercase();
+                let alias_key = parsed.name.clone();
                 let namespaced = self.qualify_current_namespace(&parsed.name);
                 if let Some(target) = self.constant_aliases.get(&alias_key) {
                     target.clone()
@@ -3468,8 +3553,8 @@ impl Parser<'_> {
                 return Err(exit_reserved_name_syntax_error(self.peek(), "\"(\""));
             }
         }
-        let (name, _) = self.parse_declaration_name("expected function name")?;
-        self.declared_functions.insert(name.to_ascii_lowercase());
+        let (name, name_span) = self.parse_declaration_name("expected function name")?;
+        self.register_declared_function_name(&name, name_span)?;
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
@@ -4519,7 +4604,7 @@ impl Parser<'_> {
                 Some(token_span),
             ));
         }
-        self.declared_constants.insert(name.to_ascii_lowercase());
+        self.register_declared_constant_name(&name, token_span)?;
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
         validate_constant_expression_closures(&value)?;
