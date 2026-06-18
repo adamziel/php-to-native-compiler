@@ -1496,12 +1496,14 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->class_aliases = &runtime->owned_class_aliases;
     ptn_symbols_init(&runtime->owned_class_constants);
     runtime->class_constants = &runtime->owned_class_constants;
-    ptn_symbols_init(&runtime->owned_class_constant_deprecations);
-    runtime->class_constant_deprecations = &runtime->owned_class_constant_deprecations;
     ptn_symbols_init(&runtime->owned_class_constant_initializing);
     runtime->class_constant_initializing = &runtime->owned_class_constant_initializing;
+    runtime->class_constant_initializing_class = NULL;
+    runtime->class_constant_initializing_constant = NULL;
     runtime->current_class_constant_initializing_class_name = NULL;
     runtime->current_class_constant_initializing_constant_name = NULL;
+    ptn_symbols_init(&runtime->owned_class_constant_deprecations);
+    runtime->class_constant_deprecations = &runtime->owned_class_constant_deprecations;
     runtime->class_constant_deprecation_suppress_class = NULL;
     runtime->class_constant_deprecation_suppress_constant = NULL;
     ptn_symbols_init(&runtime->owned_static_properties);
