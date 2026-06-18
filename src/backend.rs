@@ -21497,7 +21497,7 @@ impl ValueEmitter {
         match source {
             ValueExpr::InternalCall { name, .. } => self
                 .direct_user_function(name)
-                .map(|(_, function)| function.return_by_ref)
+                .map(|(_, function)| function.return_by_ref && !function.is_generator)
                 .unwrap_or(false),
             ValueExpr::MethodCall { receiver, name, .. } => {
                 let class_name = match receiver.as_ref() {
@@ -21522,7 +21522,7 @@ impl ValueEmitter {
                     .into_iter()
                     .find(|method| !method.is_static && method.name.eq_ignore_ascii_case(name))
                     .and_then(|method| self.user_functions.get(method.function_index))
-                    .map(|function| function.return_by_ref)
+                    .map(|function| function.return_by_ref && !function.is_generator)
                     .unwrap_or(false)
             }
             _ => false,

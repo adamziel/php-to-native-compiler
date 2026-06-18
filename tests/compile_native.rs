@@ -30484,6 +30484,66 @@ int(200)\n",
 }
 
 #[test]
+fn compile_by_reference_static_call_failed_return_warns_once_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-static-call-failed-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-static-call-failed-return.php");
+    let output = root.join("by-reference-static-call-failed-return-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class ParentClass\n\
+{\n\
+    private static $_OBJECTS;\n\
+\n\
+    public static function Get()\n\
+    {\n\
+        self::$_OBJECTS[1] = new ChildClass();\n\
+        return self::$_OBJECTS[1];\n\
+    }\n\
+}\n\
+\n\
+class ChildClass extends ParentClass\n\
+{\n\
+    public $Manager;\n\
+\n\
+    function __construct()\n\
+    {\n\
+        $this->Manager = $this;\n\
+    }\n\
+\n\
+    public static function &GetCurrent()\n\
+    {\n\
+        return ChildClass::Get();\n\
+    }\n\
+\n\
+    public static function &Get()\n\
+    {\n\
+        return parent::Get();\n\
+    }\n\
+}\n\
+\n\
+$staff =& ChildClass::GetCurrent();\n\
+var_dump($staff instanceof ChildClass);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nNotice: Only variable references should be returned by reference in {} on line 29\n\
+bool(true)\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_by_reference_magic_set_value_return_stays_plain_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-magic-set-value-return");
     fs::create_dir_all(&root).unwrap();
