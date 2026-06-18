@@ -1762,6 +1762,33 @@ impl Parser<'_> {
             if matches!(self.peek().kind, TokenKind::As) {
                 let span_start = method.span;
                 self.advance();
+                if self.peek_is_identifier("abstract") {
+                    let span = self.peek().span;
+                    self.advance();
+                    self.expect_semicolon()?;
+                    return Err(Diagnostic::new(
+                        "Cannot use \"abstract\" as method modifier in trait alias",
+                        Some(span),
+                    ));
+                }
+                if self.peek_is_identifier("final") {
+                    let span = self.peek().span;
+                    self.advance();
+                    self.expect_semicolon()?;
+                    return Err(Diagnostic::new(
+                        "final trait aliases are unsupported",
+                        Some(span),
+                    ));
+                }
+                if self.peek_is_identifier("static") {
+                    let span = self.peek().span;
+                    self.advance();
+                    self.expect_semicolon()?;
+                    return Err(Diagnostic::new(
+                        "Cannot use \"static\" as method modifier in trait alias",
+                        Some(span),
+                    ));
+                }
                 let mut visibility = None;
                 let mut alias = None;
                 if let Some(parsed_visibility) = self.parse_optional_trait_alias_visibility() {
@@ -10233,13 +10260,257 @@ fn compose_trait_decl(
         return Err(Diagnostic::new(format!("Trait \"{name}\" not found"), None));
     };
     let mut composed = trait_decl.clone();
+    let mut used_traits = Vec::new();
     for trait_use in &trait_decl.trait_uses {
         let used_trait = compose_trait_decl(&trait_use.name, traits, visiting, cache)?;
-        import_trait_members_into_trait(&mut composed, &used_trait, trait_use)?;
+        used_traits.push(used_trait);
+    }
+    let used_trait_refs = used_traits.iter().collect::<Vec<_>>();
+    validate_trait_use_adaptations(
+        &trait_decl.name,
+        &trait_decl.trait_uses,
+        traits,
+        &used_trait_refs,
+    )?;
+    for (trait_use, used_trait) in trait_decl.trait_uses.iter().zip(used_traits.iter()) {
+        import_trait_members_into_trait(&mut composed, used_trait, trait_use)?;
     }
     visiting.remove(&lookup_name);
     cache.insert(lookup_name, composed.clone());
     Ok(composed)
+}
+
+fn validate_trait_use_adaptations(
+    composer_name: &str,
+    trait_uses: &[TraitUseDecl],
+    all_traits: &[TraitDecl],
+    used_traits: &[&TraitDecl],
+) -> Result<()> {
+    validate_duplicate_trait_precedence_exclusions(trait_uses)?;
+    for (index, trait_use) in trait_uses.iter().enumerate() {
+        if trait_use.adaptations.is_empty()
+            || trait_uses
+                .iter()
+                .take(index)
+                .any(|previous| previous.adaptations == trait_use.adaptations)
+        {
+            continue;
+        }
+        let adaptation_traits = used_traits
+            .iter()
+            .copied()
+            .filter(|trait_decl| {
+                trait_uses.iter().any(|candidate| {
+                    candidate.adaptations == trait_use.adaptations
+                        && candidate.name.eq_ignore_ascii_case(&trait_decl.name)
+                })
+            })
+            .collect::<Vec<_>>();
+        for adaptation in &trait_use.adaptations {
+            match adaptation {
+                TraitAdaptation::Alias(alias) => {
+                    if let Some(trait_name) = &alias.method.trait_name {
+                        validate_adaptation_trait_reference(
+                            trait_name,
+                            composer_name,
+                            alias.method.span,
+                            all_traits,
+                            &adaptation_traits,
+                        )?;
+                    }
+                    if alias.method.trait_name.is_none() {
+                        if let Some((first, second)) =
+                            ambiguous_trait_method_reference(&alias.method.method_name, used_traits)
+                        {
+                            let method_name = &alias.method.method_name;
+                            return Err(Diagnostic::new(
+                                format!(
+                                    "An alias was defined for method {method_name}(), which exists in both {first} and {second}. Use {first}::{method_name} or {second}::{method_name} to resolve the ambiguity"
+                                ),
+                                Some(alias.span),
+                            ));
+                        }
+                    }
+                    if trait_method_reference_exists(&alias.method, &adaptation_traits) {
+                        continue;
+                    }
+                    let method_name = &alias.method.method_name;
+                    if let Some(alias_name) = &alias.alias {
+                        let referenced_method = trait_method_reference_label(&alias.method);
+                        let message = if alias.method.trait_name.is_some() {
+                            format!(
+                                "An alias was defined for {referenced_method} but this method does not exist"
+                            )
+                        } else {
+                            format!(
+                                "An alias ({alias_name}) was defined for {referenced_method}, but this method does not exist"
+                            )
+                        };
+                        return Err(Diagnostic::new(message, Some(alias.span)));
+                    }
+                    return Err(Diagnostic::new(
+                        format!(
+                            "The modifiers of the trait method {method_name}() are changed, but this method does not exist. Error"
+                        ),
+                        Some(alias.span),
+                    ));
+                }
+                TraitAdaptation::Precedence(precedence) => {
+                    if let Some(preferred_trait) = &precedence.method.trait_name {
+                        validate_adaptation_trait_reference(
+                            preferred_trait,
+                            composer_name,
+                            precedence.method.span,
+                            all_traits,
+                            &adaptation_traits,
+                        )?;
+                        if precedence
+                            .instead_of
+                            .iter()
+                            .any(|excluded| excluded.eq_ignore_ascii_case(preferred_trait))
+                        {
+                            return Err(Diagnostic::new(
+                                format!(
+                                    "Inconsistent insteadof definition. The method {} is to be used from {preferred_trait}, but {preferred_trait} is also on the exclude list",
+                                    precedence.method.method_name
+                                ),
+                                Some(precedence.span),
+                            ));
+                        }
+                    }
+                    for excluded_trait in &precedence.instead_of {
+                        validate_adaptation_trait_reference(
+                            excluded_trait,
+                            composer_name,
+                            precedence.span,
+                            all_traits,
+                            &adaptation_traits,
+                        )?;
+                    }
+                    if !trait_method_reference_exists(&precedence.method, &adaptation_traits) {
+                        let referenced_method = trait_method_reference_label(&precedence.method);
+                        return Err(Diagnostic::new(
+                            format!(
+                                "A precedence rule was defined for {referenced_method} but this method does not exist"
+                            ),
+                            Some(precedence.span),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_duplicate_trait_precedence_exclusions(trait_uses: &[TraitUseDecl]) -> Result<()> {
+    let mut excluded_methods = HashSet::new();
+    for (index, trait_use) in trait_uses.iter().enumerate() {
+        if trait_use.adaptations.is_empty()
+            || trait_uses
+                .iter()
+                .take(index)
+                .any(|previous| previous.adaptations == trait_use.adaptations)
+        {
+            continue;
+        }
+        for adaptation in &trait_use.adaptations {
+            let TraitAdaptation::Precedence(precedence) = adaptation else {
+                continue;
+            };
+            for excluded_trait in &precedence.instead_of {
+                let key = (
+                    precedence.method.method_name.to_ascii_lowercase(),
+                    excluded_trait.to_ascii_lowercase(),
+                );
+                if !excluded_methods.insert(key) {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Failed to evaluate a trait precedence ({}). Method of trait {excluded_trait} was defined to be excluded multiple times",
+                            precedence.method.method_name
+                        ),
+                        Some(precedence.span),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ambiguous_trait_method_reference(
+    method_name: &str,
+    traits: &[&TraitDecl],
+) -> Option<(String, String)> {
+    let mut matches = traits.iter().filter(|trait_decl| {
+        trait_decl
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case(method_name))
+    });
+    let first = matches.next()?;
+    let second = matches.next()?;
+    Some((first.name.clone(), second.name.clone()))
+}
+
+fn validate_adaptation_trait_reference(
+    trait_name: &str,
+    composer_name: &str,
+    span: SourceSpan,
+    all_traits: &[TraitDecl],
+    used_traits: &[&TraitDecl],
+) -> Result<()> {
+    reject_reserved_trait_reference(trait_name, span)?;
+    if used_traits
+        .iter()
+        .any(|trait_decl| trait_decl.name.eq_ignore_ascii_case(trait_name))
+    {
+        return Ok(());
+    }
+    if all_traits
+        .iter()
+        .any(|trait_decl| trait_decl.name.eq_ignore_ascii_case(trait_name))
+    {
+        return Err(Diagnostic::new(
+            format!("Required Trait {trait_name} wasn't added to {composer_name}"),
+            Some(span),
+        ));
+    }
+    Err(Diagnostic::new(
+        format!("Could not find trait {trait_name}"),
+        Some(span),
+    ))
+}
+
+fn reject_reserved_trait_reference(name: &str, span: SourceSpan) -> Result<()> {
+    if let Some(reserved_name) = reserved_class_name_segment(&name.to_ascii_lowercase()) {
+        return Err(Diagnostic::new(
+            format!("Cannot use \"{reserved_name}\" as trait name, as it is reserved"),
+            Some(span),
+        ));
+    }
+    Ok(())
+}
+
+fn trait_method_reference_label(reference: &TraitMethodReference) -> String {
+    if let Some(trait_name) = &reference.trait_name {
+        format!("{trait_name}::{}", reference.method_name)
+    } else {
+        format!("method {}()", reference.method_name)
+    }
+}
+
+fn trait_method_reference_exists(reference: &TraitMethodReference, traits: &[&TraitDecl]) -> bool {
+    traits.iter().any(|trait_decl| {
+        reference
+            .trait_name
+            .as_deref()
+            .is_none_or(|name| name.eq_ignore_ascii_case(&trait_decl.name))
+            && trait_decl
+                .methods
+                .iter()
+                .any(|method| method.name.eq_ignore_ascii_case(&reference.method_name))
+    })
 }
 
 fn import_trait_members_into_trait(
@@ -10248,29 +10519,56 @@ fn import_trait_members_into_trait(
     trait_use: &TraitUseDecl,
 ) -> Result<()> {
     for property in &source.properties {
-        if !target
+        if let Some(existing) = target
             .properties
             .iter()
-            .any(|candidate| candidate.name == property.name)
+            .find(|candidate| candidate.name == property.name)
         {
+            validate_composed_property_compatibility(
+                &target.name,
+                &source.name,
+                &target.name,
+                existing,
+                property,
+                target.span,
+            )?;
+        } else {
             target.properties.push(property.clone());
         }
     }
     for property in &source.static_properties {
-        if !target
+        if let Some(existing) = target
             .static_properties
             .iter()
-            .any(|candidate| candidate.name == property.name)
+            .find(|candidate| candidate.name == property.name)
         {
+            validate_composed_static_property_compatibility(
+                &target.name,
+                &source.name,
+                &target.name,
+                existing,
+                property,
+                target.span,
+            )?;
+        } else {
             target.static_properties.push(property.clone());
         }
     }
     for constant in &source.constants {
-        if !target
+        if let Some(existing) = target
             .constants
             .iter()
-            .any(|candidate| candidate.name.eq_ignore_ascii_case(&constant.name))
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(&constant.name))
         {
+            validate_composed_constant_compatibility(
+                &target.name,
+                &source.name,
+                &target.name,
+                existing,
+                constant,
+                target.span,
+            )?;
+        } else {
             target.constants.push(constant.clone());
         }
     }
@@ -10281,6 +10579,10 @@ fn import_trait_members_into_trait(
 }
 
 fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Result<()> {
+    let non_trait_names = classes
+        .iter()
+        .map(|class| class.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
     for class in classes {
         if class.trait_uses.is_empty() {
             continue;
@@ -10291,23 +10593,56 @@ fn compose_class_traits(classes: &mut [ClassDecl], traits: &[TraitDecl]) -> Resu
             .map(|method| method.name.to_ascii_lowercase())
             .collect::<HashSet<_>>();
         let mut imported_method_names = HashSet::new();
+        let mut property_origins = class
+            .properties
+            .iter()
+            .map(|property| (property.name.clone(), class.name.clone()))
+            .collect::<HashMap<_, _>>();
+        let mut static_property_origins = class
+            .static_properties
+            .iter()
+            .map(|property| (property.name.clone(), class.name.clone()))
+            .collect::<HashMap<_, _>>();
+        let mut constant_origins = class
+            .constants
+            .iter()
+            .map(|constant| (constant.name.to_ascii_lowercase(), class.name.clone()))
+            .collect::<HashMap<_, _>>();
         let trait_uses = class.trait_uses.clone();
-        for trait_use in trait_uses {
+        let mut used_traits = Vec::new();
+        for trait_use in &trait_uses {
             let Some(trait_decl) = traits
                 .iter()
                 .find(|candidate| candidate.name.eq_ignore_ascii_case(&trait_use.name))
             else {
-                return Err(Diagnostic::new(
-                    format!("Trait \"{}\" not found", trait_use.name),
+                let message = if non_trait_names.contains(&trait_use.name.to_ascii_lowercase()) {
+                    format!(
+                        "{} cannot use {} - it is not a trait",
+                        class.name, trait_use.name
+                    )
+                } else {
+                    format!("Trait \"{}\" not found", trait_use.name)
+                };
+                return Err(Diagnostic::uncaught_fatal(
+                    "Error",
+                    message,
                     Some(trait_use.span),
+                    None,
                 ));
             };
+            used_traits.push(trait_decl);
+        }
+        validate_trait_use_adaptations(&class.name, &trait_uses, traits, &used_traits)?;
+        for (trait_use, trait_decl) in trait_uses.iter().zip(used_traits.iter()) {
             import_trait_members_into_class(
                 class,
                 trait_decl,
-                &trait_use,
+                trait_use,
                 &own_method_names,
                 &mut imported_method_names,
+                &mut property_origins,
+                &mut static_property_origins,
+                &mut constant_origins,
             )?;
         }
     }
@@ -10320,32 +10655,78 @@ fn import_trait_members_into_class(
     trait_use: &TraitUseDecl,
     own_method_names: &HashSet<String>,
     imported_method_names: &mut HashSet<String>,
+    property_origins: &mut HashMap<String, String>,
+    static_property_origins: &mut HashMap<String, String>,
+    constant_origins: &mut HashMap<String, String>,
 ) -> Result<()> {
     for property in &trait_decl.properties {
-        if !class
+        if let Some(existing) = class
             .properties
             .iter()
-            .any(|candidate| candidate.name == property.name)
+            .find(|candidate| candidate.name == property.name)
         {
+            let existing_owner = property_origins
+                .get(&property.name)
+                .map(String::as_str)
+                .unwrap_or(&class.name);
+            validate_composed_property_compatibility(
+                existing_owner,
+                &trait_decl.name,
+                &class.name,
+                existing,
+                property,
+                class.span,
+            )?;
+        } else {
             class.properties.push(property.clone());
+            property_origins.insert(property.name.clone(), trait_decl.name.clone());
         }
     }
     for property in &trait_decl.static_properties {
-        if !class
+        if let Some(existing) = class
             .static_properties
             .iter()
-            .any(|candidate| candidate.name == property.name)
+            .find(|candidate| candidate.name == property.name)
         {
+            let existing_owner = static_property_origins
+                .get(&property.name)
+                .map(String::as_str)
+                .unwrap_or(&class.name);
+            validate_composed_static_property_compatibility(
+                existing_owner,
+                &trait_decl.name,
+                &class.name,
+                existing,
+                property,
+                class.span,
+            )?;
+        } else {
             class.static_properties.push(property.clone());
+            static_property_origins.insert(property.name.clone(), trait_decl.name.clone());
         }
     }
     for constant in &trait_decl.constants {
-        if !class
+        if let Some(existing) = class
             .constants
             .iter()
-            .any(|candidate| candidate.name.eq_ignore_ascii_case(&constant.name))
+            .find(|candidate| candidate.name.eq_ignore_ascii_case(&constant.name))
         {
+            let constant_key = constant.name.to_ascii_lowercase();
+            let existing_owner = constant_origins
+                .get(&constant_key)
+                .map(String::as_str)
+                .unwrap_or(&class.name);
+            validate_composed_constant_compatibility(
+                existing_owner,
+                &trait_decl.name,
+                &class.name,
+                existing,
+                constant,
+                class.span,
+            )?;
+        } else {
             class.constants.push(constant.clone());
+            constant_origins.insert(constant.name.to_ascii_lowercase(), trait_decl.name.clone());
         }
     }
     for method in &trait_decl.methods {
@@ -10416,16 +10797,18 @@ fn import_trait_method_into_class(
     let method_key = method.name.to_ascii_lowercase();
     if !original_excluded && !own_method_names.contains(&method_key) {
         let imported = adapted_original_trait_method(method, trait_decl, &trait_use.adaptations);
-        if !imported_method_names.insert(method_key) {
-            return Err(Diagnostic::new(
-                format!(
-                    "Trait method {}::{} has not been applied because of a collision",
-                    trait_decl.name, method.name
-                ),
-                Some(class.span),
+        if let Err(existing) =
+            insert_imported_trait_method(class, imported_method_names, &method_key, imported)
+        {
+            return Err(trait_method_collision_diagnostic(
+                class,
+                trait_decl,
+                method,
+                &method.name,
+                &existing,
+                class.span,
             ));
         }
-        class.methods.push(imported);
     }
 
     for alias in matching_trait_aliases(&trait_use.adaptations, &trait_decl.name, &method.name) {
@@ -10436,23 +10819,145 @@ fn import_trait_method_into_class(
         if own_method_names.contains(&alias_key) {
             continue;
         }
-        if !imported_method_names.insert(alias_key) {
-            return Err(Diagnostic::new(
-                format!(
-                    "Trait method {}::{} has not been applied because of a collision",
-                    trait_decl.name, alias_name
-                ),
-                Some(alias.span),
-            ));
-        }
         let mut imported = method_with_trait_origin(method, trait_decl);
         imported.name = alias_name.clone();
         if let Some(visibility) = alias.visibility {
             imported.visibility = visibility;
         }
-        class.methods.push(imported);
+        if let Err(existing) =
+            insert_imported_trait_method(class, imported_method_names, &alias_key, imported)
+        {
+            return Err(trait_method_collision_diagnostic(
+                class, trait_decl, method, alias_name, &existing, alias.span,
+            ));
+        }
     }
     Ok(())
+}
+
+fn insert_imported_trait_method(
+    class: &mut ClassDecl,
+    imported_method_names: &mut HashSet<String>,
+    method_key: &str,
+    imported: MethodDecl,
+) -> std::result::Result<(), MethodDecl> {
+    if imported_method_names.insert(method_key.to_string()) {
+        class.methods.push(imported);
+        return Ok(());
+    }
+    let Some(existing) = class
+        .methods
+        .iter_mut()
+        .find(|candidate| candidate.name.eq_ignore_ascii_case(&imported.name))
+    else {
+        return Err(imported);
+    };
+    if existing.trait_name == imported.trait_name
+        && existing.trait_method_name == imported.trait_method_name
+    {
+        return Ok(());
+    }
+    match (existing.is_abstract, imported.is_abstract) {
+        (true, false) => {
+            *existing = imported;
+            Ok(())
+        }
+        (false, true) | (true, true) => Ok(()),
+        _ => Err(existing.clone()),
+    }
+}
+
+fn trait_method_collision_diagnostic(
+    class: &ClassDecl,
+    trait_decl: &TraitDecl,
+    method: &MethodDecl,
+    applied_name: &str,
+    existing: &MethodDecl,
+    span: SourceSpan,
+) -> Diagnostic {
+    let existing_trait = existing.trait_name.as_deref().unwrap_or(&class.name);
+    Diagnostic::new(
+        format!(
+            "Trait method {}::{} has not been applied as {}::{}, because of collision with {}::{}",
+            trait_decl.name, method.name, class.name, applied_name, existing_trait, existing.name
+        ),
+        Some(span),
+    )
+}
+
+fn validate_composed_property_compatibility(
+    existing_owner: &str,
+    imported_owner: &str,
+    composer_name: &str,
+    existing: &PropertyDecl,
+    imported: &PropertyDecl,
+    span: SourceSpan,
+) -> Result<()> {
+    if existing.visibility == imported.visibility
+        && existing.set_visibility == imported.set_visibility
+        && existing.is_final == imported.is_final
+        && existing.is_abstract == imported.is_abstract
+        && existing.is_readonly == imported.is_readonly
+        && existing.type_hint == imported.type_hint
+        && existing.value == imported.value
+    {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!(
+            "{existing_owner} and {imported_owner} define the same property (${}) in the composition of {composer_name}. However, the definition differs and is considered incompatible. Class was composed",
+            existing.name
+        ),
+        Some(span),
+    ))
+}
+
+fn validate_composed_static_property_compatibility(
+    existing_owner: &str,
+    imported_owner: &str,
+    composer_name: &str,
+    existing: &StaticPropertyDecl,
+    imported: &StaticPropertyDecl,
+    span: SourceSpan,
+) -> Result<()> {
+    if existing.visibility == imported.visibility
+        && existing.set_visibility == imported.set_visibility
+        && existing.is_final == imported.is_final
+        && existing.type_hint == imported.type_hint
+        && existing.value == imported.value
+    {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!(
+            "{existing_owner} and {imported_owner} define the same property (${}) in the composition of {composer_name}. However, the definition differs and is considered incompatible. Class was composed",
+            existing.name
+        ),
+        Some(span),
+    ))
+}
+
+fn validate_composed_constant_compatibility(
+    existing_owner: &str,
+    imported_owner: &str,
+    composer_name: &str,
+    existing: &ClassConstantDecl,
+    imported: &ClassConstantDecl,
+    span: SourceSpan,
+) -> Result<()> {
+    if existing.visibility == imported.visibility
+        && existing.is_final == imported.is_final
+        && existing.value == imported.value
+    {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!(
+            "{existing_owner} and {imported_owner} define the same constant ({}) in the composition of {composer_name}. However, the definition differs and is considered incompatible. Class was composed",
+            existing.name
+        ),
+        Some(span),
+    ))
 }
 
 fn adapted_original_trait_method(
