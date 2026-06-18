@@ -1427,9 +1427,6 @@ static size_t ptn_object_initialized_property_dump_count(PtnObject *object) {
         const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
             ? ptn_object_property_metadata(object, entry->key.as.string)
             : NULL;
-        if (ptn_object_metadata_is_array_object_storage(metadata)) {
-            continue;
-        }
         if (object->lazy_uninitialized && !object->lazy_initializing &&
             (metadata == NULL || !metadata->lazy_skip)) {
             continue;

@@ -5953,6 +5953,14 @@ static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_element_notice(
     PtnValue container,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_arrayaccess_call(
+    PtnRuntime *runtime,
+    PtnValue container,
+    const char *method_name,
+    size_t argc,
+    PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(
     PtnRuntime *runtime,
     const char *key,
@@ -5985,6 +5993,144 @@ static PTN_UNUSED void ptn_warn_illegal_string_reference_key(
     free(key_string);
 }
 
+static PTN_UNUSED PtnFunctionMetadata ptn_arrayaccess_declared_method_metadata(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *method_name
+) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        runtime == NULL ||
+        runtime->declared_method_metadata == NULL ||
+        receiver.type != PTN_OBJECT ||
+        receiver.as.object == NULL ||
+        receiver.as.object->class_name == NULL ||
+        method_name == NULL
+    ) {
+        return ptn_function_metadata_not_found();
+    }
+    return runtime->declared_method_metadata(receiver.as.object->class_name, method_name);
+}
+
+static PTN_UNUSED void ptn_arrayaccess_throw_missing_offset_get_argument(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnFunctionMetadata metadata,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    const char *class_name = receiver.type == PTN_OBJECT && receiver.as.object != NULL
+        ? receiver.as.object->class_name
+        : "ArrayAccess";
+    const char *parameter_name = "offset";
+    if (
+        metadata.found &&
+        metadata.parameter_count > 0 &&
+        metadata.parameters != NULL &&
+        metadata.parameters[0].name != NULL
+    ) {
+        parameter_name = metadata.parameters[0].name;
+    }
+
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s::offsetGet(): Argument #1 ($%s) not passed",
+        class_name,
+        parameter_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s::offsetGet(): Argument #1 ($%s) not passed",
+        class_name,
+        parameter_name
+    );
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "ArgumentCountError",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+}
+
+static PTN_UNUSED int ptn_arrayaccess_append_reference_temporary(
+    PtnRuntime *runtime,
+    PtnValue container,
+    size_t line,
+    PtnValue *reference_out
+) {
+    PtnValue value = ptn_value_deref(container);
+    if (
+        value.type != PTN_OBJECT ||
+        value.as.object == NULL ||
+        !ptn_object_is_internal_or_descendant(value, "ArrayObject")
+    ) {
+        return 0;
+    }
+
+    int exact_array_object = ptn_ascii_case_equal(value.as.object->class_name, "ArrayObject");
+    int has_declared_offset_get =
+        !exact_array_object &&
+        runtime != NULL &&
+        runtime->declared_method_exists != NULL &&
+        runtime->declared_method_exists(value.as.object->class_name, "offsetGet");
+    if (has_declared_offset_get) {
+        PtnFunctionMetadata metadata =
+            ptn_arrayaccess_declared_method_metadata(runtime, value, "offsetGet");
+        if (metadata.found && metadata.return_by_ref) {
+            PtnValue arg = ptn_null();
+            PtnValue result = ptn_arrayaccess_call(runtime, value, "offsetGet", 1, &arg, line);
+            if (reference_out != NULL) {
+                *reference_out = result.type == PTN_REFERENCE
+                    ? result
+                    : ptn_reference_value(ptn_reference_new_owned(result));
+            } else {
+                ptn_value_destroy(&result);
+            }
+            return 1;
+        }
+        if (metadata.found && metadata.required_parameter_count > 0) {
+            ptn_emit_indirect_modification_overloaded_element_notice(runtime, value, line);
+            ptn_arrayaccess_throw_missing_offset_get_argument(runtime, value, metadata, line);
+            if (reference_out != NULL) {
+                *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            }
+            return 1;
+        }
+        PtnValue result = ptn_arrayaccess_call(runtime, value, "offsetGet", 0, NULL, line);
+        if (result.type == PTN_REFERENCE) {
+            if (reference_out != NULL) {
+                *reference_out = result;
+            } else {
+                ptn_value_destroy(&result);
+            }
+            return 1;
+        }
+        ptn_emit_indirect_modification_overloaded_element_notice(runtime, value, line);
+        if (reference_out != NULL) {
+            *reference_out = ptn_reference_value(ptn_reference_new_owned(result));
+        } else {
+            ptn_value_destroy(&result);
+        }
+        return 1;
+    }
+
+    ptn_emit_indirect_modification_overloaded_element_notice(runtime, value, line);
+    if (reference_out != NULL) {
+        *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    return 1;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     PtnRuntime *runtime,
     const char *name,
@@ -5996,6 +6142,13 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     if (slot != NULL) {
         PtnValue slot_value = ptn_value_deref(*slot);
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
+            PtnValue append_reference = ptn_null();
+            if (
+                key_value == NULL &&
+                ptn_arrayaccess_append_reference_temporary(runtime, slot_value, line, &append_reference)
+            ) {
+                return append_reference;
+            }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             PtnValue reference = ptn_null();
             if (ptn_internal_array_object_offset_reference(
@@ -6016,6 +6169,10 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
             }
             ptn_emit_indirect_modification_overloaded_element_notice(runtime, slot_value, line);
             return ptn_reference_value(ptn_reference_new_owned(value));
+        }
+        if (slot_value.type == PTN_STRING && key_value == NULL) {
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
         }
         ptn_warn_illegal_string_reference_key(runtime, slot_value, key_value, line);
     }
@@ -6062,6 +6219,13 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
         ? &container->as.reference->value
         : container;
     if (ptn_arrayaccess_can_dispatch(runtime, *value, "offsetGet")) {
+        PtnValue append_reference = ptn_null();
+        if (
+            key_value == NULL &&
+            ptn_arrayaccess_append_reference_temporary(runtime, *value, line, &append_reference)
+        ) {
+            return append_reference;
+        }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         PtnValue reference = ptn_null();
         if (ptn_internal_array_object_offset_reference(
@@ -6090,8 +6254,12 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
     if (value->type == PTN_ARRAY) {
         array = ptn_array_detach_value(value);
     } else if (value->type == PTN_STRING) {
-        ptn_warn_illegal_string_reference_key(runtime, *value, key_value, line);
-        ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+        if (key_value == NULL) {
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
+        } else {
+            ptn_warn_illegal_string_reference_key(runtime, *value, key_value, line);
+            ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+        }
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else if ((array = ptn_array_convertible_scalar_for_write(runtime, value, line)) != NULL) {
         /* false/null conversion handled by shared lvalue write semantics. */
@@ -6284,6 +6452,16 @@ static PTN_UNUSED int ptn_object_implements_builtin_interface(PtnObject *object,
     return object != NULL &&
         (ptn_declared_class_implements_interface(object->class_name, interface_name) ||
          ptn_builtin_class_implements_interface(object->class_name, interface_name));
+}
+
+static PTN_UNUSED int ptn_object_supports_foreach_by_reference(PtnObject *object) {
+    return object != NULL &&
+        object->class_name != NULL &&
+        (
+            ptn_ascii_case_equal(object->class_name, "ArrayObject") ||
+            ptn_ascii_case_equal(object->class_name, "ArrayIterator") ||
+            ptn_ascii_case_equal(object->class_name, "RecursiveArrayIterator")
+        );
 }
 
 static PTN_UNUSED int ptn_object_has_iterator_method(
@@ -6651,6 +6829,22 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
                 path,
                 line
             );
+        }
+        if (
+            (
+                ptn_object_implements_builtin_interface(value->as.object, "Iterator") ||
+                ptn_object_implements_builtin_interface(value->as.object, "IteratorAggregate")
+            ) &&
+            !ptn_object_supports_foreach_by_reference(value->as.object)
+        ) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "An iterator cannot be used with foreach by reference",
+                path,
+                line
+            );
+            return iterator;
         }
         return ptn_array_iterator_from_traversable_object(runtime, *value, access_scope, path, line, 0);
     }
@@ -8214,6 +8408,13 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
     if (slot != NULL) {
         PtnValue slot_value = ptn_value_deref(*slot);
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
+            PtnValue append_reference = ptn_null();
+            if (
+                segments[0].append &&
+                ptn_arrayaccess_append_reference_temporary(runtime, slot_value, line, &append_reference)
+            ) {
+                return append_reference;
+            }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
             PtnValue array_object_reference = ptn_null();
@@ -8246,6 +8447,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
                 return value;
             }
             if (segment_count == 1) {
+                ptn_emit_indirect_modification_overloaded_element_notice(runtime, slot_value, line);
                 return ptn_reference_value(ptn_reference_new_owned(value));
             }
             if (value.type == PTN_REFERENCE) {
@@ -8261,6 +8463,10 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
                 return nested_reference;
             }
             ptn_value_destroy(&value);
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+        if (slot_value.type == PTN_STRING && segments[0].append) {
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
             return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
         }
     }
@@ -8352,11 +8558,14 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
     }
 
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
-    if (slot != NULL && !segments[0].append) {
+    if (slot != NULL) {
         PtnValue slot_value = ptn_value_deref(*slot);
-        ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
+        if (!segments[0].append) {
+            ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
+        }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (
+            !segments[0].append &&
             segment_count == 1 &&
             slot_value.type == PTN_OBJECT &&
             ptn_internal_class_name_is_weak_map(slot_value.as.object->class_name)
@@ -8368,6 +8577,17 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
         }
 #endif
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
+            if (segments[0].append) {
+                ptn_emit_indirect_modification_overloaded_element_notice(runtime, slot_value, line);
+                ptn_throw_exception_at(
+                    runtime,
+                    "Error",
+                    "Cannot assign by reference to an array dimension of an object",
+                    path,
+                    line
+                );
+                return;
+            }
             PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
             PtnValue value = ptn_arrayaccess_read(runtime, slot_value, key, line);
             if (value.type == PTN_REFERENCE) {
@@ -8397,6 +8617,13 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
                 line
             );
             return;
+        }
+        if (slot_value.type == PTN_STRING && segments[0].append) {
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
+            return;
+        }
+        if (!segments[0].append) {
+            ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
         }
     }
 
@@ -8446,6 +8673,13 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
 
     PtnValue *target_value = target->type == PTN_REFERENCE ? &target->as.reference->value : target;
     if (ptn_arrayaccess_can_dispatch(runtime, *target_value, "offsetGet")) {
+        PtnValue append_reference = ptn_null();
+        if (
+            segments[0].append &&
+            ptn_arrayaccess_append_reference_temporary(runtime, *target_value, line, &append_reference)
+        ) {
+            return append_reference;
+        }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
         PtnValue array_object_reference = ptn_null();
@@ -8478,6 +8712,7 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
             return value;
         }
         if (segment_count == 1) {
+            ptn_emit_indirect_modification_overloaded_element_notice(runtime, *target_value, line);
             return ptn_reference_value(ptn_reference_new_owned(value));
         }
         if (value.type == PTN_REFERENCE) {
@@ -8500,10 +8735,12 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
     if (target_value->type == PTN_ARRAY) {
         array = ptn_array_detach_value(target_value);
     } else if (target_value->type == PTN_STRING) {
-        if (!segments[0].append) {
+        if (segments[0].append) {
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
+        } else {
             ptn_warn_illegal_string_reference_key(runtime, *target_value, &segments[0].value, line);
+            ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         }
-        ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else if ((array = ptn_array_convertible_scalar_for_write(runtime, target_value, line)) != NULL) {
         /* false/null conversion handled by shared lvalue write semantics. */

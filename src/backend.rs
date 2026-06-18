@@ -288,6 +288,9 @@ pub fn emit_c(module: &Module) -> String {
             "    runtime.reflected_method_dispatch = ptn_call_declared_method_in_scope;\n",
         );
         out.push_str("    runtime.declared_method_exists = ptn_declared_class_method_exists;\n");
+        out.push_str(
+            "    runtime.declared_method_metadata = ptn_declared_class_method_metadata;\n",
+        );
     }
     if needs_magic_property_read {
         out.push_str("    runtime.magic_property_read = ptn_declared_magic_property_read;\n");
@@ -5629,6 +5632,67 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnFunctionMetadata ptn_declared_class_method_metadata(const char *class_name, const char *method_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            let function = &functions[method.function_index];
+            let required_parameter_count = function
+                .parameters
+                .iter()
+                .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+                .count();
+            let is_variadic = function
+                .parameters
+                .iter()
+                .any(|parameter| parameter.is_variadic);
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            let parameters = emit_function_metadata_parameters(
+                out,
+                "            ",
+                &format!("ptn_declared_method_{}_parameters", method.function_index),
+                &function.parameters,
+            );
+            out.push_str("            return ptn_function_metadata_found(\"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("::");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\", 0, ");
+            out.push_str(&function.parameters.len().to_string());
+            out.push_str(", ");
+            out.push_str(&required_parameter_count.to_string());
+            out.push_str(", ");
+            out.push_str(if is_variadic { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(&parameters);
+            out.push_str(", ");
+            out.push_str(if function.return_by_ref { "1" } else { "0" });
+            emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+            out.push_str(");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_function_metadata_not_found();\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_function_metadata_not_found();\n");
     out.push_str("}\n");
 
     out.push_str(

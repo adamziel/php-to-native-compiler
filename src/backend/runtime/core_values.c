@@ -974,6 +974,10 @@ typedef int (*PtnReflectedMethodDispatchHandler)(
     PtnValue *result_out
 );
 typedef int (*PtnDeclaredMethodExistsHandler)(const char *class_name, const char *method_name);
+typedef PtnFunctionMetadata (*PtnDeclaredMethodMetadataHandler)(
+    const char *class_name,
+    const char *method_name
+);
 typedef int (*PtnClassScopeAllowsHandler)(
     const char *access_scope,
     const char *declaring_class
@@ -1086,6 +1090,7 @@ struct PtnRuntime {
     PtnMethodDispatchHandler method_dispatch;
     PtnReflectedMethodDispatchHandler reflected_method_dispatch;
     PtnDeclaredMethodExistsHandler declared_method_exists;
+    PtnDeclaredMethodMetadataHandler declared_method_metadata;
     PtnClassScopeAllowsHandler class_scope_allows;
     PtnDeclaredClassReadonlyHandler declared_class_is_readonly;
     PtnDeclaredClassAllowsDynamicPropertiesHandler declared_class_allows_dynamic_properties;
