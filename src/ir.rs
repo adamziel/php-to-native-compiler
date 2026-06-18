@@ -136,6 +136,8 @@ pub struct PropertyDecl {
     pub is_virtual: bool,
     pub hook_has_get: bool,
     pub hook_has_set: bool,
+    pub hook_get_is_final: bool,
+    pub hook_set_is_final: bool,
     pub hook_get_is_abstract: bool,
     pub hook_set_is_abstract: bool,
     pub hook_get_value: Option<ValueExpr>,
@@ -1551,6 +1553,8 @@ impl<'a> LoweringContext<'a> {
                 is_virtual: property.is_virtual,
                 hook_has_get: property.hook_has_get,
                 hook_has_set: property.hook_has_set,
+                hook_get_is_final: property.hook_get_is_final,
+                hook_set_is_final: property.hook_set_is_final,
                 hook_get_is_abstract: property.hook_get_is_abstract,
                 hook_set_is_abstract: property.hook_set_is_abstract,
                 hook_get_value: property

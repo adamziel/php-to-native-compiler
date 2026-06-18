@@ -1324,6 +1324,38 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\nabstract prop hooks\n--FILE--\n<?php\nabstract class A { abstract public $prop { get; set; } }\nclass B extends A { public $prop { get {} set {} } }\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/property_hooks/abstract_prop_plain.phpt",
+            "--TEST--\nplain property satisfies abstract property\n--FILE--\n<?php\nabstract class A { abstract public $prop { get; set; } }\nclass B extends A { public $prop; }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/final.phpt",
+            "--TEST--\nfinal hook override\n--FILE--\n<?php\nclass A { public $prop { final get { return 42; } } }\nclass B extends A { public $prop { get { return 24; } } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/final_prop_final_hook.phpt",
+            "--TEST--\nfinal hook on final property\n--FILE--\n<?php\nclass Test { final public $prop { final get => $field; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/final_prop_promoted_1.phpt",
+            "--TEST--\nfinal promoted hooked property\n--FILE--\n<?php\nclass A { public function __construct(public final $prop { get {} set {} }) {} }\nclass B extends A { public $prop; }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/interface_get_by_ref_backed.phpt",
+            "--TEST--\nbacked by-ref interface hook\n--FILE--\n<?php\ninterface I { public $prop { &get; } }\nclass C implements I { public $prop { &get { return $this->prop; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/interface_get_by_ref_plain.phpt",
+            "--TEST--\nplain by-ref interface hook\n--FILE--\n<?php\ninterface I { public $prop { &get; } }\nclass C implements I { public $prop; }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/interface_set_only.phpt",
+            "--TEST--\nset-only interface hook\n--FILE--\n<?php\ninterface I { public $prop { set; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/no_default_value_untyped_002.phpt",
+            "--TEST--\nuntyped hooked property metadata\n--FILE--\n<?php\nclass C { public $prop { set => $value; } }\nvar_dump(new ReflectionClass(C::class));\n--EXPECTF--\n",
+        ),
+        (
             "ext/reflection/tests/property_hooks/ReflectionClass_getMethods.phpt",
             "--TEST--\nreflection class methods\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } }\nvar_dump((new ReflectionClass(Test::class))->getMethods());\n--EXPECT--\n",
         ),

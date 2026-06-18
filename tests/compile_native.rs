@@ -5918,6 +5918,47 @@ class Demo extends Base {
 }
 
 #[test]
+fn parser_tracks_final_property_hook_metadata() {
+    let program = parser::parse(
+        "<?php
+class Demo {
+    final public $prop {
+        final get => $field;
+        set => $value;
+    }
+}
+",
+    )
+    .unwrap();
+
+    let property = &program.classes[0].properties[0];
+    assert!(property.is_final);
+    assert!(property.has_hooks);
+    assert!(property.hook_get_is_final);
+    assert!(!property.hook_set_is_final);
+    assert!(!property.is_virtual);
+}
+
+#[test]
+fn parser_accepts_promoted_property_hook_metadata() {
+    let program = parser::parse(
+        "<?php
+class Demo {
+    public function __construct(public final $prop { get {} set {} }) {}
+}
+",
+    )
+    .unwrap();
+
+    let property = &program.classes[0].properties[0];
+    assert!(property.is_final);
+    assert!(property.has_hooks);
+    assert!(property.hook_has_get);
+    assert!(property.hook_has_set);
+    assert!(property.is_virtual);
+}
+
+#[test]
 fn parser_lowers_asymmetric_constructor_promoted_properties() {
     let program = parser::parse(
         "<?php
@@ -7097,6 +7138,26 @@ class B extends A {
     .unwrap_err();
 
     assert_eq!(error.message, "Cannot override final property A::$prop");
+}
+
+#[test]
+fn parser_rejects_final_property_hook_overrides() {
+    let error = parser::parse(
+        "<?php
+class A {
+    public $prop { final get { return 42; } }
+}
+class B extends A {
+    public $prop { get { return 24; } }
+}
+",
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "Cannot override final property hook A::$prop::get()"
+    );
 }
 
 #[test]

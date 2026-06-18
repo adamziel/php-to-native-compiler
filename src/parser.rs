@@ -279,6 +279,8 @@ struct ParsedPropertyHookBlock {
     is_virtual: bool,
     has_get: bool,
     has_set: bool,
+    get_is_final: bool,
+    set_is_final: bool,
     get_is_abstract: bool,
     set_is_abstract: bool,
     get_override_span: Option<SourceSpan>,
@@ -2723,6 +2725,8 @@ impl Parser<'_> {
                     is_virtual: hooks.is_virtual,
                     hook_has_get: hooks.has_get,
                     hook_has_set: hooks.has_set,
+                    hook_get_is_final: hooks.get_is_final,
+                    hook_set_is_final: hooks.set_is_final,
                     hook_get_is_abstract: hooks.get_is_abstract,
                     hook_set_is_abstract: hooks.set_is_abstract,
                     hook_get_override_span: hooks.get_override_span,
@@ -2755,6 +2759,8 @@ impl Parser<'_> {
                 is_virtual: false,
                 hook_has_get: false,
                 hook_has_set: false,
+                hook_get_is_final: false,
+                hook_set_is_final: false,
                 hook_get_is_abstract: false,
                 hook_set_is_abstract: false,
                 hook_get_override_span: None,
@@ -2929,7 +2935,8 @@ impl Parser<'_> {
                     if matches!(self.peek().kind, TokenKind::DoubleArrow) {
                         self.advance();
                         let value = self.parse_expr()?;
-                        let uses_backing_property = expr_uses_this_property(&value, property_name);
+                        let uses_backing_property = expr_uses_this_property(&value, property_name)
+                            || expr_uses_property_hook_field(&value);
                         if !uses_backing_property && !is_supported_property_default_expr(&value) {
                             return Err(Diagnostic::new(
                                 "property hook get expression must be a supported constant expression",
@@ -2937,7 +2944,14 @@ impl Parser<'_> {
                             ));
                         }
                         self.expect_semicolon()?;
+                        validate_property_hook_modifiers(
+                            hook_is_final,
+                            false,
+                            hook_visibility,
+                            token.span,
+                        )?;
                         hooks.has_get = true;
+                        hooks.get_is_final = hook_is_final;
                         if uses_backing_property {
                             hooks.is_virtual = false;
                         } else {
@@ -2961,6 +2975,7 @@ impl Parser<'_> {
                             token.span,
                         )?;
                         hooks.has_get = true;
+                        hooks.get_is_final = hook_is_final;
                         hooks.get_is_abstract = is_abstract_hook;
                         if self.skip_property_hook_body("get", property_name)? {
                             hooks.is_virtual = false;
@@ -2994,6 +3009,7 @@ impl Parser<'_> {
                         token.span,
                     )?;
                     hooks.has_set = true;
+                    hooks.set_is_final = hook_is_final;
                     hooks.set_is_abstract = is_abstract_hook;
                     if self.skip_property_hook_body(&name, property_name)? {
                         hooks.is_virtual = false;
@@ -3632,7 +3648,7 @@ impl Parser<'_> {
                 Some(token.span),
             ));
         };
-        let promoted_property = if let Some(modifiers) = promotion_modifiers {
+        let mut promoted_property = if let Some(modifiers) = promotion_modifiers {
             let class_name = class_name_for_promotions.expect("promotion modifiers require class");
             let is_readonly = class_is_readonly || modifiers.is_readonly;
             let set_visibility = modifiers
@@ -3670,13 +3686,24 @@ impl Parser<'_> {
                 set_visibility,
                 is_final: modifiers.is_final,
                 is_readonly,
+                has_hooks: false,
+                is_virtual: false,
+                hook_has_get: false,
+                hook_has_set: false,
+                hook_get_is_final: false,
+                hook_set_is_final: false,
+                hook_get_is_abstract: false,
+                hook_set_is_abstract: false,
+                hook_get_override_span: None,
+                hook_set_override_span: None,
+                hook_get_value: None,
                 has_override_attribute: attributes.has_override,
                 span: modifiers.visibility_span.unwrap_or(token.span),
             })
         } else {
             None
         };
-        if let Some(promoted) = &promoted_property {
+        if let Some(promoted) = promoted_property.as_mut() {
             if matches!(self.peek().kind, TokenKind::LeftBrace) {
                 if promoted.is_readonly {
                     return Err(Diagnostic::new(
@@ -3684,10 +3711,21 @@ impl Parser<'_> {
                         Some(self.peek().span),
                     ));
                 }
-                return Err(Diagnostic::new(
-                    "property hooks are unsupported",
-                    Some(self.peek().span),
-                ));
+                let class_name =
+                    class_name_for_promotions.expect("promotion modifiers require class");
+                let hooks =
+                    self.parse_property_hook_block(class_name, &name, promoted.visibility)?;
+                promoted.has_hooks = true;
+                promoted.is_virtual = hooks.is_virtual;
+                promoted.hook_has_get = hooks.has_get;
+                promoted.hook_has_set = hooks.has_set;
+                promoted.hook_get_is_final = hooks.get_is_final;
+                promoted.hook_set_is_final = hooks.set_is_final;
+                promoted.hook_get_is_abstract = hooks.get_is_abstract;
+                promoted.hook_set_is_abstract = hooks.set_is_abstract;
+                promoted.hook_get_override_span = hooks.get_override_span;
+                promoted.hook_set_override_span = hooks.set_override_span;
+                promoted.hook_get_value = hooks.get_value;
             }
         }
         let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
@@ -10287,15 +10325,17 @@ fn promoted_properties_from_constructor(
                 is_final: promoted.is_final,
                 is_abstract: false,
                 is_readonly: class_is_readonly || promoted.is_readonly,
-                has_hooks: false,
-                is_virtual: false,
-                hook_has_get: false,
-                hook_has_set: false,
-                hook_get_is_abstract: false,
-                hook_set_is_abstract: false,
-                hook_get_override_span: None,
-                hook_set_override_span: None,
-                hook_get_value: None,
+                has_hooks: promoted.has_hooks,
+                is_virtual: promoted.is_virtual,
+                hook_has_get: promoted.hook_has_get,
+                hook_has_set: promoted.hook_has_set,
+                hook_get_is_final: promoted.hook_get_is_final,
+                hook_set_is_final: promoted.hook_set_is_final,
+                hook_get_is_abstract: promoted.hook_get_is_abstract,
+                hook_set_is_abstract: promoted.hook_set_is_abstract,
+                hook_get_override_span: promoted.hook_get_override_span,
+                hook_set_override_span: promoted.hook_set_override_span,
+                hook_get_value: promoted.hook_get_value.clone(),
                 type_hint: parameter
                     .type_hint
                     .as_ref()
@@ -13978,6 +14018,24 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
                 return Err(Diagnostic::new(
                     format!(
                         "Cannot override final property {}::${}",
+                        parent.name, parent_property.name
+                    ),
+                    Some(property.span),
+                ));
+            }
+            if parent_property.has_hooks && parent_property.hook_get_is_final {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot override final property hook {}::${}::get()",
+                        parent.name, parent_property.name
+                    ),
+                    Some(property.span),
+                ));
+            }
+            if parent_property.has_hooks && parent_property.hook_set_is_final {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot override final property hook {}::${}::set()",
                         parent.name, parent_property.name
                     ),
                     Some(property.span),
@@ -20330,6 +20388,14 @@ fn token_string_parts_use_this_property(parts: &[TokenStringPart], property_name
         }
         _ => false,
     })
+}
+
+fn expr_uses_property_hook_field(expr: &Expr) -> bool {
+    match expr {
+        Expr::Grouped { expr, .. } => expr_uses_property_hook_field(expr),
+        Expr::Variable(name, _) => name == "field",
+        _ => false,
+    }
 }
 
 fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
