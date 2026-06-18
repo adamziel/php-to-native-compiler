@@ -1575,10 +1575,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->magic_property_get_exists = NULL;
     runtime->magic_property_set = NULL;
     runtime->magic_property_unset = NULL;
+    runtime->property_hook_read = NULL;
+    runtime->property_hook_write = NULL;
     runtime->magic_debug_info = NULL;
     runtime->class_constant_initializer = NULL;
     runtime->new_instance_without_constructor = NULL;
     runtime->in_magic_property_dispatch = 0;
+    runtime->active_property_hook_object = NULL;
+    runtime->active_property_hook_property = NULL;
+    runtime->active_property_hook_depth = 0;
     runtime->magic_property_frames = NULL;
     runtime->magic_property_frame_len = 0;
     runtime->magic_property_frame_capacity = 0;

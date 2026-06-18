@@ -1116,6 +1116,11 @@ static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnO
         if (cloned_metadata != NULL) {
             cloned_metadata->is_unset = metadata->is_unset;
             cloned_metadata->lazy_skip = metadata->lazy_skip;
+            cloned_metadata->has_hooks = metadata->has_hooks;
+            cloned_metadata->is_virtual = metadata->is_virtual;
+            cloned_metadata->hook_has_get = metadata->hook_has_get;
+            cloned_metadata->hook_has_set = metadata->hook_has_set;
+            cloned_metadata->hook_set_uses_return = metadata->hook_set_uses_return;
             if (metadata->last_type_name != NULL) {
                 cloned_metadata->last_type_name = ptn_duplicate_string(metadata->last_type_name);
             }
@@ -3431,6 +3436,43 @@ static PTN_UNUSED void ptn_emit_static_property_non_static_notice_if_accessible(
     }
 }
 
+static PTN_UNUSED int ptn_property_hook_is_active(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property
+) {
+    return runtime != NULL &&
+        runtime->active_property_hook_depth != 0 &&
+        runtime->active_property_hook_object == object &&
+        runtime->active_property_hook_property != NULL &&
+        property != NULL &&
+        strcmp(runtime->active_property_hook_property, property) == 0;
+}
+
+static PTN_UNUSED void ptn_throw_property_hook_access_error(
+    PtnRuntime *runtime,
+    const char *operation,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (metadata == NULL) {
+        return;
+    }
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot %s %s-only virtual property %s::$%s",
+        operation,
+        strcmp(operation, "read from") == 0 ? "set" : "get",
+        metadata->declaring_class,
+        metadata->display_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
 static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -3841,6 +3883,27 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     );
     ptn_array_key_free(key);
     free(storage_key);
+    if (metadata != NULL &&
+        metadata->has_hooks &&
+        !ptn_property_hook_is_active(runtime, receiver.as.object, metadata->display_name)) {
+        if (!metadata->hook_has_get && metadata->is_virtual) {
+            ptn_throw_property_hook_access_error(runtime, "read from", metadata);
+            return ptn_null();
+        }
+        if (metadata->hook_has_get && runtime != NULL && runtime->property_hook_read != NULL) {
+            PtnValue hook_value = ptn_null();
+            if (runtime->property_hook_read(
+                runtime,
+                receiver,
+                metadata->declaring_class,
+                metadata->display_name,
+                line,
+                &hook_value
+            )) {
+                return hook_value;
+            }
+        }
+    }
     if (entry == NULL) {
         if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
             if (metadata->is_unset) {
@@ -4253,8 +4316,31 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
     ptn_array_key_free(key);
     free(storage_key);
+    if (metadata != NULL &&
+        metadata->has_hooks &&
+        !ptn_property_hook_is_active(runtime, receiver.as.object, metadata->display_name)) {
+        if (!metadata->hook_has_get && metadata->is_virtual) {
+            ptn_throw_property_hook_access_error(runtime, "read from", metadata);
+            return ptn_lookup_missing();
+        }
+        if (metadata->hook_has_get && runtime != NULL && runtime->property_hook_read != NULL) {
+            PtnValue hook_value = ptn_null();
+            if (runtime->property_hook_read(
+                runtime,
+                receiver,
+                metadata->declaring_class,
+                metadata->display_name,
+                line,
+                &hook_value
+            )) {
+                return ptn_lookup_found(hook_value);
+            }
+        }
+    }
     if (entry == NULL) {
         PtnValue magic_value;
         if (
@@ -4311,8 +4397,31 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_probe_quiet(
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
     ptn_array_key_free(key);
     free(storage_key);
+    if (metadata != NULL &&
+        metadata->has_hooks &&
+        !ptn_property_hook_is_active(runtime, receiver.as.object, metadata->display_name)) {
+        if (!metadata->hook_has_get && metadata->is_virtual) {
+            ptn_throw_property_hook_access_error(runtime, "read from", metadata);
+            return ptn_lookup_missing();
+        }
+        if (metadata->hook_has_get && runtime != NULL && runtime->property_hook_read != NULL) {
+            PtnValue hook_value = ptn_null();
+            if (runtime->property_hook_read(
+                runtime,
+                receiver,
+                metadata->declaring_class,
+                metadata->display_name,
+                line,
+                &hook_value
+            )) {
+                return ptn_lookup_found(hook_value);
+            }
+        }
+    }
     if (entry == NULL) {
         PtnValue magic_value;
         if (
@@ -4383,6 +4492,29 @@ static PTN_UNUSED int ptn_object_property_is_set(
         ptn_object_property_metadata(receiver.as.object, storage_key);
     ptn_array_key_free(key);
     free(storage_key);
+    if (metadata != NULL &&
+        metadata->has_hooks &&
+        !ptn_property_hook_is_active(runtime, receiver.as.object, metadata->display_name)) {
+        if (!metadata->hook_has_get && metadata->is_virtual) {
+            ptn_throw_property_hook_access_error(runtime, "read from", metadata);
+            return 0;
+        }
+        if (metadata->hook_has_get && runtime != NULL && runtime->property_hook_read != NULL) {
+            PtnValue hook_value = ptn_null();
+            if (runtime->property_hook_read(
+                runtime,
+                receiver,
+                metadata->declaring_class,
+                metadata->display_name,
+                line,
+                &hook_value
+            )) {
+                int is_set = ptn_value_deref(hook_value).type != PTN_NULL;
+                ptn_value_destroy(&hook_value);
+                return is_set;
+            }
+        }
+    }
     if (entry == NULL) {
         if (metadata == NULL || metadata->is_unset) {
             int magic_isset = 0;
@@ -4502,9 +4634,46 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    int ptn_hook_value_owned = 0;
+    PtnValue ptn_hook_value = ptn_null();
+    if (metadata != NULL &&
+        metadata->has_hooks &&
+        !ptn_property_hook_is_active(runtime, receiver.as.object, metadata->display_name)) {
+        if (!metadata->hook_has_set && metadata->is_virtual) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_property_hook_access_error(runtime, "write to", metadata);
+            return ptn_null();
+        }
+        if (metadata->hook_has_set && runtime != NULL && runtime->property_hook_write != NULL) {
+            int store_result = 0;
+            if (runtime->property_hook_write(
+                runtime,
+                receiver,
+                metadata->declaring_class,
+                metadata->display_name,
+                value,
+                line,
+                &store_result,
+                &ptn_hook_value
+            )) {
+                if (!store_result || metadata->is_virtual) {
+                    ptn_array_key_free(key);
+                    free(storage_key);
+                    ptn_value_destroy(&ptn_hook_value);
+                    return ptn_value_clone_deref(value);
+                }
+                value = ptn_hook_value;
+                ptn_hook_value_owned = 1;
+            }
+        }
+    }
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
         ptn_array_key_free(key);
         free(storage_key);
+        if (ptn_hook_value_owned) {
+            ptn_value_destroy(&ptn_hook_value);
+        }
         ptn_throw_readonly_property_error(
             runtime,
             receiver.as.object->class_name,
@@ -4534,6 +4703,9 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         )) {
         ptn_array_key_free(key);
         free(storage_key);
+        if (ptn_hook_value_owned) {
+            ptn_value_destroy(&ptn_hook_value);
+        }
         return ptn_null();
     }
     if (metadata == NULL) {
@@ -4556,6 +4728,9 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     }
     ptn_lazy_object_sync_proxy_instance_properties(receiver.as.object);
     free(storage_key);
+    if (ptn_hook_value_owned) {
+        ptn_value_destroy(&ptn_hook_value);
+    }
     return result;
 }
 
@@ -4999,6 +5174,23 @@ static PTN_UNUSED void ptn_object_unset_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
+    if (mutable_metadata != NULL && mutable_metadata->has_hooks) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot unset hooked property %s::$%s",
+            mutable_metadata->declaring_class,
+            mutable_metadata->display_name
+        );
+        ptn_array_key_free(key);
+        free(storage_key);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Error", message);
+        return;
+    }
     if (mutable_metadata != NULL && mutable_metadata->is_readonly && entry != NULL) {
         ptn_array_key_free(key);
         free(storage_key);

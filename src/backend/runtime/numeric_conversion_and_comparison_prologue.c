@@ -97,10 +97,15 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->magic_property_get_exists = caller_runtime->magic_property_get_exists;
     runtime->magic_property_set = caller_runtime->magic_property_set;
     runtime->magic_property_unset = caller_runtime->magic_property_unset;
+    runtime->property_hook_read = caller_runtime->property_hook_read;
+    runtime->property_hook_write = caller_runtime->property_hook_write;
     runtime->magic_debug_info = caller_runtime->magic_debug_info;
     runtime->class_constant_initializer = caller_runtime->class_constant_initializer;
     runtime->new_instance_without_constructor = caller_runtime->new_instance_without_constructor;
     runtime->in_magic_property_dispatch = caller_runtime->in_magic_property_dispatch;
+    runtime->active_property_hook_object = caller_runtime->active_property_hook_object;
+    runtime->active_property_hook_property = caller_runtime->active_property_hook_property;
+    runtime->active_property_hook_depth = caller_runtime->active_property_hook_depth;
     runtime->magic_property_frames = NULL;
     runtime->magic_property_frame_len = caller_runtime->magic_property_frame_len;
     runtime->magic_property_frame_capacity = caller_runtime->magic_property_frame_len;
