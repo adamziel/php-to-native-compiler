@@ -31548,22 +31548,21 @@ var_dump(function_exists(\"array_slice\"), function_exists(\"ARRAY_SLICE\"));",
 }
 
 #[test]
-fn compile_array_slice_dereferences_reference_entries_to_native_binary() {
-    let root = temp_dir("ptn-native-array-slice-deref-references");
+fn compile_array_slice_preserves_reference_entries_to_native_binary() {
+    let root = temp_dir("ptn-native-array-slice-reference-entries");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("array-slice-deref-references.php");
-    let output = root.join("array-slice-deref-references-bin");
+    let input = root.join("array-slice-reference-entries.php");
+    let output = root.join("array-slice-reference-entries-bin");
     fs::write(
         &input,
         "<?php
-function takes_ref(&$ref) {
-    var_dump($ref);
-}
-
-$object = new stdClass();
-$args = [&$object];
-$slice = array_slice($args, 0, 1);
-call_user_func_array('takes_ref', $slice);
+$val1 = 'one';
+$val2 = 'two';
+$val3 = 'three';
+$input = [3 => &$val1, 2 => &$val2, 1 => &$val3];
+var_dump(array_slice($input, 1, 2));
+$val2 = 'hello, world';
+var_dump(array_slice($input, 1, 2, true));
 ",
     )
     .unwrap();
@@ -31572,16 +31571,27 @@ call_user_func_array('takes_ref', $slice);
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    let stdout = String::from_utf8(execution.stdout).unwrap();
-    assert!(
-        stdout.contains("takes_ref(): Argument #1 ($ref) must be passed by reference, value given"),
-        "{stdout}"
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  &string(3) \"two\"\n",
+            "  [1]=>\n",
+            "  &string(5) \"three\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [2]=>\n",
+            "  &string(12) \"hello, world\"\n",
+            "  [1]=>\n",
+            "  &string(5) \"three\"\n",
+            "}\n",
+        )
     );
-    assert!(stdout.contains("object(stdClass)#1 (0)"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_value_clone_deref(source->value)"));
+    assert!(c_source.contains("ptn_value_clone(source->value)"));
 }
 
 #[test]
