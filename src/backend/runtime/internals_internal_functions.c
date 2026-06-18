@@ -418,6 +418,7 @@ static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *ru
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
@@ -1274,6 +1275,13 @@ typedef struct {
     size_t size;
     size_t index;
 } PtnSplFixedArrayData;
+static PtnValue ptn_spl_fixed_array_storage_to_array(PtnSplFixedArrayData *data);
+static PtnValue ptn_spl_fixed_array_from_array(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 
 typedef struct {
     PtnValue objects;
@@ -1685,6 +1693,41 @@ static void ptn_var_dump_object_header(
             property_count
         );
     }
+}
+
+static int ptn_var_dump_spl_fixed_array_object(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    int debug
+) {
+    if (object == NULL || !ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
+        return 0;
+    }
+    PtnSplFixedArrayData *data = object->native_data == NULL
+        ? NULL
+        : (PtnSplFixedArrayData *)object->native_data;
+    PtnValue array = ptn_spl_fixed_array_storage_to_array(data);
+    PtnValue resolved_array = ptn_value_deref(array);
+    PtnArray *entries = resolved_array.type == PTN_ARRAY ? resolved_array.as.array : NULL;
+    ptn_var_dump_object_header(object, entries == NULL ? 0 : entries->len, debug);
+    ptn_dump_seen_objects_push(seen, object);
+    if (entries != NULL) {
+        for (size_t i = 0; i < entries->len; i++) {
+            ptn_var_dump_indent(indent + 1);
+            ptn_var_dump_array_key(entries->entries[i].key);
+            if (debug) {
+                ptn_debug_zval_dump_value_indented(entries->entries[i].value, indent + 1, seen);
+            } else {
+                ptn_var_dump_value_indented(entries->entries[i].value, indent + 1, seen);
+            }
+        }
+    }
+    ptn_dump_seen_objects_pop(seen);
+    ptn_var_dump_indent(indent);
+    fputs("}\n", stdout);
+    ptn_value_destroy(&array);
+    return 1;
 }
 
 static int ptn_var_dump_object_proxy_instance(
@@ -2450,6 +2493,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
                 printf("enum(%s::%s)\n", object->class_name, object->enum_case_name);
                 break;
             }
+            if (ptn_var_dump_spl_fixed_array_object(object, indent, seen, 0)) {
+                break;
+            }
             if (ptn_var_dump_weak_map_object(object, indent, seen, 0)) {
                 break;
             }
@@ -2591,6 +2637,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             PtnObject *object = value.as.object;
             if (ptn_dump_seen_objects_contains(seen, object)) {
                 fputs("*RECURSION*\n", stdout);
+                break;
+            }
+            if (ptn_var_dump_spl_fixed_array_object(object, indent, seen, 1)) {
                 break;
             }
             if (ptn_var_dump_weak_map_object(object, indent, seen, 1)) {
@@ -2902,6 +2951,38 @@ static void ptn_print_r_object(
     size_t indent,
     PtnDumpSeenArrays *seen
 ) {
+    if (object != NULL && ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
+        PtnSplFixedArrayData *data = object->native_data == NULL
+            ? NULL
+            : (PtnSplFixedArrayData *)object->native_data;
+        PtnValue array = ptn_spl_fixed_array_storage_to_array(data);
+        ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
+        ptn_string_buffer_append_indent(buffer, indent);
+        ptn_string_buffer_append(buffer, "(\n");
+        PtnValue resolved_array = ptn_value_deref(array);
+        if (resolved_array.type == PTN_ARRAY) {
+            ptn_dump_seen_objects_push(seen, object);
+            for (size_t i = 0; i < resolved_array.as.array->len; i++) {
+                ptn_string_buffer_append_indent(buffer, indent + 4);
+                ptn_string_buffer_append_char(buffer, '[');
+                ptn_print_r_key(buffer, resolved_array.as.array->entries[i].key);
+                ptn_string_buffer_append(buffer, "] => ");
+                PtnValue entry_value = ptn_value_deref(resolved_array.as.array->entries[i].value);
+                if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+                    ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
+                    ptn_string_buffer_append_char(buffer, '\n');
+                } else {
+                    ptn_print_r_value_indented(buffer, entry_value, indent, seen);
+                    ptn_string_buffer_append_char(buffer, '\n');
+                }
+            }
+            ptn_dump_seen_objects_pop(seen);
+        }
+        ptn_value_destroy(&array);
+        ptn_string_buffer_append_indent(buffer, indent);
+        ptn_string_buffer_append(buffer, ")\n");
+        return;
+    }
     ptn_string_buffer_append_format(buffer, "%s Object\n", object->class_name);
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append(buffer, "(\n");
@@ -57490,6 +57571,11 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return ptn_weak_reference_create(runtime, argc, args, line);
         }
     }
+    if (ptn_internal_class_name_is_spl_fixed_array(class_name)) {
+        if (ptn_ascii_case_equal(name, "fromArray")) {
+            return ptn_spl_fixed_array_from_array(runtime, argc, args, line);
+        }
+    }
     if (ptn_ascii_case_equal(class_name, "Phar")) {
         if (ptn_ascii_case_equal(name, "apiVersion")) {
             return ptn_internal_phar_api_version(runtime, argc, args, line);
@@ -62515,6 +62601,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_weak_reference(class_name)) {
         return ptn_ascii_case_equal(method_name, "create");
+    }
+    if (ptn_internal_class_name_is_spl_fixed_array(class_name)) {
+        return ptn_ascii_case_equal(method_name, "fromArray");
     }
     if (ptn_internal_class_name_is_datetime_zone(class_name)) {
         return ptn_ascii_case_equal(method_name, "listAbbreviations")
@@ -73724,6 +73813,11 @@ static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *a
     if (ptn_bcmath_number_cast_array(value, array_out)) {
         return 1;
     }
+    if (value.type == PTN_OBJECT &&
+        ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
+        *array_out = ptn_spl_fixed_array_storage_to_array((PtnSplFixedArrayData *)value.as.object->native_data);
+        return 1;
+    }
     PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(value);
     if (data == NULL) {
         return 0;
@@ -74130,29 +74224,104 @@ static void ptn_spl_declare_private_value_property(
     ptn_value_destroy(&property_value);
 }
 
-static const char *ptn_spl_path_basename_part(const char *path) {
-    if (path == NULL) {
-        return "";
+static int ptn_spl_path_is_all_separators(const char *path, size_t len) {
+    if (path == NULL || len == 0) {
+        return 0;
     }
-    const char *slash = strrchr(path, '/');
+    for (size_t i = 0; i < len; i++) {
+        if (path[i] != '/'
 #if defined(_WIN32)
-    const char *backslash = strrchr(path, '\\');
-    if (backslash != NULL && (slash == NULL || backslash > slash)) {
-        slash = backslash;
-    }
+            && path[i] != '\\'
 #endif
-    return slash == NULL ? path : slash + 1;
+        ) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static size_t ptn_spl_path_trimmed_len(const char *path) {
+    if (path == NULL) {
+        return 0;
+    }
+    size_t len = strlen(path);
+    while (len > 1 && (path[len - 1] == '/'
+#if defined(_WIN32)
+                       || path[len - 1] == '\\'
+#endif
+                       )) {
+        len--;
+    }
+    return len;
+}
+
+static const char *ptn_spl_path_last_separator_before(const char *path, size_t len) {
+    const char *slash = NULL;
+    for (size_t i = 0; i < len; i++) {
+        if (path[i] == '/'
+#if defined(_WIN32)
+            || path[i] == '\\'
+#endif
+        ) {
+            slash = path + i;
+        }
+    }
+    return slash;
+}
+
+static char *ptn_spl_path_filename_alloc(const char *path) {
+    if (path == NULL || path[0] == '\0') {
+        return ptn_duplicate_string("");
+    }
+    size_t original_len = strlen(path);
+    if (ptn_spl_path_is_all_separators(path, original_len)) {
+        return ptn_duplicate_string("/");
+    }
+    size_t len = ptn_spl_path_trimmed_len(path);
+    const char *slash = ptn_spl_path_last_separator_before(path, len);
+    const char *base = slash == NULL ? path : slash + 1;
+    return ptn_duplicate_string_len(base, (size_t)(path + len - base));
+}
+
+static char *ptn_spl_path_normalize_allocated(char *path) {
+    if (path == NULL) {
+        return ptn_duplicate_string("");
+    }
+    size_t len = strlen(path);
+    if (len == 0) {
+        return path;
+    }
+    if (ptn_spl_path_is_all_separators(path, len)) {
+        path[1] = '\0';
+        return path;
+    }
+    size_t trimmed_len = ptn_spl_path_trimmed_len(path);
+    path[trimmed_len] = '\0';
+    return path;
 }
 
 static char *ptn_spl_path_basename_alloc(const char *path) {
-    return ptn_duplicate_string(ptn_spl_path_basename_part(path));
+    if (path == NULL || path[0] == '\0') {
+        return ptn_duplicate_string("");
+    }
+    size_t original_len = strlen(path);
+    if (ptn_spl_path_is_all_separators(path, original_len)) {
+        return ptn_duplicate_string("");
+    }
+    return ptn_spl_path_filename_alloc(path);
 }
 
 static char *ptn_spl_path_dirname_alloc(const char *path) {
     if (path == NULL || path[0] == '\0') {
         return ptn_duplicate_string("");
     }
-    const char *base = ptn_spl_path_basename_part(path);
+    size_t original_len = strlen(path);
+    if (ptn_spl_path_is_all_separators(path, original_len)) {
+        return ptn_duplicate_string("/");
+    }
+    size_t trimmed_len = ptn_spl_path_trimmed_len(path);
+    const char *slash = ptn_spl_path_last_separator_before(path, trimmed_len);
+    const char *base = slash == NULL ? path : slash + 1;
     if (base == path) {
         return ptn_duplicate_string("");
     }
@@ -74174,8 +74343,8 @@ static void ptn_spl_file_info_sync_properties(
     size_t line
 ) {
     PtnValue path_value = ptn_owned_string(ptn_duplicate_string(path == NULL ? "" : path));
-    char *basename = ptn_spl_path_basename_alloc(path == NULL ? "" : path);
-    PtnValue filename_value = ptn_owned_string(basename);
+    char *filename = ptn_spl_path_filename_alloc(path == NULL ? "" : path);
+    PtnValue filename_value = ptn_owned_string(filename);
     ptn_spl_declare_private_value_property(runtime, object, "pathName", declaring_class, path_value, line);
     ptn_spl_declare_private_value_property(runtime, object, "fileName", declaring_class, filename_value, line);
     ptn_value_destroy(&path_value);
@@ -74421,19 +74590,22 @@ static int ptn_spl_file_info_stat(
 }
 
 static char *ptn_spl_file_info_extension_alloc(const char *path) {
-    const char *base = ptn_spl_path_basename_part(path);
+    char *base = ptn_spl_path_filename_alloc(path);
     const char *dot = strrchr(base, '.');
-    if (dot == NULL || dot == base || dot[1] == '\0') {
+    if (dot == NULL || dot[1] == '\0') {
+        free(base);
         return ptn_duplicate_string("");
     }
-    return ptn_duplicate_string(dot + 1);
+    char *extension = ptn_duplicate_string(dot + 1);
+    free(base);
+    return extension;
 }
 
 static char *ptn_spl_file_info_basename_with_suffix(const char *path, const char *suffix) {
     char *base = ptn_spl_path_basename_alloc(path);
     size_t base_len = strlen(base);
     size_t suffix_len = suffix == NULL ? 0 : strlen(suffix);
-    if (suffix_len != 0 && base_len >= suffix_len &&
+    if (suffix_len != 0 && base_len > suffix_len &&
         memcmp(base + base_len - suffix_len, suffix, suffix_len) == 0) {
         base[base_len - suffix_len] = '\0';
     }
@@ -74762,7 +74934,7 @@ static PtnValue ptn_spl_fixed_array_storage_to_array(PtnSplFixedArrayData *data)
 }
 
 static void ptn_spl_fixed_array_throw_invalid_index(PtnRuntime *runtime) {
-    ptn_throw_exception(runtime, "RuntimeException", "Index invalid or out of range");
+    ptn_throw_exception(runtime, "OutOfBoundsException", "Index invalid or out of range");
 }
 
 static int ptn_spl_fixed_array_index_from_arg(
@@ -74781,7 +74953,36 @@ static int ptn_spl_fixed_array_index_from_arg(
     if (!ptn_spl_offset_key_from_value(runtime, "SplFixedArray", ptn_value_deref(offset), line, for_isset, for_unset, &key)) {
         return 0;
     }
-    if (key.type != PTN_ARRAY_KEY_INT || key.as.integer < 0 || (uint64_t)key.as.integer >= (uint64_t)data->size) {
+    if (key.type != PTN_ARRAY_KEY_INT) {
+        ptn_array_key_free(key);
+        if (for_isset) {
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "Cannot access offset of type string in isset or empty",
+                runtime->source_path,
+                line
+            );
+        } else if (for_unset) {
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "Cannot unset offset of type string on SplFixedArray",
+                runtime->source_path,
+                line
+            );
+        } else {
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "Cannot access offset of type string on SplFixedArray",
+                runtime->source_path,
+                line
+            );
+        }
+        return 0;
+    }
+    if (key.as.integer < 0 || (uint64_t)key.as.integer >= (uint64_t)data->size) {
         ptn_array_key_free(key);
         if (for_isset) {
             return 0;
@@ -75064,7 +75265,7 @@ static PTN_UNUSED PtnValue ptn_spl_fixed_array_call_method(
         }
         PtnValue offset = ptn_value_deref(args[0]);
         if (offset.type == PTN_NULL) {
-            ptn_spl_fixed_array_throw_invalid_index(runtime);
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for SplFixedArray");
             return ptn_null();
         }
         size_t index = 0;
@@ -76684,7 +76885,7 @@ static void ptn_spl_file_info_init_data(
     const char *file_class,
     const char *info_class
 ) {
-    data->path = path;
+    data->path = ptn_spl_path_normalize_allocated(path);
     data->file_class = ptn_duplicate_string(file_class == NULL ? "SplFileObject" : file_class);
     data->info_class = ptn_duplicate_string(info_class == NULL ? "SplFileInfo" : info_class);
 }
@@ -76863,7 +77064,7 @@ static PtnValue ptn_spl_file_info_call_method(
         ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
-            : ptn_owned_string(ptn_spl_path_basename_alloc(data->path == NULL ? "" : data->path));
+            : ptn_owned_string(ptn_spl_path_filename_alloc(data->path == NULL ? "" : data->path));
     }
     if (ptn_ascii_case_equal(name, "getPath")) {
         ptn_reflection_check_no_arguments(runtime, "SplFileInfo", name, argc);
