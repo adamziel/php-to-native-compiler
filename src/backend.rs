@@ -603,6 +603,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (class_name == NULL || interface_name == NULL) {\n");
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"BcMath\\\\Number\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Stringable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
@@ -4281,6 +4284,7 @@ fn emit_class_metadata_helpers(
     out.push_str("    }\n");
     for class_name in [
         "stdClass",
+        "BcMath\\Number",
         "Generator",
         "Attribute",
         "AllowDynamicProperties",
@@ -4662,6 +4666,7 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (include_internal) {\n");
     for builtin in [
         "stdClass",
+        "BcMath\\Number",
         "Generator",
         "Reflection",
         "ReflectionAttribute",
@@ -5047,6 +5052,9 @@ fn emit_class_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_implements_interface_direct(const char *class_name, const char *interface_name) {\n",
     );
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"BcMath\\\\Number\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Stringable\");\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"Generator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
@@ -14876,6 +14884,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Deprecated")
                 || class_name.eq_ignore_ascii_case("NoDiscard")
                 || class_name.eq_ignore_ascii_case("ReturnTypeWillChange")
+                || class_name.eq_ignore_ascii_case("BcMath\\Number")
                 || class_name.eq_ignore_ascii_case("AppendIterator")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")

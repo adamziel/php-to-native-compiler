@@ -10631,6 +10631,9 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
             || is_modeled_builtin_exception_class_name(parent_name)
             || is_modeled_builtin_reflection_class_name(parent_name)
             || is_modeled_archive_network_class_name(parent_name)
+            || parent_name
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case("BcMath\\Number")
             || parent_name.eq_ignore_ascii_case("Generator")
         {
             continue;
@@ -11220,6 +11223,9 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("SplStack")
         || name.eq_ignore_ascii_case("SplFileInfo")
         || name.eq_ignore_ascii_case("SplFileObject")
+        || name
+            .trim_start_matches('\\')
+            .eq_ignore_ascii_case("BcMath\\Number")
         || name.eq_ignore_ascii_case("Generator")
         || is_modeled_builtin_date_class_name(name)
         || is_modeled_builtin_enum_class_name(name)
@@ -11643,6 +11649,11 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         ][..]
     } else if candidate_name.eq_ignore_ascii_case("Generator") {
         &["Iterator", "Traversable"][..]
+    } else if candidate_name
+        .trim_start_matches('\\')
+        .eq_ignore_ascii_case("BcMath\\Number")
+    {
+        &["Stringable"][..]
     } else if candidate_name.eq_ignore_ascii_case("DateTime")
         || candidate_name.eq_ignore_ascii_case("DateTimeImmutable")
     {
@@ -12975,9 +12986,12 @@ fn validate_final_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
         let Some(parent_name) = &class.parent_name else {
             continue;
         };
-        if parent_name.eq_ignore_ascii_case("Generator") {
+        if let Some(final_name) = modeled_builtin_final_class_name(parent_name) {
             return Err(Diagnostic::new(
-                format!("Class {} cannot extend final class Generator", class.name),
+                format!(
+                    "Class {} cannot extend final class {final_name}",
+                    class.name
+                ),
                 Some(class.span),
             ));
         }
@@ -12998,6 +13012,14 @@ fn validate_final_class_inheritance(classes: &[ClassDecl]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn modeled_builtin_final_class_name(name: &str) -> Option<&'static str> {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "generator" => Some("Generator"),
+        "bcmath\\number" => Some("BcMath\\Number"),
+        _ => None,
+    }
 }
 
 fn validate_readonly_class_inheritance(classes: &[ClassDecl]) -> Result<()> {

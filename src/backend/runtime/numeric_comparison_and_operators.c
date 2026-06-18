@@ -248,6 +248,12 @@ static PTN_UNUSED int ptn_compare_object_and_number(
 static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    int internal_compared = 0;
+    if (ptn_bcmath_number_compare(runtime, left, right, line, &internal_compared)) {
+        return internal_compared == PTN_COMPARE_EQUAL;
+    }
+#endif
     if (left.type == right.type) {
         switch (left.type) {
             case PTN_NULL:
@@ -412,6 +418,12 @@ static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
 static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    int internal_compared = PTN_COMPARE_UNORDERED;
+    if (ptn_bcmath_number_compare(runtime, left, right, line, &internal_compared)) {
+        return internal_compared;
+    }
+#endif
     if (left.type == right.type) {
         switch (left.type) {
             case PTN_NULL:
@@ -754,6 +766,12 @@ static PTN_UNUSED PtnValue ptn_add(PtnRuntime *runtime, PtnValue left, PtnValue 
     if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
         return ptn_array_union(left.as.array, right.as.array);
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_binary_op(runtime, "+", left, right, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
 
     int64_t left_integer = 0;
     int64_t right_integer = 0;
@@ -786,6 +804,15 @@ static PTN_UNUSED PtnValue ptn_subtract_integers(int64_t left, int64_t right) {
 }
 
 static PTN_UNUSED PtnValue ptn_subtract(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_binary_op(runtime, "-", left, right, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
+
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -832,6 +859,15 @@ static PTN_UNUSED PtnValue ptn_multiply_integers(int64_t left, int64_t right) {
 }
 
 static PTN_UNUSED PtnValue ptn_multiply(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_binary_op(runtime, "*", left, right, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
+
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -883,6 +919,15 @@ static PTN_UNUSED int ptn_integer_power_fits(int64_t base, int64_t exponent, int
 }
 
 static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_binary_op(runtime, "**", left, right, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
+
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -933,6 +978,15 @@ static PTN_UNUSED PtnValue ptn_power(PtnRuntime *runtime, PtnValue left, PtnValu
 }
 
 static PTN_UNUSED PtnValue ptn_divide(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    left = ptn_value_deref(left);
+    right = ptn_value_deref(right);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_binary_op(runtime, "/", left, right, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
+
     int64_t left_integer = 0;
     int64_t right_integer = 0;
     if (ptn_fast_integer_value(left, &left_integer) && ptn_fast_integer_value(right, &right_integer)) {
@@ -1220,6 +1274,12 @@ static PTN_UNUSED int64_t ptn_value_to_integer_with_precision_deprecation_at(
 static PTN_UNUSED PtnValue ptn_modulo(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_binary_op(runtime, "%", left, right, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
     if (ptn_numeric_operator_rejects_operand(left) ||
         ptn_numeric_operator_rejects_operand(right)) {
         ptn_throw_unsupported_operand_types(runtime, left, "%", right, line);
@@ -1454,6 +1514,12 @@ static PTN_UNUSED PtnValue ptn_increment_value(PtnRuntime *runtime, PtnValue val
         return ptn_value_clone(ptn_value_deref(value));
     }
     value = ptn_value_deref(value);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_inc_dec(runtime, value, 1, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
     switch (value.type) {
         case PTN_NULL:
             return ptn_int(1);
@@ -1482,6 +1548,12 @@ static PTN_UNUSED PtnValue ptn_decrement_value(PtnRuntime *runtime, PtnValue val
         return ptn_value_clone(ptn_value_deref(value));
     }
     value = ptn_value_deref(value);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_result = ptn_null();
+    if (ptn_bcmath_number_inc_dec(runtime, value, 0, line, &internal_result)) {
+        return internal_result;
+    }
+#endif
     switch (value.type) {
         case PTN_NULL:
             return ptn_null();

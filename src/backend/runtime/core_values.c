@@ -1467,6 +1467,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_return_type_will_change(const c
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_zone(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_bcmath_number(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
@@ -1987,6 +1988,44 @@ static PTN_UNUSED PtnValue ptn_date_interval_new(
     size_t argc,
     const PtnValue *args,
     size_t line
+);
+static PTN_UNUSED PtnValue ptn_bcmath_number_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED int ptn_bcmath_number_cast_array(PtnValue value, PtnValue *array_out);
+static PTN_UNUSED int ptn_bcmath_number_is_truthy(PtnValue value, int *truthy_out);
+static PTN_UNUSED int ptn_bcmath_number_compare(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    int *compared
+);
+static PTN_UNUSED int ptn_bcmath_number_binary_op(
+    PtnRuntime *runtime,
+    const char *operator,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnValue *result_out
+);
+static PTN_UNUSED int ptn_bcmath_number_inc_dec(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int increment,
+    size_t line,
+    PtnValue *result_out
 );
 static PTN_UNUSED PtnValue ptn_zip_archive_new(
     PtnRuntime *runtime,

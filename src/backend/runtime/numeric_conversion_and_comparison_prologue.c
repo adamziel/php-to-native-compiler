@@ -4716,6 +4716,13 @@ static PTN_UNUSED PtnValue ptn_call_method(
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_bcmath_number(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+    ) {
+        return ptn_bcmath_number_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && (ptn_internal_class_name_is_reflection_class(receiver.as.object->class_name) ||
             ptn_internal_class_name_is_reflection_object(receiver.as.object->class_name))
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
@@ -5180,7 +5187,15 @@ static PTN_UNUSED int ptn_is_truthy(PtnValue value) {
                 !(value.as.string.len == 1 && value.as.string.data[0] == '0');
         case PTN_ARRAY:
             return value.as.array->len != 0;
-        case PTN_OBJECT:
+        case PTN_OBJECT: {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+            int truthy = 1;
+            if (ptn_bcmath_number_is_truthy(value, &truthy)) {
+                return truthy;
+            }
+#endif
+            return 1;
+        }
         case PTN_CLOSURE:
             return 1;
         case PTN_EXCEPTION:

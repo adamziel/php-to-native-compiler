@@ -2427,6 +2427,7 @@ fn ast_known_internal_class(class_name: &str) -> bool {
         "ArrayIterator",
         "ArrayObject",
         "Attribute",
+        "BcMath\\Number",
         "CallbackFilterIterator",
         "Closure",
         "DateInterval",

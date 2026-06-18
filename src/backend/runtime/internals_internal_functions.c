@@ -58201,6 +58201,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class
     return ptn_ascii_case_equal(class_name, "DateInterval");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_bcmath_number(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "BcMath\\Number");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "RoundingMode");
 }
@@ -58345,6 +58349,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_datetime_immutable(class_name)
         || ptn_internal_class_name_is_datetime_zone(class_name)
         || ptn_internal_class_name_is_date_interval(class_name)
+        || ptn_internal_class_name_is_bcmath_number(class_name)
         || ptn_internal_class_name_is_rounding_mode(class_name)
         || ptn_internal_class_name_is_phar(class_name)
         || ptn_internal_class_name_is_zip_archive(class_name)
@@ -59591,6 +59596,10 @@ static int ptn_internal_class_property_exists(const char *class_name, const char
     if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
         return ptn_ascii_case_equal(property_name, "value");
     }
+    if (ptn_internal_class_name_is_bcmath_number(class_name)) {
+        return ptn_ascii_case_equal(property_name, "value")
+            || ptn_ascii_case_equal(property_name, "scale");
+    }
     if (ptn_internal_class_name_is_attribute(class_name)) {
         return ptn_ascii_case_equal(property_name, "flags");
     }
@@ -59686,6 +59695,23 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
         return ptn_sensitive_parameter_value_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_bcmath_number(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "__toString")
+            || ptn_ascii_case_equal(method_name, "add")
+            || ptn_ascii_case_equal(method_name, "sub")
+            || ptn_ascii_case_equal(method_name, "mul")
+            || ptn_ascii_case_equal(method_name, "div")
+            || ptn_ascii_case_equal(method_name, "mod")
+            || ptn_ascii_case_equal(method_name, "divmod")
+            || ptn_ascii_case_equal(method_name, "pow")
+            || ptn_ascii_case_equal(method_name, "powmod")
+            || ptn_ascii_case_equal(method_name, "sqrt")
+            || ptn_ascii_case_equal(method_name, "ceil")
+            || ptn_ascii_case_equal(method_name, "floor")
+            || ptn_ascii_case_equal(method_name, "round")
+            || ptn_ascii_case_equal(method_name, "compare");
     }
     if (ptn_internal_class_name_is_attribute(class_name) ||
         ptn_internal_class_name_is_deprecated(class_name) ||
@@ -60135,6 +60161,27 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
         static const char *const names[] = { "getValue" };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_bcmath_number(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "add",
+            "sub",
+            "mul",
+            "div",
+            "mod",
+            "divmod",
+            "pow",
+            "powmod",
+            "sqrt",
+            "ceil",
+            "floor",
+            "round",
+            "compare",
+        };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -68623,6 +68670,9 @@ static PtnValue ptn_spl_object_public_properties_array_copy(PtnObject *object) {
 
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out) {
     value = ptn_value_deref(value);
+    if (ptn_bcmath_number_cast_array(value, array_out)) {
+        return 1;
+    }
     PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(value);
     if (data == NULL) {
         return 0;
