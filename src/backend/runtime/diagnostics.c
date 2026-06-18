@@ -836,6 +836,13 @@ static PTN_UNUSED const char *ptn_diagnostic_builtin_path(size_t line) {
     return "ptn";
 }
 
+static PTN_UNUSED const char *ptn_runtime_source_path_or(PtnRuntime *runtime, const char *fallback) {
+    if (runtime != NULL && runtime->source_path != NULL && runtime->source_path[0] != '\0') {
+        return runtime->source_path;
+    }
+    return fallback == NULL ? "" : fallback;
+}
+
 static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     PtnDiagnosticSink *diagnostics,
     int64_t severity,
