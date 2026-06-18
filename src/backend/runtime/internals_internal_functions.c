@@ -12329,6 +12329,161 @@ static PtnValue ptn_array_splice_values(
     return removed;
 }
 
+static void ptn_array_splice_capture_active_exception(PtnRuntime *runtime, PtnException **primary) {
+    if (runtime == NULL || runtime->exceptions == NULL ||
+        runtime->exceptions->active_exception == NULL) {
+        return;
+    }
+    if (*primary == NULL) {
+        *primary = runtime->exceptions->active_exception;
+        ptn_exception_retain(*primary);
+    }
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = NULL;
+}
+
+static void ptn_array_splice_restore_active_exception(PtnRuntime *runtime, PtnException *primary) {
+    if (runtime == NULL || runtime->exceptions == NULL || primary == NULL) {
+        return;
+    }
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = primary;
+}
+
+static void ptn_array_splice_drop_value_capturing_exception(
+    PtnRuntime *runtime,
+    PtnValue *value,
+    PtnException **primary
+);
+
+static void ptn_array_splice_drop_reference_capturing_exception(
+    PtnRuntime *runtime,
+    PtnReference *reference,
+    PtnException **primary
+) {
+    if (reference == NULL || reference->refcount == 0) {
+        return;
+    }
+    if (reference->refcount > 1) {
+        reference->refcount--;
+        return;
+    }
+    reference->refcount = 0;
+    ptn_array_splice_drop_value_capturing_exception(runtime, &reference->value, primary);
+    free(reference->property_type_class_name);
+    free(reference->property_type_text);
+    free(reference->property_declaring_class);
+    free(reference->property_name);
+    for (size_t i = 0; i < reference->property_type_source_len; i++) {
+        free(reference->property_type_sources[i].class_name);
+        free(reference->property_type_sources[i].text);
+        free(reference->property_type_sources[i].declaring_class);
+        free(reference->property_type_sources[i].property_name);
+    }
+    free(reference->property_type_sources);
+    free(reference);
+}
+
+static void ptn_array_splice_drop_array_capturing_exception(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnException **primary
+) {
+    if (array == NULL) {
+        return;
+    }
+    ptn_cow_debug_assert_array_refcount(array, "release");
+    ptn_cow_debug_note_array_release();
+    if (array->refcount > 1) {
+        array->refcount--;
+        return;
+    }
+    array->refcount = 0;
+    if (array->iterator_refcount != 0) {
+        return;
+    }
+    ptn_cow_debug_note_array_free();
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_key_free(array->entries[i].key);
+        ptn_array_splice_drop_value_capturing_exception(runtime, &array->entries[i].value, primary);
+    }
+    free(array->index_slots);
+    free(array->entries);
+    free(array);
+}
+
+static void ptn_array_splice_drop_with_frame(
+    PtnRuntime *runtime,
+    PtnValue *value,
+    PtnException **primary
+) {
+    if (runtime == NULL || runtime->exceptions == NULL) {
+        ptn_value_drop(value);
+        return;
+    }
+
+    PtnTryFrame drop_frame;
+    PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    const char *saved_called_class_name_override = runtime->called_class_name_override;
+    int saved_suppress_user_call_frame_location = runtime->suppress_user_call_frame_location;
+    int saved_suppress_user_argument_count_location =
+        runtime->suppress_user_argument_count_location;
+    int saved_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    int saved_throw_argument_count_errors = runtime->throw_argument_count_errors;
+
+    ptn_try_frame_push(runtime, &drop_frame);
+    if (setjmp(drop_frame.jump) == 0) {
+        ptn_value_drop(value);
+    }
+    ptn_try_frame_pop(runtime, &drop_frame);
+
+    runtime->trace_frame = saved_trace_frame;
+    runtime->called_class_name_override = saved_called_class_name_override;
+    runtime->suppress_user_call_frame_location = saved_suppress_user_call_frame_location;
+    runtime->suppress_user_argument_count_location =
+        saved_suppress_user_argument_count_location;
+    runtime->warn_by_ref_argument_mismatch = saved_warn_by_ref_argument_mismatch;
+    runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
+
+    ptn_array_splice_capture_active_exception(runtime, primary);
+}
+
+static void ptn_array_splice_drop_value_capturing_exception(
+    PtnRuntime *runtime,
+    PtnValue *value,
+    PtnException **primary
+) {
+    if (value == NULL || !value->owned) {
+        return;
+    }
+
+    if (value->type == PTN_ARRAY) {
+        PtnArray *array = value->as.array;
+        *value = ptn_null();
+        ptn_array_splice_drop_array_capturing_exception(runtime, array, primary);
+        return;
+    }
+    if (value->type == PTN_REFERENCE) {
+        PtnReference *reference = value->as.reference;
+        *value = ptn_null();
+        ptn_array_splice_drop_reference_capturing_exception(runtime, reference, primary);
+        return;
+    }
+
+    for (size_t attempt = 0; value->owned && attempt < 3; attempt++) {
+        ptn_array_splice_drop_with_frame(runtime, value, primary);
+    }
+    if (value->owned) {
+        *value = ptn_null();
+    }
+}
+
+static void ptn_array_splice_drop_removed_result(PtnRuntime *runtime, PtnValue *removed) {
+    PtnException *primary = NULL;
+    ptn_array_splice_drop_value_capturing_exception(runtime, removed, &primary);
+    ptn_array_splice_restore_active_exception(runtime, primary);
+}
+
 static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
     PtnRuntime *runtime,
     PtnValue target,
@@ -12343,7 +12498,7 @@ static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
         mutation_epoch = array->mutation_epoch;
     }
 
-    ptn_value_drop(removed);
+    ptn_array_splice_drop_removed_result(runtime, removed);
 
     if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
         if (array != NULL) {

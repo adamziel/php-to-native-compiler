@@ -238,6 +238,21 @@ try {\n\
             expected_stdout: "Array was modified during array_splice operation\n",
         },
         CowReducerCase {
+            name: "array_splice_discarded_result_throwing_destructors",
+            oracle: "ext/standard/tests/array/gh19926.phpt",
+            source: "<?php\n\
+class ThrowingDestructor {\n\
+    function __destruct() { throw new Exception(); }\n\
+}\n\
+$arr = [new ThrowingDestructor(), new ThrowingDestructor()];\n\
+try {\n\
+    array_splice($arr, 0, 2);\n\
+} catch (Exception $e) {\n\
+    echo \"Exception caught, no assertion failure\\n\";\n\
+}",
+            expected_stdout: "Exception caught, no assertion failure\n",
+        },
+        CowReducerCase {
             name: "array_walk_callback_global_swap",
             oracle: "ext/standard/tests/array/array_walk/bug69068_2.phpt",
             source: "<?php\n\
@@ -601,7 +616,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 40, "COW reducer pass count changed");
+    assert_eq!(passed, 41, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
@@ -1087,6 +1102,37 @@ echo count($out), \":\", $out[0][\"x\"], \":\", $out[0][\"y\"], \":\", $out[1], 
 
     assert_eq!(passed, 4, "nested COW reducer pass count changed");
     assert_eq!(failed, 0, "nested COW reducer fail count changed");
+}
+
+#[test]
+fn compile_array_splice_discarded_result_throwing_destructors_to_native_binary() {
+    let root = temp_dir("ptn-native-array-splice-throwing-destructors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-splice-throwing-destructors.php");
+    let output = root.join("array-splice-throwing-destructors-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class ThrowingDestructor {\n\
+    function __destruct() { throw new Exception(); }\n\
+}\n\
+$arr = [new ThrowingDestructor(), new ThrowingDestructor()];\n\
+try {\n\
+    array_splice($arr, 0, 2);\n\
+} catch (Exception $e) {\n\
+    echo \"Exception caught, no assertion failure\\n\";\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Exception caught, no assertion failure\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 fn temp_dir(name: &str) -> PathBuf {
