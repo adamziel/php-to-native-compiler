@@ -1,0 +1,6 @@
+# ptn-w17z.168 exact Zend residual row pack
+# bucket: zend-residuals rows=4
+Zend/tests/arginfo_zpp_mismatch.phpt
+Zend/tests/array_unpack/undef_var.phpt
+Zend/tests/arrow_functions/006.phpt
+Zend/tests/attributes/005_objects.phpt

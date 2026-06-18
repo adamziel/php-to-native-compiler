@@ -41664,6 +41664,12 @@ static PtnValue ptn_internal_mb_split(PtnRuntime *runtime, size_t argc, const Pt
     PtnStringOperand subject = ptn_internal_expect_string_arg(runtime, "mb_split", 2, "string", args[1], line);
     int64_t limit = argc >= 3 ? ptn_internal_expect_integer_arg(runtime, "mb_split", 3, "limit", args[2], line) : -1;
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (pattern.len == 0) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_owned_string_len(ptn_duplicate_string_len(subject.data, subject.len), subject.len));
+        ptn_string_operand_free(pattern);
+        ptn_string_operand_free(subject);
+        return result;
+    }
 #if defined(_WIN32)
     (void)runtime;
     (void)limit;
@@ -41681,8 +41687,18 @@ static PtnValue ptn_internal_mb_split(PtnRuntime *runtime, size_t argc, const Pt
         while ((limit <= 0 || index < limit - 1) && cursor <= subject.len && regexec(&regex, subject_c + cursor, 1, &match, 0) == 0) {
             size_t start = cursor + (size_t)match.rm_so;
             size_t end = cursor + (size_t)match.rm_eo;
+            if (start > subject.len || end > subject.len || end < start) {
+                break;
+            }
             ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_owned_string_len(ptn_duplicate_string_len(subject.data + cursor, start - cursor), start - cursor));
-            cursor = end <= cursor ? cursor + 1 : end;
+            if (end <= cursor) {
+                if (cursor >= subject.len) {
+                    break;
+                }
+                cursor++;
+            } else {
+                cursor = end;
+            }
         }
         ptn_array_set_entry(result.as.array, ptn_array_int_key(index), ptn_owned_string_len(ptn_duplicate_string_len(subject.data + cursor, subject.len - cursor), subject.len - cursor));
         regfree(&regex);

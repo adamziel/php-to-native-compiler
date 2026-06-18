@@ -14646,6 +14646,51 @@ try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $
 }
 
 #[test]
+fn compile_mb_split_empty_pattern_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-split-empty-pattern");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-split-empty-pattern.php");
+    let output = root.join("mb-split-empty-pattern-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(mb_split(\"\", \"\"));\n\
+var_dump(mb_split(\"\", \"abc\"));\n\
+var_dump(mb_split(\"b\", \"abc\"));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(0) \"\"\n",
+            "}\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(3) \"abc\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"c\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_mb_split"));
+    assert!(c_source.contains("pattern.len == 0"));
+}
+
+#[test]
 fn compile_chunk_split_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
