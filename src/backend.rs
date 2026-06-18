@@ -16819,7 +16819,7 @@ fn cc_optimization_args_for_source(
 ) -> Result<Vec<&'static str>> {
     let has_explicit_profile = value.map(str::trim).is_some_and(|value| !value.is_empty());
     if !has_explicit_profile && c_source_len >= LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD {
-        return Ok(vec!["-O0", "-g"]);
+        return Ok(vec!["-O0", "-w"]);
     }
     cc_optimization_args_for(value)
 }
@@ -28725,6 +28725,7 @@ impl ValueEmitter {
                     line,
                 );
             }
+            out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_declared_method(&runtime, ");
             out.push_str(&receiver_temp);
@@ -29598,15 +29599,15 @@ mod tests {
     }
 
     #[test]
-    fn default_c_compiler_profile_uses_debug_for_large_sources() {
+    fn default_c_compiler_profile_uses_fast_compile_for_large_sources() {
         assert_eq!(
             cc_optimization_args_for_source(None, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).unwrap(),
-            vec!["-O0", "-g"]
+            vec!["-O0", "-w"]
         );
         assert_eq!(
             cc_optimization_args_for_source(Some(""), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
                 .unwrap(),
-            vec!["-O0", "-g"]
+            vec!["-O0", "-w"]
         );
         assert_eq!(
             cc_optimization_args_for_source(Some("2"), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
