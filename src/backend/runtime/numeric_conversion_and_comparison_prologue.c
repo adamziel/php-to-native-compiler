@@ -161,6 +161,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->always_populate_raw_post_data = NULL;
     runtime->upload_tmp_dir = NULL;
     runtime->expose_php = NULL;
+    runtime->unserialize_callback_func = NULL;
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
     runtime->precision = caller_runtime->precision;
@@ -522,6 +523,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->expose_php = NULL;
         free(runtime->user_agent);
         runtime->user_agent = NULL;
+        free(runtime->unserialize_callback_func);
+        runtime->unserialize_callback_func = NULL;
         free(runtime->assert_callback_ini);
         runtime->assert_callback_ini = NULL;
         ptn_value_destroy(&runtime->assert_callback);

@@ -1190,6 +1190,7 @@ struct PtnRuntime {
     char *upload_tmp_dir;
     char *expose_php;
     char *user_agent;
+    char *unserialize_callback_func;
     char *request_body;
     size_t request_body_len;
     int precision;

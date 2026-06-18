@@ -1673,6 +1673,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_upload_tmp_dir = getenv("PTN_UPLOAD_TMP_DIR");
     const char *configured_expose_php = getenv("PTN_EXPOSE_PHP");
     const char *configured_user_agent = getenv("PTN_USER_AGENT");
+    const char *configured_unserialize_callback_func =
+        getenv("PTN_UNSERIALIZE_CALLBACK_FUNC");
     runtime->default_charset = ptn_duplicate_string(
         configured_default_charset == NULL ? "UTF-8" : configured_default_charset
     );
@@ -1803,6 +1805,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->user_agent = ptn_duplicate_string(
         configured_user_agent == NULL ? "" : configured_user_agent
+    );
+    runtime->unserialize_callback_func = ptn_duplicate_string(
+        configured_unserialize_callback_func == NULL ? "" : configured_unserialize_callback_func
     );
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
