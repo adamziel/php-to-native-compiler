@@ -799,6 +799,139 @@ static PTN_UNUSED int ptn_lazy_object_is_uninitialized(PtnValue value) {
         value.as.object->lazy_uninitialized;
 }
 
+static PTN_UNUSED int ptn_reference_property_source_matches_metadata_storage(
+    const PtnReferencePropertyTypeSource *source,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    return source != NULL &&
+        metadata != NULL &&
+        source->declaring_class != NULL &&
+        source->property_name != NULL &&
+        strcmp(source->declaring_class, metadata->declaring_class) == 0 &&
+        strcmp(source->property_name, metadata->display_name) == 0;
+}
+
+static PTN_UNUSED void ptn_reference_property_type_source_clear_storage(
+    PtnReferencePropertyTypeSource *source
+) {
+    if (source == NULL) {
+        return;
+    }
+    free(source->class_name);
+    free(source->text);
+    free(source->declaring_class);
+    free(source->property_name);
+    source->kind = PTN_PROPERTY_TYPE_NONE;
+    source->class_name = NULL;
+    source->text = NULL;
+    source->allows_null = 0;
+    source->declaring_class = NULL;
+    source->property_name = NULL;
+}
+
+static PTN_UNUSED PtnReferencePropertyTypeSource ptn_reference_primary_property_type_source_storage(
+    const PtnReference *reference
+) {
+    PtnReferencePropertyTypeSource source;
+    source.kind = reference->property_type_kind;
+    source.class_name = reference->property_type_class_name;
+    source.text = reference->property_type_text;
+    source.allows_null = reference->property_type_allows_null;
+    source.declaring_class = reference->property_declaring_class;
+    source.property_name = reference->property_name;
+    return source;
+}
+
+static PTN_UNUSED void ptn_reference_clear_primary_property_type_storage(PtnReference *reference) {
+    free(reference->property_type_class_name);
+    free(reference->property_type_text);
+    free(reference->property_declaring_class);
+    free(reference->property_name);
+    reference->property_type_kind = PTN_PROPERTY_TYPE_NONE;
+    reference->property_type_class_name = NULL;
+    reference->property_type_text = NULL;
+    reference->property_type_allows_null = 0;
+    reference->property_declaring_class = NULL;
+    reference->property_name = NULL;
+}
+
+static PTN_UNUSED void ptn_reference_promote_property_type_source_storage(PtnReference *reference) {
+    if (reference->property_type_source_len == 0) {
+        ptn_reference_clear_primary_property_type_storage(reference);
+        return;
+    }
+    free(reference->property_type_class_name);
+    free(reference->property_type_text);
+    free(reference->property_declaring_class);
+    free(reference->property_name);
+    PtnReferencePropertyTypeSource promoted = reference->property_type_sources[0];
+    reference->property_type_kind = promoted.kind;
+    reference->property_type_class_name = promoted.class_name;
+    reference->property_type_text = promoted.text;
+    reference->property_type_allows_null = promoted.allows_null;
+    reference->property_declaring_class = promoted.declaring_class;
+    reference->property_name = promoted.property_name;
+    for (size_t i = 1; i < reference->property_type_source_len; i++) {
+        reference->property_type_sources[i - 1] = reference->property_type_sources[i];
+    }
+    reference->property_type_source_len--;
+}
+
+static PTN_UNUSED void ptn_reference_forget_property_type_source_storage(
+    PtnReference *reference,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (reference == NULL || metadata == NULL) {
+        return;
+    }
+    PtnReferencePropertyTypeSource primary =
+        ptn_reference_primary_property_type_source_storage(reference);
+    if (ptn_reference_property_source_matches_metadata_storage(&primary, metadata)) {
+        ptn_reference_promote_property_type_source_storage(reference);
+        return;
+    }
+    for (size_t i = 0; i < reference->property_type_source_len; i++) {
+        if (ptn_reference_property_source_matches_metadata_storage(
+            &reference->property_type_sources[i],
+            metadata
+        )) {
+            ptn_reference_property_type_source_clear_storage(&reference->property_type_sources[i]);
+            for (size_t j = i + 1; j < reference->property_type_source_len; j++) {
+                reference->property_type_sources[j - 1] = reference->property_type_sources[j];
+            }
+            reference->property_type_source_len--;
+            return;
+        }
+    }
+}
+
+static PTN_UNUSED void ptn_lazy_object_reset_property_storage(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT ||
+        value.as.object == NULL ||
+        value.as.object->properties == NULL) {
+        return;
+    }
+    PtnObject *object = value.as.object;
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+        PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+        size_t index = ptn_array_find_key(object->properties, key);
+        if (index < object->properties->len &&
+            object->properties->entries[index].value.type == PTN_REFERENCE) {
+            ptn_reference_forget_property_type_source_storage(
+                object->properties->entries[index].value.as.reference,
+                metadata
+            );
+        }
+        (void)ptn_array_unset_entry(object->properties, key);
+        metadata->is_unset = 1;
+        metadata->lazy_skip = 0;
+        free(metadata->last_type_name);
+        metadata->last_type_name = NULL;
+    }
+}
+
 static PTN_UNUSED void ptn_lazy_object_mark(
     PtnValue value,
     PtnValue initializer,

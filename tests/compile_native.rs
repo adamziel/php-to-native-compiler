@@ -10397,6 +10397,81 @@ try {
 }
 
 #[test]
+fn compile_spl_object_storage_magic_unserialize_detaches_references_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-object-storage-magic-unserialize");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-object-storage-magic-unserialize.php");
+    let output = root.join("spl-object-storage-magic-unserialize-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$storage = new SplObjectStorage();
+$info = 1;
+$object = new stdClass();
+$storage->__unserialize([[$object, &$info], []]);
+$value = $storage[$object];
+$value = 123;
+var_dump($storage[$object], $info);
+
+$serialized = $storage->__serialize();
+var_dump(count($serialized[0]), $serialized[0][1]);
+
+$first = new stdClass();
+$second = new stdClass();
+$storage = new SplObjectStorage();
+$storage[$first] = 10;
+$storage[$second] = 20;
+$serialized = $storage->__serialize();
+var_dump(count($serialized[0]), $serialized[0][1], $serialized[0][3]);
+
+$copy = new SplObjectStorage();
+$copy->__unserialize($serialized);
+var_dump($copy[$first], $copy[$second]);
+
+try {
+    $copy->__unserialize(1);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+try {
+    $copy->__unserialize([]);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(1)\n",
+            "int(4)\n",
+            "int(10)\n",
+            "int(20)\n",
+            "int(10)\n",
+            "int(20)\n",
+            "TypeError: SplObjectStorage::__unserialize(): Argument #1 ($data) must be of type array, int given\n",
+            "UnexpectedValueException: Incomplete or ill-typed serialization data\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_get_hash_overrides_to_native_binary() {
     let root = temp_dir("ptn-native-spl-storage-get-hash");
     fs::create_dir_all(&root).unwrap();
@@ -45572,6 +45647,99 @@ var_dump($mark->a);
 }
 
 #[test]
+fn compile_lazy_reset_detaches_typed_property_reference_sources_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-reset-reference-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-reset-reference-source.php");
+    let output = root.join("lazy-reset-reference-source-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyResetTypedReference {
+    public int $a;
+
+    public function __construct() {
+        $this->a = 1;
+    }
+}
+
+$rc = new ReflectionClass(LazyResetTypedReference::class);
+
+echo \"# Ghost:\\n\";
+$obj = new LazyResetTypedReference();
+$ref =& $obj->a;
+try {
+    $ref = \"string\";
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$rc->resetAsLazyGhost($obj, function ($obj) {
+    echo \"ghost initializer\\n\";
+    $obj->__construct();
+});
+$ref = \"string\";
+var_dump($ref);
+var_dump($rc->isUninitializedLazyObject($obj));
+var_dump($obj->a);
+var_dump($obj->a);
+
+echo \"# Proxy:\\n\";
+$obj = new LazyResetTypedReference();
+$ref =& $obj->a;
+try {
+    $ref = \"string\";
+} catch (Throwable $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$rc->resetAsLazyProxy($obj, function () {
+    echo \"proxy initializer\\n\";
+    return new LazyResetTypedReference();
+});
+$ref = \"string\";
+var_dump($ref);
+var_dump($rc->isUninitializedLazyObject($obj));
+var_dump($obj->a);
+var_dump($obj->a);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "# Ghost:\n",
+            "Cannot assign string to reference held by property LazyResetTypedReference::$a of type int\n",
+            "string(6) \"string\"\n",
+            "bool(true)\n",
+            "ghost initializer\n",
+            "int(1)\n",
+            "int(1)\n",
+            "# Proxy:\n",
+            "Cannot assign string to reference held by property LazyResetTypedReference::$a of type int\n",
+            "string(6) \"string\"\n",
+            "bool(true)\n",
+            "proxy initializer\n",
+            "int(1)\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("resetAsLazyGhost"));
+    assert!(c_source.contains("resetAsLazyProxy"));
+}
+
+#[test]
 fn compile_property_and_static_property_inc_dec_to_native_binary() {
     let root = temp_dir("ptn-native-property-static-inc-dec");
     fs::create_dir_all(&root).unwrap();
@@ -47365,6 +47533,54 @@ echo $ordered, \"\\n\";\n",
         "initial\nupdated\n7\nnumber\ntruthy\nempty\nordered\nrhs\nrhs\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_variable_isset_empty_reference_names_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-isset-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-isset-empty.php");
+    let output = root.join("dynamic-variable-isset-empty-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$name = \"var\";\n\
+$ref =& $name;\n\
+$var = 42;\n\
+var_dump(isset($$ref));\n\
+unset($var);\n\
+var_dump(isset($$ref));\n\
+var_dump(empty($$ref));\n\
+var_dump(isset($$undef));\n\
+var_dump(empty($$undef));\n\
+$slot = \"missing\";\n\
+$name = \"slot\";\n\
+var_dump(isset($$$name));\n\
+var_dump(empty($$$name));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_variable_is_set(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_variable_is_empty(&runtime, ptn_tmp_"));
 }
 
 #[test]

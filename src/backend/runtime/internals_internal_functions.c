@@ -3939,22 +3939,27 @@ static void ptn_serialize_append_spl_object_storage_object(
     if (infos == NULL || infos->len < count) {
         count = 0;
     }
+    if (count > SIZE_MAX / 2) {
+        ptn_abort_out_of_memory();
+    }
     ptn_string_buffer_append_format(
         buffer,
         "O:%zu:\"%s\":2:{i:0;a:%zu:{",
         strlen(object->class_name),
         object->class_name,
-        count
+        count * 2
     );
+    (void)ptn_serialize_state_next_id(state);
     for (size_t i = 0; i < count; i++) {
-        if (i > (size_t)INT64_MAX) {
+        size_t object_key = i * 2;
+        size_t info_key = object_key + 1;
+        if (info_key > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
-        ptn_string_buffer_append_format(buffer, "i:%zu;a:2:{i:0;", i);
+        ptn_string_buffer_append_format(buffer, "i:%zu;", object_key);
         ptn_serialize_append_value_with_id(buffer, objects->entries[i].value, state, 0);
-        ptn_string_buffer_append(buffer, "i:1;");
+        ptn_string_buffer_append_format(buffer, "i:%zu;", info_key);
         ptn_serialize_append_value_with_id(buffer, infos->entries[i].value, state, 0);
-        ptn_string_buffer_append_char(buffer, '}');
     }
     ptn_string_buffer_append(buffer, "}i:1;a:0:{}}");
 }
@@ -69672,6 +69677,7 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
     if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
         ptn_object_run_destructor(object.as.object);
     }
+    ptn_lazy_object_reset_property_storage(object);
     ptn_lazy_object_mark(object, initializer, is_proxy, options);
     return ptn_null();
 }
@@ -73166,6 +73172,13 @@ static void ptn_spl_object_storage_sync_properties(
     PtnSplObjectStorageData *data,
     size_t line
 );
+static int ptn_spl_object_storage_replace_from_unserialize_payload(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    PtnValue payload,
+    size_t line
+);
 static void ptn_spl_heap_sync_properties(
     PtnRuntime *runtime,
     PtnValue object,
@@ -74551,6 +74564,21 @@ static void ptn_unserialize_hydrate_spl_array_backed_object(
         data->sorting = 0;
         ptn_unserialize_replace_native_data(instance, data, ptn_array_object_data_free);
         ptn_spl_declare_storage_property(runtime, object, "ArrayObject", data->storage, line);
+        return;
+    }
+    if (ptn_declared_class_is_same_or_descendant(instance->class_name, "SplObjectStorage")) {
+        PtnSplObjectStorageData *data = ptn_spl_object_storage_data(runtime, object);
+        if (data == NULL) {
+            return;
+        }
+        PtnValue payload;
+        payload.type = PTN_ARRAY;
+        payload.owned = 0;
+        payload.as.array = instance->properties;
+        if (ptn_spl_object_storage_replace_from_unserialize_payload(runtime, object, data, payload, line)) {
+            (void)ptn_array_unset_entry(instance->properties, ptn_array_string_key("0"));
+            (void)ptn_array_unset_entry(instance->properties, ptn_array_string_key("1"));
+        }
     }
 }
 
@@ -76599,6 +76627,114 @@ static int ptn_spl_object_storage_hash_for_object(
     return 1;
 }
 
+static void ptn_spl_object_storage_throw_incomplete_serialization_data(PtnRuntime *runtime) {
+    ptn_throw_exception(runtime, "UnexpectedValueException", "Incomplete or ill-typed serialization data");
+}
+
+static int ptn_spl_object_storage_replace_from_serialized_entries(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    PtnValue entries_value,
+    size_t line
+) {
+    entries_value = ptn_value_deref(entries_value);
+    if (data == NULL ||
+        entries_value.type != PTN_ARRAY ||
+        entries_value.as.array->len % 2 != 0) {
+        ptn_spl_object_storage_throw_incomplete_serialization_data(runtime);
+        return 0;
+    }
+    PtnArray *entries = entries_value.as.array;
+    PtnValue objects = ptn_array_from_literal_entries(0, NULL);
+    PtnValue infos = ptn_array_from_literal_entries(0, NULL);
+    PtnValue hashes = ptn_array_from_literal_entries(0, NULL);
+    int64_t next = 0;
+    for (size_t i = 0; i < entries->len; i += 2) {
+        PtnValue object_value = ptn_value_deref(entries->entries[i].value);
+        if (object_value.type != PTN_OBJECT) {
+            ptn_value_destroy(&objects);
+            ptn_value_destroy(&infos);
+            ptn_value_destroy(&hashes);
+            ptn_spl_object_storage_throw_incomplete_serialization_data(runtime);
+            return 0;
+        }
+        PtnValue object_copy = ptn_value_clone(object_value);
+        PtnValue info_copy = ptn_value_clone_deref(entries->entries[i + 1].value);
+        PtnValue hash = ptn_null();
+        if (!ptn_spl_object_storage_hash_for_object(runtime, receiver, "__unserialize", object_copy, line, &hash)) {
+            ptn_value_destroy(&object_copy);
+            ptn_value_destroy(&info_copy);
+            ptn_value_destroy(&objects);
+            ptn_value_destroy(&infos);
+            ptn_value_destroy(&hashes);
+            return 0;
+        }
+        ptn_array_set_entry(objects.as.array, ptn_array_int_key(next), object_copy);
+        ptn_array_set_entry(infos.as.array, ptn_array_int_key(next), info_copy);
+        ptn_array_set_entry(hashes.as.array, ptn_array_int_key(next), hash);
+        next++;
+    }
+    ptn_value_destroy(&data->objects);
+    ptn_value_destroy(&data->infos);
+    ptn_value_destroy(&data->hashes);
+    data->objects = objects;
+    data->infos = infos;
+    data->hashes = hashes;
+    data->index = 0;
+    ptn_spl_object_storage_sync_properties(runtime, receiver, data, line);
+    return 1;
+}
+
+static PtnArrayEntry *ptn_spl_object_storage_unserialize_payload_entry(PtnArray *array, int64_t index) {
+    PtnArrayKey int_key = ptn_array_int_key(index);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, int_key);
+    ptn_array_key_free(int_key);
+    if (entry != NULL) {
+        return entry;
+    }
+    char buffer[32];
+    int written = snprintf(buffer, sizeof(buffer), "%lld", (long long)index);
+    if (written < 0 || (size_t)written >= sizeof(buffer)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnArrayKey string_key = ptn_array_string_key(buffer);
+    entry = ptn_array_entry_for_key(array, string_key);
+    ptn_array_key_free(string_key);
+    return entry;
+}
+
+static int ptn_spl_object_storage_replace_from_unserialize_payload(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnSplObjectStorageData *data,
+    PtnValue payload,
+    size_t line
+) {
+    payload = ptn_value_deref(payload);
+    if (payload.type != PTN_ARRAY) {
+        ptn_spl_object_storage_throw_incomplete_serialization_data(runtime);
+        return 0;
+    }
+    PtnArrayEntry *storage_entry =
+        ptn_spl_object_storage_unserialize_payload_entry(payload.as.array, 0);
+    PtnArrayEntry *members_entry =
+        ptn_spl_object_storage_unserialize_payload_entry(payload.as.array, 1);
+    if (storage_entry == NULL ||
+        members_entry == NULL ||
+        ptn_value_deref(members_entry->value).type != PTN_ARRAY) {
+        ptn_spl_object_storage_throw_incomplete_serialization_data(runtime);
+        return 0;
+    }
+    return ptn_spl_object_storage_replace_from_serialized_entries(
+        runtime,
+        receiver,
+        data,
+        storage_entry->value,
+        line
+    );
+}
+
 static ssize_t ptn_spl_object_storage_find_hash(PtnSplObjectStorageData *data, PtnValue hash) {
     PtnValue resolved_hash = ptn_value_deref(hash);
     if (resolved_hash.type != PTN_STRING) {
@@ -76653,7 +76789,7 @@ static PtnValue ptn_spl_object_storage_hash_at(PtnSplObjectStorageData *data, si
     return ptn_value_clone_deref(array->entries[index].value);
 }
 
-static PtnValue ptn_spl_object_storage_pairs_array(PtnSplObjectStorageData *data) {
+static PtnValue ptn_spl_object_storage_debug_storage_array(PtnSplObjectStorageData *data) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t count = ptn_spl_object_storage_count(data);
     for (size_t i = 0; i < count; i++) {
@@ -76663,15 +76799,34 @@ static PtnValue ptn_spl_object_storage_pairs_array(PtnSplObjectStorageData *data
         PtnValue pair = ptn_array_from_literal_entries(0, NULL);
         ptn_array_set_entry(
             pair.as.array,
-            ptn_array_int_key(0),
+            ptn_array_string_key("obj"),
             ptn_spl_object_storage_object_at(data, i)
         );
         ptn_array_set_entry(
             pair.as.array,
-            ptn_array_int_key(1),
+            ptn_array_string_key("inf"),
             ptn_spl_object_storage_info_at(data, i)
         );
         ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), pair);
+    }
+    return result;
+}
+
+static PtnValue ptn_spl_object_storage_serialized_entries_array(PtnSplObjectStorageData *data) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t count = ptn_spl_object_storage_count(data);
+    int64_t key = 0;
+    for (size_t i = 0; i < count; i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(key++),
+            ptn_spl_object_storage_object_at(data, i)
+        );
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key(key++),
+            ptn_spl_object_storage_info_at(data, i)
+        );
     }
     return result;
 }
@@ -76700,7 +76855,7 @@ static void ptn_spl_object_storage_sync_properties(
     PtnSplObjectStorageData *data,
     size_t line
 ) {
-    PtnValue storage = ptn_spl_object_storage_pairs_array(data);
+    PtnValue storage = ptn_spl_object_storage_debug_storage_array(data);
     ptn_spl_declare_private_value_property(runtime, object, "storage", "SplObjectStorage", storage, line);
     ptn_value_destroy(&storage);
 }
@@ -77181,12 +77336,12 @@ static PtnValue ptn_spl_object_storage_call_method(
             ptn_array_set_entry(
                 result.as.array,
                 ptn_spl_private_debug_key("SplObjectStorage", "storage"),
-                ptn_spl_object_storage_pairs_array(data)
+                ptn_spl_object_storage_debug_storage_array(data)
             );
             return result;
         }
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
-        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_spl_object_storage_pairs_array(data));
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_spl_object_storage_serialized_entries_array(data));
         ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_array_from_literal_entries(0, NULL));
         return result;
     }
@@ -77195,6 +77350,22 @@ static PtnValue ptn_spl_object_storage_call_method(
             ptn_throw_exception(runtime, "ArgumentCountError", "SplObjectStorage::__unserialize() expects exactly 1 argument");
             return ptn_null();
         }
+        PtnValue payload = ptn_value_deref(args[0]);
+        if (payload.type != PTN_ARRAY) {
+            char message[160];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "SplObjectStorage::__unserialize(): Argument #1 ($data) must be of type array, %s given",
+                ptn_offset_container_type_name(payload)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        ptn_spl_object_storage_replace_from_unserialize_payload(runtime, receiver, data, payload, line);
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "seek")) {
