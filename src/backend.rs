@@ -29,6 +29,8 @@ const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "Phar",
+    "WeakMap",
+    "WeakReference",
     "ZipArchive",
     "SoapClient",
     "SoapServer",
@@ -673,6 +675,12 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Serializable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"WeakMap\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"SplHeap\") ||\n");
@@ -4306,6 +4314,8 @@ fn emit_class_metadata_helpers(
         "Deprecated",
         "NoDiscard",
         "ReturnTypeWillChange",
+        "WeakMap",
+        "WeakReference",
         "ArrayObject",
         "ArrayIterator",
         "RecursiveArrayIterator",
@@ -4708,6 +4718,8 @@ fn emit_class_metadata_helpers(
         "ReturnTypeWillChange",
         "SensitiveParameter",
         "SensitiveParameterValue",
+        "WeakMap",
+        "WeakReference",
         "ArrayIterator",
         "RecursiveArrayIterator",
         "ArrayObject",
@@ -4936,6 +4948,13 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_final(const char *name) {\n");
+    for class_name in ["Generator", "BcMath\\Number", "WeakMap", "WeakReference"] {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
     if classes.is_empty() {
         out.push_str("    (void)name;\n");
     }
@@ -9345,6 +9364,8 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "soapclient" => Some("SoapClient"),
                 "soapserver" => Some("SoapServer"),
                 "phptoken" => Some("PhpToken"),
+                "weakmap" => Some("WeakMap"),
+                "weakreference" => Some("WeakReference"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
                 "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
@@ -11526,6 +11547,23 @@ fn emit_instruction(
                     source_path,
                     *line,
                 );
+                out.push_str("        if (ptn_declared_class_is_final(");
+                out.push_str(&parent_temp);
+                out.push_str(")) {\n");
+                out.push_str("            char final_parent_message[1024];\n");
+                out.push_str("            snprintf(final_parent_message, sizeof(final_parent_message), \"Class ");
+                out.push_str(&c_string(&class.name));
+                out.push_str(" cannot extend final class %s\", ");
+                out.push_str(&parent_temp);
+                out.push_str(");\n");
+                out.push_str(
+                    "            ptn_emit_fatal_error_at(&runtime, final_parent_message, \"",
+                );
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("        }\n");
             }
             for (interface_index, interface_name) in class.interfaces.iter().enumerate() {
                 let interface_temp =
@@ -14356,6 +14394,11 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
             || !class.properties.is_empty()
             || !class.static_properties.is_empty()
             || !class.interfaces.is_empty()
+            || class
+                .parent_name
+                .as_deref()
+                .and_then(modeled_internal_class_name)
+                .is_some()
     }) {
         requirements.internal_function_dispatch = true;
     }
@@ -15057,6 +15100,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("ReflectionProperty")
                 || class_name.eq_ignore_ascii_case("SensitiveParameter")
                 || class_name.eq_ignore_ascii_case("SensitiveParameterValue")
+                || class_name.eq_ignore_ascii_case("WeakMap")
+                || class_name.eq_ignore_ascii_case("WeakReference")
                 || class_name.eq_ignore_ascii_case("Attribute")
                 || class_name.eq_ignore_ascii_case("AllowDynamicProperties")
                 || class_name.eq_ignore_ascii_case("DelayedTargetValidation")

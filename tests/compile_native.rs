@@ -9222,6 +9222,136 @@ var_dump($wr->get());
 }
 
 #[test]
+fn compile_weak_reference_guards_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-reference-guards");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-reference-guards.php");
+    let output = root.join("weak-reference-guards-bin");
+    fs::write(
+        &input,
+        "<?php
+$std = new stdClass;
+$wr = WeakReference::create($std);
+
+try {
+    serialize($wr);
+} catch (Throwable $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+
+try {
+    unserialize('O:13:\"WeakReference\":0:{}');
+} catch (Throwable $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+
+try {
+    $wr->foo = 1;
+} catch (Throwable $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+
+try {
+    new WeakReference;
+} catch (Throwable $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Exception: Serialization of 'WeakReference' is not allowed\n",
+            "Exception: Unserialization of 'WeakReference' is not allowed\n",
+            "Error: Cannot create dynamic property WeakReference::$foo\n",
+            "Error: Direct instantiation of WeakReference is not allowed, use WeakReference::create instead\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_map_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map.php");
+    let output = root.join("weak-map-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = (object)['name' => 'a'];
+$b = (object)['name' => 'b'];
+$map = new WeakMap;
+$map[$a] = 1;
+$map[$b] = 2;
+
+var_dump(
+    $map instanceof WeakMap,
+    $map instanceof ArrayAccess,
+    $map instanceof Countable,
+    $map instanceof Iterator,
+    count($map),
+    isset($map[$a]),
+    $map[$a]
+);
+
+foreach ($map as $key => $value) {
+    echo $key->name, '=', $value, \"\\n\";
+}
+unset($key);
+
+foreach ($map as &$value) {
+    $value += 10;
+}
+unset($value);
+
+var_dump($map[$a], $map->offsetGet($b));
+$clone = clone $map;
+unset($a);
+gc_collect_cycles();
+var_dump(count($map), count($clone), isset($map[$b]));
+unset($b);
+gc_collect_cycles();
+var_dump(count($map), count($clone));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "a=1\n",
+            "b=2\n",
+            "int(11)\n",
+            "int(12)\n",
+            "int(1)\n",
+            "int(1)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_var_dump_recursive_object_to_native_binary() {
     let root = temp_dir("ptn-native-var-dump-recursive-object");
     fs::create_dir_all(&root).unwrap();

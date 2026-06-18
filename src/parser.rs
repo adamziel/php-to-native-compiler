@@ -11219,6 +11219,8 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name.eq_ignore_ascii_case("ArrayObject")
         || name.eq_ignore_ascii_case("SplFixedArray")
         || name.eq_ignore_ascii_case("SplObjectStorage")
+        || name.eq_ignore_ascii_case("WeakMap")
+        || name.eq_ignore_ascii_case("WeakReference")
         || name.eq_ignore_ascii_case("SplHeap")
         || name.eq_ignore_ascii_case("SplMaxHeap")
         || name.eq_ignore_ascii_case("SplMinHeap")
@@ -11633,6 +11635,8 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
             "Traversable",
         ][..]
     } else if candidate_name.eq_ignore_ascii_case("SplObjectStorage") {
+        &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
+    } else if candidate_name.eq_ignore_ascii_case("WeakMap") {
         &["ArrayAccess", "Countable", "Iterator", "Traversable"][..]
     } else if candidate_name.eq_ignore_ascii_case("SplHeap")
         || candidate_name.eq_ignore_ascii_case("SplMaxHeap")
@@ -13023,6 +13027,8 @@ fn modeled_builtin_final_class_name(name: &str) -> Option<&'static str> {
     match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
         "generator" => Some("Generator"),
         "bcmath\\number" => Some("BcMath\\Number"),
+        "weakmap" => Some("WeakMap"),
+        "weakreference" => Some("WeakReference"),
         _ => None,
     }
 }

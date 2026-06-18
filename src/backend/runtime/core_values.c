@@ -1467,6 +1467,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *cla
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_weak_map(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_weak_reference(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_allow_dynamic_properties(const char *class_name);
@@ -1576,6 +1577,30 @@ static PTN_UNUSED PtnValue ptn_weak_reference_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_weak_map_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_weak_map_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+);
+static PTN_UNUSED int ptn_weak_map_bind_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue key_value,
+    PtnValue reference,
+    size_t line
+);
+static PTN_UNUSED int ptn_weak_map_offset_isset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue key_value,
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_property_new(
@@ -1743,6 +1768,14 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_weak_reference_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_weak_map_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

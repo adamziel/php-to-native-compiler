@@ -2321,6 +2321,43 @@ static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
     fputs("}\n", stdout);
 }
 
+static int ptn_weak_map_debug_properties(PtnObject *object, PtnValue *properties_out);
+
+static int ptn_var_dump_weak_map_object(
+    PtnObject *object,
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    int debug
+) {
+    PtnValue properties_value = ptn_null();
+    if (!ptn_weak_map_debug_properties(object, &properties_value)) {
+        return 0;
+    }
+    PtnValue resolved = ptn_value_deref(properties_value);
+    if (resolved.type != PTN_ARRAY) {
+        ptn_value_destroy(&properties_value);
+        return 0;
+    }
+
+    PtnArray *properties = resolved.as.array;
+    ptn_var_dump_object_header(object, properties->len, debug);
+    ptn_dump_seen_objects_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_var_dump_indent(indent + 1);
+        ptn_var_dump_array_key(properties->entries[i].key);
+        if (debug) {
+            ptn_debug_zval_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+        } else {
+            ptn_var_dump_value_indented(properties->entries[i].value, indent + 1, seen);
+        }
+    }
+    ptn_dump_seen_objects_pop(seen);
+    ptn_var_dump_indent(indent);
+    fputs("}\n", stdout);
+    ptn_value_destroy(&properties_value);
+    return 1;
+}
+
 static size_t ptn_class_name_dump_len(const char *class_name) {
     const char *anonymous_suffix = strstr(class_name, "@anonymous#");
     if (anonymous_suffix != NULL) {
@@ -2409,6 +2446,9 @@ static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSe
             PtnObject *object = value.as.object;
             if (object->enum_case_name != NULL) {
                 printf("enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                break;
+            }
+            if (ptn_var_dump_weak_map_object(object, indent, seen, 0)) {
                 break;
             }
             if (ptn_var_dump_weak_reference_object(object, indent, seen, 0)) {
@@ -2549,6 +2589,9 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
             PtnObject *object = value.as.object;
             if (ptn_dump_seen_objects_contains(seen, object)) {
                 fputs("*RECURSION*\n", stdout);
+                break;
+            }
+            if (ptn_var_dump_weak_map_object(object, indent, seen, 1)) {
                 break;
             }
             if (ptn_var_dump_weak_reference_object(object, indent, seen, 1)) {
@@ -3405,6 +3448,22 @@ static void ptn_serialize_append_value_with_id(
                     "Exception",
                     "Serialization of 'ReflectionReference' is not allowed"
                 );
+                ptn_string_buffer_append(buffer, "N;");
+                break;
+            }
+            if (ptn_internal_class_name_is_weak_reference(value.as.object->class_name) ||
+                ptn_internal_class_name_is_weak_map(value.as.object->class_name)) {
+                char message[96];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Serialization of '%s' is not allowed",
+                    value.as.object->class_name
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(state->runtime, "Exception", message);
                 ptn_string_buffer_append(buffer, "N;");
                 break;
             }
@@ -4289,13 +4348,21 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             char *class_name = ptn_duplicate_string_len(state->data + state->pos, class_len);
             state->pos += class_len;
-            if (ptn_ascii_case_equal(class_name, "ReflectionReference")) {
-                free(class_name);
-                ptn_throw_exception(
-                    runtime,
-                    "Exception",
-                    "Unserialization of 'ReflectionReference' is not allowed"
+            if (ptn_ascii_case_equal(class_name, "ReflectionReference") ||
+                ptn_internal_class_name_is_weak_reference(class_name) ||
+                ptn_internal_class_name_is_weak_map(class_name)) {
+                char message[96];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Unserialization of '%s' is not allowed",
+                    class_name
                 );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                free(class_name);
+                ptn_throw_exception(runtime, "Exception", message);
                 result.value = ptn_null();
                 result.id = ptn_unserialize_add_slot(state, &result.value);
                 return result;
@@ -4355,6 +4422,24 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 !ptn_unserialize_consume(state, '{') ||
                 !ptn_unserialize_require_payload(state, payload_len)) {
                 free(class_name);
+                return result;
+            }
+            if (ptn_internal_class_name_is_weak_reference(class_name) ||
+                ptn_internal_class_name_is_weak_map(class_name)) {
+                char message[96];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Unserialization of '%s' is not allowed",
+                    class_name
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                free(class_name);
+                ptn_throw_exception(runtime, "Exception", message);
+                result.value = ptn_null();
+                result.id = ptn_unserialize_add_slot(state, &result.value);
                 return result;
             }
             const char *payload = state->data + state->pos;
@@ -57202,12 +57287,434 @@ static PTN_UNUSED PtnValue ptn_weak_reference_new(
     (void)argc;
     (void)args;
     (void)line;
-    ptn_throw_exception(
+    ptn_throw_exception_at(
         runtime,
         "Error",
-        "Direct instantiation of WeakReference is not allowed, use WeakReference::create instead"
+        "Direct instantiation of WeakReference is not allowed, use WeakReference::create instead",
+        runtime->source_path,
+        line
     );
     return ptn_null();
+}
+
+typedef struct PtnWeakMapData {
+    PtnRuntime *runtime;
+    PtnObject **objects;
+    size_t *object_ids;
+    PtnValue *values;
+    unsigned char *value_reference_visible;
+    size_t len;
+    size_t capacity;
+    size_t index;
+} PtnWeakMapData;
+
+static void ptn_weak_map_data_free(void *data) {
+    PtnWeakMapData *map = (PtnWeakMapData *)data;
+    if (map == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < map->len; i++) {
+        ptn_value_destroy(&map->values[i]);
+    }
+    free(map->objects);
+    free(map->object_ids);
+    free(map->values);
+    free(map->value_reference_visible);
+    free(map);
+}
+
+static PtnObject *ptn_weak_map_live_object(PtnWeakMapData *map, PtnObject *candidate, size_t object_id) {
+    if (map == NULL || map->runtime == NULL || candidate == NULL) {
+        return NULL;
+    }
+    PtnRuntime *root = ptn_runtime_root(map->runtime);
+    if (root == NULL) {
+        return NULL;
+    }
+    for (size_t i = 0; i < root->live_objects_len; i++) {
+        PtnObject *object = root->live_objects[i];
+        if (object == candidate &&
+            object->object_id == object_id &&
+            object->refcount != 0) {
+            return object;
+        }
+    }
+    return NULL;
+}
+
+static PtnWeakMapData *ptn_weak_map_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_weak_map(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid WeakMap object");
+        return NULL;
+    }
+    return (PtnWeakMapData *)receiver.as.object->native_data;
+}
+
+static void ptn_weak_map_prune(PtnWeakMapData *map) {
+    if (map == NULL) {
+        return;
+    }
+    size_t write = 0;
+    size_t adjusted_index = map->index;
+    for (size_t read = 0; read < map->len; read++) {
+        PtnObject *live = ptn_weak_map_live_object(map, map->objects[read], map->object_ids[read]);
+        if (live == NULL) {
+            if (read < adjusted_index && adjusted_index > 0) {
+                adjusted_index--;
+            }
+            ptn_value_destroy(&map->values[read]);
+            continue;
+        }
+        if (write != read) {
+            map->objects[write] = live;
+            map->object_ids[write] = live->object_id;
+            map->values[write] = map->values[read];
+            map->value_reference_visible[write] = map->value_reference_visible[read];
+        } else {
+            map->objects[write] = live;
+            map->object_ids[write] = live->object_id;
+        }
+        write++;
+    }
+    map->len = write;
+    map->index = adjusted_index > map->len ? map->len : adjusted_index;
+}
+
+static void ptn_weak_map_reserve(PtnWeakMapData *map, size_t needed) {
+    if (map->capacity >= needed) {
+        return;
+    }
+    size_t new_capacity = map->capacity == 0 ? 4 : map->capacity * 2;
+    while (new_capacity < needed) {
+        if (new_capacity > SIZE_MAX / 2) {
+            ptn_abort_out_of_memory();
+        }
+        new_capacity *= 2;
+    }
+    if (new_capacity > SIZE_MAX / sizeof(PtnObject *) ||
+        new_capacity > SIZE_MAX / sizeof(size_t) ||
+        new_capacity > SIZE_MAX / sizeof(PtnValue) ||
+        new_capacity > SIZE_MAX / sizeof(unsigned char)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnObject **objects = malloc(new_capacity * sizeof(PtnObject *));
+    size_t *object_ids = malloc(new_capacity * sizeof(size_t));
+    PtnValue *values = malloc(new_capacity * sizeof(PtnValue));
+    unsigned char *value_reference_visible = malloc(new_capacity * sizeof(unsigned char));
+    if (objects == NULL || object_ids == NULL || values == NULL || value_reference_visible == NULL) {
+        free(objects);
+        free(object_ids);
+        free(values);
+        free(value_reference_visible);
+        ptn_abort_out_of_memory();
+    }
+    if (map->len != 0) {
+        memcpy(objects, map->objects, map->len * sizeof(PtnObject *));
+        memcpy(object_ids, map->object_ids, map->len * sizeof(size_t));
+        memcpy(values, map->values, map->len * sizeof(PtnValue));
+        memcpy(value_reference_visible, map->value_reference_visible, map->len * sizeof(unsigned char));
+    }
+    free(map->objects);
+    free(map->object_ids);
+    free(map->values);
+    free(map->value_reference_visible);
+    map->objects = objects;
+    map->object_ids = object_ids;
+    map->values = values;
+    map->value_reference_visible = value_reference_visible;
+    map->capacity = new_capacity;
+}
+
+static PtnWeakMapData *ptn_weak_map_data_new(PtnRuntime *runtime) {
+    PtnWeakMapData *map = malloc(sizeof(PtnWeakMapData));
+    if (map == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    map->runtime = ptn_runtime_root(runtime);
+    map->objects = NULL;
+    map->object_ids = NULL;
+    map->values = NULL;
+    map->value_reference_visible = NULL;
+    map->len = 0;
+    map->capacity = 0;
+    map->index = 0;
+    return map;
+}
+
+static int ptn_weak_map_key_object(
+    PtnRuntime *runtime,
+    const char *method_name,
+    PtnValue value,
+    PtnObject **object_out
+) {
+    (void)method_name;
+    PtnValue object = ptn_value_deref(value);
+    if (object.type == PTN_OBJECT && object.as.object != NULL) {
+        *object_out = object.as.object;
+        return 1;
+    }
+    ptn_throw_exception(runtime, "TypeError", "WeakMap key must be an object");
+    return 0;
+}
+
+static void ptn_weak_map_throw_not_contained(PtnRuntime *runtime, PtnObject *object) {
+    const char *class_name = object == NULL ? "Object" : object->class_name;
+    size_t object_id = object == NULL ? 0 : object->object_id;
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Object %s#%zu not contained in WeakMap",
+        class_name,
+        object_id
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Error", message);
+}
+
+static int ptn_weak_map_find_index(PtnWeakMapData *map, PtnObject *object, size_t *index_out) {
+    if (map == NULL || object == NULL) {
+        return 0;
+    }
+    ptn_weak_map_prune(map);
+    for (size_t i = 0; i < map->len; i++) {
+        if (map->objects[i] == object && map->object_ids[i] == object->object_id) {
+            if (index_out != NULL) {
+                *index_out = i;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_weak_map_remove_at(PtnWeakMapData *map, size_t index) {
+    if (map == NULL || index >= map->len) {
+        return;
+    }
+    ptn_value_destroy(&map->values[index]);
+    for (size_t i = index + 1; i < map->len; i++) {
+        map->objects[i - 1] = map->objects[i];
+        map->object_ids[i - 1] = map->object_ids[i];
+        map->values[i - 1] = map->values[i];
+        map->value_reference_visible[i - 1] = map->value_reference_visible[i];
+    }
+    map->len--;
+    if (map->index > map->len) {
+        map->index = map->len;
+    }
+}
+
+static void ptn_weak_map_set(PtnWeakMapData *map, PtnObject *object, PtnValue value) {
+    size_t index = 0;
+    if (ptn_weak_map_find_index(map, object, &index)) {
+        PtnValue old = map->values[index];
+        map->values[index] = ptn_value_clone(value);
+        map->value_reference_visible[index] = 0;
+        ptn_value_destroy(&old);
+        return;
+    }
+    ptn_weak_map_reserve(map, map->len + 1);
+    map->objects[map->len] = object;
+    map->object_ids[map->len] = object->object_id;
+    map->values[map->len] = ptn_value_clone(value);
+    map->value_reference_visible[map->len] = 0;
+    map->len++;
+}
+
+static PtnValue ptn_weak_map_object_value(PtnObject *object) {
+    PtnValue value = ptn_object(object);
+    value.owned = 0;
+    return value;
+}
+
+static PtnValue ptn_weak_map_entry_reference(PtnWeakMapData *map, size_t index, int visible_reference) {
+    if (map == NULL || index >= map->len) {
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
+    if (map->values[index].type != PTN_REFERENCE) {
+        PtnValue current = map->values[index];
+        map->values[index] = ptn_reference_value(ptn_reference_new_owned(current));
+    }
+    if (visible_reference) {
+        map->value_reference_visible[index] = 1;
+    }
+    return ptn_value_clone(map->values[index]);
+}
+
+static PtnValue ptn_weak_map_debug_value(PtnValue value, int visible_reference) {
+    if (value.type == PTN_REFERENCE && !visible_reference) {
+        return ptn_value_clone_deref(value);
+    }
+    return ptn_value_clone(value);
+}
+
+static PtnValue ptn_weak_map_debug_info(PtnWeakMapData *map) {
+    ptn_weak_map_prune(map);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < map->len; i++) {
+        PtnValue row = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(
+            row.as.array,
+            ptn_array_string_key("key"),
+            ptn_value_clone(ptn_weak_map_object_value(map->objects[i]))
+        );
+        ptn_array_set_entry(
+            row.as.array,
+            ptn_array_string_key("value"),
+            ptn_weak_map_debug_value(map->values[i], map->value_reference_visible[i])
+        );
+        if (i > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), row);
+    }
+    return result;
+}
+
+static int ptn_weak_map_debug_properties(PtnObject *object, PtnValue *properties_out) {
+    if (object == NULL ||
+        properties_out == NULL ||
+        !ptn_internal_class_name_is_weak_map(object->class_name) ||
+        object->native_data == NULL) {
+        return 0;
+    }
+    *properties_out = ptn_weak_map_debug_info((PtnWeakMapData *)object->native_data);
+    return 1;
+}
+
+static int ptn_weak_map_current_reference(PtnRuntime *runtime, PtnValue receiver, PtnValue *out) {
+    PtnWeakMapData *map = ptn_weak_map_data(runtime, receiver);
+    if (map == NULL || out == NULL) {
+        return 0;
+    }
+    ptn_weak_map_prune(map);
+    if (map->index >= map->len) {
+        *out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        return 1;
+    }
+    *out = ptn_weak_map_entry_reference(map, map->index, 1);
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_weak_map_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "WeakMap::__construct() expects exactly 0 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue object = ptn_object_new_shell(runtime, "WeakMap");
+    object.as.object->native_data = ptn_weak_map_data_new(runtime);
+    object.as.object->native_data_free = ptn_weak_map_data_free;
+    return object;
+}
+
+static PTN_UNUSED PtnValue ptn_weak_map_clone(
+    PtnRuntime *runtime,
+    PtnValue source,
+    size_t line
+) {
+    (void)line;
+    PtnWeakMapData *source_map = ptn_weak_map_data(runtime, source);
+    if (source_map == NULL) {
+        return ptn_null();
+    }
+    ptn_weak_map_prune(source_map);
+    PtnValue object = ptn_object_new_shell(runtime, "WeakMap");
+    PtnWeakMapData *clone = ptn_weak_map_data_new(runtime);
+    ptn_weak_map_reserve(clone, source_map->len);
+    for (size_t i = 0; i < source_map->len; i++) {
+        clone->objects[i] = source_map->objects[i];
+        clone->object_ids[i] = source_map->object_ids[i];
+        clone->values[i] = ptn_value_clone(source_map->values[i]);
+        clone->value_reference_visible[i] = source_map->value_reference_visible[i];
+    }
+    clone->len = source_map->len;
+    clone->index = source_map->index;
+    object.as.object->native_data = clone;
+    object.as.object->native_data_free = ptn_weak_map_data_free;
+    return object;
+}
+
+static PTN_UNUSED int ptn_weak_map_bind_reference(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue key_value,
+    PtnValue reference,
+    size_t line
+) {
+    (void)line;
+    if (reference.type != PTN_REFERENCE) {
+        ptn_abort_out_of_memory();
+    }
+    PtnWeakMapData *map = ptn_weak_map_data(runtime, receiver);
+    if (map == NULL) {
+        return 1;
+    }
+    PtnObject *object = NULL;
+    if (!ptn_weak_map_key_object(runtime, "offsetSet", key_value, &object)) {
+        return 1;
+    }
+    size_t index = 0;
+    if (ptn_weak_map_find_index(map, object, &index)) {
+        PtnValue old = map->values[index];
+        map->values[index] = ptn_value_clone(reference);
+        map->value_reference_visible[index] = 1;
+        ptn_value_destroy(&old);
+        return 1;
+    }
+    ptn_weak_map_reserve(map, map->len + 1);
+    map->objects[map->len] = object;
+    map->object_ids[map->len] = object->object_id;
+    map->values[map->len] = ptn_value_clone(reference);
+    map->value_reference_visible[map->len] = 1;
+    map->len++;
+    return 1;
+}
+
+static PTN_UNUSED int ptn_weak_map_offset_isset(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    PtnValue key_value,
+    size_t line
+) {
+    (void)line;
+    PtnWeakMapData *map = ptn_weak_map_data(runtime, receiver);
+    if (map == NULL) {
+        return 0;
+    }
+    PtnObject *object = NULL;
+    if (!ptn_weak_map_key_object(runtime, "offsetExists", key_value, &object)) {
+        return 0;
+    }
+    size_t index = 0;
+    if (!ptn_weak_map_find_index(map, object, &index)) {
+        return 0;
+    }
+    return ptn_value_deref(map->values[index]).type != PTN_NULL;
 }
 
 static PTN_UNUSED PtnValue ptn_zip_archive_new(
@@ -59305,6 +59812,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const
     return ptn_ascii_case_equal(class_name, "SensitiveParameterValue");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_weak_map(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "WeakMap");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_weak_reference(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "WeakReference");
 }
@@ -59519,6 +60030,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_closure(class_name)
         || ptn_internal_class_name_is_sensitive_parameter(class_name)
         || ptn_internal_class_name_is_sensitive_parameter_value(class_name)
+        || ptn_internal_class_name_is_weak_map(class_name)
         || ptn_internal_class_name_is_weak_reference(class_name)
         || ptn_internal_class_name_is_attribute(class_name)
         || ptn_internal_class_name_is_allow_dynamic_properties(class_name)
@@ -60901,6 +61413,19 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_weak_reference(class_name)) {
         return ptn_ascii_case_equal(method_name, "get");
     }
+    if (ptn_internal_class_name_is_weak_map(class_name)) {
+        return ptn_ascii_case_equal(method_name, "count")
+            || ptn_ascii_case_equal(method_name, "offsetExists")
+            || ptn_ascii_case_equal(method_name, "offsetGet")
+            || ptn_ascii_case_equal(method_name, "offsetSet")
+            || ptn_ascii_case_equal(method_name, "offsetUnset")
+            || ptn_ascii_case_equal(method_name, "rewind")
+            || ptn_ascii_case_equal(method_name, "valid")
+            || ptn_ascii_case_equal(method_name, "key")
+            || ptn_ascii_case_equal(method_name, "current")
+            || ptn_ascii_case_equal(method_name, "next")
+            || ptn_ascii_case_equal(method_name, "__debugInfo");
+    }
     if (ptn_internal_class_name_is_bcmath_number(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "__toString")
@@ -61460,6 +61985,23 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_weak_reference(class_name)) {
         static const char *const names[] = { "create", "get" };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_weak_map(class_name)) {
+        static const char *const names[] = {
+            "count",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "rewind",
+            "valid",
+            "key",
+            "current",
+            "next",
+            "__debugInfo",
+        };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }
@@ -71317,6 +71859,8 @@ static PtnValue ptn_reflection_extension_classes(
             "Generator",
             "SensitiveParameter",
             "SensitiveParameterValue",
+            "WeakMap",
+            "WeakReference",
             "Attribute",
             "AllowDynamicProperties",
             "DelayedTargetValidation",
@@ -72105,6 +72649,13 @@ static PTN_UNUSED int ptn_internal_array_iterator_current_reference(
     size_t line,
     PtnValue *out
 ) {
+    (void)line;
+    PtnValue resolved_iterator = ptn_value_deref(iterator_object);
+    if (resolved_iterator.type == PTN_OBJECT &&
+        ptn_internal_class_name_is_weak_map(resolved_iterator.as.object->class_name)) {
+        return ptn_weak_map_current_reference(runtime, iterator_object, out);
+    }
+
     PtnArrayIteratorData *data = ptn_spl_array_iterator_data_from_value(iterator_object);
     if (data == NULL || out == NULL) {
         return 0;
@@ -77150,6 +77701,128 @@ static PTN_UNUSED PtnValue ptn_weak_reference_call_method(
         return ptn_null();
     }
     return ptn_weak_reference_value(ptn_weak_reference_live_object(data));
+}
+
+static PTN_UNUSED PtnValue ptn_weak_map_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    PtnWeakMapData *map = ptn_weak_map_data(runtime, receiver);
+    if (map == NULL) {
+        return ptn_null();
+    }
+
+    if (ptn_ascii_case_equal(name, "count")) {
+        ptn_reflection_check_no_arguments(runtime, "WeakMap", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_weak_map_prune(map);
+        if (map->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_int((int64_t)map->len);
+    }
+    if (ptn_ascii_case_equal(name, "offsetExists")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "WeakMap::offsetExists() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnObject *object = NULL;
+        if (!ptn_weak_map_key_object(runtime, "offsetExists", args[0], &object)) {
+            return ptn_null();
+        }
+        return ptn_bool(ptn_weak_map_find_index(map, object, NULL));
+    }
+    if (ptn_ascii_case_equal(name, "offsetGet")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "WeakMap::offsetGet() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnObject *object = NULL;
+        if (!ptn_weak_map_key_object(runtime, "offsetGet", args[0], &object)) {
+            return ptn_null();
+        }
+        size_t index = 0;
+        if (!ptn_weak_map_find_index(map, object, &index)) {
+            ptn_weak_map_throw_not_contained(runtime, object);
+            return ptn_null();
+        }
+        return ptn_weak_map_entry_reference(map, index, 0);
+    }
+    if (ptn_ascii_case_equal(name, "offsetSet")) {
+        if (argc != 2) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "WeakMap::offsetSet() expects exactly 2 arguments");
+            return ptn_null();
+        }
+        PtnObject *object = NULL;
+        if (!ptn_weak_map_key_object(runtime, "offsetSet", args[0], &object)) {
+            return ptn_null();
+        }
+        ptn_weak_map_set(map, object, args[1]);
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "offsetUnset")) {
+        if (argc != 1) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "WeakMap::offsetUnset() expects exactly 1 argument");
+            return ptn_null();
+        }
+        PtnObject *object = NULL;
+        if (!ptn_weak_map_key_object(runtime, "offsetUnset", args[0], &object)) {
+            return ptn_null();
+        }
+        size_t index = 0;
+        if (ptn_weak_map_find_index(map, object, &index)) {
+            ptn_weak_map_remove_at(map, index);
+        }
+        return ptn_null();
+    }
+
+    ptn_reflection_check_no_arguments(runtime, "WeakMap", name, argc);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "rewind")) {
+        ptn_weak_map_prune(map);
+        map->index = 0;
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "valid")) {
+        ptn_weak_map_prune(map);
+        return ptn_bool(map->index < map->len);
+    }
+    if (ptn_ascii_case_equal(name, "key")) {
+        ptn_weak_map_prune(map);
+        if (map->index >= map->len) {
+            return ptn_null();
+        }
+        return ptn_value_clone(ptn_weak_map_object_value(map->objects[map->index]));
+    }
+    if (ptn_ascii_case_equal(name, "current")) {
+        ptn_weak_map_prune(map);
+        if (map->index >= map->len) {
+            return ptn_null();
+        }
+        return ptn_value_clone_deref(map->values[map->index]);
+    }
+    if (ptn_ascii_case_equal(name, "next")) {
+        ptn_weak_map_prune(map);
+        if (map->index < map->len) {
+            map->index++;
+        }
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__debugInfo")) {
+        return ptn_weak_map_debug_info(map);
+    }
+
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
 }
 
 static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
