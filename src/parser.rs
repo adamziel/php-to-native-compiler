@@ -129,6 +129,7 @@ fn parse_with_options(
         allow_unscoped_relative_types: 0,
         return_by_ref_stack: Vec::new(),
         strict_types: false,
+        strict_types_declare_allowed: true,
         compiler_halt_offset,
         compile_warnings: Vec::new(),
         validate_method_signatures,
@@ -167,6 +168,7 @@ struct Parser<'a> {
     allow_unscoped_relative_types: usize,
     return_by_ref_stack: Vec<bool>,
     strict_types: bool,
+    strict_types_declare_allowed: bool,
     compiler_halt_offset: Option<i64>,
     compile_warnings: Vec<CompileWarning>,
     validate_method_signatures: bool,
@@ -505,6 +507,7 @@ impl Parser<'_> {
                     statements.push(statement);
                 }
             } else if token_is_identifier_named(self.peek(), "namespace") {
+                self.strict_types_declare_allowed = false;
                 if scope == TopLevelScope::NamespaceBlock {
                     if self.namespace_declaration_uses_semicolon() {
                         return Err(Diagnostic::new(
@@ -531,25 +534,31 @@ impl Parser<'_> {
                 }
                 self.parse_namespace_declaration(classes, traits, functions, statements)?;
             } else if token_is_identifier_named(self.peek(), "use") {
+                self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 self.parse_use_declarations()?;
             } else if self.peek_starts_function_decl() {
+                self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 functions.push(self.parse_function_decl(attributes)?);
             } else if token_is_identifier_named(self.peek(), "trait") {
+                self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 traits.push(self.parse_trait_decl(attributes)?);
             } else if token_is_identifier_named(self.peek(), "enum") {
+                self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let class = self.parse_enum_decl(attributes)?;
                 self.register_declared_class_name(&class)?;
                 classes.push(class);
             } else if self.peek_starts_class_decl() {
+                self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let class = self.parse_class_decl(attributes)?;
                 self.register_declared_class_name(&class)?;
                 classes.push(class);
             } else {
+                self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let statement = self.parse_statement_with_attributes(attributes)?;
                 self.note_runtime_class_alias_statement(&statement);
@@ -4402,6 +4411,7 @@ impl Parser<'_> {
     fn parse_declare_statement(&mut self) -> Result<Statement> {
         let start_span = self.advance().span;
         self.expect_left_paren()?;
+        let mut has_strict_types = false;
         if !matches!(self.peek().kind, TokenKind::RightParen) {
             loop {
                 let name_token = self.advance().clone();
@@ -4411,6 +4421,13 @@ impl Parser<'_> {
                 self.expect_equal()?;
                 let value = self.parse_declare_literal_value(&name, name_token.span)?;
                 if name.eq_ignore_ascii_case("strict_types") {
+                    if !self.strict_types_declare_allowed {
+                        return Err(Diagnostic::new(
+                            "strict_types declaration must be the very first statement in the script",
+                            Some(start_span),
+                        ));
+                    }
+                    has_strict_types = true;
                     self.strict_types = value != 0;
                 }
                 if matches!(self.peek().kind, TokenKind::Comma) {
@@ -4422,7 +4439,17 @@ impl Parser<'_> {
         }
         self.expect_right_paren()?;
         if matches!(self.peek().kind, TokenKind::LeftBrace) {
-            return self.parse_compound_block();
+            if has_strict_types {
+                return Err(Diagnostic::new(
+                    "strict_types declaration must not use block mode",
+                    Some(start_span),
+                ));
+            }
+            let previous_strict_types_declare_allowed =
+                std::mem::replace(&mut self.strict_types_declare_allowed, false);
+            let statement = self.parse_compound_block();
+            self.strict_types_declare_allowed = previous_strict_types_declare_allowed;
+            return statement;
         }
         self.expect_statement_terminator()?;
         Ok(Statement::Empty { span: start_span })

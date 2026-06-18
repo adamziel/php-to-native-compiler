@@ -53,6 +53,10 @@ fn parser_records_strict_types_declare_directive() {
 
     let program = parser::parse("<?php declare(strict_types=0); echo \"weak\";").unwrap();
     assert!(!program.strict_types);
+
+    let program =
+        parser::parse("<?php declare(ticks=1); declare(strict_types=1); echo \"ok\";").unwrap();
+    assert!(program.strict_types);
 }
 
 #[test]
@@ -61,6 +65,30 @@ fn parser_reports_non_literal_declare_ticks_as_fatal() {
     assert_eq!(error.kind, DiagnosticKind::Fatal);
     assert_eq!(error.message, "declare(ticks) value must be a literal");
     assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
+fn parser_rejects_late_strict_types_declare_directives() {
+    let error = parser::parse("<?php function f() {} declare(strict_types=1);").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "strict_types declaration must be the very first statement in the script"
+    );
+
+    let error = parser::parse("<?php if (true) { declare(strict_types=1); }").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "strict_types declaration must be the very first statement in the script"
+    );
+
+    let error = parser::parse("<?php declare(strict_types=1) { echo \"bad\"; }").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "strict_types declaration must not use block mode"
+    );
 }
 
 #[test]
