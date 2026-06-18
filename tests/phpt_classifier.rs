@@ -1399,6 +1399,7 @@ fn phpt_classifier_keeps_supported_class_contract_rows_runnable() {
         "--TEST--\nduplicate property visibility\n--FILE--\n<?php\nclass Base { public public final public final $value; }\n--EXPECTF--\n",
         "--TEST--\nfinal abstract method\n--FILE--\n<?php\nclass Base { final abstract function run(); }\n--EXPECTF--\n",
         "--TEST--\nfinal abstract class\n--FILE--\n<?php\nfinal abstract class Base { private function hidden() {} }\n--EXPECTF--\n",
+        "--TEST--\nfinal method\n--FILE--\n<?php\nclass Base { final public function run() {} }\n--EXPECT--\n",
         "--TEST--\nnon-public method\n--FILE--\n<?php\nclass Box { private function hidden() {} protected static function guarded() {} }\n--EXPECT--\n",
         "--TEST--\nfinal class constant\n--FILE--\n<?php\nclass Box { final public const NAME = 'box'; public final const OTHER = 'other'; }\n--EXPECT--\n",
         "--TEST--\nfinal interface constant override\n--FILE--\n<?php\ninterface Contract { final public const NAME = 'base'; } class Impl implements Contract { public const NAME = 'child'; }\n--EXPECTF--\n",
@@ -1415,9 +1416,9 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
     let cases = [
         (
             "final method contracts",
-            "--TEST--\nfinal\n--FILE--\n<?php\nclass Base { final public function run() {} }\n--EXPECT--\n",
-            "unsupported-class-contract-metadata\t",
-            "requires final class/method override metadata",
+            "--TEST--\nfinal\n--FILE--\n<?php\nclass Base { final public function run() {} } class Child extends Base { public function run() {} }\n--EXPECTF--\n",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "magic sleep metadata",
@@ -1534,18 +1535,6 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
             "selected for PTN semantic measurement",
         ),
         (
-            "class constant spread default",
-            "--TEST--\nclass constant spread\n--FILE--\n<?php\nclass Bag { public const VALUES = [0, ...self::MORE]; }\n--EXPECT--\n",
-            "unsupported-class-constant-metadata\t",
-            "requires class-scope constant/static-property default unpack evaluation",
-        ),
-        (
-            "static property spread default",
-            "--TEST--\nstatic property spread\n--FILE--\n<?php\nclass Bag { public static $values = [...self::MORE]; }\n--EXPECT--\n",
-            "unsupported-class-constant-metadata\t",
-            "requires class-scope constant/static-property default unpack evaluation",
-        ),
-        (
             "internal attribute reflection metadata",
             "--TEST--\nattribute metadata\n--FILE--\n<?php\n$r = new ReflectionClass(Attribute::class);\nvar_dump($r->getAttributes());\n--EXPECT--\n",
             "runnable\t",
@@ -1592,14 +1581,19 @@ fn phpt_classifier_keeps_non_public_method_visibility_rows_runnable() {
 
 #[test]
 fn phpt_classifier_keeps_direct_static_property_rows_runnable() {
-    let classification = classify(
+    let cases = [
         "--TEST--\nstatic property\n--FILE--\n<?php\nclass Box { public static $value = 1; }\nBox::$value = 2;\nvar_dump(Box::$value);\n--EXPECT--\nint(2)\n",
-    );
+        "--TEST--\nclass constant spread\n--FILE--\n<?php\nclass Bag { public const MORE = [1, 2]; public const VALUES = [0, ...self::MORE]; }\n--EXPECT--\n",
+        "--TEST--\nstatic property spread\n--FILE--\n<?php\nclass Bag { public const MORE = [1, 2]; public static $values = [...self::MORE]; }\n--EXPECT--\n",
+    ];
 
-    assert_eq!(
-        classification,
-        "runnable\tselected for PTN semantic measurement\n"
-    );
+    for phpt in cases {
+        assert_eq!(
+            classify(phpt),
+            "runnable\tselected for PTN semantic measurement\n"
+        );
+        assert_eq!(classify(phpt), classify_with_section_cache(phpt));
+    }
 }
 
 #[test]

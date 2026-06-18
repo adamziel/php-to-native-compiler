@@ -4339,6 +4339,12 @@ fn parser_models_final_class_and_modifier_diagnostics() {
     let err = parser::parse("<?php interface Bad { final function run(); }").unwrap_err();
     assert_eq!(err.message, "Interface method Bad::run() must not be final");
 
+    let err = parser::parse(
+        "<?php class Base { final public function run() {} } class Child extends Base { public function run() {} }",
+    )
+    .unwrap_err();
+    assert_eq!(err.message, "Cannot override final method Base::run()");
+
     let err = parser::parse("<?php class Bad { abstract abstract function run() {} }").unwrap_err();
     assert!(err
         .message

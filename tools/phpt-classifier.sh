@@ -1862,8 +1862,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             }
             final_class_constant_modifier = line ~ /(^|[^[:alnum:]_$])final[[:space:]]+((public|protected|private)[[:space:]]+)?const([^[:alnum:]_$]|$)/ ||
                 line ~ /(^|[^[:alnum:]_$])(public|protected|private)[[:space:]]+final[[:space:]]+const([^[:alnum:]_$]|$)/
+            final_method_modifier = line ~ /(^|[^[:alnum:]_$])final[[:space:]][^;{}=]*function[[:space:]]/
             if (!implemented_modifier_diagnostic &&
                 !final_class_constant_modifier &&
+                !final_method_modifier &&
                 !ptn_supported_property_hook_metadata_row() &&
                 line ~ /(^|[^[:alnum:]_$])final[[:space:]]+(function|static|public|protected|private|abstract)([^[:alnum:]_$]|$)/) {
                 print "unsupported-class-contract-metadata\trequires final class/method override metadata, outside PTN modeled class dispatch"
@@ -2033,13 +2035,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
                 line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+final[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"
-                found = 1
-                exit
-            }
-            if (line ~ /[.][.][.]/ &&
-                (line ~ /(^|[[:space:]])(public|protected|private)?[[:space:]]*const[[:space:]]+[a-z_][a-z0-9_]*[[:space:]]*=/ ||
-                 line ~ /(^|[[:space:]])(public|protected|private|var)?[[:space:]]*static[[:space:]]+\$[a-z_][a-z0-9_]*[[:space:]]*=/)) {
-                print "unsupported-class-constant-metadata\trequires class-scope constant/static-property default unpack evaluation, outside PTN modeled class metadata"
                 found = 1
                 exit
             }
