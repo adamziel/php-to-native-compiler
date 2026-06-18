@@ -2609,6 +2609,7 @@ static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
+static PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_scope, const char *declaring_class, int visibility);
 static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
@@ -64984,6 +64985,7 @@ static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const 
 static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name);
 static int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
+static PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
@@ -67760,6 +67762,7 @@ static int ptn_reflection_class_constant_method_exists(const char *method_name) 
 
 static int ptn_reflection_method_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getClosure")
         || ptn_ascii_case_equal(method_name, "getDeclaringClass")
@@ -68816,6 +68819,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_reflection_method(class_name)) {
         static const char *const names[] = {
+            "__toString",
             "getAttributes",
             "getDeclaringClass",
             "getEndLine",
@@ -71121,13 +71125,15 @@ static const char *ptn_reflection_method_internal_declaring_class(
     return class_name;
 }
 
-static PTN_UNUSED PtnValue ptn_reflection_method_new(
+static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
-    size_t line
+    size_t line,
+    const char *function_name,
+    const char *first_parameter_name,
+    int deprecate_one_arg_constructor
 ) {
-    (void)line;
     if (argc != 1 && argc != 2) {
         char message[160];
         int written = snprintf(
@@ -71148,28 +71154,30 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new(
     char *class_name = NULL;
     char *method_name = NULL;
     if (argc == 1) {
-        PtnValue method_arg = ptn_value_deref(args[0]);
-        if (method_arg.type != PTN_STRING) {
-            const char *actual_type = ptn_property_exists_target_type_name(method_arg);
-            char message[192];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "ReflectionMethod::__construct(): Argument #1 ($objectOrMethod) must be of type object|string, %s given",
-                actual_type
+        if (deprecate_one_arg_constructor) {
+            ptn_emit_deprecation(
+                &runtime->diagnostics,
+                "Calling ReflectionMethod::__construct() with 1 argument is deprecated, use ReflectionMethod::createFromMethodName() instead",
+                line
             );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
-                ptn_abort_out_of_memory();
-            }
-            ptn_throw_exception(runtime, "TypeError", message);
-            return ptn_null();
         }
         char *qualified_name = ptn_value_to_string(args[0]);
         char *separator = strstr(qualified_name, "::");
         if (separator == NULL) {
-            PtnValue result = ptn_reflection_method_throw_missing(runtime, qualified_name, "");
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s: Argument #1 ($%s) must be a valid method name",
+                function_name,
+                first_parameter_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "ReflectionException", message);
             free(qualified_name);
-            return result;
+            return ptn_null();
         }
         *separator = '\0';
         class_name = ptn_duplicate_string(qualified_name);
@@ -71267,13 +71275,38 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new(
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_reflection_method_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_reflection_method_new_ex(
+        runtime,
+        argc,
+        args,
+        line,
+        "ReflectionMethod::__construct()",
+        "objectOrMethod",
+        1
+    );
+}
+
 static PtnValue ptn_internal_reflection_method_create_from_method_name(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,
     size_t line
 ) {
-    return ptn_reflection_method_new(runtime, argc, args, line);
+    return ptn_reflection_method_new_ex(
+        runtime,
+        argc,
+        args,
+        line,
+        "ReflectionMethod::createFromMethodName()",
+        "method",
+        0
+    );
 }
 
 static void ptn_reflection_method_check_exact_arguments(
@@ -71802,6 +71835,22 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     ptn_reflection_method_check_exact_arguments(runtime, name, argc, 0);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        if (!is_internal) {
+            return ptn_declared_class_reflection_method_to_string(runtime, data->class_name, data->name);
+        }
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Method [ <internal> public method %s ] {\n}\n",
+            data->name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        return ptn_string(message);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(data->name));

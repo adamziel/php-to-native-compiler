@@ -8615,6 +8615,54 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    if classes.is_empty() && traits.is_empty() {
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)method_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return ptn_string(\"");
+            out.push_str(&c_string(&reflection_method_to_string(
+                class, entry, classes, functions,
+            )));
+            out.push_str("\");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_string(\"Object\");\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for method in &trait_decl.methods {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            return ptn_string(\"");
+            out.push_str(&c_string(&reflection_trait_method_to_string(
+                trait_decl, method, functions,
+            )));
+            out.push_str("\");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_string(\"Object\");\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_string(\"Object\");\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out) {\n",
     );
     if classes.is_empty() {
@@ -9639,6 +9687,102 @@ fn reflection_class_methods_to_string(
         }
     }
     out.push_str("  }\n");
+}
+
+fn reflection_method_to_string(
+    reflected_class: &ClassDecl,
+    entry: ClassMethodLookupEntry<'_>,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> String {
+    let method = entry.method;
+    let function = &functions[method.function_index];
+    let mut out = String::new();
+    out.push_str("Method [ <user");
+    if let Some(parent_class) =
+        reflection_method_parent_prototype(reflected_class, &method.name, classes)
+    {
+        out.push_str(", overwrites ");
+        out.push_str(parent_class);
+        out.push_str(", prototype ");
+        out.push_str(parent_class);
+    } else if !entry.declaring_class.eq_ignore_ascii_case(&reflected_class.name) {
+        out.push_str(", inherits ");
+        out.push_str(entry.declaring_class);
+    }
+    if method.name.eq_ignore_ascii_case("__construct") {
+        out.push_str(", ctor");
+    }
+    out.push_str("> ");
+    out.push_str(method_visibility_name(method.visibility));
+    if method.is_static {
+        out.push_str(" static");
+    }
+    out.push_str(" method ");
+    out.push_str(&method.name);
+    out.push_str(" ] {\n");
+    out.push_str("  @@ ");
+    out.push_str(&method.source_file);
+    out.push(' ');
+    out.push_str(&method.line.to_string());
+    out.push_str(" - ");
+    out.push_str(&method.end_line.to_string());
+    out.push('\n');
+    if !function.parameters.is_empty() {
+        out.push('\n');
+        reflection_parameters_to_string(&mut out, &function.parameters);
+    }
+    if let Some(return_type) = &function.return_type {
+        if function.parameters.is_empty() {
+            out.push('\n');
+        }
+        out.push_str("  - Return [ ");
+        out.push_str(&type_hint_label(return_type));
+        out.push_str(" ]\n");
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn reflection_trait_method_to_string(
+    trait_decl: &TraitDecl,
+    method: &TraitMethodDecl,
+    _functions: &[FunctionDecl],
+) -> String {
+    let mut out = String::new();
+    out.push_str("Method [ <user> ");
+    out.push_str(method_visibility_name(method.visibility));
+    if method.is_static {
+        out.push_str(" static");
+    }
+    out.push_str(" method ");
+    out.push_str(&method.name);
+    out.push_str(" ] {\n");
+    out.push_str("  @@ %s ");
+    out.push_str(&method.line.to_string());
+    out.push_str(" - ");
+    out.push_str(&method.line.to_string());
+    out.push_str("\n}\n");
+    out
+}
+
+fn reflection_method_parent_prototype<'a>(
+    class: &'a ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<&'a str> {
+    let mut parent_name = class.parent_name.as_deref();
+    while let Some(name) = parent_name {
+        let parent = class_by_name(classes, name)?;
+        if parent.methods.iter().any(|method| {
+            method.visibility != PropertyVisibility::Private
+                && method.name.eq_ignore_ascii_case(method_name)
+        }) {
+            return Some(parent.name.as_str());
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
 }
 
 fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParameter]) {
