@@ -30345,6 +30345,80 @@ string:9\n",
 }
 
 #[test]
+fn compile_failed_by_reference_return_is_reported_once_to_native_binary() {
+    let root = temp_dir("ptn-native-failed-by-reference-return-once");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("failed-by-reference-return-once.php");
+    let output = root.join("failed-by-reference-return-once-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class C {\n\
+    function &constantByRef() { return 100; }\n\
+    static function &globalByRef() { return $GLOBALS['a']; }\n\
+}\n\
+function value() { return 100; }\n\
+function &constant_by_ref() { return 100; }\n\
+function &global_by_ref() { return $GLOBALS['a']; }\n\
+function &forward($name) { return $name(); }\n\
+class ParentClass {\n\
+    private static $_OBJECTS;\n\
+    public static function Get() {\n\
+        self::$_OBJECTS[1] = new ChildClass();\n\
+        return self::$_OBJECTS[1];\n\
+    }\n\
+}\n\
+class ChildClass extends ParentClass {\n\
+    public $Manager;\n\
+    function __construct() { $this->Manager = $this; }\n\
+    public static function &GetCurrent() { return ChildClass::Get(); }\n\
+    public static function &Get() { return parent::Get(); }\n\
+}\n\
+$c = new C;\n\
+$a = 4;\n\
+$b =& $c->constantByRef();\n\
+$a++;\n\
+var_dump($a, $b);\n\
+$a = 4;\n\
+$b =& forward('value');\n\
+$a++;\n\
+var_dump($a, $b);\n\
+$a = 4;\n\
+$b =& forward('constant_by_ref');\n\
+$a++;\n\
+var_dump($a, $b);\n\
+$a = 4;\n\
+$b =& forward('global_by_ref');\n\
+$a++;\n\
+var_dump($a, $b);\n\
+$staff = ChildClass::GetCurrent();\n\
+echo $staff instanceof ChildClass ? \"staff\\n\" : \"bad\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout
+            .matches("Only variable references should be returned by reference")
+            .count(),
+        4,
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("Only variables should be assigned by reference"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("int(5)\nint(100)\n"), "{stdout}");
+    assert!(stdout.contains("int(5)\nint(5)\n"), "{stdout}");
+    assert!(stdout.ends_with("staff\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_by_reference_magic_set_value_return_stays_plain_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-magic-set-value-return");
     fs::create_dir_all(&root).unwrap();
