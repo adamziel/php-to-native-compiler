@@ -31223,6 +31223,97 @@ var_dump(range(\"5\", \"5\", 0.1));",
 }
 
 #[test]
+fn compile_range_size_guard_and_float_endpoint_to_native_binary() {
+    let root = temp_dir("ptn-native-range-size-guard");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("range-size-guard.php");
+    let output = root.join("range-size-guard-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { range(0, 100000000000, 0.1); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { range(0, PHP_INT_MAX); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(range(4.5, 4.2, 0.1));\n\
+var_dump(range(1, 5, 2.0));\n\
+var_dump(range(\"1\", \"3\"));\n\
+var_dump(range(\"9\", \"A\"));\n\
+var_dump(range(\"a\", \"h\", 2.0));\n\
+try { range(\"A\", \"H\", 0.0); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "The supplied range exceeds the maximum array size by 999998951425.0 elements: start=0.0, end=100000000000.0, step=0.1. Max size: 1048576\n",
+            "The supplied range exceeds the maximum array size by 9223372036853727232 elements: start=0, end=9223372036854775807, step=1. Calculated size: 9223372036854775808. Maximum size: 1048576.\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  float(4.5)\n",
+            "  [1]=>\n",
+            "  float(4.4)\n",
+            "  [2]=>\n",
+            "  float(4.3)\n",
+            "  [3]=>\n",
+            "  float(4.2)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(3)\n",
+            "  [2]=>\n",
+            "  int(5)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"1\"\n",
+            "  [1]=>\n",
+            "  string(1) \"2\"\n",
+            "  [2]=>\n",
+            "  string(1) \"3\"\n",
+            "}\n",
+            "array(9) {\n",
+            "  [0]=>\n",
+            "  string(1) \"9\"\n",
+            "  [1]=>\n",
+            "  string(1) \":\"\n",
+            "  [2]=>\n",
+            "  string(1) \";\"\n",
+            "  [3]=>\n",
+            "  string(1) \"<\"\n",
+            "  [4]=>\n",
+            "  string(1) \"=\"\n",
+            "  [5]=>\n",
+            "  string(1) \">\"\n",
+            "  [6]=>\n",
+            "  string(1) \"?\"\n",
+            "  [7]=>\n",
+            "  string(1) \"@\"\n",
+            "  [8]=>\n",
+            "  string(1) \"A\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"c\"\n",
+            "  [2]=>\n",
+            "  string(1) \"e\"\n",
+            "  [3]=>\n",
+            "  string(1) \"g\"\n",
+            "}\n",
+            "range(): Argument #3 ($step) cannot be 0\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_predicates_use_generated_fast_paths() {
     let root = temp_dir("ptn-native-array-predicate-fast-paths");
     fs::create_dir_all(&root).unwrap();

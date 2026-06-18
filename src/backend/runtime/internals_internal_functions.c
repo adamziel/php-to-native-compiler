@@ -12672,6 +12672,10 @@ static uint64_t ptn_range_abs_integer_step(int64_t step_value) {
     return step_value < 0 ? (uint64_t)(-(step_value + 1)) + 1 : (uint64_t)step_value;
 }
 
+static long double ptn_range_max_alloc_entries(void) {
+    return (long double)PTN_ARRAY_MAX_ALLOC_ENTRIES;
+}
+
 static const char *ptn_range_finite_label(double value) {
     return isnan(value) ? "NAN" : "INF";
 }
@@ -12958,6 +12962,25 @@ static double ptn_range_number_as_double(PtnNumber number) {
     return number.type == PTN_NUMBER_FLOAT ? number.floating : (double)number.integer;
 }
 
+static int ptn_range_number_as_integral_int64(PtnNumber number, int64_t *integer_out) {
+    if (number.type == PTN_NUMBER_INT) {
+        *integer_out = number.integer;
+        return 1;
+    }
+    if (!isfinite(number.floating)) {
+        return 0;
+    }
+    double integer_part = 0.0;
+    if (modf(number.floating, &integer_part) != 0.0) {
+        return 0;
+    }
+    if (integer_part < (double)INT64_MIN || integer_part > (double)INT64_MAX) {
+        return 0;
+    }
+    *integer_out = (int64_t)integer_part;
+    return 1;
+}
+
 static int ptn_range_equal_single_byte_strings(PtnRangeBound start, PtnRangeBound end, PtnNumber step) {
     return step.type == PTN_NUMBER_INT &&
         start.kind == PTN_RANGE_BOUND_NUMBER &&
@@ -12967,6 +12990,18 @@ static int ptn_range_equal_single_byte_strings(PtnRangeBound start, PtnRangeBoun
         start.original_string_len == 1 &&
         end.original_string_len == 1 &&
         start.original_first_byte == end.original_first_byte;
+}
+
+static int ptn_range_bound_has_single_byte_string(PtnRangeBound bound) {
+    return bound.original_was_string && bound.original_string_len == 1;
+}
+
+static PtnRangeBound ptn_range_original_character_bound(PtnRangeBound bound) {
+    bound.kind = PTN_RANGE_BOUND_CHARACTER;
+    bound.number = ptn_number_int(0);
+    bound.character = bound.original_first_byte;
+    bound.truncated_string = 0;
+    return bound;
 }
 
 static void ptn_range_validate_numeric_step(PtnRuntime *runtime, double start, double end, double step) {
@@ -13023,6 +13058,82 @@ static void ptn_range_validate_integer_step(PtnRuntime *runtime, int64_t start, 
     }
 }
 
+static void ptn_range_throw_integer_size_error(
+    PtnRuntime *runtime,
+    int64_t start,
+    int64_t end,
+    int64_t step,
+    long double count
+) {
+    long double max_size = ptn_range_max_alloc_entries();
+    long double over_by = count > max_size ? count - max_size : 0.0L;
+    char message[320];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The supplied range exceeds the maximum array size by %.0Lf elements: start=%lld, end=%lld, step=%lld. Calculated size: %.0Lf. Maximum size: %.0Lf.",
+        over_by,
+        (long long)start,
+        (long long)end,
+        (long long)step,
+        count,
+        max_size
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static void ptn_range_throw_float_size_error(
+    PtnRuntime *runtime,
+    double start,
+    double end,
+    double step,
+    long double count
+) {
+    long double max_size = ptn_range_max_alloc_entries();
+    long double over_by = count > max_size ? count - max_size : 0.0L;
+    char message[320];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The supplied range exceeds the maximum array size by %.1Lf elements: start=%.1f, end=%.1f, step=%.1f. Max size: %.0Lf",
+        over_by,
+        start,
+        end,
+        step,
+        max_size
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static long double ptn_range_integer_count(uint64_t distance, uint64_t step) {
+    if (step == 0) {
+        return 0.0L;
+    }
+    return floorl((long double)distance / (long double)step) + 1.0L;
+}
+
+static int ptn_range_integer_count_exceeds_alloc(
+    PtnRuntime *runtime,
+    int64_t start,
+    int64_t end,
+    int64_t step_value,
+    uint64_t distance,
+    uint64_t step
+) {
+    long double count = ptn_range_integer_count(distance, step);
+    if (count > ptn_range_max_alloc_entries()) {
+        ptn_range_throw_integer_size_error(runtime, start, end, step_value, count);
+        return 1;
+    }
+    return 0;
+}
+
 static PtnValue ptn_range_single_string(unsigned char byte) {
     char string[1] = { (char)byte };
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
@@ -13059,6 +13170,18 @@ static PtnValue ptn_range_characters(
     uint64_t distance = start.character <= end.character
         ? (uint64_t)end.character - (uint64_t)start.character
         : (uint64_t)start.character - (uint64_t)end.character;
+    if (
+        ptn_range_integer_count_exceeds_alloc(
+            runtime,
+            start_value,
+            end_value,
+            step_value,
+            distance,
+            step
+        )
+    ) {
+        return ptn_null();
+    }
     uint64_t count = distance == 0 ? 1 : distance / step + 1;
     if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
         ptn_abort_out_of_memory();
@@ -13096,6 +13219,18 @@ static PtnValue ptn_range_integers(PtnRuntime *runtime, int64_t start, int64_t e
     uint64_t distance = start <= end
         ? (uint64_t)end - (uint64_t)start
         : (uint64_t)start - (uint64_t)end;
+    if (
+        ptn_range_integer_count_exceeds_alloc(
+            runtime,
+            start,
+            end,
+            step_value,
+            distance,
+            step
+        )
+    ) {
+        return ptn_null();
+    }
 
     uint64_t count = distance == 0 ? 1 : distance / step + 1;
     if (count > (uint64_t)INT64_MAX || count > (uint64_t)SIZE_MAX) {
@@ -13137,21 +13272,26 @@ static PtnValue ptn_range_floats(PtnRuntime *runtime, double start, double end, 
 
     double distance = fabs(end - start);
     double step = fabs(step_value);
-    double count_double = distance == 0.0 ? 1.0 : floor(distance / step) + 1.0;
+    double count_double = distance == 0.0 ? 1.0 : floor((distance / step) + 1e-12) + 1.0;
     if (!isfinite(count_double) || count_double > (double)INT64_MAX || count_double > (double)SIZE_MAX) {
         ptn_abort_out_of_memory();
+    }
+    if ((long double)count_double > ptn_range_max_alloc_entries()) {
+        ptn_range_throw_float_size_error(runtime, start, end, step_value, (long double)count_double);
+        return ptn_null();
     }
     uint64_t count = (uint64_t)count_double;
 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     int ascending = start <= end;
-    double current = start;
     for (uint64_t i = 0; i < count; i++) {
-        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_float(current));
-        if (i + 1 == count) {
-            break;
+        double current = ascending
+            ? start + (step * (double)i)
+            : start - (step * (double)i);
+        if (i + 1 == count && fabs(current - end) <= step * 1e-9) {
+            current = end;
         }
-        current = ascending ? current + step : current - step;
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_float(current));
     }
     return result;
 }
@@ -13180,13 +13320,29 @@ static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnVa
         return ptn_range_single_string(start.original_first_byte);
     }
 
+    int64_t integral_step = 0;
+    int step_is_integral = ptn_range_number_as_integral_int64(step, &integral_step);
+    if (
+        step_is_integral &&
+        ptn_range_bound_has_single_byte_string(start) &&
+        ptn_range_bound_has_single_byte_string(end)
+    ) {
+        return ptn_range_characters(
+            runtime,
+            ptn_range_original_character_bound(start),
+            ptn_range_original_character_bound(end),
+            integral_step,
+            line
+        );
+    }
+
     if (start.kind == PTN_RANGE_BOUND_CHARACTER && end.kind == PTN_RANGE_BOUND_CHARACTER) {
-        if (step.type != PTN_NUMBER_INT) {
+        if (!step_is_integral) {
             ptn_range_emit_fractional_character_step_warning(runtime, line);
             start = ptn_range_number_bound(ptn_number_int(0));
             end = ptn_range_number_bound(ptn_number_int(0));
         } else {
-            return ptn_range_characters(runtime, start, end, step.integer, line);
+            return ptn_range_characters(runtime, start, end, integral_step, line);
         }
     } else if (start.kind == PTN_RANGE_BOUND_CHARACTER) {
         ptn_range_emit_character_mismatch_warning(runtime, 2, "end", 1, "start", line);
@@ -13203,6 +13359,13 @@ static PtnValue ptn_internal_range(PtnRuntime *runtime, size_t argc, const PtnVa
         step.type == PTN_NUMBER_FLOAT;
 
     if (use_float_range) {
+        if (
+            start.number.type == PTN_NUMBER_INT &&
+            end.number.type == PTN_NUMBER_INT &&
+            step_is_integral
+        ) {
+            return ptn_range_integers(runtime, start.number.integer, end.number.integer, integral_step);
+        }
         return ptn_range_floats(runtime, start_number, end_number, step_number);
     }
     return ptn_range_integers(runtime, start.number.integer, end.number.integer, step.integer);
