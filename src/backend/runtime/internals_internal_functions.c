@@ -393,6 +393,446 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     ptn_array_key_free(key);
     return ptn_bool(exists);
 }
+
+typedef struct {
+    PtnArray **arrays;
+    size_t arrays_len;
+    size_t arrays_capacity;
+    PtnObject **objects;
+    size_t objects_len;
+    size_t objects_capacity;
+} PtnDirectDumpSeen;
+
+static PTN_UNUSED void ptn_direct_dump_seen_init(PtnDirectDumpSeen *seen) {
+    seen->arrays = NULL;
+    seen->arrays_len = 0;
+    seen->arrays_capacity = 0;
+    seen->objects = NULL;
+    seen->objects_len = 0;
+    seen->objects_capacity = 0;
+}
+
+static PTN_UNUSED void ptn_direct_dump_seen_free(PtnDirectDumpSeen *seen) {
+    free(seen->arrays);
+    seen->arrays = NULL;
+    seen->arrays_len = 0;
+    seen->arrays_capacity = 0;
+    free(seen->objects);
+    seen->objects = NULL;
+    seen->objects_len = 0;
+    seen->objects_capacity = 0;
+}
+
+static PTN_UNUSED int ptn_direct_dump_seen_array_contains(PtnDirectDumpSeen *seen, PtnArray *array) {
+    for (size_t i = 0; i < seen->arrays_len; i++) {
+        if (seen->arrays[i] == array) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED int ptn_direct_dump_seen_object_contains(PtnDirectDumpSeen *seen, PtnObject *object) {
+    for (size_t i = 0; i < seen->objects_len; i++) {
+        if (seen->objects[i] == object) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_direct_dump_seen_array_push(PtnDirectDumpSeen *seen, PtnArray *array) {
+    if (seen->arrays_len == seen->arrays_capacity) {
+        size_t new_capacity = seen->arrays_capacity == 0 ? 8 : seen->arrays_capacity * 2;
+        if (new_capacity < seen->arrays_capacity || new_capacity > SIZE_MAX / sizeof(PtnArray *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_arrays = realloc(seen->arrays, new_capacity * sizeof(PtnArray *));
+        if (new_arrays == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->arrays = new_arrays;
+        seen->arrays_capacity = new_capacity;
+    }
+    seen->arrays[seen->arrays_len++] = array;
+}
+
+static PTN_UNUSED void ptn_direct_dump_seen_object_push(PtnDirectDumpSeen *seen, PtnObject *object) {
+    if (seen->objects_len == seen->objects_capacity) {
+        size_t new_capacity = seen->objects_capacity == 0 ? 8 : seen->objects_capacity * 2;
+        if (new_capacity < seen->objects_capacity || new_capacity > SIZE_MAX / sizeof(PtnObject *)) {
+            ptn_abort_out_of_memory();
+        }
+        PtnObject **new_objects = realloc(seen->objects, new_capacity * sizeof(PtnObject *));
+        if (new_objects == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        seen->objects = new_objects;
+        seen->objects_capacity = new_capacity;
+    }
+    seen->objects[seen->objects_len++] = object;
+}
+
+static PTN_UNUSED void ptn_direct_dump_seen_array_pop(PtnDirectDumpSeen *seen) {
+    if (seen->arrays_len > 0) {
+        seen->arrays_len--;
+    }
+}
+
+static PTN_UNUSED void ptn_direct_dump_seen_object_pop(PtnDirectDumpSeen *seen) {
+    if (seen->objects_len > 0) {
+        seen->objects_len--;
+    }
+}
+
+static PTN_UNUSED void ptn_direct_dump_write(PtnRuntime *runtime, const char *data, size_t len) {
+    ptn_output_write(runtime, data, len);
+}
+
+static PTN_UNUSED void ptn_direct_dump_write_cstr(PtnRuntime *runtime, const char *data) {
+    ptn_direct_dump_write(runtime, data, data == NULL ? 0 : strlen(data));
+}
+
+static PTN_UNUSED void ptn_direct_dump_printf(PtnRuntime *runtime, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    va_list args_copy;
+    va_copy(args_copy, args);
+    int needed = vsnprintf(NULL, 0, format, args_copy);
+    va_end(args_copy);
+    if (needed < 0) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    char *buffer = malloc((size_t)needed + 1);
+    if (buffer == NULL) {
+        va_end(args);
+        ptn_abort_out_of_memory();
+    }
+    int written = vsnprintf(buffer, (size_t)needed + 1, format, args);
+    va_end(args);
+    if (written < 0 || written > needed) {
+        free(buffer);
+        ptn_abort_out_of_memory();
+    }
+    ptn_direct_dump_write(runtime, buffer, (size_t)written);
+    free(buffer);
+}
+
+static PTN_UNUSED void ptn_direct_dump_indent(PtnRuntime *runtime, size_t indent) {
+    for (size_t i = 0; i < indent; i++) {
+        ptn_direct_dump_write_cstr(runtime, "  ");
+    }
+}
+
+static PTN_UNUSED void ptn_direct_dump_array_key(PtnRuntime *runtime, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_direct_dump_printf(runtime, "[%lld]=>\n", (long long)key.as.integer);
+        return;
+    }
+    ptn_direct_dump_write_cstr(runtime, "[\"");
+    ptn_direct_dump_write(runtime, key.as.string, key.string_len);
+    ptn_direct_dump_write_cstr(runtime, "\"]=>\n");
+}
+
+static PTN_UNUSED void ptn_direct_dump_object_key(PtnRuntime *runtime, PtnObject *object, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_direct_dump_array_key(runtime, key);
+        return;
+    }
+    const PtnObjectPropertyMetadata *metadata = ptn_object_property_metadata(object, key.as.string);
+    const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
+    if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", display_name);
+        return;
+    }
+    if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
+        ptn_direct_dump_printf(runtime, "[\"%s\":protected]=>\n", display_name);
+        return;
+    }
+    ptn_direct_dump_printf(
+        runtime,
+        "[\"%s\":\"%s\":private]=>\n",
+        display_name,
+        metadata->declaring_class
+    );
+}
+
+static PTN_UNUSED void ptn_direct_var_dump_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t indent,
+    PtnDirectDumpSeen *seen
+) {
+    int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
+    if (value.type == PTN_REFERENCE) {
+        value = ptn_value_deref(value);
+    }
+    if (value.type == PTN_ARRAY && ptn_direct_dump_seen_array_contains(seen, value.as.array)) {
+        ptn_direct_dump_indent(runtime, indent);
+        ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
+        return;
+    }
+    if (value.type == PTN_OBJECT && ptn_direct_dump_seen_object_contains(seen, value.as.object)) {
+        ptn_direct_dump_indent(runtime, indent);
+        ptn_direct_dump_write_cstr(runtime, "*RECURSION*\n");
+        return;
+    }
+    ptn_direct_dump_indent(runtime, indent);
+    if (print_reference) {
+        ptn_direct_dump_write_cstr(runtime, "&");
+    }
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_direct_dump_write_cstr(runtime, "NULL\n");
+            break;
+        case PTN_BOOL:
+            ptn_direct_dump_write_cstr(runtime, value.as.boolean ? "bool(true)\n" : "bool(false)\n");
+            break;
+        case PTN_INT:
+            ptn_direct_dump_printf(runtime, "int(%lld)\n", (long long)value.as.integer);
+            break;
+        case PTN_FLOAT: {
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_var_dump_float(
+                value.as.floating,
+                ptn_runtime_serialize_precision(runtime),
+                formatted,
+                sizeof(formatted)
+            );
+            ptn_direct_dump_printf(runtime, "float(%s)\n", formatted);
+            break;
+        }
+        case PTN_STRING:
+            ptn_direct_dump_printf(runtime, "string(%zu) \"", value.as.string.len);
+            ptn_direct_dump_write(runtime, (const char *)value.as.string.data, value.as.string.len);
+            ptn_direct_dump_write_cstr(runtime, "\"\n");
+            break;
+        case PTN_ARRAY: {
+            PtnArray *array = value.as.array;
+            ptn_direct_dump_printf(runtime, "array(%zu) {\n", array->len);
+            ptn_direct_dump_seen_array_push(seen, array);
+            for (size_t i = 0; i < array->len; i++) {
+                PtnArrayEntry *entry = &array->entries[i];
+                ptn_direct_dump_indent(runtime, indent + 1);
+                ptn_direct_dump_array_key(runtime, entry->key);
+                ptn_direct_var_dump_value(runtime, entry->value, indent + 1, seen);
+            }
+            ptn_direct_dump_seen_array_pop(seen);
+            ptn_direct_dump_indent(runtime, indent);
+            ptn_direct_dump_write_cstr(runtime, "}\n");
+            break;
+        }
+        case PTN_OBJECT: {
+            PtnObject *object = value.as.object;
+            PtnArray *properties = object->properties;
+            size_t property_count = properties == NULL ? 0 : properties->len;
+            if (object->enum_case_name != NULL) {
+                ptn_direct_dump_printf(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                break;
+            }
+            ptn_direct_dump_printf(
+                runtime,
+                "object(%s)#%zu (%zu) {\n",
+                object->class_name,
+                object->object_id,
+                property_count
+            );
+            ptn_direct_dump_seen_object_push(seen, object);
+            if (properties != NULL) {
+                for (size_t i = 0; i < properties->len; i++) {
+                    PtnArrayEntry *entry = &properties->entries[i];
+                    ptn_direct_dump_indent(runtime, indent + 1);
+                    ptn_direct_dump_object_key(runtime, object, entry->key);
+                    ptn_direct_var_dump_value(runtime, entry->value, indent + 1, seen);
+                }
+            }
+            ptn_direct_dump_seen_object_pop(seen);
+            ptn_direct_dump_indent(runtime, indent);
+            ptn_direct_dump_write_cstr(runtime, "}\n");
+            break;
+        }
+        case PTN_CLOSURE:
+            ptn_direct_dump_printf(runtime, "object(Closure)#%zu (0) {\n", value.as.closure->object_id);
+            ptn_direct_dump_indent(runtime, indent);
+            ptn_direct_dump_write_cstr(runtime, "}\n");
+            break;
+        case PTN_EXCEPTION:
+            ptn_direct_dump_printf(
+                runtime,
+                "object(%s)#%zu (1) {\n",
+                value.as.exception->class_name,
+                value.as.exception->object_id
+            );
+            ptn_direct_dump_indent(runtime, indent + 1);
+            ptn_direct_dump_write_cstr(runtime, "[\"message\":protected]=>\n");
+            ptn_direct_dump_indent(runtime, indent + 1);
+            ptn_direct_dump_printf(runtime, "string(%zu) \"", value.as.exception->message_len);
+            ptn_direct_dump_write(runtime, value.as.exception->message, value.as.exception->message_len);
+            ptn_direct_dump_write_cstr(runtime, "\"\n");
+            ptn_direct_dump_indent(runtime, indent);
+            ptn_direct_dump_write_cstr(runtime, "}\n");
+            break;
+        case PTN_RESOURCE:
+            ptn_direct_dump_printf(
+                runtime,
+                "resource(%lld) of type (%s)\n",
+                (long long)value.as.resource->id,
+                value.as.resource->type_name
+            );
+            break;
+        case PTN_REFERENCE:
+            ptn_direct_dump_write_cstr(runtime, "NULL\n");
+            break;
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_direct_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc == 0) {
+        (void)line;
+        ptn_throw_exception(runtime, "ArgumentCountError", "var_dump() expects at least 1 argument");
+        return ptn_null();
+    }
+    for (size_t i = 0; i < argc; i++) {
+        PtnDirectDumpSeen seen;
+        ptn_direct_dump_seen_init(&seen);
+        ptn_direct_var_dump_value(runtime, args[i], 0, &seen);
+        ptn_direct_dump_seen_free(&seen);
+    }
+    return ptn_null();
+}
+
+static PTN_UNUSED const char *ptn_direct_string_arg_type_name(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_OBJECT:
+            return value.as.object->class_name;
+        case PTN_EXCEPTION:
+            return value.as.exception->class_name;
+        case PTN_CLOSURE:
+            return "Closure";
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+        case PTN_ARRAY:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            return ptn_offset_container_type_name(value);
+    }
+    return ptn_offset_container_type_name(value);
+}
+
+static PTN_UNUSED void ptn_direct_throw_string_arg_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type string, %s given",
+        function_name,
+        position,
+        argument_name,
+        ptn_direct_string_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static PTN_UNUSED PtnStringOperand ptn_direct_expect_string_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        if (runtime != NULL && runtime->strict_types) {
+            ptn_direct_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
+            return ptn_string_operand_borrowed("");
+        }
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing null to parameter #%zu ($%s) of type string is deprecated",
+            function_name,
+            position,
+            argument_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    } else if (value.type == PTN_OBJECT) {
+        PtnStringOperand object_string;
+        if (ptn_try_object_to_string_operand(runtime, value, line, &object_string)) {
+            return object_string;
+        }
+        ptn_direct_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
+        return ptn_string_operand_borrowed("");
+    } else if (
+        value.type == PTN_ARRAY ||
+        value.type == PTN_CLOSURE ||
+        value.type == PTN_EXCEPTION ||
+        value.type == PTN_RESOURCE
+    ) {
+        ptn_direct_throw_string_arg_type_error(runtime, function_name, position, argument_name, value);
+        return ptn_string_operand_borrowed("");
+    }
+    return ptn_value_to_string_operand_with_runtime(runtime, value, line);
+}
+
+static PTN_UNUSED PtnValue ptn_str_repeat_value(PtnRuntime *runtime, PtnValue string_value, PtnValue times_value, size_t line) {
+    PtnStringOperand input = ptn_direct_expect_string_arg(runtime, "str_repeat", 1, "string", string_value, line);
+    int64_t repeat = ptn_value_to_integer(times_value);
+    if (repeat < 0) {
+        ptn_string_operand_free(input);
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "str_repeat(): Argument #2 ($times) must be greater than or equal to 0"
+        );
+        return ptn_null();
+    }
+    if (repeat == 0 || input.len == 0) {
+        ptn_string_operand_free(input);
+        char *empty = malloc(1);
+        if (empty == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        empty[0] = '\0';
+        return ptn_owned_string_len(empty, 0);
+    }
+
+    size_t times = (size_t)repeat;
+    if (input.len > SIZE_MAX / times || input.len * times == SIZE_MAX) {
+        ptn_string_operand_free(input);
+        ptn_abort_out_of_memory();
+    }
+    size_t output_len = input.len * times;
+    char *output = malloc(output_len + 1);
+    if (output == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < times; i++) {
+        memcpy(output + (i * input.len), input.data, input.len);
+    }
+    output[output_len] = '\0';
+    ptn_string_operand_free(input);
+    return ptn_owned_string_len(output, output_len);
+}
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
 /* PTN_INTERNAL_FUNCTIONS_START */

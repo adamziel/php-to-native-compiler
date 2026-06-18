@@ -104,11 +104,10 @@ pub fn emit_c(module: &Module) -> String {
         || runtime_requirements.dynamic_function_dispatch;
     let has_declared_methods = module.classes.iter().any(|class| !class.methods.is_empty());
     let needs_method_dispatch = runtime_requirements.method_dispatch
-        || runtime_requirements.internal_function_dispatch
         || has_declared_methods
         || needs_direct_callable_dispatch;
-    let needs_callable_dispatch = needs_direct_callable_dispatch || needs_method_dispatch;
-    if needs_callable_dispatch {
+    let needs_callable_dispatch = needs_direct_callable_dispatch;
+    if needs_direct_callable_dispatch {
         runtime_requirements.internal_function_dispatch = true;
     }
     let needs_magic_property_read = module.classes.iter().any(|class| {
@@ -14786,19 +14785,6 @@ fn collect_value_legacy_dollar_brace_deprecations(
 
 fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
     let mut requirements = RuntimeRequirements::default();
-    if module.classes.iter().any(|class| {
-        !class.methods.is_empty()
-            || !class.properties.is_empty()
-            || !class.static_properties.is_empty()
-            || !class.interfaces.is_empty()
-            || class
-                .parent_name
-                .as_deref()
-                .and_then(modeled_internal_class_name)
-                .is_some()
-    }) {
-        requirements.internal_function_dispatch = true;
-    }
     if module
         .classes
         .iter()
@@ -15739,6 +15725,8 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+        || (name.eq_ignore_ascii_case("str_repeat") && argument_count == 2)
+        || (name.eq_ignore_ascii_case("var_dump") && argument_count >= 1)
 }
 
 enum NamedArgumentBindingError {
@@ -26988,6 +26976,70 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        if !has_named_arguments && !has_unpacked_arguments && name.eq_ignore_ascii_case("var_dump")
+        {
+            let mut argument_temps = Vec::new();
+            for argument in arguments {
+                argument_temps.push(self.emit_materialized_value(out, argument));
+            }
+            let args_temp = if argument_temps.is_empty() {
+                None
+            } else {
+                let args_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&args_temp);
+                out.push('[');
+                out.push_str(&argument_temps.len().to_string());
+                out.push_str("];\n");
+                for (index, argument_temp) in argument_temps.iter().enumerate() {
+                    out.push_str("    ");
+                    out.push_str(&args_temp);
+                    out.push('[');
+                    out.push_str(&index.to_string());
+                    out.push_str("] = ");
+                    out.push_str(argument_temp);
+                    out.push_str(";\n");
+                }
+                Some(args_temp)
+            };
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_direct_var_dump(&runtime, ");
+            out.push_str(&argument_temps.len().to_string());
+            out.push_str(", ");
+            out.push_str(args_temp.as_deref().unwrap_or("NULL"));
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            for argument_temp in argument_temps {
+                emit_value_cleanup(out, "    ", &argument_temp);
+            }
+            return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("str_repeat")
+            && arguments.len() == 2
+        {
+            let string_temp = self.emit_materialized_value(out, &arguments[0]);
+            let times_temp = self.emit_materialized_value(out, &arguments[1]);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_str_repeat_value(&runtime, ");
+            out.push_str(&string_temp);
+            out.push_str(", ");
+            out.push_str(&times_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &string_temp);
+            emit_value_cleanup(out, "    ", &times_temp);
+            return result_temp;
+        }
+
         if !has_named_arguments && !has_unpacked_arguments {
             if name.eq_ignore_ascii_case("extract") {
                 if let Some(result_temp) = self.emit_extract_call(out, arguments, line) {
@@ -29581,9 +29633,10 @@ fn display_os(value: &OsStr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cc_optimization_args_for, cc_optimization_args_for_source,
+        cc_optimization_args_for, cc_optimization_args_for_source, emit_c,
         LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
     };
+    use crate::{ir::lower, parser::parse};
 
     #[test]
     fn default_c_compiler_profile_uses_o2_for_small_sources() {
@@ -29636,5 +29689,31 @@ mod tests {
     fn c_compiler_profile_rejects_unknown_values() {
         let error = cc_optimization_args_for(Some("fast")).unwrap_err();
         assert!(error.message.contains("invalid PTN_CC_OPT_LEVEL value"));
+    }
+
+    #[test]
+    fn direct_helpers_keep_parser_control_rows_off_full_internal_dispatch() {
+        let program = parse(
+            r#"<?php
+class Beep {}
+function test(mixed $var) {
+    try {
+        match ($var) {};
+    } catch (UnhandledMatchError $e) {
+        print $e->getMessage() . PHP_EOL;
+    }
+}
+test(str_repeat("e", 2));
+var_dump(0);
+"#,
+        )
+        .unwrap();
+        let c_source = emit_c(&lower(&program));
+
+        assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH"));
+        assert!(c_source.contains("ptn_str_repeat_value(&runtime"));
+        assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
+        assert!(c_source.contains("ptn_call_declared_method(&runtime"));
+        assert!(!c_source.contains("static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime"));
     }
 }
