@@ -29339,7 +29339,7 @@ function ref(&$x) {\n\
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
@@ -29356,6 +29356,9 @@ function ref(&$x) {\n\
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_by_ref_argument_source_or_temporary"));
 }
 
 #[test]
@@ -48012,6 +48015,81 @@ var_dump($object);
         "object(stdClass)#1 (1) {\n  [\"value\"]=>\n  string(7) \"visible\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_direct_var_dump_magic_debug_info_reference_return_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-var-dump-debug-info-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-var-dump-debug-info-ref.php");
+    let output = root.join("direct-var-dump-debug-info-ref-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    private $tmp = ['x' => 1];
+
+    public function &__debugInfo(): array {
+        return $this->tmp;
+    }
+}
+var_dump(new Test);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(Test)#1 (1) {\n  [\"x\"]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
+    assert!(c_source.contains("ptn_declared_magic_debug_info"));
+}
+
+#[test]
+fn compile_direct_var_dump_top_level_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-var-dump-top-level-ref");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-var-dump-top-level-ref.php");
+    let output = root.join("direct-var-dump-top-level-ref-bin");
+    fs::write(
+        &input,
+        "<?php
+function &square(&$x) {
+    return $x = $x * $x;
+}
+
+$y = 3;
+var_dump(square($y));
+$ref =& $y;
+var_dump($ref);
+var_dump([&$y]);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nNotice: Only variable references should be returned by reference in {} on line 3\nint(9)\nint(9)\narray(1) {{\n  [0]=>\n  &int(9)\n}}\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
 }
 
 #[test]
