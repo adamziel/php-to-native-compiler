@@ -16344,6 +16344,37 @@ fn by_ref_temporary_argument_allowed(value: &ValueExpr) -> bool {
     )
 }
 
+fn temporary_array_dim_by_ref_argument_path(
+    value: &ValueExpr,
+) -> Option<(&ValueExpr, Vec<Option<ValueExpr>>, usize)> {
+    let mut dimensions = Vec::new();
+    let mut current = value;
+    let mut line = value_expr_runtime_line(value).unwrap_or(0);
+
+    loop {
+        match current {
+            ValueExpr::ArrayAccess {
+                array,
+                index,
+                line: access_line,
+            } => {
+                line = *access_line;
+                dimensions.push(Some((**index).clone()));
+                current = array.as_ref();
+            }
+            ValueExpr::ArrayAppendAccess { .. } => return None,
+            ValueExpr::InternalCall { .. }
+            | ValueExpr::DynamicCall { .. }
+            | ValueExpr::MethodCall { .. }
+            | ValueExpr::DynamicMethodCall { .. } => {
+                dimensions.reverse();
+                return Some((current, dimensions, line));
+            }
+            _ => return None,
+        }
+    }
+}
+
 fn cursor_temporary_helper_name(name: &str) -> Option<&'static str> {
     if name.eq_ignore_ascii_case("next") {
         Some("ptn_runtime_array_next_temporary")
@@ -28699,6 +28730,40 @@ impl ValueEmitter {
                 out.push_str("\");\n");
             }
             return temp;
+        }
+        if let Some((root, dimensions, path_line)) =
+            temporary_array_dim_by_ref_argument_path(argument)
+        {
+            let root_allowed = match root {
+                ValueExpr::InternalCall { name, .. } => !name.eq_ignore_ascii_case("func_get_args"),
+                ValueExpr::DynamicCall { .. }
+                | ValueExpr::MethodCall { .. }
+                | ValueExpr::DynamicMethodCall { .. } => true,
+                _ => false,
+            };
+            if root_allowed {
+                let root_temp = self.emit_materialized_value(out, root);
+                let path = emit_array_path_segments(out, self, &dimensions);
+                let temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&temp);
+                out.push_str(" = ptn_value_reference_for_array_path(&runtime, &");
+                out.push_str(&root_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&path_line.to_string());
+                out.push_str(");\n");
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+                emit_value_cleanup(out, "    ", &root_temp);
+                return temp;
+            }
         }
         if value_is_temporary_write_context(argument) {
             let temp = self.next_temp();
