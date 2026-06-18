@@ -1803,11 +1803,15 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         }
         function ptn_supported_property_hook_metadata_row() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/asymmetric_visibility\/virtual_(get|set)_only[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/with_Override_(okay|error_get|error_set)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(no_compile_errors|with_(AllowDynamicProperties|NoDiscard|SensitiveParameter))[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/closures\/closure_0(49|51|53|55|62)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/abstract_hook[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/abstract_prop_hooks[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/syntax[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_getProperties_003[.]phpt$/ ||
+                ptn_path ~ /ext\/reflection\/tests\/ReflectionClass_isIterable_gh20217[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/property_hooks\/ReflectionClass_getMethods[.]phpt$/
         }
         function ptn_supported_enum_metadata_row() {
@@ -1993,7 +1997,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|isreadonly)[[:space:]]*\(/ &&
                     !ptn_supported_reflection_property_named_type_metadata_row()) ||
-                line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_|export|setaccessible|getmodifiernames)/) {
+                line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_[a-z0-9_]*|export|setaccessible|getmodifiernames)[[:space:]]*[(]/) {
                 print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                 found = 1
                 exit

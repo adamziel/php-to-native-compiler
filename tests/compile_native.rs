@@ -42892,6 +42892,73 @@ try {
 }
 
 #[test]
+fn compile_reflection_class_get_properties_orders_hook_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-property-hook-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-property-hook-order.php");
+    let output = root.join("reflection-property-hook-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectHookOrder {
+    public $pub1;
+    public $pub2;
+    private $priv1;
+    public static $pubs;
+    private static $privs;
+    public $hookNoVirt { set { $this->hookNoVirt = strtoupper($value); } }
+    public $hookVirt { get { return 42; } }
+}
+
+function dumpNames(array $properties) {
+    foreach ($properties as $property) {
+        echo $property->getName(), \"\\n\";
+    }
+    echo \"--\\n\";
+}
+
+$rc = new ReflectionClass(\"ReflectHookOrder\");
+dumpNames($rc->getProperties(ReflectionProperty::IS_PUBLIC));
+dumpNames($rc->getProperties(ReflectionProperty::IS_PRIVATE | ReflectionProperty::IS_STATIC));
+dumpNames($rc->getProperties(ReflectionProperty::IS_VIRTUAL));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "pub1\n",
+            "pub2\n",
+            "pubs\n",
+            "hookNoVirt\n",
+            "hookVirt\n",
+            "--\n",
+            "priv1\n",
+            "pubs\n",
+            "privs\n",
+            "--\n",
+            "hookVirt\n",
+            "--\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_properties"));
+    assert!(c_source.contains("ReflectHookOrder"));
+}
+
+#[test]
 fn compile_reflection_property_access_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-property-access-metadata");
     fs::create_dir_all(&root).unwrap();

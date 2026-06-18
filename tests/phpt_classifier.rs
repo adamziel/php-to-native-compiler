@@ -1226,12 +1226,28 @@ fn phpt_classifier_keeps_readonly_property_rows_runnable() {
 
 #[test]
 fn phpt_classifier_keeps_supported_asymmetric_property_hook_rows_runnable_by_path() {
-    let phpt = "--TEST--\nasymmetric protected set\n--FILE--\n<?php\nclass ParentBox { public protected(set) string $author = \"base\"; }\nclass ChildBox extends ParentBox { public protected(set) string $author = \"child\"; }\nvar_dump(new ChildBox());\n--EXPECT--\n";
+    let cases = [
+        (
+            "Zend/tests/asymmetric_visibility/gh19044.phpt",
+            "--TEST--\nasymmetric protected set\n--FILE--\n<?php\nclass ParentBox { public protected(set) string $author = \"base\"; }\nclass ChildBox extends ParentBox { public protected(set) string $author = \"child\"; }\nvar_dump(new ChildBox());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/asymmetric_visibility/virtual_get_only.phpt",
+            "--TEST--\nget-only virtual property\n--FILE--\n<?php\nclass Bad { public private(set) string $name { get { return 'bad'; } } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/asymmetric_visibility/virtual_set_only.phpt",
+            "--TEST--\nset-only virtual property\n--FILE--\n<?php\nclass Bad { public private(set) string $name { set { } } }\n--EXPECTF--\n",
+        ),
+    ];
 
-    assert_eq!(
-        classify_at_relative_path(phpt, "Zend/tests/asymmetric_visibility/gh19044.phpt"),
-        "runnable\tselected for PTN semantic measurement\n"
-    );
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n",
+            "{path}"
+        );
+    }
 }
 
 #[test]
@@ -1252,6 +1268,34 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
         (
             "ext/reflection/tests/property_hooks/ReflectionClass_getMethods.phpt",
             "--TEST--\nreflection class methods\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } }\nvar_dump((new ReflectionClass(Test::class))->getMethods());\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/ReflectionClass_getProperties_003.phpt",
+            "--TEST--\nreflection class properties\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } }\nvar_dump((new ReflectionClass(Test::class))->getProperties());\n--EXPECT--\n",
+        ),
+        (
+            "ext/reflection/tests/ReflectionClass_isIterable_gh20217.phpt",
+            "--TEST--\nreflection class is iterable\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } }\nvar_dump((new ReflectionClass(Test::class))->isIterable());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/closures/closure_049.phpt",
+            "--TEST--\nclosure with hook metadata\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } public function run() { return static function () { return static::class; }; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/closures/closure_051.phpt",
+            "--TEST--\nclosure with hook metadata\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } public static function run() { return static function () { return static::class; }; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/closures/closure_053.phpt",
+            "--TEST--\nclosure with hook metadata\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } public function run() { return static function () { return self::class; }; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/closures/closure_055.phpt",
+            "--TEST--\nclosure with hook metadata\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } public static function run() { return static function () { return self::class; }; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/closures/closure_062.phpt",
+            "--TEST--\nclosure with hook metadata\n--FILE--\n<?php\nclass Test { public $a { get {} set {} } public function run() { return function () { return $this; }; } }\n--EXPECT--\n",
         ),
         (
             "Zend/tests/attributes/delayed_target_validation/with_Override_okay.phpt",
@@ -2021,7 +2065,7 @@ fn phpt_classifier_keeps_final_static_property_modifier_rows_runnable() {
 #[test]
 fn phpt_classifier_keeps_property_hook_modifier_rows_runnable() {
     let classification = classify(
-        "--TEST--\nreflection property hook modifiers\n--FILE--\n<?php\nclass Bag { public $value { get { return 42; } } }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getModifiers());\n--EXPECT--\n",
+        "--TEST--\nreflection property hook modifiers\n--FILE--\n<?php\nclass Bag { public $value { get { return 42; } } }\n$ref = new ReflectionProperty('Bag', 'value');\nvar_dump($ref->getModifiers());\nvar_dump(ReflectionProperty::IS_VIRTUAL);\n--EXPECT--\n",
     );
     assert!(
         classification.starts_with("runnable\t"),

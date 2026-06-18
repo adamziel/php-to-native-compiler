@@ -8897,29 +8897,32 @@ fn class_property_exists_chain<'a>(
         if !seen_classes.insert(lookup_name) {
             return;
         }
+        let instance_property_entry =
+            |property: &'a crate::ir::PropertyDecl| ClassPropertyExistsEntry {
+                declaring_class: class.name.as_str(),
+                name: property.name.as_str(),
+                visibility: property.visibility,
+                set_visibility: property.set_visibility,
+                is_static: false,
+                is_final: property.is_final,
+                is_abstract: property.is_abstract,
+                is_readonly: property.is_readonly,
+                has_hooks: property.has_hooks,
+                is_virtual: property.is_virtual,
+                hook_has_get: property.hook_has_get,
+                hook_has_set: property.hook_has_set,
+                hook_get_is_abstract: property.hook_get_is_abstract,
+                hook_set_is_abstract: property.hook_set_is_abstract,
+                type_hint: property.type_hint.as_ref(),
+                value: property.value.as_ref(),
+                has_default: property.value.is_some() || property.type_hint.is_none(),
+            };
         properties.extend(
             class
                 .properties
                 .iter()
-                .map(|property| ClassPropertyExistsEntry {
-                    declaring_class: class.name.as_str(),
-                    name: property.name.as_str(),
-                    visibility: property.visibility,
-                    set_visibility: property.set_visibility,
-                    is_static: false,
-                    is_final: property.is_final,
-                    is_abstract: property.is_abstract,
-                    is_readonly: property.is_readonly,
-                    has_hooks: property.has_hooks,
-                    is_virtual: property.is_virtual,
-                    hook_has_get: property.hook_has_get,
-                    hook_has_set: property.hook_has_set,
-                    hook_get_is_abstract: property.hook_get_is_abstract,
-                    hook_set_is_abstract: property.hook_set_is_abstract,
-                    type_hint: property.type_hint.as_ref(),
-                    value: property.value.as_ref(),
-                    has_default: property.value.is_some() || property.type_hint.is_none(),
-                }),
+                .filter(|property| !property.has_hooks)
+                .map(instance_property_entry),
         );
         properties.extend(class.static_properties.iter().map(|property| {
             ClassPropertyExistsEntry {
@@ -8942,6 +8945,13 @@ fn class_property_exists_chain<'a>(
                 has_default: property.value.is_some() || property.type_hint.is_none(),
             }
         }));
+        properties.extend(
+            class
+                .properties
+                .iter()
+                .filter(|property| property.has_hooks)
+                .map(instance_property_entry),
+        );
 
         let Some(parent_name) = &class.parent_name else {
             return;
