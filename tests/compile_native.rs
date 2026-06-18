@@ -18538,6 +18538,104 @@ var_dump(constant(\"\\\\LOOKUP_CONST\"));
 }
 
 #[test]
+fn compile_method_exists_class_name_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-method-exists-class-name-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("method-exists-class-name-metadata.php");
+    let output = root.join("method-exists-class-name-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class MethodBase {
+    private function hiddenBase() {}
+    protected static function protStatic() {}
+    public function visible() {}
+}
+
+class MethodChild extends MethodBase {
+    public static $flag = true;
+    private static function hiddenChild() {}
+    public static function ownStatic() {}
+}
+
+spl_autoload_register(function ($name) {
+    echo \"autoload:$name\\n\";
+    if ($name === 'LoadedProps') {
+        class LoadedProps {
+            public $loaded = 1;
+        }
+    }
+    if ($name === 'LoadedMethods') {
+        class LoadedMethods {
+            public function run() {}
+            protected function hidden() {}
+        }
+    }
+    if ($name === 'LoadedVars') {
+        class LoadedVars {
+            public $loadedVar = 9;
+        }
+    }
+});
+
+$child = new MethodChild();
+var_dump(method_exists('MethodChild', 'visible'));
+var_dump(method_exists('MethodChild', 'hiddenBase'));
+var_dump(method_exists($child, 'hiddenBase'));
+var_dump(method_exists('MethodChild', 'hiddenChild'));
+var_dump(method_exists('MethodChild', 'protStatic'));
+var_dump(method_exists('', 'run'));
+var_dump(method_exists('MissingMethodClass', 'run'));
+var_dump(property_exists('\\MethodChild', 'flag'));
+var_dump(property_exists('', 'loaded'));
+var_dump(property_exists('\\LoadedProps', 'loaded'));
+var_dump(in_array('run', get_class_methods('\\LoadedMethods'), true));
+$vars = get_class_vars('\\LoadedVars');
+var_dump($vars['loadedVar']);
+try {
+    method_exists(42, 'run');
+} catch (TypeError $e) {
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "autoload:MissingMethodClass\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "autoload:LoadedProps\n",
+            "bool(true)\n",
+            "autoload:LoadedMethods\n",
+            "bool(true)\n",
+            "autoload:LoadedVars\n",
+            "int(9)\n",
+            "TypeError: method_exists(): Argument #1 ($object_or_class) must be of type object|string, int given\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_method_exists"));
+    assert!(c_source.contains("ptn_internal_get_class_vars"));
+    assert!(c_source.contains("ptn_declared_class_method_exists_from_class_name"));
+}
+
+#[test]
 fn compile_spl_autoload_registry_helpers_to_native_binary() {
     let root = temp_dir("ptn-native-spl-autoload-registry-helpers");
     fs::create_dir_all(&root).unwrap();
