@@ -1050,12 +1050,14 @@ struct PtnRuntime {
     PtnSymbolTable *class_aliases;
     PtnSymbolTable owned_class_constants;
     PtnSymbolTable *class_constants;
-    PtnSymbolTable owned_class_constant_deprecations;
-    PtnSymbolTable *class_constant_deprecations;
     PtnSymbolTable owned_class_constant_initializing;
     PtnSymbolTable *class_constant_initializing;
+    const char *class_constant_initializing_class;
+    const char *class_constant_initializing_constant;
     const char *current_class_constant_initializing_class_name;
     const char *current_class_constant_initializing_constant_name;
+    PtnSymbolTable owned_class_constant_deprecations;
+    PtnSymbolTable *class_constant_deprecations;
     const char *class_constant_deprecation_suppress_class;
     const char *class_constant_deprecation_suppress_constant;
     PtnSymbolTable owned_static_properties;

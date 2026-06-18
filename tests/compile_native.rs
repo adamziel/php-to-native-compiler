@@ -17362,6 +17362,56 @@ echo call_user_func([$greeter, \"via_this\"], 5), \"\\n\";
 }
 
 #[test]
+fn compile_call_user_func_invalid_method_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-invalid-method-callback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-invalid-method-callback.php");
+    let output = root.join("call-user-func-invalid-method-callback-bin");
+    fs::write(
+        &input,
+        "<?php
+class CallbackBase {
+    protected function guarded($value) {
+        echo \"not called\\n\";
+    }
+}
+class CallbackChild extends CallbackBase {
+    private function hidden($value) {
+        echo \"not called\\n\";
+    }
+}
+
+$target = new CallbackChild();
+foreach ([\"hidden\", \"guarded\"] as $method) {
+    try {
+        call_user_func([$target, $method], \"value\");
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "call_user_func(): Argument #1 ($callback) must be a valid callback, cannot access private method CallbackChild::hidden()\n",
+            "call_user_func(): Argument #1 ($callback) must be a valid callback, cannot access protected method CallbackChild::guarded()\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_call_user_callback"));
+    assert!(c_source.contains("ptn_invalid_callback_message"));
+}
+
+#[test]
 fn compile_magic_call_object_callables_to_native_binary() {
     let root = temp_dir("ptn-native-magic-call-object-callables");
     fs::create_dir_all(&root).unwrap();
@@ -30883,6 +30933,8 @@ function report($callback) {
 }
 class CallbackTarget {
     public static function ok($value) { return $value; }
+    private static function hidden($value) { return $value; }
+    protected static function guarded($value) { return $value; }
 }
 class PrivateCallbackTarget {
     private static function hide($value) { return $value; }
@@ -43118,6 +43170,74 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_define_class_constant(&runtime"));
     assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope(&runtime"));
+}
+
+#[test]
+fn compile_class_constant_array_unpack_self_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-array-unpack-self-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-array-unpack-self-reference.php");
+    let output = root.join("class-constant-array-unpack-self-reference-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public const FOO = [0, ...self::ARR, 4];
+    public const ARR = [1, 2, 3];
+    public static $bar = [...self::ARR];
+}
+
+class D {
+    public const A = [...self::B];
+    public const B = [...self::A];
+}
+
+var_dump(C::FOO);
+var_dump(C::$bar);
+
+try {
+    var_dump(D::A);
+} catch (Error $ex) {
+    echo \"Exception: \" . $ex->getMessage() . \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(5) {\n",
+            "  [0]=>\n",
+            "  int(0)\n",
+            "  [1]=>\n",
+            "  int(1)\n",
+            "  [2]=>\n",
+            "  int(2)\n",
+            "  [3]=>\n",
+            "  int(3)\n",
+            "  [4]=>\n",
+            "  int(4)\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "  [1]=>\n",
+            "  int(2)\n",
+            "  [2]=>\n",
+            "  int(3)\n",
+            "}\n",
+            "Exception: Cannot declare self-referencing constant self::B\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_class_constant_is_initializing"));
 }
 
 #[test]

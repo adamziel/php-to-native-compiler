@@ -7,14 +7,18 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->class_aliases = caller_runtime->class_aliases;
     ptn_symbols_init(&runtime->owned_class_constants);
     runtime->class_constants = caller_runtime->class_constants;
-    ptn_symbols_init(&runtime->owned_class_constant_deprecations);
-    runtime->class_constant_deprecations = caller_runtime->class_constant_deprecations;
     ptn_symbols_init(&runtime->owned_class_constant_initializing);
     runtime->class_constant_initializing = caller_runtime->class_constant_initializing;
+    runtime->class_constant_initializing_class =
+        caller_runtime->class_constant_initializing_class;
+    runtime->class_constant_initializing_constant =
+        caller_runtime->class_constant_initializing_constant;
     runtime->current_class_constant_initializing_class_name =
         caller_runtime->current_class_constant_initializing_class_name;
     runtime->current_class_constant_initializing_constant_name =
         caller_runtime->current_class_constant_initializing_constant_name;
+    ptn_symbols_init(&runtime->owned_class_constant_deprecations);
+    runtime->class_constant_deprecations = caller_runtime->class_constant_deprecations;
     runtime->class_constant_deprecation_suppress_class =
         caller_runtime->class_constant_deprecation_suppress_class;
     runtime->class_constant_deprecation_suppress_constant =
@@ -403,8 +407,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->owned_static_property_read_visibility);
     ptn_symbols_free(&runtime->owned_static_property_initialized);
     ptn_symbols_free(&runtime->owned_static_properties);
-    ptn_symbols_free(&runtime->owned_class_constant_initializing);
     ptn_symbols_free(&runtime->owned_class_constant_deprecations);
+    ptn_symbols_free(&runtime->owned_class_constant_initializing);
     ptn_symbols_free(&runtime->owned_class_constants);
     ptn_symbols_free(&runtime->owned_class_aliases);
     ptn_symbols_free(&runtime->owned_constants);
@@ -2646,16 +2650,16 @@ static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_table(PtnRuntime *r
     return runtime->class_constants == NULL ? &runtime->owned_class_constants : runtime->class_constants;
 }
 
-static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_deprecation_table(PtnRuntime *runtime) {
-    return runtime->class_constant_deprecations == NULL
-        ? &runtime->owned_class_constant_deprecations
-        : runtime->class_constant_deprecations;
-}
-
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_initializing_table(PtnRuntime *runtime) {
     return runtime->class_constant_initializing == NULL
         ? &runtime->owned_class_constant_initializing
         : runtime->class_constant_initializing;
+}
+
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_class_constant_deprecation_table(PtnRuntime *runtime) {
+    return runtime->class_constant_deprecations == NULL
+        ? &runtime->owned_class_constant_deprecations
+        : runtime->class_constant_deprecations;
 }
 
 static PTN_UNUSED int ptn_property_class_names_equal(const char *left, const char *right) {
@@ -3789,6 +3793,77 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
     return ptn_null();
 }
 
+static PTN_UNUSED int ptn_runtime_class_constant_is_initializing(
+    PtnRuntime *runtime,
+    const char *key
+) {
+    PtnValue value;
+    return runtime != NULL &&
+        ptn_symbols_get(ptn_runtime_class_constant_initializing_table(runtime), key, &value);
+}
+
+static PTN_UNUSED void ptn_runtime_mark_class_constant_initializing(
+    PtnRuntime *runtime,
+    const char *key
+) {
+    ptn_symbols_set(ptn_runtime_class_constant_initializing_table(runtime), key, ptn_bool(1));
+}
+
+static PTN_UNUSED void ptn_runtime_clear_class_constant_initializing(
+    PtnRuntime *runtime,
+    const char *key
+) {
+    ptn_symbols_unset(ptn_runtime_class_constant_initializing_table(runtime), key);
+}
+
+static PTN_UNUSED void ptn_runtime_clear_class_constant_initializing_all(PtnRuntime *runtime) {
+    PtnSymbolTable *initializing = ptn_runtime_class_constant_initializing_table(runtime);
+    ptn_symbols_free(initializing);
+    ptn_symbols_init(initializing);
+    runtime->class_constant_initializing_class = NULL;
+    runtime->class_constant_initializing_constant = NULL;
+    runtime->current_class_constant_initializing_class_name = NULL;
+    runtime->current_class_constant_initializing_constant_name = NULL;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_self_referencing_class_constant_error(
+    PtnRuntime *runtime,
+    const char *fallback_constant,
+    size_t line
+) {
+    const char *constant = runtime != NULL && runtime->class_constant_initializing_constant != NULL
+        ? runtime->class_constant_initializing_constant
+        : fallback_constant;
+    int needed = snprintf(
+        NULL,
+        0,
+        "Cannot declare self-referencing constant self::%s",
+        constant
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "Cannot declare self-referencing constant self::%s",
+        constant
+    );
+    ptn_runtime_clear_class_constant_initializing_all(runtime);
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "Error",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+    return ptn_null();
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
     PtnRuntime *runtime,
     const char *class_name,
@@ -3846,45 +3921,27 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
             free(key);
             return ptn_value_clone_deref(value);
         }
-        PtnValue initializing;
-        if (
-            ptn_symbols_get(
-                ptn_runtime_class_constant_initializing_table(runtime),
-                key,
-                &initializing
-            ) &&
-            ptn_is_truthy(initializing)
-        ) {
-            const char *message_class = runtime->current_class_constant_initializing_class_name == NULL
-                ? lookup_class_name
-                : runtime->current_class_constant_initializing_class_name;
-            const char *message_constant = runtime->current_class_constant_initializing_constant_name == NULL
-                ? constant
-                : runtime->current_class_constant_initializing_constant_name;
-            char message[256];
-            int written = snprintf(
-                message,
-                sizeof(message),
-                "Cannot declare self-referencing constant %s::%s",
-                message_class,
-                message_constant
-            );
-            if (written < 0 || (size_t)written >= sizeof(message)) {
+        if (runtime->class_constant_initializer != NULL) {
+            if (ptn_runtime_class_constant_is_initializing(runtime, key)) {
                 free(key);
-                ptn_abort_out_of_memory();
+                return ptn_runtime_self_referencing_class_constant_error(runtime, constant, line);
             }
-            free(key);
-            ptn_throw_exception_at(
-                runtime,
-                "Error",
-                message,
-                runtime != NULL ? runtime->source_path : NULL,
-                line
-            );
-            return ptn_null();
-        }
-        if (runtime->class_constant_initializer != NULL &&
-            runtime->class_constant_initializer(runtime, lookup_class_name, constant)) {
+            const char *previous_initializing_class = runtime->class_constant_initializing_class;
+            const char *previous_initializing_constant =
+                runtime->class_constant_initializing_constant;
+            runtime->class_constant_initializing_class = lookup_class_name;
+            runtime->class_constant_initializing_constant = constant;
+            ptn_runtime_mark_class_constant_initializing(runtime, key);
+            int initialized =
+                runtime->class_constant_initializer(runtime, lookup_class_name, constant);
+            ptn_runtime_clear_class_constant_initializing(runtime, key);
+            runtime->class_constant_initializing_class = previous_initializing_class;
+            runtime->class_constant_initializing_constant = previous_initializing_constant;
+            if (!initialized) {
+                free(key);
+                lookup_class_name = ptn_declared_class_parent_name(lookup_class_name);
+                continue;
+            }
             if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
                 free(key);
                 return ptn_null();
