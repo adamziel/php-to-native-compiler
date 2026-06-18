@@ -305,6 +305,13 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
     return buffer.data;
 }
 
+static PTN_UNUSED void ptn_string_operand_free(PtnStringOperand operand);
+static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+);
+
 static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type == PTN_STRING && ptn_string_has_embedded_nul(value.as.string)) {
@@ -323,10 +330,23 @@ static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue 
         case PTN_STRING:
         case PTN_RESOURCE:
             return ptn_value_to_string(value);
-        case PTN_ARRAY:
         case PTN_OBJECT:
         case PTN_CLOSURE:
-        case PTN_EXCEPTION:
+        case PTN_EXCEPTION: {
+            PtnStringOperand name = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+            if (memchr(name.data, '\0', name.len) != NULL) {
+                ptn_string_operand_free(name);
+                ptn_emit_type_error(
+                    &runtime->diagnostics,
+                    "Unsupported dynamic variable name containing embedded NUL"
+                );
+                exit(255);
+            }
+            char *copy = ptn_duplicate_string_len(name.data, name.len);
+            ptn_string_operand_free(name);
+            return copy;
+        }
+        case PTN_ARRAY:
         case PTN_REFERENCE:
             break;
     }

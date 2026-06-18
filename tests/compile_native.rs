@@ -9835,6 +9835,42 @@ var_dump(count($decoded));
 }
 
 #[test]
+fn compile_array_object_iterator_class_tostring_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-iterator-class-tostring-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-iterator-class-tostring-exception.php");
+    let output = root.join("array-object-iterator-class-tostring-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BadIteratorClass {
+    public function __toString() {
+        throw new Exception("iterator conversion failed");
+    }
+}
+
+try { new ArrayObject([], 0, new BadIteratorClass); }
+catch (Exception $e) { echo $e->getMessage(), "\n"; }
+
+$arrayObject = new ArrayObject([]);
+try { $arrayObject->setIteratorClass(new BadIteratorClass); }
+catch (Exception $e) { echo $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "iterator conversion failed\niterator conversion failed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_object_storage_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-storage-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -38505,6 +38541,52 @@ fn compile_include_path_variable_concatenation_to_native_binary() {
 }
 
 #[test]
+fn compile_dynamic_include_operand_tostring_exception_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-include-tostring-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("dynamic-include-tostring-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class PathLike {
+    public function __toString() {
+        throw new Exception("path conversion failed");
+    }
+}
+
+try {
+    include new PathLike();
+    echo "unreachable\n";
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+echo "after\n";
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "path conversion failed\nafter\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_resolve_path"));
+    assert!(!c_source.contains("ptn_include_file_0"));
+}
+
+#[test]
 fn compile_include_path_dynamic_filename_segment_to_native_binary() {
     let root = temp_dir("ptn-native-include-path-dynamic-filename-segment");
     fs::create_dir_all(&root).unwrap();
@@ -46509,6 +46591,48 @@ echo $ref3, \"\\n\";\n",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_bind_global_variable(&runtime, ptn_tmp_"));
     assert!(c_source.contains("ptn_runtime_bind_array_path_reference(&runtime, ptn_tmp_"));
+}
+
+#[test]
+fn dynamic_variable_object_name_tostring_exception_is_catchable() {
+    let root = temp_dir("ptn-native-dynamic-variable-tostring-exception");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-tostring-exception.php");
+    let output = root.join("dynamic-variable-tostring-exception-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class BadName {
+    public function __toString() {
+        throw new Exception("name conversion failed");
+    }
+}
+
+$badName = new BadName;
+${""} = 42;
+
+try { unset(${$badName}); }
+catch (Exception $e) { echo $e->getMessage(), "\n"; }
+var_dump(${""});
+
+try { $x = ${$badName}; }
+catch (Exception $e) { echo $e->getMessage(), "\n"; }
+
+try { $x = isset(${$badName}); }
+catch (Exception $e) { echo $e->getMessage(), "\n"; }
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "name conversion failed\nint(42)\nname conversion failed\nname conversion failed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

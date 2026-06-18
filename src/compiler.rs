@@ -1020,15 +1020,11 @@ impl IncludeCollector {
         source_file: &str,
         source_dir: &str,
     ) -> Result<Vec<usize>> {
-        let include_paths =
-            bounded_include_paths(path, source_file, source_dir, &self.path_env).ok_or_else(
-                || {
-            Diagnostic::new(
-                "dynamic include paths are unsupported; use a compile-time string path or bounded conditional of compile-time string paths",
-                Some(path.span()),
-            )
-                },
-            )?;
+        let Some(include_paths) =
+            bounded_include_paths(path, source_file, source_dir, &self.path_env)
+        else {
+            return Ok(Vec::new());
+        };
         let mut candidates = Vec::new();
         for include_path in include_paths {
             let index = self.resolve_include_candidate(&include_path, span, source_dir)?;

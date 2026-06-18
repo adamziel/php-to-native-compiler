@@ -150,7 +150,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_type_hint_runtime_helpers(&mut out);
     emit_include_prototypes(&mut out, &module.includes);
     emit_include_once_state(&mut out, &module.includes);
-    if !module.includes.is_empty() {
+    if runtime_requirements.include_helpers {
         emit_include_runtime_helpers(&mut out);
     }
     emit_user_function_prototypes(
@@ -554,6 +554,7 @@ struct RuntimeRequirements {
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     direct_internal_helpers: bool,
+    include_helpers: bool,
     request_context: bool,
 }
 
@@ -15404,6 +15405,7 @@ fn collect_value_runtime_requirements(
             collect_value_runtime_requirements(expression, functions, requirements);
         }
         ValueExpr::Include { path, .. } => {
+            requirements.include_helpers = true;
             collect_value_runtime_requirements(path, functions, requirements);
         }
         ValueExpr::Throw { value, .. } => {
