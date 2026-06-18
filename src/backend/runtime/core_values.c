@@ -1129,6 +1129,8 @@ struct PtnRuntime {
     int by_ref_argument_notice_pending;
     int by_ref_argument_notice_emitted;
     size_t by_ref_argument_notice_line;
+    const PtnArrayKey *call_argument_keys;
+    size_t call_argument_key_count;
     char *include_path;
     char **included_files;
     size_t included_files_len;

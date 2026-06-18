@@ -150,13 +150,13 @@ static PTN_UNUSED void ptn_closure_release(PtnClosure *closure) {
     if (closure->refcount != 0) {
         return;
     }
-    ptn_runtime_release_object_id(closure->lifecycle_runtime, closure->object_id);
     free(closure->scope_class_name);
     free(closure->called_class_name);
     ptn_symbols_free(&closure->captures);
     if (closure->has_wrapped_callable) {
         ptn_value_destroy(&closure->wrapped_callable);
     }
+    ptn_runtime_release_object_id(closure->lifecycle_runtime, closure->object_id);
     free(closure->bound_scope_name);
     free(closure);
 }

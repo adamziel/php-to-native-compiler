@@ -1,0 +1,2 @@
+Zend/tests/closures/closure_065.phpt
+Zend/tests/gh8962.phpt

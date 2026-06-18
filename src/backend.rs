@@ -1931,6 +1931,8 @@ fn emit_user_functions(
                 );
             }
         }
+        out.push_str("    runtime.call_argument_keys = NULL;\n");
+        out.push_str("    runtime.call_argument_key_count = 0;\n");
         let mut break_targets = Vec::new();
         let mut finally_stack = Vec::new();
         let return_label = values.next_label("ptn_function_return");
@@ -2383,7 +2385,17 @@ fn emit_variadic_parameter_binding(
 
     out.push_str("        ptn_array_set_entry(");
     out.push_str(&array_temp);
-    out.push_str(".as.array, ptn_array_int_key((int64_t)");
+    out.push_str(".as.array, (runtime.call_argument_keys != NULL && ");
+    out.push_str(&index_temp);
+    out.push_str(" < runtime.call_argument_key_count && runtime.call_argument_keys[");
+    out.push_str(&index_temp);
+    out.push_str(
+        "].type == PTN_ARRAY_KEY_STRING) ? ptn_array_string_key_len(runtime.call_argument_keys[",
+    );
+    out.push_str(&index_temp);
+    out.push_str("].as.string, runtime.call_argument_keys[");
+    out.push_str(&index_temp);
+    out.push_str("].string_len) : ptn_array_int_key((int64_t)");
     out.push_str(&offset_temp);
     out.push_str("), ");
     out.push_str(&value_expr);
@@ -6420,6 +6432,7 @@ fn emit_reflection_attribute_metadata_helpers(
     emit_declared_class_constant_reflection_attributes(out, classes, functions);
     emit_declared_function_reflection_attributes(out, classes, functions);
     emit_declared_function_parameter_reflection_attributes(out, classes, functions);
+    emit_declared_function_parameter_default_metadata(out, functions);
     emit_declared_constant_attributes(out, classes, functions, instructions);
     emit_declared_attribute_class_flags(out, classes);
 }
@@ -7390,6 +7403,56 @@ fn emit_declared_function_parameter_reflection_attributes(
         }
     }
     out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionParameter\", \"getAttributes\", argc, args, line);\n");
+    out.push_str("}\n");
+}
+
+fn emit_declared_function_parameter_default_metadata(out: &mut String, functions: &[FunctionDecl]) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_function_parameter_default_available(const char *function_name, size_t parameter_index) {\n",
+    );
+    out.push_str("    (void)function_name;\n");
+    out.push_str("    (void)parameter_index;\n");
+    for function in functions.iter().filter(|function| !function.is_anonymous) {
+        for (index, parameter) in function.parameters.iter().enumerate() {
+            if parameter.default_value.is_none() {
+                continue;
+            }
+            out.push_str("    if (ptn_ascii_case_equal(function_name, \"");
+            out.push_str(&c_string(&function.display_name));
+            out.push_str("\") && parameter_index == ");
+            out.push_str(&index.to_string());
+            out.push_str(") {\n");
+            out.push_str("        return 1;\n");
+            out.push_str("    }\n");
+        }
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_function_parameter_default_constant_name(const char *function_name, size_t parameter_index) {\n",
+    );
+    out.push_str("    (void)function_name;\n");
+    out.push_str("    (void)parameter_index;\n");
+    for function in functions.iter().filter(|function| !function.is_anonymous) {
+        for (index, parameter) in function.parameters.iter().enumerate() {
+            let Some(constant_name) =
+                reflection_default_constant_name(parameter.default_value.as_ref())
+            else {
+                continue;
+            };
+            out.push_str("    if (ptn_ascii_case_equal(function_name, \"");
+            out.push_str(&c_string(&function.display_name));
+            out.push_str("\") && parameter_index == ");
+            out.push_str(&index.to_string());
+            out.push_str(") {\n");
+            out.push_str("        return \"");
+            out.push_str(&c_string(&constant_name));
+            out.push_str("\";\n");
+            out.push_str("    }\n");
+        }
+    }
+    out.push_str("    return NULL;\n");
     out.push_str("}\n");
 }
 
@@ -9412,7 +9475,20 @@ fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Null) | None => "NULL".to_string(),
         Some(ValueExpr::Array(_)) => "Array".to_string(),
         Some(ValueExpr::Constant { name, .. }) => name.clone(),
+        Some(ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        }) => format!("{class_name}::{name}"),
         _ => "NULL".to_string(),
+    }
+}
+
+fn reflection_default_constant_name(value: Option<&ValueExpr>) -> Option<String> {
+    match value? {
+        ValueExpr::Constant { name, .. } => Some(name.trim_start_matches('\\').to_string()),
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } => Some(format!("{}::{}", class_name.trim_start_matches('\\'), name)),
+        _ => None,
     }
 }
 

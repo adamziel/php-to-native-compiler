@@ -281,6 +281,27 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
     );
     closure.as.closure->has_wrapped_callable = 1;
     closure.as.closure->wrapped_callable = ptn_value_clone_deref(callable);
+    PtnValue resolved = ptn_value_deref(callable);
+    if (resolved.type == PTN_ARRAY && resolved.as.array != NULL) {
+        for (size_t i = 0; i < resolved.as.array->len; i++) {
+            PtnArrayEntry *entry = &resolved.as.array->entries[i];
+            if (entry->key.type != PTN_ARRAY_KEY_INT || entry->key.as.integer != 0) {
+                continue;
+            }
+
+            PtnValue receiver = ptn_value_deref(entry->value);
+            if (receiver.type != PTN_OBJECT && receiver.type != PTN_EXCEPTION) {
+                break;
+            }
+
+            const char *class_name = receiver.type == PTN_OBJECT
+                ? receiver.as.object->class_name
+                : receiver.as.exception->class_name;
+            ptn_closure_set_scope(closure, class_name, class_name);
+            ptn_closure_set_capture(closure, "this", receiver);
+            break;
+        }
+    }
     return closure;
 }
 
@@ -1601,6 +1622,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->by_ref_argument_notice_pending = 0;
     runtime->by_ref_argument_notice_emitted = 0;
     runtime->by_ref_argument_notice_line = 0;
+    runtime->call_argument_keys = NULL;
+    runtime->call_argument_key_count = 0;
     runtime->include_path = ptn_duplicate_string(".");
     runtime->included_files = NULL;
     runtime->included_files_len = 0;

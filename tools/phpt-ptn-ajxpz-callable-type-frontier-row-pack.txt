@@ -1,0 +1,4 @@
+Zend/tests/call_user_functions/call_user_func_001.phpt
+Zend/tests/named_params/call_user_func_array.phpt
+Zend/tests/type_declarations/confusable_type_warning.phpt
+Zend/tests/typehints/bug62441.phpt

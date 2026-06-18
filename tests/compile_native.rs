@@ -2571,6 +2571,53 @@ fn parser_accepts_class_name_parameter_and_return_type_hints() {
 }
 
 #[test]
+fn parser_warns_for_confusable_unqualified_type_hints() {
+    let program = parser::parse(
+        "<?php
+namespace {
+    function a(integer $value) {}
+    function b(double $value) {}
+    function c(boolean $value) {}
+    function d(resource $value) {}
+    function e(\\integer $value) {}
+}
+namespace Foo {
+    use integer;
+    function f(integer $value) {}
+    function g(boolean $value) {}
+}",
+    )
+    .unwrap();
+
+    assert_eq!(
+        program.compile_warnings.iter().map(|warning| warning.message.as_str()).collect::<Vec<_>>(),
+        vec![
+            "\"integer\" will be interpreted as a class name. Did you mean \"int\"? Write \"\\integer\" to suppress this warning",
+            "\"double\" will be interpreted as a class name. Did you mean \"float\"? Write \"\\double\" to suppress this warning",
+            "\"boolean\" will be interpreted as a class name. Did you mean \"bool\"? Write \"\\boolean\" to suppress this warning",
+            "\"resource\" is not a supported builtin type and will be interpreted as a class name. Write \"\\resource\" to suppress this warning",
+            "\"boolean\" will be interpreted as a class name. Did you mean \"bool\"? Write \"\\Foo\\boolean\" or import the class with \"use\" to suppress this warning",
+        ]
+    );
+    assert!(program
+        .compile_warnings
+        .iter()
+        .all(|warning| warning.kind == CompileWarningKind::Warning));
+    assert_eq!(
+        program.functions[0].parameters[0].type_hint,
+        Some(TypeHint::Class("integer".to_string()))
+    );
+    assert_eq!(
+        program.functions[3].parameters[0].type_hint,
+        Some(TypeHint::Class("resource".to_string()))
+    );
+    assert_eq!(
+        program.functions[6].parameters[0].type_hint,
+        Some(TypeHint::Class("Foo\\boolean".to_string()))
+    );
+}
+
+#[test]
 fn parser_accepts_iterable_object_union_intersection_and_dnf_type_hints() {
     let program = parser::parse(
         "<?php function test(object $object, iterable $iterable, (A&B)|array $value): object|iterable {}",
@@ -2663,6 +2710,29 @@ class ChildDnf extends ParentDnf {
     assert_eq!(
         error.message,
         "Declaration of ChildDnf::both(): LeftMarker|RightMarker must be compatible with ParentDnf::both(): LeftMarker&RightMarker"
+    );
+}
+
+#[test]
+fn parser_reports_unavailable_parameter_class_for_signature_compatibility() {
+    let error = parser::parse(
+        "<?php
+namespace {
+    interface Iface {
+        function method(stdClass $o);
+    }
+}
+namespace ns {
+    class Foo implements \\Iface {
+        function method(stdClass $o) {}
+    }
+}",
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "Could not check compatibility between ns\\Foo::method(ns\\stdClass $o) and Iface::method(stdClass $o), because class ns\\stdClass is not available"
     );
 }
 
@@ -30354,7 +30424,8 @@ var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_call_user_func_array"));
-    assert!(c_source.contains("ptn_internal_call_callback(runtime, args[0], arguments->len"));
+    assert!(c_source.contains("runtime->call_argument_keys = expanded_keys"));
+    assert!(c_source.contains("ptn_internal_call_user_callback(runtime, callback, expanded_count"));
 }
 
 #[test]

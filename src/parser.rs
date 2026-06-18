@@ -3990,23 +3990,29 @@ impl Parser<'_> {
                 self.advance();
                 TypeHint::Never
             }
-            TokenKind::IntType | TokenKind::IntegerType => {
+            TokenKind::IntType => {
                 self.advance();
                 TypeHint::Int
             }
-            TokenKind::FloatType | TokenKind::DoubleType => {
+            TokenKind::FloatType => {
                 self.advance();
                 TypeHint::Float
             }
-            TokenKind::StringType | TokenKind::BinaryType
-                if !matches!(self.peek_next().kind, TokenKind::Backslash) =>
-            {
+            TokenKind::StringType if !matches!(self.peek_next().kind, TokenKind::Backslash) => {
                 self.advance();
                 TypeHint::String
             }
-            TokenKind::BoolType | TokenKind::BooleanType => {
+            TokenKind::BoolType => {
                 self.advance();
                 TypeHint::Bool
+            }
+            TokenKind::IntegerType
+            | TokenKind::DoubleType
+            | TokenKind::BinaryType
+            | TokenKind::BooleanType => {
+                let parsed = self.parse_name("expected type hint")?;
+                self.note_confusable_type_hint_warning(&parsed);
+                TypeHint::Class(self.resolve_class_name(&parsed))
             }
             TokenKind::True => {
                 self.advance();
@@ -4040,6 +4046,7 @@ impl Parser<'_> {
             }
             TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
                 let parsed = self.parse_name("expected type hint")?;
+                self.note_confusable_type_hint_warning(&parsed);
                 TypeHint::Class(self.resolve_class_name(&parsed))
             }
             _ if name_segment_from_token(&token.kind).is_some()
@@ -4057,6 +4064,32 @@ impl Parser<'_> {
             type_hint,
             span: token.span,
         })
+    }
+
+    fn note_confusable_type_hint_warning(&mut self, parsed: &ParsedName) {
+        if parsed.resolution != NameResolution::Unqualified {
+            return;
+        }
+        if self
+            .class_aliases
+            .contains_key(&parsed.name.to_ascii_lowercase())
+        {
+            return;
+        }
+        let name = self
+            .source
+            .get(parsed.span.byte_start..parsed.span.byte_end)
+            .unwrap_or(parsed.name.as_str());
+        let Some(message) =
+            confusable_type_hint_warning_message(name, self.current_namespace.as_deref())
+        else {
+            return;
+        };
+        self.compile_warnings.push(CompileWarning {
+            message,
+            span: parsed.span,
+            kind: CompileWarningKind::Warning,
+        });
     }
 
     fn relative_type_hint(&self, keyword: &str, span: SourceSpan) -> Result<TypeHint> {
@@ -8757,23 +8790,53 @@ fn is_unsupported_builtin_type_hint_name(name: &str) -> bool {
     )
 }
 
+fn confusable_type_hint_warning_message(
+    name: &str,
+    current_namespace: Option<&str>,
+) -> Option<String> {
+    let replacement = match name {
+        "integer" => Some("int"),
+        "double" => Some("float"),
+        "boolean" => Some("bool"),
+        _ => None,
+    };
+    let suppress_hint = match current_namespace {
+        Some(namespace) if !namespace.is_empty() => {
+            format!(
+                "Write \"\\{}\\{}\" or import the class with \"use\" to suppress this warning",
+                namespace, name
+            )
+        }
+        _ => format!("Write \"\\{}\" to suppress this warning", name),
+    };
+    if let Some(replacement) = replacement {
+        Some(format!(
+            "\"{name}\" will be interpreted as a class name. Did you mean \"{replacement}\"? {suppress_hint}"
+        ))
+    } else if name == "resource" {
+        Some(format!(
+            "\"resource\" is not a supported builtin type and will be interpreted as a class name. {suppress_hint}"
+        ))
+    } else {
+        None
+    }
+}
+
 fn is_unqualified_only_builtin_type_hint_name(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
         "array"
             | "callable"
             | "bool"
-            | "boolean"
             | "float"
-            | "double"
             | "int"
-            | "integer"
             | "iterable"
             | "mixed"
             | "null"
             | "object"
             | "string"
-            | "binary"
+            | "true"
+            | "false"
             | "void"
             | "never"
     )
@@ -12353,6 +12416,21 @@ fn validate_method_signature_pair(
             classes,
             runtime_class_aliases,
         ) {
+            if let (Some(type_hint), Some(parent_type_hint)) =
+                (&parameter.type_hint, &parent_parameter.type_hint)
+            {
+                if let Some(unavailable_name) =
+                    unresolved_compatibility_class(type_hint, parent_type_hint, classes)
+                {
+                    return Err(method_signature_unresolved_compatibility_error(
+                        class,
+                        method,
+                        parent_class,
+                        parent_method,
+                        &unavailable_name,
+                    ));
+                }
+            }
             return Err(method_signature_compatibility_error(
                 class,
                 method,

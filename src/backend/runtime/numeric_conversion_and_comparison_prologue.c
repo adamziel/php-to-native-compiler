@@ -130,6 +130,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->by_ref_argument_notice_pending = caller_runtime->by_ref_argument_notice_pending;
     runtime->by_ref_argument_notice_emitted = caller_runtime->by_ref_argument_notice_emitted;
     runtime->by_ref_argument_notice_line = caller_runtime->by_ref_argument_notice_line;
+    runtime->call_argument_keys = caller_runtime->call_argument_keys;
+    runtime->call_argument_key_count = caller_runtime->call_argument_key_count;
     runtime->include_path = NULL;
     runtime->included_files = NULL;
     runtime->included_files_len = 0;

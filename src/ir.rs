@@ -1503,7 +1503,11 @@ impl<'a> LoweringContext<'a> {
         let attributes = self.annotate_attribute_metadata(&function.attributes);
         let deprecated_metadata = self.function_deprecated_metadata(&attributes, None, None, None);
         let display_name = if let Some(scope_name) = &self.current_function_display_name {
-            format!("{{closure:{}():{}}}", scope_name, function.span.line)
+            if scope_name.starts_with("{closure:") {
+                format!("{{closure:{}:{}}}", scope_name, function.span.line)
+            } else {
+                format!("{{closure:{}():{}}}", scope_name, function.span.line)
+            }
         } else {
             format!("{{closure:{}:{}}}", self.source_file, function.span.line)
         };
