@@ -69621,6 +69621,35 @@ static int ptn_reflection_class_symbol_exists(const char *name) {
         || ptn_internal_interface_exists_name(name);
 }
 
+static int ptn_reflection_class_runtime_symbol_exists(PtnRuntime *runtime, const char *name) {
+    return ptn_declared_runtime_class_exists(runtime, name)
+        || ptn_declared_runtime_interface_exists(runtime, name)
+        || ptn_declared_trait_exists(name)
+        || ptn_internal_class_exists_name(name)
+        || ptn_internal_interface_exists_name(name);
+}
+
+static int ptn_reflection_class_autoload_name_char_is_valid(unsigned char ch) {
+    return ch == '_' ||
+        ch == '\\' ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= '0' && ch <= '9') ||
+        ch >= 0x80;
+}
+
+static int ptn_reflection_class_name_should_autoload(const char *name) {
+    if (name == NULL || *name == '\0') {
+        return 0;
+    }
+    for (const unsigned char *cursor = (const unsigned char *)name; *cursor != '\0'; cursor++) {
+        if (!ptn_reflection_class_autoload_name_char_is_valid(*cursor)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static int ptn_reflection_class_is_interface_name(const char *name) {
     return ptn_declared_interface_exists(name) || ptn_internal_interface_exists_name(name);
 }
@@ -70781,12 +70810,26 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
     if (name == NULL) {
         return ptn_null();
     }
-    if (!ptn_reflection_class_symbol_exists(name)) {
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    if (
+        !ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name) &&
+        ptn_reflection_class_name_should_autoload(lookup_name)
+    ) {
+        runtime->call_site_line = line;
+        ptn_runtime_autoload_class(runtime, lookup_name, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(name);
+            return ptn_null();
+        }
+        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    }
+    if (!ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name)) {
         ptn_reflection_class_throw_missing_class(runtime, name);
         free(name);
         return ptn_null();
     }
-    PtnValue object = ptn_reflection_class_object_from_name(runtime, name);
+    PtnValue object = ptn_reflection_class_object_from_name(runtime, resolved_name);
     free(name);
     return object;
 }

@@ -20729,11 +20729,15 @@ impl ValueEmitter {
         function: &FunctionDecl,
         full_internal_dispatch: bool,
     ) -> Self {
-        let function_magic_name = function
-            .trait_method_name
-            .as_deref()
-            .or(function.method_name.as_deref())
-            .unwrap_or(function.name.as_str());
+        let function_magic_name = if function.is_anonymous {
+            function.display_name.as_str()
+        } else {
+            function
+                .trait_method_name
+                .as_deref()
+                .or(function.method_name.as_deref())
+                .unwrap_or(function.name.as_str())
+        };
         let method_magic_name = if function.is_anonymous {
             function.display_name.clone()
         } else if let (Some(trait_name), Some(trait_method_name)) = (

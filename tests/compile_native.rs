@@ -24371,7 +24371,9 @@ $fn();\n\
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "string(9) \"{{closure}}\"\nstring({}) \"{}\"\n",
+            "string({}) \"{}\"\nstring({}) \"{}\"\n",
+            method.len(),
+            method,
             method.len(),
             method
         )
