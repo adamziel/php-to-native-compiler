@@ -8487,18 +8487,16 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name) {\n",
     );
-    out.push_str("    (void)runtime;\n");
     if classes.is_empty() {
         out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)runtime;\n");
     }
     for class in classes {
-        let reflection = reflection_class_to_string(class, classes, functions);
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        out.push_str("        return ptn_string(\"");
-        out.push_str(&c_string(&reflection));
-        out.push_str("\");\n");
+        emit_reflection_class_to_string_runtime(out, class, classes, functions);
+        out.push_str("        return ptn_owned_string(ptn_reflection_buffer.data);\n");
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_string(\"Object\");\n");
@@ -9225,11 +9223,73 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 }
 
-fn reflection_class_to_string(
+fn emit_reflection_class_to_string_runtime(
+    out: &mut String,
     class: &ClassDecl,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
-) -> String {
+) {
+    let header = reflection_class_to_string_header(class);
+    let methods = reflection_class_to_string_methods_tail(class, classes, functions);
+    out.push_str("        PtnStringBuffer ptn_reflection_buffer;\n");
+    out.push_str("        ptn_string_buffer_init(&ptn_reflection_buffer);\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&header));
+    out.push_str("\");\n");
+    emit_reflection_class_constants_to_string_runtime(out, class);
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&methods));
+    out.push_str("\");\n");
+}
+
+fn emit_reflection_class_constants_to_string_runtime(out: &mut String, class: &ClassDecl) {
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"  - Constants [");
+    out.push_str(&class.constants.len().to_string());
+    out.push_str("] {\\n\");\n");
+    for (index, constant) in class.constants.iter().enumerate() {
+        let value_temp = format!("ptn_reflection_constant_value_{index}");
+        let repr_temp = format!("ptn_reflection_constant_repr_{index}");
+        out.push_str("        PtnValue ");
+        out.push_str(&value_temp);
+        out.push_str(" = ptn_runtime_read_class_constant(runtime, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\", \"");
+        out.push_str(&c_string(&constant.name));
+        out.push_str("\", 0);\n");
+        out.push_str("        if (runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
+        out.push_str("            free(ptn_reflection_buffer.data);\n");
+        out.push_str("            ptn_value_destroy(&");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        out.push_str("            return ptn_null();\n");
+        out.push_str("        }\n");
+        out.push_str("        char *");
+        out.push_str(&repr_temp);
+        out.push_str(" = ptn_value_to_string(");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        out.push_str(
+            "        ptn_string_buffer_append_format(&ptn_reflection_buffer, \"    Constant [ ",
+        );
+        out.push_str(method_visibility_name(constant.visibility));
+        out.push_str(" %s ");
+        out.push_str(&c_string(&constant.name));
+        out.push_str(" ] { %s }\\n\", ptn_reflection_class_constant_value_type_name(");
+        out.push_str(&value_temp);
+        out.push_str("), ");
+        out.push_str(&repr_temp);
+        out.push_str(");\n");
+        out.push_str("        free(");
+        out.push_str(&repr_temp);
+        out.push_str(");\n");
+        out.push_str("        ptn_value_destroy(&");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+    }
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"  }\\n\\n\");\n");
+}
+
+fn reflection_class_to_string_header(class: &ClassDecl) -> String {
     let mut out = String::new();
     out.push_str(if class.is_interface {
         "Interface [ <user> "
@@ -9267,8 +9327,15 @@ fn reflection_class_to_string(
     out.push('-');
     out.push_str(&class.end_line.to_string());
     out.push_str("\n\n");
+    out
+}
 
-    reflection_class_constants_to_string(&mut out, class);
+fn reflection_class_to_string_methods_tail(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> String {
+    let mut out = String::new();
     reflection_class_properties_to_string(&mut out, "Static properties", &class.static_properties);
 
     let visible_methods = reflection_class_visible_method_entries(class, classes);
@@ -9294,22 +9361,6 @@ fn reflection_class_to_string(
 
     out.push_str("}\n");
     out
-}
-
-fn reflection_class_constants_to_string(out: &mut String, class: &ClassDecl) {
-    out.push_str("  - Constants [");
-    out.push_str(&class.constants.len().to_string());
-    out.push_str("] {\n");
-    for constant in &class.constants {
-        out.push_str("    Constant [ ");
-        out.push_str(method_visibility_name(constant.visibility));
-        out.push(' ');
-        out.push_str(&constant.name);
-        out.push_str(" ] { ");
-        out.push_str(&reflection_default_repr(Some(&constant.value)));
-        out.push_str(" }\n");
-    }
-    out.push_str("  }\n\n");
 }
 
 trait ReflectionPropertySummary {

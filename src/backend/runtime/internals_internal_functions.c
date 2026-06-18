@@ -72333,6 +72333,19 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     if (ptn_internal_class_name_is_zip_archive(class_name)) {
         return "zip";
     }
+    if (ptn_ascii_case_equal(class_name, "DOMNode") ||
+        ptn_ascii_case_equal(class_name, "DOMDocument") ||
+        ptn_ascii_case_equal(class_name, "DOMDocumentFragment") ||
+        ptn_ascii_case_equal(class_name, "DOMElement") ||
+        ptn_ascii_case_equal(class_name, "DOMAttr") ||
+        ptn_ascii_case_equal(class_name, "DOMCharacterData") ||
+        ptn_ascii_case_equal(class_name, "DOMText") ||
+        ptn_ascii_case_equal(class_name, "DOMCdataSection") ||
+        ptn_ascii_case_equal(class_name, "DOMCDataSection") ||
+        ptn_ascii_case_equal(class_name, "DOMComment") ||
+        ptn_ascii_case_equal(class_name, "DOMNodeList")) {
+        return "dom";
+    }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
         ptn_internal_class_name_is_soap_server(class_name) ||
         ptn_exception_name_equal(class_name, "SoapFault")) {
@@ -73603,15 +73616,16 @@ static const char *ptn_reflection_class_constant_value_type_name(PtnValue value)
 
 static PtnValue ptn_reflection_class_constant_to_string(
     PtnRuntime *runtime,
-    PtnReflectionClassConstantData *data,
+    const char *class_name,
+    const char *constant_name,
     size_t line
 ) {
-    PtnValue value = ptn_runtime_read_class_constant(runtime, data->class_name, data->name, line);
+    PtnValue value = ptn_runtime_read_class_constant(runtime, class_name, constant_name, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&value);
         return ptn_null();
     }
-    int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name);
+    int modifiers = ptn_declared_class_reflection_constant_modifiers(class_name, constant_name);
     const char *visibility_name = "public";
     if ((modifiers & 4) != 0) {
         visibility_name = "private";
@@ -73628,7 +73642,7 @@ static PtnValue ptn_reflection_class_constant_to_string(
             : "Constant [ %s %s %s ] { %s }\n",
         visibility_name,
         type_name,
-        data->name,
+        constant_name,
         value_repr
     );
     if (needed < 0) {
@@ -73650,12 +73664,33 @@ static PtnValue ptn_reflection_class_constant_to_string(
             : "Constant [ %s %s %s ] { %s }\n",
         visibility_name,
         type_name,
-        data->name,
+        constant_name,
         value_repr
     );
     free(value_repr);
     ptn_value_destroy(&value);
     return ptn_owned_string(result);
+}
+
+static char *ptn_reflection_class_constant_current_name(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    PtnValue value = ptn_object_read_property(
+        runtime,
+        receiver,
+        "name",
+        "ReflectionClassConstant",
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&value);
+        return NULL;
+    }
+    char *name = ptn_value_to_string(value);
+    ptn_value_destroy(&value);
+    return name;
 }
 
 static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
@@ -73720,37 +73755,100 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "__toString")) {
-        return ptn_reflection_class_constant_to_string(runtime, data, line);
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_reflection_class_constant_to_string(
+            runtime,
+            data->class_name,
+            constant_name,
+            line
+        );
+        free(constant_name);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "getName")) {
-        return ptn_owned_string(ptn_duplicate_string(data->name));
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        return ptn_owned_string(constant_name);
     }
     if (ptn_ascii_case_equal(name, "getDeclaringClass")) {
         return ptn_reflection_class_object_from_name(runtime, data->class_name);
     }
     if (ptn_ascii_case_equal(name, "getValue")) {
-        return ptn_runtime_read_class_constant(runtime, data->class_name, data->name, line);
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_runtime_read_class_constant(runtime, data->class_name, constant_name, line);
+        free(constant_name);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "isDeprecated")) {
-        return ptn_bool(ptn_declared_class_reflection_constant_is_deprecated(data->class_name, data->name));
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        int result = ptn_declared_class_reflection_constant_is_deprecated(data->class_name, constant_name);
+        free(constant_name);
+        return ptn_bool(result);
     }
     if (ptn_ascii_case_equal(name, "isEnumCase")) {
-        return ptn_bool(ptn_declared_class_reflection_constant_is_enum_case(data->class_name, data->name));
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        int result = ptn_declared_class_reflection_constant_is_enum_case(data->class_name, constant_name);
+        free(constant_name);
+        return ptn_bool(result);
     }
     if (ptn_ascii_case_equal(name, "getModifiers")) {
-        return ptn_int(ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name));
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        int result = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
+        free(constant_name);
+        return ptn_int(result);
     }
     if (ptn_ascii_case_equal(name, "isFinal")) {
-        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 32) != 0);
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
+        free(constant_name);
+        return ptn_bool((modifiers & 32) != 0);
     }
     if (ptn_ascii_case_equal(name, "isPublic")) {
-        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 1) != 0);
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
+        free(constant_name);
+        return ptn_bool((modifiers & 1) != 0);
     }
     if (ptn_ascii_case_equal(name, "isProtected")) {
-        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 2) != 0);
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
+        free(constant_name);
+        return ptn_bool((modifiers & 2) != 0);
     }
     if (ptn_ascii_case_equal(name, "isPrivate")) {
-        return ptn_bool((ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name) & 4) != 0);
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        int modifiers = ptn_declared_class_reflection_constant_modifiers(data->class_name, constant_name);
+        free(constant_name);
+        return ptn_bool((modifiers & 4) != 0);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
