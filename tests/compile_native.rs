@@ -2443,6 +2443,28 @@ fn parser_accepts_function_static_local_declarations() {
 }
 
 #[test]
+fn parser_accepts_script_static_local_declarations() {
+    let program = parser::parse("<?php static $value = 0, $other;").unwrap();
+
+    let Statement::Static { declarations, .. } = &program.statements[0] else {
+        panic!("expected script-scope static declaration");
+    };
+    assert_eq!(declarations.len(), 2);
+    assert_eq!(declarations[0].name, "value");
+    assert!(matches!(declarations[0].value, Some(Expr::Int(0, _))));
+    assert_eq!(declarations[1].name, "other");
+    assert!(declarations[1].value.is_none());
+}
+
+#[test]
+fn parser_rejects_duplicate_script_static_local_declarations() {
+    let error = parser::parse("<?php static $a = 10; static $a = 11;").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Duplicate declaration of static variable $a");
+}
+
+#[test]
 fn compile_recursive_static_local_initializer_to_native_binary() {
     let root = temp_dir("ptn-native-recursive-static-local-initializer");
     fs::create_dir_all(&root).unwrap();

@@ -658,12 +658,6 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "requires PHP hidden-suffix anonymous class generated names",
         ),
         (
-            "top-level static binding",
-            "--TEST--\nstatic binding\n--FILE--\n<?php\ntry { static $value; } catch (Throwable $e) {}\n--EXPECT--\n",
-            "unsupported-function-state\t",
-            "requires top-level static variable diagnostics",
-        ),
-        (
             "eval dynamic code",
             "--TEST--\neval\n--FILE--\n<?php\n$code = 'echo \"x\\n\";';\neval($code);\n--EXPECT--\nx\n",
             "unsupported-dynamic-eval\t",
@@ -727,11 +721,12 @@ fn phpt_classifier_keeps_simple_trait_composition_runnable() {
 }
 
 #[test]
-fn phpt_classifier_keeps_nullable_never_and_function_static_rows_runnable() {
+fn phpt_classifier_keeps_nullable_never_and_static_rows_runnable() {
     let cases = [
         "--TEST--\nnullable\n--FILE--\n<?php\n$fn = fn(?int... $args): array => $args;\n--EXPECT--\n",
         "--TEST--\nnever\n--FILE--\n<?php\n$fn = fn(): never => throw new Exception('done');\n--EXPECT--\n",
         "--TEST--\nstatic local\n--FILE--\n<?php\nfunction next_value() { static $value = 0; return ++$value; }\n--EXPECT--\n",
+        "--TEST--\ntop-level static\n--FILE--\n<?php\ntry { static $value; } catch (Throwable $e) {}\n--EXPECT--\n",
     ];
 
     for phpt in cases {
