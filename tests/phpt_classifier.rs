@@ -1053,14 +1053,13 @@ fn phpt_classifier_keeps_plain_heredoc_and_nowdoc_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_interpolating_heredoc_bodies() {
+fn phpt_classifier_keeps_interpolating_heredoc_bodies_runnable() {
     let classification = classify(
         "--TEST--\nheredoc interpolation\n--FILE--\n<?php\n$name = \"world\";\necho <<<TXT\nHello $name\nTXT;\n--EXPECT--\nHello world\n",
     );
 
     assert!(
-        classification.starts_with("unsupported-string-parser\t")
-            && classification.contains("requires heredoc interpolation"),
+        classification.starts_with("runnable\t"),
         "{classification:?}"
     );
 }

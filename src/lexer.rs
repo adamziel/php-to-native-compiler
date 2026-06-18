@@ -546,43 +546,46 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let mut value = String::new();
+        let mut literal = String::new();
+        let mut parts = Vec::new();
+        let mut has_variable = false;
         let mut at_line_start = true;
         while self.peek_char().is_some() {
             if at_line_start && self.starts_heredoc_closing_label(&label) {
-                trim_heredoc_terminal_newline(&mut value);
+                trim_heredoc_terminal_newline(&mut literal);
                 for _ in 0..label.len() {
                     self.bump_char();
                 }
+                let kind = if has_variable {
+                    if !literal.is_empty() {
+                        parts.push(StringPart::Literal(literal));
+                    }
+                    TokenKind::InterpolatedString(parts)
+                } else {
+                    TokenKind::String(literal)
+                };
                 self.tokens.push(Token {
-                    kind: TokenKind::String(value),
+                    kind,
                     span: SourceSpan::new(start.byte_start, self.cursor, start.line, start.column),
                 });
                 return Ok(());
             }
 
             let ch = self.peek_char().expect("checked by loop condition");
-            if !nowdoc && ch == '$' && self.starts_heredoc_interpolation() {
-                return Err(Diagnostic::new(
-                    "heredoc interpolation is unsupported",
-                    Some(self.current_char_span()),
-                ));
-            }
             if !nowdoc && ch == '\\' {
                 self.bump_char();
                 let escaped = self.peek_char().ok_or_else(|| {
                     Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
                 })?;
                 match escaped {
-                    'n' => value.push('\n'),
-                    'r' => value.push('\r'),
-                    't' => value.push('\t'),
-                    'e' => value.push('\u{1b}'),
-                    'v' => value.push('\u{0b}'),
-                    'f' => value.push('\u{0c}'),
-                    '\\' => value.push('\\'),
-                    '"' => value.push('"'),
-                    '$' => value.push('$'),
+                    'n' => literal.push('\n'),
+                    'r' => literal.push('\r'),
+                    't' => literal.push('\t'),
+                    'e' => literal.push('\u{1b}'),
+                    'v' => literal.push('\u{0b}'),
+                    'f' => literal.push('\u{0c}'),
+                    '\\' => literal.push('\\'),
+                    '$' => literal.push('$'),
                     'x' => {
                         self.bump_char();
                         let mut digits = String::new();
@@ -597,12 +600,39 @@ impl<'a> Lexer<'a> {
                             break;
                         }
                         if digits.is_empty() {
-                            value.push('\\');
-                            value.push('x');
+                            literal.push('\\');
+                            literal.push('x');
                         } else {
                             let byte = u8::from_str_radix(&digits, 16).unwrap();
-                            push_php_string_byte(&mut value, byte);
+                            push_php_string_byte(&mut literal, byte);
                         }
+                        at_line_start = false;
+                        continue;
+                    }
+                    'u' if self.rest().starts_with("u{") => {
+                        self.bump_char();
+                        self.bump_char();
+                        let mut digits = String::new();
+                        while let Some(hex) = self.peek_char() {
+                            if hex.is_ascii_hexdigit() {
+                                digits.push(hex);
+                                self.bump_char();
+                            } else {
+                                break;
+                            }
+                        }
+                        if !digits.is_empty() && self.peek_char() == Some('}') {
+                            self.bump_char();
+                            if let Ok(value) = u32::from_str_radix(&digits, 16) {
+                                if value <= 0x10ffff {
+                                    push_php_codepoint_escape(&mut literal, value);
+                                    at_line_start = false;
+                                    continue;
+                                }
+                            }
+                        }
+                        literal.push_str("\\u{");
+                        literal.push_str(&digits);
                         at_line_start = false;
                         continue;
                     }
@@ -619,13 +649,13 @@ impl<'a> Lexer<'a> {
                             break;
                         }
                         let byte = (u16::from_str_radix(&digits, 8).unwrap() & 0xff) as u8;
-                        push_php_string_byte(&mut value, byte);
+                        push_php_string_byte(&mut literal, byte);
                         at_line_start = false;
                         continue;
                     }
                     other => {
-                        value.push('\\');
-                        value.push(other);
+                        literal.push('\\');
+                        literal.push(other);
                     }
                 }
                 self.bump_char();
@@ -633,72 +663,77 @@ impl<'a> Lexer<'a> {
                 continue;
             }
 
-            if !nowdoc && ch == '\\' {
+            if !nowdoc && ch == '{' && self.rest().starts_with("{$") {
+                if !literal.is_empty() {
+                    parts.push(StringPart::Literal(literal));
+                    literal = String::new();
+                }
+                parts.push(self.lex_braced_interpolation_part()?);
+                has_variable = true;
+                at_line_start = false;
+                continue;
+            }
+
+            if !nowdoc && ch == '$' {
+                let start = self.current_span(1);
                 self.bump_char();
-                let escaped = self.peek_char().ok_or_else(|| {
-                    Diagnostic::new("unterminated string escape", Some(self.current_span(0)))
-                })?;
-                match escaped {
-                    'n' => value.push('\n'),
-                    'r' => value.push('\r'),
-                    't' => value.push('\t'),
-                    'e' => value.push('\u{1b}'),
-                    'v' => value.push('\u{0b}'),
-                    'f' => value.push('\u{0c}'),
-                    '\\' => value.push('\\'),
-                    '"' => value.push('"'),
-                    '$' => value.push('$'),
-                    'x' => {
-                        self.bump_char();
-                        let mut digits = String::new();
-                        for _ in 0..2 {
-                            if let Some(hex) = self.peek_char() {
-                                if hex.is_ascii_hexdigit() {
-                                    digits.push(hex);
-                                    self.bump_char();
-                                    continue;
-                                }
-                            }
-                            break;
+                if let Some(first) = self.peek_char() {
+                    if first == '{' {
+                        if !literal.is_empty() {
+                            parts.push(StringPart::Literal(literal));
+                            literal = String::new();
                         }
-                        if digits.is_empty() {
-                            value.push('\\');
-                            value.push('x');
+                        parts.push(self.lex_legacy_dollar_brace_interpolation_part(start)?);
+                        has_variable = true;
+                        at_line_start = false;
+                        continue;
+                    }
+                    if is_ident_start(first) {
+                        if !literal.is_empty() {
+                            parts.push(StringPart::Literal(literal));
+                            literal = String::new();
+                        }
+                        let mut name = String::new();
+                        while let Some(ch) = self.peek_char() {
+                            if is_ident_continue(ch) {
+                                name.push(ch);
+                                self.bump_char();
+                            } else {
+                                break;
+                            }
+                        }
+                        if self.rest().starts_with("->") {
+                            self.bump_char();
+                            self.bump_char();
+                            let property = self.read_interpolation_variable_name(start)?;
+                            parts.push(StringPart::PropertyFetch {
+                                variable: name,
+                                property,
+                            });
+                            has_variable = true;
+                            at_line_start = false;
+                            continue;
+                        }
+                        let indices = self.lex_unbraced_interpolation_indices()?;
+                        if indices.is_empty() {
+                            parts.push(StringPart::Variable(name));
                         } else {
-                            let byte = u8::from_str_radix(&digits, 16).unwrap();
-                            push_php_string_byte(&mut value, byte);
+                            parts.push(StringPart::ArrayAccess {
+                                array: name,
+                                indices,
+                            });
                         }
+                        has_variable = true;
                         at_line_start = false;
                         continue;
-                    }
-                    '0'..='7' => {
-                        let mut digits = String::new();
-                        for _ in 0..3 {
-                            if let Some(octal) = self.peek_char() {
-                                if matches!(octal, '0'..='7') {
-                                    digits.push(octal);
-                                    self.bump_char();
-                                    continue;
-                                }
-                            }
-                            break;
-                        }
-                        let byte = u16::from_str_radix(&digits, 8).unwrap();
-                        push_php_string_byte(&mut value, (byte & 0xff) as u8);
-                        at_line_start = false;
-                        continue;
-                    }
-                    other => {
-                        value.push('\\');
-                        value.push(other);
                     }
                 }
-                self.bump_char();
-                at_line_start = escaped == '\n';
+                literal.push('$');
+                at_line_start = false;
                 continue;
             }
 
-            value.push(ch);
+            literal.push(ch);
             self.bump_char();
             at_line_start = ch == '\n';
         }

@@ -1460,11 +1460,6 @@ ptn_phpt_first_unsupported_language_surface() {
                     ptn_heredoc_nowdoc = 0
                     next
                 }
-                if (!ptn_heredoc_nowdoc && $0 ~ /[$]([$A-Za-z_{])/) {
-                    print "unsupported-string-parser\trequires heredoc interpolation inside `<<<` string bodies, outside PTN modeled string parser"
-                    found = 1
-                    exit
-                }
                 next
             }
             if (ptn_start_heredoc(ptn_php_code_line_raw($0))) {

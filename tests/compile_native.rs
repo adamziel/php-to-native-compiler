@@ -1081,7 +1081,7 @@ fn lexer_decodes_double_quoted_unicode_codepoint_escapes() {
 fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
     let source = concat!(
         "<?php $left = <<<TXT\n",
-        "Hello\\n\\t\\v\\f\\x41\\101\\$\\q\n",
+        "Hello\\n\\t\\v\\f\\x41\\101\\$\\q\\\"\n",
         "TXT;\n",
         "$right = <<<'TXT'\n",
         "$literal\\n\n",
@@ -1097,7 +1097,7 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
     let Statement::Assign { value, .. } = &program.statements[0] else {
         panic!("expected assignment");
     };
-    assert!(matches!(value, Expr::String(value, _) if value == "Hello\n\t\u{0b}\u{0c}AA$\\q"));
+    assert!(matches!(value, Expr::String(value, _) if value == "Hello\n\t\u{0b}\u{0c}AA$\\q\\\""));
 
     let Statement::Assign { value, .. } = &program.statements[1] else {
         panic!("expected assignment");
@@ -1116,10 +1116,34 @@ fn lexer_accepts_plain_heredoc_and_nowdoc_strings() {
 }
 
 #[test]
-fn lexer_rejects_interpolating_heredoc_bodies() {
-    let error = lexer::lex("<?php $value = <<<TXT\nHello $name\nTXT;\n").unwrap_err();
-    assert_eq!(error.message, "heredoc interpolation is unsupported");
-    assert_eq!(error.span.unwrap().line, 2);
+fn lexer_accepts_interpolating_heredoc_bodies() {
+    let source = concat!(
+        "<?php $value = <<<TXT\n",
+        "Hello $name {$items['name']} ${name}!\n",
+        "TXT;\n",
+    );
+    let program = parser::parse(source).unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment");
+    };
+    let Expr::InterpolatedString(parts, _) = value else {
+        panic!("expected interpolated heredoc");
+    };
+    assert_eq!(
+        parts,
+        &vec![
+            StringPart::Literal("Hello ".to_string()),
+            StringPart::Variable("name".to_string()),
+            StringPart::Literal(" ".to_string()),
+            StringPart::ArrayAccess {
+                array: "items".to_string(),
+                indices: vec![StringInterpolationIndex::String("name".to_string())],
+            },
+            StringPart::Literal(" ".to_string()),
+            StringPart::LegacyDollarBraceVariable("name".to_string()),
+            StringPart::Literal("!".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -30124,6 +30148,37 @@ var_dump(array_fill(0, 2, $heredoc));
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(9)\nstring(9) \"Hello\n\tAA\"\nstring(12) \"$literal\\n\\t\"\narray(2) {\n  [0]=>\n  string(9) \"Hello\n\tAA\"\n  [1]=>\n  string(9) \"Hello\n\tAA\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_interpolating_heredoc_values_to_native_binary() {
+    let root = temp_dir("ptn-native-interpolating-heredoc-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("interpolating-heredoc-values.php");
+    let output = root.join("interpolating-heredoc-values-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$variable = "VARIABLE";
+$bar = array("value" => "foo");
+$out = <<<END
+This uses $variable and {$bar['value']}!
+Escaped \$variable and \"quote\n
+END;
+echo $out, "|";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "This uses VARIABLE and foo!\nEscaped $variable and \\\"quote\n|"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
