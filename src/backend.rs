@@ -18638,6 +18638,22 @@ fn emit_only_variables_assigned_by_reference_notice(out: &mut String, indent: &s
     out.push_str(");\n");
 }
 
+fn emit_only_variables_assigned_by_reference_notice_unless_return_fallback(
+    out: &mut String,
+    indent: &str,
+    line: usize,
+    source_temp: &str,
+) {
+    out.push_str(indent);
+    out.push_str("if (!ptn_value_is_return_reference_fallback(");
+    out.push_str(source_temp);
+    out.push_str(")) {\n");
+    let nested_indent = format!("{indent}    ");
+    emit_only_variables_assigned_by_reference_notice(out, &nested_indent, line);
+    out.push_str(indent);
+    out.push_str("}\n");
+}
+
 fn emit_unwrap_array_dim_reference_call_argument(out: &mut String, indent: &str, temp: &str) {
     out.push_str(indent);
     out.push_str("ptn_runtime_unwrap_reference_slots_if_unaliased(&runtime, ");
@@ -23136,7 +23152,12 @@ impl ValueEmitter {
         out.push_str("    } else {\n");
         let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
         if !self.source_is_declared_by_ref_call(source) {
-            emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
+            emit_only_variables_assigned_by_reference_notice_unless_return_fallback(
+                out,
+                "        ",
+                target.line(),
+                &source_temp,
+            );
         }
         out.push_str("        ");
         out.push_str(&result_temp);
@@ -23309,14 +23330,25 @@ impl ValueEmitter {
             out.push_str(&target_reference_temp);
             out.push_str(";\n");
         } else {
-            emit_only_variables_assigned_by_reference_notice(out, "        ", target.line());
-            out.push_str("        ");
+            out.push_str("        if (ptn_value_is_return_reference_fallback(");
+            out.push_str(&source_temp);
+            out.push_str(")) {\n");
+            let target_reference_temp = self.emit_assignment_target_reference(out, target);
+            out.push_str("            ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(&target_reference_temp);
+            out.push_str(";\n");
+            out.push_str("        } else {\n");
+            emit_only_variables_assigned_by_reference_notice(out, "            ", target.line());
+            out.push_str("            ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_by_ref_argument_source_or_temporary(&runtime, ");
             out.push_str(&stored_temp);
             out.push_str(", ");
             out.push_str(&line.to_string());
             out.push_str(");\n");
+            out.push_str("        }\n");
         }
         emit_value_cleanup(out, "        ", &stored_temp);
         out.push_str("    }\n");
@@ -23386,7 +23418,12 @@ impl ValueEmitter {
         out.push_str(");\n");
         out.push_str("    } else {\n");
         if !self.source_is_declared_by_ref_call(source) {
-            emit_only_variables_assigned_by_reference_notice(out, "        ", line);
+            emit_only_variables_assigned_by_reference_notice_unless_return_fallback(
+                out,
+                "        ",
+                line,
+                &source_temp,
+            );
         }
         out.push_str("        ptn_runtime_write_variable(&runtime, \"");
         out.push_str(&c_string(name));
@@ -23447,7 +23484,12 @@ impl ValueEmitter {
         out.push_str(");\n");
         out.push_str("    } else {\n");
         if !self.source_is_declared_by_ref_call(source) {
-            emit_only_variables_assigned_by_reference_notice(out, "        ", target.line);
+            emit_only_variables_assigned_by_reference_notice_unless_return_fallback(
+                out,
+                "        ",
+                target.line,
+                &source_temp,
+            );
         }
         let snapshot_temp = self.next_temp();
         out.push_str("        PtnValue ");

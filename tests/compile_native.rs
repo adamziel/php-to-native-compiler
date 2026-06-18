@@ -30388,6 +30388,73 @@ string:9\n",
 }
 
 #[test]
+fn compile_failed_by_ref_return_fallback_notices_once_to_native_binary() {
+    let root = temp_dir("ptn-native-failed-by-ref-return-fallback-notices-once");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("failed-by-ref-return-fallback-notices-once.php");
+    let output = root.join("failed-by-ref-return-fallback-notices-once-bin");
+    fs::write(
+        &input,
+        "<?php
+function &returnConstantByRef() {
+    return 100;
+}
+function &returnFunctionCallByRef($fn) {
+    return $fn();
+}
+class C {
+    function &returnConstantByRef() {
+        return 100;
+    }
+    function &returnFunctionCallByRef($name) {
+        return $this->$name();
+    }
+}
+function takes(&$value) {
+    $value = 200;
+}
+
+$var =& returnFunctionCallByRef('returnConstantByRef');
+var_dump($var);
+
+$c = new C;
+$method =& $c->returnConstantByRef();
+var_dump($method);
+
+$wrapped =& $c->returnFunctionCallByRef('returnConstantByRef');
+var_dump($wrapped);
+
+takes($arg =& returnFunctionCallByRef('returnConstantByRef'));
+var_dump($arg);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nNotice: Only variable references should be returned by reference in {} on line 3\n\
+int(100)\n\
+\nNotice: Only variable references should be returned by reference in {} on line 10\n\
+int(100)\n\
+\nNotice: Only variable references should be returned by reference in {} on line 10\n\
+int(100)\n\
+\nNotice: Only variable references should be returned by reference in {} on line 3\n\
+int(200)\n",
+            input.display(),
+            input.display(),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_by_reference_magic_set_value_return_stays_plain_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-magic-set-value-return");
     fs::create_dir_all(&root).unwrap();

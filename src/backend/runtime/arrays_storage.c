@@ -1414,6 +1414,7 @@ static PTN_UNUSED PtnArray *ptn_array_detach_value(PtnValue *value) {
 }
 
 static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
+    value.by_ref_return_fallback = 0;
     switch (value.type) {
         case PTN_REFERENCE:
             value.as.reference->refcount++;
@@ -1449,6 +1450,7 @@ static PTN_UNUSED PtnValue ptn_value_deep_clone(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
+    value.by_ref_return_fallback = 0;
     switch (value.type) {
         case PTN_REFERENCE:
             value.as.reference->refcount++;

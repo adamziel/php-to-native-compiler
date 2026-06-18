@@ -529,6 +529,7 @@ typedef struct {
 typedef struct {
     PtnType type;
     int owned;
+    int by_ref_return_fallback;
     union {
         int boolean;
         int64_t integer;
@@ -2595,6 +2596,7 @@ static PTN_UNUSED PtnValue ptn_null(void) {
     PtnValue value;
     value.type = PTN_NULL;
     value.owned = 0;
+    value.by_ref_return_fallback = 0;
     return value;
 }
 
@@ -2602,6 +2604,7 @@ static PTN_UNUSED PtnValue ptn_missing(void) {
     PtnValue value;
     value.type = PTN_NULL;
     value.owned = -1;
+    value.by_ref_return_fallback = 0;
     return value;
 }
 
@@ -2609,10 +2612,22 @@ static PTN_UNUSED int ptn_value_is_missing(PtnValue value) {
     return value.type == PTN_NULL && value.owned == -1;
 }
 
+static PTN_UNUSED int ptn_value_is_return_reference_fallback(PtnValue value) {
+    return value.type != PTN_REFERENCE && value.by_ref_return_fallback;
+}
+
+static PTN_UNUSED PtnValue ptn_value_mark_return_reference_fallback(PtnValue value) {
+    if (value.type != PTN_REFERENCE) {
+        value.by_ref_return_fallback = 1;
+    }
+    return value;
+}
+
 static PTN_UNUSED PtnValue ptn_bool(int boolean) {
     PtnValue value;
     value.type = PTN_BOOL;
     value.owned = 0;
+    value.by_ref_return_fallback = 0;
     value.as.boolean = boolean ? 1 : 0;
     return value;
 }
@@ -2621,6 +2636,7 @@ static PTN_UNUSED PtnValue ptn_int(int64_t integer) {
     PtnValue value;
     value.type = PTN_INT;
     value.owned = 0;
+    value.by_ref_return_fallback = 0;
     value.as.integer = integer;
     return value;
 }
@@ -2629,6 +2645,7 @@ static PTN_UNUSED PtnValue ptn_float(double floating) {
     PtnValue value;
     value.type = PTN_FLOAT;
     value.owned = 0;
+    value.by_ref_return_fallback = 0;
     value.as.floating = floating;
     return value;
 }
@@ -2717,6 +2734,7 @@ static PTN_UNUSED PtnValue ptn_string_literal(const char *string, size_t len) {
     PtnValue value;
     value.type = PTN_STRING;
     value.owned = 0;
+    value.by_ref_return_fallback = 0;
     value.as.string.data = (const unsigned char *)string;
     value.as.string.len = len;
     value.as.string.payload = NULL;
@@ -2732,6 +2750,7 @@ static PTN_UNUSED PtnValue ptn_owned_string_len(char *string, size_t len) {
     PtnValue value;
     value.type = PTN_STRING;
     value.owned = 1;
+    value.by_ref_return_fallback = 0;
     value.as.string.data = payload->data;
     value.as.string.len = len;
     value.as.string.payload = payload;
@@ -2746,6 +2765,7 @@ static PTN_UNUSED PtnValue ptn_array(PtnArray *array) {
     PtnValue value;
     value.type = PTN_ARRAY;
     value.owned = 1;
+    value.by_ref_return_fallback = 0;
     value.as.array = array;
     return value;
 }
@@ -2754,6 +2774,7 @@ static PTN_UNUSED PtnValue ptn_object(PtnObject *object) {
     PtnValue value;
     value.type = PTN_OBJECT;
     value.owned = 1;
+    value.by_ref_return_fallback = 0;
     value.as.object = object;
     return value;
 }
@@ -2791,6 +2812,7 @@ static PTN_UNUSED PtnValue ptn_closure(
     PtnValue value;
     value.type = PTN_CLOSURE;
     value.owned = 1;
+    value.by_ref_return_fallback = 0;
     value.as.closure = closure;
     return value;
 }
@@ -2799,6 +2821,7 @@ static PTN_UNUSED PtnValue ptn_exception_value(PtnException *exception) {
     PtnValue value;
     value.type = PTN_EXCEPTION;
     value.owned = 1;
+    value.by_ref_return_fallback = 0;
     value.as.exception = exception;
     return value;
 }
@@ -3304,6 +3327,7 @@ static PTN_UNUSED PtnValue ptn_resource(PtnResource *resource) {
     PtnValue value;
     value.type = PTN_RESOURCE;
     value.owned = 1;
+    value.by_ref_return_fallback = 0;
     value.as.resource = resource;
     return value;
 }
@@ -3369,6 +3393,7 @@ static PTN_UNUSED PtnValue ptn_reference_value(PtnReference *reference) {
     PtnValue value;
     value.type = PTN_REFERENCE;
     value.owned = 1;
+    value.by_ref_return_fallback = 0;
     value.as.reference = reference;
     return value;
 }

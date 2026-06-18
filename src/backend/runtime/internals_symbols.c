@@ -264,6 +264,15 @@ static PTN_UNUSED PtnValue ptn_value_clone_deref(PtnValue value) {
     return ptn_value_clone(ptn_value_deref(value));
 }
 
+static PTN_UNUSED PtnValue ptn_value_clone_deref_preserve_return_reference_fallback(PtnValue value) {
+    int is_fallback = ptn_value_is_return_reference_fallback(ptn_value_deref(value));
+    PtnValue clone = ptn_value_clone_deref(value);
+    if (is_fallback) {
+        clone = ptn_value_mark_return_reference_fallback(clone);
+    }
+    return clone;
+}
+
 static void ptn_symbols_init(PtnSymbolTable *symbols) {
     symbols->items = NULL;
     symbols->len = 0;
