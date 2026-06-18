@@ -38797,6 +38797,79 @@ foo();
 }
 
 #[test]
+fn compile_goto_into_try_and_catch_to_native_binary() {
+    let root = temp_dir("ptn-native-goto-into-try-catch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("goto-into-try-catch.php");
+    let output = root.join("goto-into-try-catch-bin");
+    fs::write(
+        &input,
+        r#"<?php
+goto a;
+try {
+    echo "1";
+a:
+    echo "2";
+    throw new Exception();
+} catch (Exception $e) {
+    echo "3";
+}
+echo "4";
+goto b;
+try {
+    echo "5";
+    throw new Exception();
+} catch (Exception $e) {
+    echo "6";
+b:
+    echo "7";
+}
+echo "8\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "23478\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_finally_return_overrides_try_return_to_native_binary() {
+    let root = temp_dir("ptn-native-finally-return-overrides-try-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("finally-return-overrides.php");
+    let output = root.join("finally-return-overrides-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function test($x) {
+    foreach ($x as $v) {
+        try {
+            return str_repeat("a", 2);
+        } finally {
+            return 42;
+        }
+    }
+}
+
+var_dump(test([1]));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(42)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_foreach_finally_goto_cleanup_to_native_binary() {
     let root = temp_dir("ptn-native-nested-foreach-finally-goto-cleanup");
     fs::create_dir_all(&root).unwrap();
@@ -50404,6 +50477,62 @@ fn parser_reports_namespace_relative_grouped_use_parse_errors() {
         assert_eq!(error.kind, DiagnosticKind::ParseError);
         assert_eq!(error.message, expected);
     }
+}
+
+#[test]
+fn parser_rejects_namespace_function_and_const_import_symbol_conflicts() {
+    let cases = [
+        (
+            "<?php namespace { use function foo\\bar; function bar() {} }",
+            "Cannot redeclare function bar() (previously declared as local import)",
+        ),
+        (
+            "<?php namespace { function bar() {} use function foo\\bar; }",
+            "Cannot use function foo\\bar as bar because the name is already in use",
+        ),
+        (
+            "<?php namespace { use function foo\\bar; use function foo\\BAR; }",
+            "Cannot use function foo\\BAR as BAR because the name is already in use",
+        ),
+        (
+            "<?php namespace { use const foo\\bar; const bar = 42; }",
+            "Cannot declare const bar because the name is already in use",
+        ),
+        (
+            "<?php namespace { const bar = 42; use const foo\\bar; }",
+            "Cannot use const foo\\bar as bar because the name is already in use",
+        ),
+        (
+            "<?php namespace { use const foo\\baz, bar\\baz; }",
+            "Cannot use const bar\\baz as baz because the name is already in use",
+        ),
+    ];
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn parser_keeps_namespace_import_symbols_block_local() {
+    parser::parse("<?php namespace { class C {} } namespace { use Ns\\C; }").unwrap();
+    parser::parse("<?php namespace { function f() {} } namespace { use function Ns\\f; }").unwrap();
+    parser::parse("<?php namespace { const C = 1; } namespace { use const Ns\\C; }").unwrap();
+    parser::parse("<?php use const foo\\bar; use const foo\\BAR;").unwrap();
+
+    let program =
+        parser::parse("<?php namespace { function f() {} } namespace { use function f; }").unwrap();
+    assert_eq!(program.compile_warnings.len(), 1);
+    assert_eq!(
+        program.compile_warnings[0].message,
+        "The use statement with non-compound name 'f' has no effect"
+    );
+
+    let error = parser::parse("<?php namespace { class C {} use Ns\\C; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot use Ns\\C as C because the name is already in use"
+    );
 }
 
 #[test]

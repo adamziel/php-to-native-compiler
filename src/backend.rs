@@ -12233,7 +12233,7 @@ fn emit_instruction(
     finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
-    label_scope: Option<&str>,
+    label_scope: Option<&LabelScope<'_>>,
 ) {
     match instruction {
         Instruction::Store { name, value } => {
@@ -13252,7 +13252,7 @@ fn emit_instruction(
             );
         }
         Instruction::Label { name } => {
-            let label = c_label_with_scope(name, label_scope);
+            let label = scoped_c_label(name, label_scope);
             emit_label_reference(out, &label);
             out.push_str("    ");
             out.push_str(&label);
@@ -13260,7 +13260,7 @@ fn emit_instruction(
             out.push_str("    ;\n");
         }
         Instruction::Goto { label } => {
-            let target = c_label_with_scope(label, label_scope);
+            let target = scoped_c_label(label, label_scope);
             let context_indices: Vec<usize> = finally_stack
                 .iter()
                 .enumerate()
@@ -13417,7 +13417,7 @@ fn emit_try(
     finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
-    label_scope: Option<&str>,
+    label_scope: Option<&LabelScope<'_>>,
 ) {
     let frame_temp = values.next_temp();
     let caught_temp = values.next_temp();
@@ -13451,49 +13451,39 @@ fn emit_try(
         && body_gotos
             .iter()
             .all(|label| body_labels.contains(label.as_str()));
-    let body_entry_scope = can_scope_body_labels.then(|| values.next_label("ptn_try_body_labels"));
-    let body_entry_target_temp = body_entry_scope.as_ref().map(|_| values.next_temp());
-    let body_entry_start_label = body_entry_scope
+    let body_entry_labels = if can_scope_body_labels {
+        body_labels
+    } else {
+        HashSet::new()
+    };
+    let catch_entry_labels = catch_try_entry_labels(catches);
+    let mut entry_labels: Vec<String> = body_entry_labels
+        .union(&catch_entry_labels)
+        .cloned()
+        .collect();
+    entry_labels.sort();
+    let entry_label_set: HashSet<String> = entry_labels.iter().cloned().collect();
+    let entry_target_temp = (!entry_labels.is_empty()).then(|| values.next_temp());
+    let entry_setup_label = entry_target_temp
         .as_ref()
-        .map(|_| values.next_label("ptn_try_body_entry"));
-    let mut body_entry_labels = body_labels.iter().cloned().collect::<Vec<_>>();
-    body_entry_labels.sort();
+        .map(|_| values.next_label("ptn_try_setup"));
+    let catch_entry_label =
+        (!catch_entry_labels.is_empty()).then(|| values.next_label("ptn_try_catch_entry"));
+    let try_label_prefix = (!entry_labels.is_empty()).then(|| values.next_label("ptn_try_labels"));
+    let try_label_scope = try_label_prefix.as_ref().map(|prefix| LabelScope {
+        prefix,
+        labels: &entry_label_set,
+    });
+    let active_label_scope = try_label_scope.as_ref().or(label_scope);
     out.push_str("    {\n");
-    if let (Some(entry_target_temp), Some(entry_start_label)) =
-        (&body_entry_target_temp, &body_entry_start_label)
-    {
-        out.push_str("        volatile int ");
-        out.push_str(entry_target_temp);
-        out.push_str(" = 0;\n");
-        for label in &body_entry_labels {
-            let public_label = c_label_with_scope(label, label_scope);
-            emit_label_reference(out, &public_label);
-        }
-        out.push_str("        goto ");
-        out.push_str(entry_start_label);
-        out.push_str(";\n");
-        for (index, label) in body_entry_labels.iter().enumerate() {
-            let public_label = c_label_with_scope(label, label_scope);
-            out.push_str("        ");
-            out.push_str(&public_label);
-            out.push_str(":\n");
-            out.push_str("        ");
-            out.push_str(entry_target_temp);
-            out.push_str(" = ");
-            out.push_str(&(index + 1).to_string());
-            out.push_str(";\n");
-            out.push_str("        goto ");
-            out.push_str(entry_start_label);
-            out.push_str(";\n");
-        }
-        out.push_str("        ");
-        out.push_str(entry_start_label);
-        out.push_str(":\n");
-        out.push_str("        ;\n");
-    }
     out.push_str("        PtnTryFrame ");
     out.push_str(&frame_temp);
     out.push_str(";\n");
+    if let Some(entry_target_temp) = &entry_target_temp {
+        out.push_str("        volatile int ");
+        out.push_str(entry_target_temp);
+        out.push_str(" = 0;\n");
+    }
     if let Some(frame_active_temp) = &frame_active_temp {
         out.push_str("        int ");
         out.push_str(frame_active_temp);
@@ -13514,6 +13504,43 @@ fn emit_try(
         out.push_str("        volatile int ");
         out.push_str(catch_active_temp);
         out.push_str(" = 0;\n");
+    }
+    out.push_str("        int ");
+    out.push_str(&caught_temp);
+    out.push_str(" = 0;\n");
+    out.push_str("        (void)");
+    out.push_str(&caught_temp);
+    out.push_str(";\n");
+    if let Some(entry_target_temp) = &entry_target_temp {
+        out.push_str("        if (0) {\n");
+        for (index, label) in entry_labels.iter().enumerate() {
+            let public_label = scoped_c_label(label, label_scope);
+            out.push_str("            if (0) { goto ");
+            out.push_str(&public_label);
+            out.push_str("; }\n");
+            out.push_str("            ");
+            out.push_str(&public_label);
+            out.push_str(":\n");
+            out.push_str("            ");
+            out.push_str(entry_target_temp);
+            out.push_str(" = ");
+            out.push_str(&(index + 1).to_string());
+            out.push_str(";\n");
+            out.push_str("            goto ");
+            out.push_str(
+                entry_setup_label
+                    .as_deref()
+                    .expect("entry setup label exists"),
+            );
+            out.push_str(";\n");
+        }
+        out.push_str("        }\n");
+    }
+    if let Some(entry_setup_label) = &entry_setup_label {
+        out.push_str("        ");
+        out.push_str(entry_setup_label);
+        out.push_str(":\n");
+        out.push_str("        ;\n");
     }
     out.push_str("        PtnTraceFrame *");
     out.push_str(&saved_trace_temp);
@@ -13542,20 +13569,25 @@ fn emit_try(
     out.push_str("        if (setjmp(");
     out.push_str(&frame_temp);
     out.push_str(".jump) == 0) {\n");
-    if let (Some(entry_target_temp), Some(entry_scope)) =
-        (&body_entry_target_temp, &body_entry_scope)
-    {
+    if let Some(entry_target_temp) = &entry_target_temp {
         out.push_str("            if (");
         out.push_str(entry_target_temp);
         out.push_str(" != 0) {\n");
         out.push_str("                switch (");
         out.push_str(entry_target_temp);
         out.push_str(") {\n");
-        for (index, label) in body_entry_labels.iter().enumerate() {
+        for (index, label) in entry_labels.iter().enumerate() {
             out.push_str("                    case ");
             out.push_str(&(index + 1).to_string());
-            out.push_str(": goto ");
-            out.push_str(&c_label_with_scope(label, Some(entry_scope)));
+            out.push_str(": ");
+            if body_entry_labels.contains(label) {
+                out.push_str(entry_target_temp);
+                out.push_str(" = 0; goto ");
+                out.push_str(&scoped_c_label(label, active_label_scope));
+            } else if let Some(catch_entry_label) = &catch_entry_label {
+                out.push_str("goto ");
+                out.push_str(catch_entry_label);
+            }
             out.push_str(";\n");
         }
         out.push_str("                }\n");
@@ -13570,7 +13602,7 @@ fn emit_try(
             finally_stack,
             source_path,
             body_return_target,
-            body_entry_scope.as_deref().or(label_scope),
+            active_label_scope,
         );
     }
     out.push_str("            ptn_try_frame_pop(&runtime, &");
@@ -13592,6 +13624,12 @@ fn emit_try(
         control_dispatch_label.is_some(),
     );
     out.push_str("        } else {\n");
+    if let Some(catch_entry_label) = &catch_entry_label {
+        out.push_str("            ");
+        out.push_str(catch_entry_label);
+        out.push_str(":\n");
+        out.push_str("            ;\n");
+    }
     if let Some(catch_active_temp) = &catch_active_temp {
         out.push_str("            if (");
         out.push_str(catch_active_temp);
@@ -13633,9 +13671,40 @@ fn emit_try(
     out.push_str(";\n");
     out.push_str("            runtime.warn_by_ref_argument_mismatch = 0;\n");
     out.push_str("            runtime.throw_argument_count_errors = 0;\n");
-    out.push_str("            int ");
+    out.push_str("            ");
     out.push_str(&caught_temp);
     out.push_str(" = 0;\n");
+    if let Some(entry_target_temp) = &entry_target_temp {
+        if !catch_entry_labels.is_empty() {
+            out.push_str("            if (");
+            out.push_str(entry_target_temp);
+            out.push_str(" != 0) {\n");
+            out.push_str("                ");
+            out.push_str(&caught_temp);
+            out.push_str(" = 1;\n");
+            if let Some(catch_active_temp) = &catch_active_temp {
+                out.push_str("                ");
+                out.push_str(catch_active_temp);
+                out.push_str(" = 1;\n");
+            }
+            out.push_str("                switch (");
+            out.push_str(entry_target_temp);
+            out.push_str(") {\n");
+            for (index, label) in entry_labels.iter().enumerate() {
+                if catch_entry_labels.contains(label) {
+                    out.push_str("                    case ");
+                    out.push_str(&(index + 1).to_string());
+                    out.push_str(": ");
+                    out.push_str(entry_target_temp);
+                    out.push_str(" = 0; goto ");
+                    out.push_str(&scoped_c_label(label, active_label_scope));
+                    out.push_str(";\n");
+                }
+            }
+            out.push_str("                }\n");
+            out.push_str("            }\n");
+        }
+    }
     for catch in catches {
         out.push_str("            if (!");
         out.push_str(&caught_temp);
@@ -13672,7 +13741,7 @@ fn emit_try(
                 finally_stack,
                 source_path,
                 body_return_target,
-                label_scope,
+                active_label_scope,
             );
         }
         if let Some(catch_active_temp) = &catch_active_temp {
@@ -13898,7 +13967,12 @@ fn emit_finally_instructions(
     source_path: &str,
     return_target: Option<&str>,
 ) {
-    let label_scope = values.next_label("ptn_finally_labels");
+    let label_prefix = values.next_label("ptn_finally_labels");
+    let labels = instruction_labels(finally_body);
+    let label_scope = LabelScope {
+        prefix: &label_prefix,
+        labels: &labels,
+    };
     for finally_instruction in finally_body {
         emit_instruction(
             out,
@@ -14101,6 +14175,52 @@ fn instruction_labels_excluding_nested_try(instructions: &[Instruction]) -> Hash
     let mut labels = HashSet::new();
     collect_instruction_labels_excluding_nested_try(instructions, &mut labels);
     labels
+}
+
+fn catch_try_entry_labels(catches: &[IrCatchClause]) -> HashSet<String> {
+    let mut labels = HashSet::new();
+    for catch in catches {
+        collect_try_entry_labels(&catch.body, &mut labels);
+    }
+    labels
+}
+
+fn collect_try_entry_labels(instructions: &[Instruction], labels: &mut HashSet<String>) {
+    for instruction in instructions {
+        match instruction {
+            Instruction::Label { name } => {
+                labels.insert(name.clone());
+            }
+            Instruction::Try { .. } => {}
+            Instruction::Branch {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_try_entry_labels(then_body, labels);
+                collect_try_entry_labels(else_body, labels);
+            }
+            Instruction::While { body, .. }
+            | Instruction::DoWhile { body, .. }
+            | Instruction::Foreach { body, .. } => collect_try_entry_labels(body, labels),
+            Instruction::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                collect_try_entry_labels(initializers, labels);
+                collect_try_entry_labels(updates, labels);
+                collect_try_entry_labels(body, labels);
+            }
+            Instruction::Switch { cases, .. } => {
+                for case in cases {
+                    collect_try_entry_labels(&case.body, labels);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect_instruction_labels(instructions: &[Instruction], labels: &mut HashSet<String>) {
@@ -17243,7 +17363,7 @@ fn emit_switch(
     finally_stack: &mut Vec<FinallyContext>,
     source_path: &str,
     return_target: Option<&str>,
-    label_scope: Option<&str>,
+    label_scope: Option<&LabelScope<'_>>,
 ) {
     let end_label = values.next_label("ptn_switch_end");
     emit_label_reference(out, &end_label);
@@ -30482,11 +30602,18 @@ fn c_label(value: &str) -> String {
     out
 }
 
-fn c_label_with_scope(value: &str, scope: Option<&str>) -> String {
+struct LabelScope<'a> {
+    prefix: &'a str,
+    labels: &'a HashSet<String>,
+}
+
+fn scoped_c_label(value: &str, scope: Option<&LabelScope<'_>>) -> String {
     let mut label = c_label(value);
     if let Some(scope) = scope {
-        label.push_str("__");
-        label.push_str(scope);
+        if scope.labels.contains(value) {
+            label.push_str("__");
+            label.push_str(scope.prefix);
+        }
     }
     label
 }

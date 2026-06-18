@@ -1,0 +1,19 @@
+# Focused full-corpus parser/control-flow row pack for ptn-u5h6q.
+#
+# Source bucket: php-src Zend jump/switch/try rows from the full corpus.
+# Selection: goto entry into try/catch, switch cleanup, and return/throw/finally
+# control dispatch rows that exercise shared backend label/finally machinery.
+Zend/tests/jump/jump16.phpt
+Zend/tests/jump/jump17.phpt
+Zend/tests/switch/bug72508.phpt
+Zend/tests/try/bug70228.phpt
+Zend/tests/try/bug70228_2.phpt
+Zend/tests/try/bug70228_3.phpt
+Zend/tests/try/bug70228_4.phpt
+Zend/tests/try/bug70228_5.phpt
+Zend/tests/try/bug70228_6.phpt
+Zend/tests/try/bug70228_7.phpt
+Zend/tests/try/bug70228_8.phpt
+Zend/tests/try/bug72213.phpt
+Zend/tests/try/bug72213_2.phpt
+Zend/tests/try/try_finally_014.phpt
