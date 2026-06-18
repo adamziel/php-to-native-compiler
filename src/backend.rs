@@ -15739,6 +15739,9 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
 fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
         || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+        || (name.eq_ignore_ascii_case("str_repeat") && argument_count == 2)
+        || (name.eq_ignore_ascii_case("get_class") && argument_count == 1)
+        || name.eq_ignore_ascii_case("var_dump")
 }
 
 enum NamedArgumentBindingError {
@@ -26988,6 +26991,100 @@ impl ValueEmitter {
             return result_temp;
         }
 
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("str_repeat")
+            && arguments.len() == 2
+        {
+            let string_temp = self.emit_call_argument(out, name, 0, &arguments[0]);
+            let times_temp = self.emit_call_argument(out, name, 1, &arguments[1]);
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ptn_value_share(");
+            out.push_str(&string_temp);
+            out.push_str("), ptn_value_share(");
+            out.push_str(&times_temp);
+            out.push_str(") };\n");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_str_repeat_value(&runtime, ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[0]"));
+            emit_value_cleanup(out, "    ", &format!("{args_temp}[1]"));
+            emit_value_cleanup(out, "    ", &string_temp);
+            emit_value_cleanup(out, "    ", &times_temp);
+            return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && name.eq_ignore_ascii_case("get_class")
+            && arguments.len() == 1
+        {
+            let argument_temp = self.emit_call_argument(out, name, 0, &arguments[0]);
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_get_class_value(&runtime, ");
+            out.push_str(&argument_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &argument_temp);
+            return result_temp;
+        }
+
+        if !has_named_arguments && !has_unpacked_arguments && name.eq_ignore_ascii_case("var_dump")
+        {
+            let mut temps = Vec::with_capacity(arguments.len());
+            for (argument_index, argument) in arguments.iter().enumerate() {
+                temps.push(self.emit_call_argument(out, name, argument_index, argument));
+            }
+            let result_temp = self.next_temp();
+            if temps.is_empty() {
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_direct_var_dump_value(&runtime, 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                return result_temp;
+            }
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            for (index, temp) in temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
+            out.push_str(" };\n");
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_direct_var_dump_value(&runtime, ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            for index in 0..temps.len() {
+                emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+            }
+            for temp in temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
+            return result_temp;
+        }
+
         if !has_named_arguments && !has_unpacked_arguments {
             if name.eq_ignore_ascii_case("extract") {
                 if let Some(result_temp) = self.emit_extract_call(out, arguments, line) {
@@ -29581,9 +29678,10 @@ fn display_os(value: &OsStr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cc_optimization_args_for, cc_optimization_args_for_source,
+        cc_optimization_args_for, cc_optimization_args_for_source, emit_c,
         LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD,
     };
+    use crate::{ir, parser};
 
     #[test]
     fn default_c_compiler_profile_uses_o2_for_small_sources() {
@@ -29636,5 +29734,24 @@ mod tests {
     fn c_compiler_profile_rejects_unknown_values() {
         let error = cc_optimization_args_for(Some("fast")).unwrap_err();
         assert!(error.message.contains("invalid PTN_CC_OPT_LEVEL value"));
+    }
+
+    #[test]
+    fn direct_string_and_object_helpers_do_not_require_full_internal_dispatch() {
+        let program = parser::parse(
+            "<?php echo str_repeat(\"a\", 2); echo get_class(new Exception); var_dump([1]);",
+        )
+        .unwrap();
+        let module = ir::lower(&program);
+        let c_source = emit_c(&module);
+
+        assert!(c_source.contains("ptn_str_repeat_value(&runtime"));
+        assert!(c_source.contains("ptn_get_class_value(&runtime"));
+        assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
+        assert!(!c_source.contains("ptn_call_function(&runtime, \"str_repeat\""));
+        assert!(!c_source.contains("ptn_call_function(&runtime, \"get_class\""));
+        assert!(!c_source.contains("ptn_call_function(&runtime, \"var_dump\""));
+        assert!(!c_source.contains("ptn_internal_str_repeat"));
+        assert!(!c_source.contains("ptn_internal_var_dump"));
     }
 }
