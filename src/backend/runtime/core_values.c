@@ -1130,6 +1130,9 @@ struct PtnRuntime {
     char *pcre_backtrack_limit;
     char *pcre_jit;
     char *opcache_save_comments;
+    char *phar_readonly;
+    char *phar_require_hash;
+    char *phar_cache_list;
     char *internal_encoding;
     char *input_encoding;
     char *output_encoding;

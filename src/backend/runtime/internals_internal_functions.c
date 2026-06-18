@@ -44255,6 +44255,30 @@ static const char *ptn_runtime_opcache_save_comments(PtnRuntime *runtime) {
     return root->opcache_save_comments;
 }
 
+static const char *ptn_runtime_phar_readonly(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->phar_readonly == NULL) {
+        return "1";
+    }
+    return root->phar_readonly;
+}
+
+static const char *ptn_runtime_phar_require_hash(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->phar_require_hash == NULL) {
+        return "1";
+    }
+    return root->phar_require_hash;
+}
+
+static const char *ptn_runtime_phar_cache_list(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->phar_cache_list == NULL) {
+        return "";
+    }
+    return root->phar_cache_list;
+}
+
 static const char *ptn_runtime_internal_encoding(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->internal_encoding == NULL) {
@@ -44942,6 +44966,18 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_save_comments(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.readonly")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_readonly(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.require_hash")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_require_hash(runtime)));
+        return 1;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.cache_list")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_cache_list(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "output_handler")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_handler(runtime)));
         return 1;
@@ -45089,6 +45125,21 @@ static void ptn_runtime_set_opcache_save_comments(PtnRuntime *runtime, const cha
     ptn_runtime_set_ini_string(&root->opcache_save_comments, value);
 }
 
+static void ptn_runtime_set_phar_readonly(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->phar_readonly, value);
+}
+
+static void ptn_runtime_set_phar_require_hash(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->phar_require_hash, value);
+}
+
+static void ptn_runtime_set_phar_cache_list(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->phar_cache_list, value);
+}
+
 static void ptn_runtime_set_internal_encoding(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->internal_encoding, value);
@@ -45223,6 +45274,21 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
         ptn_runtime_set_opcache_save_comments(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.readonly")) {
+        ptn_runtime_set_phar_readonly(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.require_hash")) {
+        ptn_runtime_set_phar_require_hash(runtime, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.cache_list")) {
+        ptn_runtime_set_phar_cache_list(runtime, "");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -45433,6 +45499,36 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_opcache_save_comments(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.readonly")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_readonly(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_phar_readonly(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.require_hash")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_require_hash(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_phar_require_hash(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "phar.cache_list")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_phar_cache_list(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_phar_cache_list(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -54757,6 +54853,168 @@ static PtnValue ptn_internal_phar_can_compress(PtnRuntime *runtime, size_t argc,
     return ptn_bool(0);
 }
 
+static PtnValue ptn_internal_phar_can_write(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[128];
+        int written = snprintf(message, sizeof(message), "Phar::canWrite() expects exactly 0 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    return ptn_bool(!ptn_runtime_ini_bool(ptn_runtime_phar_readonly(runtime), 1));
+}
+
+static PtnValue ptn_internal_phar_get_supported_compression(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(message, sizeof(message), "Phar::getSupportedCompression() expects exactly 0 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("GZ"));
+    return result;
+}
+
+static PtnValue ptn_internal_phar_get_supported_signatures(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)args;
+    (void)line;
+    if (argc != 0) {
+        char message[160];
+        int written = snprintf(message, sizeof(message), "Phar::getSupportedSignatures() expects exactly 0 arguments, %zu given", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    static const char *const signatures[] = {
+        "MD5",
+        "SHA-1",
+        "SHA-256",
+        "SHA-512",
+        "OpenSSL",
+        "OpenSSL_SHA256",
+        "OpenSSL_SHA512",
+    };
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < sizeof(signatures) / sizeof(signatures[0]); i++) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key((int64_t)i), ptn_string(signatures[i]));
+    }
+    return result;
+}
+
+static int ptn_phar_extension_has_executable_marker(const char *ext, size_t ext_len) {
+    if (ext_len < 5) {
+        return 0;
+    }
+    for (size_t i = 0; i + 5 <= ext_len; i++) {
+        if (ext[i] != '.') {
+            continue;
+        }
+        if (i > 0 && ext[i - 1] == '/') {
+            continue;
+        }
+        if (memcmp(ext + i, ".phar", 5) != 0) {
+            continue;
+        }
+        size_t after = i + 5;
+        if (after == ext_len || ext[after] == '/' || ext[after] == '.') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_phar_check_filename_extension(const char *filename, const char *ext, size_t ext_len, int executable) {
+    (void)filename;
+    if (ext_len >= 50 || ext_len <= 1) {
+        return 0;
+    }
+    if (executable) {
+        return ptn_phar_extension_has_executable_marker(ext, ext_len);
+    }
+    if (ptn_phar_extension_has_executable_marker(ext, ext_len)) {
+        return 0;
+    }
+    return ext[1] != '.' && ext[1] != '/' && ext[1] != '\0';
+}
+
+static int ptn_phar_is_valid_filename_operand(PtnStringOperand filename, int executable) {
+    if (filename.len <= 1) {
+        return 0;
+    }
+    const char *data = filename.data;
+    size_t pos = 1;
+    while (pos < filename.len) {
+        while (pos < filename.len && data[pos] != '.') {
+            pos++;
+        }
+        if (pos >= filename.len) {
+            return 0;
+        }
+        while (pos != 0 && (data[pos - 1] == '/' || data[pos - 1] == '\0')) {
+            pos++;
+            while (pos < filename.len && data[pos] != '.') {
+                pos++;
+            }
+            if (pos >= filename.len) {
+                return 0;
+            }
+        }
+        size_t slash = pos;
+        while (slash < filename.len && data[slash] != '/' && data[slash] != '\0') {
+            slash++;
+        }
+        const char *ext = data + pos;
+        size_t ext_len = slash - pos;
+        if (slash >= filename.len || data[slash] == '\0') {
+            return ptn_phar_check_filename_extension(data, ext, ext_len, executable);
+        }
+        if (ptn_phar_check_filename_extension(data, ext, ext_len, executable)) {
+            return 1;
+        }
+        pos++;
+    }
+    return 0;
+}
+
+static PtnValue ptn_internal_phar_is_valid_phar_filename(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1 || argc > 2) {
+        char message[160];
+        const char *relation = argc < 1 ? "at least" : "at most";
+        size_t expected = argc < 1 ? 1 : 2;
+        int written = snprintf(message, sizeof(message), "Phar::isValidPharFilename() expects %s %zu argument%s, %zu given", relation, expected, expected == 1 ? "" : "s", argc);
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand filename = ptn_internal_expect_string_arg(runtime, "Phar::isValidPharFilename", 1, "filename", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int executable = 1;
+    if (argc >= 2) {
+        executable = ptn_is_truthy(args[1]);
+    }
+    int valid = ptn_phar_is_valid_filename_operand(filename, executable);
+    ptn_string_operand_free(filename);
+    return ptn_bool(valid);
+}
+
 typedef enum {
     PTN_XMLWRITER_TARGET_NONE,
     PTN_XMLWRITER_TARGET_MEMORY,
@@ -56210,6 +56468,18 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
         if (ptn_ascii_case_equal(name, "canCompress")) {
             return ptn_internal_phar_can_compress(runtime, argc, args, line);
         }
+        if (ptn_ascii_case_equal(name, "canWrite")) {
+            return ptn_internal_phar_can_write(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "getSupportedCompression")) {
+            return ptn_internal_phar_get_supported_compression(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "getSupportedSignatures")) {
+            return ptn_internal_phar_get_supported_signatures(runtime, argc, args, line);
+        }
+        if (ptn_ascii_case_equal(name, "isValidPharFilename")) {
+            return ptn_internal_phar_is_valid_phar_filename(runtime, argc, args, line);
+        }
     }
     if (ptn_internal_class_name_is_rounding_mode(class_name)) {
         if (ptn_ascii_case_equal(name, "cases")) {
@@ -57466,6 +57736,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "phpversion", 0, 1, ptn_internal_phpversion },
         { "Phar::apiVersion", 0, 0, ptn_internal_phar_api_version },
         { "Phar::canCompress", 0, 1, ptn_internal_phar_can_compress },
+        { "Phar::canWrite", 0, 0, ptn_internal_phar_can_write },
+        { "Phar::getSupportedCompression", 0, 0, ptn_internal_phar_get_supported_compression },
+        { "Phar::getSupportedSignatures", 0, 0, ptn_internal_phar_get_supported_signatures },
+        { "Phar::isValidPharFilename", 1, 2, ptn_internal_phar_is_valid_phar_filename },
         { "pi", 0, 0, ptn_internal_pi },
         { "pack", 1, PTN_VARIADIC_ARGS, ptn_internal_pack },
         { "pow", 2, 2, ptn_internal_pow },
@@ -60151,7 +60425,11 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     }
     if (ptn_internal_class_name_is_phar(class_name)) {
         return ptn_ascii_case_equal(method_name, "apiVersion")
-            || ptn_ascii_case_equal(method_name, "canCompress");
+            || ptn_ascii_case_equal(method_name, "canCompress")
+            || ptn_ascii_case_equal(method_name, "canWrite")
+            || ptn_ascii_case_equal(method_name, "getSupportedCompression")
+            || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
+            || ptn_ascii_case_equal(method_name, "isValidPharFilename");
     }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
         ptn_internal_class_name_is_soap_server(class_name) ||
@@ -60201,7 +60479,11 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_internal_class_name_is_phar(class_name)) {
         return ptn_ascii_case_equal(method_name, "apiVersion")
-            || ptn_ascii_case_equal(method_name, "canCompress");
+            || ptn_ascii_case_equal(method_name, "canCompress")
+            || ptn_ascii_case_equal(method_name, "canWrite")
+            || ptn_ascii_case_equal(method_name, "getSupportedCompression")
+            || ptn_ascii_case_equal(method_name, "getSupportedSignatures")
+            || ptn_ascii_case_equal(method_name, "isValidPharFilename");
     }
     if (ptn_internal_class_name_is_intl_break_iterator(class_name)) {
         return ptn_ascii_case_equal(method_name, "createWordInstance")
@@ -60961,6 +61243,10 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_phar(class_name)) {
         ptn_append_method_name(result, &index, "apiVersion");
         ptn_append_method_name(result, &index, "canCompress");
+        ptn_append_method_name(result, &index, "canWrite");
+        ptn_append_method_name(result, &index, "getSupportedCompression");
+        ptn_append_method_name(result, &index, "getSupportedSignatures");
+        ptn_append_method_name(result, &index, "isValidPharFilename");
         return result;
     }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
@@ -67953,6 +68239,12 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
     if (ptn_ascii_case_equal(extension_name, "pcre")) {
         ptn_extension_ini_set_entry(runtime, result, "pcre.backtrack_limit");
         ptn_extension_ini_set_entry(runtime, result, "pcre.jit");
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "Phar")) {
+        ptn_extension_ini_set_entry(runtime, result, "phar.readonly");
+        ptn_extension_ini_set_entry(runtime, result, "phar.require_hash");
+        ptn_extension_ini_set_entry(runtime, result, "phar.cache_list");
         return result;
     }
     if (ptn_ascii_case_equal(extension_name, "mbstring")) {

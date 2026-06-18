@@ -1800,6 +1800,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let phar_metadata_ini = classify_at_relative_path(
+        "--TEST--\nphar metadata ini\n--EXTENSIONS--\nphar\n--INI--\nphar.readonly=1\nphar.require_hash=0\nphar.cache_list=\n--FILE--\n<?php\nvar_dump(Phar::isValidPharFilename('example.phar'));\n--EXPECT--\nbool(true)\n",
+        "ext/phar/tests/phar_metadata_ini.phpt",
+    );
+    assert_eq!(
+        phar_metadata_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let phar_archive_ini = classify_at_relative_path(
+        "--TEST--\nphar archive ini\n--EXTENSIONS--\nphar\n--INI--\nphar.readonly=0\n--FILE--\n<?php\n$phar = new Phar(__DIR__ . '/archive.phar');\n--EXPECT--\n",
+        "ext/phar/tests/phar_archive_ini.phpt",
+    );
+    assert!(
+        phar_archive_ini.starts_with("unsupported-phar-archive-runtime\t"),
+        "{phar_archive_ini:?}"
+    );
+
     let xmlwriter_extension = classify(
         "--TEST--\nxmlwriter extension\n--EXTENSIONS--\nxmlwriter\n--FILE--\n<?php\n$xw = xmlwriter_open_memory();\nxmlwriter_start_element($xw, 'root');\nxmlwriter_end_element($xw);\necho xmlwriter_flush($xw);\n--EXPECT--\n<root/>\n",
     );

@@ -1583,6 +1583,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
     const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
     const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
+    const char *configured_phar_readonly = getenv("PTN_PHAR_READONLY");
+    const char *configured_phar_require_hash = getenv("PTN_PHAR_REQUIRE_HASH");
+    const char *configured_phar_cache_list = getenv("PTN_PHAR_CACHE_LIST");
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
     const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
     const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
@@ -1621,6 +1624,15 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->opcache_save_comments = ptn_duplicate_string(
         configured_opcache_save_comments == NULL ? "1" : configured_opcache_save_comments
+    );
+    runtime->phar_readonly = ptn_duplicate_string(
+        configured_phar_readonly == NULL ? "1" : configured_phar_readonly
+    );
+    runtime->phar_require_hash = ptn_duplicate_string(
+        configured_phar_require_hash == NULL ? "1" : configured_phar_require_hash
+    );
+    runtime->phar_cache_list = ptn_duplicate_string(
+        configured_phar_cache_list == NULL ? "" : configured_phar_cache_list
     );
     runtime->internal_encoding = ptn_duplicate_string(
         configured_internal_encoding == NULL ? "" : configured_internal_encoding

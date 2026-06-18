@@ -11,7 +11,7 @@
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="bcmath,calendar,Core,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,phar,Reflection,sockets,soap,SPL,standard,tokenizer,uri,xml,xmlreader,xmlwriter,zip,zlib"
-PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.active,assert.bail,assert.callback,assert.exception,assert.warning,bcmath.scale,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,intl.default_locale,max_input_nesting_level,max_input_vars,max_memory_limit,mbstring.detect_order,mbstring.encoding_translation,mbstring.http_input,mbstring.http_output,mbstring.internal_encoding,mbstring.language,mbstring.regex_retry_limit,mbstring.regex_stack_limit,mbstring.strict_detection,mbstring.substitute_character,memory_limit,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,post_max_size,precision,register_argc_argv,serialize_precision,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
+PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.active,assert.bail,assert.callback,assert.exception,assert.warning,bcmath.scale,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,intl.default_locale,max_input_nesting_level,max_input_vars,max_memory_limit,mbstring.detect_order,mbstring.encoding_translation,mbstring.http_input,mbstring.http_output,mbstring.internal_encoding,mbstring.language,mbstring.regex_retry_limit,mbstring.regex_stack_limit,mbstring.strict_detection,mbstring.substitute_character,memory_limit,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,phar.cache_list,phar.readonly,phar.require_hash,post_max_size,precision,register_argc_argv,serialize_precision,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT=""
@@ -2277,6 +2277,89 @@ ptn_phpt_first_unsupported_internal_surface() {
     return "${ptn_status[1]}"
 }
 
+ptn_phpt_first_unsupported_phar_archive_surface() {
+    local rel=$1
+    local path=$2
+
+    [[ "$rel" == ext/phar/* ]] || return 1
+
+    ptn_phpt_section "$path" FILE | LC_ALL=C awk '
+        function ptn_php_code_line(raw,    i, ch, next_ch, out, quote, escaped) {
+            quote = ""
+            escaped = 0
+            out = ""
+            for (i = 1; i <= length(raw); i++) {
+                ch = substr(raw, i, 1)
+                next_ch = substr(raw, i + 1, 1)
+                if (ptn_block_comment) {
+                    if (ch == "*" && next_ch == "/") {
+                        ptn_block_comment = 0
+                        out = out "  "
+                        i++
+                    } else {
+                        out = out " "
+                    }
+                    continue
+                }
+                if (quote != "") {
+                    if (escaped) {
+                        escaped = 0
+                    } else if (ch == "\\") {
+                        escaped = 1
+                    } else if (ch == quote) {
+                        quote = ""
+                    }
+                    out = out " "
+                    continue
+                }
+                if (ch == "\"" || ch == "\047") {
+                    quote = ch
+                    out = out " "
+                    continue
+                }
+                if (ch == "/" && next_ch == "/") {
+                    break
+                }
+                if (ch == "#") {
+                    break
+                }
+                if (ch == "/" && next_ch == "*") {
+                    ptn_block_comment = 1
+                    out = out "  "
+                    i++
+                    continue
+                }
+                out = out ch
+            }
+            return tolower(out)
+        }
+        {
+            raw = tolower($0)
+            line = ptn_php_code_line($0)
+            if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+\\?phar(data|fileinfo)?[[:space:]]*\(/) {
+                print "unsupported-phar-archive-runtime\trequires Phar archive object parsing/mutation runtime, outside PTN modeled Phar metadata surface"
+                found = 1
+                exit
+            }
+            if (line ~ /(^|[^[:alnum:]_$\\])phar[[:space:]]*::[[:space:]]*(mapphar|webphar|mount|interceptfilefuncs|loadphar|unlinkarchive|mungserver|running|createstub|createdefaultstub)[[:space:]]*\(/) {
+                print "unsupported-phar-archive-runtime\trequires Phar archive mapping/front-controller runtime, outside PTN modeled Phar metadata surface"
+                found = 1
+                exit
+            }
+            if (raw ~ /phar:\/\//) {
+                print "unsupported-phar-archive-runtime\trequires phar:// stream wrapper archive access, outside PTN modeled stream runtime"
+                found = 1
+                exit
+            }
+        }
+        END {
+            exit found ? 0 : 1
+        }
+    '
+    local -a ptn_status=("${PIPESTATUS[@]}")
+    return "${ptn_status[1]}"
+}
+
 ptn_phpt_classify_row() {
     local row=$1
     local path=$2
@@ -2390,6 +2473,11 @@ ptn_phpt_classify_row() {
 
     if ptn_phpt_has_resource_limit_expectation "$path"; then
         printf 'unsupported-resource-limit-ini\trequires Zend memory manager allocation-failure/resource-limit diagnostics outside PTN safe PHPT execution bounds\n'
+        return 0
+    fi
+
+    if value=$(ptn_phpt_first_unsupported_phar_archive_surface "$rel" "$path"); then
+        printf '%s\n' "$value"
         return 0
     fi
 

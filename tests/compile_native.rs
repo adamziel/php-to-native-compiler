@@ -36878,6 +36878,67 @@ var_dump($ext->getName(), $inis['user_agent']);",
 }
 
 #[test]
+fn phpc_phar_ini_and_metadata_are_runtime_visible() {
+    let root = temp_dir("ptn-phpc-phar-ini-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("phar-ini-metadata.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('phar.readonly'), ini_get('phar.require_hash'), ini_get('phar.cache_list'));\n\
+var_dump(Phar::canWrite());\n\
+var_dump(ini_set('phar.readonly', 'yes'), ini_get('phar.readonly'), Phar::canWrite());\n\
+$ext = new ReflectionExtension('phar');\n\
+$inis = $ext->getINIEntries();\n\
+var_dump($ext->getName(), $inis['phar.readonly'], $inis['phar.require_hash'], $inis['phar.cache_list']);\n\
+$compression = Phar::getSupportedCompression();\n\
+$signatures = Phar::getSupportedSignatures();\n\
+var_dump($compression, count($signatures), in_array('OpenSSL_SHA512', $signatures, true));\n\
+var_dump(Phar::isValidPharFilename('boo.phar'), Phar::isValidPharFilename('boo.tar'), Phar::isValidPharFilename('boo.tar', false));",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("phar.readonly=0")
+        .arg("-d")
+        .arg("phar.require_hash=0")
+        .arg("-d")
+        .arg("phar.cache_list=/tmp/a.phar")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(11) \"/tmp/a.phar\"\n",
+            "bool(true)\n",
+            "string(1) \"0\"\n",
+            "string(3) \"yes\"\n",
+            "bool(false)\n",
+            "string(4) \"Phar\"\n",
+            "string(3) \"yes\"\n",
+            "string(1) \"0\"\n",
+            "string(11) \"/tmp/a.phar\"\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(2) \"GZ\"\n",
+            "}\n",
+            "int(7)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_string_ini_controls_default_charset_and_parse_str_separator() {
     let root = temp_dir("ptn-phpc-string-ini");
     fs::create_dir_all(&root).unwrap();

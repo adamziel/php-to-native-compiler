@@ -454,6 +454,12 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->pcre_jit = NULL;
         free(runtime->opcache_save_comments);
         runtime->opcache_save_comments = NULL;
+        free(runtime->phar_readonly);
+        runtime->phar_readonly = NULL;
+        free(runtime->phar_require_hash);
+        runtime->phar_require_hash = NULL;
+        free(runtime->phar_cache_list);
+        runtime->phar_cache_list = NULL;
         free(runtime->internal_encoding);
         runtime->internal_encoding = NULL;
         free(runtime->input_encoding);
