@@ -869,6 +869,25 @@ fn phpt_classifier_splits_attribute_metadata_blockers() {
             "{name}: {classification:?}"
         );
     }
+
+    let zend_test_attribute = classify_at_relative_path(
+        "--TEST--\nattribute validation\n--EXTENSIONS--\nzend_test\n--FILE--\n<?php\n#[ZendTestAttribute]\nfunction f() {}\n--EXPECTF--\nFatal error: %s\n",
+        "Zend/tests/attributes/016_custom_attribute_validation.phpt",
+    );
+    assert!(
+        zend_test_attribute.starts_with("unsupported-internal-attribute-metadata\t")
+            && zend_test_attribute.contains("zend_test internal attribute validation fixtures"),
+        "{zend_test_attribute:?}"
+    );
+
+    let zend_test_path_extension = classify_at_relative_path(
+        "--TEST--\nzend test extension path\n--FILE--\n<?php\necho \"ok\\n\";\n--EXPECT--\nok\n",
+        "ext/zend_test/tests/attribute-deprecated.phpt",
+    );
+    assert!(
+        zend_test_path_extension.starts_with("unsupported-extension\t"),
+        "{zend_test_path_extension:?}"
+    );
 }
 
 #[test]
@@ -1757,6 +1776,23 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
     assert_eq!(
         xmlwriter_extension.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let non_db_extension_pack = classify(
+        "--TEST--\nnon-db extension availability\n--EXTENSIONS--\ngd session simplexml ldap gmp exif xsl random dba fileinfo ftp pcntl posix tidy bz2 com_dotnet enchant readline snmp sodium\n--FILE--\n<?php\necho \"ok\\n\";\n--EXPECT--\nok\n",
+    );
+    assert_eq!(
+        non_db_extension_pack.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let gd_path_extension = classify_at_relative_path(
+        "--TEST--\ngd path extension\n--FILE--\n<?php\necho extension_loaded('gd') ? \"ok\\n\" : \"missing\\n\";\n--EXPECT--\nok\n",
+        "ext/gd/tests/metadata.phpt",
+    );
+    assert_eq!(
+        gd_path_extension.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
 

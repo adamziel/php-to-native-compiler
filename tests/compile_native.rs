@@ -22550,9 +22550,102 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib\narray(0) {\n}\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,bz2,calendar,com_dotnet,ctype,curl,date,dba,dom,enchant,exif,fileinfo,filter,ftp,gd,gmp,hash,iconv,intl,json,ldap,libxml,mbstring,openssl,pcre,pcntl,Phar,posix,random,readline,Reflection,session,simplexml,snmp,sockets,soap,sodium,SPL,standard,tidy,tokenizer,uri,xml,xmlreader,xmlwriter,xsl,zip,zlib\narray(0) {\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_non_db_extension_registry_and_random_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-non-db-extension-registry");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("non-db-extension-registry.php");
+    let output = root.join("non-db-extension-registry-bin");
+    fs::write(
+        &input,
+        "<?php
+$names = [
+    'bz2',
+    'com_dotnet',
+    'dba',
+    'enchant',
+    'exif',
+    'fileinfo',
+    'ftp',
+    'gd',
+    'gmp',
+    'ldap',
+    'pcntl',
+    'posix',
+    'random',
+    'readline',
+    'session',
+    'simplexml',
+    'snmp',
+    'sodium',
+    'tidy',
+    'uri',
+    'xsl',
+];
+foreach ($names as $name) {
+    $reflection = new ReflectionExtension($name);
+    echo $reflection->getName(), ':',
+        extension_loaded($name) ? 'loaded' : 'missing', ':',
+        phpversion($name) !== false ? 'version' : 'none', \"\\n\";
+}
+var_dump(
+    in_array('random', get_loaded_extensions(), true),
+    in_array('random_int', get_extension_funcs('random'), true),
+    in_array('random_bytes', get_extension_funcs('random'), true),
+    strlen(random_bytes(4)),
+    random_int(3, 3),
+    mt_getrandmax() === getrandmax()
+);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bz2:loaded:version\n",
+            "com_dotnet:loaded:version\n",
+            "dba:loaded:version\n",
+            "enchant:loaded:version\n",
+            "exif:loaded:version\n",
+            "fileinfo:loaded:version\n",
+            "ftp:loaded:version\n",
+            "gd:loaded:version\n",
+            "gmp:loaded:version\n",
+            "ldap:loaded:version\n",
+            "pcntl:loaded:version\n",
+            "posix:loaded:version\n",
+            "random:loaded:version\n",
+            "readline:loaded:version\n",
+            "session:loaded:version\n",
+            "simplexml:loaded:version\n",
+            "snmp:loaded:version\n",
+            "sodium:loaded:version\n",
+            "tidy:loaded:version\n",
+            "uri:loaded:version\n",
+            "xsl:loaded:version\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(4)\n",
+            "int(3)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_MODELED_EXTENSIONS"));
+    assert!(c_source.contains("ptn_internal_random_bytes"));
 }
 
 #[test]

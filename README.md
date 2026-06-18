@@ -203,8 +203,11 @@ Rule: implement reusable PHP semantics; no PHPT row special-cases.
   `.runtime/php-src-phpt`.
 - PHPT runners preclassify broad rows before execution and write selected,
   runnable, classification, excluded, and per-category manifests under
-  `.runtime/phpt-progress`. Defaults model PTN's current `Core`, `date`,
-  `pcre`, `Reflection`, `standard`, and `uri` extension surface plus accepted runner ini keys
+  `.runtime/phpt-progress`. Defaults model PTN's current core extension
+  surface plus extension-availability metadata for bounded non-DB/non-engine
+  modules such as `gd`, `session`, `simplexml`, `gmp`, `random`, `posix`,
+  `fileinfo`, `exif`, `xsl`, and related local/optional extensions, along
+  with accepted runner ini keys
   (`assert.active`, `assert.bail`, `assert.callback`, `assert.exception`,
   `assert.warning`, `date.timezone`, `display_errors`, `error_reporting`,
   `extension_dir`, `include_path`, `opcache.save_comments`,

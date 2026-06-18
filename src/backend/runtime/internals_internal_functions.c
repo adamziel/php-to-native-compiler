@@ -42219,6 +42219,26 @@ static PtnValue ptn_internal_random_int(PtnRuntime *runtime, size_t argc, const 
     return ptn_int(value);
 }
 
+static PtnValue ptn_internal_random_bytes(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t length = ptn_internal_expect_integer_arg(runtime, "random_bytes", 1, "length", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (length < 1) {
+        ptn_throw_exception(runtime, "ValueError", "random_bytes(): Argument #1 ($length) must be greater than 0");
+        return ptn_null();
+    }
+    char *bytes = malloc((size_t)length);
+    if (bytes == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (int64_t i = 0; i < length; i++) {
+        bytes[i] = (char)(rand() & 0xff);
+    }
+    return ptn_owned_string_len(bytes, (size_t)length);
+}
+
 static PtnValue ptn_internal_getmypid(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -42811,94 +42831,70 @@ static void ptn_runtime_apply_memory_limit(PtnRuntime *runtime, const char *requ
     }
 }
 
+typedef struct {
+    const char *canonical;
+    const char *alias;
+} PtnModeledExtensionName;
+
+static const PtnModeledExtensionName PTN_MODELED_EXTENSIONS[] = {
+    { "Core", NULL },
+    { "bcmath", NULL },
+    { "bz2", NULL },
+    { "calendar", NULL },
+    { "com_dotnet", NULL },
+    { "ctype", NULL },
+    { "curl", NULL },
+    { "date", NULL },
+    { "dba", NULL },
+    { "dom", NULL },
+    { "enchant", NULL },
+    { "exif", NULL },
+    { "fileinfo", NULL },
+    { "filter", NULL },
+    { "ftp", NULL },
+    { "gd", NULL },
+    { "gmp", NULL },
+    { "hash", NULL },
+    { "iconv", NULL },
+    { "intl", NULL },
+    { "json", NULL },
+    { "ldap", NULL },
+    { "libxml", NULL },
+    { "mbstring", NULL },
+    { "openssl", NULL },
+    { "pcre", NULL },
+    { "pcntl", NULL },
+    { "Phar", "phar" },
+    { "posix", NULL },
+    { "random", NULL },
+    { "readline", NULL },
+    { "Reflection", NULL },
+    { "session", NULL },
+    { "simplexml", NULL },
+    { "snmp", NULL },
+    { "sockets", NULL },
+    { "soap", NULL },
+    { "sodium", NULL },
+    { "SPL", NULL },
+    { "standard", NULL },
+    { "tidy", NULL },
+    { "tokenizer", NULL },
+    { "uri", NULL },
+    { "xml", NULL },
+    { "xmlreader", NULL },
+    { "xmlwriter", NULL },
+    { "xsl", NULL },
+    { "zip", NULL },
+    { "zlib", NULL },
+};
+
 static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extension) {
-    if (ptn_string_operand_ascii_case_equal(extension, "Core")) {
-        return "Core";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "bcmath")) {
-        return "bcmath";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "calendar")) {
-        return "calendar";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "ctype")) {
-        return "ctype";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "curl")) {
-        return "curl";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "date")) {
-        return "date";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "filter")) {
-        return "filter";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "hash")) {
-        return "hash";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "iconv")) {
-        return "iconv";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "intl")) {
-        return "intl";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "dom")) {
-        return "dom";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "json")) {
-        return "json";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "mbstring")) {
-        return "mbstring";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "libxml")) {
-        return "libxml";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "pcre")) {
-        return "pcre";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "openssl")) {
-        return "openssl";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "Phar") ||
-        ptn_string_operand_ascii_case_equal(extension, "phar")) {
-        return "Phar";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "Reflection")) {
-        return "Reflection";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "sockets")) {
-        return "sockets";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "soap")) {
-        return "soap";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "SPL")) {
-        return "SPL";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "standard")) {
-        return "standard";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "tokenizer")) {
-        return "tokenizer";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "xmlwriter")) {
-        return "xmlwriter";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "zip")) {
-        return "zip";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "zlib")) {
-        return "zlib";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "xml")) {
-        return "xml";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "xmlreader")) {
-        return "xmlreader";
-    }
-    if (ptn_string_operand_ascii_case_equal(extension, "xmlwriter")) {
-        return "xmlwriter";
+    for (size_t i = 0; i < sizeof(PTN_MODELED_EXTENSIONS) / sizeof(PTN_MODELED_EXTENSIONS[0]); i++) {
+        const PtnModeledExtensionName *entry = &PTN_MODELED_EXTENSIONS[i];
+        if (ptn_string_operand_ascii_case_equal(extension, entry->canonical) ||
+            (entry->alias != NULL && ptn_string_operand_ascii_case_equal(extension, entry->alias))) {
+            return entry->canonical;
+        }
     }
     return NULL;
 }
@@ -44017,34 +44013,13 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     if (zend_extensions) {
         return result;
     }
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), ptn_string("bcmath"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(2), ptn_string("calendar"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(3), ptn_string("ctype"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(4), ptn_string("curl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(5), ptn_string("date"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(6), ptn_string("dom"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(7), ptn_string("filter"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(8), ptn_string("hash"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(9), ptn_string("iconv"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(10), ptn_string("intl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(11), ptn_string("json"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(12), ptn_string("libxml"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(13), ptn_string("mbstring"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(14), ptn_string("openssl"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(15), ptn_string("pcre"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(16), ptn_string("Phar"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(17), ptn_string("Reflection"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(18), ptn_string("sockets"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(19), ptn_string("soap"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(20), ptn_string("SPL"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(21), ptn_string("standard"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(22), ptn_string("tokenizer"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(23), ptn_string("xml"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(24), ptn_string("xmlreader"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(25), ptn_string("xmlwriter"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(26), ptn_string("zip"));
-    ptn_array_set_entry(result.as.array, ptn_array_int_key(27), ptn_string("zlib"));
+    for (size_t i = 0; i < sizeof(PTN_MODELED_EXTENSIONS) / sizeof(PTN_MODELED_EXTENSIONS[0]); i++) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)i),
+            ptn_string(PTN_MODELED_EXTENSIONS[i].canonical)
+        );
+    }
     return result;
 }
 
@@ -55526,6 +55501,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
         { "mktime", 0, 6, ptn_internal_mktime },
+        { "mt_getrandmax", 0, 0, ptn_internal_getrandmax },
+        { "mt_rand", 0, 2, ptn_internal_rand },
+        { "mt_srand", 0, 2, ptn_internal_srand },
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
         { "natsort", 1, 1, ptn_internal_natsort },
         { "next", 1, 1, ptn_internal_next },
@@ -55576,6 +55554,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "quotemeta", 1, 1, ptn_internal_quotemeta },
         { "rad2deg", 1, 1, ptn_internal_rad2deg },
         { "rand", 0, 2, ptn_internal_rand },
+        { "random_bytes", 1, 1, ptn_internal_random_bytes },
         { "random_int", 2, 2, ptn_internal_random_int },
         { "srand", 0, 2, ptn_internal_srand },
         { "rawurldecode", 1, 1, ptn_internal_rawurldecode },
@@ -55904,6 +55883,16 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "preg_")) {
         return "pcre";
+    }
+    if (ptn_ascii_case_equal(name, "getrandmax") ||
+        ptn_ascii_case_equal(name, "mt_getrandmax") ||
+        ptn_ascii_case_equal(name, "mt_rand") ||
+        ptn_ascii_case_equal(name, "mt_srand") ||
+        ptn_ascii_case_equal(name, "rand") ||
+        ptn_ascii_case_equal(name, "random_bytes") ||
+        ptn_ascii_case_equal(name, "random_int") ||
+        ptn_ascii_case_equal(name, "srand")) {
+        return "random";
     }
     if (ptn_internal_function_name_has_prefix(name, "xmlwriter_")) {
         return "xmlwriter";

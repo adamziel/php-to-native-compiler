@@ -10,7 +10,7 @@
 # runtime diagnostic APIs, and upstream XFAILs. Generic PHP semantic gaps
 # inside the modeled surface remain runnable and should surface as PTN failures.
 
-PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="bcmath,calendar,Core,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,phar,Reflection,sockets,soap,SPL,standard,tokenizer,uri,xml,xmlreader,xmlwriter,zip,zlib"
+PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,bcmath,bz2,calendar,com_dotnet,ctype,curl,date,dba,dom,enchant,exif,fileinfo,filter,ftp,gd,gmp,hash,iconv,intl,json,ldap,libxml,mbstring,openssl,pcre,pcntl,Phar,phar,posix,random,readline,Reflection,session,simplexml,snmp,sockets,soap,sodium,SPL,standard,tidy,tokenizer,uri,xml,xmlreader,xmlwriter,xsl,zip,zlib"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.active,assert.bail,assert.callback,assert.exception,assert.warning,bcmath.scale,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,intl.default_locale,max_input_nesting_level,max_input_vars,max_memory_limit,mbstring.detect_order,mbstring.encoding_translation,mbstring.http_input,mbstring.http_output,mbstring.internal_encoding,mbstring.language,mbstring.regex_retry_limit,mbstring.regex_stack_limit,mbstring.strict_detection,mbstring.substitute_character,memory_limit,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,post_max_size,precision,register_argc_argv,serialize_precision,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
 PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
@@ -2296,6 +2296,15 @@ ptn_phpt_classify_row() {
         printf 'unsupported-extension\trequires unavailable PTN extension %s; modeled extensions: %s\n' \
             "$value" "$(ptn_phpt_supported_extensions)"
         return 0
+    fi
+
+    if [[ "$rel" == Zend/tests/attributes/* ]]; then
+        while IFS= read -r value; do
+            if [[ "${value,,}" == "zend_test" ]]; then
+                printf 'unsupported-internal-attribute-metadata\trequires zend_test internal attribute validation fixtures beyond modeled internal attribute metadata\n'
+                return 0
+            fi
+        done < <(ptn_phpt_declared_extensions "$path")
     fi
 
     if ptn_phpt_csv_contains_ci "EXTENSIONS" "$sections" || ptn_phpt_csv_contains_ci "SKIPIF" "$sections"; then
