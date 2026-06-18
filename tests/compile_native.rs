@@ -47936,9 +47936,10 @@ echo \"done\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        concat!(
-            "Warning: The magic method MagicVisibility::__unset() must have public visibility in ptn on line 3\n",
-            "done\n",
+        format!(
+            "Warning: The magic method MagicVisibility::__unset() must have public visibility in {} on line 3\n\
+done\n",
+            input.display(),
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

@@ -19,7 +19,7 @@ It lets the project exercise binary production from day one while the runtime
 model grows toward full PHP semantics.
 
 Generated C is compiled with the system `cc` using `-O2` by default for normal
-translation units. Very large generated C files use a fast `-O0 -g` profile by
+translation units. Very large generated C files use a fast `-O0 -g0 -w` profile by
 default to keep compile/run workflows bounded; setting `PTN_CC_OPT_LEVEL`
 always overrides that adaptive choice. `PTN_CC_OPT_LEVEL` selects a
 debug-friendly `-O0 -g` profile with `0` or `debug`, or optimized profiles `1`,

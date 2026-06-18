@@ -348,7 +348,7 @@ pub fn emit_c(module: &Module) -> String {
     );
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
     emit_declaration_fatals(&mut out, &declaration_fatals, &module.source_file);
-    emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings);
+    emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings, &module.source_file);
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
         &mut out,
@@ -3002,13 +3002,19 @@ fn emit_trait_use_deprecations(out: &mut String, deprecations: &[TraitUseDepreca
     }
 }
 
-fn emit_magic_visibility_warnings(out: &mut String, warnings: &[MagicVisibilityWarning]) {
+fn emit_magic_visibility_warnings(
+    out: &mut String,
+    warnings: &[MagicVisibilityWarning],
+    source_file: &str,
+) {
     for warning in warnings {
-        out.push_str("    ptn_emit_warning(&runtime.diagnostics, \"The magic method ");
+        out.push_str("    ptn_emit_compile_warning(&runtime, \"The magic method ");
         out.push_str(&c_string(&warning.class_name));
         out.push_str("::");
         out.push_str(&c_string(&warning.method_name));
-        out.push_str("() must have public visibility\", ");
+        out.push_str("() must have public visibility\", \"");
+        out.push_str(&c_string(source_file));
+        out.push_str("\", ");
         out.push_str(&warning.line.to_string());
         out.push_str(");\n");
     }
@@ -16819,7 +16825,7 @@ fn cc_optimization_args_for_source(
 ) -> Result<Vec<&'static str>> {
     let has_explicit_profile = value.map(str::trim).is_some_and(|value| !value.is_empty());
     if !has_explicit_profile && c_source_len >= LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD {
-        return Ok(vec!["-O0", "-g"]);
+        return Ok(vec!["-O0", "-g0", "-w"]);
     }
     cc_optimization_args_for(value)
 }
@@ -29598,15 +29604,15 @@ mod tests {
     }
 
     #[test]
-    fn default_c_compiler_profile_uses_debug_for_large_sources() {
+    fn default_c_compiler_profile_uses_fast_profile_for_large_sources() {
         assert_eq!(
             cc_optimization_args_for_source(None, LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD).unwrap(),
-            vec!["-O0", "-g"]
+            vec!["-O0", "-g0", "-w"]
         );
         assert_eq!(
             cc_optimization_args_for_source(Some(""), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
                 .unwrap(),
-            vec!["-O0", "-g"]
+            vec!["-O0", "-g0", "-w"]
         );
         assert_eq!(
             cc_optimization_args_for_source(Some("2"), LARGE_C_SOURCE_FAST_COMPILE_THRESHOLD + 1)
