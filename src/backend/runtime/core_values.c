@@ -661,6 +661,11 @@ typedef struct {
     int is_readonly;
     int is_unset;
     int lazy_skip;
+    int has_hooks;
+    int is_virtual;
+    int hook_has_get;
+    int hook_has_set;
+    int hook_set_uses_return;
     char *last_type_name;
     PtnPropertyTypeKind type_kind;
     char *type_class_name;
@@ -1024,6 +1029,24 @@ typedef int (*PtnMagicPropertyUnsetHandler)(
     const char *property,
     size_t line
 );
+typedef int (*PtnPropertyHookReadHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *declaring_class,
+    const char *property,
+    size_t line,
+    PtnValue *value_out
+);
+typedef int (*PtnPropertyHookWriteHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *declaring_class,
+    const char *property,
+    PtnValue value,
+    size_t line,
+    int *store_result,
+    PtnValue *value_out
+);
 typedef int (*PtnMagicDebugInfoHandler)(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -1110,10 +1133,15 @@ struct PtnRuntime {
     PtnMagicPropertyGetExistsHandler magic_property_get_exists;
     PtnMagicPropertySetHandler magic_property_set;
     PtnMagicPropertyUnsetHandler magic_property_unset;
+    PtnPropertyHookReadHandler property_hook_read;
+    PtnPropertyHookWriteHandler property_hook_write;
     PtnMagicDebugInfoHandler magic_debug_info;
     PtnClassConstantInitializerHandler class_constant_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
     int in_magic_property_dispatch;
+    PtnObject *active_property_hook_object;
+    const char *active_property_hook_property;
+    size_t active_property_hook_depth;
     PtnMagicPropertyFrame *magic_property_frames;
     size_t magic_property_frame_len;
     size_t magic_property_frame_capacity;

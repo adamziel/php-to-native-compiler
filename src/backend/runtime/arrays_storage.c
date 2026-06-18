@@ -1174,6 +1174,11 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].is_readonly = is_readonly;
             object->property_metadata[i].is_unset = 0;
             object->property_metadata[i].lazy_skip = 0;
+            object->property_metadata[i].has_hooks = 0;
+            object->property_metadata[i].is_virtual = 0;
+            object->property_metadata[i].hook_has_get = 0;
+            object->property_metadata[i].hook_has_set = 0;
+            object->property_metadata[i].hook_set_uses_return = 0;
             free(object->property_metadata[i].last_type_name);
             object->property_metadata[i].last_type_name = NULL;
             free(object->property_metadata[i].type_class_name);
@@ -1215,11 +1220,52 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->is_readonly = is_readonly;
     metadata->is_unset = 0;
     metadata->lazy_skip = 0;
+    metadata->has_hooks = 0;
+    metadata->is_virtual = 0;
+    metadata->hook_has_get = 0;
+    metadata->hook_has_set = 0;
+    metadata->hook_set_uses_return = 0;
     metadata->last_type_name = NULL;
     metadata->type_kind = type_kind;
     metadata->type_class_name = type_class_name == NULL ? NULL : ptn_duplicate_string(type_class_name);
     metadata->type_text = type_text == NULL ? NULL : ptn_duplicate_string(type_text);
     metadata->type_allows_null = type_allows_null;
+}
+
+static PTN_UNUSED void ptn_object_register_property_hooks(
+    PtnObject *object,
+    const char *property,
+    const char *declaring_class,
+    PtnPropertyVisibility read_visibility,
+    int is_virtual,
+    int hook_has_get,
+    int hook_has_set,
+    int hook_set_uses_return
+) {
+    if (object == NULL || property == NULL || declaring_class == NULL) {
+        return;
+    }
+    char *storage_name = ptn_object_storage_key_for_declaration(
+        property,
+        declaring_class,
+        read_visibility
+    );
+    PtnObjectPropertyMetadata *metadata = NULL;
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        if (strcmp(object->property_metadata[i].storage_name, storage_name) == 0) {
+            metadata = &object->property_metadata[i];
+            break;
+        }
+    }
+    free(storage_name);
+    if (metadata == NULL) {
+        return;
+    }
+    metadata->has_hooks = 1;
+    metadata->is_virtual = is_virtual ? 1 : 0;
+    metadata->hook_has_get = hook_has_get ? 1 : 0;
+    metadata->hook_has_set = hook_has_set ? 1 : 0;
+    metadata->hook_set_uses_return = hook_set_uses_return ? 1 : 0;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_clone(PtnArrayKey key) {

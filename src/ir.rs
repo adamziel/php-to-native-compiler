@@ -137,6 +137,9 @@ pub struct PropertyDecl {
     pub hook_get_is_abstract: bool,
     pub hook_set_is_abstract: bool,
     pub hook_get_value: Option<ValueExpr>,
+    pub hook_get_function_index: Option<usize>,
+    pub hook_set_value_function_index: Option<usize>,
+    pub hook_set_body_function_index: Option<usize>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,
     pub value: Option<ValueExpr>,
@@ -889,6 +892,7 @@ pub enum MagicConstantKind {
     Method,
     Class,
     Trait,
+    Property,
     Namespace,
 }
 
@@ -1535,10 +1539,63 @@ impl<'a> LoweringContext<'a> {
         let parent_name = class.parent_name.as_deref();
         let class_attributes =
             self.lower_class_scoped_attribute_metadata(&class.attributes, &class.name, parent_name);
-        let properties = class
-            .properties
-            .iter()
-            .map(|property| PropertyDecl {
+        let mut properties = Vec::new();
+        for property in &class.properties {
+            let hook_get_value = property
+                .hook_get_value
+                .as_ref()
+                .map(|value| self.lower_expr(value));
+            let hook_get_function_index = property
+                .hook_get_body
+                .as_ref()
+                .map(|body| {
+                    self.lower_property_hook_function(
+                        class,
+                        property,
+                        "get",
+                        Vec::new(),
+                        body,
+                        false,
+                        parent_name,
+                    )
+                })
+                .or_else(|| {
+                    property.hook_get_value.as_ref().map(|value| {
+                        self.lower_property_hook_value_function(
+                            class,
+                            property,
+                            "get",
+                            Vec::new(),
+                            value,
+                            parent_name,
+                        )
+                    })
+                });
+            let hook_set_parameter = property.hook_set_parameter.as_ref().map(|parameter| {
+                self.lower_parameter_for_class_scope(parameter, &class.name, parent_name)
+            });
+            let hook_set_value_function_index = property.hook_set_value.as_ref().map(|value| {
+                self.lower_property_hook_value_function(
+                    class,
+                    property,
+                    "set",
+                    hook_set_parameter.clone().into_iter().collect(),
+                    value,
+                    parent_name,
+                )
+            });
+            let hook_set_body_function_index = property.hook_set_body.as_ref().map(|body| {
+                self.lower_property_hook_function(
+                    class,
+                    property,
+                    "set",
+                    hook_set_parameter.clone().into_iter().collect(),
+                    body,
+                    false,
+                    parent_name,
+                )
+            });
+            properties.push(PropertyDecl {
                 name: property.name.clone(),
                 visibility: lower_property_visibility(property.visibility),
                 set_visibility: lower_property_visibility(property.set_visibility),
@@ -1551,10 +1608,10 @@ impl<'a> LoweringContext<'a> {
                 hook_has_set: property.hook_has_set,
                 hook_get_is_abstract: property.hook_get_is_abstract,
                 hook_set_is_abstract: property.hook_set_is_abstract,
-                hook_get_value: property
-                    .hook_get_value
-                    .as_ref()
-                    .map(|value| self.lower_expr(value)),
+                hook_get_value,
+                hook_get_function_index,
+                hook_set_value_function_index,
+                hook_set_body_function_index,
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,
@@ -1564,8 +1621,8 @@ impl<'a> LoweringContext<'a> {
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
                 source_order: property.span.byte_start,
-            })
-            .collect();
+            });
+        }
         let static_properties = class
             .static_properties
             .iter()
@@ -1721,6 +1778,108 @@ impl<'a> LoweringContext<'a> {
             constants,
             methods,
         }
+    }
+
+    fn lower_property_hook_function(
+        &mut self,
+        class: &AstClassDecl,
+        property: &crate::ast::PropertyDecl,
+        hook_name: &str,
+        parameters: Vec<FunctionParameter>,
+        body: &[Statement],
+        return_by_ref: bool,
+        parent_name: Option<&str>,
+    ) -> usize {
+        let function_index = self.functions.len();
+        let display_name = format!("{}::${}::{}", class.name, property.name, hook_name);
+        self.functions.push(FunctionDecl {
+            name: display_name.clone(),
+            display_name: display_name.clone(),
+            source_file: self.source_file.clone(),
+            class_name: Some(class.name.clone()),
+            trait_name: None,
+            trait_method_name: None,
+            method_name: Some(format!("${}::{}", property.name, hook_name)),
+            deprecated_message: None,
+            deprecated_since: None,
+            deprecated_message_runtime_reference: None,
+            no_discard_message: None,
+            attributes: AttributeMetadata::default(),
+            is_static: false,
+            line: property.span.line,
+            end_line: property.span.end_line,
+            parameters,
+            return_type: property_hook_return_type(property, hook_name),
+            return_by_ref,
+            is_generator: statements_contain_yield(body),
+            is_anonymous: false,
+            initially_declared: true,
+            body: Vec::new(),
+        });
+        let previous_class_name =
+            std::mem::replace(&mut self.current_class_name, Some(class.name.clone()));
+        let previous_trait_name = std::mem::take(&mut self.current_trait_name);
+        let previous_function_display_name =
+            std::mem::replace(&mut self.current_function_display_name, Some(display_name));
+        let lowered_body = self.lower_statements(body);
+        self.current_class_name = previous_class_name;
+        self.current_trait_name = previous_trait_name;
+        self.current_function_display_name = previous_function_display_name;
+        self.functions[function_index].body = lowered_body;
+        let _ = parent_name;
+        function_index
+    }
+
+    fn lower_property_hook_value_function(
+        &mut self,
+        class: &AstClassDecl,
+        property: &crate::ast::PropertyDecl,
+        hook_name: &str,
+        parameters: Vec<FunctionParameter>,
+        value: &Expr,
+        parent_name: Option<&str>,
+    ) -> usize {
+        let function_index = self.functions.len();
+        let display_name = format!("{}::${}::{}", class.name, property.name, hook_name);
+        self.functions.push(FunctionDecl {
+            name: display_name.clone(),
+            display_name: display_name.clone(),
+            source_file: self.source_file.clone(),
+            class_name: Some(class.name.clone()),
+            trait_name: None,
+            trait_method_name: None,
+            method_name: Some(format!("${}::{}", property.name, hook_name)),
+            deprecated_message: None,
+            deprecated_since: None,
+            deprecated_message_runtime_reference: None,
+            no_discard_message: None,
+            attributes: AttributeMetadata::default(),
+            is_static: false,
+            line: property.span.line,
+            end_line: property.span.end_line,
+            parameters,
+            return_type: property_hook_return_type(property, hook_name),
+            return_by_ref: false,
+            is_generator: false,
+            is_anonymous: false,
+            initially_declared: true,
+            body: Vec::new(),
+        });
+        let previous_class_name =
+            std::mem::replace(&mut self.current_class_name, Some(class.name.clone()));
+        let previous_trait_name = std::mem::take(&mut self.current_trait_name);
+        let previous_function_display_name =
+            std::mem::replace(&mut self.current_function_display_name, Some(display_name));
+        let lowered_value = self.lower_expr(value);
+        self.current_class_name = previous_class_name;
+        self.current_trait_name = previous_trait_name;
+        self.current_function_display_name = previous_function_display_name;
+        self.functions[function_index].body = vec![Instruction::Return {
+            value: Some(lowered_value),
+            line: property.span.line,
+        }];
+        let _ = parent_name;
+        function_index
     }
 
     fn lower_statements(&mut self, statements: &[Statement]) -> Vec<Instruction> {
@@ -2522,6 +2681,20 @@ fn lower_property_visibility(visibility: AstPropertyVisibility) -> PropertyVisib
         AstPropertyVisibility::Protected => PropertyVisibility::Protected,
         AstPropertyVisibility::Private => PropertyVisibility::Private,
     }
+}
+
+fn property_hook_return_type(
+    property: &crate::ast::PropertyDecl,
+    hook_name: &str,
+) -> Option<TypeHint> {
+    if !hook_name.eq_ignore_ascii_case("get") {
+        return None;
+    }
+    property
+        .type_hint
+        .as_ref()
+        .and_then(|type_hint| type_hint.semantic_type.clone())
+        .map(lower_type_hint)
 }
 
 fn lower_enum_backing_type(backing_type: AstEnumBackingType) -> EnumBackingType {
@@ -4848,6 +5021,7 @@ fn assertion_magic_constant_text(kind: AstMagicConstantKind) -> &'static str {
         AstMagicConstantKind::Class => "__CLASS__",
         AstMagicConstantKind::Method => "__METHOD__",
         AstMagicConstantKind::Trait => "__TRAIT__",
+        AstMagicConstantKind::Property => "__PROPERTY__",
         AstMagicConstantKind::Namespace => "__NAMESPACE__",
     }
 }
@@ -4945,6 +5119,7 @@ fn lower_magic_constant_kind(kind: AstMagicConstantKind) -> MagicConstantKind {
         AstMagicConstantKind::Method => MagicConstantKind::Method,
         AstMagicConstantKind::Class => MagicConstantKind::Class,
         AstMagicConstantKind::Trait => MagicConstantKind::Trait,
+        AstMagicConstantKind::Property => MagicConstantKind::Property,
         AstMagicConstantKind::Namespace => MagicConstantKind::Namespace,
     }
 }

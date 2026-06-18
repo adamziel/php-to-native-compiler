@@ -131,6 +131,17 @@ pub fn emit_c(module: &Module) -> String {
         .classes
         .iter()
         .any(|class| class_magic_unset_method(class, &module.classes).is_some());
+    let needs_property_hook_read = module.classes.iter().any(|class| {
+        class.properties.iter().any(|property| {
+            effective_concrete_property_hook(class, property, "get", &module.classes).is_some()
+        })
+    });
+    let needs_property_hook_write = module.classes.iter().any(|class| {
+        class.properties.iter().any(|property| {
+            effective_concrete_property_hook(class, property, "set", &module.classes).is_some()
+        })
+    });
+    let needs_property_hook_dispatch = needs_property_hook_read || needs_property_hook_write;
     let needs_magic_debug_info = module
         .classes
         .iter()
@@ -209,6 +220,16 @@ pub fn emit_c(module: &Module) -> String {
     }
     if needs_magic_property_dispatch {
         emit_magic_property_dispatch(&mut out, &module.classes);
+    }
+    if needs_property_hook_dispatch {
+        emit_property_hook_dispatch(
+            &mut out,
+            &module.classes,
+            &module.functions,
+            &module.includes,
+            &module.source_file,
+            &module.source_dir,
+        );
     }
     if needs_magic_debug_info {
         emit_magic_debug_info_dispatch(&mut out, &module.classes);
@@ -309,6 +330,12 @@ pub fn emit_c(module: &Module) -> String {
     }
     if needs_magic_property_unset {
         out.push_str("    runtime.magic_property_unset = ptn_declared_magic_property_unset;\n");
+    }
+    if needs_property_hook_read {
+        out.push_str("    runtime.property_hook_read = ptn_declared_property_hook_read;\n");
+    }
+    if needs_property_hook_write {
+        out.push_str("    runtime.property_hook_write = ptn_declared_property_hook_write;\n");
     }
     if needs_magic_debug_info {
         out.push_str("    runtime.magic_debug_info = ptn_declared_magic_debug_info;\n");
@@ -1923,6 +1950,27 @@ fn emit_user_functions(
         }
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
+    }
+}
+
+fn property_magic_constant_name(method_name: Option<&str>) -> &str {
+    let Some(method_name) = method_name else {
+        return "";
+    };
+    let rest = if let Some(rest) = method_name.strip_prefix('$') {
+        rest
+    } else if let Some((_, rest)) = method_name.split_once("::$") {
+        rest
+    } else {
+        return "";
+    };
+    let Some((property_name, hook_name)) = rest.split_once("::") else {
+        return "";
+    };
+    if hook_name.eq_ignore_ascii_case("get") || hook_name.eq_ignore_ascii_case("set") {
+        property_name
+    } else {
+        ""
     }
 }
 
@@ -9058,11 +9106,160 @@ fn inherited_hook_property<'a>(
     None
 }
 
+fn property_has_concrete_hook(property: &crate::ir::PropertyDecl, hook_name: &str) -> bool {
+    match hook_name {
+        "get" => {
+            property.hook_has_get
+                && !property.hook_get_is_abstract
+                && (property.hook_get_function_index.is_some() || property.hook_get_value.is_some())
+        }
+        "set" => {
+            property.hook_has_set
+                && !property.hook_set_is_abstract
+                && (property.hook_set_value_function_index.is_some()
+                    || property.hook_set_body_function_index.is_some())
+        }
+        _ => false,
+    }
+}
+
+fn inherited_concrete_property_hook<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    hook_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a crate::ir::PropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if let Some(property) = parent.properties.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name == property_name
+                && property_has_concrete_hook(candidate, hook_name)
+        }) {
+            return Some((parent, property));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn inherited_visible_property<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a crate::ir::PropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        if let Some(property) = parent.properties.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private && candidate.name == property_name
+        }) {
+            return Some((parent, property));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn effective_concrete_property_hook<'a>(
+    class: &'a ClassDecl,
+    property: &'a crate::ir::PropertyDecl,
+    hook_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a crate::ir::PropertyDecl)> {
+    if property_has_concrete_hook(property, hook_name) {
+        return Some((class, property));
+    }
+    inherited_concrete_property_hook(class, &property.name, hook_name, classes)
+}
+
+fn property_has_effective_hook(
+    class: &ClassDecl,
+    property: &crate::ir::PropertyDecl,
+    hook_name: &str,
+    classes: &[ClassDecl],
+) -> bool {
+    match hook_name {
+        "get" => {
+            property.hook_has_get
+                || inherited_concrete_property_hook(class, &property.name, hook_name, classes)
+                    .is_some()
+        }
+        "set" => {
+            property.hook_has_set
+                || inherited_concrete_property_hook(class, &property.name, hook_name, classes)
+                    .is_some()
+        }
+        _ => false,
+    }
+}
+
+fn effective_property_hooks_are_virtual(
+    class: &ClassDecl,
+    property: &crate::ir::PropertyDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    let mut has_any_hook = property.has_hooks;
+    let mut is_virtual = property.has_hooks && property.is_virtual;
+    for hook_name in ["get", "set"] {
+        let has_local_hook = match hook_name {
+            "get" => property.hook_has_get,
+            "set" => property.hook_has_set,
+            _ => false,
+        };
+        if has_local_hook {
+            continue;
+        }
+        if let Some((_, inherited)) =
+            inherited_concrete_property_hook(class, &property.name, hook_name, classes)
+        {
+            has_any_hook = true;
+            if !property.has_hooks {
+                is_virtual = inherited.is_virtual;
+            } else if !inherited.is_virtual {
+                is_virtual = false;
+            }
+        } else if property.has_hooks
+            && inherited_visible_property(class, &property.name, classes)
+                .is_some_and(|(_, inherited)| !inherited.has_hooks)
+        {
+            is_virtual = false;
+        }
+    }
+    has_any_hook && is_virtual
+}
+
+fn property_has_any_effective_hook(
+    class: &ClassDecl,
+    property: &crate::ir::PropertyDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    property.has_hooks
+        || inherited_concrete_property_hook(class, &property.name, "get", classes).is_some()
+        || inherited_concrete_property_hook(class, &property.name, "set", classes).is_some()
+}
+
 fn property_runtime_declaring_class(
     class: &ClassDecl,
     property: &crate::ir::PropertyDecl,
     classes: &[ClassDecl],
 ) -> String {
+    if property.has_hooks {
+        return class.name.clone();
+    }
     if property.visibility != PropertyVisibility::Private {
         if let Some((declaring_class, _)) = inherited_hook_property(class, &property.name, classes)
         {
@@ -9293,12 +9490,12 @@ fn class_reflection_property_defaults_chain<'a>(
 fn class_property_initialization_chain(
     class: &ClassDecl,
     classes: &[ClassDecl],
-) -> Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)> {
+) -> Vec<(String, String, crate::ir::PropertyDecl, Option<ValueExpr>)> {
     fn collect(
         class: &ClassDecl,
         classes: &[ClassDecl],
         seen_classes: &mut HashSet<String>,
-        properties: &mut Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
+        properties: &mut Vec<(String, String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
     ) {
         let lookup_name = class.name.to_ascii_lowercase();
         if !seen_classes.insert(lookup_name) {
@@ -9309,17 +9506,15 @@ fn class_property_initialization_chain(
                 collect(parent, classes, seen_classes, properties);
             }
         }
-        properties.extend(class.properties.iter().cloned().filter_map(|property| {
-            if property.has_hooks && property.is_virtual {
-                return None;
-            }
+        properties.extend(class.properties.iter().cloned().map(|property| {
             let hook_get_value = inherited_hook_property(class, &property.name, classes)
                 .and_then(|(_, hook_property)| hook_property.hook_get_value.clone());
-            Some((
+            (
+                class.name.clone(),
                 property_runtime_declaring_class(class, &property, classes),
                 property,
                 hook_get_value,
-            ))
+            )
         }));
     }
 
@@ -9956,6 +10151,174 @@ fn emit_magic_property_dispatch(out: &mut String, classes: &[ClassDecl]) {
         );
         out.push_str("        return 1;\n");
         out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+}
+
+fn emit_property_hook_dispatch(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    includes: &[IncludeFile],
+    source_file: &str,
+    source_dir: &str,
+) {
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_property_hook_push_active(PtnRuntime *runtime, PtnValue receiver, const char *property, PtnObject **previous_object, const char **previous_property, size_t *previous_depth) {\n",
+    );
+    out.push_str("    PtnValue resolved = ptn_value_deref(receiver);\n");
+    out.push_str("    *previous_object = runtime->active_property_hook_object;\n");
+    out.push_str("    *previous_property = runtime->active_property_hook_property;\n");
+    out.push_str("    *previous_depth = runtime->active_property_hook_depth;\n");
+    out.push_str("    runtime->active_property_hook_object = resolved.type == PTN_OBJECT ? resolved.as.object : NULL;\n");
+    out.push_str("    runtime->active_property_hook_property = property;\n");
+    out.push_str("    runtime->active_property_hook_depth = *previous_depth + 1;\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_property_hook_pop_active(PtnRuntime *runtime, PtnObject *previous_object, const char *previous_property, size_t previous_depth) {\n",
+    );
+    out.push_str("    runtime->active_property_hook_object = previous_object;\n");
+    out.push_str("    runtime->active_property_hook_property = previous_property;\n");
+    out.push_str("    runtime->active_property_hook_depth = previous_depth;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_property_hook_read(PtnRuntime *caller_runtime, PtnValue receiver, const char *declaring_class, const char *property, size_t line, PtnValue *value_out) {\n",
+    );
+    out.push_str("    (void)caller_runtime;\n");
+    out.push_str("    (void)receiver;\n");
+    out.push_str("    (void)declaring_class;\n");
+    out.push_str("    (void)property;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)value_out;\n");
+    for class in classes {
+        for property in &class.properties {
+            let Some((hook_class, hook_property)) =
+                effective_concrete_property_hook(class, property, "get", classes)
+            else {
+                continue;
+            };
+            out.push_str("    if (ptn_ascii_case_equal(declaring_class, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && strcmp(property, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("        PtnObject *ptn_previous_hook_object;\n");
+            out.push_str("        const char *ptn_previous_hook_property;\n");
+            out.push_str("        size_t ptn_previous_hook_depth;\n");
+            out.push_str("        ptn_property_hook_push_active(caller_runtime, receiver, property, &ptn_previous_hook_object, &ptn_previous_hook_property, &ptn_previous_hook_depth);\n");
+            if let Some(function_index) = hook_property.hook_get_function_index {
+                out.push_str("        *value_out = ");
+                out.push_str(&user_function_c_name(function_index));
+                out.push_str("(caller_runtime, receiver, 0, NULL, line);\n");
+            } else if let Some(value) = &hook_property.hook_get_value {
+                out.push_str("        PtnRuntime runtime;\n");
+                out.push_str(
+                    "        ptn_runtime_init_function_frame(&runtime, caller_runtime);\n",
+                );
+                out.push_str("        runtime.current_function_name = \"");
+                out.push_str(&c_string(&format!(
+                    "{}::${}::get",
+                    hook_class.name, hook_property.name
+                )));
+                out.push_str("\";\n");
+                out.push_str("        runtime.current_class_name = \"");
+                out.push_str(&c_string(&hook_class.name));
+                out.push_str("\";\n");
+                out.push_str("        runtime.current_called_class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : \"");
+                out.push_str(&c_string(&hook_class.name));
+                out.push_str("\";\n");
+                out.push_str("        runtime.has_current_receiver = 1;\n");
+                out.push_str("        runtime.current_receiver = receiver;\n");
+                out.push_str("        ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
+                let mut values = ValueEmitter::new_with_scope(
+                    source_file,
+                    source_dir,
+                    functions,
+                    classes,
+                    includes,
+                    Some(&format!(
+                        "{}::${}::get",
+                        hook_class.name, hook_property.name
+                    )),
+                    Some(&format!(
+                        "{}::${}::get",
+                        hook_class.name, hook_property.name
+                    )),
+                    Some(&hook_class.name),
+                    None,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                );
+                let value_temp = values.emit_materialized_value(out, value);
+                out.push_str("        *value_out = ");
+                out.push_str(&value_temp);
+                out.push_str(";\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+            }
+            out.push_str("        ptn_property_hook_pop_active(caller_runtime, ptn_previous_hook_object, ptn_previous_hook_property, ptn_previous_hook_depth);\n");
+            out.push_str("        return 1;\n");
+            out.push_str("    }\n");
+        }
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_property_hook_write(PtnRuntime *runtime, PtnValue receiver, const char *declaring_class, const char *property, PtnValue value, size_t line, int *store_result, PtnValue *value_out) {\n",
+    );
+    out.push_str("    (void)runtime;\n");
+    out.push_str("    (void)receiver;\n");
+    out.push_str("    (void)declaring_class;\n");
+    out.push_str("    (void)property;\n");
+    out.push_str("    (void)value;\n");
+    out.push_str("    (void)line;\n");
+    out.push_str("    (void)store_result;\n");
+    out.push_str("    (void)value_out;\n");
+    for class in classes {
+        for property in &class.properties {
+            let Some((_, hook_property)) =
+                effective_concrete_property_hook(class, property, "set", classes)
+            else {
+                continue;
+            };
+            let Some(function_index) = hook_property
+                .hook_set_value_function_index
+                .or(hook_property.hook_set_body_function_index)
+            else {
+                continue;
+            };
+            out.push_str("    if (ptn_ascii_case_equal(declaring_class, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && strcmp(property, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("        PtnObject *ptn_previous_hook_object;\n");
+            out.push_str("        const char *ptn_previous_hook_property;\n");
+            out.push_str("        size_t ptn_previous_hook_depth;\n");
+            out.push_str("        ptn_property_hook_push_active(runtime, receiver, property, &ptn_previous_hook_object, &ptn_previous_hook_property, &ptn_previous_hook_depth);\n");
+            out.push_str("        PtnValue ptn_hook_args[1];\n");
+            out.push_str("        ptn_hook_args[0] = ptn_value_clone_deref(value);\n");
+            out.push_str("        *value_out = ");
+            out.push_str(&user_function_c_name(function_index));
+            out.push_str("(runtime, receiver, 1, ptn_hook_args, line);\n");
+            out.push_str("        ptn_value_destroy(&ptn_hook_args[0]);\n");
+            out.push_str("        *store_result = ");
+            out.push_str(if hook_property.hook_set_value_function_index.is_some() {
+                "1"
+            } else {
+                "0"
+            });
+            out.push_str(";\n");
+            out.push_str("        ptn_property_hook_pop_active(runtime, ptn_previous_hook_object, ptn_previous_hook_property, ptn_previous_hook_depth);\n");
+            out.push_str("        return 1;\n");
+            out.push_str("    }\n");
+        }
     }
     out.push_str("    return 0;\n");
     out.push_str("}\n");
@@ -21942,6 +22305,11 @@ impl ValueEmitter {
                         c_string(self.current_trait_name.as_deref().unwrap_or(""))
                     )
                 }
+                MagicConstantKind::Property => {
+                    let property_name =
+                        property_magic_constant_name(self.current_method_name.as_deref());
+                    format!("ptn_string(\"{}\")", c_string(property_name))
+                }
                 MagicConstantKind::Namespace => "ptn_string(\"\")".to_string(),
             },
             ValueExpr::InternalCall {
@@ -23065,13 +23433,17 @@ impl ValueEmitter {
         out.push_str(" = ptn_object_new_shell(&runtime, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\");\n");
-        for (declaring_class_name, property, hook_get_value) in
+        for (owner_class_name, declaring_class_name, property, hook_get_value) in
             class_property_initialization_chain(declared_class, &self.classes)
         {
             let previous_class_name = self
                 .current_class_name
                 .replace(declaring_class_name.clone());
-            let effective_value = hook_get_value.as_ref().or(property.value.as_ref());
+            let effective_value = if property.has_hooks && property.is_virtual {
+                None
+            } else {
+                hook_get_value.as_ref().or(property.value.as_ref())
+            };
             let value_temp = match effective_value {
                 Some(value) => {
                     let previous_scope_temp = self.next_temp();
@@ -23130,21 +23502,97 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
-            out.push_str(
-                if property.type_hint.is_some()
-                    && property.value.is_none()
-                    && hook_get_value.is_none()
-                {
-                    "0"
-                } else {
-                    "1"
-                },
-            );
+            out.push_str(if property.has_hooks && property.is_virtual {
+                "0"
+            } else if property.type_hint.is_some()
+                && property.value.is_none()
+                && hook_get_value.is_none()
+            {
+                "0"
+            } else {
+                "1"
+            });
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", ");
             out.push_str(&property.line.to_string());
             out.push_str(");\n");
+            if let Some(owner_class) = class_by_name(&self.classes, &owner_class_name) {
+                if property_has_any_effective_hook(owner_class, &property, &self.classes) {
+                    out.push_str("    ptn_object_register_property_hooks(");
+                    out.push_str(result_temp);
+                    out.push_str(".as.object, \"");
+                    out.push_str(&c_string(&property.name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&declaring_class_name));
+                    out.push_str("\", ");
+                    out.push_str(c_property_visibility(property.visibility));
+                    out.push_str(", ");
+                    out.push_str(
+                        if effective_property_hooks_are_virtual(
+                            owner_class,
+                            &property,
+                            &self.classes,
+                        ) {
+                            "1"
+                        } else {
+                            "0"
+                        },
+                    );
+                    out.push_str(", ");
+                    out.push_str(
+                        if property_has_effective_hook(owner_class, &property, "get", &self.classes)
+                        {
+                            "1"
+                        } else {
+                            "0"
+                        },
+                    );
+                    out.push_str(", ");
+                    out.push_str(
+                        if property_has_effective_hook(owner_class, &property, "set", &self.classes)
+                        {
+                            "1"
+                        } else {
+                            "0"
+                        },
+                    );
+                    out.push_str(", ");
+                    let set_hook_uses_return = effective_concrete_property_hook(
+                        owner_class,
+                        &property,
+                        "set",
+                        &self.classes,
+                    )
+                    .is_some_and(|(_, hook_property)| {
+                        hook_property.hook_set_value_function_index.is_some()
+                    });
+                    out.push_str(if set_hook_uses_return { "1" } else { "0" });
+                    out.push_str(");\n");
+                }
+            } else if property.has_hooks {
+                out.push_str("    ptn_object_register_property_hooks(");
+                out.push_str(result_temp);
+                out.push_str(".as.object, \"");
+                out.push_str(&c_string(&property.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&declaring_class_name));
+                out.push_str("\", ");
+                out.push_str(c_property_visibility(property.visibility));
+                out.push_str(", ");
+                out.push_str(if property.is_virtual { "1" } else { "0" });
+                out.push_str(", ");
+                out.push_str(if property.hook_has_get { "1" } else { "0" });
+                out.push_str(", ");
+                out.push_str(if property.hook_has_set { "1" } else { "0" });
+                out.push_str(", ");
+                out.push_str(if property.hook_set_value_function_index.is_some() {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(");\n");
+            }
             emit_value_cleanup(out, "    ", &assigned_temp);
             emit_value_cleanup(out, "    ", &value_temp);
         }
