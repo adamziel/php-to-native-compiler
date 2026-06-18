@@ -405,6 +405,7 @@ static int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syn
 static int ptn_declared_class_exists(const char *name);
 static int ptn_declared_interface_exists(const char *name);
 static int ptn_declared_trait_exists(const char *name);
+static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
@@ -1491,6 +1492,10 @@ static int ptn_debug_array_is_packed(PtnArray *array) {
     return 1;
 }
 
+static int ptn_debug_array_show_packed(PtnArray *array) {
+    return array != NULL && !array->debug_reference_wrapped && ptn_debug_array_is_packed(array);
+}
+
 static void ptn_var_dump_exception_indented(PtnException *exception, size_t indent, PtnDumpSeenArrays *seen) {
     const char *path = exception->path == NULL ? "" : exception->path;
     int has_errors = ptn_exception_name_equal(exception->class_name, "Uri\\WhatWg\\InvalidUrlException");
@@ -2570,7 +2575,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
                 printf(
                     "array(%zu)%s refcount(%zu){\n",
                     array->len,
-                    ptn_debug_array_is_packed(array) ? " packed" : "",
+                    ptn_debug_array_show_packed(array) ? " packed" : "",
                     ptn_array_debug_visible_refcount(array)
                 );
             }
@@ -3514,6 +3519,8 @@ typedef struct {
     PtnValue *slot;
     PtnReference *reference;
     PtnObject *retained_object;
+    PtnValue retained_value;
+    int has_retained_value;
     int slot_is_container_entry;
 } PtnUnserializeIdEntry;
 
@@ -3567,9 +3574,43 @@ static void ptn_unserialize_id_entry_clear(PtnUnserializeIdEntry *entry) {
         ptn_object_release(entry->retained_object);
         entry->retained_object = NULL;
     }
+    if (entry->has_retained_value) {
+        if (entry->retained_value.type == PTN_ARRAY) {
+            ptn_value_debug_unhide_ref(entry->retained_value);
+        }
+        ptn_value_destroy(&entry->retained_value);
+        entry->retained_value = ptn_null();
+        entry->has_retained_value = 0;
+    }
     entry->slot = NULL;
     entry->reference = NULL;
     entry->slot_is_container_entry = 0;
+}
+
+static void ptn_unserialize_id_entry_retain_value(
+    PtnUnserializeIdEntry *entry,
+    PtnValue value
+) {
+    if (entry->has_retained_value) {
+        if (entry->retained_value.type == PTN_ARRAY) {
+            ptn_value_debug_unhide_ref(entry->retained_value);
+        }
+        ptn_value_destroy(&entry->retained_value);
+    }
+    entry->retained_value = ptn_value_clone(value);
+    if (entry->retained_value.type == PTN_ARRAY) {
+        ptn_value_debug_hide_ref(entry->retained_value);
+    }
+    entry->has_retained_value = 1;
+    entry->slot = &entry->retained_value;
+    entry->slot_is_container_entry = 0;
+    entry->reference = entry->retained_value.type == PTN_REFERENCE
+        ? entry->retained_value.as.reference
+        : NULL;
+    ptn_unserialize_id_entry_set_object(
+        entry,
+        ptn_unserialize_slot_object(entry->slot)
+    );
 }
 
 static PtnStringOperand ptn_internal_expect_string_arg(
@@ -3686,6 +3727,8 @@ static size_t ptn_unserialize_add_slot(PtnUnserializeState *state, PtnValue *slo
         ? slot->as.reference
         : NULL;
     state->ids[state->id_len].retained_object = NULL;
+    state->ids[state->id_len].retained_value = ptn_null();
+    state->ids[state->id_len].has_retained_value = 0;
     state->ids[state->id_len].slot_is_container_entry = 0;
     ptn_unserialize_id_entry_set_object(
         &state->ids[state->id_len],
@@ -3705,6 +3748,14 @@ static void ptn_unserialize_update_slot_ex(
         return;
     }
     PtnUnserializeIdEntry *entry = &state->ids[id - 1];
+    if (entry->has_retained_value && slot != &entry->retained_value) {
+        if (entry->retained_value.type == PTN_ARRAY) {
+            ptn_value_debug_unhide_ref(entry->retained_value);
+        }
+        ptn_value_destroy(&entry->retained_value);
+        entry->retained_value = ptn_null();
+        entry->has_retained_value = 0;
+    }
     entry->slot = slot;
     entry->slot_is_container_entry = slot_is_container_entry;
     if (slot != NULL && slot->type == PTN_REFERENCE) {
@@ -3719,6 +3770,29 @@ static void ptn_unserialize_update_slot(PtnUnserializeState *state, size_t id, P
 
 static void ptn_unserialize_update_entry_slot(PtnUnserializeState *state, size_t id, PtnValue *slot) {
     ptn_unserialize_update_slot_ex(state, id, slot, 1);
+}
+
+static void ptn_unserialize_retain_slot_value(PtnUnserializeState *state, PtnValue *slot) {
+    if (slot == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < state->id_len; i++) {
+        if (state->ids[i].slot == slot) {
+            ptn_unserialize_id_entry_retain_value(&state->ids[i], *slot);
+        }
+    }
+}
+
+static void ptn_unserialize_retain_array_entry_values(
+    PtnUnserializeState *state,
+    PtnArray *array
+) {
+    if (array == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_unserialize_retain_slot_value(state, &array->entries[i].value);
+    }
 }
 
 static void ptn_unserialize_invalidate_id(PtnUnserializeState *state, size_t id) {
@@ -4066,7 +4140,7 @@ static PtnValue ptn_unserialize_new_object_shell(
     if (ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) {
         if (runtime != NULL &&
             runtime->new_instance_without_constructor != NULL &&
-            ptn_declared_class_exists(class_name)) {
+            ptn_declared_user_class_or_interface_exists(class_name)) {
             return runtime->new_instance_without_constructor(runtime, class_name, line);
         }
         return ptn_object_new_shell(runtime, class_name);
@@ -4092,6 +4166,50 @@ static PtnArrayKey ptn_unserialize_object_property_key(PtnArrayKey key) {
         ptn_abort_out_of_memory();
     }
     return ptn_array_string_key(buffer);
+}
+
+static void ptn_unserialize_clear_array(PtnArray *array) {
+    if (array == NULL) {
+        return;
+    }
+    ptn_array_note_mutation(array);
+    for (size_t i = 0; i < array->len; i++) {
+        ptn_array_key_free(array->entries[i].key);
+        ptn_value_destroy(&array->entries[i].value);
+    }
+    array->len = 0;
+    array->next_auto_key = 0;
+    array->current_index = 0;
+    array->has_iterator_current_index = 0;
+    ptn_array_rebuild_index(array);
+}
+
+static void ptn_zip_archive_hydrate_unserialized(
+    PtnUnserializeState *state,
+    PtnValue object
+) {
+    if (object.type != PTN_OBJECT ||
+        object.as.object == NULL ||
+        !ptn_ascii_case_equal(object.as.object->class_name, "ZipArchive")) {
+        return;
+    }
+    PtnArray *properties = object.as.object->properties;
+    ptn_unserialize_retain_array_entry_values(state, properties);
+    ptn_unserialize_clear_array(properties);
+    ptn_array_set_entry(properties, ptn_array_string_key("lastId"), ptn_int(-1));
+    ptn_array_set_entry(properties, ptn_array_string_key("status"), ptn_int(0));
+    ptn_array_set_entry(properties, ptn_array_string_key("statusSys"), ptn_int(0));
+    ptn_array_set_entry(properties, ptn_array_string_key("numFiles"), ptn_int(0));
+    ptn_array_set_entry(
+        properties,
+        ptn_array_string_key("filename"),
+        ptn_owned_string(ptn_duplicate_string(""))
+    );
+    ptn_array_set_entry(
+        properties,
+        ptn_array_string_key("comment"),
+        ptn_owned_string(ptn_duplicate_string(""))
+    );
 }
 
 static void ptn_spl_object_storage_throw_unserialize_error(
@@ -4402,6 +4520,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
             ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
+            ptn_zip_archive_hydrate_unserialized(state, result.value);
             return result;
         }
         case 'C': {

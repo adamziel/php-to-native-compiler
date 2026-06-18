@@ -451,6 +451,7 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
     ptn_cow_debug_note_array_alloc();
     array->refcount = 1;
     array->debug_hidden_refcount = 0;
+    array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;
     array->len = 0;
     array->capacity = entry_count;
@@ -1230,6 +1231,7 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     ptn_cow_debug_note_array_clone();
     array->refcount = 1;
     array->debug_hidden_refcount = 0;
+    array->debug_reference_wrapped = 0;
     array->iterator_refcount = 0;
     array->len = 0;
     array->capacity = source->len;
@@ -1360,6 +1362,19 @@ static PTN_UNUSED size_t ptn_array_debug_visible_refcount(PtnArray *array) {
         return 1;
     }
     return array->refcount - array->debug_hidden_refcount;
+}
+
+static PTN_UNUSED void ptn_array_debug_note_reference_wrapped(PtnArray *array) {
+    if (array != NULL) {
+        array->debug_reference_wrapped = 1;
+    }
+}
+
+static PTN_UNUSED void ptn_value_debug_note_reference_wrapped(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_array_debug_note_reference_wrapped(value.as.array);
+    }
 }
 
 static PTN_UNUSED void ptn_array_iterator_retain(PtnArray *array) {

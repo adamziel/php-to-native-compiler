@@ -22,6 +22,7 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     if (reference == NULL) {
         ptn_abort_out_of_memory();
     }
+    ptn_value_debug_note_reference_wrapped(value);
     reference->refcount = 1;
     reference->value = value;
     reference->property_type_kind = PTN_PROPERTY_TYPE_NONE;
@@ -41,6 +42,7 @@ static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *re
     if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, &stored_value)) {
         return 0;
     }
+    ptn_value_debug_note_reference_wrapped(stored_value);
     ptn_array_note_value_replacement(reference->value, stored_value);
     ptn_value_destroy(&reference->value);
     reference->value = stored_value;
@@ -52,6 +54,7 @@ static PTN_UNUSED int ptn_reference_assign_publish_first(PtnRuntime *runtime, Pt
     if (!ptn_property_reference_coerce_assignment(runtime, reference, value, 1, &stored_value)) {
         return 0;
     }
+    ptn_value_debug_note_reference_wrapped(stored_value);
     PtnValue old_value = reference->value;
     ptn_array_note_value_replacement(old_value, stored_value);
     reference->value = stored_value;

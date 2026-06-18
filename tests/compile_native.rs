@@ -9556,6 +9556,97 @@ var_dump(unserialize($payload));
 }
 
 #[test]
+fn compile_serializable_nested_unserialize_failure_invalidates_outer_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-nested-unserialize-failure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-nested-unserialize-failure.php");
+    let output = root.join("serializable-nested-unserialize-failure-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class obj implements Serializable {
+    public $data;
+    public function serialize(): string { return serialize($this->data); }
+    public function unserialize($data): void { $this->data = unserialize($data); }
+}
+
+$inner = 'a:1:{i:0;O:9:"Exception":2:{s:7:"' . "\0" . '*' . "\0" . 'file";s:0:"";}';
+$exploit = 'a:2:{i:0;C:3:"obj":' . strlen($inner) . ':{' . $inner . '}i:1;R:4;}';
+
+var_dump(unserialize($exploit));
+echo "DONE\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Deprecated: obj implements the Serializable interface"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 49 of 50 bytes"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 82 of 83 bytes"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\nDONE\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_ziparchive_unserialize_retained_reference_debug_dump_to_native_binary() {
+    let root = temp_dir("ptn-native-ziparchive-unserialize-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("ziparchive-unserialize-reference.php");
+    let output = root.join("ziparchive-unserialize-reference-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$free_me = array(new StdClass());
+$serialized_payload = 'a:3:{i:1;N;i:2;O:10:"ZipArchive":1:{s:8:"filename";' . serialize($free_me) . '}i:1;R:4;}';
+$unserialized_payload = unserialize($serialized_payload);
+gc_collect_cycles();
+$a = $unserialized_payload[1];
+$b = $a;
+unset($b);
+debug_zval_dump($unserialized_payload[1]);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("array(1) refcount(3){"), "{stdout}");
+    assert!(!stdout.contains("array(1) packed refcount(3){"), "{stdout}");
+    assert!(stdout.contains("object(stdClass)#"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_duplicate_key_reference_errors_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-duplicate-key-reference-errors");
     fs::create_dir_all(&root).unwrap();

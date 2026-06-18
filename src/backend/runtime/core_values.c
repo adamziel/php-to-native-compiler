@@ -734,6 +734,7 @@ struct PtnGenerator {
 struct PtnArray {
     size_t refcount;
     size_t debug_hidden_refcount;
+    int debug_reference_wrapped;
     size_t iterator_refcount;
     size_t len;
     size_t capacity;
