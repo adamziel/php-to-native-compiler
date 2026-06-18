@@ -1077,7 +1077,9 @@ Post-RC architecture remains explicit rather than hidden:
   `define()` emit the modeled duplicate-constant warning boundary and preserve
   the original runtime constant value.
 - A minimal `phpc` runner for supported PHPT rows. It compiles scripts or `-r`
-  snippets to temporary native binaries through the normal compiler pipeline.
+  snippets to temporary native binaries through the normal compiler pipeline,
+  exposes a PHP-shaped `-v`/`--version` CLI banner, and lets PHPT `--STDIN--`
+  data flow through to the compiled native binary.
   `-d precision=N`, `-d serialize_precision=N`, and `-d error_reporting=N`
   influence modeled runtime behavior; `-d display_errors=value`,
   `-d zend.assertions=value`, and modeled assertion INI values are accepted for

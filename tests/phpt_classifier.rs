@@ -18,13 +18,29 @@ fn classify(body: &str) -> String {
 }
 
 fn classify_at_relative_path(body: &str, relative_path: &str) -> String {
+    classify_at_relative_path_with_options(body, relative_path, false)
+}
+
+fn classify_at_relative_path_with_harness_programs(body: &str, relative_path: &str) -> String {
+    classify_at_relative_path_with_options(body, relative_path, true)
+}
+
+fn classify_at_relative_path_with_options(
+    body: &str,
+    relative_path: &str,
+    harness_programs: bool,
+) -> String {
     let root = temp_dir("ptn-phpt-classifier-path");
     let phpt = root.join(relative_path);
     fs::create_dir_all(phpt.parent().expect("relative path should have parent"))
         .expect("create PHPT parent");
     fs::write(&phpt, body).expect("write PHPT");
 
-    let output = Command::new("bash")
+    let mut command = Command::new("bash");
+    if harness_programs {
+        command.env("PTN_PHPT_CLASSIFY_HARNESS_PROGRAMS", "1");
+    }
+    let output = command
         .arg("-c")
         .arg("source tools/phpt-classifier.sh; ptn_phpt_classify_row \"$1\" \"$2\"")
         .arg("bash")
@@ -2214,6 +2230,80 @@ fn phpt_classifier_keeps_hash_comments_runnable() {
         classification.starts_with("runnable\t"),
         "{classification:?}"
     );
+}
+
+#[test]
+fn phpt_classifier_keeps_stdin_section_rows_runnable() {
+    let classification = classify(
+        "--TEST--\nstdin\n--STDIN--\ninput\n--FILE--\n<?php\necho stream_get_contents(STDIN);\n--EXPECT--\ninput\n",
+    );
+
+    assert_eq!(
+        classification,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+}
+
+#[test]
+fn phpt_classifier_splits_sapi_executable_boundaries() {
+    let cgi = classify_at_relative_path(
+        "--TEST--\ncgi\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n",
+        "sapi/cgi/tests/001.phpt",
+    );
+    assert!(cgi.starts_with("cgi-sapi-executable\t"), "{cgi:?}");
+
+    let fpm = classify_at_relative_path(
+        "--TEST--\nfpm\n--FILE--\n<?php echo 1; ?>\n--EXPECT--\n1\n",
+        "sapi/fpm/tests/bug64539-status-json-encoding.phpt",
+    );
+    assert!(fpm.starts_with("fpm-sapi\t"), "{fpm:?}");
+
+    let phpdbg = classify_at_relative_path(
+        "--TEST--\nphpdbg\n--PHPDBG--\nr\n--EXPECT--\n",
+        "sapi/phpdbg/tests/basic_run.phpt",
+    );
+    assert!(phpdbg.starts_with("phpdbg-sapi\t"), "{phpdbg:?}");
+}
+
+#[test]
+fn phpt_classifier_allows_supported_cli_self_probes() {
+    let version = classify_at_relative_path(
+        "--TEST--\nversion\n--FILE--\n<?php\n$php = getenv('TEST_PHP_EXECUTABLE_ESCAPED');\nvar_dump(shell_exec(\"$php -n -v\"));\n--EXPECTF--\n",
+        "sapi/cli/tests/001.phpt",
+    );
+    assert_eq!(version, "runnable\tselected for PTN semantic measurement\n");
+    let version_with_harness_programs = classify_at_relative_path_with_harness_programs(
+        "--TEST--\nversion\n--SKIPIF--\n<?php include \"skipif.inc\"; ?>\n--FILE--\n<?php\n$php = getenv('TEST_PHP_EXECUTABLE_ESCAPED');\nvar_dump(shell_exec(\"$php -n -v\"));\n--EXPECTF--\n",
+        "sapi/cli/tests/001.phpt",
+    );
+    assert_eq!(
+        version_with_harness_programs,
+        "runnable\tselected for PTN semantic measurement\n"
+    );
+
+    let shebang = classify_at_relative_path(
+        "--TEST--\nshebang\n--FILE--\n<?php\n$php = getenv('TEST_PHP_EXECUTABLE');\n$filename = __DIR__ . '/script.php';\n$script = \"#!$php -n\\n<?php echo 1; ?>\\n\";\nfile_put_contents($filename, $script);\necho shell_exec($filename);\n--EXPECT--\n1\n",
+        "sapi/cli/tests/021.phpt",
+    );
+    assert_eq!(shebang, "runnable\tselected for PTN semantic measurement\n");
+}
+
+#[test]
+fn phpt_classifier_splits_cli_option_and_process_residuals() {
+    let unsupported_option = classify_at_relative_path(
+        "--TEST--\nrf\n--FILE--\n<?php\n$php = getenv('TEST_PHP_EXECUTABLE_ESCAPED');\nvar_dump(shell_exec(\"$php -n --rf phpinfo\"));\n--EXPECT--\n",
+        "sapi/cli/tests/004.phpt",
+    );
+    assert!(
+        unsupported_option.starts_with("unsupported-cli-option\t"),
+        "{unsupported_option:?}"
+    );
+
+    let process = classify_at_relative_path(
+        "--TEST--\nproc\n--FILE--\n<?php\n$php = getenv('TEST_PHP_EXECUTABLE_ESCAPED');\n$proc = proc_open(\"$php -n test.php\", [], $pipes);\n--EXPECT--\n",
+        "sapi/cli/tests/022.phpt",
+    );
+    assert!(process.starts_with("process-boundary\t"), "{process:?}");
 }
 
 #[test]

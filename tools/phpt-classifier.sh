@@ -12,7 +12,7 @@
 
 PTN_PHPT_SUPPORTED_EXTENSIONS_DEFAULT="Core,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib"
 PTN_PHPT_SUPPORTED_INI_DEFAULT="always_populate_raw_post_data,arg_separator.input,assert.active,assert.bail,assert.callback,assert.exception,assert.warning,date.timezone,default_charset,display_errors,enable_post_data_reading,error_reporting,expose_php,extension_dir,file_uploads,filter.default,include_path,input_encoding,internal_encoding,intl.default_locale,max_input_nesting_level,max_input_vars,max_memory_limit,mbstring.detect_order,mbstring.http_output,mbstring.strict_detection,memory_limit,opcache.save_comments,output_encoding,output_handler,pcre.backtrack_limit,pcre.jit,post_max_size,precision,register_argc_argv,serialize_precision,upload_tmp_dir,user_agent,variables_order,zend.assertions,zend.exception_string_param_max_len"
-PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST,STDIN"
+PTN_PHPT_UNSUPPORTED_SECTIONS_DEFAULT="CAPTURE_STDIO,COOKIE_RAW,EXPECTHEADERS,FILE_EXTERNAL,HEADERS,PHPDBG,PUT,REDIRECTTEST,REQUEST"
 PTN_PHPT_ENVIRONMENT_SECTIONS_DEFAULT=""
 PTN_PHPT_HARNESS_SECTIONS_DEFAULT=""
 PTN_PHPT_NOISY_SECTIONS_DEFAULT="EXPECT_EXTERNAL,EXPECTF_EXTERNAL,EXPECTREGEX_EXTERNAL,FLAKY,WHITESPACE_SENSITIVE"
@@ -1096,6 +1096,30 @@ ptn_phpt_has_process_boundary() {
         }
         END { exit found ? 0 : 1 }
     ' "$path"
+}
+
+ptn_phpt_supported_cli_self_probe() {
+    local path=$1
+    local file
+    file=$(ptn_phpt_section "$path" FILE)
+
+    if printf '%s\n' "$file" | grep -Eq 'shell_exec[[:space:]]*\([[:space:]]*"\$php[[:space:]]+-n[[:space:]]+(-v|--version)"[[:space:]]*\)'; then
+        return 0
+    fi
+
+    if printf '%s\n' "$file" | grep -Eq '#!\$php[[:space:]]+-n' \
+        && printf '%s\n' "$file" | grep -Eq 'shell_exec[[:space:]]*\([[:space:]]*\$filename[[:space:]]*\)'; then
+        return 0
+    fi
+
+    return 1
+}
+
+ptn_phpt_has_unsupported_cli_option_probe() {
+    local path=$1
+
+    ptn_phpt_section "$path" FILE \
+        | grep -Eq -- '(^|[[:space:]])(--rf|--rc|--ri|--re|--ini|--notexisting|-w|-l|-s|-F|-R|-B|-E|-i|-m)([[:space:]]|$)'
 }
 
 ptn_phpt_has_resource_limit_expectation() {
@@ -2253,6 +2277,7 @@ ptn_phpt_classify_row() {
     local value
     local modeled_skipif_reason=""
     local unmodeled_skipif=0
+    local supported_cli_self_probe=0
 
     if [[ -n "$php_src" ]]; then
         rel=$(ptn_phpt_manifest_row "$row" "$php_src")
@@ -2279,8 +2304,18 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if [[ "$rel" == sapi/* ]]; then
-        printf 'sapi-behavior\texercises php-src SAPI executable behavior outside PTN script execution\n'
+    if [[ "$rel" == sapi/cgi/* ]]; then
+        printf 'cgi-sapi-executable\trequires php-cgi executable option/request behavior; PTN phpc currently models CLI scripts plus bounded CGI request context only\n'
+        return 0
+    fi
+
+    if [[ "$rel" == sapi/fpm/* ]]; then
+        printf 'fpm-sapi\trequires PHP-FPM master/worker, FastCGI, pool configuration, or signal behavior outside PTN native script execution\n'
+        return 0
+    fi
+
+    if [[ "$rel" == sapi/phpdbg/* ]] || ptn_phpt_csv_contains_ci "PHPDBG" "$sections"; then
+        printf 'phpdbg-sapi\trequires phpdbg debugger command SAPI behavior outside PTN native script execution\n'
         return 0
     fi
 
@@ -2289,7 +2324,29 @@ ptn_phpt_classify_row() {
         return 0
     fi
 
-    if ptn_phpt_has_process_boundary "$path"; then
+    if [[ "$rel" == sapi/cli/* ]]; then
+        if value=$(ptn_phpt_first_unsupported_language_surface "$path"); then
+            printf '%s\n' "$value"
+            return 0
+        fi
+        if ptn_phpt_supported_cli_self_probe "$path"; then
+            supported_cli_self_probe=1
+        elif ptn_phpt_has_unsupported_cli_option_probe "$path"; then
+            printf 'unsupported-cli-option\trequires PHP CLI option behavior outside PTN phpc supported runner modes (-f, -r, -d, -v, -m, and bounded CGI -C)\n'
+            return 0
+        elif ptn_phpt_has_process_boundary "$path"; then
+            printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
+            return 0
+        else
+            printf 'sapi-behavior\trequires CLI SAPI executable behavior outside PTN phpc supported runner modes\n'
+            return 0
+        fi
+    elif [[ "$rel" == sapi/* ]]; then
+        printf 'sapi-behavior\texercises php-src SAPI executable behavior outside PTN script execution\n'
+        return 0
+    fi
+
+    if [[ "$supported_cli_self_probe" -ne 1 ]] && ptn_phpt_has_process_boundary "$path"; then
         printf 'process-boundary\trequires child-process execution/control and pipe semantics outside PTN native runtime boundary\n'
         return 0
     fi
@@ -2305,7 +2362,9 @@ ptn_phpt_classify_row() {
         fi
     fi
 
-    if ptn_phpt_classify_harness_programs && ptn_phpt_csv_contains_ci "SKIPIF" "$sections"; then
+    if [[ "$supported_cli_self_probe" -ne 1 ]] \
+        && ptn_phpt_classify_harness_programs \
+        && ptn_phpt_csv_contains_ci "SKIPIF" "$sections"; then
         if value=$(ptn_phpt_modeled_skipif_precondition "$path"); then
             local skipif_category=${value%%$'\t'*}
             local skipif_reason=${value#*$'\t'}
