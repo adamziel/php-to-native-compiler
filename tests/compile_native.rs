@@ -12917,6 +12917,101 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_direct_sprintf_omits_internal_dispatch_block() {
+    let root = temp_dir("ptn-native-direct-sprintf-omit-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-sprintf-omit-dispatch.php");
+    let output = root.join("direct-sprintf-omit-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo sprintf(\"%0.3f\", 1 / 24), \"\\n\";\n\
+echo sprintf(\"[%+05d] [%6.3s] [%04b] [%X] [%%]\", 7, \"abcdef\", 5, 255), \"\\n\";\n\
+echo sprintf(\"[%e] [%E]\", 23333333, 0.000001), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0.042\n[+0007] [   abc] [0101] [FF] [%]\n[2.333333e+7] [1.000000E-6]\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("static PtnValue ptn_internal_sprintf("));
+    assert!(c_source.contains("ptn_internal_sprintf(&runtime"));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"sprintf\""));
+    assert!(!c_source.contains("ptn_call_internal"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
+}
+
+#[test]
+fn compile_direct_sprintf_argument_count_error_omits_internal_dispatch_block() {
+    let root = temp_dir("ptn-native-direct-sprintf-argument-count-omit-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-sprintf-argument-count-omit-dispatch.php");
+    let output = root.join("direct-sprintf-argument-count-omit-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+sprintf();",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert!(String::from_utf8(execution.stderr).unwrap().contains(
+        "Fatal error: Uncaught ArgumentCountError: sprintf() expects at least 1 argument, 0 given"
+    ));
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_sprintf(&runtime, 0, NULL"));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"sprintf\""));
+    assert!(!c_source.contains("ptn_call_internal"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
+}
+
+#[test]
+fn compile_direct_var_dump_sprintf_omits_internal_dispatch_block() {
+    let root = temp_dir("ptn-native-direct-var-dump-sprintf-omit-dispatch");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-var-dump-sprintf-omit-dispatch.php");
+    let output = root.join("direct-var-dump-sprintf-omit-dispatch-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(sprintf(\"[%+05d]\", 7));\n\
+var_dump(sprintf(\"%e\", 23333333));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "string(7) \"[+0007]\"\nstring(11) \"2.333333e+7\"\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_sprintf(&runtime"));
+    assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"sprintf\""));
+    assert!(!c_source.contains("ptn_call_function(&runtime, \"var_dump\""));
+    assert!(!c_source.contains("ptn_call_internal"));
+    assert!(!c_source.contains("ptn_internal_var_dump"));
+}
+
+#[test]
 fn compile_sprintf_positional_specifier_errors_to_native_binary() {
     let root = temp_dir("ptn-native-sprintf-positional-specifier-errors");
     fs::create_dir_all(&root).unwrap();

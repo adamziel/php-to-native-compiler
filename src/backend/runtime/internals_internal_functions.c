@@ -393,6 +393,81 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     ptn_array_key_free(key);
     return ptn_bool(exists);
 }
+
+static PTN_UNUSED void ptn_direct_var_dump_value(PtnRuntime *runtime, PtnValue value, size_t line) {
+    (void)line;
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            ptn_output_write_cstr(runtime, "NULL\n");
+            break;
+        case PTN_BOOL:
+            ptn_output_write_cstr(runtime, value.as.boolean ? "bool(true)\n" : "bool(false)\n");
+            break;
+        case PTN_INT: {
+            char buffer[64];
+            int written = snprintf(buffer, sizeof(buffer), "int(%lld)\n", (long long)value.as.integer);
+            if (written < 0 || (size_t)written >= sizeof(buffer)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_output_write(runtime, buffer, (size_t)written);
+            break;
+        }
+        case PTN_FLOAT: {
+            char formatted[PTN_FLOAT_FORMAT_BUFFER_SIZE];
+            ptn_format_var_dump_float(
+                value.as.floating,
+                ptn_runtime_serialize_precision(runtime),
+                formatted,
+                sizeof(formatted)
+            );
+            int needed = snprintf(NULL, 0, "float(%s)\n", formatted);
+            if (needed < 0) {
+                ptn_abort_out_of_memory();
+            }
+            char *buffer = malloc((size_t)needed + 1);
+            if (buffer == NULL) {
+                ptn_abort_out_of_memory();
+            }
+            int written = snprintf(buffer, (size_t)needed + 1, "float(%s)\n", formatted);
+            if (written < 0 || written != needed) {
+                free(buffer);
+                ptn_abort_out_of_memory();
+            }
+            ptn_output_write(runtime, buffer, (size_t)written);
+            free(buffer);
+            break;
+        }
+        case PTN_STRING: {
+            char header[64];
+            int written = snprintf(header, sizeof(header), "string(%zu) \"", value.as.string.len);
+            if (written < 0 || (size_t)written >= sizeof(header)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_output_write(runtime, header, (size_t)written);
+            ptn_output_write(runtime, (const char *)value.as.string.data, value.as.string.len);
+            ptn_output_write_cstr(runtime, "\"\n");
+            break;
+        }
+        case PTN_REFERENCE:
+            ptn_direct_var_dump_value(runtime, value.as.reference->value, line);
+            break;
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+            ptn_output_write_cstr(runtime, "NULL\n");
+            break;
+    }
+}
+
+static PTN_UNUSED PtnValue ptn_direct_var_dump(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    for (size_t i = 0; i < argc; i++) {
+        ptn_direct_var_dump_value(runtime, args[i], line);
+    }
+    return ptn_null();
+}
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
 /* PTN_INTERNAL_FUNCTIONS_START */
@@ -20221,6 +20296,7 @@ static PtnValue ptn_internal_join(PtnRuntime *runtime, size_t argc, const PtnVal
     return ptn_internal_implode_named(runtime, "join", argc, args, line);
 }
 
+/* PTN_SPRINTF_HELPERS_START */
 typedef struct {
     int left_adjust;
     int show_sign;
@@ -20755,7 +20831,7 @@ static uint64_t ptn_sprintf_value_to_unsigned(PtnRuntime *runtime, PtnValue valu
 
 static double ptn_sprintf_value_to_double(PtnRuntime *runtime, PtnValue value, size_t line) {
     ptn_sprintf_warn_object_numeric(runtime, value, "float", line);
-    return ptn_value_to_double(value);
+    return ptn_cast_float(value).as.floating;
 }
 
 static void ptn_sprintf_append_string(PtnStringBuffer *buffer, PtnStringOperand string, const PtnSprintfSpec *spec) {
@@ -20834,6 +20910,29 @@ static void ptn_sprintf_throw_unknown_specifier(PtnRuntime *runtime, char specif
 static void ptn_sprintf_throw_argument_count(PtnRuntime *runtime, size_t required, size_t given, size_t line) {
     char message[96];
     int written = snprintf(message, sizeof(message), "%zu arguments are required, %zu given", required, given);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "ArgumentCountError", message, runtime->source_path, line);
+}
+
+static void ptn_sprintf_throw_min_argument_count(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t min,
+    size_t given,
+    size_t line
+) {
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s() expects at least %zu argument%s, %zu given",
+        function_name,
+        min,
+        min == 1 ? "" : "s",
+        given
+    );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
@@ -21261,8 +21360,13 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
 }
 
 static PtnValue ptn_internal_sprintf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc < 1) {
+        ptn_sprintf_throw_min_argument_count(runtime, "sprintf", 1, argc, line);
+        return ptn_null();
+    }
     return ptn_internal_sprintf_named(runtime, "sprintf", argc, args, line);
 }
+/* PTN_SPRINTF_HELPERS_END */
 
 static PtnValue ptn_internal_printf(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue formatted = ptn_internal_sprintf_named(runtime, "printf", argc, args, line);
@@ -36467,6 +36571,7 @@ static PtnValue ptn_internal_pathinfo(PtnRuntime *runtime, size_t argc, const Pt
     return result;
 }
 
+/* PTN_STRING_ARG_HELPERS_START */
 static const char *ptn_internal_string_arg_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -36564,6 +36669,7 @@ static PtnStringOperand ptn_internal_expect_string_arg(
     }
     return ptn_value_to_string_operand_with_runtime(runtime, value, line);
 }
+/* PTN_STRING_ARG_HELPERS_END */
 
 static void ptn_highlight_append_escaped(PtnStringBuffer *buffer, const char *data, size_t len) {
     for (size_t i = 0; i < len; i++) {

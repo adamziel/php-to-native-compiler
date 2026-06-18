@@ -554,6 +554,7 @@ struct RuntimeRequirements {
     method_dispatch: bool,
     closure_invoke_method_dispatch: bool,
     direct_internal_helpers: bool,
+    direct_sprintf_helper: bool,
     request_context: bool,
 }
 
@@ -589,9 +590,29 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         runtime::INTERNAL_FUNCTIONS_START,
         runtime::INTERNAL_FUNCTIONS_END,
     );
+    let string_arg_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::STRING_ARG_HELPERS_START,
+        runtime::STRING_ARG_HELPERS_END,
+    );
+    let sprintf_helpers = runtime_chunk_range(
+        runtime_c,
+        runtime::SPRINTF_HELPERS_START,
+        runtime::SPRINTF_HELPERS_END,
+    );
     assert!(
         direct_helpers.after_end <= internal_functions.start,
         "runtime direct-helper chunk should precede internal-function chunk"
+    );
+    assert!(
+        internal_functions.after_start <= string_arg_helpers.start
+            && string_arg_helpers.after_end <= internal_functions.end,
+        "runtime string-arg helper chunk should be inside internal-function chunk"
+    );
+    assert!(
+        internal_functions.after_start <= sprintf_helpers.start
+            && sprintf_helpers.after_end <= internal_functions.end,
+        "runtime sprintf helper chunk should be inside internal-function chunk"
     );
 
     out.push_str(&runtime_c[..direct_helpers.start]);
@@ -601,6 +622,9 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     out.push_str(&runtime_c[direct_helpers.after_end..internal_functions.start]);
     if requirements.internal_function_dispatch {
         out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
+    } else if requirements.direct_sprintf_helper {
+        out.push_str(&runtime_c[string_arg_helpers.after_start..string_arg_helpers.end]);
+        out.push_str(&runtime_c[sprintf_helpers.after_start..sprintf_helpers.end]);
     }
     out.push_str(&runtime_c[internal_functions.after_end..]);
 }
@@ -15673,16 +15697,55 @@ fn collect_call_runtime_requirements(
     if is_uri_whatwg_url_static_call_name(name) {
         requirements.method_dispatch = true;
     }
-    if argument_names.iter().all(Option::is_none)
-        && is_direct_internal_helper_call(name, arguments.len())
-    {
-        requirements.direct_internal_helpers = true;
-        return;
+    if argument_names.iter().all(Option::is_none) {
+        if is_direct_internal_helper_call(name, arguments.len()) {
+            requirements.direct_internal_helpers = true;
+            return;
+        }
+        if is_direct_sprintf_helper_call(name, arguments.len()) {
+            requirements.direct_sprintf_helper = true;
+            return;
+        }
+        if is_direct_var_dump_helper_call(name, arguments) {
+            requirements.direct_internal_helpers = true;
+            return;
+        }
     }
     requirements.internal_function_dispatch = true;
     if internal_call_may_invoke_callable(name) {
         requirements.method_dispatch = true;
     }
+}
+
+fn is_direct_sprintf_helper_call(name: &str, argument_count: usize) -> bool {
+    let _ = argument_count;
+    name.eq_ignore_ascii_case("sprintf")
+}
+
+fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
+    (name.eq_ignore_ascii_case("count") && argument_count == 1)
+        || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+}
+
+fn is_direct_var_dump_helper_call(name: &str, arguments: &[ValueExpr]) -> bool {
+    name.eq_ignore_ascii_case("var_dump")
+        && !arguments.is_empty()
+        && arguments.iter().all(is_direct_var_dump_scalar_argument)
+}
+
+fn is_direct_var_dump_scalar_argument(argument: &ValueExpr) -> bool {
+    matches!(
+        argument,
+        ValueExpr::InternalCall {
+            name,
+            arguments,
+            argument_names,
+            argument_unpacks,
+            ..
+        } if argument_names.iter().all(Option::is_none)
+            && argument_unpacks.iter().all(|unpack| !*unpack)
+            && is_direct_sprintf_helper_call(name, arguments.len())
+    )
 }
 
 fn is_uri_whatwg_url_class_name(name: &str) -> bool {
@@ -15734,11 +15797,6 @@ fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bo
             && (function.class_name.is_none() || function.is_static)
             && function.name.eq_ignore_ascii_case(name)
     })
-}
-
-fn is_direct_internal_helper_call(name: &str, argument_count: usize) -> bool {
-    (name.eq_ignore_ascii_case("count") && argument_count == 1)
-        || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
 }
 
 enum NamedArgumentBindingError {
@@ -26985,6 +27043,126 @@ impl ValueEmitter {
             out.push_str(");\n");
             emit_value_cleanup(out, "    ", &key_temp);
             emit_value_cleanup(out, "    ", &array_temp);
+            return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && is_direct_sprintf_helper_call(name, arguments.len())
+        {
+            if arguments.is_empty() {
+                let trace_temp = self.next_temp();
+                out.push_str("    PtnTraceFrame ");
+                out.push_str(&trace_temp);
+                out.push_str(";\n");
+                out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+                out.push_str(&trace_temp);
+                out.push_str(", \"sprintf\", runtime.source_path, ");
+                out.push_str(&line.to_string());
+                out.push_str(", 0, NULL);\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_internal_sprintf(&runtime, 0, NULL, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+                out.push_str(&trace_temp);
+                out.push_str(");\n");
+                return result_temp;
+            }
+
+            let mut temps = Vec::with_capacity(arguments.len());
+            for (argument_index, argument) in arguments.iter().enumerate() {
+                temps.push(self.emit_call_argument(out, name, argument_index, argument));
+            }
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            for (index, temp) in temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
+            out.push_str(" };\n");
+
+            let trace_temp = self.next_temp();
+            out.push_str("    PtnTraceFrame ");
+            out.push_str(&trace_temp);
+            out.push_str(";\n");
+            out.push_str("    ptn_runtime_push_trace_frame(&runtime, &");
+            out.push_str(&trace_temp);
+            out.push_str(", \"sprintf\", runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(", ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(");\n");
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_internal_sprintf(&runtime, ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_runtime_pop_trace_frame(&runtime, &");
+            out.push_str(&trace_temp);
+            out.push_str(");\n");
+            for index in 0..temps.len() {
+                emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+            }
+            for temp in temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
+            return result_temp;
+        }
+
+        if !has_named_arguments
+            && !has_unpacked_arguments
+            && is_direct_var_dump_helper_call(name, arguments)
+        {
+            let mut temps = Vec::with_capacity(arguments.len());
+            for (argument_index, argument) in arguments.iter().enumerate() {
+                temps.push(self.emit_call_argument(out, name, argument_index, argument));
+            }
+            let args_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&args_temp);
+            out.push_str("[] = { ");
+            for (index, temp) in temps.iter().enumerate() {
+                if index > 0 {
+                    out.push_str(", ");
+                }
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
+            out.push_str(" };\n");
+
+            let result_temp = self.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ptn_direct_var_dump(&runtime, ");
+            out.push_str(&arguments.len().to_string());
+            out.push_str(", ");
+            out.push_str(&args_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            for index in 0..temps.len() {
+                emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
+            }
+            for temp in temps {
+                emit_value_cleanup(out, "    ", &temp);
+            }
             return result_temp;
         }
 
