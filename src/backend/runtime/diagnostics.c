@@ -1577,6 +1577,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
     const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
     const char *configured_internal_encoding = getenv("PTN_INTERNAL_ENCODING");
+    const char *configured_mbstring_internal_encoding = getenv("PTN_MBSTRING_INTERNAL_ENCODING");
     const char *configured_input_encoding = getenv("PTN_INPUT_ENCODING");
     const char *configured_output_encoding = getenv("PTN_OUTPUT_ENCODING");
     const char *configured_variables_order = getenv("PTN_VARIABLES_ORDER");
@@ -1618,6 +1619,16 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->internal_encoding = ptn_duplicate_string(
         configured_internal_encoding == NULL ? "" : configured_internal_encoding
     );
+    if (
+        configured_mbstring_internal_encoding != NULL &&
+        configured_mbstring_internal_encoding[0] != '\0'
+    ) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "PHP Startup: Use of mbstring.internal_encoding is deprecated",
+            0
+        );
+    }
     runtime->input_encoding = ptn_duplicate_string(
         configured_input_encoding == NULL ? "" : configured_input_encoding
     );

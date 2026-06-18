@@ -22720,8 +22720,13 @@ static PtnHtmlEncoding ptn_html_optional_encoding(
     }
     if (encoding.len == 0) {
         ptn_string_operand_free(encoding);
+        const char *legacy_internal_encoding = ptn_runtime_internal_encoding(runtime);
         PtnStringOperand default_charset =
-            ptn_string_operand_borrowed(ptn_runtime_default_charset(runtime));
+            ptn_string_operand_borrowed(
+                legacy_internal_encoding[0] != '\0'
+                    ? legacy_internal_encoding
+                    : ptn_runtime_default_charset(runtime)
+            );
         PtnHtmlEncoding result = PTN_HTML_ENCODING_UTF8;
         if (default_charset.len == 0) {
             return PTN_HTML_ENCODING_UTF8;
