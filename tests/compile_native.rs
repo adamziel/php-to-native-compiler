@@ -18988,6 +18988,36 @@ var_dump(get_class(new bar));
 }
 
 #[test]
+fn compile_anonymous_class_alias_get_class_target_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-alias-get-class-target");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-alias-get-class-target.php");
+    let output = root.join("anonymous-class-alias-get-class-target-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class_alias(get_class(new class {
+    protected $foo = 1;
+}), "AnonBase");
+
+var_dump((new class extends AnonBase {
+    function getFoo() {
+        return $this->foo;
+    }
+})->getFoo());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_class_alias_rejects_reserved_alias_names_to_native_binary() {
     let root = temp_dir("ptn-native-class-alias-reserved-names");
     fs::create_dir_all(&root).unwrap();

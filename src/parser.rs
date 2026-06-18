@@ -1262,7 +1262,7 @@ impl Parser<'_> {
         {
             return;
         }
-        let Some(target) = self.compile_time_class_name_string(&arguments[0]) else {
+        let Some(target) = self.compile_time_class_alias_target_name(&arguments[0]) else {
             return;
         };
         let Some(alias) = self.compile_time_class_name_string(&arguments[1]) else {
@@ -1272,6 +1272,43 @@ impl Parser<'_> {
             normalize_runtime_class_alias_key(&alias),
             normalize_runtime_class_alias_target(&target),
         );
+    }
+
+    fn compile_time_class_alias_target_name(&self, expr: &Expr) -> Option<String> {
+        if let Some(target) = self.compile_time_class_name_string(expr) {
+            return Some(target);
+        }
+        match expr {
+            Expr::Call {
+                name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                ..
+            } if name.eq_ignore_ascii_case("get_class")
+                && arguments.len() == 1
+                && argument_names.len() == 1
+                && argument_unpacks.len() == 1
+                && argument_names[0].is_none()
+                && !argument_unpacks[0] =>
+            {
+                self.compile_time_get_class_new_object_name(&arguments[0])
+            }
+            Expr::Grouped { expr, .. } => self.compile_time_class_alias_target_name(expr),
+            _ => None,
+        }
+    }
+
+    fn compile_time_get_class_new_object_name(&self, expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::NewObject {
+                class_name,
+                anonymous_class_source: Some(_),
+                ..
+            } => Some(class_name.clone()),
+            Expr::Grouped { expr, .. } => self.compile_time_get_class_new_object_name(expr),
+            _ => None,
+        }
     }
 
     fn compile_time_class_name_string(&self, expr: &Expr) -> Option<String> {

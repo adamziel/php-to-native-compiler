@@ -1412,7 +1412,11 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_supported_anonymous_get_class_row() {
             return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/anon\/011[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/anon\/gh13097_b[.]phpt$/
+        }
+        function ptn_supported_anonymous_class_alias_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/011[.]phpt$/
         }
         function ptn_supported_anonymous_closure_bind_row() {
             return ptn_path ~ /Zend\/tests\/anon\/013[.]phpt$/
@@ -1578,7 +1582,7 @@ ptn_phpt_first_unsupported_language_surface() {
                     exit
                 }
             }
-            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])class_alias[[:space:]]*[(]/) {
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])class_alias[[:space:]]*[(]/ && !ptn_supported_anonymous_class_alias_row()) {
                 print "unsupported-anonymous-class\trequires anonymous class runtime class_alias metadata, outside PTN modeled anonymous class subset"
                 found = 1
                 exit
