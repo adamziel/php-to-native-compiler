@@ -30446,6 +30446,7 @@ $a = 4;\n\
 $b =& forward('global_by_ref');\n\
 $a++;\n\
 var_dump($a, $b);\n\
+var_dump(constant_by_ref());\n\
 $staff = ChildClass::GetCurrent();\n\
 echo $staff instanceof ChildClass ? \"staff\\n\" : \"bad\\n\";\n",
     )
@@ -30460,7 +30461,7 @@ echo $staff instanceof ChildClass ? \"staff\\n\" : \"bad\\n\";\n",
         stdout
             .matches("Only variable references should be returned by reference")
             .count(),
-        4,
+        5,
         "{stdout}"
     );
     assert!(
@@ -30468,6 +30469,7 @@ echo $staff instanceof ChildClass ? \"staff\\n\" : \"bad\\n\";\n",
         "{stdout}"
     );
     assert!(stdout.contains("int(5)\nint(100)\n"), "{stdout}");
+    assert!(!stdout.contains("&int(100)"), "{stdout}");
     assert!(stdout.contains("int(5)\nint(5)\n"), "{stdout}");
     assert!(stdout.ends_with("staff\n"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

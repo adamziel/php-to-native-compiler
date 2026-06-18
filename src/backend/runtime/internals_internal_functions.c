@@ -1337,7 +1337,8 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
     size_t indent,
     PtnDirectValueDumpSeen *seen
 ) {
-    int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
+    int print_reference =
+        value.type == PTN_REFERENCE && ptn_reference_should_var_dump_marker(value.as.reference);
     if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
     }
@@ -2326,7 +2327,8 @@ static PTN_UNUSED void ptn_direct_var_dump_value_indented(
     size_t indent,
     PtnDirectDumpSeen *seen
 ) {
-    int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
+    int print_reference =
+        value.type == PTN_REFERENCE && ptn_reference_should_var_dump_marker(value.as.reference);
     if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
     }
@@ -4325,7 +4327,8 @@ static int ptn_var_dump_weak_map_object(
 }
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen) {
-    int print_reference = value.type == PTN_REFERENCE && value.as.reference->refcount > 1;
+    int print_reference =
+        value.type == PTN_REFERENCE && ptn_reference_should_var_dump_marker(value.as.reference);
     if (value.type == PTN_REFERENCE) {
         value = ptn_value_deref(value);
     }

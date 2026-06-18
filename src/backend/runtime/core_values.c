@@ -643,6 +643,7 @@ typedef struct {
 
 struct PtnReference {
     size_t refcount;
+    int suppress_var_dump_reference;
     PtnValue value;
     PtnPropertyTypeKind property_type_kind;
     char *property_type_class_name;
@@ -3371,6 +3372,12 @@ static PTN_UNUSED PtnValue ptn_reference_value(PtnReference *reference) {
     value.owned = 1;
     value.as.reference = reference;
     return value;
+}
+
+static PTN_UNUSED int ptn_reference_should_var_dump_marker(PtnReference *reference) {
+    return reference != NULL &&
+        reference->refcount > 1 &&
+        !reference->suppress_var_dump_reference;
 }
 
 static PTN_UNUSED PtnLookupResult ptn_lookup_missing(void) {

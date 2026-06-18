@@ -24,6 +24,7 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     }
     ptn_value_debug_note_reference_wrapped(value);
     reference->refcount = 1;
+    reference->suppress_var_dump_reference = 0;
     reference->value = value;
     reference->property_type_kind = PTN_PROPERTY_TYPE_NONE;
     reference->property_type_class_name = NULL;
@@ -34,6 +35,12 @@ static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value) {
     reference->property_type_sources = NULL;
     reference->property_type_source_len = 0;
     reference->property_type_source_cap = 0;
+    return reference;
+}
+
+static PTN_UNUSED PtnReference *ptn_reference_new_suppressed_var_dump_owned(PtnValue value) {
+    PtnReference *reference = ptn_reference_new_owned(value);
+    reference->suppress_var_dump_reference = 1;
     return reference;
 }
 
