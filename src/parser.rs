@@ -117,9 +117,13 @@ fn parse_with_options(
         declared_functions: HashSet::new(),
         declared_constants: HashSet::new(),
         declared_class_names: HashMap::new(),
+        namespace_block_classes: HashSet::new(),
+        namespace_block_functions: HashSet::new(),
+        namespace_block_constants: HashSet::new(),
         anonymous_classes: Vec::new(),
         nested_functions: Vec::new(),
         anonymous_class_name_counts: HashMap::new(),
+        namespace_block_open_lines: Vec::new(),
         allow_append_array_read: false,
         allow_standalone_list_array_element: false,
         active_type_scope: None,
@@ -152,9 +156,13 @@ struct Parser<'a> {
     declared_functions: HashSet<String>,
     declared_constants: HashSet<String>,
     declared_class_names: HashMap<String, SourceSpan>,
+    namespace_block_classes: HashSet<String>,
+    namespace_block_functions: HashSet<String>,
+    namespace_block_constants: HashSet<String>,
     anonymous_classes: Vec<ClassDecl>,
     nested_functions: Vec<FunctionDecl>,
     anonymous_class_name_counts: HashMap<String, usize>,
+    namespace_block_open_lines: Vec<usize>,
     allow_append_array_read: bool,
     allow_standalone_list_array_element: bool,
     active_type_scope: Option<ActiveTypeScope>,
@@ -205,6 +213,21 @@ enum UseDeclarationKind {
     Class,
     Function,
     Constant,
+}
+
+fn import_alias_key(kind: UseDeclarationKind, alias: &str) -> String {
+    match kind {
+        UseDeclarationKind::Class | UseDeclarationKind::Function => alias.to_ascii_lowercase(),
+        UseDeclarationKind::Constant => alias.to_string(),
+    }
+}
+
+fn use_import_label(kind: UseDeclarationKind) -> &'static str {
+    match kind {
+        UseDeclarationKind::Class => "",
+        UseDeclarationKind::Function => "function ",
+        UseDeclarationKind::Constant => "const ",
+    }
 }
 
 fn find_compiler_halt_offset(tokens: &[Token]) -> Option<i64> {
@@ -536,6 +559,14 @@ impl Parser<'_> {
 
     fn parse_halt_compiler_statement(&mut self, scope: TopLevelScope) -> Result<()> {
         let name_span = self.advance().span;
+        if scope == TopLevelScope::NamespaceBlock {
+            if let Some(line) = self.namespace_block_open_lines.last() {
+                return Err(Diagnostic::parse_error(
+                    format!("Unclosed '{{' on line {line}"),
+                    Some(name_span),
+                ));
+            }
+        }
         if scope != TopLevelScope::Program || self.block_depth != 0 || self.function_depth != 0 {
             return Err(Diagnostic::new(
                 "__HALT_COMPILER() can only be used from the outermost scope",
@@ -597,6 +628,7 @@ impl Parser<'_> {
         self.current_namespace = namespace;
         self.seen_namespace_declaration = true;
         self.clear_namespace_imports();
+        self.clear_namespace_block_symbols();
         Ok(())
     }
 
@@ -626,15 +658,20 @@ impl Parser<'_> {
         functions: &mut Vec<FunctionDecl>,
         statements: &mut Vec<Statement>,
     ) -> Result<()> {
-        self.expect_left_brace()?;
+        let left_brace_span = self.expect_left_brace()?;
 
         let saved_namespace = self.current_namespace.clone();
         let saved_class_aliases = self.class_aliases.clone();
         let saved_function_aliases = self.function_aliases.clone();
         let saved_constant_aliases = self.constant_aliases.clone();
+        let saved_namespace_block_classes = self.namespace_block_classes.clone();
+        let saved_namespace_block_functions = self.namespace_block_functions.clone();
+        let saved_namespace_block_constants = self.namespace_block_constants.clone();
 
         self.current_namespace = namespace;
         self.clear_namespace_imports();
+        self.clear_namespace_block_symbols();
+        self.namespace_block_open_lines.push(left_brace_span.line);
         let result = (|| {
             self.parse_top_level_items(
                 classes,
@@ -651,6 +688,10 @@ impl Parser<'_> {
         self.class_aliases = saved_class_aliases;
         self.function_aliases = saved_function_aliases;
         self.constant_aliases = saved_constant_aliases;
+        self.namespace_block_classes = saved_namespace_block_classes;
+        self.namespace_block_functions = saved_namespace_block_functions;
+        self.namespace_block_constants = saved_namespace_block_constants;
+        self.namespace_block_open_lines.pop();
 
         result
     }
@@ -744,8 +785,7 @@ impl Parser<'_> {
                 target.span,
             )
         };
-        if kind == UseDeclarationKind::Class
-            && self.current_namespace.is_none()
+        if self.current_namespace.is_none()
             && !target.name.contains('\\')
             && alias.eq_ignore_ascii_case(&target.name)
             && matches!(
@@ -930,18 +970,32 @@ impl Parser<'_> {
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&target.name),
             NameResolution::Unqualified | NameResolution::Qualified => target.name,
         };
-        let alias_key = alias.to_ascii_lowercase();
+        let alias_key = import_alias_key(kind, &alias);
+        let name_is_already_in_use = match kind {
+            UseDeclarationKind::Class => {
+                self.class_aliases.contains_key(&alias_key)
+                    || self.namespace_block_classes.contains(&alias_key)
+            }
+            UseDeclarationKind::Function => {
+                self.function_aliases.contains_key(&alias_key)
+                    || self.namespace_block_functions.contains(&alias_key)
+            }
+            UseDeclarationKind::Constant => {
+                self.constant_aliases.contains_key(&alias_key)
+                    || self.namespace_block_constants.contains(&alias_key)
+            }
+        };
+        if name_is_already_in_use {
+            return Err(Diagnostic::new(
+                format!(
+                    "Cannot use {}{target_name} as {alias} because the name is already in use",
+                    use_import_label(kind)
+                ),
+                Some(alias_span),
+            ));
+        }
         match kind {
             UseDeclarationKind::Class => {
-                let declared_key = self.qualify_current_namespace(&alias).to_ascii_lowercase();
-                if self.declared_class_names.contains_key(&declared_key) {
-                    return Err(Diagnostic::new(
-                        format!(
-                            "Cannot use {target_name} as {alias} because the name is already in use"
-                        ),
-                        Some(alias_span),
-                    ));
-                }
                 self.class_aliases.insert(alias_key, target_name);
             }
             UseDeclarationKind::Function => {
@@ -967,11 +1021,14 @@ impl Parser<'_> {
         {
             return Err(Diagnostic::new(
                 format!(
-                    "Cannot redeclare class {local_name} (previously declared as local import)"
+                    "Cannot redeclare class {} (previously declared as local import)",
+                    class.name
                 ),
                 Some(class.span),
             ));
         }
+        self.namespace_block_classes
+            .insert(local_name.to_ascii_lowercase());
         self.declared_class_names
             .insert(class.name.to_ascii_lowercase(), class.span);
         Ok(())
@@ -1044,6 +1101,28 @@ impl Parser<'_> {
         self.class_aliases.clear();
         self.function_aliases.clear();
         self.constant_aliases.clear();
+    }
+
+    fn clear_namespace_block_symbols(&mut self) {
+        self.namespace_block_classes.clear();
+        self.namespace_block_functions.clear();
+        self.namespace_block_constants.clear();
+    }
+
+    fn note_underscore_class_like_deprecation(
+        &mut self,
+        qualified_name: &str,
+        span: SourceSpan,
+        kind: &str,
+        article: &str,
+    ) {
+        if qualified_name.rsplit('\\').next() == Some("_") {
+            self.compile_warnings.push(CompileWarning {
+                message: format!("Using \"_\" as {article} {kind} name is deprecated since 8.4"),
+                span,
+                kind: CompileWarningKind::Deprecation,
+            });
+        }
     }
 
     fn parse_declaration_name(&mut self, expected: &str) -> Result<(String, SourceSpan)> {
@@ -1227,7 +1306,7 @@ impl Parser<'_> {
             NameResolution::FullyQualified => parsed.name.clone(),
             NameResolution::NamespaceRelative => self.qualify_current_namespace(&parsed.name),
             NameResolution::Unqualified => {
-                let alias_key = parsed.name.to_ascii_lowercase();
+                let alias_key = parsed.name.clone();
                 let namespaced = self.qualify_current_namespace(&parsed.name);
                 if let Some(target) = self.constant_aliases.get(&alias_key) {
                     target.clone()
@@ -1452,7 +1531,13 @@ impl Parser<'_> {
         }
         let is_readonly = readonly_span.is_some();
 
-        let (class_name, _) = self.parse_declaration_name("expected class name")?;
+        let (class_name, class_name_span) = self.parse_declaration_name("expected class name")?;
+        self.note_underscore_class_like_deprecation(
+            &class_name,
+            class_name_span,
+            if is_interface { "interface" } else { "class" },
+            if is_interface { "an" } else { "a" },
+        );
         self.reject_tight_class_clause_keyword_name("extends")?;
         let parent_name = if !is_interface && token_is_identifier_named(self.peek(), "extends") {
             self.advance();
@@ -1590,7 +1675,8 @@ impl Parser<'_> {
             return Err(Diagnostic::new("expected enum", Some(enum_token.span)));
         }
 
-        let (class_name, _) = self.parse_declaration_name("expected enum name")?;
+        let (class_name, class_name_span) = self.parse_declaration_name("expected enum name")?;
+        self.note_underscore_class_like_deprecation(&class_name, class_name_span, "enum", "an");
         let enum_backing_type = if matches!(self.peek().kind, TokenKind::Colon) {
             self.advance();
             let token = self.advance().clone();
@@ -1738,7 +1824,8 @@ impl Parser<'_> {
         if !token_is_identifier_named(&trait_token, "trait") {
             return Err(Diagnostic::new("expected trait", Some(trait_token.span)));
         }
-        let (trait_name, _) = self.parse_declaration_name("expected trait name")?;
+        let (trait_name, trait_name_span) = self.parse_declaration_name("expected trait name")?;
+        self.note_underscore_class_like_deprecation(&trait_name, trait_name_span, "trait", "a");
         self.expect_left_brace()?;
         let previous_type_scope = self.active_type_scope.replace(ActiveTypeScope {
             class_name: trait_name.clone(),
@@ -3468,7 +3555,16 @@ impl Parser<'_> {
                 return Err(exit_reserved_name_syntax_error(self.peek(), "\"(\""));
             }
         }
-        let (name, _) = self.parse_declaration_name("expected function name")?;
+        let (name, name_span) = self.parse_declaration_name("expected function name")?;
+        let local_name = name.rsplit('\\').next().unwrap_or(&name).to_string();
+        let local_key = local_name.to_ascii_lowercase();
+        if self.function_aliases.contains_key(&local_key) {
+            return Err(Diagnostic::new(
+                format!("Cannot redeclare function {name}() (previously declared as local import)"),
+                Some(name_span),
+            ));
+        }
+        self.namespace_block_functions.insert(local_key);
         self.declared_functions.insert(name.to_ascii_lowercase());
         let parameters = self.parse_function_parameters()?;
         let return_type = if matches!(self.peek().kind, TokenKind::Colon) {
@@ -4519,6 +4615,14 @@ impl Parser<'_> {
                 Some(token_span),
             ));
         }
+        let local_name = name.rsplit('\\').next().unwrap_or(&name).to_string();
+        if self.constant_aliases.contains_key(&local_name) {
+            return Err(Diagnostic::new(
+                format!("Cannot declare const {name} because the name is already in use"),
+                Some(token_span),
+            ));
+        }
+        self.namespace_block_constants.insert(local_name);
         self.declared_constants.insert(name.to_ascii_lowercase());
         self.expect_equal()?;
         let value = self.parse_const_context_expr()?;
@@ -11637,10 +11741,16 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
             ));
         }
         if let Some(reserved_name) = reserved_class_name_segment(&lookup_name) {
+            let (article, kind) = if class.is_interface {
+                ("an", "interface")
+            } else if class.is_enum {
+                ("an", "enum")
+            } else {
+                ("a", "class")
+            };
             return Err(Diagnostic::new(
                 format!(
-                    "Cannot use \"{}\" as a class name as it is reserved",
-                    reserved_name
+                    "Cannot use \"{reserved_name}\" as {article} {kind} name as it is reserved"
                 ),
                 Some(class.span),
             ));
@@ -11654,6 +11764,12 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
     }
     for trait_decl in traits {
         let lookup_name = trait_decl.name.to_ascii_lowercase();
+        if let Some(reserved_name) = reserved_class_name_segment(&lookup_name) {
+            return Err(Diagnostic::new(
+                format!("Cannot use \"{reserved_name}\" as a trait name as it is reserved"),
+                Some(trait_decl.span),
+            ));
+        }
         if !names.insert(lookup_name.clone()) {
             return Err(Diagnostic::new(
                 format!("Cannot declare trait {lookup_name}, because the name is already in use"),
@@ -11666,7 +11782,22 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
 
 fn reserved_class_name_segment(name: &str) -> Option<&str> {
     let segment = name.rsplit('\\').next().unwrap_or(name);
-    matches!(segment, "mixed" | "self" | "parent" | "static").then_some(segment)
+    matches!(
+        segment,
+        "mixed"
+            | "self"
+            | "parent"
+            | "static"
+            | "int"
+            | "integer"
+            | "float"
+            | "double"
+            | "string"
+            | "binary"
+            | "bool"
+            | "boolean"
+    )
+    .then_some(segment)
 }
 
 fn reject_reserved_parent_class_name(name: &str, span: SourceSpan) -> Result<()> {

@@ -1,0 +1,18 @@
+# ptn-ajxpz: namespace import/declaration collision and block-scope reset rows.
+#
+# Source bucket: full php-src PHPT corpus rows from the bracketed namespace
+# candidate scan that failed on import alias collision diagnostics or leaked
+# namespace-block seen symbols.
+Zend/tests/name_collision/name_collision_07.phpt
+Zend/tests/name_collision/name_collision_08.phpt
+Zend/tests/name_collision/name_collision_09.phpt
+Zend/tests/use_const/conflicting_use.phpt
+Zend/tests/use_const/define_imported.phpt
+Zend/tests/use_const/define_imported_before.phpt
+Zend/tests/use_function/case_insensivity.phpt
+Zend/tests/use_function/conditional_function_declaration.phpt
+Zend/tests/use_function/conflicting_use.phpt
+Zend/tests/use_function/define_imported.phpt
+Zend/tests/use_function/define_imported_before.phpt
+Zend/tests/use_function/ns_end_resets_seen_symbols_1.phpt
+Zend/tests/use_function/ns_end_resets_seen_symbols_2.phpt

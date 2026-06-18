@@ -50541,6 +50541,165 @@ fn parser_reports_namespace_relative_grouped_use_parse_errors() {
 }
 
 #[test]
+fn parser_rejects_namespace_import_name_collisions() {
+    let cases = [
+        (
+            "<?php namespace { use function foo\\bar; use function foo\\BAR; }",
+            "Cannot use function foo\\BAR as BAR because the name is already in use",
+        ),
+        (
+            "<?php namespace { use function foo\\bar; function bar() {} }",
+            "Cannot redeclare function bar() (previously declared as local import)",
+        ),
+        (
+            "<?php namespace { function bar() {} use function foo\\bar; }",
+            "Cannot use function foo\\bar as bar because the name is already in use",
+        ),
+        (
+            "<?php namespace Bazzle { use function Foo\\bar; function bar() {} }",
+            "Cannot redeclare function Bazzle\\bar() (previously declared as local import)",
+        ),
+        (
+            "<?php namespace { use const foo\\bar, bar\\bar; }",
+            "Cannot use const bar\\bar as bar because the name is already in use",
+        ),
+        (
+            "<?php namespace { use const foo\\bar; const bar = 42; }",
+            "Cannot declare const bar because the name is already in use",
+        ),
+        (
+            "<?php namespace Bazzle { use const Foo\\BAR; const BAR = 24; }",
+            "Cannot declare const Bazzle\\BAR because the name is already in use",
+        ),
+        (
+            "<?php namespace { const bar = 42; use const foo\\bar; }",
+            "Cannot use const foo\\bar as bar because the name is already in use",
+        ),
+        (
+            "<?php namespace Bazzle { use Foo\\Bar; class Bar {} }",
+            "Cannot redeclare class Bazzle\\Bar (previously declared as local import)",
+        ),
+    ];
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal);
+        assert_eq!(error.message, expected);
+    }
+
+    parser::parse("<?php namespace { use const foo\\bar; use const foo\\BAR; }").unwrap();
+}
+
+#[test]
+fn parser_resets_namespace_import_seen_symbols_between_bracketed_blocks() {
+    let program = parser::parse(
+        r#"<?php
+namespace {
+    function f() {}
+    class C {}
+}
+namespace Ns {
+    function f() {}
+    class C {}
+}
+namespace {
+    use function Ns\f;
+    use Ns\C;
+}
+namespace Ns {
+    use function f;
+    use C;
+}
+namespace {
+    use function f;
+    use C;
+}
+"#,
+    )
+    .unwrap();
+
+    assert_eq!(program.compile_warnings.len(), 2);
+    assert_eq!(
+        program.compile_warnings[0].message,
+        "The use statement with non-compound name 'f' has no effect"
+    );
+    assert_eq!(
+        program.compile_warnings[1].message,
+        "The use statement with non-compound name 'C' has no effect"
+    );
+}
+
+#[test]
+fn parser_warns_for_underscore_class_like_names() {
+    let program = parser::parse(
+        "<?php namespace Foo\\ClassLike { class _ {} } \
+         namespace Foo\\Contract { interface _ {} } \
+         namespace Foo\\Mixin { trait _ {} } \
+         namespace Foo\\EnumLike { enum _ {} }",
+    )
+    .unwrap();
+    let messages = program
+        .compile_warnings
+        .iter()
+        .map(|warning| (warning.kind, warning.message.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        vec![
+            (
+                CompileWarningKind::Deprecation,
+                "Using \"_\" as a class name is deprecated since 8.4",
+            ),
+            (
+                CompileWarningKind::Deprecation,
+                "Using \"_\" as an interface name is deprecated since 8.4",
+            ),
+            (
+                CompileWarningKind::Deprecation,
+                "Using \"_\" as a trait name is deprecated since 8.4",
+            ),
+            (
+                CompileWarningKind::Deprecation,
+                "Using \"_\" as an enum name is deprecated since 8.4",
+            ),
+        ]
+    );
+}
+
+#[test]
+fn parser_rejects_reserved_scalar_class_like_names() {
+    let cases = [
+        (
+            "<?php class bool {}",
+            "Cannot use \"bool\" as a class name as it is reserved",
+        ),
+        (
+            "<?php interface bool {}",
+            "Cannot use \"bool\" as an interface name as it is reserved",
+        ),
+        (
+            "<?php trait bool {}",
+            "Cannot use \"bool\" as a trait name as it is reserved",
+        ),
+        (
+            "<?php enum bool {}",
+            "Cannot use \"bool\" as an enum name as it is reserved",
+        ),
+    ];
+    for (source, expected) in cases {
+        let error = parser::parse(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Fatal);
+        assert_eq!(error.message, expected);
+    }
+}
+
+#[test]
+fn parser_reports_halt_compiler_in_bracketed_namespace_as_unclosed_block() {
+    let error = parser::parse("<?php\nnamespace Foo {\n__halt_compiler();\n").unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.message, "Unclosed '{' on line 2");
+}
+
+#[test]
 fn parser_rejects_namespace_after_function_declaration() {
     let error = parser::parse("<?php function foo() {} namespace Bar;").unwrap_err();
     assert_eq!(

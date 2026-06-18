@@ -1,0 +1,10 @@
+# ptn-ajxpz: namespace/class-like declaration diagnostic rows.
+#
+# Source bucket: full php-src PHPT bracketed namespace candidate rows that
+# failed due to generic declaration-time diagnostics rather than namespace
+# syntax support.
+Zend/tests/class_underscore_as_name.phpt
+Zend/tests/enum/enum_underscore_as_name.phpt
+Zend/tests/grammar/bug60099.phpt
+Zend/tests/interface_underscore_as_name.phpt
+Zend/tests/traits/trait_underscore_as_name.phpt
