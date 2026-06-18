@@ -930,7 +930,11 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
     for (size_t i = 0; i < argc; i++) {
         PtnDirectDumpSeen seen;
         ptn_direct_dump_seen_init(&seen);
-        ptn_direct_var_dump_value_indented(runtime, args[i], 0, &seen);
+        PtnValue value = args[i];
+        if (value.type == PTN_REFERENCE) {
+            value = ptn_value_deref(value);
+        }
+        ptn_direct_var_dump_value_indented(runtime, value, 0, &seen);
         ptn_direct_dump_seen_free(&seen);
     }
     return ptn_null();
