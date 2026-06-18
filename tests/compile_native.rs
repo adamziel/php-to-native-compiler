@@ -23143,6 +23143,7 @@ fn compile_local_system_identity_internals_to_native_binary() {
         &input,
         "<?php\n\
 var_dump(function_exists(\"gethostname\"), function_exists(\"GET_CURRENT_USER\"));\n\
+var_dump(function_exists(\"gethostbyname\"), function_exists(\"GETHOSTBYNAME\"));\n\
 $host = gethostname();\n\
 $user = get_current_user();\n\
 var_dump(is_string($host), $host === false || strlen($host) >= 0);\n\
@@ -23161,7 +23162,39 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
+bool(true)\n\
+bool(true)\n\
 bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_php_binary_and_gethostbyname_to_native_binary() {
+    let root = temp_dir("ptn-native-php-binary-gethostbyname");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-binary-gethostbyname.php");
+    let output = root.join("php-binary-gethostbyname-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(defined('PHP_BINARY'), PHP_BINARY !== '', constant('PHP_BINARY') === PHP_BINARY);\n\
+var_dump(gethostbyname('127.0.0.1'));\n\
+var_dump(gethostbyname('ptn.invalid.example'));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+string(9) \"127.0.0.1\"\n\
+string(19) \"ptn.invalid.example\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -23268,7 +23301,7 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib\narray(0) {\n}\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -37368,6 +37401,77 @@ var_dump($ext->getName(), $inis['user_agent']);",
             "string(0) \"\"\n",
             "string(8) \"standard\"\n",
             "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_opcache_metadata_surface_is_runtime_visible() {
+    let root = temp_dir("ptn-phpc-opcache-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("opcache-metadata.php");
+    let included = root.join("opcache-runtime.inc.php");
+    fs::write(&included, "<?php return 42;").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(extension_loaded('Zend OPcache'), extension_loaded('opcache'), phpversion('Zend OPcache') !== false, phpversion('opcache'));\n\
+$funcs = get_extension_funcs('Zend OPcache');\n\
+var_dump(in_array('opcache_get_status', $funcs, true), get_extension_funcs('opcache'));\n\
+$config = opcache_get_configuration();\n\
+var_dump($config['directives']['opcache.enable'], $config['directives']['opcache.enable_cli'], $config['directives']['opcache.file_cache_only'], $config['directives']['opcache.optimization_level']);\n\
+$status = opcache_get_status();\n\
+var_dump($status['opcache_enabled'], count($status['scripts']));\n\
+$tmp = __DIR__ . '/opcache-runtime.inc.php';\n\
+var_dump(opcache_is_script_cached($tmp), opcache_compile_file($tmp), opcache_invalidate($tmp, true));\n\
+$value = require $tmp;\n\
+var_dump($value, count(opcache_get_status()['scripts']));\n\
+$ext = new ReflectionExtension('Zend OPcache');\n\
+$inis = $ext->getINIEntries();\n\
+$functions = $ext->getFunctions();\n\
+var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcache.enable_cli'], $inis['opcache.optimization_level']);",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("opcache.enable=1")
+        .arg("-d")
+        .arg("opcache.enable_cli=1")
+        .arg("-d")
+        .arg("opcache.file_cache_only=0")
+        .arg("-d")
+        .arg("opcache.optimization_level=-1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(-1)\n",
+            "bool(true)\n",
+            "int(0)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(42)\n",
+            "int(1)\n",
+            "string(12) \"Zend OPcache\"\n",
+            "bool(true)\n",
+            "string(1) \"1\"\n",
+            "string(2) \"-1\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

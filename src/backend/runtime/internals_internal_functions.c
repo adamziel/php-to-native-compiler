@@ -28732,6 +28732,21 @@ static char *ptn_pcre_pattern_to_posix(
         if (byte == '\\' && i + 1 < end) {
             char next = pattern.data[++i];
             switch (next) {
+                case 'Q':
+                    while (i + 1 < end) {
+                        if (pattern.data[i + 1] == '\\' && i + 2 < end && pattern.data[i + 2] == 'E') {
+                            i += 2;
+                            break;
+                        }
+                        char quoted = pattern.data[++i];
+                        if (ptn_regex_char_is_posix_special(quoted)) {
+                            ptn_string_buffer_append_char(&output, '\\');
+                        }
+                        ptn_string_buffer_append_char(&output, quoted);
+                    }
+                    break;
+                case 'E':
+                    break;
                 case 'd':
                     ptn_string_buffer_append(&output, in_char_class ? "0-9" : "[0-9]");
                     break;
@@ -36974,6 +36989,32 @@ static PtnValue ptn_internal_gethostname(PtnRuntime *runtime, size_t argc, const
 #endif
 }
 
+static PtnValue ptn_internal_gethostbyname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand hostname = ptn_internal_expect_string_arg(runtime, "gethostbyname", 1, "hostname", args[0], line);
+    char *input = ptn_duplicate_string_len(hostname.data, hostname.len);
+    ptn_string_operand_free(hostname);
+#if !defined(_WIN32)
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    struct addrinfo *result = NULL;
+    if (getaddrinfo(input, NULL, &hints, &result) == 0 && result != NULL) {
+        char address[64];
+        int status = getnameinfo(result->ai_addr, result->ai_addrlen, address, sizeof(address), NULL, 0, NI_NUMERICHOST);
+        freeaddrinfo(result);
+        if (status == 0) {
+            free(input);
+            return ptn_owned_string(ptn_duplicate_string(address));
+        }
+    } else if (result != NULL) {
+        freeaddrinfo(result);
+    }
+#endif
+    return ptn_owned_string(input);
+}
+
 static PtnValue ptn_internal_get_current_user(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -44767,12 +44808,155 @@ static const char *ptn_runtime_pcre_jit(PtnRuntime *runtime) {
     return root->pcre_jit;
 }
 
-static const char *ptn_runtime_opcache_save_comments(PtnRuntime *runtime) {
-    PtnRuntime *root = ptn_runtime_config_root(runtime);
-    if (root == NULL || root->opcache_save_comments == NULL) {
+static void ptn_runtime_set_ini_string(char **slot, const char *value);
+
+static const char *ptn_opcache_ini_default(const char *name) {
+    if (ptn_ascii_case_equal(name, "opcache.blacklist_filename")) {
+        return "";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.enable")) {
         return "1";
     }
-    return root->opcache_save_comments;
+    if (ptn_ascii_case_equal(name, "opcache.enable_cli")) {
+        return "1";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.fast_shutdown")) {
+        return "0";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.file_cache_only")) {
+        return "0";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.file_update_protection")) {
+        return "2";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.interned_strings_buffer")) {
+        return "8";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.log_verbosity_level")) {
+        return "1";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.optimization_level")) {
+        return "0x7FFEBFFF";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.opt_debug_level")) {
+        return "0";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.preload")) {
+        return "";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.preload_user")) {
+        return "";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.save_comments")) {
+        return "1";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.validate_timestamps")) {
+        return "1";
+    }
+    return NULL;
+}
+
+static char **ptn_runtime_opcache_ini_slot(PtnRuntime *runtime, const char *name) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL) {
+        return NULL;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.blacklist_filename")) {
+        return &root->opcache_blacklist_filename;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.enable")) {
+        return &root->opcache_enable;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.enable_cli")) {
+        return &root->opcache_enable_cli;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.fast_shutdown")) {
+        return &root->opcache_fast_shutdown;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.file_cache_only")) {
+        return &root->opcache_file_cache_only;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.file_update_protection")) {
+        return &root->opcache_file_update_protection;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.interned_strings_buffer")) {
+        return &root->opcache_interned_strings_buffer;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.log_verbosity_level")) {
+        return &root->opcache_log_verbosity_level;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.optimization_level")) {
+        return &root->opcache_optimization_level;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.opt_debug_level")) {
+        return &root->opcache_opt_debug_level;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.preload")) {
+        return &root->opcache_preload;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.preload_user")) {
+        return &root->opcache_preload_user;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.save_comments")) {
+        return &root->opcache_save_comments;
+    }
+    if (ptn_ascii_case_equal(name, "opcache.validate_timestamps")) {
+        return &root->opcache_validate_timestamps;
+    }
+    return NULL;
+}
+
+static const char *ptn_runtime_opcache_ini_value(PtnRuntime *runtime, const char *name) {
+    char **slot = ptn_runtime_opcache_ini_slot(runtime, name);
+    const char *fallback = ptn_opcache_ini_default(name);
+    if (slot == NULL || *slot == NULL) {
+        return fallback == NULL ? "" : fallback;
+    }
+    return *slot;
+}
+
+static int ptn_runtime_opcache_ini_name_from_operand(PtnStringOperand option, const char **name_out) {
+    static const char *const names[] = {
+        "opcache.blacklist_filename",
+        "opcache.enable",
+        "opcache.enable_cli",
+        "opcache.fast_shutdown",
+        "opcache.file_cache_only",
+        "opcache.file_update_protection",
+        "opcache.interned_strings_buffer",
+        "opcache.log_verbosity_level",
+        "opcache.optimization_level",
+        "opcache.opt_debug_level",
+        "opcache.preload",
+        "opcache.preload_user",
+        "opcache.save_comments",
+        "opcache.validate_timestamps",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (ptn_string_operand_ascii_case_equal(option, names[i])) {
+            *name_out = names[i];
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_runtime_opcache_ini_value_operand(PtnRuntime *runtime, PtnStringOperand option, PtnValue *out) {
+    const char *name = NULL;
+    if (!ptn_runtime_opcache_ini_name_from_operand(option, &name)) {
+        return 0;
+    }
+    *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_ini_value(runtime, name)));
+    return 1;
+}
+
+static int ptn_runtime_set_opcache_ini(PtnRuntime *runtime, const char *name, const char *value) {
+    char **slot = ptn_runtime_opcache_ini_slot(runtime, name);
+    if (slot == NULL) {
+        return 0;
+    }
+    ptn_runtime_set_ini_string(slot, value);
+    return 1;
 }
 
 static const char *ptn_runtime_phar_readonly(PtnRuntime *runtime) {
@@ -45340,6 +45524,9 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "odbc")) {
         return "odbc";
     }
+    if (ptn_string_operand_ascii_case_equal(extension, "Zend OPcache")) {
+        return "Zend OPcache";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "openssl")) {
         return "openssl";
     }
@@ -45513,8 +45700,7 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_jit(runtime)));
         return 1;
     }
-    if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
-        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_save_comments(runtime)));
+    if (ptn_runtime_opcache_ini_value_operand(runtime, option, out)) {
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "phar.readonly")) {
@@ -45671,11 +45857,6 @@ static void ptn_runtime_set_pcre_jit(PtnRuntime *runtime, const char *value) {
     ptn_runtime_set_ini_string(&root->pcre_jit, value);
 }
 
-static void ptn_runtime_set_opcache_save_comments(PtnRuntime *runtime, const char *value) {
-    PtnRuntime *root = ptn_runtime_config_root(runtime);
-    ptn_runtime_set_ini_string(&root->opcache_save_comments, value);
-}
-
 static void ptn_runtime_set_phar_readonly(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->phar_readonly, value);
@@ -45823,8 +46004,9 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
-    if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
-        ptn_runtime_set_opcache_save_comments(runtime, "1");
+    const char *opcache_name = NULL;
+    if (ptn_runtime_opcache_ini_name_from_operand(option, &opcache_name)) {
+        ptn_runtime_set_opcache_ini(runtime, opcache_name, ptn_opcache_ini_default(opcache_name));
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -46045,11 +46227,12 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return previous;
     }
-    if (ptn_string_operand_ascii_case_equal(option, "opcache.save_comments")) {
-        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_save_comments(runtime)));
+    const char *opcache_name = NULL;
+    if (ptn_runtime_opcache_ini_name_from_operand(option, &opcache_name)) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_ini_value(runtime, opcache_name)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
-        ptn_runtime_set_opcache_save_comments(runtime, next);
+        ptn_runtime_set_opcache_ini(runtime, opcache_name, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -46564,12 +46747,297 @@ static PtnValue ptn_internal_php_ini_scanned_files(PtnRuntime *runtime, size_t a
     return ptn_string("");
 }
 
+static int ptn_opcache_enabled(PtnRuntime *runtime) {
+    return ptn_runtime_ini_bool(ptn_runtime_opcache_ini_value(runtime, "opcache.enable"), 1) &&
+        ptn_runtime_ini_bool(ptn_runtime_opcache_ini_value(runtime, "opcache.enable_cli"), 1);
+}
+
+static int64_t ptn_opcache_ini_integer_value(PtnRuntime *runtime, const char *name) {
+    const char *value = ptn_runtime_opcache_ini_value(runtime, name);
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+    errno = 0;
+    char *end = NULL;
+    long long parsed = strtoll(value, &end, 0);
+    if (end == value || errno == ERANGE) {
+        return 0;
+    }
+    return (int64_t)parsed;
+}
+
+static void ptn_opcache_configuration_set_directive(PtnRuntime *runtime, PtnValue directives, const char *name) {
+    PtnValue value;
+    if (ptn_ascii_case_equal(name, "opcache.enable") ||
+        ptn_ascii_case_equal(name, "opcache.enable_cli") ||
+        ptn_ascii_case_equal(name, "opcache.fast_shutdown") ||
+        ptn_ascii_case_equal(name, "opcache.file_cache_only") ||
+        ptn_ascii_case_equal(name, "opcache.save_comments") ||
+        ptn_ascii_case_equal(name, "opcache.validate_timestamps")) {
+        value = ptn_bool(ptn_runtime_ini_bool(ptn_runtime_opcache_ini_value(runtime, name), 1));
+    } else if (ptn_ascii_case_equal(name, "opcache.file_update_protection") ||
+               ptn_ascii_case_equal(name, "opcache.interned_strings_buffer") ||
+               ptn_ascii_case_equal(name, "opcache.log_verbosity_level") ||
+               ptn_ascii_case_equal(name, "opcache.optimization_level") ||
+               ptn_ascii_case_equal(name, "opcache.opt_debug_level")) {
+        value = ptn_int(ptn_opcache_ini_integer_value(runtime, name));
+    } else {
+        value = ptn_owned_string(ptn_duplicate_string(ptn_runtime_opcache_ini_value(runtime, name)));
+    }
+    ptn_array_set_entry(directives.as.array, ptn_array_string_key(name), value);
+}
+
+static PtnValue ptn_opcache_configuration_directives(PtnRuntime *runtime) {
+    static const char *const names[] = {
+        "opcache.blacklist_filename",
+        "opcache.enable",
+        "opcache.enable_cli",
+        "opcache.fast_shutdown",
+        "opcache.file_cache_only",
+        "opcache.file_update_protection",
+        "opcache.interned_strings_buffer",
+        "opcache.log_verbosity_level",
+        "opcache.optimization_level",
+        "opcache.opt_debug_level",
+        "opcache.preload",
+        "opcache.preload_user",
+        "opcache.save_comments",
+        "opcache.validate_timestamps",
+    };
+    PtnValue directives = ptn_array_from_literal_entries(0, NULL);
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        ptn_opcache_configuration_set_directive(runtime, directives, names[i]);
+    }
+    return directives;
+}
+
+static char *ptn_opcache_blacklist_dirname_alloc(const char *path) {
+    const char *last = strrchr(path, '/');
+#if defined(_WIN32)
+    const char *backslash = strrchr(path, '\\');
+    if (backslash != NULL && (last == NULL || backslash > last)) {
+        last = backslash;
+    }
+#endif
+    if (last == NULL) {
+        return ptn_duplicate_string(".");
+    }
+    if (last == path) {
+        return ptn_duplicate_string_len(path, 1);
+    }
+    return ptn_duplicate_string_len(path, (size_t)(last - path));
+}
+
+static char *ptn_opcache_blacklist_resolve_entry(const char *blacklist_path, const char *entry) {
+    if (ptn_path_string_is_absolute(entry)) {
+        return ptn_duplicate_string(entry);
+    }
+    while (entry[0] == '.' && (entry[1] == '/' || entry[1] == '\\')) {
+        entry += 2;
+    }
+    char *dir = ptn_opcache_blacklist_dirname_alloc(blacklist_path);
+    size_t dir_len = strlen(dir);
+    size_t entry_len = strlen(entry);
+    char separator = '/';
+#if defined(_WIN32)
+    separator = '\\';
+#endif
+    char *resolved = malloc(dir_len + 1 + entry_len + 1);
+    if (resolved == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(resolved, dir, dir_len);
+    resolved[dir_len] = separator;
+    memcpy(resolved + dir_len + 1, entry, entry_len + 1);
+    free(dir);
+    return resolved;
+}
+
+static void ptn_opcache_blacklist_add_line(
+    PtnValue result,
+    const char *blacklist_path,
+    const char *line_start,
+    size_t line_len,
+    int64_t *next_index
+) {
+    while (line_len > 0 && isspace((unsigned char)*line_start)) {
+        line_start++;
+        line_len--;
+    }
+    while (line_len > 0 && isspace((unsigned char)line_start[line_len - 1])) {
+        line_len--;
+    }
+    if (line_len == 0 || line_start[0] == ';') {
+        return;
+    }
+    if (line_len >= 2 &&
+        ((line_start[0] == '"' && line_start[line_len - 1] == '"') ||
+         (line_start[0] == '\'' && line_start[line_len - 1] == '\''))) {
+        line_start++;
+        line_len -= 2;
+    }
+    char *entry = ptn_duplicate_string_len(line_start, line_len);
+    char *resolved = ptn_opcache_blacklist_resolve_entry(blacklist_path, entry);
+    free(entry);
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_int_key((*next_index)++),
+        ptn_owned_string(resolved)
+    );
+}
+
+static void ptn_opcache_blacklist_add_file(PtnValue result, const char *path, int64_t *next_index) {
+    unsigned char *data = NULL;
+    size_t data_len = 0;
+    if (!ptn_read_file_bytes(path, &data, &data_len)) {
+        return;
+    }
+    size_t line_start = 0;
+    for (size_t i = 0; i <= data_len; i++) {
+        if (i != data_len && data[i] != '\n') {
+            continue;
+        }
+        size_t line_len = i - line_start;
+        if (line_len > 0 && data[line_start + line_len - 1] == '\r') {
+            line_len--;
+        }
+        ptn_opcache_blacklist_add_line(
+            result,
+            path,
+            (const char *)data + line_start,
+            line_len,
+            next_index
+        );
+        line_start = i + 1;
+    }
+    free(data);
+}
+
+static PtnValue ptn_opcache_blacklist_entries(PtnRuntime *runtime) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    const char *configured = ptn_runtime_opcache_ini_value(runtime, "opcache.blacklist_filename");
+    if (configured == NULL || configured[0] == '\0') {
+        return result;
+    }
+    int64_t next_index = 0;
+#if defined(_WIN32)
+    ptn_opcache_blacklist_add_file(result, configured, &next_index);
+#else
+    glob_t matches;
+    memset(&matches, 0, sizeof(matches));
+    int glob_result = glob(configured, 0, NULL, &matches);
+    if (glob_result == 0) {
+        for (size_t i = 0; i < matches.gl_pathc; i++) {
+            ptn_opcache_blacklist_add_file(result, matches.gl_pathv[i], &next_index);
+        }
+        globfree(&matches);
+    } else {
+        globfree(&matches);
+        ptn_opcache_blacklist_add_file(result, configured, &next_index);
+    }
+#endif
+    return result;
+}
+
+static PtnValue ptn_internal_opcache_get_configuration(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnValue version = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(version.as.array, ptn_array_string_key("version"), ptn_string(PTN_PHP_VERSION));
+    ptn_array_set_entry(version.as.array, ptn_array_string_key("opcache_product_name"), ptn_string("Zend OPcache"));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("version"), version);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("directives"), ptn_opcache_configuration_directives(runtime));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("blacklist"), ptn_opcache_blacklist_entries(runtime));
+    return result;
+}
+
+static PtnValue ptn_opcache_status_scripts(PtnRuntime *runtime) {
+    PtnValue scripts = ptn_array_from_literal_entries(0, NULL);
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return scripts;
+    }
+    for (size_t i = 0; i < root->included_files_len; i++) {
+        const char *path = root->included_files[i];
+        if (runtime != NULL && runtime->source_path != NULL && strcmp(path, runtime->source_path) == 0) {
+            continue;
+        }
+        PtnValue script = ptn_array_from_literal_entries(0, NULL);
+        ptn_array_set_entry(script.as.array, ptn_array_string_key("full_path"), ptn_owned_string(ptn_duplicate_string(path)));
+        ptn_array_set_entry(script.as.array, ptn_array_string_key("hits"), ptn_int(1));
+        ptn_array_set_entry(script.as.array, ptn_array_string_key("memory_consumption"), ptn_int(0));
+        ptn_array_set_entry(script.as.array, ptn_array_string_key("timestamp"), ptn_int(0));
+        ptn_array_set_entry(scripts.as.array, ptn_array_string_key(path), script);
+    }
+    return scripts;
+}
+
+static PtnValue ptn_internal_opcache_get_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    (void)line;
+    int get_scripts = argc == 0 || ptn_is_truthy(args[0]);
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("opcache_enabled"), ptn_bool(ptn_opcache_enabled(runtime)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("cache_full"), ptn_bool(0));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("restart_pending"), ptn_bool(0));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("restart_in_progress"), ptn_bool(0));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("scripts"), get_scripts ? ptn_opcache_status_scripts(runtime) : ptn_array_from_literal_entries(0, NULL));
+    PtnValue jit = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(jit.as.array, ptn_array_string_key("enabled"), ptn_bool(0));
+    ptn_array_set_entry(jit.as.array, ptn_array_string_key("on"), ptn_bool(0));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("jit"), jit);
+    return result;
+}
+
+static int ptn_opcache_path_exists(PtnStringOperand path) {
+    char *owned = ptn_duplicate_string_len(path.data, path.len);
+    struct stat info;
+    int exists = stat(owned, &info) == 0 && S_ISREG(info.st_mode);
+    free(owned);
+    return exists;
+}
+
+static PtnValue ptn_internal_opcache_is_script_cached(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "opcache_is_script_cached", 1, "filename", args[0], line);
+    int exists = ptn_opcache_enabled(runtime) && ptn_opcache_path_exists(path);
+    ptn_string_operand_free(path);
+    return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_opcache_invalidate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "opcache_invalidate", 1, "filename", args[0], line);
+    int force = argc >= 2 && ptn_is_truthy(args[1]);
+    int ok = ptn_opcache_path_exists(path) || force;
+    ptn_string_operand_free(path);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_opcache_compile_file(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path = ptn_internal_expect_string_arg(runtime, "opcache_compile_file", 1, "filename", args[0], line);
+    int ok = ptn_opcache_enabled(runtime) && ptn_opcache_path_exists(path);
+    ptn_string_operand_free(path);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_opcache_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)runtime;
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_bool(1);
+}
+
 static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)line;
     int zend_extensions = argc >= 1 && ptn_is_truthy(args[0]);
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     if (zend_extensions) {
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Zend OPcache"));
         return result;
     }
     ptn_array_set_entry(result.as.array, ptn_array_int_key(0), ptn_string("Core"));
@@ -46610,6 +47078,7 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     ptn_array_set_entry(result.as.array, ptn_array_int_key(35), ptn_string("pdo_firebird"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(36), ptn_string("pdo_dblib"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(37), ptn_string("odbc"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(38), ptn_string("Zend OPcache"));
     return result;
 }
 
@@ -58928,6 +59397,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_mangled_object_vars", 1, 1, ptn_internal_get_mangled_object_vars },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
+        { "gethostbyname", 1, 1, ptn_internal_gethostbyname },
         { "gethostname", 0, 0, ptn_internal_gethostname },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getdate", 0, 1, ptn_internal_getdate },
@@ -59135,6 +59605,12 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ob_list_handlers", 0, 0, ptn_internal_ob_list_handlers },
         { "ob_start", 0, 3, ptn_internal_ob_start },
         { "octdec", 1, 1, ptn_internal_octdec },
+        { "opcache_compile_file", 1, 1, ptn_internal_opcache_compile_file },
+        { "opcache_get_configuration", 0, 0, ptn_internal_opcache_get_configuration },
+        { "opcache_get_status", 0, 1, ptn_internal_opcache_get_status },
+        { "opcache_invalidate", 1, 2, ptn_internal_opcache_invalidate },
+        { "opcache_is_script_cached", 1, 1, ptn_internal_opcache_is_script_cached },
+        { "opcache_reset", 0, 0, ptn_internal_opcache_reset },
         { "opendir", 1, 2, ptn_internal_opendir },
         { "ord", 1, 1, ptn_internal_ord },
         { "pathinfo", 1, 2, ptn_internal_pathinfo },
@@ -59482,6 +59958,9 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "openssl_")) {
         return "openssl";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "opcache_")) {
+        return "Zend OPcache";
     }
     if (ptn_internal_function_name_has_prefix(name, "socket_")) {
         return "sockets";
@@ -72127,6 +72606,23 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "phar.readonly");
         ptn_extension_ini_set_entry(runtime, result, "phar.require_hash");
         ptn_extension_ini_set_entry(runtime, result, "phar.cache_list");
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "Zend OPcache")) {
+        ptn_extension_ini_set_entry(runtime, result, "opcache.blacklist_filename");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.enable");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.enable_cli");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.fast_shutdown");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.file_cache_only");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.file_update_protection");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.interned_strings_buffer");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.log_verbosity_level");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.optimization_level");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.opt_debug_level");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.preload");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.preload_user");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.save_comments");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.validate_timestamps");
         return result;
     }
     if (ptn_ascii_case_equal(extension_name, "mbstring")) {

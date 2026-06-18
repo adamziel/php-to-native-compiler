@@ -2137,6 +2137,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PHP_MAXPATHLEN);
         return 1;
     }
+    if (strcmp(name, "PHP_BINARY") == 0) {
+        *out = ptn_string(PTN_PHP_BINARY);
+        return 1;
+    }
     if (strcmp(name, "PHP_VERSION") == 0) {
         *out = ptn_string(PTN_PHP_VERSION);
         return 1;

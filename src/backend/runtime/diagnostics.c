@@ -1616,7 +1616,26 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
     const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
+    const char *configured_opcache_blacklist_filename =
+        getenv("PTN_OPCACHE_BLACKLIST_FILENAME");
+    const char *configured_opcache_enable = getenv("PTN_OPCACHE_ENABLE");
+    const char *configured_opcache_enable_cli = getenv("PTN_OPCACHE_ENABLE_CLI");
+    const char *configured_opcache_fast_shutdown = getenv("PTN_OPCACHE_FAST_SHUTDOWN");
+    const char *configured_opcache_file_cache_only = getenv("PTN_OPCACHE_FILE_CACHE_ONLY");
+    const char *configured_opcache_file_update_protection =
+        getenv("PTN_OPCACHE_FILE_UPDATE_PROTECTION");
+    const char *configured_opcache_interned_strings_buffer =
+        getenv("PTN_OPCACHE_INTERNED_STRINGS_BUFFER");
+    const char *configured_opcache_log_verbosity_level =
+        getenv("PTN_OPCACHE_LOG_VERBOSITY_LEVEL");
+    const char *configured_opcache_optimization_level =
+        getenv("PTN_OPCACHE_OPTIMIZATION_LEVEL");
+    const char *configured_opcache_opt_debug_level = getenv("PTN_OPCACHE_OPT_DEBUG_LEVEL");
+    const char *configured_opcache_preload = getenv("PTN_OPCACHE_PRELOAD");
+    const char *configured_opcache_preload_user = getenv("PTN_OPCACHE_PRELOAD_USER");
     const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
+    const char *configured_opcache_validate_timestamps =
+        getenv("PTN_OPCACHE_VALIDATE_TIMESTAMPS");
     const char *configured_phar_readonly = getenv("PTN_PHAR_READONLY");
     const char *configured_phar_require_hash = getenv("PTN_PHAR_REQUIRE_HASH");
     const char *configured_phar_cache_list = getenv("PTN_PHAR_CACHE_LIST");
@@ -1656,8 +1675,47 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->pcre_jit = ptn_duplicate_string(
         configured_pcre_jit == NULL ? "1" : configured_pcre_jit
     );
+    runtime->opcache_blacklist_filename = ptn_duplicate_string(
+        configured_opcache_blacklist_filename == NULL ? "" : configured_opcache_blacklist_filename
+    );
+    runtime->opcache_enable = ptn_duplicate_string(
+        configured_opcache_enable == NULL ? "1" : configured_opcache_enable
+    );
+    runtime->opcache_enable_cli = ptn_duplicate_string(
+        configured_opcache_enable_cli == NULL ? "1" : configured_opcache_enable_cli
+    );
+    runtime->opcache_fast_shutdown = ptn_duplicate_string(
+        configured_opcache_fast_shutdown == NULL ? "0" : configured_opcache_fast_shutdown
+    );
+    runtime->opcache_file_cache_only = ptn_duplicate_string(
+        configured_opcache_file_cache_only == NULL ? "0" : configured_opcache_file_cache_only
+    );
+    runtime->opcache_file_update_protection = ptn_duplicate_string(
+        configured_opcache_file_update_protection == NULL ? "2" : configured_opcache_file_update_protection
+    );
+    runtime->opcache_interned_strings_buffer = ptn_duplicate_string(
+        configured_opcache_interned_strings_buffer == NULL ? "8" : configured_opcache_interned_strings_buffer
+    );
+    runtime->opcache_log_verbosity_level = ptn_duplicate_string(
+        configured_opcache_log_verbosity_level == NULL ? "1" : configured_opcache_log_verbosity_level
+    );
+    runtime->opcache_optimization_level = ptn_duplicate_string(
+        configured_opcache_optimization_level == NULL ? "0x7FFEBFFF" : configured_opcache_optimization_level
+    );
+    runtime->opcache_opt_debug_level = ptn_duplicate_string(
+        configured_opcache_opt_debug_level == NULL ? "0" : configured_opcache_opt_debug_level
+    );
+    runtime->opcache_preload = ptn_duplicate_string(
+        configured_opcache_preload == NULL ? "" : configured_opcache_preload
+    );
+    runtime->opcache_preload_user = ptn_duplicate_string(
+        configured_opcache_preload_user == NULL ? "" : configured_opcache_preload_user
+    );
     runtime->opcache_save_comments = ptn_duplicate_string(
         configured_opcache_save_comments == NULL ? "1" : configured_opcache_save_comments
+    );
+    runtime->opcache_validate_timestamps = ptn_duplicate_string(
+        configured_opcache_validate_timestamps == NULL ? "1" : configured_opcache_validate_timestamps
     );
     runtime->phar_readonly = ptn_duplicate_string(
         configured_phar_readonly == NULL ? "1" : configured_phar_readonly

@@ -28,9 +28,11 @@
 #include <glob.h>
 #include <iconv.h>
 #include <langinfo.h>
+#include <netdb.h>
 #include <pwd.h>
 #include <regex.h>
 #include <sys/file.h>
+#include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/statvfs.h>
 #include <sys/utsname.h>
@@ -91,6 +93,7 @@ typedef struct {
 #define PTN_PHP_SAPI_NAME "cli"
 #define PTN_ZEND_VERSION "4.4.0"
 #define PTN_PHP_EXTENSION_DIR "."
+#define PTN_PHP_BINARY "phpc"
 #ifdef PATH_MAX
 #define PTN_PHP_MAXPATHLEN PATH_MAX
 #else
@@ -1141,7 +1144,20 @@ struct PtnRuntime {
     char *filter_default;
     char *pcre_backtrack_limit;
     char *pcre_jit;
+    char *opcache_blacklist_filename;
+    char *opcache_enable;
+    char *opcache_enable_cli;
+    char *opcache_fast_shutdown;
+    char *opcache_file_cache_only;
+    char *opcache_file_update_protection;
+    char *opcache_interned_strings_buffer;
+    char *opcache_log_verbosity_level;
+    char *opcache_optimization_level;
+    char *opcache_opt_debug_level;
+    char *opcache_preload;
+    char *opcache_preload_user;
     char *opcache_save_comments;
+    char *opcache_validate_timestamps;
     char *phar_readonly;
     char *phar_require_hash;
     char *phar_cache_list;

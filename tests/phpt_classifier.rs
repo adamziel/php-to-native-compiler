@@ -1756,10 +1756,10 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
             "runtime function table mutation",
         ),
         (
-            "opcache",
-            "opcache.enable_cli=1",
-            "unsupported-opcache-ini\t",
-            "Zend OPcache configuration",
+            "opcache optimizer dump",
+            "opcache.opt_debug_level=0x20000",
+            "unsupported-opcache-observability\t",
+            "optimizer disassembly",
         ),
         (
             "host path",
@@ -1796,6 +1796,24 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
     assert_eq!(
         residual_extension_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let opcache_metadata_ini = classify_at_relative_path(
+        "--TEST--\nopcache metadata ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.file_cache_only=0\n--FILE--\n<?php\nvar_dump(opcache_get_configuration()['directives']['opcache.enable_cli']);\n--EXPECT--\nbool(true)\n",
+        "ext/opcache/tests/opcache_metadata_ini.phpt",
+    );
+    assert_eq!(
+        opcache_metadata_ini.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
+    let unmodeled_disabled_function = classify_at_relative_path(
+        "--TEST--\nunmodeled disabled function\n--EXTENSIONS--\nopcache\n--INI--\ndisable_functions=dl\nopcache.enable=1\nopcache.enable_cli=1\n--FILE--\n<?php\nvar_dump(is_callable('dl'));\n--EXPECT--\nbool(false)\n",
+        "ext/opcache/tests/disable_unmodeled_dl.phpt",
+    );
+    assert_eq!(
+        unmodeled_disabled_function.trim_end(),
         "runnable\tselected for PTN semantic measurement"
     );
 

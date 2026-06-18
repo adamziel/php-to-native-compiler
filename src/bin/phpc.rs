@@ -208,6 +208,7 @@ struct RuntimeIni {
     filter_default: Option<String>,
     pcre_backtrack_limit: Option<String>,
     pcre_jit: Option<String>,
+    opcache: Vec<(String, String)>,
     opcache_save_comments: Option<String>,
     phar_readonly: Option<String>,
     phar_require_hash: Option<String>,
@@ -387,8 +388,13 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.pcre_backtrack_limit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.jit") {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
-    } else if name.eq_ignore_ascii_case("opcache.save_comments") {
-        ini.opcache_save_comments = Some(normalize_ini_scalar(raw_value));
+    } else if let Some(canonical_name) = canonical_opcache_ini_name(name) {
+        let value = normalize_ini_scalar(raw_value);
+        ini.opcache
+            .push((canonical_name.to_string(), value.clone()));
+        if canonical_name.eq_ignore_ascii_case("opcache.save_comments") {
+            ini.opcache_save_comments = Some(value);
+        }
     } else if name.eq_ignore_ascii_case("phar.readonly") {
         ini.phar_readonly = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("phar.require_hash") {
@@ -456,6 +462,31 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     } else if name.eq_ignore_ascii_case("user_agent") {
         ini.user_agent = Some(normalize_ini_scalar(raw_value));
     }
+}
+
+fn canonical_opcache_ini_name(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "opcache.blacklist_filename" => Some("opcache.blacklist_filename"),
+        "opcache.enable" => Some("opcache.enable"),
+        "opcache.enable_cli" => Some("opcache.enable_cli"),
+        "opcache.fast_shutdown" => Some("opcache.fast_shutdown"),
+        "opcache.file_cache_only" => Some("opcache.file_cache_only"),
+        "opcache.file_update_protection" => Some("opcache.file_update_protection"),
+        "opcache.interned_strings_buffer" => Some("opcache.interned_strings_buffer"),
+        "opcache.log_verbosity_level" => Some("opcache.log_verbosity_level"),
+        "opcache.optimization_level" => Some("opcache.optimization_level"),
+        "opcache.opt_debug_level" => Some("opcache.opt_debug_level"),
+        "opcache.preload" => Some("opcache.preload"),
+        "opcache.preload_user" => Some("opcache.preload_user"),
+        "opcache.save_comments" => Some("opcache.save_comments"),
+        "opcache.validate_timestamps" => Some("opcache.validate_timestamps"),
+        _ => None,
+    }
+}
+
+fn opcache_ini_env_name(name: &str) -> Option<String> {
+    canonical_opcache_ini_name(name)
+        .map(|canonical| format!("PTN_{}", canonical.to_ascii_uppercase().replace('.', "_")))
 }
 
 fn normalize_ini_scalar(raw_value: &str) -> String {
@@ -739,6 +770,7 @@ fn compile_and_run(
         filter_default: ini.filter_default.clone(),
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
+        opcache: ini.opcache.clone(),
         opcache_save_comments: ini.opcache_save_comments.clone(),
         phar_readonly: ini.phar_readonly.clone(),
         phar_require_hash: ini.phar_require_hash.clone(),
@@ -839,6 +871,11 @@ fn compile_and_run(
     }
     if let Some(pcre_jit) = &ini.pcre_jit {
         command.env("PTN_PCRE_JIT", pcre_jit);
+    }
+    for (name, value) in &ini.opcache {
+        if let Some(env_name) = opcache_ini_env_name(name) {
+            command.env(env_name, value);
+        }
     }
     if let Some(opcache_save_comments) = &ini.opcache_save_comments {
         command.env("PTN_OPCACHE_SAVE_COMMENTS", opcache_save_comments);
