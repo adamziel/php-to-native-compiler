@@ -6771,7 +6771,7 @@ static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
     ) {
         return ptn_null();
     }
-    return iterator->runtime->method_dispatch(
+    PtnValue result = iterator->runtime->method_dispatch(
         iterator->runtime,
         iterator->iterator_object,
         method_name,
@@ -6779,6 +6779,12 @@ static PTN_UNUSED PtnValue ptn_protocol_iterator_call(
         NULL,
         iterator->line
     );
+    if (iterator->runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        ptn_rethrow_exception(iterator->runtime);
+        return ptn_null();
+    }
+    return result;
 }
 
 static PTN_UNUSED void ptn_protocol_iterator_refresh_valid(PtnArrayIterator *iterator) {
@@ -6935,6 +6941,7 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         PtnValue result = runtime->method_dispatch(runtime, value, "getIterator", 0, NULL, line);
         if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&result);
+            ptn_rethrow_exception(runtime);
             return ptn_array_iterator_empty();
         }
         PtnValue resolved = ptn_value_deref(result);
