@@ -819,8 +819,13 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "    const char *path = runtime->source_path != NULL ? runtime->source_path : \"ptn\";\n",
     );
-    out.push_str("    const char *throw_path = declaration_path != NULL ? declaration_path : runtime->source_path;\n");
-    out.push_str("    size_t throw_line = declaration_line != 0 ? declaration_line : line;\n");
+    out.push_str(
+        "    int include_definition = declaration_path != NULL && declaration_line != 0;\n",
+    );
+    out.push_str(
+        "    const char *throw_path = include_definition ? declaration_path : runtime->source_path;\n",
+    );
+    out.push_str("    size_t throw_line = include_definition ? declaration_line : line;\n");
     out.push_str("    int needed;\n");
     out.push_str("    if (line != 0 && has_parameter_name) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"%s(): Argument #%zu ($%s) must be of type %s, %s given, called in %s on line %zu\", function_name, position, parameter_name, expected_class_name, given, path, line);\n");
@@ -847,7 +852,11 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given\", function_name, position, expected_class_name, given);\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, throw_path, throw_line);\n");
+    out.push_str("    if (include_definition) {\n");
+    out.push_str("        ptn_throw_exception_owned_message_at_defined_location(runtime, \"TypeError\", message, throw_path, throw_line);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, throw_path, throw_line);\n");
+    out.push_str("    }\n");
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_user_parameter_string_is_numeric(PtnString string, double *number) {\n");

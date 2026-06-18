@@ -1454,18 +1454,25 @@ static PTN_UNUSED PtnStringOperand ptn_exception_to_string_operand(
     if (exception->message_len != 0) {
         ptn_string_buffer_append(&buffer, ": ");
         ptn_string_buffer_append_len(&buffer, exception->message, exception->message_len);
+        if (
+            exception->message_defined_at_location &&
+            exception->path != NULL &&
+            exception->line != 0
+        ) {
+            ptn_string_buffer_append_format(
+                &buffer,
+                " and defined in %s:%zu",
+                exception->path,
+                exception->line
+            );
+        }
     }
-    if (
-        strcmp(exception->class_name, "TypeError") == 0 &&
-        exception->message != NULL &&
-        strstr(exception->message, ", called in ") != NULL
-    ) {
-        ptn_string_buffer_append(&buffer, " and defined in ");
-    } else {
+    if (!exception->message_defined_at_location) {
         ptn_string_buffer_append(&buffer, " in ");
+        ptn_string_buffer_append(&buffer, exception->path == NULL ? "ptn" : exception->path);
+        ptn_string_buffer_append_format(&buffer, ":%zu", exception->line);
     }
-    ptn_string_buffer_append(&buffer, exception->path == NULL ? "ptn" : exception->path);
-    ptn_string_buffer_append_format(&buffer, ":%zu\nStack trace:\n", exception->line);
+    ptn_string_buffer_append(&buffer, "\nStack trace:\n");
     PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
     ptn_string_buffer_append_len(&buffer, trace.data, trace.len);
     free(trace.owned);
@@ -1515,10 +1522,17 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->code = code;
     exception->path = path;
     exception->line = line;
+    exception->message_defined_at_location = 0;
     exception->trace = ptn_exception_capture_trace(runtime);
     exception->previous = ptn_value_clone_deref(previous);
     exception->severity = severity;
     return exception;
+}
+
+static PTN_UNUSED void ptn_exception_mark_message_defined_at_location(PtnException *exception) {
+    if (exception != NULL) {
+        exception->message_defined_at_location = 1;
+    }
 }
 
 static PTN_UNUSED PtnException *ptn_exception_new_owned_cstr(
@@ -1746,23 +1760,29 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_chain_entry(
         fputc('\n', stderr);
         fprintf(
             stderr,
-            "%s: Uncaught %s: %s in %s:%zu\n",
+            "%s: Uncaught %s: %s",
             first_label,
             exception->class_name,
-            exception->message,
-            display_path,
-            display_line
+            exception->message
         );
+        if (exception->message_defined_at_location && exception->path != NULL && exception->line != 0) {
+            fprintf(stderr, " and defined in %s:%zu\n", exception->path, exception->line);
+        } else {
+            fprintf(stderr, " in %s:%zu\n", display_path, display_line);
+        }
         *first = 0;
     } else {
         fprintf(
             stderr,
-            "\nNext %s: %s in %s:%zu\n",
+            "\nNext %s: %s",
             exception->class_name,
-            exception->message,
-            display_path,
-            display_line
+            exception->message
         );
+        if (exception->message_defined_at_location && exception->path != NULL && exception->line != 0) {
+            fprintf(stderr, " and defined in %s:%zu\n", exception->path, exception->line);
+        } else {
+            fprintf(stderr, " in %s:%zu\n", display_path, display_line);
+        }
     }
     fputs("Stack trace:\n#0 {main}\n", stderr);
 }
@@ -1820,8 +1840,18 @@ static PTN_UNUSED void ptn_emit_uncaught_exception_with_label(
     if (exception->message_len != 0) {
         fputs(": ", stderr);
         fwrite(exception->message, 1, exception->message_len, stderr);
+        if (
+            exception->message_defined_at_location &&
+            exception->path != NULL &&
+            exception->line != 0
+        ) {
+            fprintf(stderr, " and defined in %s:%zu", exception->path, exception->line);
+        }
     }
-    fprintf(stderr, " in %s:%zu\n", display_path, display_line);
+    if (!exception->message_defined_at_location) {
+        fprintf(stderr, " in %s:%zu", display_path, display_line);
+    }
+    fputc('\n', stderr);
     fputs("Stack trace:\n", stderr);
     PtnStringOperand trace = ptn_exception_trace_as_string_operand(runtime, exception);
     fwrite(trace.data, 1, trace.len, stderr);
@@ -1948,6 +1978,35 @@ static PTN_UNUSED void ptn_throw_exception_owned_message_at(
         path,
         line
     );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
+static PTN_UNUSED void ptn_throw_exception_owned_message_at_defined_location(
+    PtnRuntime *runtime,
+    const char *class_name,
+    char *message,
+    const char *path,
+    size_t line
+) {
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        class_name,
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        path,
+        line
+    );
+    ptn_exception_mark_message_defined_at_location(exception);
     ptn_exception_free(runtime->exceptions->active_exception);
     runtime->exceptions->active_exception = exception;
     if (runtime->exceptions->try_frame != NULL) {

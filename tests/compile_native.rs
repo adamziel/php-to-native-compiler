@@ -20175,6 +20175,57 @@ class TestStrict {}
 }
 
 #[test]
+fn compile_reflection_attribute_constructor_type_error_message_omits_definition_suffix() {
+    let root = temp_dir("ptn-native-reflection-attribute-type-error-message");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-attribute-type-error-message.php");
+    let output = root.join("reflection-attribute-type-error-message-bin");
+    fs::write(
+        &input,
+        r#"<?php
+#[Attribute]
+class A {
+    public function __construct(public string $name) {}
+}
+
+#[A([])]
+class Subject {}
+
+$attribute = (new ReflectionClass(Subject::class))->getAttributes()[0];
+try {
+    $attribute->newInstance();
+} catch (TypeError $e) {
+    echo "message=", $e->getMessage(), "\n";
+    echo "string=", $e, "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "message=A::__construct(): Argument #1 ($name) must be of type string, array given, called in "
+        ),
+        "{stdout}"
+    );
+    let message_line = stdout.lines().next().unwrap();
+    assert!(!message_line.contains("and defined in"), "{stdout}");
+    assert!(
+        stdout.contains(
+            "string=TypeError: A::__construct(): Argument #1 ($name) must be of type string, array given, called in "
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains(" and defined in "), "{stdout}");
+}
+
+#[test]
 fn compile_internal_attribute_object_readonly_properties_to_native_binary() {
     let root = temp_dir("ptn-native-internal-attribute-readonly");
     fs::create_dir_all(&root).unwrap();

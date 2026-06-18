@@ -852,6 +852,7 @@ struct PtnException {
     int64_t code;
     const char *path;
     size_t line;
+    int message_defined_at_location;
     PtnValue trace;
     PtnValue previous;
     int64_t severity;
