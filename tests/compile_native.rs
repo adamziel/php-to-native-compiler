@@ -48015,6 +48015,52 @@ var_dump($object);
 }
 
 #[test]
+fn compile_var_dump_magic_debug_info_to_native_binary() {
+    let root = temp_dir("ptn-native-var-dump-magic-debug-info");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-dump-magic-debug-info.php");
+    let output = root.join("var-dump-magic-debug-info-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    public $d = 4;
+    public function __debugInfo() {
+        return ['a' => 1, \"\\0*\\0b\" => 2, \"\\0Foo\\0c\" => 3, '' => 4];
+    }
+}
+var_dump(new Foo());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(Foo)#1 (4) {\n",
+            "  [\"a\"]=>\n",
+            "  int(1)\n",
+            "  [\"b\":protected]=>\n",
+            "  int(2)\n",
+            "  [\"c\":\"Foo\":private]=>\n",
+            "  int(3)\n",
+            "  [\"\"]=>\n",
+            "  int(4)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump_value(&runtime"));
+    assert!(c_source.contains("ptn_declared_magic_debug_info"));
+}
+
+#[test]
 fn compile_declared_non_public_property_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-non-public-property-metadata");
     fs::create_dir_all(&root).unwrap();
