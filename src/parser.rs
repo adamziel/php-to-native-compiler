@@ -15496,15 +15496,40 @@ fn validate_array_reference_lvalue_expr(expr: &Expr, temporary_message: &str) ->
                     Expr::ArrayAccess { .. } => {
                         validate_array_reference_lvalue_expr(expr.as_ref(), temporary_message)
                     }
-                    _ => Err(Diagnostic::new(temporary_message, Some(*span))),
+                    _ => validate_temporary_array_reference_source_root(
+                        expr.as_ref(),
+                        temporary_message,
+                        *span,
+                    ),
                 },
                 Expr::ArrayAccess { .. } => {
                     validate_array_reference_lvalue_expr(array.as_ref(), temporary_message)
                 }
-                _ => Err(Diagnostic::new(temporary_message, Some(*span))),
+                _ => validate_temporary_array_reference_source_root(
+                    array.as_ref(),
+                    temporary_message,
+                    *span,
+                ),
             }
         }
         _ => Err(Diagnostic::new(temporary_message, Some(expr.span()))),
+    }
+}
+
+fn validate_temporary_array_reference_source_root(
+    expr: &Expr,
+    temporary_message: &str,
+    span: SourceSpan,
+) -> Result<()> {
+    match expr {
+        Expr::Grouped { expr, .. } => {
+            validate_temporary_array_reference_source_root(expr, temporary_message, span)
+        }
+        Expr::Call { .. }
+        | Expr::DynamicCall { .. }
+        | Expr::MethodCall { .. }
+        | Expr::DynamicMethodCall { .. } => Ok(()),
+        _ => Err(Diagnostic::new(temporary_message, Some(span))),
     }
 }
 
