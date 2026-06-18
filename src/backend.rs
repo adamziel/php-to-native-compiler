@@ -32049,7 +32049,7 @@ impl ValueEmitter {
                     return self.emit_reference_source(out, argument, line);
                 }
                 if allow_temporary && by_ref_temporary_argument_allowed(argument) {
-                    let value_temp = self.emit_raw_materialized_value(out, argument);
+                    let value_temp = self.emit_reference_candidate_value(out, argument);
                     let reference_temp = self.next_temp();
                     out.push_str("    PtnValue ");
                     out.push_str(&reference_temp);
