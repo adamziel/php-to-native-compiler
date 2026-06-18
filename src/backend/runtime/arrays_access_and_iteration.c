@@ -3178,6 +3178,100 @@ static PTN_UNUSED void ptn_throw_dynamic_property_readonly_class_error(
     ptn_throw_exception(runtime, "Error", message);
 }
 
+static PTN_UNUSED int ptn_object_is_php_incomplete_class(PtnObject *object) {
+    return object != NULL && ptn_ascii_case_equal(object->class_name, "__PHP_Incomplete_Class");
+}
+
+static PTN_UNUSED char *ptn_incomplete_class_original_name(PtnObject *object) {
+    if (object != NULL && object->properties != NULL) {
+        PtnArrayKey key = ptn_array_string_key("__PHP_Incomplete_Class_Name");
+        PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+        ptn_array_key_free(key);
+        if (entry != NULL) {
+            PtnValue value = ptn_value_deref(entry->value);
+            if (value.type == PTN_STRING) {
+                return ptn_duplicate_string_len(
+                    (const char *)value.as.string.data,
+                    value.as.string.len
+                );
+            }
+        }
+    }
+    return ptn_duplicate_string("unknown");
+}
+
+static PTN_UNUSED char *ptn_incomplete_class_property_message(
+    PtnObject *object,
+    const char *operation
+) {
+    char *class_name = ptn_incomplete_class_original_name(object);
+    int needed = snprintf(
+        NULL,
+        0,
+        "The script tried to %s a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        operation,
+        class_name
+    );
+    if (needed < 0) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(class_name);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        (size_t)needed + 1,
+        "The script tried to %s a property on an incomplete object. Please ensure that the class definition \"%s\" of the object you are trying to operate on was loaded _before_ unserialize() gets called or provide an autoloader to load the class definition",
+        operation,
+        class_name
+    );
+    free(class_name);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    return message;
+}
+
+static PTN_UNUSED void ptn_emit_incomplete_class_property_read_warning(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    char *details = ptn_incomplete_class_property_message(object, "access");
+    int needed = snprintf(NULL, 0, "main(): %s", details);
+    if (needed < 0) {
+        free(details);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(details);
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, (size_t)needed + 1, "main(): %s", details);
+    free(details);
+    if (written < 0 || written != needed) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static PTN_UNUSED void ptn_throw_incomplete_class_property_write_error(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t line
+) {
+    char *message = ptn_incomplete_class_property_message(object, "modify");
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+    free(message);
+}
+
 static PTN_UNUSED int ptn_object_class_allows_dynamic_properties(
     PtnRuntime *runtime,
     const char *class_name
@@ -3754,6 +3848,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (ptn_object_is_php_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_class_property_read_warning(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         int local_lazy_slot = 0;
         char *lazy_storage_key = ptn_object_resolve_property_storage_key(
@@ -3939,6 +4037,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
         ptn_throw_property_modification_on_non_object(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (ptn_object_is_php_incomplete_class(receiver.as.object)) {
+        ptn_throw_incomplete_class_property_write_error(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
             return ptn_null();
@@ -4053,6 +4155,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
         ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (ptn_object_is_php_incomplete_class(receiver.as.object)) {
+        ptn_throw_incomplete_class_property_write_error(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
         if (!ptn_lazy_object_initialize(runtime, receiver, line)) {
             return ptn_null();
@@ -4161,6 +4267,10 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
         ptn_emit_non_object_property_read_warning(runtime, property, receiver, line);
         return ptn_null();
     }
+    if (ptn_object_is_php_incomplete_class(receiver.as.object)) {
+        ptn_emit_incomplete_class_property_read_warning(runtime, receiver.as.object, line);
+        return ptn_null();
+    }
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
@@ -4239,6 +4349,9 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
         return ptn_lookup_found(exception_property);
     }
     if (receiver.type != PTN_OBJECT) {
+        return ptn_lookup_missing();
+    }
+    if (ptn_object_is_php_incomplete_class(receiver.as.object)) {
         return ptn_lookup_missing();
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {
@@ -4438,6 +4551,10 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         } else {
             ptn_throw_property_assignment_on_non_object(runtime, property, receiver, line);
         }
+        return ptn_null();
+    }
+    if (ptn_object_is_php_incomplete_class(receiver.as.object)) {
+        ptn_throw_incomplete_class_property_write_error(runtime, receiver.as.object, line);
         return ptn_null();
     }
     if (receiver.as.object->lazy_uninitialized && !receiver.as.object->lazy_initializing) {

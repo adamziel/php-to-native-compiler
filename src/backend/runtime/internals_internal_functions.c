@@ -1087,10 +1087,21 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_key(
         return;
     }
     const PtnObjectPropertyMetadata *metadata =
-        object == NULL ? NULL : ptn_object_property_metadata(object, key.as.string);
+        object != NULL && memchr(key.as.string, '\0', key.string_len) == NULL
+            ? ptn_object_property_metadata(object, key.as.string)
+            : NULL;
     const char *display_name = metadata == NULL ? key.as.string : metadata->display_name;
     if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
-        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", display_name);
+        size_t display_len = metadata == NULL ? key.string_len : strlen(display_name);
+        ptn_direct_dump_write_cstr(runtime, "[\"");
+        for (size_t i = 0; i < display_len; i++) {
+            if (display_name[i] == '\0') {
+                ptn_direct_dump_write_cstr(runtime, "\\0");
+            } else {
+                ptn_direct_dump_write(runtime, &display_name[i], 1);
+            }
+        }
+        ptn_direct_dump_write_cstr(runtime, "\"]=>\n");
     } else if (metadata->read_visibility == PTN_PROPERTY_PROTECTED) {
         ptn_direct_dump_printf(runtime, "[\"%s\":protected]=>\n", display_name);
     } else {
@@ -3550,9 +3561,11 @@ static size_t ptn_object_initialized_property_dump_count(PtnObject *object) {
     size_t count = 0;
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
-        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
-            ? ptn_object_property_metadata(object, entry->key.as.string)
-            : NULL;
+        const PtnObjectPropertyMetadata *metadata =
+            entry->key.type == PTN_ARRAY_KEY_STRING &&
+                    memchr(entry->key.as.string, '\0', entry->key.string_len) == NULL
+                ? ptn_object_property_metadata(object, entry->key.as.string)
+                : NULL;
         if (object->lazy_uninitialized && !object->lazy_initializing &&
             (metadata == NULL || !metadata->lazy_skip)) {
             continue;
@@ -3710,9 +3723,11 @@ static void ptn_var_dump_object_initialized_properties(
     }
     for (size_t i = 0; i < object->properties->len; i++) {
         PtnArrayEntry *entry = &object->properties->entries[i];
-        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
-            ? ptn_object_property_metadata(object, entry->key.as.string)
-            : NULL;
+        const PtnObjectPropertyMetadata *metadata =
+            entry->key.type == PTN_ARRAY_KEY_STRING &&
+                    memchr(entry->key.as.string, '\0', entry->key.string_len) == NULL
+                ? ptn_object_property_metadata(object, entry->key.as.string)
+                : NULL;
         if (metadata != NULL) {
             continue;
         }

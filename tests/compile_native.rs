@@ -10364,6 +10364,57 @@ var_dump(unserialize($encoded));
 }
 
 #[test]
+fn compile_incomplete_class_access_and_nul_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-incomplete-class-access");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("incomplete-class-access.php");
+    let output = root.join("incomplete-class-access-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$encoded = serialize(new __PHP_Incomplete_Class);
+$object = unserialize($encoded);
+try {
+    $object->test = "a";
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+}
+var_dump($object->test);
+
+$missing = 'O:8:"Missing_":1:{s:33:"__PHP_Incomplete_Class_Name' . "\0" . 'other";i:123;}';
+ob_start();
+var_dump(unserialize($missing));
+echo str_replace("\0", "\\0", ob_get_clean());
+echo serialize(unserialize('O:9:"TestClass":0:{}')), "\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("The script tried to modify a property on an incomplete object"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: main(): The script tried to access a property on an incomplete object"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.contains("NULL\n"), "{stdout}");
+    assert!(
+        stdout.contains(r#"["__PHP_Incomplete_Class_Name\0other"]=>"#),
+        "{stdout}"
+    );
+    assert!(stdout.contains("O:9:\"TestClass\":0:{}"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_unserialize_preserves_iterator_class_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-iterator-class-unserialize");
     fs::create_dir_all(&root).unwrap();
