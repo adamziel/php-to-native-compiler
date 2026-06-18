@@ -1646,12 +1646,6 @@ ptn_phpt_first_unsupported_language_surface() {
                 line ~ /[.][.][.][[:space:]]*[a-z_\\][a-z0-9_\\]*[[:space:]]*[(]/) {
                 ptn_deferred_generator_reason = ""
             }
-            if (!ptn_static_local_context && ptn_class_body_depth == 0 &&
-                line ~ /(^|[;{}])[[:space:]]*static[[:space:]]+\$[a-z_]/) {
-                print "unsupported-function-state\trequires top-level static variable diagnostics, outside PTN function-local static storage model"
-                found = 1
-                exit
-            }
             if (ptn_function_body_depth > 0 && ptn_line_close_braces > 0) {
                 ptn_function_body_depth -= ptn_line_close_braces
                 if (ptn_function_body_depth < 0) {

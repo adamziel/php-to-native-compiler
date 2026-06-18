@@ -378,6 +378,7 @@ impl Parser<'_> {
         validate_void_returns(&functions)?;
         validate_never_returns(&functions)?;
         validate_typed_returns_have_values(&functions)?;
+        validate_script_static_local_declarations(&statements)?;
         validate_anonymous_functions_in_statements(&statements, &functions)?;
         validate_reference_assignment_sources(&statements, &functions)?;
         validate_control_transfers_in_statements(&statements, 0)?;
@@ -4411,13 +4412,6 @@ impl Parser<'_> {
 
     fn parse_static_local(&mut self) -> Result<Statement> {
         let span = self.advance().span;
-        if self.function_depth == 0 {
-            return Err(Diagnostic::new(
-                "static local variables must be declared inside a function",
-                Some(span),
-            ));
-        }
-
         let mut declarations = vec![self.parse_static_local_declaration()?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
@@ -8410,6 +8404,80 @@ fn find_static_local_declaration_matching<'a>(
         }
     }
     None
+}
+
+fn validate_script_static_local_declarations(statements: &[Statement]) -> Result<()> {
+    let mut names = HashSet::new();
+    validate_static_local_declaration_names(statements, &mut names)
+}
+
+fn validate_static_local_declaration_names<'a>(
+    statements: &'a [Statement],
+    names: &mut HashSet<&'a str>,
+) -> Result<()> {
+    for statement in statements {
+        match statement {
+            Statement::Static { declarations, .. } => {
+                for declaration in declarations {
+                    if !names.insert(declaration.name.as_str()) {
+                        return Err(Diagnostic::new(
+                            format!(
+                                "Duplicate declaration of static variable ${}",
+                                declaration.name
+                            ),
+                            Some(declaration.span),
+                        ));
+                    }
+                }
+            }
+            Statement::Block { statements, .. } => {
+                validate_static_local_declaration_names(statements, names)?;
+            }
+            Statement::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                validate_static_local_declaration_names(then_body, names)?;
+                validate_static_local_declaration_names(else_body, names)?;
+            }
+            Statement::While { body, .. } | Statement::DoWhile { body, .. } => {
+                validate_static_local_declaration_names(body, names)?;
+            }
+            Statement::For {
+                initializers,
+                updates,
+                body,
+                ..
+            } => {
+                validate_static_local_declaration_names(initializers, names)?;
+                validate_static_local_declaration_names(updates, names)?;
+                validate_static_local_declaration_names(body, names)?;
+            }
+            Statement::Foreach { body, .. } => {
+                validate_static_local_declaration_names(body, names)?;
+            }
+            Statement::Switch { cases, .. } => {
+                for case in cases {
+                    validate_static_local_declaration_names(&case.body, names)?;
+                }
+            }
+            Statement::Try {
+                body,
+                catches,
+                finally_body,
+                ..
+            } => {
+                validate_static_local_declaration_names(body, names)?;
+                for catch in catches {
+                    validate_static_local_declaration_names(&catch.body, names)?;
+                }
+                validate_static_local_declaration_names(finally_body, names)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn is_auto_global_name(name: &str) -> bool {
