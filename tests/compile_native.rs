@@ -6008,6 +6008,28 @@ function old_fn() {}
         "Attribute \"Attribute\" cannot target constant (allowed targets: class)"
     );
 
+    let enum_attribute_target = parser::parse("<?php #[Attribute] enum Demo {}").unwrap_err();
+    assert_eq!(enum_attribute_target.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        enum_attribute_target.message,
+        "Cannot apply #[\\Attribute] to enum Demo"
+    );
+
+    let enum_dynamic_properties_target =
+        parser::parse("<?php #[AllowDynamicProperties] enum Demo {}").unwrap_err();
+    assert_eq!(enum_dynamic_properties_target.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        enum_dynamic_properties_target.message,
+        "Cannot apply #[\\AllowDynamicProperties] to enum Demo"
+    );
+
+    let enum_deprecated_target = parser::parse("<?php #[Deprecated] enum Demo {}").unwrap_err();
+    assert_eq!(enum_deprecated_target.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        enum_deprecated_target.message,
+        "Cannot apply #[\\Deprecated] to enum Demo"
+    );
+
     let repeated_const_deprecated =
         parser::parse("<?php #[Deprecated] #[Deprecated] const MY_CONST = true;").unwrap_err();
     assert_eq!(repeated_const_deprecated.kind, DiagnosticKind::Fatal);
@@ -19042,6 +19064,68 @@ var_dump(ReflectionClassConstant::IS_PUBLIC, ReflectionClassConstant::IS_PROTECT
     assert!(c_source.contains("ptn_declared_class_reflection_constants"));
     assert!(c_source.contains("ptn_declared_class_reflection_constant_modifiers"));
     assert!(c_source.contains("ptn_declared_class_reflection_constant_is_deprecated"));
+}
+
+#[test]
+fn compile_enum_reflection_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-reflection-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-reflection-metadata.php");
+    let output = root.join("enum-reflection-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Status {
+    #[Deprecated(\"use Status::Ok instead\")]
+    case Old;
+    case Ok;
+    const Alias = self::Ok;
+}
+
+class PlainConstantBox {
+    const VALUE = 1;
+}
+
+var_dump((new ReflectionClass(PlainConstantBox::class))->isEnum());
+var_dump((new ReflectionClass(Status::class))->isEnum());
+var_dump((new ReflectionClassConstant(Status::class, 'Old'))->isEnumCase());
+var_dump((new ReflectionClassConstant(Status::class, 'Alias'))->isEnumCase());
+var_dump((new ReflectionClassConstant(PlainConstantBox::class, 'VALUE'))->isEnumCase());
+Status::Old;
+
+try {
+    new ArrayObject(Status::Ok);
+} catch (InvalidArgumentException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(false)\nbool(true)\nbool(true)\nbool(false)\nbool(false)\n"));
+    assert!(
+        stdout.contains("Deprecated: Enum case Status::Old is deprecated, use Status::Ok instead"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Deprecated: ArrayObject::__construct(): Using an object as a backing array for ArrayObject is deprecated"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Enums are not compatible with ArrayObject"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_is_enum"));
+    assert!(c_source.contains("ptn_declared_class_reflection_constant_is_enum_case"));
+    assert!(c_source.contains("Enum case Status::Old is deprecated"));
 }
 
 #[test]

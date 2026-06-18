@@ -12205,6 +12205,12 @@ fn validate_builtin_attribute_targets(
         )?;
         if class.attributes.has_attribute && !attribute_delays_target_validation(&class.attributes)
         {
+            if class.is_enum {
+                return Err(Diagnostic::new(
+                    format!("Cannot apply #[\\Attribute] to enum {}", class.name),
+                    Some(class.span),
+                ));
+            }
             if class.is_interface {
                 return Err(Diagnostic::new(
                     format!("Cannot apply #[\\Attribute] to interface {}", class.name),
@@ -12222,16 +12228,26 @@ fn validate_builtin_attribute_targets(
             }
         }
         if class.attributes.has_allow_dynamic_properties
-            && class.is_interface
             && !attribute_delays_target_validation(&class.attributes)
         {
-            return Err(Diagnostic::new(
-                format!(
-                    "Cannot apply #[\\AllowDynamicProperties] to interface {}",
-                    class.name
-                ),
-                Some(class.span),
-            ));
+            if class.is_enum {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to enum {}",
+                        class.name
+                    ),
+                    Some(class.span),
+                ));
+            }
+            if class.is_interface {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to interface {}",
+                        class.name
+                    ),
+                    Some(class.span),
+                ));
+            }
         }
         if class.attributes.deprecated_message.is_some()
             && class.is_interface
@@ -12243,7 +12259,17 @@ fn validate_builtin_attribute_targets(
             ));
         }
         if class.attributes.deprecated_message.is_some()
+            && class.is_enum
+            && !attribute_delays_target_validation(&class.attributes)
+        {
+            return Err(Diagnostic::new(
+                format!("Cannot apply #[\\Deprecated] to enum {}", class.name),
+                Some(class.span),
+            ));
+        }
+        if class.attributes.deprecated_message.is_some()
             && !class.is_interface
+            && !class.is_enum
             && !attribute_delays_target_validation(&class.attributes)
         {
             return Err(Diagnostic::new(

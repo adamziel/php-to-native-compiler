@@ -1842,6 +1842,37 @@ fn phpt_classifier_excludes_unsupported_runtime_diagnostics_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_allows_focused_enum_metadata_rows() {
+    let enum_row = "--TEST--\nenum metadata\n--FILE--\n<?php\nenum Demo { case A; }\n--EXPECT--\n";
+    for path in [
+        "Zend/tests/attributes/Attribute/Attribute_on_enum.phpt",
+        "Zend/tests/attributes/allow_dynamic_properties_on_enum.phpt",
+        "Zend/tests/attributes/deprecated/class_constants/101.phpt",
+        "Zend/tests/attributes/deprecated/error_on_enum.phpt",
+        "Zend/tests/attributes/override/014.phpt",
+        "Zend/tests/attributes/override/015.phpt",
+        "ext/reflection/tests/ReflectionClassConstant_isEnumCase.phpt",
+        "ext/reflection/tests/ReflectionClass_isEnum.phpt",
+        "ext/spl/tests/ArrayObject/ArrayObject_enum.phpt",
+    ] {
+        let classification = classify_at_relative_path(enum_row, path);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{path}: {classification:?}"
+        );
+    }
+
+    let delayed = classify_at_relative_path(
+        enum_row,
+        "Zend/tests/attributes/delayed_target_validation/validator_Attribute.phpt",
+    );
+    assert!(
+        delayed.starts_with("unsupported-enum-metadata\t"),
+        "{delayed:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_excludes_unmodeled_pcre_array_pattern_rows() {
     let classification = classify(
         "--TEST--\npcre array pattern\n--INI--\npcre.jit=0\n--FILE--\n<?php\nvar_dump(preg_replace(array('#x#'), '', 'x'));\n--EXPECT--\n",

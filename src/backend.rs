@@ -5314,6 +5314,35 @@ fn emit_class_metadata_helpers(
         out.push_str("}\n");
 
         out.push_str(
+            "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_enum_case(const char *class_name, const char *constant_name) {\n",
+        );
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_class_constant_lookup_entries {
+            out.push_str("    (void)constant_name;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_constant_lookup_chain(class, classes) {
+                let constant = entry.constant;
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ");
+                out.push_str(if constant.is_enum_case { "1" } else { "0" });
+                out.push_str(";\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return 0;\n");
+        out.push_str("}\n");
+
+        out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name) {\n",
         );
         if classes.is_empty() {
@@ -16535,10 +16564,25 @@ fn class_constant_deprecated_warning_message(
         return None;
     }
     deprecated_warning_message_for_parts(
-        &format!("Constant {}::{}", class.name, constant.name),
+        &class_constant_deprecated_subject(class, constant),
         constant.deprecated_message.as_deref(),
         constant.deprecated_since.as_deref(),
     )
+}
+
+fn class_constant_deprecated_subject(class: &ClassDecl, constant: &ClassConstantDecl) -> String {
+    class_constant_deprecated_subject_for_name(&class.name, constant)
+}
+
+fn class_constant_deprecated_subject_for_name(
+    class_name: &str,
+    constant: &ClassConstantDecl,
+) -> String {
+    if constant.is_enum_case {
+        format!("Enum case {}::{}", class_name, constant.name)
+    } else {
+        format!("Constant {}::{}", class_name, constant.name)
+    }
 }
 
 fn class_constant_deprecated_runtime_message_reference(
@@ -16602,10 +16646,10 @@ fn emit_class_constant_deprecation_from_runtime_reference(
     out.push_str(&c_string(&class.name));
     out.push_str("\", \"");
     out.push_str(&c_string(&constant.name));
-    out.push_str("\", \"Constant ");
-    out.push_str(&c_string(&class.name));
-    out.push_str("::");
-    out.push_str(&c_string(&constant.name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(&class_constant_deprecated_subject(
+        class, constant,
+    )));
     out.push_str("\", \"");
     out.push_str(&c_string(
         constant.deprecated_since.as_deref().unwrap_or(""),
@@ -17483,7 +17527,7 @@ impl ValueEmitter {
             return None;
         }
         let message = deprecated_warning_message_for_parts(
-            &format!("Constant {}::{}", resolved_class_name, name),
+            &class_constant_deprecated_subject_for_name(&resolved_class_name, constant),
             constant.deprecated_message.as_deref(),
             constant.deprecated_since.as_deref(),
         )?;

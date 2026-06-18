@@ -1,0 +1,14 @@
+# Focused enum metadata PHPT row pack for ptn-w17z.139.
+# Paths are relative to PHP_SRC_PHPT.
+Zend/tests/attributes/Attribute/Attribute_on_enum.phpt
+Zend/tests/attributes/allow_dynamic_properties_on_enum.phpt
+Zend/tests/attributes/delayed_target_validation/validator_AllowDynamicProperties.phpt
+Zend/tests/attributes/delayed_target_validation/validator_Attribute.phpt
+Zend/tests/attributes/delayed_target_validation/validator_Deprecated.phpt
+Zend/tests/attributes/deprecated/class_constants/101.phpt
+Zend/tests/attributes/deprecated/error_on_enum.phpt
+Zend/tests/attributes/override/014.phpt
+Zend/tests/attributes/override/015.phpt
+ext/reflection/tests/ReflectionClassConstant_isEnumCase.phpt
+ext/reflection/tests/ReflectionClass_isEnum.phpt
+ext/spl/tests/ArrayObject/ArrayObject_enum.phpt

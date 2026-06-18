@@ -48151,6 +48151,7 @@ static int ptn_declared_attribute_class_flags(
 static PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name);
+static int ptn_declared_class_reflection_constant_is_enum_case(const char *class_name, const char *constant_name);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
 static PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
@@ -50513,6 +50514,7 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isInstantiable")
         || ptn_ascii_case_equal(method_name, "isInterface")
         || ptn_ascii_case_equal(method_name, "isInternal")
+        || ptn_ascii_case_equal(method_name, "isEnum")
         || ptn_ascii_case_equal(method_name, "isIterable")
         || ptn_ascii_case_equal(method_name, "isIterateable")
         || ptn_ascii_case_equal(method_name, "isReadOnly")
@@ -50609,6 +50611,7 @@ static int ptn_reflection_class_constant_method_exists(const char *method_name) 
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getValue")
         || ptn_ascii_case_equal(method_name, "isDeprecated")
+        || ptn_ascii_case_equal(method_name, "isEnumCase")
         || ptn_ascii_case_equal(method_name, "isFinal")
         || ptn_ascii_case_equal(method_name, "isPrivate")
         || ptn_ascii_case_equal(method_name, "isProtected")
@@ -56975,6 +56978,10 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_reflection_class_is_interface_name(class_name));
     }
+    if (ptn_ascii_case_equal(name, "isEnum")) {
+        ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_declared_class_is_enum(class_name));
+    }
     if (ptn_ascii_case_equal(name, "isInternal")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(ptn_reflection_class_is_internal_name(class_name));
@@ -57363,6 +57370,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
     }
     if (ptn_ascii_case_equal(name, "isDeprecated")) {
         return ptn_bool(ptn_declared_class_reflection_constant_is_deprecated(data->class_name, data->name));
+    }
+    if (ptn_ascii_case_equal(name, "isEnumCase")) {
+        return ptn_bool(ptn_declared_class_reflection_constant_is_enum_case(data->class_name, data->name));
     }
     if (ptn_ascii_case_equal(name, "getModifiers")) {
         return ptn_int(ptn_declared_class_reflection_constant_modifiers(data->class_name, data->name));
@@ -58947,6 +58957,26 @@ static PtnValue ptn_spl_prepare_backing_storage(
     if (value.type == PTN_OBJECT) {
         if (emit_object_deprecation) {
             ptn_spl_array_backing_deprecation(runtime, class_name, method_name, line);
+        }
+        if (ptn_declared_class_is_enum(value.as.object->class_name)) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Enums are not compatible with %s",
+                class_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_at(
+                runtime,
+                "InvalidArgumentException",
+                message,
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
         }
         if (ptn_internal_class_name_is_date_interval(value.as.object->class_name) ||
             ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
