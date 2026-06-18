@@ -141,6 +141,7 @@ pub struct PropertyDecl {
     pub attributes: AttributeMetadata,
     pub value: Option<ValueExpr>,
     pub line: usize,
+    pub source_order: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +160,7 @@ pub struct StaticPropertyDecl {
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,
     pub value: Option<ValueExpr>,
+    pub source_order: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1561,6 +1563,7 @@ impl<'a> LoweringContext<'a> {
                 ),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
                 line: property.span.line,
+                source_order: property.span.byte_start,
             })
             .collect();
         let static_properties = class
@@ -1578,6 +1581,7 @@ impl<'a> LoweringContext<'a> {
                     parent_name,
                 ),
                 value: property.value.as_ref().map(|value| self.lower_expr(value)),
+                source_order: property.span.byte_start,
             })
             .collect();
         let class_constant_values =

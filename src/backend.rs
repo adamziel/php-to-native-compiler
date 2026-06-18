@@ -8376,6 +8376,12 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
     if property.reflection_is_abstract() {
         out.push_str("abstract ");
     }
+    if property.reflection_is_final()
+        || (property.reflection_set_visibility() != property.reflection_visibility()
+            && property.reflection_set_visibility() == PropertyVisibility::Private)
+    {
+        out.push_str("final ");
+    }
     out.push_str(method_visibility_name(property.reflection_visibility()));
     if property.reflection_set_visibility() != property.reflection_visibility() {
         out.push(' ');
@@ -8384,9 +8390,6 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
     }
     if property.reflection_is_static() {
         out.push_str(" static");
-    }
-    if property.reflection_is_final() {
-        out.push_str(" final");
     }
     if property.reflection_is_virtual() {
         out.push_str(" virtual");
@@ -8959,41 +8962,39 @@ fn class_property_exists_chain<'a>(
                 value: property.value.as_ref(),
                 has_default: property.value.is_some() || property.type_hint.is_none(),
             };
-        properties.extend(
+        let mut class_properties = Vec::new();
+        class_properties.extend(
             class
                 .properties
                 .iter()
-                .filter(|property| !property.has_hooks)
-                .map(instance_property_entry),
+                .map(|property| (property.source_order, instance_property_entry(property))),
         );
-        properties.extend(class.static_properties.iter().map(|property| {
-            ClassPropertyExistsEntry {
-                declaring_class: class.name.as_str(),
-                name: property.name.as_str(),
-                visibility: property.visibility,
-                set_visibility: property.set_visibility,
-                is_static: true,
-                is_final: property.is_final,
-                is_abstract: false,
-                is_readonly: false,
-                has_hooks: false,
-                is_virtual: false,
-                hook_has_get: false,
-                hook_has_set: false,
-                hook_get_is_abstract: false,
-                hook_set_is_abstract: false,
-                type_hint: property.type_hint.as_ref(),
-                value: property.value.as_ref(),
-                has_default: property.value.is_some() || property.type_hint.is_none(),
-            }
+        class_properties.extend(class.static_properties.iter().map(|property| {
+            (
+                property.source_order,
+                ClassPropertyExistsEntry {
+                    declaring_class: class.name.as_str(),
+                    name: property.name.as_str(),
+                    visibility: property.visibility,
+                    set_visibility: property.set_visibility,
+                    is_static: true,
+                    is_final: property.is_final,
+                    is_abstract: false,
+                    is_readonly: false,
+                    has_hooks: false,
+                    is_virtual: false,
+                    hook_has_get: false,
+                    hook_has_set: false,
+                    hook_get_is_abstract: false,
+                    hook_set_is_abstract: false,
+                    type_hint: property.type_hint.as_ref(),
+                    value: property.value.as_ref(),
+                    has_default: property.value.is_some() || property.type_hint.is_none(),
+                },
+            )
         }));
-        properties.extend(
-            class
-                .properties
-                .iter()
-                .filter(|property| property.has_hooks)
-                .map(instance_property_entry),
-        );
+        class_properties.sort_by_key(|(source_order, _)| *source_order);
+        properties.extend(class_properties.into_iter().map(|(_, property)| property));
 
         let Some(parent_name) = &class.parent_name else {
             return;

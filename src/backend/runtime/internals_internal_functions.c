@@ -61039,7 +61039,9 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isInitialized")
         || ptn_ascii_case_equal(method_name, "isLazy")
         || ptn_ascii_case_equal(method_name, "isPrivate")
+        || ptn_ascii_case_equal(method_name, "isPrivateSet")
         || ptn_ascii_case_equal(method_name, "isProtected")
+        || ptn_ascii_case_equal(method_name, "isProtectedSet")
         || ptn_ascii_case_equal(method_name, "isPublic")
         || ptn_ascii_case_equal(method_name, "isReadable")
         || ptn_ascii_case_equal(method_name, "isReadOnly")
@@ -62080,7 +62082,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isFinal",
             "isLazy",
             "isPrivate",
+            "isPrivateSet",
             "isProtected",
+            "isProtectedSet",
             "isPublic",
             "isReadable",
             "isStatic",
@@ -66389,11 +66393,23 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
             ? ptn_null()
             : ptn_bool(visibility == PTN_PROPERTY_PROTECTED);
     }
+    if (ptn_ascii_case_equal(name, "isProtectedSet")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool((modifiers & 2048) != 0);
+    }
     if (ptn_ascii_case_equal(name, "isPrivate")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
             : ptn_bool(visibility == PTN_PROPERTY_PRIVATE);
+    }
+    if (ptn_ascii_case_equal(name, "isPrivateSet")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool((modifiers & 4096) != 0);
     }
     if (ptn_ascii_case_equal(name, "isStatic")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);

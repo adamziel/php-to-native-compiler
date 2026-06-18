@@ -43593,9 +43593,15 @@ var_dump($shortSetHook->isVirtual());
 $protectedSet = new ReflectionProperty(\"ReflectPropModifiers\", \"protectedSet\");
 var_dump($protectedSet->getModifiers());
 var_dump($protectedSet->isFinal());
+var_dump($protectedSet->isProtectedSet());
+var_dump($protectedSet->isPrivateSet());
+var_dump($protectedSet->__toString());
 $privateSet = new ReflectionProperty(\"ReflectPropModifiers\", \"privateSet\");
 var_dump($privateSet->getModifiers());
 var_dump($privateSet->isFinal());
+var_dump($privateSet->isProtectedSet());
+var_dump($privateSet->isPrivateSet());
+var_dump($privateSet->__toString());
 $readonly = new ReflectionProperty(\"ReflectPropModifiers\", \"readonlyValue\");
 var_dump($readonly->isReadOnly());
 var_dump($readonly->getModifiers());
@@ -43624,6 +43630,8 @@ var_dump(method_exists(\"ReflectionProperty\", \"getModifiers\"));
 var_dump(method_exists(\"ReflectionProperty\", \"getType\"));
 var_dump(method_exists(\"ReflectionProperty\", \"hasType\"));
 var_dump(method_exists(\"ReflectionProperty\", \"isReadOnly\"));
+var_dump(method_exists(\"ReflectionProperty\", \"isPrivateSet\"));
+var_dump(method_exists(\"ReflectionProperty\", \"isProtectedSet\"));
 var_dump(in_array(\"getProperty\", get_class_methods(\"ReflectionClass\")));
 try {
     $rc->getProperty(\"missing\");
@@ -43688,8 +43696,16 @@ try {
             "bool(false)\n",
             "int(2049)\n",
             "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "string(55) \"Property [ public protected(set) mixed $protectedSet ]\n",
+            "\"\n",
             "int(4129)\n",
             "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "string(57) \"Property [ final public private(set) mixed $privateSet ]\n",
+            "\"\n",
             "bool(true)\n",
             "int(2177)\n",
             "bool(true)\n",
@@ -43714,6 +43730,8 @@ try {
             "string(8) \"severity\"\n",
             "string(14) \"ErrorException\"\n",
             "int(1)\n",
+            "bool(true)\n",
+            "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -43749,6 +43767,12 @@ class ReflectHookOrder {
     public $hookVirt { get { return 42; } }
 }
 
+class ReflectHookBeforeAsymmetric {
+    public $p1;
+    public $p2 { get => 42; }
+    public protected(set) mixed $p3;
+}
+
 function dumpNames(array $properties) {
     foreach ($properties as $property) {
         echo $property->getName(), \"\\n\";
@@ -43760,6 +43784,8 @@ $rc = new ReflectionClass(\"ReflectHookOrder\");
 dumpNames($rc->getProperties(ReflectionProperty::IS_PUBLIC));
 dumpNames($rc->getProperties(ReflectionProperty::IS_PRIVATE | ReflectionProperty::IS_STATIC));
 dumpNames($rc->getProperties(ReflectionProperty::IS_VIRTUAL));
+$rc2 = new ReflectionClass(\"ReflectHookBeforeAsymmetric\");
+dumpNames($rc2->getProperties());
 ",
     )
     .unwrap();
@@ -43787,6 +43813,10 @@ dumpNames($rc->getProperties(ReflectionProperty::IS_VIRTUAL));
             "privs\n",
             "--\n",
             "hookVirt\n",
+            "--\n",
+            "p1\n",
+            "p2\n",
+            "p3\n",
             "--\n",
         )
     );
