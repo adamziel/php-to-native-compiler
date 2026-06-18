@@ -69908,7 +69908,7 @@ static PtnValue ptn_reflection_class_instantiate(
             ptn_throw_exception(runtime, "ReflectionException", message);
             return ptn_null();
         }
-        return ptn_declared_class_new_instance(runtime, class_name, argc, args, line);
+        return ptn_declared_class_new_instance(runtime, class_name, argc, args, 0);
     }
     if (!ptn_reflection_class_is_instantiable(class_name)) {
         char message[256];
@@ -71108,6 +71108,15 @@ static PtnValue ptn_reflection_method_throw_missing(PtnRuntime *runtime, const c
     return ptn_null();
 }
 
+static int ptn_reflection_method_argument_allows_string_coercion(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_STRING ||
+        value.type == PTN_NULL ||
+        value.type == PTN_BOOL ||
+        value.type == PTN_INT ||
+        value.type == PTN_FLOAT;
+}
+
 static const char *ptn_reflection_method_internal_declaring_class(
     const char *class_name,
     const char *method_name
@@ -71161,6 +71170,24 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
                 line
             );
         }
+        PtnValue method_arg = ptn_value_deref(args[0]);
+        if (!ptn_reflection_method_argument_allows_string_coercion(method_arg)) {
+            const char *actual_type = ptn_property_exists_target_type_name(method_arg);
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s: Argument #1 ($%s) must be of type string, %s given",
+                function_name,
+                first_parameter_name,
+                actual_type
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
         char *qualified_name = ptn_value_to_string(args[0]);
         char *separator = strstr(qualified_name, "::");
         if (separator == NULL) {
@@ -71191,7 +71218,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             class_name = ptn_duplicate_string(class_arg.as.exception->class_name);
         } else if (class_arg.type == PTN_CLOSURE) {
             class_name = ptn_duplicate_string("Closure");
-        } else if (class_arg.type != PTN_STRING) {
+        } else if (!ptn_reflection_method_argument_allows_string_coercion(class_arg)) {
             const char *actual_type = ptn_property_exists_target_type_name(class_arg);
             char message[192];
             int written = snprintf(
@@ -71209,7 +71236,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
             class_name = ptn_value_to_string(class_arg);
         }
         PtnValue method_arg = ptn_value_deref(args[1]);
-        if (method_arg.type != PTN_NULL && method_arg.type != PTN_STRING) {
+        if (!ptn_reflection_method_argument_allows_string_coercion(method_arg)) {
             const char *actual_type = ptn_property_exists_target_type_name(method_arg);
             char message[192];
             int written = snprintf(

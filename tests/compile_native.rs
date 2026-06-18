@@ -19542,6 +19542,15 @@ class StringBox {
     }
 }
 
+interface IOrder1 {}
+interface IOrder2 {}
+interface IOrder3 {}
+interface IOrder4 extends IOrder3 {}
+interface IOrder5 extends IOrder4 {}
+interface IOrder6 extends IOrder5, IOrder1, IOrder2 {}
+interface IOrder7 extends IOrder6 {}
+class InterfaceOrderSubject implements IOrder7 {}
+
 function dump_methods($methods) {
     foreach ($methods as $method) {
         echo $method, \"|\";
@@ -19567,6 +19576,8 @@ dump_assoc(class_uses(\"WorkerList\"));
 dump_assoc(class_uses(new WorkerList()));
 dump_assoc(class_uses(\"BaseList\"));
 dump_assoc(class_implements(new StringBox()));
+dump_assoc((new ReflectionClass(\"IOrder7\"))->getInterfaceNames());
+dump_assoc((new ReflectionClass(\"InterfaceOrderSubject\"))->getInterfaceNames());
 var_dump(in_array(\"WorkerList\", get_declared_classes()));
 var_dump(in_array(\"Contract\", get_declared_interfaces()));
 var_dump(in_array(\"ListedTrait\", get_declared_traits()));
@@ -19610,6 +19621,8 @@ try {
             "ListedTrait=ListedTrait|\n",
             "\n",
             "Stringable=Stringable|\n",
+            "0=IOrder6|1=IOrder4|2=IOrder3|3=IOrder2|4=IOrder1|5=IOrder5|\n",
+            "0=IOrder7|1=IOrder5|2=IOrder1|3=IOrder2|4=IOrder3|5=IOrder4|6=IOrder6|\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",

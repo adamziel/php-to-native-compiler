@@ -18,8 +18,8 @@ use crate::ir::{
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget,
     Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
     MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind,
-    PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl, TraitUseDecl, TypeHint,
-    UnaryOp, ValueExpr,
+    PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl, TraitMethodDecl,
+    TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -9706,7 +9706,10 @@ fn reflection_method_to_string(
         out.push_str(parent_class);
         out.push_str(", prototype ");
         out.push_str(parent_class);
-    } else if !entry.declaring_class.eq_ignore_ascii_case(&reflected_class.name) {
+    } else if !entry
+        .declaring_class
+        .eq_ignore_ascii_case(&reflected_class.name)
+    {
         out.push_str(", inherits ");
         out.push_str(entry.declaring_class);
     }
@@ -9745,7 +9748,7 @@ fn reflection_method_to_string(
 }
 
 fn reflection_trait_method_to_string(
-    trait_decl: &TraitDecl,
+    _trait_decl: &TraitDecl,
     method: &TraitMethodDecl,
     _functions: &[FunctionDecl],
 ) -> String {
@@ -10009,21 +10012,19 @@ fn class_method_lookup_chain<'a>(
     methods
 }
 
-fn class_transitive_interfaces<'a>(class: &'a ClassDecl, classes: &'a [ClassDecl]) -> Vec<&'a str> {
-    fn builtin_parent_interfaces(interface_name: &str) -> &'static [&'static str] {
-        match interface_name
-            .trim_start_matches('\\')
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "iterator" | "iteratoraggregate" => &["Traversable"],
-            "outeriterator" | "recursiveiterator" | "seekableiterator" => {
-                &["Iterator", "Traversable"]
-            }
-            _ => &[],
-        }
+fn builtin_parent_interfaces(interface_name: &str) -> &'static [&'static str] {
+    match interface_name
+        .trim_start_matches('\\')
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "iterator" | "iteratoraggregate" => &["Traversable"],
+        "outeriterator" | "recursiveiterator" | "seekableiterator" => &["Iterator", "Traversable"],
+        _ => &[],
     }
+}
 
+fn class_transitive_interfaces<'a>(class: &'a ClassDecl, classes: &'a [ClassDecl]) -> Vec<&'a str> {
     fn collect<'a>(
         interface_name: &'a str,
         classes: &'a [ClassDecl],
@@ -10083,6 +10084,47 @@ fn class_interface_lookup_chain<'a>(
     class: &'a ClassDecl,
     classes: &'a [ClassDecl],
 ) -> Vec<&'a str> {
+    fn direct_interface_names<'a>(
+        interface_name: &'a str,
+        classes: &'a [ClassDecl],
+    ) -> Vec<&'a str> {
+        if let Some(interface) = class_by_name(classes, interface_name) {
+            return interface
+                .interfaces
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+        }
+        builtin_parent_interfaces(interface_name)
+            .iter()
+            .copied()
+            .collect()
+    }
+
+    fn collect_interface_chain<'a>(
+        interface_name: &'a str,
+        classes: &'a [ClassDecl],
+        seen_interfaces: &mut HashSet<String>,
+        interfaces: &mut Vec<&'a str>,
+    ) {
+        let direct_interfaces = direct_interface_names(interface_name, classes);
+        for interface in &direct_interfaces {
+            if seen_interfaces.insert(interface.to_ascii_lowercase()) {
+                interfaces.push(interface);
+            }
+        }
+        for interface in direct_interfaces {
+            let mut parent_seen = HashSet::new();
+            let mut parent_interfaces = Vec::new();
+            collect_interface_chain(interface, classes, &mut parent_seen, &mut parent_interfaces);
+            for parent_interface in parent_interfaces.into_iter().rev() {
+                if seen_interfaces.insert(parent_interface.to_ascii_lowercase()) {
+                    interfaces.push(parent_interface);
+                }
+            }
+        }
+    }
+
     fn collect_class<'a>(
         class: &'a ClassDecl,
         classes: &'a [ClassDecl],
@@ -10094,14 +10136,29 @@ fn class_interface_lookup_chain<'a>(
         if !seen_classes.insert(class_key) {
             return;
         }
-        for interface in class_transitive_interfaces(class, classes) {
+        if let Some(parent_name) = &class.parent_name {
+            if let Some(parent) = class_by_name(classes, parent_name) {
+                collect_class(parent, classes, seen_classes, seen_interfaces, interfaces);
+            }
+        }
+        let direct_interfaces = class
+            .interfaces
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        for interface in &direct_interfaces {
             if seen_interfaces.insert(interface.to_ascii_lowercase()) {
                 interfaces.push(interface);
             }
         }
-        if let Some(parent_name) = &class.parent_name {
-            if let Some(parent) = class_by_name(classes, parent_name) {
-                collect_class(parent, classes, seen_classes, seen_interfaces, interfaces);
+        for interface in direct_interfaces {
+            let mut parent_seen = HashSet::new();
+            let mut parent_interfaces = Vec::new();
+            collect_interface_chain(interface, classes, &mut parent_seen, &mut parent_interfaces);
+            for parent_interface in parent_interfaces.into_iter().rev() {
+                if seen_interfaces.insert(parent_interface.to_ascii_lowercase()) {
+                    interfaces.push(parent_interface);
+                }
             }
         }
     }
