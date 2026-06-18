@@ -8409,7 +8409,7 @@ fn emit_class_reflection_metadata_helpers(
 ) {
     emit_reflection_attribute_metadata_helpers(out, classes, traits, functions, instructions);
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_reflection_method_matches_filter(int is_static, int visibility, int filter_present, int filter) {\n",
+        "\nstatic PTN_UNUSED int ptn_reflection_method_matches_filter(int is_static, int is_final, int visibility, int filter_present, int filter) {\n",
     );
     out.push_str("    if (!filter_present) {\n");
     out.push_str("        return 1;\n");
@@ -8418,6 +8418,9 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("        return 0;\n");
     out.push_str("    }\n");
     out.push_str("    int modifiers = is_static ? 16 : 0;\n");
+    out.push_str("    if (is_final) {\n");
+    out.push_str("        modifiers |= 32;\n");
+    out.push_str("    }\n");
     out.push_str("    if (visibility == PTN_PROPERTY_PUBLIC) {\n");
     out.push_str("        modifiers |= 1;\n");
     out.push_str("    } else if (visibility == PTN_PROPERTY_PROTECTED) {\n");
@@ -8537,7 +8540,7 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract) {\n",
     );
     if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
@@ -8552,6 +8555,7 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    (void)method_name;\n");
         out.push_str("    (void)is_static;\n");
         out.push_str("    (void)visibility;\n");
+        out.push_str("    (void)is_final;\n");
         out.push_str("    (void)is_abstract;\n");
     }
     for class in classes {
@@ -8568,6 +8572,9 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(";\n");
             out.push_str("            *visibility = ");
             out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            *is_final = ");
+            out.push_str(if method.is_final { "1" } else { "0" });
             out.push_str(";\n");
             out.push_str("            *is_abstract = ");
             out.push_str(if method.is_abstract { "1" } else { "0" });
@@ -8591,6 +8598,9 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(";\n");
             out.push_str("            *visibility = ");
             out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            *is_final = ");
+            out.push_str("0");
             out.push_str(";\n");
             out.push_str("            *is_abstract = ");
             out.push_str(if method.is_abstract { "1" } else { "0" });
@@ -8686,6 +8696,8 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("        if (ptn_reflection_method_matches_filter(");
             out.push_str(if method.is_static { "1" } else { "0" });
             out.push_str(", ");
+            out.push_str(if method.is_final { "1" } else { "0" });
+            out.push_str(", ");
             out.push_str(c_method_visibility(method.visibility));
             out.push_str(", filter_present, filter)) {\n");
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_method_object_from_name(runtime, \"");
@@ -8705,6 +8717,8 @@ fn emit_class_reflection_metadata_helpers(
         for method in &trait_decl.methods {
             out.push_str("        if (ptn_reflection_method_matches_filter(");
             out.push_str(if method.is_static { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str("0");
             out.push_str(", ");
             out.push_str(c_method_visibility(method.visibility));
             out.push_str(", filter_present, filter)) {\n");

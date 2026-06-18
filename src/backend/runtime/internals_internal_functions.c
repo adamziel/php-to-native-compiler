@@ -2139,7 +2139,7 @@ static int ptn_declared_class_is_same_or_descendant(const char *class_name, cons
 static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
-static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
+static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
 static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_scope, const char *declaring_class, int visibility);
 static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
@@ -2238,6 +2238,7 @@ static char *ptn_inaccessible_declared_method_callback_reason(
 ) {
     int is_static = 0;
     int visibility = PTN_PROPERTY_PUBLIC;
+    int is_final = 0;
     int is_abstract = 0;
     if (
         !ptn_declared_class_reflection_method_metadata(
@@ -2245,12 +2246,14 @@ static char *ptn_inaccessible_declared_method_callback_reason(
             method_name,
             &is_static,
             &visibility,
+            &is_final,
             &is_abstract
         )
     ) {
         return NULL;
     }
     (void)is_static;
+    (void)is_final;
     (void)is_abstract;
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     if (ptn_declared_method_visibility_allows(access_scope, class_name, visibility)) {
@@ -63054,7 +63057,7 @@ static PtnValue ptn_declared_trait_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name);
 static int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
-static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_abstract);
+static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
 static int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
@@ -64456,8 +64459,10 @@ static PTN_UNUSED PtnValue ptn_first_class_callable_create(PtnRuntime *runtime, 
 
         int is_static = 0;
         int visibility = PTN_PROPERTY_PUBLIC;
+        int is_final = 0;
         int is_abstract = 0;
-        if (ptn_declared_class_reflection_method_metadata(class_name, method_name, &is_static, &visibility, &is_abstract)) {
+        if (ptn_declared_class_reflection_method_metadata(class_name, method_name, &is_static, &visibility, &is_final, &is_abstract)) {
+            (void)is_final;
             if (is_abstract) {
                 ptn_first_class_callable_throw_error(
                     runtime,
@@ -65863,6 +65868,7 @@ static int ptn_reflection_parameter_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getPosition")
         || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "hasType")
+        || ptn_ascii_case_equal(method_name, "isArray")
         || ptn_ascii_case_equal(method_name, "isCallable")
         || ptn_ascii_case_equal(method_name, "isPassedByReference")
         || ptn_ascii_case_equal(method_name, "isVariadic");
@@ -66917,6 +66923,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getPosition",
             "getType",
             "hasType",
+            "isArray",
             "isCallable",
             "isPassedByReference",
             "isVariadic",
@@ -67944,6 +67951,7 @@ static PtnValue ptn_reflection_class_instantiate(
     if (ptn_declared_class_exists(class_name)) {
         int is_static = 0;
         int visibility = PTN_PROPERTY_PUBLIC;
+        int is_final = 0;
         int is_abstract = 0;
         if (
             argc != 0 &&
@@ -67952,6 +67960,7 @@ static PtnValue ptn_reflection_class_instantiate(
                 "__construct",
                 &is_static,
                 &visibility,
+                &is_final,
                 &is_abstract
             )
         ) {
@@ -69701,6 +69710,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         || ptn_declared_trait_exists(data->class_name));
     int is_static = 0;
     int visibility = PTN_PROPERTY_PUBLIC;
+    int is_final = 0;
     int is_abstract = 0;
     if (!is_internal) {
         ptn_declared_class_reflection_method_metadata(
@@ -69708,6 +69718,7 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             data->name,
             &is_static,
             &visibility,
+            &is_final,
             &is_abstract
         );
     }
@@ -69945,6 +69956,9 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
         }
         if (is_static) {
             modifiers |= 16;
+        }
+        if (is_final) {
+            modifiers |= 32;
         }
         if (is_abstract) {
             modifiers |= 64;
@@ -73459,7 +73473,14 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     }
     if (ptn_ascii_case_equal(name, "isCloneable")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
-        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(!ptn_internal_reflection_metadata_class_exists(class_name));
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(
+                !ptn_reflection_class_is_interface_name(class_name) &&
+                !ptn_declared_trait_exists(class_name) &&
+                !ptn_declared_class_is_abstract(class_name) &&
+                !ptn_internal_reflection_metadata_class_exists(class_name)
+            );
     }
     if (ptn_ascii_case_equal(name, "isIterable") || ptn_ascii_case_equal(name, "isIterateable")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
@@ -83019,6 +83040,15 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
         );
         const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
         return ptn_bool(type_name != NULL && ptn_ascii_case_equal(type_name, "callable"));
+    }
+    if (ptn_ascii_case_equal(name, "isArray")) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Method ReflectionParameter::isArray() is deprecated since 8.0, use ReflectionParameter::getType() instead",
+            line
+        );
+        const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
+        return ptn_bool(type_name != NULL && ptn_ascii_case_equal(type_name, "array"));
     }
     if (ptn_ascii_case_equal(name, "isPassedByReference")) {
         return ptn_bool(ptn_function_metadata_parameter_by_ref(metadata, index));
