@@ -146,8 +146,9 @@ foreach ($wrap as $value) {
     let execution = Command::new(&output).output().unwrap();
     assert!(
         execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
         execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     assert_eq!(
@@ -229,8 +230,9 @@ var_dump($fixed->getSize(), $from->getSize(), $from[1]);
     let execution = Command::new(&output).output().unwrap();
     assert!(
         execution.status.success(),
-        "native exited with {:?}\nstderr:\n{}",
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
         execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
         String::from_utf8_lossy(&execution.stderr)
     );
     assert_eq!(
@@ -9816,6 +9818,190 @@ var_dump(unserialize($encoded . 'tail'));
     assert!(
         stdout.contains("Warning: unserialize(): Extra data starting at offset 64 of 68 bytes"),
         "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_serializable_null_payloads_do_not_leave_reference_ids_to_native_binary() {
+    let root = temp_dir("ptn-native-serializable-null-reference-ids");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serializable-null-reference-ids.php");
+    let output = root.join("serializable-null-reference-ids-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class UnSerializable implements Serializable {
+    public function serialize() {}
+    public function unserialize($serialized) {}
+}
+class NotSerializable implements Serializable {
+    public function serialize() { return null; }
+    public function unserialize($serialized) {}
+}
+
+$unser = new UnSerializable();
+$arr = [$unser];
+$arr[1] = &$arr[0];
+$arr[2] = 'endcap';
+$arr[3] = &$arr[2];
+echo serialize($arr), "\n";
+
+$obj = new NotSerializable();
+var_dump(serialize([$obj, $obj]));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("a:4:{i:0;N;i:1;N;i:2;s:6:\"endcap\";i:3;R:4;}"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("string(18) \"a:2:{i:0;N;i:1;N;}\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_typed_property_references_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-typed-property-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-typed-property-references.php");
+    let output = root.join("unserialize-typed-property-references-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class A { public int $a; public $b; }
+class B { public $a; public int $b; }
+class C { public int $a; public string $b; }
+class D { public int $a; public float $b; }
+
+var_dump(unserialize('O:1:"A":2:{s:1:"a";i:1;s:1:"b";R:2;}'));
+var_dump(unserialize('O:1:"B":2:{s:1:"a";i:1;s:1:"b";R:2;}'));
+
+foreach ([
+    'O:1:"A":2:{s:1:"a";N;s:1:"b";R:2;}',
+    'O:1:"B":2:{s:1:"a";N;s:1:"b";R:2;}',
+    'O:1:"C":2:{s:1:"a";i:1;s:1:"b";R:2;}',
+    'O:1:"C":2:{s:1:"b";s:1:"x";s:1:"a";R:2;}',
+    'O:1:"D":2:{s:1:"a";i:1;s:1:"b";R:2;}',
+] as $payload) {
+    try {
+        var_dump(unserialize($payload));
+    } catch (TypeError $e) {
+        echo $e->getMessage(), "\n";
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(A)#"), "{stdout}");
+    assert!(stdout.contains("object(B)#"), "{stdout}");
+    assert!(stdout.contains("&int(1)"), "{stdout}");
+    assert!(
+        stdout.contains("Cannot assign null to property A::$a of type int"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign null to property B::$b of type int"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign int to property C::$b of type string"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Cannot assign string to property C::$a of type int"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Reference with value of type int held by property D::$a of type int is not compatible with property D::$b of type float"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_serialize_visibility_keys_and_get_debug_type_to_native_binary() {
+    let root = temp_dir("ptn-native-serialize-visibility-keys-debug-type");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("serialize-visibility-keys-debug-type.php");
+    let output = root.join("serialize-visibility-keys-debug-type-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class members {
+    public $var_public = "public";
+    protected $var_protected = "protected";
+    private $var_private = "private";
+}
+
+$serialized = serialize(new members());
+var_dump(str_contains($serialized, "\0members\0var_private"));
+var_dump(str_contains($serialized, "\0*\0var_protected"));
+var_dump(unserialize($serialized));
+
+foreach ([null, true, 1, 1.5, "x", [], new stdClass()] as $value) {
+    echo get_debug_type($value), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "object(members)#1 (3) {\n",
+            "  [\"var_public\"]=>\n",
+            "  string(6) \"public\"\n",
+            "  [\"var_protected\":protected]=>\n",
+            "  string(9) \"protected\"\n",
+            "  [\"var_private\":\"members\":private]=>\n",
+            "  string(7) \"private\"\n",
+            "}\n",
+            "null\n",
+            "bool\n",
+            "int\n",
+            "float\n",
+            "string\n",
+            "array\n",
+            "stdClass\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
