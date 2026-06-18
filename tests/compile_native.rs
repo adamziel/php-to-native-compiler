@@ -36802,6 +36802,22 @@ L2:
 ?>",
             "1: ok\n2: ok\n3: ok\n",
         ),
+        (
+            "jump03",
+            "<?php
+do {
+    if (1) {
+        echo \"1: ok\\n\";
+        goto L1;
+    } else {
+        echo \"bug\\n\";
+L1:
+        echo \"2: ok\\n\";
+    }
+} while (0);
+?>",
+            "1: ok\n2: ok\n",
+        ),
     ];
 
     for (name, source, expected) in cases {

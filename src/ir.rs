@@ -1881,13 +1881,16 @@ impl<'a> LoweringContext<'a> {
                     else_body,
                     ..
                 } => {
-                    if let Some(value) = ast_compile_time_condition_truth(condition) {
-                        if value {
-                            instructions.extend(self.lower_statements(then_body));
-                        } else {
-                            instructions.extend(self.lower_statements(else_body));
+                    if !statements_contain_label(then_body) && !statements_contain_label(else_body)
+                    {
+                        if let Some(value) = ast_compile_time_condition_truth(condition) {
+                            if value {
+                                instructions.extend(self.lower_statements(then_body));
+                            } else {
+                                instructions.extend(self.lower_statements(else_body));
+                            }
+                            continue;
                         }
-                        continue;
                     }
                     instructions.push(Instruction::Branch {
                         condition: self.lower_expr(condition),
@@ -2572,6 +2575,79 @@ fn lower_type_hint(type_hint: AstTypeHint) -> TypeHint {
 
 fn statements_contain_yield(statements: &[Statement]) -> bool {
     statements.iter().any(statement_contains_yield)
+}
+
+fn statements_contain_label(statements: &[Statement]) -> bool {
+    statements.iter().any(statement_contains_label)
+}
+
+fn statement_contains_label(statement: &Statement) -> bool {
+    match statement {
+        Statement::Label { .. } => true,
+        Statement::If {
+            then_body,
+            else_body,
+            ..
+        } => statements_contain_label(then_body) || statements_contain_label(else_body),
+        Statement::Block { statements, .. }
+        | Statement::While {
+            body: statements, ..
+        }
+        | Statement::DoWhile {
+            body: statements, ..
+        }
+        | Statement::Foreach {
+            body: statements, ..
+        } => statements_contain_label(statements),
+        Statement::For {
+            initializers,
+            updates,
+            body,
+            ..
+        } => {
+            statements_contain_label(initializers)
+                || statements_contain_label(updates)
+                || statements_contain_label(body)
+        }
+        Statement::Switch { cases, .. } => cases
+            .iter()
+            .any(|case| statements_contain_label(&case.body)),
+        Statement::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            statements_contain_label(body)
+                || catches
+                    .iter()
+                    .any(|catch| statements_contain_label(&catch.body))
+                || statements_contain_label(finally_body)
+        }
+        Statement::Empty { .. }
+        | Statement::ClassDeclaration { .. }
+        | Statement::FunctionDeclaration { .. }
+        | Statement::Assign { .. }
+        | Statement::AssignRef { .. }
+        | Statement::ArrayAssign { .. }
+        | Statement::ArrayAssignRef { .. }
+        | Statement::Call { .. }
+        | Statement::Echo { .. }
+        | Statement::Print { .. }
+        | Statement::Expression { .. }
+        | Statement::Return { .. }
+        | Statement::Exit { .. }
+        | Statement::Throw { .. }
+        | Statement::Const { .. }
+        | Statement::Static { .. }
+        | Statement::Increment { .. }
+        | Statement::Unset { .. }
+        | Statement::Global { .. }
+        | Statement::Break { .. }
+        | Statement::Continue { .. }
+        | Statement::Goto { .. }
+        | Statement::InlineHtml { .. } => false,
+    }
 }
 
 fn statement_contains_yield(statement: &Statement) -> bool {
