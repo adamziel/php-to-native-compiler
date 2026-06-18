@@ -28291,7 +28291,7 @@ static PtnValue ptn_internal_fread(PtnRuntime *runtime, size_t argc, const PtnVa
         ptn_stream_apply_filter_chain_in_place(resource->read_filters, (unsigned char *)buffer, read_len);
     }
     if (read_len == 0 && ptn_stream_error(resource)) {
-        ptn_emit_stream_read_notice(runtime, "fread", length, line);
+        ptn_emit_stream_read_notice(runtime, "fread", 8192, line);
         ptn_stream_clear_error(resource);
         free(buffer);
         return ptn_bool(0);
@@ -29824,6 +29824,24 @@ static PtnValue ptn_internal_file_put_contents(PtnRuntime *runtime, size_t argc,
     return result;
 }
 
+static void ptn_emit_file_read_failure_notice(
+    PtnRuntime *runtime,
+    const char *function_name,
+    const char *path,
+    const char *opened_path,
+    size_t line
+) {
+    int saved_errno = errno;
+    size_t requested_len = 8192;
+    struct stat info;
+    const char *stat_path = opened_path != NULL ? opened_path : path;
+    if (stat(stat_path, &info) == 0 && info.st_size > 0) {
+        requested_len = (size_t)info.st_size;
+    }
+    errno = saved_errno;
+    ptn_emit_stream_read_notice(runtime, function_name, requested_len, line);
+}
+
 static int ptn_read_file_bytes(const char *path, unsigned char **data_out, size_t *len_out);
 static int64_t ptn_internal_expect_integer_arg(
     PtnRuntime *runtime,
@@ -29908,12 +29926,18 @@ static PtnValue ptn_internal_file_get_contents(PtnRuntime *runtime, size_t argc,
     char *opened_path = NULL;
     int read_result = ptn_read_file_bytes_with_search(runtime, path, use_include_path, &data, &data_len, &opened_path);
     if (read_result <= 0) {
+        if (read_result < 0) {
+            ptn_emit_file_read_failure_notice(runtime, "file_get_contents", path, opened_path, line);
+            free(opened_path);
+            free(path);
+            free(data);
+            return ptn_bool(0);
+        }
         char detail[192];
         int needed = snprintf(
             detail,
             sizeof(detail),
-            "%s: %s",
-            read_result == 0 ? "Failed to open stream" : "Failed to read stream",
+            "Failed to open stream: %s",
             strerror(errno)
         );
         if (needed < 0 || (size_t)needed >= sizeof(detail)) {
@@ -31136,6 +31160,162 @@ static PtnValue ptn_internal_chmod(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_bool(0);
 }
 
+#if !defined(_WIN32)
+static int ptn_internal_chown_uid_arg(PtnRuntime *runtime, PtnValue value, size_t line, uid_t *uid_out) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT) {
+        *uid_out = (uid_t)value.as.integer;
+        return 1;
+    }
+
+    PtnStringOperand name_operand =
+        ptn_internal_expect_string_arg(runtime, "chown", 2, "user", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    char *name = ptn_path_operand_to_c_string(name_operand);
+    ptn_string_operand_free(name_operand);
+    if (name == NULL) {
+        ptn_emit_function_warning(runtime, "chown", "Unable to find uid for ", line);
+        return 0;
+    }
+    struct passwd *entry = getpwnam(name);
+    if (entry == NULL) {
+        size_t name_len = strlen(name);
+        int needed = snprintf(NULL, 0, "Unable to find uid for %s", name);
+        if (needed < 0 || name_len > (size_t)INT_MAX) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(message, (size_t)needed + 1, "Unable to find uid for %s", name);
+        if (written < 0 || written != needed) {
+            free(message);
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_function_warning(runtime, "chown", message, line);
+        free(message);
+        free(name);
+        return 0;
+    }
+    *uid_out = entry->pw_uid;
+    free(name);
+    return 1;
+}
+
+static int ptn_internal_chgrp_gid_arg(PtnRuntime *runtime, PtnValue value, size_t line, gid_t *gid_out) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT) {
+        *gid_out = (gid_t)value.as.integer;
+        return 1;
+    }
+
+    PtnStringOperand name_operand =
+        ptn_internal_expect_string_arg(runtime, "chgrp", 2, "group", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    char *name = ptn_path_operand_to_c_string(name_operand);
+    ptn_string_operand_free(name_operand);
+    if (name == NULL) {
+        ptn_emit_function_warning(runtime, "chgrp", "Unable to find gid for ", line);
+        return 0;
+    }
+    struct group *entry = getgrnam(name);
+    if (entry == NULL) {
+        size_t name_len = strlen(name);
+        int needed = snprintf(NULL, 0, "Unable to find gid for %s", name);
+        if (needed < 0 || name_len > (size_t)INT_MAX) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        int written = snprintf(message, (size_t)needed + 1, "Unable to find gid for %s", name);
+        if (written < 0 || written != needed) {
+            free(message);
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_function_warning(runtime, "chgrp", message, line);
+        free(message);
+        free(name);
+        return 0;
+    }
+    *gid_out = entry->gr_gid;
+    free(name);
+    return 1;
+}
+#endif
+
+static PtnValue ptn_internal_chown(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "chown(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    ptn_emit_function_warning(runtime, "chown", "Operation not supported", line);
+    free(path);
+    return ptn_bool(0);
+#else
+    uid_t uid = (uid_t)-1;
+    if (!ptn_internal_chown_uid_arg(runtime, args[1], line, &uid)) {
+        free(path);
+        return ptn_bool(0);
+    }
+    if (chown(path, uid, (gid_t)-1) == 0) {
+        free(path);
+        return ptn_bool(1);
+    }
+    ptn_emit_function_warning(runtime, "chown", strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+#endif
+}
+
+static PtnValue ptn_internal_chgrp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand path_operand = ptn_value_to_string_operand(args[0]);
+    char *path = ptn_path_operand_to_c_string(path_operand);
+    ptn_string_operand_free(path_operand);
+    if (path == NULL) {
+        ptn_emit_warning(&runtime->diagnostics, "chgrp(): Filename contains null byte", line);
+        return ptn_bool(0);
+    }
+
+#if defined(_WIN32)
+    ptn_emit_function_warning(runtime, "chgrp", "Operation not supported", line);
+    free(path);
+    return ptn_bool(0);
+#else
+    gid_t gid = (gid_t)-1;
+    if (!ptn_internal_chgrp_gid_arg(runtime, args[1], line, &gid)) {
+        free(path);
+        return ptn_bool(0);
+    }
+    if (chown(path, (uid_t)-1, gid) == 0) {
+        free(path);
+        return ptn_bool(1);
+    }
+    ptn_emit_function_warning(runtime, "chgrp", strerror(errno), line);
+    free(path);
+    return ptn_bool(0);
+#endif
+}
+
 static int ptn_platform_touch_times(const char *path, int64_t atime_value, int64_t mtime_value) {
 #if defined(_WIN32)
     struct _utimbuf times;
@@ -31561,7 +31741,7 @@ static PtnValue ptn_internal_disk_space(PtnRuntime *runtime, const char *functio
 #else
     struct statvfs info;
     if (statvfs(path, &info) != 0) {
-        ptn_emit_file_warning(runtime, function_name, path, strerror(errno), line);
+        ptn_emit_function_warning(runtime, function_name, strerror(errno), line);
         free(path);
         return ptn_bool(0);
     }
@@ -53138,6 +53318,8 @@ static PtnValue ptn_internal_dir(PtnRuntime *runtime, size_t argc, const PtnValu
 static PtnValue ptn_internal_disk_free_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_disk_total_space(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_diskfreespace(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_chgrp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_chown(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_feof(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_fflush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -53333,7 +53515,9 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ceil", 1, 1, ptn_internal_ceil },
         { "chdir", 1, 1, ptn_internal_chdir },
         { "checkdate", 3, 3, ptn_internal_checkdate },
+        { "chgrp", 2, 2, ptn_internal_chgrp },
         { "chmod", 2, 2, ptn_internal_chmod },
+        { "chown", 2, 2, ptn_internal_chown },
         { "chop", 1, 2, ptn_internal_chop },
         { "chr", 1, 1, ptn_internal_chr },
         { "chunk_split", 1, 3, ptn_internal_chunk_split },

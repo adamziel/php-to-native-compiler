@@ -12984,6 +12984,85 @@ bool(false)\n"
 }
 
 #[test]
+fn compile_filesystem_diagnostic_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-filesystem-diagnostic-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("filesystem-diagnostic-helpers.php");
+    let output = root.join("filesystem-diagnostic-helpers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$dir = __DIR__ . '/dir';\n\
+mkdir($dir);\n\
+var_dump(file_get_contents($dir));\n\
+var_dump(disk_free_space(__DIR__ . '/missing-disk'));\n\
+var_dump(diskfreespace(__DIR__ . '/missing-disk'));\n\
+var_dump(disk_total_space(__DIR__ . '/missing-disk'));\n\
+$path = __DIR__ . '/write-only.txt';\n\
+$handle = fopen($path, 'w');\n\
+var_dump(fread($handle, 100));\n\
+fclose($handle);\n\
+unlink($path);\n\
+rmdir($dir);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Notice: file_get_contents(): Read of "));
+    assert!(stdout
+        .contains("bytes failed with errno=21 Is a directory in ptn on line 4\nbool(false)\n"));
+    assert!(stdout.contains(
+        "Warning: disk_free_space(): No such file or directory in ptn on line 5\nbool(false)\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: diskfreespace(): No such file or directory in ptn on line 6\nbool(false)\n"
+    ));
+    assert!(stdout.contains(
+        "Warning: disk_total_space(): No such file or directory in ptn on line 7\nbool(false)\n"
+    ));
+    assert!(stdout
+        .contains("Notice: fread(): Read of 8192 bytes failed with errno=9 Bad file descriptor"));
+    assert!(stdout.ends_with("bool(false)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_chown_chgrp_internals_to_native_binary() {
+    let root = temp_dir("ptn-native-chown-chgrp-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("chown-chgrp-internals.php");
+    let output = root.join("chown-chgrp-internals-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(function_exists('chown'), function_exists('chgrp'));\n\
+var_dump(chown(__DIR__ . '/missing-owner', 0));\n\
+var_dump(chgrp(__DIR__ . '/missing-group', 0));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\nbool(true)\n"));
+    assert!(stdout
+        .contains("Warning: chown(): No such file or directory in ptn on line 3\nbool(false)\n"));
+    assert!(stdout
+        .contains("Warning: chgrp(): No such file or directory in ptn on line 4\nbool(false)\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_chown"));
+    assert!(c_source.contains("ptn_internal_chgrp"));
+}
+
+#[test]
 fn compile_filesystem_paths_normalize_native_binary() {
     let root = temp_dir("ptn-native-filesystem-path-normalize");
     fs::create_dir_all(&root).unwrap();

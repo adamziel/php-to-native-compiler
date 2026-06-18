@@ -24,6 +24,7 @@
 #else
 #include <dirent.h>
 #include <fnmatch.h>
+#include <grp.h>
 #include <glob.h>
 #include <iconv.h>
 #include <langinfo.h>
