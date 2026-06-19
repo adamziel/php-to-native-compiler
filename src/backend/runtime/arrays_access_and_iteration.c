@@ -2408,6 +2408,39 @@ static PTN_UNUSED int ptn_property_type_text_coerce_assignment(
     size_t len = strlen(type_text);
     ptn_property_trim_type_span(&start, &len);
     for (int allow_scalar_coercion = 0; allow_scalar_coercion <= 1; allow_scalar_coercion++) {
+        if (allow_scalar_coercion && resolved.type == PTN_INT) {
+            int depth = 0;
+            size_t part_start = 0;
+            for (size_t i = 0; i <= len; i++) {
+                char ch = i < len ? start[i] : '|';
+                if (i < len && ch == '(') {
+                    depth++;
+                    continue;
+                }
+                if (i < len && ch == ')') {
+                    depth--;
+                    continue;
+                }
+                if (i < len && (ch != '|' || depth != 0)) {
+                    continue;
+                }
+                const char *part = start + part_start;
+                size_t part_len = i - part_start;
+                ptn_property_trim_type_span(&part, &part_len);
+                if (ptn_ascii_case_equal_span_to_string(part, part_len, "float") &&
+                    ptn_property_type_text_coerce_atom(
+                        runtime,
+                        part,
+                        part_len,
+                        resolved,
+                        allow_scalar_coercion,
+                        out
+                    )) {
+                    return 1;
+                }
+                part_start = i + 1;
+            }
+        }
         int depth = 0;
         size_t part_start = 0;
         for (size_t i = 0; i <= len; i++) {

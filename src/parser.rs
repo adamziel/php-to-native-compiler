@@ -4263,9 +4263,20 @@ impl Parser<'_> {
         let first = self.parse_type_hint_atom(context)?;
         let mut span = first.span;
         let mut types = vec![first.type_hint];
-        while matches!(self.peek().kind, TokenKind::Ampersand)
-            && token_starts_type_hint_atom(self.peek_next())
-        {
+        while matches!(self.peek().kind, TokenKind::Ampersand) {
+            if !token_starts_type_hint_atom(self.peek_next()) {
+                if matches!(
+                    self.peek_next().kind,
+                    TokenKind::Variable(_) | TokenKind::Ellipsis
+                ) {
+                    break;
+                }
+                self.advance();
+                let next = self.parse_type_hint_atom(context)?;
+                span = combine_spans(span, next.span);
+                types.push(next.type_hint);
+                continue;
+            }
             self.advance();
             let next = self.parse_type_hint_atom(context)?;
             span = combine_spans(span, next.span);
@@ -4383,6 +4394,13 @@ impl Parser<'_> {
             {
                 let parsed = self.parse_name("expected type hint")?;
                 TypeHint::Class(self.resolve_class_name(&parsed))
+            }
+            TokenKind::AttributeStart => {
+                let token = self.advance();
+                return Err(Diagnostic::parse_error(
+                    "syntax error, unexpected token \"#[\"",
+                    Some(token.span),
+                ));
             }
             _ => {
                 let token = self.advance();
@@ -7389,6 +7407,10 @@ impl Parser<'_> {
                 })
             }
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
+            TokenKind::Ampersand => Err(Diagnostic::parse_error(
+                "syntax error, unexpected token \"&\"",
+                Some(token.span),
+            )),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
     }
@@ -7948,6 +7970,11 @@ impl Parser<'_> {
 
         let class_name = self.next_anonymous_class_name(parent_name.as_deref(), &interfaces);
         self.expect_left_brace()?;
+        let previous_type_scope = self.active_type_scope.replace(ActiveTypeScope {
+            class_name: class_name.clone(),
+            parent_name: parent_name.clone(),
+            allow_unresolved_parent: false,
+        });
         let mut properties = Vec::new();
         let mut static_properties = Vec::new();
         let mut constants = Vec::new();
@@ -7981,6 +8008,7 @@ impl Parser<'_> {
                 }
             }
         }
+        self.active_type_scope = previous_type_scope;
         let right_span = self.expect_right_brace()?;
         let span = combine_spans(start_span, right_span);
         let source = self
@@ -9389,7 +9417,7 @@ fn property_type_hint_from_type_hint(type_hint: &TypeHint) -> PropertyTypeHint {
         | TypeHint::Intersection(_) => PropertyTypeHint {
             text: type_hint_display_canonical(type_hint),
             kind: PropertyTypeKind::Unsupported,
-            allows_null: false,
+            allows_null: type_hint_accepts_null_default(type_hint),
             semantic_type: None,
         },
         TypeHint::Void | TypeHint::Never => PropertyTypeHint {
@@ -9479,14 +9507,14 @@ fn validate_property_default_value_type(
     let Some(default_type) = property_default_value_type_name(value) else {
         return Ok(());
     };
-    if property_default_value_matches_type(type_hint, default_type) {
+    if property_default_value_matches_type(type_hint, value) {
         return Ok(());
     }
     let declared_type = property_type_hint_display(type_hint);
     if default_type == "null" {
         return Err(Diagnostic::new(
             format!(
-                "Default value for property of type {declared_type} may not be null. Use the nullable type ?{declared_type} to allow null default value"
+                "Cannot use null as default value for property {class_name}::${property_name} of type {declared_type}"
             ),
             Some(value.span()),
         ));
@@ -9512,7 +9540,13 @@ fn property_default_value_type_name(value: &Expr) -> Option<&'static str> {
     }
 }
 
-fn property_default_value_matches_type(type_hint: &PropertyTypeHint, default_type: &str) -> bool {
+fn property_default_value_matches_type(type_hint: &PropertyTypeHint, value: &Expr) -> bool {
+    if let Some(semantic_type) = &type_hint.semantic_type {
+        return class_constant_type_accepts_literal(semantic_type, value);
+    }
+    let Some(default_type) = property_default_value_type_name(value) else {
+        return true;
+    };
     if default_type == "null" {
         return type_hint.allows_null
             || matches!(
@@ -13984,15 +14018,21 @@ fn type_hint_display(type_hint: &TypeHint) -> String {
         TypeHint::Union(types) => {
             let mut members = types
                 .iter()
-                .map(|member| type_hint_union_member_display(member))
+                .map(|member| (member, type_hint_union_member_display(member)))
                 .collect::<Vec<_>>();
             if members
                 .iter()
-                .all(|member| union_builtin_display_rank(member).is_some())
+                .all(|(_, display)| union_builtin_display_rank(display).is_some())
             {
-                members.sort_by_key(|member| union_builtin_display_rank(member).unwrap());
+                members.sort_by_key(|(_, display)| union_builtin_display_rank(display).unwrap());
+            } else {
+                members.sort_by_key(|(member, _)| type_hint_union_member_is_builtin_like(member));
             }
-            members.join("|")
+            members
+                .into_iter()
+                .map(|(_, display)| display)
+                .collect::<Vec<_>>()
+                .join("|")
         }
         TypeHint::Intersection(types) => types
             .iter()
@@ -14082,6 +14122,9 @@ fn class_constant_literal_type_name(value: &Expr) -> Option<&'static str> {
 }
 
 fn class_constant_type_accepts_literal(type_hint: &TypeHint, value: &Expr) -> bool {
+    if let Expr::Grouped { expr, .. } = value {
+        return class_constant_type_accepts_literal(type_hint, expr);
+    }
     match type_hint {
         TypeHint::Null => matches!(value, Expr::Null(_)),
         TypeHint::Array => matches!(value, Expr::Array { .. }),
@@ -14124,27 +14167,38 @@ fn union_builtin_display_rank(member: &str) -> Option<usize> {
     }
 }
 
+fn type_hint_union_member_is_builtin_like(type_hint: &TypeHint) -> bool {
+    !matches!(type_hint, TypeHint::Class(_) | TypeHint::Intersection(_))
+}
+
 fn type_hint_display_canonical(type_hint: &TypeHint) -> String {
     match type_hint {
         TypeHint::Union(types) => {
             let mut members = types
                 .iter()
-                .map(|member| match member {
-                    TypeHint::Intersection(_) => {
-                        format!("({})", type_hint_display_canonical(member))
-                    }
-                    _ => type_hint_display_canonical(member),
+                .map(|member| {
+                    let display = match member {
+                        TypeHint::Intersection(_) => {
+                            format!("({})", type_hint_display_canonical(member))
+                        }
+                        _ => type_hint_display_canonical(member),
+                    };
+                    (member, display)
                 })
                 .collect::<Vec<_>>();
             if members
                 .iter()
-                .all(|member| union_builtin_display_rank(member).is_some())
+                .all(|(_, display)| union_builtin_display_rank(display).is_some())
             {
-                members.sort_by_key(|member| union_builtin_display_rank(member).unwrap());
+                members.sort_by_key(|(_, display)| union_builtin_display_rank(display).unwrap());
             } else {
-                members.sort_by_key(|member| !member.starts_with('('));
+                members.sort_by_key(|(member, _)| type_hint_union_member_is_builtin_like(member));
             }
-            members.join("|")
+            members
+                .into_iter()
+                .map(|(_, display)| display)
+                .collect::<Vec<_>>()
+                .join("|")
         }
         TypeHint::Intersection(types) => types
             .iter()

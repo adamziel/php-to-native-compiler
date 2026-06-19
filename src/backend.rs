@@ -1957,25 +1957,122 @@ fn emit_user_functions(
                             "ptn_value_deref({parameter_source}).type == PTN_NULL || ({condition})"
                         );
                     }
-                    out.push_str("    if (!(");
-                    out.push_str(&condition);
-                    out.push_str(")) {\n");
-                    out.push_str("        ptn_throw_user_parameter_class_type_error(&runtime, \"");
-                    out.push_str(&c_string(&function.display_name));
-                    out.push_str("\", ");
-                    out.push_str(&(parameter_index + 1).to_string());
-                    out.push_str(", \"");
-                    out.push_str(&c_string(&parameter.name));
-                    out.push_str("\", \"");
-                    out.push_str(&c_string(&type_hint_label(type_hint)));
-                    out.push_str("\", ");
-                    out.push_str(&parameter_source);
-                    out.push_str(", line");
-                    emit_user_function_declaration_location_args(out, function);
-                    out.push_str(");\n");
-                    out.push_str("        return ptn_null();\n");
-                    out.push_str("    }\n");
-                    None
+                    if let Some(coercion_helper) =
+                        type_hint_single_scalar_union_parameter_coercion_helper(type_hint)
+                    {
+                        let temp = format!("ptn_parameter_{}", parameter_index);
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(";\n");
+                        out.push_str("    if (!(");
+                        out.push_str(&condition);
+                        out.push_str(")) {\n");
+                        out.push_str("        if (!");
+                        out.push_str(coercion_helper);
+                        out.push_str("(&runtime, \"");
+                        out.push_str(&c_string(&function.display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(", &");
+                        out.push_str(&temp);
+                        out.push_str(")) {\n");
+                        out.push_str("            return ptn_null();\n");
+                        out.push_str("        }\n");
+                        out.push_str("    } else {\n");
+                        out.push_str("        ");
+                        out.push_str(&temp);
+                        out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str("));\n");
+                        out.push_str("    }\n");
+                        Some(temp)
+                    } else if type_hint_union_allows_int_to_float(type_hint) {
+                        let temp = format!("ptn_parameter_{}", parameter_index);
+                        out.push_str("    PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(";\n");
+                        out.push_str("    if (!(");
+                        out.push_str(&condition);
+                        out.push_str(")) {\n");
+                        out.push_str("        if (ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str(").type == PTN_INT) {\n");
+                        out.push_str(
+                            "            if (!ptn_coerce_user_parameter_float(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&function.display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(", &");
+                        out.push_str(&temp);
+                        out.push_str(")) {\n");
+                        out.push_str("                return ptn_null();\n");
+                        out.push_str("            }\n");
+                        out.push_str("        } else {\n");
+                        out.push_str(
+                            "            ptn_throw_user_parameter_class_type_error(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&function.display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(");\n");
+                        out.push_str("            return ptn_null();\n");
+                        out.push_str("        }\n");
+                        out.push_str("    } else {\n");
+                        out.push_str("        ");
+                        out.push_str(&temp);
+                        out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                        out.push_str(&parameter_source);
+                        out.push_str("));\n");
+                        out.push_str("    }\n");
+                        Some(temp)
+                    } else {
+                        out.push_str("    if (!(");
+                        out.push_str(&condition);
+                        out.push_str(")) {\n");
+                        out.push_str(
+                            "        ptn_throw_user_parameter_class_type_error(&runtime, \"",
+                        );
+                        out.push_str(&c_string(&function.display_name));
+                        out.push_str("\", ");
+                        out.push_str(&(parameter_index + 1).to_string());
+                        out.push_str(", \"");
+                        out.push_str(&c_string(&parameter.name));
+                        out.push_str("\", \"");
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
+                        out.push_str("\", ");
+                        out.push_str(&parameter_source);
+                        out.push_str(", line");
+                        emit_user_function_declaration_location_args(out, function);
+                        out.push_str(");\n");
+                        out.push_str("        return ptn_null();\n");
+                        out.push_str("    }\n");
+                        None
+                    }
                 } else {
                     if matches!(effective_type_hint, Some(TypeHint::Null)) {
                         out.push_str("    if (ptn_value_deref(");
@@ -1990,7 +2087,7 @@ fn emit_user_functions(
                         out.push_str(", \"");
                         out.push_str(&c_string(&parameter.name));
                         out.push_str("\", \"");
-                        out.push_str(&c_string(&type_hint_label(type_hint)));
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
                         out.push_str("\", ");
                         out.push_str(&parameter_source);
                         out.push_str(", line");
@@ -2018,7 +2115,7 @@ fn emit_user_functions(
                         out.push_str(", \"");
                         out.push_str(&c_string(&parameter.name));
                         out.push_str("\", \"");
-                        out.push_str(&c_string(&type_hint_label(type_hint)));
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
                         out.push_str("\", ");
                         out.push_str(&parameter_source);
                         out.push_str(", line");
@@ -2048,7 +2145,7 @@ fn emit_user_functions(
                         out.push_str(", \"");
                         out.push_str(&c_string(&parameter.name));
                         out.push_str("\", \"");
-                        out.push_str(&c_string(&type_hint_label(type_hint)));
+                        out.push_str(&c_string(&parameter_type_error_label(parameter, type_hint)));
                         out.push_str("\", ");
                         out.push_str(&parameter_source);
                         out.push_str(", line");
@@ -2081,7 +2178,9 @@ fn emit_user_functions(
                             out.push_str(", \"");
                             out.push_str(&c_string(&parameter.name));
                             out.push_str("\", \"");
-                            out.push_str(&c_string(&type_hint_label(type_hint)));
+                            out.push_str(&c_string(&parameter_type_error_label(
+                                parameter, type_hint,
+                            )));
                             out.push_str("\", ");
                             out.push_str(&parameter_source);
                             out.push_str(", line");
@@ -2102,7 +2201,9 @@ fn emit_user_functions(
                             out.push_str(", \"");
                             out.push_str(&c_string(&parameter.name));
                             out.push_str("\", \"");
-                            out.push_str(&c_string(&type_hint_label(type_hint)));
+                            out.push_str(&c_string(&parameter_type_error_label(
+                                parameter, type_hint,
+                            )));
                             out.push_str("\", ");
                             out.push_str(&parameter_source);
                             out.push_str(", line");
@@ -3790,11 +3891,18 @@ fn type_hint_label(type_hint: &TypeHint) -> String {
             }
             _ => format!("?{}", type_hint_label(inner)),
         },
-        TypeHint::Union(types) => types
-            .iter()
-            .map(type_hint_union_member_label)
-            .collect::<Vec<_>>()
-            .join("|"),
+        TypeHint::Union(types) => {
+            let mut members = types
+                .iter()
+                .map(|type_hint| (type_hint, type_hint_union_member_label(type_hint)))
+                .collect::<Vec<_>>();
+            members.sort_by_key(|(type_hint, _)| type_hint_union_member_is_builtin_like(type_hint));
+            members
+                .into_iter()
+                .map(|(_, label)| label)
+                .collect::<Vec<_>>()
+                .join("|")
+        }
         TypeHint::Intersection(types) => types
             .iter()
             .map(type_hint_label)
@@ -3934,6 +4042,29 @@ fn type_hint_union_member_label(type_hint: &TypeHint) -> String {
     }
 }
 
+fn type_hint_union_member_is_builtin_like(type_hint: &TypeHint) -> bool {
+    !matches!(type_hint, TypeHint::Class(_) | TypeHint::Intersection(_))
+}
+
+fn parameter_type_error_label(parameter: &FunctionParameter, type_hint: &TypeHint) -> String {
+    if parameter_default_value_is_null(parameter)
+        && !type_hint_allows_null(Some(type_hint))
+        && type_hint_allows_implicit_nullable_default(type_hint)
+    {
+        return implicit_nullable_type_hint_label(type_hint);
+    }
+    type_hint_label(type_hint)
+}
+
+fn implicit_nullable_type_hint_label(type_hint: &TypeHint) -> String {
+    match type_hint {
+        TypeHint::Iterable => "Traversable|array|null".to_string(),
+        TypeHint::Intersection(_) => format!("({})|null", type_hint_label(type_hint)),
+        TypeHint::Union(_) => format!("{}|null", type_hint_label(type_hint)),
+        _ => format!("?{}", type_hint_label(type_hint)),
+    }
+}
+
 fn type_hint_label_uses_runtime_static(type_hint: &TypeHint) -> bool {
     match type_hint {
         TypeHint::Static => true,
@@ -3994,11 +4125,23 @@ fn type_hint_runtime_static_label_format(type_hint: &TypeHint) -> String {
             }
             _ => format!("?{}", type_hint_runtime_static_label_format(inner)),
         },
-        TypeHint::Union(types) => types
-            .iter()
-            .map(type_hint_union_member_runtime_static_label_format)
-            .collect::<Vec<_>>()
-            .join("|"),
+        TypeHint::Union(types) => {
+            let mut members = types
+                .iter()
+                .map(|type_hint| {
+                    (
+                        type_hint,
+                        type_hint_union_member_runtime_static_label_format(type_hint),
+                    )
+                })
+                .collect::<Vec<_>>();
+            members.sort_by_key(|(type_hint, _)| type_hint_union_member_is_builtin_like(type_hint));
+            members
+                .into_iter()
+                .map(|(_, label)| label)
+                .collect::<Vec<_>>()
+                .join("|")
+        }
         TypeHint::Intersection(types) => types
             .iter()
             .map(type_hint_runtime_static_label_format)
@@ -4321,6 +4464,32 @@ fn type_hint_scalar_parameter_coercion_helper(
     }
 }
 
+fn type_hint_single_scalar_union_parameter_coercion_helper(
+    type_hint: &TypeHint,
+) -> Option<&'static str> {
+    let TypeHint::Union(types) = type_hint else {
+        return None;
+    };
+    let mut helper = None;
+    for member in types {
+        let Some(member_helper) = type_hint_scalar_parameter_coercion_helper(Some(member)) else {
+            continue;
+        };
+        if helper.is_some() {
+            return None;
+        }
+        helper = Some(member_helper);
+    }
+    helper
+}
+
+fn type_hint_union_allows_int_to_float(type_hint: &TypeHint) -> bool {
+    let TypeHint::Union(types) = type_hint else {
+        return false;
+    };
+    types.iter().any(|member| matches!(member, TypeHint::Float))
+}
+
 fn non_nullable_type_hint(type_hint: Option<&TypeHint>) -> Option<&TypeHint> {
     match type_hint {
         Some(TypeHint::Nullable(inner)) => Some(inner),
@@ -4330,8 +4499,10 @@ fn non_nullable_type_hint(type_hint: Option<&TypeHint>) -> Option<&TypeHint> {
 
 fn type_hint_allows_null(type_hint: Option<&TypeHint>) -> bool {
     match type_hint {
-        Some(TypeHint::Nullable(_)) => true,
-        Some(TypeHint::Union(types)) => types.iter().any(|type_hint| type_hint == &TypeHint::Null),
+        Some(TypeHint::Null | TypeHint::Mixed | TypeHint::Nullable(_)) => true,
+        Some(TypeHint::Union(types)) => types
+            .iter()
+            .any(|type_hint| type_hint_allows_null(Some(type_hint))),
         _ => false,
     }
 }
@@ -11466,13 +11637,7 @@ fn reflection_parameter_type_label(parameter: &FunctionParameter, type_hint: &Ty
         && !type_hint_allows_null(Some(type_hint))
         && type_hint_allows_implicit_nullable_default(type_hint)
     {
-        return match type_hint {
-            TypeHint::Iterable => "Traversable|array|null".to_string(),
-            TypeHint::Union(_) | TypeHint::Intersection(_) => {
-                format!("{}|null", type_hint_label(type_hint))
-            }
-            _ => format!("?{}", type_hint_label(type_hint)),
-        };
+        return implicit_nullable_type_hint_label(type_hint);
     }
     type_hint_label(type_hint)
 }
@@ -18171,7 +18336,7 @@ fn type_hint_accepts_default_value(type_hint: &TypeHint, value: &ValueExpr) -> b
         TypeHint::Null => matches!(value, ValueExpr::Null),
         TypeHint::Array => matches!(value, ValueExpr::Array(_)),
         TypeHint::Int => matches!(value, ValueExpr::Int(_)),
-        TypeHint::Float => matches!(value, ValueExpr::Float(_)),
+        TypeHint::Float => matches!(value, ValueExpr::Float(_) | ValueExpr::Int(_)),
         TypeHint::String => matches!(value, ValueExpr::String(_)),
         TypeHint::Bool => matches!(value, ValueExpr::Bool(_)),
         TypeHint::True => matches!(value, ValueExpr::Bool(true)),
