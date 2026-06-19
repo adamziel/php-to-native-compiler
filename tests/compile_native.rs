@@ -10614,6 +10614,119 @@ var_dump(unserialize($payload));
 }
 
 #[test]
+fn compile_session_php_serialize_decode_unexpected_end_to_native_binary() {
+    let root = temp_dir("ptn-native-session-php-serialize-decode-unexpected-end");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-php-serialize-decode-unexpected-end.php");
+    let output = root.join("session-php-serialize-decode-unexpected-end-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.serialize_handler', 'php_serialize');
+session_id('ptn_session_php_serialize_decode_unexpected_end');
+session_start();
+$sess = 'O:9:"Exception":2:{{s:7:"' . "\0" . '*' . "\0" . 'file";s:0:"";}}';
+var_dump(session_decode($sess));
+var_dump($_SESSION);
+echo "DONE\n";
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Warning: session_decode(): Unexpected end of serialized data"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: session_decode(): Failed to decode session object. Session has been destroyed"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("bool(false)\narray(0) {\n}\nDONE\n"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_session_serialize_handler_codecs_to_native_binary() {
+    let root = temp_dir("ptn-native-session-serialize-handler-codecs");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("session-serialize-handler-codecs.php");
+    let output = root.join("session-serialize-handler-codecs-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+ini_set('session.save_path', '{}');
+ini_set('session.serialize_handler', 'php_serialize');
+session_id('ptn_session_php_serialize_codec');
+session_start();
+$_SESSION = ['x' => 42, 'false' => false];
+echo session_encode(), "\n";
+session_decode('a:2:{{s:1:"x";i:7;s:1:"z";s:3:"hey";}}');
+var_dump($_SESSION);
+session_write_close();
+
+ini_set('session.serialize_handler', 'php_binary');
+session_id('ptn_session_php_binary_codec');
+session_start();
+$_SESSION = ['abc' => 1, 'de' => false];
+echo bin2hex(session_encode()), "\n";
+session_decode(chr(3) . 'abc' . 'i:9;' . chr(2) . 'de' . 'b:0;');
+var_dump($_SESSION);
+"#,
+            root.display()
+        ),
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "a:2:{s:1:\"x\";i:42;s:5:\"false\";b:0;}\n",
+            "array(2) {\n",
+            "  [\"x\"]=>\n",
+            "  int(7)\n",
+            "  [\"z\"]=>\n",
+            "  string(3) \"hey\"\n",
+            "}\n",
+            "03616263693a313b026465623a303b\n",
+            "array(2) {\n",
+            "  [\"abc\"]=>\n",
+            "  int(9)\n",
+            "  [\"de\"]=>\n",
+            "  bool(false)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_serializable_nested_unserialize_failure_invalidates_outer_reference_to_native_binary() {
     let root = temp_dir("ptn-native-serializable-nested-unserialize-failure");
     fs::create_dir_all(&root).unwrap();

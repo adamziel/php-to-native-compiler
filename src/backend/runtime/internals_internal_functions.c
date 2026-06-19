@@ -8105,17 +8105,17 @@ typedef struct {
     size_t insufficient_present;
 } PtnUnserializeSavedInput;
 
-static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    PtnStringOperand input = ptn_internal_expect_string_arg(
-        runtime,
-        "unserialize",
-        1,
-        "data",
-        args[0],
-        line
-    );
-
+static int ptn_unserialize_value_from_operand(
+    PtnRuntime *runtime,
+    PtnStringOperand input,
+    size_t line,
+    PtnValue *out,
+    int emit_diagnostics,
+    int *unexpected_end_out
+) {
+    if (unexpected_end_out != NULL) {
+        *unexpected_end_out = 0;
+    }
     PtnUnserializeState *active_state = runtime == NULL
         ? NULL
         : (PtnUnserializeState *)runtime->active_unserialize_state;
@@ -8184,31 +8184,37 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
             ptn_unserialize_truncate_ids(active_state, saved_id_len);
             ptn_string_operand_free(input);
             ptn_rethrow_exception(runtime);
-            return ptn_null();
+            return 0;
         }
         if (failed) {
-            if (unexpected_end) {
-                ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+            if (unexpected_end_out != NULL) {
+                *unexpected_end_out = unexpected_end;
             }
-            if (insufficient_data) {
-                ptn_unserialize_emit_insufficient_data_warning(
-                    runtime,
-                    insufficient_required,
-                    insufficient_present,
-                    line
-                );
+            if (emit_diagnostics) {
+                if (unexpected_end) {
+                    ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+                }
+                if (insufficient_data) {
+                    ptn_unserialize_emit_insufficient_data_warning(
+                        runtime,
+                        insufficient_required,
+                        insufficient_present,
+                        line
+                    );
+                }
+                ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
             }
-            ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
             ptn_value_destroy(&parsed.value);
             ptn_unserialize_truncate_ids(active_state, saved_id_len);
             ptn_string_operand_free(input);
-            return ptn_bool(0);
+            return 0;
         }
-        if (parsed_pos != input.len) {
+        if (emit_diagnostics && parsed_pos != input.len) {
             ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
         }
         ptn_string_operand_free(input);
-        return parsed.value;
+        *out = parsed.value;
+        return 1;
     }
 
     PtnUnserializeState state;
@@ -8253,32 +8259,55 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
         ptn_unserialize_state_free(&state);
         ptn_string_operand_free(input);
         ptn_rethrow_exception(runtime);
-        return ptn_null();
+        return 0;
     }
     if (failed) {
-        if (unexpected_end) {
-            ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+        if (unexpected_end_out != NULL) {
+            *unexpected_end_out = unexpected_end;
         }
-        if (insufficient_data) {
-            ptn_unserialize_emit_insufficient_data_warning(
-                runtime,
-                insufficient_required,
-                insufficient_present,
-                line
-            );
+        if (emit_diagnostics) {
+            if (unexpected_end) {
+                ptn_unserialize_emit_unexpected_end_warning(runtime, line);
+            }
+            if (insufficient_data) {
+                ptn_unserialize_emit_insufficient_data_warning(
+                    runtime,
+                    insufficient_required,
+                    insufficient_present,
+                    line
+                );
+            }
+            ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
         }
-        ptn_unserialize_emit_error_warning(runtime, error_pos, input.len, line);
         ptn_value_destroy(&parsed.value);
         ptn_unserialize_state_free(&state);
         ptn_string_operand_free(input);
-        return ptn_bool(0);
+        return 0;
     }
-    if (parsed_pos != input.len) {
+    if (emit_diagnostics && parsed_pos != input.len) {
         ptn_unserialize_emit_extra_data_warning(runtime, parsed_pos, input.len, line);
     }
     ptn_unserialize_state_free(&state);
     ptn_string_operand_free(input);
-    return parsed.value;
+    *out = parsed.value;
+    return 1;
+}
+
+static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand input = ptn_internal_expect_string_arg(
+        runtime,
+        "unserialize",
+        1,
+        "data",
+        args[0],
+        line
+    );
+    PtnValue result = ptn_null();
+    if (!ptn_unserialize_value_from_operand(runtime, input, line, &result, 1, NULL)) {
+        return ptn_bool(0);
+    }
+    return result;
 }
 
 static void ptn_var_export_append_value(
@@ -55251,30 +55280,80 @@ static int ptn_session_serialized_value_len(const char *data, size_t len, size_t
     return 0;
 }
 
+static int ptn_session_decode_serialized_value(
+    PtnRuntime *runtime,
+    const char *data,
+    size_t len,
+    PtnValue *out,
+    size_t line
+) {
+    PtnStringOperand payload = ptn_string_operand_borrowed_len(data, len);
+    int unexpected_end = 0;
+    PtnValue value = ptn_null();
+    if (!ptn_unserialize_value_from_operand(
+            runtime,
+            payload,
+            line,
+            &value,
+            0,
+            &unexpected_end
+        )) {
+        if (unexpected_end) {
+            ptn_emit_runtime_warning(
+                runtime,
+                "session_decode(): Unexpected end of serialized data",
+                line
+            );
+        }
+        return 0;
+    }
+    *out = value;
+    return 1;
+}
+
 static int ptn_session_decode_payload(PtnRuntime *runtime, const char *data, size_t len, PtnValue *out, size_t line) {
+    const char *handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
+    if (ptn_ascii_case_equal(handler, "php_serialize")) {
+        return ptn_session_decode_serialized_value(runtime, data, len, out, line);
+    }
+
+    int php_binary = ptn_ascii_case_equal(handler, "php_binary");
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     size_t pos = 0;
     while (pos < len) {
-        size_t key_start = pos;
-        while (pos < len && data[pos] != '|') {
+        char *key_name = NULL;
+        if (php_binary) {
+            size_t key_len = (size_t)(unsigned char)data[pos++];
+            if (key_len > len - pos) {
+                ptn_value_destroy(&result);
+                return 0;
+            }
+            key_name = ptn_duplicate_string_len(data + pos, key_len);
+            pos += key_len;
+        } else {
+            size_t key_start = pos;
+            while (pos < len && data[pos] != '|') {
+                pos++;
+            }
+            if (pos == len) {
+                ptn_value_destroy(&result);
+                return 0;
+            }
+            key_name = ptn_duplicate_string_len(data + key_start, pos - key_start);
             pos++;
         }
-        if (pos == len || pos == key_start) {
-            ptn_value_destroy(&result);
-            return 0;
-        }
-        char *key_name = ptn_duplicate_string_len(data + key_start, pos - key_start);
-        pos++;
         size_t value_len = 0;
         if (!ptn_session_serialized_value_len(data, len, pos, &value_len)) {
             free(key_name);
             ptn_value_destroy(&result);
             return 0;
         }
-        char *payload = ptn_duplicate_string_len(data + pos, value_len);
-        PtnValue arg = ptn_owned_string(payload);
-        PtnValue value = ptn_internal_unserialize(runtime, 1, &arg, line);
-        ptn_value_destroy(&arg);
+        PtnValue value = ptn_null();
+        if (!ptn_session_decode_serialized_value(runtime, data + pos, value_len, &value, line)) {
+            free(key_name);
+            ptn_value_destroy(&result);
+            return 0;
+        }
         if (runtime->exceptions->active_exception != NULL) {
             free(key_name);
             ptn_value_destroy(&result);
@@ -55290,15 +55369,29 @@ static int ptn_session_decode_payload(PtnRuntime *runtime, const char *data, siz
 
 static PtnValue ptn_session_encode_array(PtnRuntime *runtime, PtnValue session_array, size_t line) {
     session_array = ptn_value_deref(session_array);
+    const char *handler = ptn_runtime_session_ini(runtime, "session.serialize_handler");
+    if (ptn_ascii_case_equal(handler, "php_serialize")) {
+        PtnValue value_arg = ptn_value_clone_deref(session_array);
+        PtnValue serialized_result = ptn_internal_serialize(runtime, 1, &value_arg, line);
+        ptn_value_destroy(&value_arg);
+        return serialized_result;
+    }
     if (session_array.type != PTN_ARRAY) {
         return ptn_string("");
     }
+    int php_binary = ptn_ascii_case_equal(handler, "php_binary");
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     for (size_t i = 0; i < session_array.as.array->len; i++) {
         PtnArrayEntry *entry = &session_array.as.array->entries[i];
-        if (entry->key.type != PTN_ARRAY_KEY_STRING ||
-            memchr(entry->key.as.string, '|', entry->key.string_len) != NULL) {
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        if (php_binary && entry->key.string_len > 255) {
+            free(buffer.data);
+            return ptn_bool(0);
+        }
+        if (!php_binary && memchr(entry->key.as.string, '|', entry->key.string_len) != NULL) {
             continue;
         }
         PtnValue value_arg = ptn_value_clone_deref(entry->value);
@@ -55310,8 +55403,13 @@ static PtnValue ptn_session_encode_array(PtnRuntime *runtime, PtnValue session_a
         }
         PtnValue serialized = ptn_value_deref(serialized_result);
         if (serialized.type == PTN_STRING) {
+            if (php_binary) {
+                ptn_string_buffer_append_char(&buffer, (char)entry->key.string_len);
+            }
             ptn_string_buffer_append_len(&buffer, entry->key.as.string, entry->key.string_len);
-            ptn_string_buffer_append_char(&buffer, '|');
+            if (!php_binary) {
+                ptn_string_buffer_append_char(&buffer, '|');
+            }
             ptn_string_buffer_append_len(&buffer, (const char *)serialized.as.string.data, serialized.as.string.len);
         }
         ptn_value_destroy(&serialized_result);
