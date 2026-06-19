@@ -18373,6 +18373,8 @@ fn compile_user_function_calls_use_direct_generated_path_to_native_binary() {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(!c_source.contains("ptn_runtime_import_constants"));
     assert!(c_source.contains("ptn_runtime_init_function_frame(&runtime, caller_runtime);"));
+    assert!(c_source.contains("runtime->native_argc = caller_runtime->native_argc;"));
+    assert!(c_source.contains("runtime->native_argv = caller_runtime->native_argv;"));
     assert!(c_source.contains("ptn_user_function_0(&runtime, ptn_null(), 1,"));
 
     let main_start = c_source
@@ -39481,6 +39483,55 @@ var_dump($rest);\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "array(6) {\n  [\"v\"]=>\n  bool(false)\n  [\"a\"]=>\n  string(3) \"one\"\n  [\"b\"]=>\n  string(3) \"two\"\n  [\"arg\"]=>\n  string(5) \"value\"\n  [\"flag\"]=>\n  bool(false)\n  [\"opt\"]=>\n  string(5) \"maybe\"\n}\nint(9)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cli_getopt_reads_forwarded_arguments_inside_user_function() {
+    let root = temp_dir("ptn-phpc-cli-getopt-user-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cli-getopt-user-function.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function read_options() {\n\
+    $rest = null;\n\
+    $options = getopt('a:b::v', ['arg:', 'flag', 'opt::'], $rest);\n\
+    return [$options, $rest];\n\
+}\n\
+$result = read_options();\n\
+$options = $result[0];\n\
+$rest = $result[1];\n\
+var_dump(array_key_exists('v', $options));\n\
+var_dump($options['a']);\n\
+var_dump($options['b']);\n\
+var_dump($options['arg']);\n\
+var_dump(array_key_exists('flag', $options));\n\
+var_dump($options['opt']);\n\
+var_dump($rest);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .arg("--")
+        .arg("-v")
+        .arg("-a")
+        .arg("one")
+        .arg("-b=two")
+        .arg("--arg")
+        .arg("value")
+        .arg("--flag")
+        .arg("--opt=maybe")
+        .arg("tail")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nstring(3) \"one\"\nstring(3) \"two\"\nstring(5) \"value\"\nbool(true)\nstring(5) \"maybe\"\nint(9)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
