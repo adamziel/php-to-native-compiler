@@ -1304,8 +1304,11 @@ fn emit_declared_class_new_instance_without_constructor(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_new_instance_without_constructor(PtnRuntime *caller_runtime, const char *class_name, size_t line) {\n",
     );
     if classes.is_empty() {
-        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)line;\n");
     }
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"stdClass\")) {\n");
+    out.push_str("        return ptn_object_new_shell(caller_runtime, \"stdClass\");\n");
+    out.push_str("    }\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
     let mut emitted_branch = false;
@@ -1354,11 +1357,13 @@ fn emit_declared_class_new_instance_without_constructor(
     );
     if classes.is_empty() {
         out.push_str("    (void)runtime;\n");
-        out.push_str("    (void)class_name;\n");
         out.push_str("    (void)argc;\n");
         out.push_str("    (void)args;\n");
         out.push_str("    (void)line;\n");
     }
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"stdClass\")) {\n");
+    out.push_str("        return ptn_object_new_shell(runtime, \"stdClass\");\n");
+    out.push_str("    }\n");
     for declared_class in classes {
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&declared_class.name));

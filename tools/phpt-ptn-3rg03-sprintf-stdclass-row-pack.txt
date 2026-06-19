@@ -1,0 +1,7 @@
+# ptn-3rg03 ext/standard strings rows unlocked by generated stdClass instantiation.
+# Source bucket: ext/standard/tests/strings/sprintf*.phpt before run
+# .runtime/phpt-progress/run-20260619T044306Z-1959053.log.
+ext/standard/tests/strings/sprintf_rope_optimization_001.phpt
+ext/standard/tests/strings/sprintf_rope_optimization_002.phpt
+ext/standard/tests/strings/sprintf_rope_optimization_003.phpt
+ext/standard/tests/strings/sprintf_variation54.phpt
