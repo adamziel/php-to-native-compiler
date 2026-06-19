@@ -1619,6 +1619,12 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_reflection_parameter_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_reflection_class_constant_new(
     PtnRuntime *runtime,
     size_t argc,

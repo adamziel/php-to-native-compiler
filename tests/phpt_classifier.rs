@@ -1444,6 +1444,30 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "Zend/tests/attributes/delayed_target_validation/with_Override_error_set.phpt",
             "--TEST--\ndelayed override hook set error\n--FILE--\n<?php\nclass Demo { public string $hooked { get => $this->hooked; #[DelayedTargetValidation] #[Override] set => $value; } }\n--EXPECTF--\n",
         ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/has_runtime_errors.phpt",
+            "--TEST--\ndelayed hook runtime errors\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Deprecated] get => $this->hooked; #[DelayedTargetValidation] #[NoDiscard] set => $value; } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/validator_NoDiscard.phpt",
+            "--TEST--\ndelayed nodiscard validator\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[NoDiscard] get => $this->hooked; set => $value; } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_Deprecated.phpt",
+            "--TEST--\ndelayed deprecated hook\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Deprecated] get => $this->hooked; set => $value; } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_ReturnTypeWillChange.phpt",
+            "--TEST--\ndelayed return type will change hook\n--FILE--\n<?php\nclass Demo implements Countable { public string $hooked { #[DelayedTargetValidation] #[ReturnTypeWillChange] get => $this->hooked; set => $value; } #[DelayedTargetValidation] #[ReturnTypeWillChange] public function count() { return 0; } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/nodiscard/unsupported_property_hook_get.phpt",
+            "--TEST--\nnodiscard hook get\n--FILE--\n<?php\nclass Demo { public string $hooked { #[NoDiscard] get => $this->hooked; set => $value; } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/nodiscard/unsupported_property_hook_set.phpt",
+            "--TEST--\nnodiscard hook set\n--FILE--\n<?php\nclass Demo { public string $hooked { get => $this->hooked; #[NoDiscard] set => $value; } }\n--EXPECTF--\n",
+        ),
     ];
 
     for (path, phpt) in cases {

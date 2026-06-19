@@ -10811,7 +10811,7 @@ fn reflection_method_to_string(
     out.push('\n');
     if !function.parameters.is_empty() {
         out.push('\n');
-        reflection_parameters_to_string(&mut out, &function.parameters);
+        reflection_parameters_to_string_with_indent(&mut out, &function.parameters, "  ", "    ");
     }
     if let Some(return_type) = &function.return_type {
         if function.parameters.is_empty() {
@@ -10919,11 +10919,22 @@ fn reflection_method_parent_prototype<'a>(
 }
 
 fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParameter]) {
-    out.push_str("      - Parameters [");
+    reflection_parameters_to_string_with_indent(out, parameters, "      ", "        ");
+}
+
+fn reflection_parameters_to_string_with_indent(
+    out: &mut String,
+    parameters: &[FunctionParameter],
+    block_indent: &str,
+    parameter_indent: &str,
+) {
+    out.push_str(block_indent);
+    out.push_str("- Parameters [");
     out.push_str(&parameters.len().to_string());
     out.push_str("] {\n");
     for (index, parameter) in parameters.iter().enumerate() {
-        out.push_str("        Parameter #");
+        out.push_str(parameter_indent);
+        out.push_str("Parameter #");
         out.push_str(&index.to_string());
         out.push_str(" [ <");
         out.push_str(if parameter.default_value.is_some() {
@@ -10950,7 +10961,8 @@ fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParam
         }
         out.push_str(" ]\n");
     }
-    out.push_str("      }\n");
+    out.push_str(block_indent);
+    out.push_str("}\n");
 }
 
 fn reflection_parameter_type_label(parameter: &FunctionParameter, type_hint: &TypeHint) -> String {

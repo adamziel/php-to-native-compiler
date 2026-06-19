@@ -70910,7 +70910,8 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
 }
 
 static int ptn_reflection_parameter_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "canBePassedByValue")
+    return ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "canBePassedByValue")
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getPosition")
@@ -70972,7 +70973,8 @@ static int ptn_reflection_reference_method_exists(const char *method_name) {
 }
 
 static int ptn_reflection_constant_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "getAttributes")
+    return ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getExtension")
         || ptn_ascii_case_equal(method_name, "getExtensionName")
         || ptn_ascii_case_equal(method_name, "getName");
@@ -71932,6 +71934,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_reflection_constant(class_name)) {
         static const char *const names[] = {
+            "__toString",
             "getAttributes",
             "getExtension",
             "getExtensionName",
@@ -71983,6 +71986,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_reflection_parameter(class_name)) {
         static const char *const names[] = {
+            "__toString",
             "canBePassedByValue",
             "getAttributes",
             "getName",
@@ -73644,6 +73648,51 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_new(
 }
 
 static PtnValue ptn_reflection_extension_object_from_name(PtnRuntime *runtime, const char *name);
+static const char *ptn_reflection_class_constant_value_type_name(PtnValue value);
+
+static PtnValue ptn_reflection_constant_to_string(
+    PtnRuntime *runtime,
+    const char *constant_name,
+    size_t line
+) {
+    PtnValue value = ptn_read_constant(runtime, constant_name, runtime->source_path, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&value);
+        return ptn_null();
+    }
+    const char *type_name = ptn_reflection_class_constant_value_type_name(value);
+    char *value_repr = ptn_value_to_string(value);
+    int needed = snprintf(
+        NULL,
+        0,
+        "Constant [ %s %s ] { %s }\n",
+        type_name,
+        constant_name,
+        value_repr
+    );
+    if (needed < 0) {
+        free(value_repr);
+        ptn_value_destroy(&value);
+        ptn_abort_out_of_memory();
+    }
+    char *result = malloc((size_t)needed + 1);
+    if (result == NULL) {
+        free(value_repr);
+        ptn_value_destroy(&value);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        result,
+        (size_t)needed + 1,
+        "Constant [ %s %s ] { %s }\n",
+        type_name,
+        constant_name,
+        value_repr
+    );
+    free(value_repr);
+    ptn_value_destroy(&value);
+    return ptn_owned_string(result);
+}
 
 static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
     PtnRuntime *runtime,
@@ -73658,6 +73707,12 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
     PtnReflectionConstantData *data = ptn_reflection_constant_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "__toString", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_constant_to_string(runtime, data->name, line);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         ptn_reflection_class_check_exact_arguments(runtime, "getName", argc, 0);
@@ -82132,44 +82187,56 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
     } else {
         ptn_string_buffer_append_format(
             &buffer,
-            "Function [ <user> function %s ] {\n\n",
+            "Function [ <user> function %s ] {\n",
             metadata.name
         );
+        if (metadata.source_file != NULL) {
+            ptn_string_buffer_append_format(
+                &buffer,
+                "  @@ %s %zu - %zu\n",
+                metadata.source_file,
+                metadata.start_line,
+                metadata.end_line
+            );
+        }
     }
 
-    ptn_string_buffer_append_format(&buffer, "  - Parameters [%zu] {\n", metadata.parameter_count);
-    for (size_t i = 0; i < metadata.parameter_count; i++) {
-        char fallback[32];
-        const char *parameter_name = ptn_function_metadata_parameter_name(
-            metadata,
-            i,
-            fallback,
-            sizeof(fallback)
-        );
-        const char *type_display = ptn_function_metadata_parameter_type_display_name(metadata, i);
-        const char *default_display = ptn_internal_function_parameter_default_display(metadata, i);
-        ptn_string_buffer_append_format(
-            &buffer,
-            "    Parameter #%zu [ <%s> ",
-            i,
-            i < metadata.required_parameter_count ? "required" : "optional"
-        );
-        if (type_display != NULL) {
-            ptn_string_buffer_append_format(&buffer, "%s ", type_display);
+    if (metadata.parameter_count > 0) {
+        ptn_string_buffer_append(&buffer, "\n");
+        ptn_string_buffer_append_format(&buffer, "  - Parameters [%zu] {\n", metadata.parameter_count);
+        for (size_t i = 0; i < metadata.parameter_count; i++) {
+            char fallback[32];
+            const char *parameter_name = ptn_function_metadata_parameter_name(
+                metadata,
+                i,
+                fallback,
+                sizeof(fallback)
+            );
+            const char *type_display = ptn_function_metadata_parameter_type_display_name(metadata, i);
+            const char *default_display = ptn_internal_function_parameter_default_display(metadata, i);
+            ptn_string_buffer_append_format(
+                &buffer,
+                "    Parameter #%zu [ <%s> ",
+                i,
+                i < metadata.required_parameter_count ? "required" : "optional"
+            );
+            if (type_display != NULL) {
+                ptn_string_buffer_append_format(&buffer, "%s ", type_display);
+            }
+            if (ptn_function_metadata_parameter_is_variadic(metadata, i)) {
+                ptn_string_buffer_append(&buffer, "...");
+            }
+            if (ptn_function_metadata_parameter_by_ref(metadata, i)) {
+                ptn_string_buffer_append(&buffer, "&");
+            }
+            ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
+            if (default_display != NULL) {
+                ptn_string_buffer_append_format(&buffer, " = %s", default_display);
+            }
+            ptn_string_buffer_append(&buffer, " ]\n");
         }
-        if (ptn_function_metadata_parameter_is_variadic(metadata, i)) {
-            ptn_string_buffer_append(&buffer, "...");
-        }
-        if (ptn_function_metadata_parameter_by_ref(metadata, i)) {
-            ptn_string_buffer_append(&buffer, "&");
-        }
-        ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
-        if (default_display != NULL) {
-            ptn_string_buffer_append_format(&buffer, " = %s", default_display);
-        }
-        ptn_string_buffer_append(&buffer, " ]\n");
+        ptn_string_buffer_append(&buffer, "  }\n");
     }
-    ptn_string_buffer_append(&buffer, "  }\n");
     if (metadata.return_type_display_name != NULL) {
         ptn_string_buffer_append_format(&buffer, "  - Return [ %s ]\n", metadata.return_type_display_name);
     }
@@ -82259,6 +82326,213 @@ static PtnValue ptn_reflection_parameter_object_from_metadata(
         ptn_owned_string(ptn_duplicate_string(parameter_name))
     );
     return object;
+}
+
+static PtnFunctionMetadata ptn_reflection_parameter_resolve_function_metadata(
+    PtnRuntime *runtime,
+    PtnValue target,
+    size_t line
+) {
+    target = ptn_value_deref(target);
+    if (target.type == PTN_CLOSURE) {
+        return target.as.closure->metadata;
+    }
+    if (target.type == PTN_ARRAY) {
+        if (target.as.array == NULL || target.as.array->len < 2) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "The parameter class method must be an array with two elements"
+            );
+            return ptn_function_metadata_not_found();
+        }
+        PtnValue class_arg = ptn_value_deref(target.as.array->entries[0].value);
+        PtnValue method_arg = ptn_value_deref(target.as.array->entries[1].value);
+        char *class_name = NULL;
+        if (class_arg.type == PTN_OBJECT) {
+            class_name = ptn_duplicate_string(class_arg.as.object->class_name);
+        } else if (class_arg.type == PTN_EXCEPTION) {
+            class_name = ptn_duplicate_string(class_arg.as.exception->class_name);
+        } else {
+            class_name = ptn_value_to_string(class_arg);
+        }
+        char *method_name = ptn_value_to_string(method_arg);
+        const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
+        const char *resolved_class_name = NULL;
+        if (!ptn_reflection_class_runtime_symbol_exists_after_autoload(
+                runtime,
+                lookup_class_name,
+                line,
+                &resolved_class_name
+            )) {
+            if (runtime->exceptions->active_exception == NULL) {
+                ptn_reflection_class_throw_missing_class(runtime, lookup_class_name);
+            }
+            free(method_name);
+            free(class_name);
+            return ptn_function_metadata_not_found();
+        }
+
+        int needed = snprintf(NULL, 0, "%s::%s", resolved_class_name, method_name);
+        if (needed < 0) {
+            free(method_name);
+            free(class_name);
+            ptn_abort_out_of_memory();
+        }
+        char *function_name = malloc((size_t)needed + 1);
+        if (function_name == NULL) {
+            free(method_name);
+            free(class_name);
+            ptn_abort_out_of_memory();
+        }
+        snprintf(function_name, (size_t)needed + 1, "%s::%s", resolved_class_name, method_name);
+        PtnFunctionMetadata metadata = ptn_find_function_metadata(function_name);
+        free(function_name);
+        if (!metadata.found && runtime->exceptions->active_exception == NULL) {
+            ptn_reflection_method_throw_missing(runtime, resolved_class_name, method_name);
+        }
+        free(method_name);
+        free(class_name);
+        return metadata;
+    }
+
+    char *name = ptn_value_to_string(target);
+    PtnFunctionMetadata metadata = ptn_find_function_metadata(name);
+    if (!metadata.found) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Function %s() does not exist",
+            name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            free(name);
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+    }
+    free(name);
+    return metadata;
+}
+
+static int ptn_reflection_parameter_resolve_index(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata,
+    PtnValue parameter,
+    size_t line,
+    size_t *index_out
+) {
+    (void)line;
+    parameter = ptn_value_deref(parameter);
+    if (parameter.type == PTN_INT) {
+        if (parameter.as.integer >= 0 && (uint64_t)parameter.as.integer < metadata.parameter_count) {
+            *index_out = (size_t)parameter.as.integer;
+            return 1;
+        }
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "The parameter specified by its offset could not be found"
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return 0;
+    }
+
+    char *name = ptn_value_to_string(parameter);
+    for (size_t i = 0; i < metadata.parameter_count; i++) {
+        char fallback[32];
+        const char *parameter_name =
+            ptn_function_metadata_parameter_name(metadata, i, fallback, sizeof(fallback));
+        if (strcmp(parameter_name, name) == 0) {
+            free(name);
+            *index_out = i;
+            return 1;
+        }
+    }
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The parameter specified by its name could not be found"
+    );
+    free(name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ReflectionException", message);
+    return 0;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_parameter_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc != 2) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionParameter::__construct() expects exactly 2 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnFunctionMetadata metadata =
+        ptn_reflection_parameter_resolve_function_metadata(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL || !metadata.found) {
+        return ptn_null();
+    }
+    size_t index = 0;
+    if (!ptn_reflection_parameter_resolve_index(runtime, metadata, args[1], line, &index)) {
+        return ptn_null();
+    }
+    return ptn_reflection_parameter_object_from_metadata(runtime, metadata, index);
+}
+
+static PtnValue ptn_reflection_parameter_to_string(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    char fallback[32];
+    const char *parameter_name =
+        ptn_function_metadata_parameter_name(metadata, index, fallback, sizeof(fallback));
+    const char *type_display = ptn_function_metadata_parameter_type_display_name(metadata, index);
+    const char *default_display = ptn_internal_function_parameter_default_display(metadata, index);
+    ptn_string_buffer_append_format(
+        &buffer,
+        "Parameter #%zu [ <%s> ",
+        index,
+        index < metadata.required_parameter_count ? "required" : "optional"
+    );
+    if (type_display != NULL) {
+        ptn_string_buffer_append_format(&buffer, "%s ", type_display);
+    }
+    if (ptn_function_metadata_parameter_is_variadic(metadata, index)) {
+        ptn_string_buffer_append(&buffer, "...");
+    }
+    if (ptn_function_metadata_parameter_by_ref(metadata, index)) {
+        ptn_string_buffer_append(&buffer, "&");
+    }
+    ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
+    if (default_display != NULL) {
+        ptn_string_buffer_append_format(&buffer, " = %s", default_display);
+    }
+    ptn_string_buffer_append(&buffer, " ]");
+    return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
 static void ptn_reflection_check_no_arguments(
@@ -88570,6 +88844,9 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
     ptn_reflection_check_no_arguments(runtime, "ReflectionParameter", name, argc);
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "__toString")) {
+        return ptn_reflection_parameter_to_string(metadata, index);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         char fallback[32];
