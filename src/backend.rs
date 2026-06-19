@@ -29714,9 +29714,84 @@ impl ValueEmitter {
         out.push_str(" = ptn_object_new_shell(&runtime, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\");\n");
-        for (declaring_class_name, property, hook_get_value) in
-            class_property_initialization_chain(declared_class, &self.classes)
-        {
+        self.emit_runtime_alias_parent_property_initializers(out, result_temp, declared_class);
+        self.emit_declared_property_initializers(
+            out,
+            "    ",
+            result_temp,
+            class_property_initialization_chain(declared_class, &self.classes),
+        );
+    }
+
+    fn emit_runtime_alias_parent_property_initializers(
+        &mut self,
+        out: &mut String,
+        result_temp: &str,
+        declared_class: &ClassDecl,
+    ) {
+        let Some(parent_name) = declared_class.parent_name.as_deref() else {
+            return;
+        };
+        if class_by_name(&self.classes, parent_name).is_some() {
+            return;
+        }
+        let parent_alias_temp = self.next_temp();
+        out.push_str("    const char *");
+        out.push_str(&parent_alias_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+        out.push_str(&c_string(parent_name));
+        out.push_str("\");\n");
+        let candidate_classes = self.classes.clone();
+        let mut emitted_branch = false;
+        for candidate in candidate_classes {
+            if candidate.name.eq_ignore_ascii_case(&declared_class.name) {
+                continue;
+            }
+            let chain = class_property_initialization_chain(&candidate, &self.classes);
+            if chain.is_empty() {
+                continue;
+            }
+            out.push_str("    ");
+            if emitted_branch {
+                out.push_str("} else ");
+            }
+            out.push_str("if (ptn_ascii_case_equal(");
+            out.push_str(&parent_alias_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&candidate.name));
+            out.push_str("\")) {\n");
+            self.emit_declared_property_initializers(
+                out,
+                "        ",
+                result_temp,
+                chain
+                    .into_iter()
+                    .map(|(declaring_class_name, property, hook_get_value)| {
+                        let runtime_declaring_class =
+                            if declaring_class_name.eq_ignore_ascii_case(&candidate.name) {
+                                parent_name.to_string()
+                            } else {
+                                declaring_class_name
+                            };
+                        (runtime_declaring_class, property, hook_get_value)
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            emitted_branch = true;
+        }
+        if emitted_branch {
+            out.push_str("    }\n");
+        }
+    }
+
+    fn emit_declared_property_initializers(
+        &mut self,
+        out: &mut String,
+        indent: &str,
+        result_temp: &str,
+        chain: Vec<(String, crate::ir::PropertyDecl, Option<ValueExpr>)>,
+    ) {
+        for (declaring_class_name, property, hook_get_value) in chain {
             let previous_class_name = self
                 .current_class_name
                 .replace(declaring_class_name.clone());
@@ -29725,30 +29800,37 @@ impl ValueEmitter {
                 Some(value) => {
                     let previous_scope_temp = self.next_temp();
                     let previous_called_scope_temp = self.next_temp();
-                    out.push_str("    const char *");
+                    out.push_str(indent);
+                    out.push_str("const char *");
                     out.push_str(&previous_scope_temp);
                     out.push_str(" = runtime.current_class_name;\n");
-                    out.push_str("    const char *");
+                    out.push_str(indent);
+                    out.push_str("const char *");
                     out.push_str(&previous_called_scope_temp);
                     out.push_str(" = runtime.current_called_class_name;\n");
-                    out.push_str("    runtime.current_class_name = \"");
+                    out.push_str(indent);
+                    out.push_str("runtime.current_class_name = \"");
                     out.push_str(&c_string(&declaring_class_name));
                     out.push_str("\";\n");
-                    out.push_str("    runtime.current_called_class_name = \"");
+                    out.push_str(indent);
+                    out.push_str("runtime.current_called_class_name = \"");
                     out.push_str(&c_string(&declaring_class_name));
                     out.push_str("\";\n");
                     let value_temp = self.emit_const_materialized_value(out, value);
-                    out.push_str("    runtime.current_called_class_name = ");
+                    out.push_str(indent);
+                    out.push_str("runtime.current_called_class_name = ");
                     out.push_str(&previous_called_scope_temp);
                     out.push_str(";\n");
-                    out.push_str("    runtime.current_class_name = ");
+                    out.push_str(indent);
+                    out.push_str("runtime.current_class_name = ");
                     out.push_str(&previous_scope_temp);
                     out.push_str(";\n");
                     value_temp
                 }
                 None => {
                     let temp = self.next_temp();
-                    out.push_str("    PtnValue ");
+                    out.push_str(indent);
+                    out.push_str("PtnValue ");
                     out.push_str(&temp);
                     out.push_str(" = ptn_null();\n");
                     temp
@@ -29756,7 +29838,8 @@ impl ValueEmitter {
             };
             self.current_class_name = previous_class_name;
             let assigned_temp = self.next_temp();
-            out.push_str("    PtnValue ");
+            out.push_str(indent);
+            out.push_str("PtnValue ");
             out.push_str(&assigned_temp);
             out.push_str(" = ptn_object_declare_property_with_hooks(&runtime, ");
             out.push_str(result_temp);
@@ -29802,8 +29885,8 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(&property.line.to_string());
             out.push_str(");\n");
-            emit_value_cleanup(out, "    ", &assigned_temp);
-            emit_value_cleanup(out, "    ", &value_temp);
+            emit_value_cleanup(out, indent, &assigned_temp);
+            emit_value_cleanup(out, indent, &value_temp);
         }
     }
 

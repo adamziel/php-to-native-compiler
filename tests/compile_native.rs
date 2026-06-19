@@ -6989,6 +6989,40 @@ trigger_error('delta');
 }
 
 #[test]
+fn compile_trigger_error_user_error_emits_deprecated_then_direct_fatal() {
+    let root = temp_dir("ptn-native-trigger-error-user-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trigger-error-user-error.php");
+    let output = root.join("trigger-error-user-error-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$anonymous = new class {};
+trigger_error(get_class($anonymous) . " ...now you don't!", E_USER_ERROR);
+echo "unreachable\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Deprecated: Passing E_USER_ERROR to trigger_error() is deprecated since 8.4, throw an exception or call exit with a string message instead"
+        ),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("unreachable"), "{stdout}");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(stderr.contains("Fatal error: class@anonymous"), "{stderr}");
+    assert!(stderr.contains(" ...now you don't!"), "{stderr}");
+    assert!(!stderr.contains("Uncaught Error"), "{stderr}");
+}
+
+#[test]
 fn compile_reference_notice_routes_through_user_error_handler_to_native_binary() {
     let root = temp_dir("ptn-native-notice-reference-handler");
     fs::create_dir_all(&root).unwrap();
@@ -54976,6 +55010,36 @@ bool(true)\n\
 bool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_anonymous_class_runtime_alias_parent_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-runtime-alias-parent");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-runtime-alias-parent.php");
+    let output = root.join("anonymous-class-runtime-alias-parent-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class_alias(get_class(new class { protected $foo = 1; }), "AnonBase");
+var_dump((new class extends AnonBase {
+    public function getFoo() {
+        return $this->foo;
+    }
+})->getFoo());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(1)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_resolve_class_alias(&runtime, \"AnonBase\")"));
 }
 
 #[test]

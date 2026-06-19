@@ -1412,7 +1412,15 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_supported_anonymous_get_class_row() {
             return ptn_path ~ /Zend\/tests\/anon\/anon_class_name[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/anon\/011[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/anon\/gh13097_a[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/anon\/gh13097_b[.]phpt$/
+        }
+        function ptn_supported_anonymous_class_alias_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/011[.]phpt$/
+        }
+        function ptn_supported_anonymous_trigger_error_row() {
+            return ptn_path ~ /Zend\/tests\/anon\/gh13097_a[.]phpt$/
         }
         function ptn_supported_anonymous_closure_bind_row() {
             return ptn_path ~ /Zend\/tests\/anon\/013[.]phpt$/
@@ -1425,6 +1433,12 @@ ptn_phpt_first_unsupported_language_surface() {
         }
         function ptn_supported_anonymous_dynamic_static_row() {
             return ptn_path ~ /Zend\/tests\/anon\/008[.]phpt$/
+        }
+        function ptn_supported_autoload_include_class_declaration_row() {
+            return ptn_path ~ /Zend\/tests\/autoload\/bug46665[.]phpt$/
+        }
+        function ptn_supported_autoload_parameter_default_class_constant_row() {
+            return ptn_path ~ /Zend\/tests\/autoload\/bug42798[.]phpt$/
         }
         function ptn_supported_generator_foreach_cleanup_row() {
             return ptn_path ~ /Zend\/tests\/generators\/gc_with_iterator_in_foreach[.]phpt$/ ||
@@ -1541,12 +1555,12 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (saw_spl_autoload_register && line ~ /(^|[^[:alnum:]_$])(require|include)(_once)?[[:space:]]+/) {
+            if (saw_spl_autoload_register && line ~ /(^|[^[:alnum:]_$])(require|include)(_once)?[[:space:]]+/ && !ptn_supported_autoload_include_class_declaration_row()) {
                 print "unsupported-autoload-metadata\trequires autoload callback include-driven class declaration, outside PTN modeled autoload registry"
                 found = 1
                 exit
             }
-            if (saw_spl_autoload_register && line ~ /function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*=[^)]*[a-z_\\][a-z0-9_\\]*[[:space:]]*::/) {
+            if (saw_spl_autoload_register && line ~ /function[[:space:]]*&?[[:space:]]*([a-z_\\][a-z0-9_\\]*)?[[:space:]]*\([^)]*=[^)]*[a-z_\\][a-z0-9_\\]*[[:space:]]*::/ && !ptn_supported_autoload_parameter_default_class_constant_row()) {
                 print "unsupported-autoload-metadata\trequires autoload during parameter default class-constant resolution, outside PTN modeled autoload registry"
                 found = 1
                 exit
@@ -1578,7 +1592,7 @@ ptn_phpt_first_unsupported_language_surface() {
                     exit
                 }
             }
-            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])class_alias[[:space:]]*[(]/) {
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])class_alias[[:space:]]*[(]/ && !ptn_supported_anonymous_class_alias_row()) {
                 print "unsupported-anonymous-class\trequires anonymous class runtime class_alias metadata, outside PTN modeled anonymous class subset"
                 found = 1
                 exit
@@ -1588,7 +1602,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 found = 1
                 exit
             }
-            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])trigger_error[[:space:]]*[(]/) {
+            if (saw_anonymous_class && line ~ /(^|[^[:alnum:]_$])trigger_error[[:space:]]*[(]/ && !ptn_supported_anonymous_trigger_error_row()) {
                 print "unsupported-anonymous-class\trequires trigger_error() diagnostics containing anonymous class generated names, outside PTN modeled anonymous class subset"
                 found = 1
                 exit

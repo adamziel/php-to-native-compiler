@@ -1249,6 +1249,32 @@ static PTN_UNUSED void ptn_emit_fatal_error_at(
     exit(255);
 }
 
+static PTN_UNUSED void ptn_emit_fatal_error_bytes_at(
+    PtnRuntime *runtime,
+    const char *message,
+    size_t message_len,
+    const char *path,
+    size_t line
+) {
+    fflush(stdout);
+    PtnDiagnosticSink *diagnostics = &runtime->diagnostics;
+    if (diagnostics->display_errors) {
+        FILE *stream = diagnostics->stream == NULL ? stderr : diagnostics->stream;
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root != NULL && root->output_has_started) {
+            fputc('\n', stream);
+        }
+        fputs("Fatal error: ", stream);
+        fwrite(message, 1, message_len, stream);
+        fputs(" in ", stream);
+        fputs(path != NULL ? path : (runtime->source_path != NULL ? runtime->source_path : "ptn"), stream);
+        fputs(" on line ", stream);
+        fprintf(stream, "%zu", line);
+        fputc('\n', stream);
+    }
+    exit(255);
+}
+
 static PTN_UNUSED void ptn_emit_memory_allocation_overflow_error(
     PtnRuntime *runtime,
     size_t count,

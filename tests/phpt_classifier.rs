@@ -847,6 +847,14 @@ fn phpt_classifier_keeps_supported_anonymous_metadata_rows_runnable_by_path() {
             "--TEST--\nanonymous closure bind\n--FILE--\n<?php\n$class = new class {};\n$foo = function() { return $this; };\n$closure = Closure::bind($foo, $class, $class);\nvar_dump($closure());\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/anon/011.phpt",
+            "--TEST--\nanonymous class alias\n--FILE--\n<?php\nclass_alias(get_class(new class { protected $foo = 1; }), \"AnonBase\");\nvar_dump((new class extends AnonBase { function getFoo() { return $this->foo; } })->getFoo());\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/anon/gh13097_a.phpt",
+            "--TEST--\nanonymous trigger_error name\n--FILE--\n<?php\n$anonymous = new class(){};\ntrigger_error(get_class($anonymous).' ...now you don\\'t!', E_USER_ERROR);\n--EXPECTF--\n",
+        ),
+        (
             "Zend/tests/anon/gh13097_b.phpt",
             "--TEST--\nanonymous exception name\n--FILE--\n<?php\n$anonymous = new class(){};\nthrow new Exception(get_class($anonymous));\n--EXPECTF--\n",
         ),
@@ -1553,6 +1561,28 @@ fn phpt_classifier_keeps_supported_class_contract_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_autoload_metadata_rows_runnable_by_path() {
+    let cases = [
+        (
+            "Zend/tests/autoload/bug42798.phpt",
+            "--TEST--\nautoload default class constant\n--FILE--\n<?php\nspl_autoload_register(function ($className) { print \"$className\\n\"; exit(); });\nfunction foo($c = ok::constant) {}\nfoo();\n--EXPECT--\nok\n",
+        ),
+        (
+            "Zend/tests/autoload/bug46665.phpt",
+            "--TEST--\nautoload include class declaration\n--FILE--\n<?php\nspl_autoload_register(function ($class) { var_dump($class); require __DIR__ . '/bug46665_autoload.inc'; });\n$baz = '\\\\Foo\\\\Bar\\\\Baz';\nnew $baz();\n--EXPECT--\nstring(11) \"Foo\\Bar\\Baz\"\n",
+        ),
+    ];
+
+    for (path, phpt) in cases {
+        assert_eq!(
+            classify_at_relative_path(phpt, path),
+            "runnable\tselected for PTN semantic measurement\n",
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
     let cases = [
         (
@@ -1624,8 +1654,8 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "reflection method doc comments",
             "--TEST--\nreflection\n--INI--\nopcache.save_comments=1\n--FILE--\n<?php\nclass A { /** doc */ function run() {} }\n$r = new ReflectionClass('A');\nforeach ($r->getMethods() as $m) { var_dump($m->getDocComment()); }\n--EXPECT--\n",
-            "unsupported-internal-reflection-metadata\t",
-            "requires reflection source/doc/static-variable metadata",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "readonly static property",

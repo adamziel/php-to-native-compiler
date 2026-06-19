@@ -58280,20 +58280,18 @@ static PtnValue ptn_internal_trigger_error(PtnRuntime *runtime, size_t argc, con
         ptn_string_operand_free(message);
         return ptn_null();
     }
-    char *owned_message = ptn_duplicate_string_len(message.data, message.len);
+    size_t owned_message_len = message.len;
+    char *owned_message = ptn_duplicate_string_len(message.data, owned_message_len);
     ptn_string_operand_free(message);
     switch (level) {
         case PTN_E_USER_ERROR:
-            if (!ptn_diagnostics_try_error_handler(
+            ptn_emit_user_deprecation(
                 &runtime->diagnostics,
-                PTN_E_USER_ERROR,
-                owned_message,
-                runtime->source_path,
+                "Passing E_USER_ERROR to trigger_error() is deprecated since 8.4, throw an exception or call exit with a string message instead",
                 line
-            )) {
-                ptn_throw_exception_at(runtime, "Error", owned_message, runtime->source_path, line);
-            }
-            break;
+            );
+            ptn_emit_fatal_error_bytes_at(runtime, owned_message, owned_message_len, runtime->source_path, line);
+            return ptn_null();
         case PTN_E_USER_WARNING:
             ptn_emit_user_warning(&runtime->diagnostics, owned_message, line);
             break;
