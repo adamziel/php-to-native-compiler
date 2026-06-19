@@ -6937,6 +6937,11 @@ impl Parser<'_> {
                                 member.span,
                                 true,
                             ),
+                            TokenKind::Dollar => {
+                                let name_expr = self.parse_dynamic_variable_expr(member.span)?;
+                                let member_span = combine_spans(member.span, name_expr.span());
+                                (None, Some(name_expr), member_span, false)
+                            }
                             TokenKind::LeftBrace => {
                                 let name_expr = self.parse_expr()?;
                                 let right_span = self.expect_right_brace()?;
@@ -7596,6 +7601,25 @@ impl Parser<'_> {
                 name: member_name,
                 span: combine_spans(class_span, member.span),
             });
+        }
+        if let TokenKind::Dollar = member.kind {
+            let name_expr = self.parse_dynamic_variable_expr(member.span)?;
+            let member_span = combine_spans(member.span, name_expr.span());
+            if !matches!(self.peek().kind, TokenKind::LeftParen) {
+                return Ok(Expr::DynamicClassConstantFetch {
+                    class_name: Some(class_name),
+                    receiver: None,
+                    name: Box::new(name_expr),
+                    span: combine_spans(class_span, member_span),
+                });
+            }
+            if self.peek_is_first_class_callable_arguments() {
+                return Err(Diagnostic::new(
+                    "dynamic first-class static method callables are unsupported",
+                    Some(member_span),
+                ));
+            }
+            return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
         }
         if let TokenKind::LeftBrace = member.kind {
             let name_expr = self.parse_expr()?;

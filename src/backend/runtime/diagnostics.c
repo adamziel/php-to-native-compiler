@@ -1767,6 +1767,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->current_class_name = NULL;
     runtime->current_called_class_name = NULL;
     runtime->called_class_name_override = NULL;
+    runtime->forward_static_called_class_name = NULL;
     runtime->current_generator = NULL;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();

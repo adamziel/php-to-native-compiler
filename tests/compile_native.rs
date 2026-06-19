@@ -18969,6 +18969,75 @@ echo MathBox::pair(1, 2), \"\\n\";
 }
 
 #[test]
+fn compile_root_static_callables_to_native_binary() {
+    let root = temp_dir("ptn-native-root-static-callables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("root-static-callables.php");
+    let output = root.join("root-static-callables-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public static function hello() {
+        echo \"Hello World\\n\";
+    }
+
+    public static function pair($left, $right) {
+        echo $left + $right, \"\\n\";
+    }
+}
+
+class Test {
+    public static function foo() {
+        echo __CLASS__, \"::\", __FUNCTION__, \"\\n\";
+    }
+}
+
+function foo() {
+    echo __FUNCTION__, \"\\n\";
+}
+
+$call = [\"A\", \"pair\"];
+$call(2, 3);
+call_user_func([\"A\", \"hello\"]);
+$y[0] = \"hello\";
+A::{$y[0]}();
+$slot = \"method\";
+$method = \"hello\";
+A::$$slot();
+$class = \"A\";
+$class::$$slot();
+call_user_func(__NAMESPACE__ . \"\\\\foo\");
+call_user_func(__NAMESPACE__ . \"\\\\test::foo\");
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "5\n",
+            "Hello World\n",
+            "Hello World\n",
+            "Hello World\n",
+            "Hello World\n",
+            "foo\n",
+            "Test::foo\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime->forward_static_called_class_name = NULL;"));
+    assert!(c_source.contains("ptn_call_callable(&runtime"));
+    assert!(c_source.contains("ptn_callable_resolve_class_scope"));
+}
+
+#[test]
 fn compile_instance_method_call_user_func_to_native_binary() {
     let root = temp_dir("ptn-native-instance-method-call-user-func");
     fs::create_dir_all(&root).unwrap();
