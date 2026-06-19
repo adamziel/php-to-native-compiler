@@ -43146,6 +43146,45 @@ echo declared_file_name(), \"\\n\";\n";
 }
 
 #[test]
+fn compile_include_matches_runtime_source_override_relative_path_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-source-include-alias");
+    let source_root = root.join("source");
+    let runtime_root = root.join("runtime");
+    let include_dir = source_root.join("sub");
+    fs::create_dir_all(&include_dir).unwrap();
+    fs::create_dir_all(&runtime_root).unwrap();
+    let input = source_root.join("main.php");
+    let included = include_dir.join("helper.inc");
+    let runtime_source = runtime_root.join("main.php");
+    let output = root.join("runtime-source-include-alias-bin");
+    let source = "<?php\n\
+$value = require __DIR__ . '/sub/helper.inc';\n\
+echo \"value=$value\\n\";\n";
+    fs::write(&input, source).unwrap();
+    fs::write(&runtime_source, source).unwrap();
+    fs::write(
+        &included,
+        "<?php echo 'helper=', basename(__FILE__), \"\\n\"; return 'included';",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_RUNTIME_SOURCE_PATH", &runtime_source)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "helper=helper.inc\nvalue=included\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_path_matches_runtime_source_relative"));
+}
+
+#[test]
 fn compile_file_get_contents_uses_include_path_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-include-path");
     let cwd = root.join("cwd");

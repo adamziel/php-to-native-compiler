@@ -532,6 +532,48 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    return resolved;\n");
     out.push_str("}\n");
     out.push_str(
+        "\nstatic PTN_UNUSED char *ptn_include_runtime_source_dir(PtnRuntime *runtime, size_t *dir_len) {\n",
+    );
+    out.push_str("    const char *source_path = runtime != NULL && runtime->source_path != NULL ? runtime->source_path : \"\";\n");
+    out.push_str("    const char *separator = strrchr(source_path, '/');\n");
+    out.push_str("#if defined(_WIN32)\n");
+    out.push_str("    const char *backslash = strrchr(source_path, '\\\\');\n");
+    out.push_str("    if (backslash != NULL && (separator == NULL || backslash > separator)) {\n");
+    out.push_str("        separator = backslash;\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
+    out.push_str("    if (separator == NULL) {\n");
+    out.push_str("        *dir_len = 1;\n");
+    out.push_str("        return ptn_duplicate_string_len(\".\", 1);\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    *dir_len = separator == source_path ? 1 : (size_t)(separator - source_path);\n",
+    );
+    out.push_str("    return ptn_duplicate_string_len(source_path, *dir_len);\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_include_path_matches_runtime_source_relative(PtnRuntime *runtime, const char *resolved, const char *relative_path) {\n",
+    );
+    out.push_str("    if (runtime == NULL || resolved == NULL || relative_path == NULL || relative_path[0] == '\\0') {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    size_t dir_len = 0;\n");
+    out.push_str("    char *source_dir = ptn_include_runtime_source_dir(runtime, &dir_len);\n");
+    out.push_str("    size_t relative_len = strlen(relative_path);\n");
+    out.push_str("    int needs_separator = dir_len > 0 && source_dir[dir_len - 1] != '/';\n");
+    out.push_str("    size_t expected_len = dir_len + (needs_separator ? 1 : 0) + relative_len;\n");
+    out.push_str("    int matches = strlen(resolved) == expected_len && strncmp(resolved, source_dir, dir_len) == 0;\n");
+    out.push_str("    if (matches && needs_separator) {\n");
+    out.push_str("        matches = resolved[dir_len] == '/';\n");
+    out.push_str("    }\n");
+    out.push_str("    if (matches) {\n");
+    out.push_str("        size_t relative_offset = dir_len + (needs_separator ? 1 : 0);\n");
+    out.push_str("        matches = strcmp(resolved + relative_offset, relative_path) == 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    free(source_dir);\n");
+    out.push_str("    return matches;\n");
+    out.push_str("}\n");
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_compiled_include_path_error(PtnRuntime *runtime, const char *kind, size_t line, int required) {\n",
     );
     out.push_str("    char message[96];\n");
@@ -27110,8 +27152,11 @@ impl ValueEmitter {
             out.push('0');
             return;
         }
-        for (index, alias) in include.path_aliases.iter().enumerate() {
-            if index > 0 {
+        let runtime_relative_aliases =
+            runtime_source_relative_include_aliases(&include.path_aliases, &self.source_dir);
+        let mut emitted = 0;
+        for alias in &include.path_aliases {
+            if emitted > 0 {
                 out.push_str(" || ");
             }
             out.push_str("strcmp(");
@@ -27119,6 +27164,18 @@ impl ValueEmitter {
             out.push_str(", \"");
             out.push_str(&c_string(alias));
             out.push_str("\") == 0");
+            emitted += 1;
+        }
+        for alias in runtime_relative_aliases {
+            if emitted > 0 {
+                out.push_str(" || ");
+            }
+            out.push_str("ptn_include_path_matches_runtime_source_relative(&runtime, ");
+            out.push_str(resolved_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&alias));
+            out.push_str("\")");
+            emitted += 1;
         }
     }
 
@@ -34960,6 +35017,35 @@ fn c_string(value: &str) -> String {
         }
     }
     out
+}
+
+fn runtime_source_relative_include_aliases(
+    path_aliases: &[String],
+    source_dir: &str,
+) -> Vec<String> {
+    if source_dir.is_empty() {
+        return Vec::new();
+    }
+
+    let source_dir = Path::new(source_dir);
+    let mut aliases = Vec::new();
+    for alias in path_aliases {
+        let path = Path::new(alias);
+        if !path.is_absolute() {
+            continue;
+        }
+        let Ok(relative) = path.strip_prefix(source_dir) else {
+            continue;
+        };
+        if relative.as_os_str().is_empty() {
+            continue;
+        }
+        let relative = relative.to_string_lossy().into_owned();
+        if !aliases.contains(&relative) {
+            aliases.push(relative);
+        }
+    }
+    aliases
 }
 
 fn c_i64_literal(value: i64) -> String {
