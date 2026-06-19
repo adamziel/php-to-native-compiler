@@ -4913,6 +4913,7 @@ fn emit_class_metadata_helpers(
         "ReflectionFunction",
         "ReflectionMethod",
         "ReflectionObject",
+        "ReflectionParameter",
         "ReflectionProperty",
         "SensitiveParameter",
         "SensitiveParameterValue",
@@ -6492,6 +6493,8 @@ fn emit_class_metadata_helpers(
     }
     out.push_str("    return result;\n");
     out.push_str("}\n");
+
+    emit_property_hook_deprecation_helper(out, classes, traits);
 
     if emit_reflection_helpers {
         emit_class_reflection_metadata_helpers(out, classes, functions, traits, instructions);
@@ -8870,6 +8873,159 @@ fn c_attribute_argument_value(value: &AttributeArgumentValue) -> String {
     }
 }
 
+fn emit_property_hook_deprecation_helper(
+    out: &mut String,
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+) {
+    out.push_str(
+        "\nstatic PTN_UNUSED void ptn_declared_class_property_hook_deprecation(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type, size_t line) {\n",
+    );
+    let has_deprecated_property_hooks = classes.iter().any(|class| {
+        class.properties.iter().any(|property| {
+            property.hook_get_attributes.deprecated_count > 0
+                || property.hook_set_attributes.deprecated_count > 0
+        })
+    }) || traits.iter().any(|trait_decl| {
+        trait_decl.properties.iter().any(|property| {
+            property.hook_get_attributes.deprecated_count > 0
+                || property.hook_set_attributes.deprecated_count > 0
+        })
+    });
+    if !has_deprecated_property_hooks {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)hook_type;\n");
+        out.push_str("    (void)line;\n");
+    }
+    for class in classes {
+        if !class.properties.iter().any(|property| {
+            property.hook_get_attributes.deprecated_count > 0
+                || property.hook_set_attributes.deprecated_count > 0
+        }) {
+            continue;
+        }
+        out.push_str("    if (runtime != NULL && ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in &class.properties {
+            if property.hook_get_attributes.deprecated_count > 0 {
+                out.push_str("        if (hook_type == 1 && strcmp(property_name, \"");
+                out.push_str(&c_string(&property.name));
+                out.push_str("\") == 0) {\n");
+                let subject = format!("Method {}::${}::get()", class.name, property.name);
+                emit_deprecated_function_warning_parts(
+                    out,
+                    "            ",
+                    "runtime",
+                    "runtime->source_path",
+                    "&runtime->diagnostics",
+                    &subject,
+                    property.hook_get_attributes.deprecated_message.as_deref(),
+                    property.hook_get_attributes.deprecated_since.as_deref(),
+                    property
+                        .hook_get_attributes
+                        .deprecated_message_constant
+                        .as_ref(),
+                    Some(&class.name),
+                    "line",
+                );
+                out.push_str("            return;\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_set_attributes.deprecated_count > 0 {
+                out.push_str("        if (hook_type == 2 && strcmp(property_name, \"");
+                out.push_str(&c_string(&property.name));
+                out.push_str("\") == 0) {\n");
+                let subject = format!("Method {}::${}::set()", class.name, property.name);
+                emit_deprecated_function_warning_parts(
+                    out,
+                    "            ",
+                    "runtime",
+                    "runtime->source_path",
+                    "&runtime->diagnostics",
+                    &subject,
+                    property.hook_set_attributes.deprecated_message.as_deref(),
+                    property.hook_set_attributes.deprecated_since.as_deref(),
+                    property
+                        .hook_set_attributes
+                        .deprecated_message_constant
+                        .as_ref(),
+                    Some(&class.name),
+                    "line",
+                );
+                out.push_str("            return;\n");
+                out.push_str("        }\n");
+            }
+        }
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        if !trait_decl.properties.iter().any(|property| {
+            property.hook_get_attributes.deprecated_count > 0
+                || property.hook_set_attributes.deprecated_count > 0
+        }) {
+            continue;
+        }
+        out.push_str("    if (runtime != NULL && ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for property in &trait_decl.properties {
+            if property.hook_get_attributes.deprecated_count > 0 {
+                out.push_str("        if (hook_type == 1 && strcmp(property_name, \"");
+                out.push_str(&c_string(&property.name));
+                out.push_str("\") == 0) {\n");
+                let subject = format!("Method {}::${}::get()", trait_decl.name, property.name);
+                emit_deprecated_function_warning_parts(
+                    out,
+                    "            ",
+                    "runtime",
+                    "runtime->source_path",
+                    "&runtime->diagnostics",
+                    &subject,
+                    property.hook_get_attributes.deprecated_message.as_deref(),
+                    property.hook_get_attributes.deprecated_since.as_deref(),
+                    property
+                        .hook_get_attributes
+                        .deprecated_message_constant
+                        .as_ref(),
+                    Some(&trait_decl.name),
+                    "line",
+                );
+                out.push_str("            return;\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_set_attributes.deprecated_count > 0 {
+                out.push_str("        if (hook_type == 2 && strcmp(property_name, \"");
+                out.push_str(&c_string(&property.name));
+                out.push_str("\") == 0) {\n");
+                let subject = format!("Method {}::${}::set()", trait_decl.name, property.name);
+                emit_deprecated_function_warning_parts(
+                    out,
+                    "            ",
+                    "runtime",
+                    "runtime->source_path",
+                    "&runtime->diagnostics",
+                    &subject,
+                    property.hook_set_attributes.deprecated_message.as_deref(),
+                    property.hook_set_attributes.deprecated_since.as_deref(),
+                    property
+                        .hook_set_attributes
+                        .deprecated_message_constant
+                        .as_ref(),
+                    Some(&trait_decl.name),
+                    "line",
+                );
+                out.push_str("            return;\n");
+                out.push_str("        }\n");
+            }
+        }
+        out.push_str("    }\n");
+    }
+    out.push_str("}\n");
+}
+
 fn emit_class_reflection_metadata_helpers(
     out: &mut String,
     classes: &[ClassDecl],
@@ -9468,7 +9624,7 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED void ptn_declared_class_property_hook_deprecation(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type, size_t line) {\n",
+        "\nstatic PTN_UNUSED void ptn_declared_class_property_hook_deprecation_reflection_unused(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type, size_t line) {\n",
     );
     let has_deprecated_property_hooks = classes.iter().any(|class| {
         class.properties.iter().any(|property| {

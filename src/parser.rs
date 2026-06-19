@@ -12697,6 +12697,19 @@ fn validate_method_signature_compatibility(
                 }
             }
 
+            if let Some(tentative_method) =
+                find_tentative_internal_interface_method(class, &method.name, classes)
+            {
+                validate_tentative_internal_return_signature(
+                    class,
+                    method,
+                    &tentative_method,
+                    classes,
+                    runtime_class_aliases,
+                    compile_warnings,
+                )?;
+            }
+
             let mut interface_methods = Vec::new();
             collect_class_interface_methods(class, &method.name, classes, &mut interface_methods);
             for (interface, interface_method) in interface_methods {
@@ -12794,11 +12807,79 @@ fn find_tentative_internal_parent_method(
     None
 }
 
+fn find_tentative_internal_interface_method(
+    class: &ClassDecl,
+    method_name: &str,
+    classes: &[ClassDecl],
+) -> Option<TentativeInternalMethod> {
+    fn find_in_interface(
+        interface_name: &str,
+        method_name: &str,
+        classes: &[ClassDecl],
+        seen_interfaces: &mut HashSet<String>,
+    ) -> Option<TentativeInternalMethod> {
+        let normalized = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+        if !seen_interfaces.insert(normalized.clone()) {
+            return None;
+        }
+        if let Some(method) = tentative_internal_method(&normalized, method_name) {
+            return Some(method);
+        }
+        let interface = find_class(classes, interface_name).filter(|class| class.is_interface)?;
+        for parent_name in &interface.interfaces {
+            if let Some(method) =
+                find_in_interface(parent_name, method_name, classes, seen_interfaces)
+            {
+                return Some(method);
+            }
+        }
+        None
+    }
+
+    fn find_in_class(
+        class: &ClassDecl,
+        method_name: &str,
+        classes: &[ClassDecl],
+        seen_classes: &mut HashSet<String>,
+        seen_interfaces: &mut HashSet<String>,
+    ) -> Option<TentativeInternalMethod> {
+        if !seen_classes.insert(class.name.to_ascii_lowercase()) {
+            return None;
+        }
+        for interface_name in &class.interfaces {
+            if let Some(method) =
+                find_in_interface(interface_name, method_name, classes, seen_interfaces)
+            {
+                return Some(method);
+            }
+        }
+        let parent = class
+            .parent_name
+            .as_deref()
+            .and_then(|parent_name| find_class(classes, parent_name))?;
+        find_in_class(parent, method_name, classes, seen_classes, seen_interfaces)
+    }
+
+    find_in_class(
+        class,
+        method_name,
+        classes,
+        &mut HashSet::new(),
+        &mut HashSet::new(),
+    )
+}
+
 fn tentative_internal_method(
     normalized_class_name: &str,
     method_name: &str,
 ) -> Option<TentativeInternalMethod> {
     match (normalized_class_name, method_name.to_ascii_lowercase().as_str()) {
+        ("countable", "count") => Some(TentativeInternalMethod {
+            class_name: "Countable",
+            signature: "count(): int",
+            return_type: TypeHint::Int,
+            is_static: false,
+        }),
         ("datetimezone", "listidentifiers") => Some(TentativeInternalMethod {
             class_name: "DateTimeZone",
             signature:
@@ -14025,6 +14106,7 @@ fn modeled_builtin_interface_method_exists(interface_name: &str, method_name: &s
             | ("iterator", "rewind")
             | ("iterator", "valid")
             | ("iteratoraggregate", "getiterator")
+            | ("countable", "count")
             | ("outeriterator", "getinneriterator")
             | ("recursiveiterator", "getchildren")
             | ("recursiveiterator", "haschildren")
