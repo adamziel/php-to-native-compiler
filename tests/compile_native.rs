@@ -6828,6 +6828,62 @@ important();
 }
 
 #[test]
+fn compile_nodiscard_warnings_for_discarded_call_user_func_to_native_binary() {
+    let root = temp_dir("ptn-native-nodiscard-call-user-func");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nodiscard-call-user-func.php");
+    let output = root.join("nodiscard-call-user-func-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function (int $errno, string $errstr) {
+    echo $errno, ':', $errstr, \"\\n\";
+    return true;
+});
+
+#[\\NoDiscard]
+function important(): int { return 1; }
+
+class Worker {
+    #[\\NoDiscard('method matters')]
+    public function run(): int { return 2; }
+
+    #[\\NoDiscard]
+    public static function stat(): int { return 3; }
+}
+
+$worker = new Worker();
+call_user_func('important');
+call_user_func([$worker, 'run']);
+call_user_func(['Worker', 'stat']);
+call_user_func_array('important', []);
+call_user_func_array([$worker, 'run'], []);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "512:The return value of function important() should either be used or intentionally ignored by casting it as (void)\n",
+            "512:The return value of method Worker::run() should either be used or intentionally ignored by casting it as (void), method matters\n",
+            "512:The return value of method Worker::stat() should either be used or intentionally ignored by casting it as (void)\n",
+            "512:The return value of function important() should either be used or intentionally ignored by casting it as (void)\n",
+            "512:The return value of method Worker::run() should either be used or intentionally ignored by casting it as (void), method matters\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_emit_no_discard_for_callable(&runtime"));
+    assert!(c_source.contains("ptn_callable_array_parts"));
+}
+
+#[test]
 fn compile_attribute_throwing_error_handler_remains_installed_to_native_binary() {
     let root = temp_dir("ptn-native-attribute-throwing-handler");
     fs::create_dir_all(&root).unwrap();

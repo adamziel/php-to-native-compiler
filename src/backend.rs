@@ -227,7 +227,12 @@ pub fn emit_c(module: &Module) -> String {
         emit_dynamic_function_dispatch(&mut out);
     }
     if needs_callable_dispatch {
-        emit_callable_dispatch(&mut out, &module.functions, needs_method_dispatch);
+        emit_callable_dispatch(
+            &mut out,
+            &module.functions,
+            &module.classes,
+            needs_method_dispatch,
+        );
     }
     emit_declared_class_new_instance_without_constructor(
         &mut out,
@@ -1274,7 +1279,7 @@ fn emit_user_function_prototypes(
                 "static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);\n",
         );
     }
-    if needs_dynamic_function_dispatch {
+    if needs_function_dispatch || needs_dynamic_function_dispatch {
         out.push_str(
             "static PTN_UNUSED void ptn_emit_no_discard_for_callable(PtnRuntime *runtime, PtnValue callable, size_t line);\n",
         );
@@ -12976,6 +12981,7 @@ fn emit_callable_argument_by_ref_return(out: &mut String, function: &FunctionDec
 fn emit_callable_dispatch(
     out: &mut String,
     functions: &[FunctionDecl],
+    classes: &[ClassDecl],
     needs_method_dispatch: bool,
 ) {
     if needs_method_dispatch {
@@ -13023,7 +13029,7 @@ fn emit_callable_dispatch(
         out.push_str("}\n");
     }
 
-    emit_no_discard_callable_dispatch(out, functions);
+    emit_no_discard_callable_dispatch(out, functions, classes);
 
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index) {\n",
@@ -13298,7 +13304,11 @@ fn emit_callable_dispatch(
     out.push_str("}\n");
 }
 
-fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl]) {
+fn emit_no_discard_callable_dispatch(
+    out: &mut String,
+    functions: &[FunctionDecl],
+    classes: &[ClassDecl],
+) {
     out.push_str(
         "\nstatic PTN_UNUSED void ptn_emit_no_discard_for_callable(PtnRuntime *runtime, PtnValue callable, size_t line) {\n",
     );
@@ -13395,10 +13405,119 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
     if has_object_targets {
         out.push_str("    }\n");
     }
+    let has_array_method_targets = classes.iter().any(|class| {
+        class_method_lookup_chain(class, classes)
+            .iter()
+            .any(|entry| {
+                no_discard_warning_message(&functions[entry.method.function_index]).is_some()
+            })
+    });
+    if has_array_method_targets {
+        out.push_str("    if (resolved.type == PTN_ARRAY) {\n");
+        out.push_str("        PtnValue scope;\n");
+        out.push_str("        PtnValue method;\n");
+        out.push_str("        if (ptn_callable_array_parts(resolved, &scope, &method) && method.type == PTN_STRING) {\n");
+        out.push_str("            char *method_name = ptn_value_to_string(method);\n");
+        out.push_str("            if (scope.type == PTN_OBJECT) {\n");
+        out.push_str("                const char *class_name = scope.as.object->class_name;\n");
+        for class in classes {
+            let entries = class_method_lookup_chain(class, classes);
+            if entries.iter().all(|entry| {
+                no_discard_warning_message(&functions[entry.method.function_index]).is_none()
+            }) {
+                continue;
+            }
+            out.push_str("                if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in entries {
+                let method = entry.method;
+                let function = &functions[method.function_index];
+                out.push_str("                    if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\")) {\n");
+                out.push_str("                        if (ptn_declared_method_visibility_allows(runtime->current_class_name, \"");
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", ");
+                out.push_str(c_method_visibility(method.visibility));
+                out.push_str(")");
+                if method.visibility == PropertyVisibility::Protected {
+                    out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
+                }
+                out.push_str(") {\n");
+                if let Some(message) = no_discard_warning_message(function) {
+                    out.push_str("                            ptn_emit_user_warning(&runtime->diagnostics, \"");
+                    out.push_str(&c_string(&message));
+                    out.push_str("\", line);\n");
+                }
+                out.push_str("                        }\n");
+                out.push_str("                        free(method_name);\n");
+                out.push_str("                        return;\n");
+                out.push_str("                    }\n");
+            }
+            out.push_str("                }\n");
+        }
+        out.push_str("            }\n");
+        out.push_str("            if (scope.type == PTN_STRING) {\n");
+        out.push_str("                char *scope_name = ptn_value_to_string(scope);\n");
+        out.push_str("                const char *class_name = ptn_runtime_resolve_class_alias(runtime, ptn_symbol_name_without_leading_slash(scope_name));\n");
+        for class in classes {
+            let entries = class_method_lookup_chain(class, classes);
+            if entries.iter().all(|entry| {
+                let method = entry.method;
+                !method.is_static
+                    || no_discard_warning_message(&functions[method.function_index]).is_none()
+            }) {
+                continue;
+            }
+            out.push_str("                if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in entries {
+                let method = entry.method;
+                if !method.is_static {
+                    continue;
+                }
+                let function = &functions[method.function_index];
+                out.push_str("                    if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\")) {\n");
+                out.push_str("                        if (ptn_declared_method_visibility_allows(runtime->current_class_name, \"");
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", ");
+                out.push_str(c_method_visibility(method.visibility));
+                out.push_str(")");
+                if method.visibility == PropertyVisibility::Protected {
+                    out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
+                }
+                out.push_str(") {\n");
+                if let Some(message) = no_discard_warning_message(function) {
+                    out.push_str("                            ptn_emit_user_warning(&runtime->diagnostics, \"");
+                    out.push_str(&c_string(&message));
+                    out.push_str("\", line);\n");
+                }
+                out.push_str("                        }\n");
+                out.push_str("                        free(scope_name);\n");
+                out.push_str("                        free(method_name);\n");
+                out.push_str("                        return;\n");
+                out.push_str("                    }\n");
+            }
+            out.push_str("                }\n");
+        }
+        out.push_str("                free(scope_name);\n");
+        out.push_str("            }\n");
+        out.push_str("            free(method_name);\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+    }
     let has_anonymous_targets = functions
         .iter()
         .any(|function| function.is_anonymous && function.no_discard_message.is_some());
-    if !(has_anonymous_targets || has_string_targets || has_object_targets) {
+    if !(has_anonymous_targets
+        || has_string_targets
+        || has_object_targets
+        || has_array_method_targets)
+    {
         out.push_str("    (void)line;\n");
     }
     out.push_str("}\n");
@@ -32501,6 +32620,17 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        if discarded
+            && (name.eq_ignore_ascii_case("call_user_func")
+                || name.eq_ignore_ascii_case("call_user_func_array"))
+            && !arguments.is_empty()
+        {
+            out.push_str("    ptn_emit_no_discard_for_callable(&runtime, ");
+            out.push_str(&args_temp);
+            out.push_str("[0], ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+        }
         if let Some(direct_user) = &direct_user {
             self.emit_direct_user_function_call(
                 out,
