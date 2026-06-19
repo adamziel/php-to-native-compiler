@@ -11488,6 +11488,28 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        }\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
     out.push_str("        int valid = 0;\n");
+    out.push_str("        char *separator = strstr(method_name, \"::\");\n");
+    out.push_str(
+        "        if (separator != NULL && separator != method_name && separator[2] != '\\0') {\n",
+    );
+    out.push_str("            const char *receiver_class_name = scope.as.object->class_name;\n");
+    out.push_str("            *separator = '\\0';\n");
+    out.push_str("            const char *target_class_name = method_name;\n");
+    out.push_str("            if (ptn_ascii_case_equal(method_name, \"self\") || ptn_ascii_case_equal(method_name, \"static\")) {\n");
+    out.push_str("                target_class_name = receiver_class_name;\n");
+    out.push_str("            } else if (ptn_ascii_case_equal(method_name, \"parent\")) {\n");
+    out.push_str("                const char *parent = ptn_declared_class_parent_name(receiver_class_name);\n");
+    out.push_str("                if (parent != NULL) {\n");
+    out.push_str("                    target_class_name = parent;\n");
+    out.push_str("                }\n");
+    out.push_str("            } else {\n");
+    out.push_str("                target_class_name = ptn_runtime_resolve_class_alias(runtime, ptn_symbol_name_without_leading_slash(method_name));\n");
+    out.push_str("            }\n");
+    out.push_str("            if (ptn_declared_class_is_same_or_descendant(receiver_class_name, target_class_name)) {\n");
+    out.push_str("                valid = ptn_declared_class_method_is_callable(target_class_name, separator + 2, access_scope);\n");
+    out.push_str("            }\n");
+    out.push_str("            *separator = ':';\n");
+    out.push_str("        }\n");
     out.push_str("        if (ptn_internal_class_exists_name(scope.as.object->class_name)) {\n");
     out.push_str("            valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name);\n");
     out.push_str("        }\n");
@@ -11519,7 +11541,6 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        }\n");
     out.push_str("        char *class_name = ptn_value_to_string(scope);\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
-    out.push_str("        char *resolved_class_name_owned = NULL;\n");
     out.push_str("        const char *resolved_class_name = class_name;\n");
     out.push_str("        if (ptn_ascii_case_equal(class_name, \"self\") || ptn_ascii_case_equal(class_name, \"static\")) {\n");
     out.push_str("            const char *resolved = runtime == NULL ? NULL : (runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name);\n");
@@ -11527,7 +11548,9 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                resolved_class_name = resolved;\n");
     out.push_str("            }\n");
     out.push_str("        } else if (ptn_ascii_case_equal(class_name, \"parent\")) {\n");
-    out.push_str("            const char *base = runtime == NULL ? NULL : runtime->current_class_name;\n");
+    out.push_str(
+        "            const char *base = runtime == NULL ? NULL : runtime->current_class_name;\n",
+    );
     out.push_str("            const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);\n");
     out.push_str("            if (parent != NULL) {\n");
     out.push_str("                resolved_class_name = parent;\n");
@@ -11559,8 +11582,25 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        }\n");
     out.push_str("        snprintf(function_name, (size_t)needed + 1, \"%s::%s\", class_name, method_name);\n");
     out.push_str("        int valid = ptn_declared_class_static_method_is_callable(resolved_class_name, method_name, access_scope) || (ptn_internal_class_exists_name(resolved_class_name) && ptn_internal_class_static_method_exists(resolved_class_name, method_name)) || ptn_find_internal_function(function_name) != NULL;\n");
+    out.push_str("        if (!valid && runtime != NULL && runtime->has_current_receiver) {\n");
+    out.push_str(
+        "            PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n",
+    );
+    out.push_str("            const char *current_receiver_class = NULL;\n");
+    out.push_str("            if (current_receiver.type == PTN_OBJECT) {\n");
+    out.push_str(
+        "                current_receiver_class = current_receiver.as.object->class_name;\n",
+    );
+    out.push_str("            } else if (current_receiver.type == PTN_EXCEPTION) {\n");
+    out.push_str(
+        "                current_receiver_class = current_receiver.as.exception->class_name;\n",
+    );
+    out.push_str("            }\n");
+    out.push_str("            if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, resolved_class_name)) {\n");
+    out.push_str("                valid = ptn_declared_class_method_is_callable(resolved_class_name, method_name, access_scope);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
     out.push_str("        free(function_name);\n");
-    out.push_str("        free(resolved_class_name_owned);\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        free(class_name);\n");
     out.push_str("        return valid;\n");
