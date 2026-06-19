@@ -23115,7 +23115,7 @@ impl ValueEmitter {
             if assignment_compound_binary_op(op).is_some() {
                 unreachable!("parser rejects compound assignment for value array offsets");
             }
-            let array_temp = self.emit_materialized_value(out, array);
+            let array_temp = self.emit_reference_candidate_value(out, array);
             let path = emit_array_path_segments(out, self, dimensions);
             let value_temp = self.emit_materialized_value(out, value);
             let snapshot_temp = self.next_temp();

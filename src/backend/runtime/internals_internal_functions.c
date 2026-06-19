@@ -64293,6 +64293,7 @@ static void ptn_xmlwriter_append_method_names(PtnValue result, int64_t *index) {
 
 static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_closure_from_callable(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 
 static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     PtnRuntime *runtime,
@@ -64332,6 +64333,11 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
             return runtime->exceptions->active_exception != NULL
                 ? ptn_null()
                 : ptn_reflection_modifier_names(modifiers);
+        }
+    }
+    if (ptn_internal_class_name_is_reflection_reference(class_name)) {
+        if (ptn_ascii_case_equal(name, "fromArrayElement")) {
+            return ptn_internal_reflection_reference_from_array_element(runtime, argc, args, line);
         }
     }
     if (ptn_internal_class_name_is_weak_reference(class_name)) {
@@ -69838,6 +69844,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     }
     if (ptn_ascii_case_equal(class_name, "Reflection")) {
         return ptn_ascii_case_equal(method_name, "getModifierNames");
+    }
+    if (ptn_internal_class_name_is_reflection_reference(class_name)) {
+        return ptn_ascii_case_equal(method_name, "fromArrayElement");
     }
     if (ptn_internal_class_name_is_weak_reference(class_name)) {
         return ptn_ascii_case_equal(method_name, "create");
