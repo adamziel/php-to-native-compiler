@@ -7338,31 +7338,64 @@ class B extends A {
 }
 
 #[test]
-fn parser_rejects_mixed_as_reserved_class_name() {
-    let error = parser::parse("<?php class mixed {}").unwrap_err();
+fn compile_mixed_as_reserved_class_name_to_native_fatal() {
+    let root = temp_dir("ptn-native-reserved-mixed-class-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reserved-mixed-class-name.php");
+    let output = root.join("reserved-mixed-class-name-bin");
+    fs::write(&input, "<?php class mixed {} echo \"unreachable\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
     assert_eq!(
-        error.message,
-        "Cannot use \"mixed\" as a class name as it is reserved"
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot use \"mixed\" as a class name as it is reserved in {} on line 1\n",
+            input.display()
+        )
     );
 }
 
 #[test]
-fn parser_rejects_type_names_as_class_names_and_import_aliases() {
+fn compile_type_names_as_class_names_to_native_fatals_and_reject_import_aliases() {
     let class_cases = [
-        ("<?php class int {}", "int"),
-        ("<?php class float {}", "float"),
-        ("<?php class string {}", "string"),
-        ("<?php class bool {}", "bool"),
-        ("<?php namespace Foo; class int {}", "int"),
+        ("reserved-int-class-name", "<?php class int {}", "int"),
+        ("reserved-float-class-name", "<?php class float {}", "float"),
+        (
+            "reserved-string-class-name",
+            "<?php class string {}",
+            "string",
+        ),
+        ("reserved-bool-class-name", "<?php class bool {}", "bool"),
+        (
+            "reserved-namespaced-int-class-name",
+            "<?php namespace Foo; class int {}",
+            "int",
+        ),
     ];
-    for (source, reserved) in class_cases {
-        let error = parser::parse(source).unwrap_err();
+    for (case_name, source, reserved) in class_cases {
+        let root = temp_dir(&format!("ptn-native-{case_name}"));
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{case_name}.php"));
+        let output = root.join(format!("{case_name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{source}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "", "{source}");
         assert_eq!(
-            error.message,
-            format!("Cannot use \"{reserved}\" as a class name as it is reserved"),
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "Fatal error: Cannot use \"{reserved}\" as a class name as it is reserved in {} on line 1\n",
+                input.display()
+            ),
             "{source}"
         );
-        assert_eq!(error.kind, DiagnosticKind::Fatal, "{source}");
     }
 
     let error = parser::parse("<?php use foobar as int;").unwrap_err();
@@ -7371,6 +7404,52 @@ fn parser_rejects_type_names_as_class_names_and_import_aliases() {
         "Cannot use foobar as int because 'int' is a special class name"
     );
     assert_eq!(error.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
+fn compile_deprecated_then_reserved_declaration_names_to_native_diagnostics() {
+    let cases = [
+        ("class", "a class"),
+        ("interface", "an interface"),
+        ("trait", "a trait"),
+    ];
+    for (kind, subject) in cases {
+        let root = temp_dir(&format!("ptn-native-{kind}-name-deprecation-then-reserved"));
+        fs::create_dir_all(&root).unwrap();
+        let input = root.join(format!("{kind}-name-deprecation-then-reserved.php"));
+        let output = root.join(format!("{kind}-name-deprecation-then-reserved-bin"));
+        fs::write(
+            &input,
+            format!(
+                "<?php
+{kind} _ {{}}
+{kind} bool {{}}
+"
+            ),
+        )
+        .unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{kind}");
+        assert_eq!(
+            String::from_utf8(execution.stdout).unwrap(),
+            format!(
+                "Deprecated: Using \"_\" as {subject} name is deprecated since 8.4 in {} on line 2\n",
+                input.display()
+            ),
+            "{kind}"
+        );
+        assert_eq!(
+            String::from_utf8(execution.stderr).unwrap(),
+            format!(
+                "\nFatal error: Cannot use \"bool\" as {subject} name as it is reserved in {} on line 3\n",
+                input.display()
+            ),
+            "{kind}"
+        );
+    }
 }
 
 #[test]
@@ -20526,6 +20605,43 @@ echo \"unreachable\\n\";
     assert!(String::from_utf8(execution.stderr)
         .unwrap()
         .contains("Fatal error: Cannot use \"bool\" as a class alias as it is reserved"));
+}
+
+#[test]
+fn compile_class_alias_deprecation_then_reserved_alias_formats_native_diagnostics() {
+    let root = temp_dir("ptn-native-class-alias-deprecation-then-reserved");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-alias-deprecation-then-reserved.php");
+    let output = root.join("class-alias-deprecation-then-reserved-bin");
+    fs::write(
+        &input,
+        "<?php
+class_alias('stdClass', '_');
+class_alias('stdClass', 'bool');
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        format!(
+            "\nDeprecated: Using \"_\" as a class alias is deprecated since 8.4 in {} on line 2\n",
+            input.display()
+        )
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert_eq!(
+        stderr,
+        format!(
+            "\nFatal error: Cannot use \"bool\" as a class alias as it is reserved in {} on line 3\n",
+            input.display()
+        )
+    );
 }
 
 #[test]

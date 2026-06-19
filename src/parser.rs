@@ -396,8 +396,8 @@ impl Parser<'_> {
         let mut trait_lookup = traits.clone();
         trait_lookup.extend(self.external_traits.iter().cloned());
         compose_class_traits(&mut classes, &trait_lookup)?;
-        validate_class_names(&classes, &traits)?;
-        validate_trait_names(&traits)?;
+        validate_class_names(&classes, &traits, &mut self.compile_warnings)?;
+        validate_trait_names(&traits, &mut self.compile_warnings)?;
         validate_builtin_attribute_targets(&classes, &traits, &functions)?;
         let mut validation_classes = classes.clone();
         validation_classes.extend(self.external_classes.iter().cloned());
@@ -12248,7 +12248,11 @@ fn method_with_trait_origin(method: &MethodDecl, trait_decl: &TraitDecl) -> Meth
     imported
 }
 
-fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<()> {
+fn validate_class_names(
+    classes: &[ClassDecl],
+    traits: &[TraitDecl],
+    compile_warnings: &mut Vec<CompileWarning>,
+) -> Result<()> {
     let mut names = HashSet::new();
     for class in classes {
         let lookup_name = class.name.to_ascii_lowercase();
@@ -12258,14 +12262,17 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
                 Some(class.span),
             ));
         }
-        if let Some(reserved_name) = reserved_class_name_segment(&lookup_name) {
-            return Err(Diagnostic::new(
-                format!(
-                    "Cannot use \"{}\" as a class name as it is reserved",
-                    reserved_name
-                ),
-                Some(class.span),
-            ));
+        if declaration_name_segment(&lookup_name) == "_" {
+            let subject = if class.is_interface {
+                "an interface"
+            } else {
+                "a class"
+            };
+            compile_warnings.push(CompileWarning {
+                message: format!("Using \"_\" as {subject} name is deprecated since 8.4"),
+                span: class.span,
+                kind: CompileWarningKind::Deprecation,
+            });
         }
         if !names.insert(lookup_name.clone()) {
             return Err(Diagnostic::new(
@@ -12286,8 +12293,12 @@ fn validate_class_names(classes: &[ClassDecl], traits: &[TraitDecl]) -> Result<(
     Ok(())
 }
 
+fn declaration_name_segment(name: &str) -> &str {
+    name.rsplit('\\').next().unwrap_or(name)
+}
+
 fn reserved_class_name_segment(name: &str) -> Option<&str> {
-    let segment = name.rsplit('\\').next().unwrap_or(name);
+    let segment = declaration_name_segment(name);
     matches!(
         segment,
         "array"
@@ -12333,10 +12344,20 @@ fn reject_reserved_interface_name(name: &str, span: SourceSpan) -> Result<()> {
     ))
 }
 
-fn validate_trait_names(traits: &[TraitDecl]) -> Result<()> {
+fn validate_trait_names(
+    traits: &[TraitDecl],
+    compile_warnings: &mut Vec<CompileWarning>,
+) -> Result<()> {
     let mut names = HashSet::new();
     for trait_decl in traits {
         let lookup_name = trait_decl.name.to_ascii_lowercase();
+        if declaration_name_segment(&lookup_name) == "_" {
+            compile_warnings.push(CompileWarning {
+                message: "Using \"_\" as a trait name is deprecated since 8.4".to_string(),
+                span: trait_decl.span,
+                kind: CompileWarningKind::Deprecation,
+            });
+        }
         if !names.insert(lookup_name.clone()) {
             return Err(Diagnostic::new(
                 format!("Cannot declare trait {lookup_name}, because the name is already in use"),

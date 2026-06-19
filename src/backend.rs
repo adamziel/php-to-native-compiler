@@ -362,7 +362,12 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_file,
     );
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
-    emit_declaration_fatals(&mut out, &declaration_fatals, &module.source_file);
+    emit_declaration_fatals(
+        &mut out,
+        &declaration_fatals,
+        &module.source_file,
+        !module.compile_warnings.is_empty(),
+    );
     emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings, &module.source_file);
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
@@ -3219,14 +3224,23 @@ fn emit_compile_warnings(out: &mut String, warnings: &[CompileWarning], source_f
     }
 }
 
-fn emit_declaration_fatals(out: &mut String, fatals: &[DeclarationFatal], source_file: &str) {
+fn emit_declaration_fatals(
+    out: &mut String,
+    fatals: &[DeclarationFatal],
+    source_file: &str,
+    needs_separator: bool,
+) {
     let Some(fatal) = fatals.first() else {
         return;
     };
+    out.push_str("    fflush(stdout);\n");
     out.push_str("    if (runtime.diagnostics.display_errors) {\n");
     out.push_str(
         "        FILE *ptn_declaration_fatal_stream = runtime.diagnostics.stream == NULL ? stderr : runtime.diagnostics.stream;\n",
     );
+    if needs_separator {
+        out.push_str("        fputc('\\n', ptn_declaration_fatal_stream);\n");
+    }
     out.push_str("        fputs(\"Fatal error: ");
     out.push_str(&c_string(&fatal.message));
     out.push_str(" in ");
@@ -16288,6 +16302,19 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
 fn collect_module_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
     let mut fatals = Vec::new();
     for class in &module.classes {
+        if let Some(message) = reserved_declaration_name_fatal_message(
+            &class.name,
+            if class.is_interface {
+                ("an", "interface")
+            } else {
+                ("a", "class")
+            },
+        ) {
+            fatals.push(DeclarationFatal {
+                message,
+                line: class.line,
+            });
+        }
         if let Some(message) = enum_class_declaration_fatal_message(class) {
             fatals.push(DeclarationFatal {
                 message,
@@ -16306,7 +16333,54 @@ fn collect_module_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
             }
         }
     }
+    for trait_decl in &module.traits {
+        if let Some(message) =
+            reserved_declaration_name_fatal_message(&trait_decl.name, ("a", "trait"))
+        {
+            fatals.push(DeclarationFatal {
+                message,
+                line: trait_decl.line,
+            });
+        }
+    }
     fatals
+}
+
+fn reserved_declaration_name_fatal_message(
+    name: &str,
+    article_and_kind: (&str, &str),
+) -> Option<String> {
+    let lookup_name = name.to_ascii_lowercase();
+    let reserved_name = reserved_declaration_name_segment(&lookup_name)?;
+    let (article, kind) = article_and_kind;
+    Some(format!(
+        "Cannot use \"{reserved_name}\" as {article} {kind} name as it is reserved"
+    ))
+}
+
+fn reserved_declaration_name_segment(name: &str) -> Option<&str> {
+    let segment = name.rsplit('\\').next().unwrap_or(name);
+    matches!(
+        segment,
+        "array"
+            | "bool"
+            | "callable"
+            | "false"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "never"
+            | "null"
+            | "object"
+            | "parent"
+            | "self"
+            | "static"
+            | "string"
+            | "true"
+            | "void"
+    )
+    .then_some(segment)
 }
 
 fn enum_class_declaration_fatal_message(class: &ClassDecl) -> Option<String> {

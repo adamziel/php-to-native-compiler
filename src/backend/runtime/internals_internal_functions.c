@@ -68802,9 +68802,6 @@ static PTN_UNUSED int ptn_runtime_register_class_alias(
             "Cannot use \"%s\" as a class alias as it is reserved",
             alias_lookup_name
         );
-        if (runtime->diagnostics.emitted_deprecation) {
-            fputc('\n', stdout);
-        }
         ptn_emit_fatal_error_at(runtime, message, runtime->source_path, line);
         free(message);
         return 0;
