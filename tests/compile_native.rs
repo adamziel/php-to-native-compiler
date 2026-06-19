@@ -32202,6 +32202,8 @@ var_dump(array_key_exists(\"missing\", $items));\n\
 var_dump(array_key_exists(null, $items));\n\
 var_dump(array_key_exists(1.5, $items));\n\
 var_dump(array_key_exists(1.23456789E-10, $items));\n\
+var_dump(array_key_exists(1.00000000000001, $items));\n\
+var_dump(array_key_exists(1.99999999999999, $items));\n\
 var_dump(array_key_exists(\"\", $items));\n\
 var_dump(array_key_exists(\"0\", $items));\n\
 var_dump(array_key_exists(\"n\", $items));\n\
@@ -32217,7 +32219,7 @@ try { array_key_exists(\"public_var\", new KeyCheck); } catch (TypeError $e) { e
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let expected_stdout = format!(
-        "bool(true)\nbool(false)\n\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\n\nDeprecated: Implicit conversion from float 1.5 to int loses precision in {0} on line 6\nbool(true)\n\nDeprecated: Implicit conversion from float 1.23456789E-10 to int loses precision in {0} on line 7\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n",
+        "bool(true)\nbool(false)\n\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\n\nDeprecated: Implicit conversion from float 1.5 to int loses precision in {0} on line 6\nbool(true)\n\nDeprecated: Implicit conversion from float 1.23456789E-10 to int loses precision in {0} on line 7\nbool(true)\n\nDeprecated: Implicit conversion from float 1.00000000000001 to int loses precision in {0} on line 8\nbool(true)\n\nDeprecated: Implicit conversion from float 1.99999999999999 to int loses precision in {0} on line 9\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n",
         input.display()
     );
     assert_eq!(

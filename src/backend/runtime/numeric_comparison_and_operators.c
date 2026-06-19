@@ -1262,7 +1262,7 @@ static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
         diagnostics->emitted_deprecation = 1;
     }
     char formatted[128];
-    ptn_format_scalar_float(value, formatted, sizeof(formatted));
+    ptn_format_scalar_shortest_float(value, formatted, sizeof(formatted));
 
     char message[128];
     int written = snprintf(
