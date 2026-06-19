@@ -38021,6 +38021,24 @@ $push_many_source = [1];\n\
 $push_many_copy = $push_many_source;\n\
 $push_many_count = array_push($push_many_copy, 2, 3);\n\
 if ($push_many_count === 3 && count($push_many_source) === 1 && count($push_many_copy) === 3 && $push_many_copy[2] === 3) { $pass++; } else { echo \"FAIL array_push_many\\n\"; $fail++; }\n\
+$pop_negative_source = [-1 => 0];\n\
+$pop_negative_copy = $pop_negative_source;\n\
+array_pop($pop_negative_copy);\n\
+array_push($pop_negative_copy, 0);\n\
+array_push($pop_negative_copy, 0);\n\
+if (count($pop_negative_source) === 1 && count($pop_negative_copy) === 2 && $pop_negative_source[-1] === 0 && $pop_negative_copy[-1] === 0 && $pop_negative_copy[0] === 0) { $pass++; } else { echo \"FAIL array_pop_negative_push\\n\"; $fail++; }\n\
+$pop_hole_source = [2 => \"two\", 5 => \"five\"];\n\
+$pop_hole_copy = $pop_hole_source;\n\
+$pop_hole_value = array_pop($pop_hole_copy);\n\
+$pop_hole_copy[] = \"again\";\n\
+if ($pop_hole_value === \"five\" && count($pop_hole_source) === 2 && count($pop_hole_copy) === 2 && $pop_hole_source[5] === \"five\" && $pop_hole_copy[2] === \"two\" && $pop_hole_copy[5] === \"again\") { $pass++; } else { echo \"FAIL array_pop_hole_push\\n\"; $fail++; }\n\
+$push_mixed_source = [\"f\" => \"fff\", 1 => \"one\", 4 => \"six\", 2 => \"float\", 3 => 3.7, 5 => \"Five\", 6 => 8.6, \"a\" => null];\n\
+$push_mixed_copy = $push_mixed_source;\n\
+$push_mixed_count = array_push($push_mixed_copy, \"tail\", \"end\");\n\
+if ($push_mixed_count === 10 && count($push_mixed_source) === 8 && count($push_mixed_copy) === 10 && $push_mixed_copy[6] === 8.6 && $push_mixed_copy[7] === \"tail\" && $push_mixed_copy[8] === \"end\") { $pass++; } else { echo \"FAIL array_push_mixed_keys\\n\"; $fail++; }\n\
+$append_mixed = [4 => \"A\", 1 => \"B\"];\n\
+$append_mixed[] = \"C\";\n\
+if (count($append_mixed) === 3 && $append_mixed[4] === \"A\" && $append_mixed[1] === \"B\" && $append_mixed[5] === \"C\") { $pass++; } else { echo \"FAIL array_append_mixed_keys\\n\"; $fail++; }\n\
 $unshift_source = [\"x\" => \"X\", 4 => \"A\", 9 => \"B\"];\n\
 $unshift_copy = $unshift_source;\n\
 $unshift_count = array_unshift($unshift_copy, \"first\", \"second\");\n\
@@ -38074,7 +38092,7 @@ echo \"mutating internal COW matrix: pass=\", $pass, \" fail=\", $fail, \"\\n\";
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "mutating internal COW matrix: pass=14 fail=0\n"
+        "mutating internal COW matrix: pass=18 fail=0\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

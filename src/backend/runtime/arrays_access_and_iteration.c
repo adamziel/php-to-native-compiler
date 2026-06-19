@@ -5204,9 +5204,7 @@ static PTN_UNUSED int ptn_array_append_key_available(PtnRuntime *runtime, PtnArr
             goto unavailable;
         }
     }
-    if (array->next_auto_key < INT64_MAX) {
-        return 1;
-    }
+    return 1;
 unavailable:
     ptn_throw_exception(
         runtime,
@@ -10737,12 +10735,19 @@ static PTN_UNUSED PtnValue ptn_array_pop_value(PtnArray *array) {
     }
 
     size_t removed_index = array->len - 1;
+    PtnArrayKey removed_key = array->entries[removed_index].key;
+    int64_t old_next_auto_key = array->next_auto_key;
     PtnValue removed = ptn_value_clone_deref(array->entries[removed_index].value);
     ptn_value_destroy(&array->entries[removed_index].value);
-    ptn_array_key_free(array->entries[removed_index].key);
+    ptn_array_key_free(removed_key);
     array->len--;
     array->current_index = 0;
-    ptn_array_recompute_next_auto_key(array);
+    if (removed_key.type == PTN_ARRAY_KEY_INT &&
+        ptn_array_next_auto_key_after_integer(removed_key.as.integer) == old_next_auto_key) {
+        array->next_auto_key = removed_key.as.integer;
+    } else {
+        array->next_auto_key = old_next_auto_key;
+    }
     ptn_array_rebuild_index(array);
     return removed;
 }
@@ -11691,14 +11696,8 @@ static PTN_UNUSED int64_t ptn_array_push_values(PtnRuntime *runtime, PtnArray *a
     }
 
     for (size_t i = 0; i < argc; i++) {
-        if (array->next_auto_key >= INT64_MAX) {
-            goto unavailable;
-        }
-        for (size_t j = 0; j < array->len; j++) {
-            if (array->entries[j].key.type == PTN_ARRAY_KEY_INT &&
-                array->entries[j].key.as.integer == INT64_MAX) {
-                goto unavailable;
-            }
+        if (!ptn_array_append_key_available(runtime, array)) {
+            return (int64_t)array->len;
         }
         PtnArrayKey key = ptn_array_int_key(array->next_auto_key);
         ptn_array_set_entry(array, key, ptn_value_clone_deref(values[i]));
@@ -11707,13 +11706,5 @@ static PTN_UNUSED int64_t ptn_array_push_values(PtnRuntime *runtime, PtnArray *a
     array->current_index = 0;
     ptn_array_recompute_next_auto_key(array);
     ptn_array_rebuild_index(array);
-    return (int64_t)array->len;
-
-unavailable:
-    ptn_throw_exception(
-        runtime,
-        "Error",
-        "Cannot add element to the array as the next element is already occupied"
-    );
     return (int64_t)array->len;
 }
