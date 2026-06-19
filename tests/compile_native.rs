@@ -27525,6 +27525,79 @@ echo [1, 2, 3][1], \"\\n\";",
 }
 
 #[test]
+fn compile_array_auto_key_remains_monotonic_after_lower_explicit_keys_to_native_binary() {
+    let root = temp_dir("ptn-native-array-auto-key-monotonic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-auto-key-monotonic.php");
+    let output = root.join("array-auto-key-monotonic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$bulk = [52 => \"x\", true => \"t\", false => \"f\", \"tail\"];\n\
+var_dump($bulk);\n\
+$bulk[5] = \"low\";\n\
+$bulk[] = \"after-low\";\n\
+var_dump($bulk);\n\
+$incremental = [52 => \"x\", true => \"t\", ...[], false => \"f\", \"tail\"];\n\
+var_dump($incremental);\n\
+$negative = [-2 => \"a\", \"b\"];\n\
+var_dump($negative);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(4) {\n",
+            "  [52]=>\n",
+            "  string(1) \"x\"\n",
+            "  [1]=>\n",
+            "  string(1) \"t\"\n",
+            "  [0]=>\n",
+            "  string(1) \"f\"\n",
+            "  [53]=>\n",
+            "  string(4) \"tail\"\n",
+            "}\n",
+            "array(6) {\n",
+            "  [52]=>\n",
+            "  string(1) \"x\"\n",
+            "  [1]=>\n",
+            "  string(1) \"t\"\n",
+            "  [0]=>\n",
+            "  string(1) \"f\"\n",
+            "  [53]=>\n",
+            "  string(4) \"tail\"\n",
+            "  [5]=>\n",
+            "  string(3) \"low\"\n",
+            "  [54]=>\n",
+            "  string(9) \"after-low\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [52]=>\n",
+            "  string(1) \"x\"\n",
+            "  [1]=>\n",
+            "  string(1) \"t\"\n",
+            "  [0]=>\n",
+            "  string(1) \"f\"\n",
+            "  [53]=>\n",
+            "  string(4) \"tail\"\n",
+            "}\n",
+            "array(2) {\n",
+            "  [-2]=>\n",
+            "  string(1) \"a\"\n",
+            "  [-1]=>\n",
+            "  string(1) \"b\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_numeric_string_array_key_normalization_to_native_binary() {
     let root = temp_dir("ptn-native-numeric-string-array-key-normalization");
     fs::create_dir_all(&root).unwrap();
