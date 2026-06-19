@@ -2698,6 +2698,19 @@ static char *ptn_format_missing_method_callback_reason(const char *class_name, c
     return reason;
 }
 
+static char *ptn_format_abstract_method_callback_reason(const char *class_name, const char *method_name) {
+    int needed = snprintf(NULL, 0, "cannot call abstract method %s::%s()", class_name, method_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *reason = malloc((size_t)needed + 1);
+    if (reason == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(reason, (size_t)needed + 1, "cannot call abstract method %s::%s()", class_name, method_name);
+    return reason;
+}
+
 static const char *ptn_callback_visibility_name(int visibility) {
     if (visibility == PTN_PROPERTY_PRIVATE) {
         return "private";
@@ -2763,7 +2776,9 @@ static char *ptn_inaccessible_declared_method_callback_reason(
     }
     (void)is_static;
     (void)is_final;
-    (void)is_abstract;
+    if (is_abstract) {
+        return ptn_format_abstract_method_callback_reason(class_name, method_name);
+    }
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
     if (ptn_declared_method_visibility_allows(access_scope, class_name, visibility)) {
         return NULL;
@@ -2812,9 +2827,52 @@ static char *ptn_invalid_array_callback_reason(PtnRuntime *runtime, PtnValue res
         }
         free(class_name);
     } else if (scope.type == PTN_OBJECT) {
-        reason = ptn_inaccessible_declared_method_callback_reason(runtime, scope.as.object->class_name, method_name);
-        if (reason == NULL && !ptn_internal_class_method_exists(scope.as.object->class_name, method_name)) {
-            reason = ptn_format_missing_method_callback_reason(scope.as.object->class_name, method_name);
+        const char *receiver_class_name = scope.as.object->class_name;
+        char *separator = strstr(method_name, "::");
+        if (separator != NULL && separator != method_name && separator[2] != '\0') {
+            *separator = '\0';
+            const char *target_class_name = method_name;
+            if (ptn_ascii_case_equal(method_name, "self") || ptn_ascii_case_equal(method_name, "static")) {
+                target_class_name = receiver_class_name;
+            } else if (ptn_ascii_case_equal(method_name, "parent")) {
+                const char *parent = ptn_declared_class_parent_name(receiver_class_name);
+                if (parent != NULL) {
+                    target_class_name = parent;
+                }
+            } else {
+                target_class_name = runtime == NULL
+                    ? ptn_symbol_name_without_leading_slash(method_name)
+                    : ptn_runtime_resolve_class_alias(runtime, ptn_symbol_name_without_leading_slash(method_name));
+            }
+            const char *target_method_name = separator + 2;
+            if (ptn_declared_class_is_same_or_descendant(receiver_class_name, target_class_name)) {
+                reason = ptn_inaccessible_declared_method_callback_reason(runtime, target_class_name, target_method_name);
+                if (
+                    reason == NULL &&
+                    !ptn_declared_class_method_is_callable(
+                        target_class_name,
+                        target_method_name,
+                        runtime == NULL ? NULL : runtime->current_class_name
+                    ) &&
+                    !ptn_internal_class_method_exists(target_class_name, target_method_name)
+                ) {
+                    reason = ptn_format_missing_method_callback_reason(target_class_name, target_method_name);
+                }
+            }
+            *separator = ':';
+        } else {
+            reason = ptn_inaccessible_declared_method_callback_reason(runtime, receiver_class_name, method_name);
+            if (
+                reason == NULL &&
+                !ptn_declared_class_method_is_callable(
+                    receiver_class_name,
+                    method_name,
+                    runtime == NULL ? NULL : runtime->current_class_name
+                ) &&
+                !ptn_internal_class_method_exists(receiver_class_name, method_name)
+            ) {
+                reason = ptn_format_missing_method_callback_reason(receiver_class_name, method_name);
+            }
         }
     } else if (scope.type == PTN_EXCEPTION) {
         if (!ptn_internal_class_method_exists(scope.as.exception->class_name, method_name)) {

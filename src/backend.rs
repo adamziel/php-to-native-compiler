@@ -6270,6 +6270,11 @@ fn emit_class_metadata_helpers(
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
+            if method.is_abstract {
+                out.push_str("            return 0;\n");
+                out.push_str("        }\n");
+                continue;
+            }
             out.push_str("            if (ptn_declared_method_visibility_allows(access_scope, \"");
             out.push_str(&c_string(entry.declaring_class));
             out.push_str("\", ");
@@ -6561,6 +6566,11 @@ fn emit_class_metadata_helpers(
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
+            if method.is_abstract {
+                out.push_str("            return 0;\n");
+                out.push_str("        }\n");
+                continue;
+            }
             out.push_str("            return ptn_declared_method_visible(");
             out.push_str(c_property_visibility(method.visibility));
             out.push_str(", \"");
@@ -11824,24 +11834,38 @@ fn emit_method_dispatch(
                 out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
             }
             out.push_str(") {\n");
-            emit_deprecated_function_warning(
-                out,
-                "            ",
-                "runtime",
-                "runtime->source_path",
-                "&runtime->diagnostics",
-                function,
-                "line",
-            );
-            out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
-            out.push_str("            runtime->called_class_name_override = class_name;\n");
-            out.push_str("            PtnValue ptn_method_result = ");
-            out.push_str(&user_function_c_name(method.function_index));
-            out.push_str("(runtime, resolved, argc, args, line);\n");
-            out.push_str(
-                "            runtime->called_class_name_override = ptn_previous_called_class;\n",
-            );
-            out.push_str("            return ptn_method_result;\n");
+            if method.is_abstract {
+                out.push_str("            char ptn_abstract_method_message[512];\n");
+                out.push_str("            int ptn_abstract_method_written = snprintf(ptn_abstract_method_message, sizeof(ptn_abstract_method_message), \"Cannot call abstract method %s::%s()\", \"");
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\");\n");
+                out.push_str("            if (ptn_abstract_method_written < 0 || (size_t)ptn_abstract_method_written >= sizeof(ptn_abstract_method_message)) {\n");
+                out.push_str("                ptn_abort_out_of_memory();\n");
+                out.push_str("            }\n");
+                out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_abstract_method_message, runtime->source_path, line);\n");
+                out.push_str("            return ptn_null();\n");
+            } else {
+                emit_deprecated_function_warning(
+                    out,
+                    "            ",
+                    "runtime",
+                    "runtime->source_path",
+                    "&runtime->diagnostics",
+                    function,
+                    "line",
+                );
+                out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+                out.push_str("            runtime->called_class_name_override = class_name;\n");
+                out.push_str("            PtnValue ptn_method_result = ");
+                out.push_str(&user_function_c_name(method.function_index));
+                out.push_str("(runtime, resolved, argc, args, line);\n");
+                out.push_str(
+                    "            runtime->called_class_name_override = ptn_previous_called_class;\n",
+                );
+                out.push_str("            return ptn_method_result;\n");
+            }
             out.push_str("            }\n");
             out.push_str("            if (ptn_inaccessible_visibility == NULL) {\n");
             out.push_str("                ptn_inaccessible_visibility = \"");
@@ -12107,6 +12131,20 @@ fn emit_method_dispatch(
             out.push_str("                *result_out = ptn_null();\n");
             out.push_str("                return 1;\n");
             out.push_str("            }\n");
+            if method.is_abstract {
+                out.push_str("            char ptn_abstract_method_message[512];\n");
+                out.push_str("            int ptn_abstract_method_written = snprintf(ptn_abstract_method_message, sizeof(ptn_abstract_method_message), \"Cannot call abstract method %s::%s()\", \"");
+                out.push_str(&c_string(entry.declaring_class));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\");\n");
+                out.push_str("            if (ptn_abstract_method_written < 0 || (size_t)ptn_abstract_method_written >= sizeof(ptn_abstract_method_message)) {\n");
+                out.push_str("                ptn_abort_out_of_memory();\n");
+                out.push_str("            }\n");
+                out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_abstract_method_message, runtime->source_path, line);\n");
+                out.push_str("            *result_out = ptn_null();\n");
+                out.push_str("            return 1;\n");
+            }
             if method.is_static {
                 out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
                 out.push_str(

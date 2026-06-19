@@ -14387,9 +14387,6 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
             .iter()
             .find(|method| method.is_abstract && method.trait_name.is_none())
         {
-            if parent_concrete_method_exists(class, &method.name, classes) {
-                continue;
-            }
             return Err(Diagnostic::new(
                 format!(
                     "Class {} declares abstract method {}() and must therefore be declared abstract",
@@ -14406,13 +14403,12 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
                 class.span,
             ));
         }
-        if let Some(required_method) = inherited_unsatisfied_abstract_method(class, classes) {
-            return Err(Diagnostic::new(
-                format!(
-                    "Class {} must implement 1 abstract method ({}::{})",
-                    class.name, required_method.declaring_class, required_method.method_name
-                ),
-                Some(class.span),
+        let abstract_methods = inherited_unsatisfied_abstract_methods(class, classes);
+        if !abstract_methods.is_empty() {
+            return Err(abstract_methods_diagnostic(
+                &class.name,
+                &abstract_methods,
+                class.span,
             ));
         }
     }
@@ -14429,6 +14425,27 @@ struct RequiredAbstractPropertyHook {
 struct RequiredAbstractMethod {
     declaring_class: String,
     method_name: String,
+}
+
+fn abstract_methods_diagnostic(
+    class_name: &str,
+    methods: &[RequiredAbstractMethod],
+    span: SourceSpan,
+) -> Diagnostic {
+    let count = methods.len();
+    let remaining = methods
+        .iter()
+        .map(|method| format!("{}::{}", method.declaring_class, method.method_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Diagnostic::new(
+        format!(
+            "Class {class_name} contains {count} abstract method{} and must therefore be declared abstract or implement the remaining method{} ({remaining})",
+            if count == 1 { "" } else { "s" },
+            if count == 1 { "" } else { "s" },
+        ),
+        Some(span),
+    )
 }
 
 fn abstract_property_hooks_diagnostic(
@@ -14614,10 +14631,26 @@ fn property_satisfies_hook(property: &PropertyDecl, hook_name: &str) -> bool {
     }
 }
 
-fn inherited_unsatisfied_abstract_method(
+fn inherited_unsatisfied_abstract_methods(
     class: &ClassDecl,
     classes: &[ClassDecl],
-) -> Option<RequiredAbstractMethod> {
+) -> Vec<RequiredAbstractMethod> {
+    let mut requirements = Vec::new();
+    collect_parent_abstract_methods(class, classes, &mut requirements);
+    collect_interface_abstract_methods(class, classes, &mut requirements);
+    requirements
+        .into_iter()
+        .filter(|required| {
+            !concrete_method_exists_in_class_or_ancestors(class, &required.method_name, classes)
+        })
+        .collect()
+}
+
+fn collect_parent_abstract_methods(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    requirements: &mut Vec<RequiredAbstractMethod>,
+) {
     let mut parent_name = class.parent_name.as_deref();
     let mut seen = HashSet::new();
     while let Some(name) = parent_name {
@@ -14631,17 +14664,69 @@ fn inherited_unsatisfied_abstract_method(
             if !method.is_abstract || method.trait_name.is_some() {
                 continue;
             }
-            if concrete_method_exists_in_class_or_ancestors(class, &method.name, classes) {
-                continue;
-            }
-            return Some(RequiredAbstractMethod {
+            requirements.push(RequiredAbstractMethod {
                 declaring_class: parent.name.clone(),
                 method_name: method.name.clone(),
             });
         }
         parent_name = parent.parent_name.as_deref();
     }
-    None
+}
+
+fn collect_interface_abstract_methods(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    requirements: &mut Vec<RequiredAbstractMethod>,
+) {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        for interface_name in &candidate.interfaces {
+            collect_interface_methods(
+                interface_name,
+                classes,
+                &mut seen_interfaces,
+                requirements,
+            );
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+}
+
+fn collect_interface_methods(
+    interface_name: &str,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+    requirements: &mut Vec<RequiredAbstractMethod>,
+) {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return;
+    }
+    let Some(interface) = find_class(classes, interface_name) else {
+        return;
+    };
+    if !interface.is_interface {
+        return;
+    }
+    for method in &interface.methods {
+        if method.trait_name.is_none() {
+            requirements.push(RequiredAbstractMethod {
+                declaring_class: interface.name.clone(),
+                method_name: method.name.clone(),
+            });
+        }
+    }
+    for parent_interface in &interface.interfaces {
+        collect_interface_methods(parent_interface, classes, seen, requirements);
+    }
 }
 
 fn concrete_method_exists_in_class_or_ancestors(
@@ -14666,32 +14751,6 @@ fn concrete_method_exists_in_class_or_ancestors(
             .parent_name
             .as_deref()
             .and_then(|name| find_class(classes, name));
-    }
-    false
-}
-
-fn parent_concrete_method_exists(
-    class: &ClassDecl,
-    method_name: &str,
-    classes: &[ClassDecl],
-) -> bool {
-    let mut parent_name = class.parent_name.as_deref();
-    let mut seen = HashSet::new();
-    while let Some(name) = parent_name {
-        if !seen.insert(name.to_ascii_lowercase()) {
-            break;
-        }
-        let Some(parent) = find_class(classes, name) else {
-            break;
-        };
-        if parent
-            .methods
-            .iter()
-            .any(|method| method_can_satisfy_override(method, method_name) && !method.is_abstract)
-        {
-            return true;
-        }
-        parent_name = parent.parent_name.as_deref();
     }
     false
 }
