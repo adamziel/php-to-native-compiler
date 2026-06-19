@@ -45015,8 +45015,11 @@ $string = \"abc\";\n\
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout)
+        .unwrap()
+        .replace(input.to_str().unwrap(), "ptn");
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+        stdout,
         "string(4) \"kept\"\n\
 rhs:nullish\n\
 string(7) \"nullish\"\n\
@@ -45054,8 +45057,8 @@ string(8) \"nullbase\"\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_path_lookup_quiet(&runtime"));
     assert!(c_source.contains("ptn_value_array_path_lookup_quiet(&runtime"));
-    assert!(c_source.contains("ptn_runtime_array_path_set(&runtime"));
-    assert!(c_source.contains("ptn_value_array_path_set(&runtime"));
+    assert!(c_source.contains("ptn_runtime_array_path_set_result(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_set_result(&runtime"));
 }
 
 #[test]

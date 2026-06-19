@@ -342,6 +342,46 @@ var_dump($items);",
             expected_stdout: "array(1) {\n  [0]=>\n  string(8) \"original\"\n}\narray(1) {\n  [0]=>\n  &string(8) \"original\"\n}\narray(1) {\n  [0]=>\n  &string(7) \"changed\"\n}\n",
         },
         CowReducerCase {
+            name: "magic_call_preserves_reference_arguments",
+            oracle: "Zend/tests/magic_methods/bug50394.phpt",
+            source: "<?php\n\
+function inc(&$x) { $x++; }\n\
+class Proxy {\n\
+    function __call($name, $args) {\n\
+        echo \"$name called!\\n\";\n\
+        call_user_func_array(\"inc\", $args);\n\
+    }\n\
+}\n\
+$arg = 1;\n\
+$args = [&$arg];\n\
+$proxy = new Proxy;\n\
+call_user_func_array([$proxy, \"bar\"], $args);\n\
+call_user_func_array([$proxy, \"bar\"], [&$arg]);\n\
+var_dump($arg);",
+            expected_stdout: "bar called!\nbar called!\nint(3)\n",
+        },
+        CowReducerCase {
+            name: "arrayaccess_coalesce_assignment_result_no_reread",
+            oracle: "Zend/tests/coalesce/assign_coalesce_003.phpt",
+            source: "<?php\n\
+class AA implements ArrayAccess {\n\
+    public $data;\n\
+    function __construct($data = []) { $this->data = $data; }\n\
+    function offsetExists($k): bool { echo \"exists($k)\\n\"; return array_key_exists($k, $this->data); }\n\
+    function &offsetGet($k): mixed { echo \"get($k)\\n\"; return $this->data[$k]; }\n\
+    function offsetSet($k, $v): void { echo \"set($k,$v)\\n\"; $this->data[$k] = $v; }\n\
+    function offsetUnset($k): void {}\n\
+}\n\
+$ary = new AA([\"bar\" => \"exists\", \"null\" => null]);\n\
+echo \"[bar]\\n\";\n\
+var_dump($ary[\"bar\"] ??= \"foo\");\n\
+echo \"[missing]\\n\";\n\
+var_dump($ary[\"missing\"] ??= \"new\");\n\
+echo \"[null]\\n\";\n\
+var_dump($ary[\"null\"] ??= \"baz\");",
+            expected_stdout: "[bar]\nexists(bar)\nget(bar)\nstring(6) \"exists\"\n[missing]\nexists(missing)\nset(missing,new)\nstring(3) \"new\"\n[null]\nexists(null)\nget(null)\nset(null,baz)\nstring(3) \"baz\"\n",
+        },
+        CowReducerCase {
             name: "function_return_array_then_write",
             oracle: "Zend/tests/assign_by_val_function_by_ref_return_value.phpt",
             source: "<?php\n\
@@ -632,7 +672,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 42, "COW reducer pass count changed");
+    assert_eq!(passed, 44, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
