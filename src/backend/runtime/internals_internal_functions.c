@@ -69419,6 +69419,7 @@ static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const 
 static PtnValue ptn_declared_class_reflection_property_hook_method(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type);
 static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name);
 static int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
+static const char *ptn_declared_class_reflection_doc_comment(const char *class_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
 static PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
@@ -69428,6 +69429,7 @@ static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, co
 static PtnValue ptn_declared_class_reflection_default_properties(PtnRuntime *runtime, const char *class_name);
 static PtnValue ptn_declared_class_reflection_static_properties(PtnRuntime *runtime, const char *class_name, size_t line);
 static int ptn_declared_class_reflection_property_metadata(const char *class_name, const char *property_name, const char **declaring_class, int *is_static, int *visibility, int *has_default, int *modifiers);
+static const char *ptn_declared_class_reflection_property_doc_comment(const char *class_name, const char *property_name);
 static int ptn_declared_class_reflection_property_type_metadata(const char *class_name, const char *property_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin, int *is_readonly);
 static PtnValue ptn_declared_class_reflection_property_default(PtnRuntime *runtime, const char *class_name, const char *property_name);
 static PtnValue ptn_declared_class_reflection_property_to_string(PtnRuntime *runtime, const char *class_name, const char *property_name);
@@ -69448,6 +69450,7 @@ static int ptn_declared_attribute_class_flags(
 );
 static PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name);
+static const char *ptn_declared_class_reflection_constant_doc_comment(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_enum_case(const char *class_name, const char *constant_name);
 static const char *ptn_declared_class_parent_name(const char *name);
@@ -72254,6 +72257,7 @@ static int ptn_reflection_class_constant_method_exists(const char *method_name) 
         || ptn_ascii_case_equal(method_name, "__toString")
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getDeclaringClass")
+        || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getValue")
@@ -72323,6 +72327,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getDeclaringClass")
         || ptn_ascii_case_equal(method_name, "getDefaultValue")
+        || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getHook")
         || ptn_ascii_case_equal(method_name, "getMangledName")
         || ptn_ascii_case_equal(method_name, "getModifiers")
@@ -73207,6 +73212,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getConstant",
             "getConstants",
             "getDefaultProperties",
+            "getDocComment",
             "getEndLine",
             "getExtension",
             "getExtensionName",
@@ -73307,6 +73313,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "__toString",
             "getAttributes",
             "getDeclaringClass",
+            "getDocComment",
             "getModifiers",
             "getName",
             "getValue",
@@ -73347,6 +73354,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "__toString",
             "getAttributes",
             "getDeclaringClass",
+            "getDocComment",
             "getEndLine",
             "getFileName",
             "getModifiers",
@@ -73405,6 +73413,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getAttributes",
             "getDeclaringClass",
             "getDefaultValue",
+            "getDocComment",
             "getMangledName",
             "getModifiers",
             "getName",
@@ -78147,7 +78156,22 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
-        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *doc_class_name = declaring_class == NULL ? data->class_name : declaring_class;
+        if (!data->is_dynamic &&
+            (ptn_declared_user_class_or_interface_exists(doc_class_name) ||
+             ptn_declared_trait_exists(doc_class_name))) {
+            const char *doc_comment = ptn_declared_class_reflection_property_doc_comment(
+                doc_class_name,
+                data->name
+            );
+            return doc_comment == NULL
+                ? ptn_bool(0)
+                : ptn_owned_string(ptn_duplicate_string(doc_comment));
+        }
+        return ptn_bool(0);
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
@@ -79883,7 +79907,13 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
-        return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *doc_comment = ptn_declared_class_reflection_doc_comment(class_name);
+        return doc_comment == NULL
+            ? ptn_bool(0)
+            : ptn_owned_string(ptn_duplicate_string(doc_comment));
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
@@ -80729,6 +80759,20 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
     }
     if (ptn_ascii_case_equal(name, "getDeclaringClass")) {
         return ptn_reflection_class_object_from_name(runtime, data->class_name);
+    }
+    if (ptn_ascii_case_equal(name, "getDocComment")) {
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        const char *doc_comment = ptn_declared_class_reflection_constant_doc_comment(
+            data->class_name,
+            constant_name
+        );
+        free(constant_name);
+        return doc_comment == NULL
+            ? ptn_bool(0)
+            : ptn_owned_string(ptn_duplicate_string(doc_comment));
     }
     if (ptn_ascii_case_equal(name, "getValue")) {
         char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);

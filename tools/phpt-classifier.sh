@@ -1774,7 +1774,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             reflection_metadata_vars[assignment] = 1
         }
         function ptn_has_reflection_source_metadata_method(line) {
-            return line ~ /->[[:space:]]*getdoccomment[[:space:]]*\(/
+            return 0
         }
         function ptn_has_reflection_constant_source_metadata_method(line) {
             return line ~ /->[[:space:]]*getfilename[[:space:]]*\(/
@@ -1947,11 +1947,6 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 reflection_metadata_vars[reflection_method_foreach_var] = 1
             }
             for (reflection_metadata_var in reflection_metadata_vars) {
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_metadata_var "[[:space:]]*->[[:space:]]*getdoccomment[[:space:]]*\\(")) {
-                    print "unsupported-internal-reflection-metadata\trequires reflection source/doc/static-variable metadata beyond PTN modeled reflection invocation and shape metadata"
-                    found = 1
-                    exit
-                }
             }
             for (reflection_constant_var in reflection_constant_vars) {
                 if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_constant_var "[[:space:]]*->[[:space:]]*getfilename[[:space:]]*\\(")) {
@@ -1960,8 +1955,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                     exit
                 }
             }
-            if (line ~ /new[[:space:]]+\\?reflection(class|function|method)[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getdoccomment[[:space:]]*\(/ ||
-                ptn_has_reflection_source_metadata_method(line) && line ~ /(^|[^[:alnum:]_$\\])reflection(class|function|method)([^[:alnum:]_]|$)/) {
+            if (ptn_has_reflection_source_metadata_method(line) && line ~ /(^|[^[:alnum:]_$\\])reflection(class|function|method)([^[:alnum:]_]|$)/) {
                 print "unsupported-internal-reflection-metadata\trequires reflection source/doc/static-variable metadata beyond PTN modeled reflection invocation and shape metadata"
                 found = 1
                 exit
@@ -1985,7 +1979,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                     found = 1
                     exit
                 }
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(") &&
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(") &&
                     !(ptn_supported_property_hook_metadata_row() && line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*gethook[[:space:]]*\\("))) {
                     print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                     found = 1
@@ -2001,7 +1995,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
                     !ptn_supported_internal_attribute_metadata_row()) ||
-                (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ &&
+                (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ &&
                     !(ptn_supported_property_hook_metadata_row() && line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*gethook[[:space:]]*\(/)) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|isreadonly)[[:space:]]*\(/ &&
                     !ptn_supported_reflection_property_named_type_metadata_row()) ||

@@ -133,6 +133,7 @@ fn parse_with_options(
         compiler_halt_offset,
         compile_warnings: Vec::new(),
         validate_method_signatures,
+        current_statement_doc_comment: None,
     }
     .parse_program()
 }
@@ -172,6 +173,7 @@ struct Parser<'a> {
     compiler_halt_offset: Option<i64>,
     compile_warnings: Vec<CompileWarning>,
     validate_method_signatures: bool,
+    current_statement_doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -334,6 +336,20 @@ impl Default for ClassModifiers {
 }
 
 impl ClassModifiers {
+    fn first_span(&self) -> Option<SourceSpan> {
+        [
+            self.static_span,
+            self.abstract_span,
+            self.final_span,
+            self.readonly_span,
+            self.visibility_span,
+            self.set_visibility_span,
+        ]
+        .into_iter()
+        .flatten()
+        .min_by_key(|span| span.byte_start)
+    }
+
     fn has_promoted_property_modifier(&self) -> bool {
         self.visibility_span.is_some()
             || self.set_visibility_span.is_some()
@@ -1574,6 +1590,17 @@ impl Parser<'_> {
             None
         };
         let class_token = self.advance().clone();
+        let declaration_start_span = [
+            abstract_span,
+            final_span,
+            readonly_span,
+            Some(class_token.span),
+        ]
+        .into_iter()
+        .flatten()
+        .min_by_key(|span| span.byte_start)
+        .unwrap_or(class_token.span);
+        let doc_comment = self.doc_comment_before(declaration_start_span.byte_start);
         let TokenKind::Identifier(keyword) = &class_token.kind else {
             return Err(Diagnostic::new("expected class", Some(class_token.span)));
         };
@@ -1674,16 +1701,14 @@ impl Parser<'_> {
         }
         self.active_type_scope = previous_type_scope;
         let right_span = self.expect_right_brace()?;
-        let span = combine_spans(
-            abstract_span.or(readonly_span).unwrap_or(class_token.span),
-            right_span,
-        );
+        let span = combine_spans(declaration_start_span, right_span);
         Ok(ClassDecl {
             name: class_name,
             parent_name,
             interfaces,
             trait_uses,
             attributes,
+            doc_comment,
             is_conditionally_declared: false,
             is_anonymous: false,
             is_abstract: is_abstract || is_interface,
@@ -1727,6 +1752,7 @@ impl Parser<'_> {
 
     fn parse_enum_decl(&mut self, attributes: ParsedAttributes) -> Result<ClassDecl> {
         let enum_token = self.advance().clone();
+        let doc_comment = self.doc_comment_before(enum_token.span.byte_start);
         let TokenKind::Identifier(keyword) = &enum_token.kind else {
             return Err(Diagnostic::new("expected enum", Some(enum_token.span)));
         };
@@ -1780,6 +1806,7 @@ impl Parser<'_> {
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
             let attributes = self.parse_attribute_groups()?;
             if matches!(self.peek().kind, TokenKind::Case) {
+                let doc_comment = self.doc_comment_before(self.peek().span.byte_start);
                 self.advance();
                 let token = self.advance().clone();
                 let TokenKind::Identifier(name) = token.kind else {
@@ -1829,6 +1856,7 @@ impl Parser<'_> {
                     visibility: PropertyVisibility::Public,
                     type_hint: None,
                     attributes,
+                    doc_comment,
                     value: Expr::Null(token.span),
                     is_enum_case: true,
                     enum_case_value,
@@ -1863,6 +1891,7 @@ impl Parser<'_> {
             interfaces,
             trait_uses,
             attributes,
+            doc_comment,
             is_conditionally_declared: false,
             is_anonymous: false,
             is_abstract: false,
@@ -1881,6 +1910,7 @@ impl Parser<'_> {
 
     fn parse_trait_decl(&mut self, attributes: ParsedAttributes) -> Result<TraitDecl> {
         let trait_token = self.advance().clone();
+        let doc_comment = self.doc_comment_before(trait_token.span.byte_start);
         if !token_is_identifier_named(&trait_token, "trait") {
             return Err(Diagnostic::new("expected trait", Some(trait_token.span)));
         }
@@ -1924,6 +1954,7 @@ impl Parser<'_> {
             name: trait_name,
             trait_uses,
             attributes,
+            doc_comment,
             properties,
             static_properties,
             constants,
@@ -2113,6 +2144,39 @@ impl Parser<'_> {
             .unwrap_or_else(|| SourceSpan::new(0, 0, 0, 0))
     }
 
+    fn doc_comment_before(&self, byte_start: usize) -> Option<String> {
+        let mut end = byte_start;
+        loop {
+            let before = self.source.get(..end)?;
+            let trimmed = before.trim_end_matches(char::is_whitespace);
+            if trimmed.ends_with("*/") {
+                let comment_end = trimmed.len();
+                let comment_start = trimmed[..comment_end.saturating_sub(2)].rfind("/*")?;
+                let comment = &trimmed[comment_start..comment_end];
+                if comment.starts_with("/**")
+                    && comment
+                        .as_bytes()
+                        .get(3)
+                        .is_some_and(u8::is_ascii_whitespace)
+                {
+                    return Some(comment.to_string());
+                }
+                end = comment_start;
+                continue;
+            }
+
+            let line_start = trimmed.rfind('\n').map(|index| index + 1).unwrap_or(0);
+            let line = &trimmed[line_start..];
+            let line_trimmed = line.trim_start_matches(char::is_whitespace);
+            if line_trimmed.starts_with("//") || line_trimmed.starts_with('#') {
+                end = line_start;
+                continue;
+            }
+
+            return None;
+        }
+    }
+
     fn parse_class_member(
         &mut self,
         class_is_readonly: bool,
@@ -2135,7 +2199,10 @@ impl Parser<'_> {
         class_name: &str,
         attributes: ParsedAttributes,
     ) -> Result<ParsedClassMember> {
+        let member_start_span = self.peek().span;
         let mut modifiers = self.parse_class_modifiers()?;
+        let declaration_start_span = modifiers.first_span().unwrap_or(member_start_span);
+        let doc_comment = self.doc_comment_before(declaration_start_span.byte_start);
         if token_is_identifier_named(self.peek(), "use") {
             if class_is_interface {
                 return Err(Diagnostic::new(
@@ -2183,6 +2250,7 @@ impl Parser<'_> {
                 modifiers.is_final,
                 class_name,
                 attributes,
+                doc_comment,
             )?;
             if class_is_interface && modifiers.visibility != PropertyVisibility::Public {
                 let constant_name = constants
@@ -2220,6 +2288,7 @@ impl Parser<'_> {
                         modifiers.set_visibility_span,
                         modifiers.is_final,
                         attributes,
+                        doc_comment,
                         class_name,
                     )?,
                 ));
@@ -2234,6 +2303,7 @@ impl Parser<'_> {
                     modifiers.is_abstract || class_is_interface,
                     class_is_interface,
                     attributes,
+                    doc_comment,
                     true,
                     class_name,
                 )?,
@@ -2255,6 +2325,7 @@ impl Parser<'_> {
                         modifiers.set_visibility_span,
                         modifiers.is_final,
                         attributes,
+                        doc_comment,
                         class_name,
                     )?,
                 ));
@@ -2269,6 +2340,7 @@ impl Parser<'_> {
                     modifiers.is_abstract || class_is_interface,
                     class_is_interface,
                     attributes,
+                    doc_comment,
                     true,
                     class_name,
                 )?,
@@ -2299,6 +2371,7 @@ impl Parser<'_> {
         let final_span = modifiers.final_span;
         let method = self.parse_method_decl(
             attributes,
+            doc_comment,
             modifiers,
             class_is_readonly,
             class_is_interface,
@@ -2509,6 +2582,7 @@ impl Parser<'_> {
         set_visibility_span: Option<SourceSpan>,
         is_final: bool,
         attributes: ParsedAttributes,
+        doc_comment: Option<String>,
         class_name: &str,
     ) -> Result<Vec<StaticPropertyDecl>> {
         let type_hint = self.parse_optional_property_type_hint()?;
@@ -2531,6 +2605,7 @@ impl Parser<'_> {
             is_final,
             type_hint.clone(),
             attributes.clone(),
+            doc_comment.clone(),
             class_name,
         )?];
         validate_builtin_attributes_for_target(
@@ -2543,12 +2618,14 @@ impl Parser<'_> {
         )?;
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
+            let property_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
             properties.push(self.parse_static_property_declaration(
                 visibility,
                 set_visibility,
                 is_final,
                 type_hint.clone(),
                 attributes.clone(),
+                property_doc_comment,
                 class_name,
             )?);
         }
@@ -2562,6 +2639,7 @@ impl Parser<'_> {
         is_final: bool,
         class_name: &str,
         attributes: ParsedAttributes,
+        doc_comment: Option<String>,
     ) -> Result<Vec<ClassConstantDecl>> {
         self.expect_const()?;
         let type_hint = self.parse_optional_class_constant_type_hint()?;
@@ -2571,15 +2649,18 @@ impl Parser<'_> {
             class_name,
             type_hint.clone(),
             attributes.clone(),
+            doc_comment.clone(),
         )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
+            let constant_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
             constants.push(self.parse_class_constant_declaration(
                 visibility,
                 is_final,
                 class_name,
                 type_hint.clone(),
                 attributes.clone(),
+                constant_doc_comment,
             )?);
         }
         validate_builtin_attributes_for_target(
@@ -2601,6 +2682,7 @@ impl Parser<'_> {
         class_name: &str,
         type_hint: Option<TypeHint>,
         attributes: ParsedAttributes,
+        doc_comment: Option<String>,
     ) -> Result<ClassConstantDecl> {
         let token = self.advance().clone();
         let Some(name) = name_segment_from_token(&token.kind) else {
@@ -2632,6 +2714,7 @@ impl Parser<'_> {
             visibility,
             type_hint,
             attributes,
+            doc_comment,
             value,
             is_enum_case: false,
             enum_case_value: None,
@@ -2669,6 +2752,7 @@ impl Parser<'_> {
         is_abstract: bool,
         class_is_interface: bool,
         attributes: ParsedAttributes,
+        doc_comment: Option<String>,
         allow_property_hooks: bool,
         class_name: &str,
     ) -> Result<Vec<PropertyDecl>> {
@@ -2704,6 +2788,7 @@ impl Parser<'_> {
             is_readonly,
             type_hint.clone(),
             attributes.clone(),
+            doc_comment.clone(),
             allow_property_hooks,
             class_is_interface,
             class_name,
@@ -2727,6 +2812,7 @@ impl Parser<'_> {
         }
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
+            let property_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
             let (property, had_hooks) = self.parse_property_declaration(
                 visibility,
                 set_visibility,
@@ -2735,6 +2821,7 @@ impl Parser<'_> {
                 is_readonly,
                 type_hint.clone(),
                 attributes.clone(),
+                property_doc_comment,
                 allow_property_hooks,
                 class_is_interface,
                 class_name,
@@ -2824,6 +2911,7 @@ impl Parser<'_> {
         is_readonly: bool,
         type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
+        doc_comment: Option<String>,
         allow_property_hooks: bool,
         class_is_interface: bool,
         class_name: &str,
@@ -2975,6 +3063,7 @@ impl Parser<'_> {
                     hook_set_parameter_name: hooks.set_parameter_name,
                     type_hint,
                     attributes: attributes.clone(),
+                    doc_comment,
                     has_override_attribute: attributes.has_override,
                     value,
                     span: token.span,
@@ -3017,6 +3106,7 @@ impl Parser<'_> {
                 hook_set_parameter_name: None,
                 type_hint,
                 attributes: attributes.clone(),
+                doc_comment,
                 has_override_attribute: attributes.has_override,
                 value,
                 span: token.span,
@@ -3032,6 +3122,7 @@ impl Parser<'_> {
         is_final: bool,
         type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
+        doc_comment: Option<String>,
         class_name: &str,
     ) -> Result<StaticPropertyDecl> {
         let token = self.advance().clone();
@@ -3096,6 +3187,7 @@ impl Parser<'_> {
             is_final,
             type_hint,
             attributes: attributes.clone(),
+            doc_comment,
             has_override_attribute: attributes.has_override,
             value,
             span: token.span,
@@ -3504,6 +3596,7 @@ impl Parser<'_> {
     fn parse_method_decl(
         &mut self,
         attributes: ParsedAttributes,
+        doc_comment: Option<String>,
         modifiers: ClassModifiers,
         class_is_readonly: bool,
         class_is_interface: bool,
@@ -3614,6 +3707,7 @@ impl Parser<'_> {
             trait_name: None,
             trait_method_name: None,
             attributes: attributes.clone(),
+            doc_comment,
             has_override_attribute: attributes.has_override,
             parameters,
             return_type,
@@ -3628,7 +3722,14 @@ impl Parser<'_> {
 
     fn parse_statement(&mut self) -> Result<Statement> {
         let attributes = self.parse_attribute_groups()?;
-        self.parse_statement_with_attributes(attributes)
+        let statement_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
+        let previous_doc_comment = std::mem::replace(
+            &mut self.current_statement_doc_comment,
+            statement_doc_comment,
+        );
+        let statement = self.parse_statement_with_attributes(attributes);
+        self.current_statement_doc_comment = previous_doc_comment;
+        statement
     }
 
     fn parse_statement_with_attributes(
@@ -3774,6 +3875,7 @@ impl Parser<'_> {
 
     fn parse_function_decl(&mut self, attributes: ParsedAttributes) -> Result<FunctionDecl> {
         let start_span = self.expect_function()?;
+        let doc_comment = self.doc_comment_before(start_span.byte_start);
         let mut return_by_ref_span = None;
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             return_by_ref_span = Some(self.advance().span);
@@ -3811,6 +3913,7 @@ impl Parser<'_> {
         Ok(FunctionDecl {
             name,
             attributes,
+            doc_comment,
             parameters,
             return_type,
             return_by_ref,
@@ -3826,6 +3929,9 @@ impl Parser<'_> {
         is_static: bool,
         attributes: ParsedAttributes,
     ) -> Result<Expr> {
+        let doc_comment = self
+            .doc_comment_before(span.byte_start)
+            .or_else(|| self.current_statement_doc_comment.clone());
         let return_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
             self.advance();
             true
@@ -3852,6 +3958,7 @@ impl Parser<'_> {
         validate_closure_use_static_names(&captures, &body)?;
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             attributes,
+            doc_comment,
             parameters,
             captures,
             return_type,
@@ -3956,6 +4063,7 @@ impl Parser<'_> {
         class_is_readonly: bool,
     ) -> Result<FunctionParameter> {
         let attributes = self.parse_attribute_groups()?;
+        let parameter_doc_comment = self.doc_comment_before(self.peek().span.byte_start);
         let promotion_modifiers = if class_name_for_promotions.is_some() {
             let modifiers = self.parse_class_modifiers()?;
             if modifiers.has_promoted_property_modifier() {
@@ -4055,6 +4163,7 @@ impl Parser<'_> {
                 set_visibility,
                 is_final: modifiers.is_final,
                 is_readonly,
+                doc_comment: parameter_doc_comment,
                 has_override_attribute: attributes.has_override,
                 span: modifiers.visibility_span.unwrap_or(token.span),
             })
@@ -7362,6 +7471,7 @@ impl Parser<'_> {
             compiler_halt_offset: None,
             compile_warnings: Vec::new(),
             validate_method_signatures: false,
+            current_statement_doc_comment: None,
         };
         parser.expect_open_tag()?;
         let parsed = parser.parse_expr().map_err(|mut diagnostic| {
@@ -7545,6 +7655,9 @@ impl Parser<'_> {
         let span = combine_spans(start_span, expression_span);
         Ok(Expr::AnonymousFunction(AnonymousFunction {
             attributes,
+            doc_comment: self
+                .doc_comment_before(start_span.byte_start)
+                .or_else(|| self.current_statement_doc_comment.clone()),
             parameters,
             captures,
             return_type,
@@ -7881,6 +7994,7 @@ impl Parser<'_> {
             interfaces,
             trait_uses,
             attributes,
+            doc_comment: self.doc_comment_before(start_span.byte_start),
             is_conditionally_declared: false,
             is_anonymous: true,
             is_abstract: false,
@@ -11225,6 +11339,7 @@ fn promoted_properties_from_constructor(
                     .as_ref()
                     .map(property_type_hint_from_type_hint),
                 attributes: parameter.attributes.clone(),
+                doc_comment: promoted.doc_comment.clone(),
                 has_override_attribute: promoted.has_override_attribute,
                 value: None,
                 span: promoted.span,
@@ -11930,6 +12045,7 @@ fn import_trait_method_into_method_list(
         interfaces: Vec::new(),
         trait_uses: Vec::new(),
         attributes: AttributeMetadata::default(),
+        doc_comment: None,
         is_conditionally_declared: false,
         is_anonymous: false,
         is_abstract: false,

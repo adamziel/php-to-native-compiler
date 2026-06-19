@@ -4392,7 +4392,9 @@ fn emit_function_metadata_source_suffix(
     out.push_str(&function.line.to_string());
     out.push_str(", ");
     out.push_str(&function.end_line.to_string());
-    out.push_str(", NULL, ");
+    out.push_str(", ");
+    out.push_str(&c_optional_string(function.doc_comment.as_deref()));
+    out.push_str(", ");
     if function_static_local_bindings(function).is_empty() {
         out.push_str("NULL");
     } else {
@@ -6388,6 +6390,35 @@ fn emit_class_metadata_helpers(
             out.push_str("    }\n");
         }
         out.push_str("    return 0;\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED const char *ptn_declared_class_reflection_constant_doc_comment(const char *class_name, const char *constant_name) {\n",
+        );
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_class_constant_lookup_entries {
+            out.push_str("    (void)constant_name;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_constant_lookup_chain(class, classes) {
+                let constant = entry.constant;
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str("            return ");
+                out.push_str(&c_optional_string(constant.doc_comment.as_deref()));
+                out.push_str(";\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return NULL;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return NULL;\n");
         out.push_str("}\n");
 
         out.push_str(
@@ -9630,6 +9661,33 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_class_reflection_doc_comment(const char *class_name) {\n",
+    );
+    if classes.is_empty() && traits.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ");
+        out.push_str(&c_optional_string(class.doc_comment.as_deref()));
+        out.push_str(";\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ");
+        out.push_str(&c_optional_string(trait_decl.doc_comment.as_deref()));
+        out.push_str(";\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return NULL;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract) {\n",
     );
     if classes.is_empty() && traits.is_empty() {
@@ -10436,6 +10494,61 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_class_reflection_property_doc_comment(const char *class_name, const char *property_name) {\n",
+    );
+    if classes.is_empty() && traits.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_property_exists_chain(class, classes).is_empty())
+        && traits
+            .iter()
+            .all(|trait_decl| trait_property_exists_entries(trait_decl).is_empty())
+    {
+        out.push_str("    (void)property_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_property_exists_chain(class, classes) {
+            if entry.visibility == PropertyVisibility::Private
+                && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
+            {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(&c_optional_string(entry.doc_comment));
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return NULL;\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for entry in trait_property_exists_entries(trait_decl) {
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(entry.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(&c_optional_string(entry.doc_comment));
+            out.push_str(";\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return NULL;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return NULL;\n");
     out.push_str("}\n");
 
     out.push_str(
@@ -12066,6 +12179,7 @@ struct ClassPropertyExistsEntry<'a> {
     hook_get_is_abstract: bool,
     hook_set_is_abstract: bool,
     type_hint: Option<&'a PropertyTypeHint>,
+    doc_comment: Option<&'a str>,
     value: Option<&'a ValueExpr>,
     has_default: bool,
 }
@@ -12104,6 +12218,7 @@ fn trait_property_exists_entries<'a>(
             hook_get_is_abstract: property.hook_get_is_abstract,
             hook_set_is_abstract: property.hook_set_is_abstract,
             type_hint: property.type_hint.as_ref(),
+            doc_comment: property.doc_comment.as_deref(),
             value: property.value.as_ref(),
             has_default: property.value.is_some() || property.type_hint.is_none(),
         };
@@ -12133,6 +12248,7 @@ fn trait_property_exists_entries<'a>(
                 hook_get_is_abstract: false,
                 hook_set_is_abstract: false,
                 type_hint: property.type_hint.as_ref(),
+                doc_comment: property.doc_comment.as_deref(),
                 value: property.value.as_ref(),
                 has_default: property.value.is_some() || property.type_hint.is_none(),
             },
@@ -12268,6 +12384,7 @@ fn class_property_exists_chain<'a>(
                 hook_get_is_abstract: property.hook_get_is_abstract,
                 hook_set_is_abstract: property.hook_set_is_abstract,
                 type_hint: property.type_hint.as_ref(),
+                doc_comment: property.doc_comment.as_deref(),
                 value: property.value.as_ref(),
                 has_default: property.value.is_some() || property.type_hint.is_none(),
             };
@@ -12297,6 +12414,7 @@ fn class_property_exists_chain<'a>(
                     hook_get_is_abstract: false,
                     hook_set_is_abstract: false,
                     type_hint: property.type_hint.as_ref(),
+                    doc_comment: property.doc_comment.as_deref(),
                     value: property.value.as_ref(),
                     has_default: property.value.is_some() || property.type_hint.is_none(),
                 },
