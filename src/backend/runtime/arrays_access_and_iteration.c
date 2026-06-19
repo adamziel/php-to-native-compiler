@@ -1174,6 +1174,10 @@ static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnO
             metadata->read_visibility,
             metadata->set_visibility,
             metadata->is_readonly,
+            metadata->has_hooks,
+            metadata->is_virtual,
+            metadata->hook_has_get,
+            metadata->hook_has_set,
             metadata->type_kind,
             metadata->type_class_name,
             metadata->type_text,
@@ -1680,6 +1684,82 @@ static PTN_UNUSED void ptn_emit_undefined_property_warning(
     fputs(" on line ", stdout);
     fprintf(stdout, "%zu", line);
     fputc('\n', stdout);
+}
+
+static PTN_UNUSED int ptn_property_is_get_only_virtual(
+    const PtnObjectPropertyMetadata *metadata
+) {
+    return metadata != NULL &&
+        metadata->is_virtual &&
+        metadata->hook_has_get &&
+        !metadata->hook_has_set;
+}
+
+static PTN_UNUSED int ptn_property_is_set_only_virtual(
+    const PtnObjectPropertyMetadata *metadata
+) {
+    return metadata != NULL &&
+        metadata->is_virtual &&
+        metadata->hook_has_set &&
+        !metadata->hook_has_get;
+}
+
+static PTN_UNUSED void ptn_throw_get_only_virtual_property_write_error(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    const char *class_name,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot write to get-only virtual property %s::$%s",
+        class_name != NULL ? class_name : metadata->declaring_class,
+        metadata->display_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_throw_set_only_virtual_property_read_error(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot read from set-only virtual property %s::$%s",
+        metadata->declaring_class,
+        metadata->display_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static PTN_UNUSED void ptn_throw_hooked_property_unset_error(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot unset hooked property %s::$%s",
+        metadata->declaring_class,
+        metadata->display_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
 static PTN_UNUSED const PtnObjectPropertyMetadata *ptn_object_private_property_for_scope(
@@ -3993,6 +4073,36 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     );
     ptn_array_key_free(key);
     free(storage_key);
+    if (ptn_property_is_set_only_virtual(metadata)) {
+        ptn_throw_set_only_virtual_property_read_error(runtime, metadata, line);
+        return ptn_null();
+    }
+    if (
+        metadata != NULL &&
+        metadata->is_virtual &&
+        metadata->hook_has_get &&
+        runtime != NULL &&
+        runtime->property_hook_get != NULL
+    ) {
+        PtnValue hook_value = ptn_null();
+        if (runtime->property_hook_get(
+            runtime,
+            receiver,
+            metadata->declaring_class,
+            metadata->display_name,
+            line,
+            &hook_value
+        )) {
+            ptn_declared_class_property_hook_deprecation(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                1,
+                line
+            );
+            return hook_value;
+        }
+    }
     if (entry == NULL) {
         if (metadata != NULL && ptn_property_type_is_declared(metadata->type_kind)) {
             if (metadata->is_unset) {
@@ -4679,6 +4789,17 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     PtnObjectPropertyMetadata *mutable_metadata = metadata == NULL
         ? NULL
         : ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
+    if (ptn_property_is_get_only_virtual(metadata)) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_get_only_virtual_property_write_error(
+            runtime,
+            metadata,
+            receiver.as.object->class_name,
+            line
+        );
+        return ptn_null();
+    }
     int readonly_clone_reinit = 0;
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
         readonly_clone_reinit =
@@ -4855,6 +4976,17 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (ptn_property_is_get_only_virtual(metadata)) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_get_only_virtual_property_write_error(
+            runtime,
+            metadata,
+            receiver.as.object->class_name,
+            line
+        );
+        return;
+    }
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
         ptn_array_key_free(key);
         free(storage_key);
@@ -5031,6 +5163,17 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (ptn_property_is_get_only_virtual(metadata)) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_get_only_virtual_property_write_error(
+            runtime,
+            metadata,
+            receiver.as.object->class_name,
+            line
+        );
+        return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+    }
     if (entry == NULL &&
         metadata != NULL &&
         metadata->is_unset &&
@@ -5195,6 +5338,12 @@ static PTN_UNUSED void ptn_object_unset_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     PtnObjectPropertyMetadata *mutable_metadata =
         ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
+    if (mutable_metadata != NULL && mutable_metadata->has_hooks) {
+        ptn_array_key_free(key);
+        free(storage_key);
+        ptn_throw_hooked_property_unset_error(runtime, mutable_metadata, line);
+        return;
+    }
     if (mutable_metadata != NULL && mutable_metadata->is_readonly && entry != NULL) {
         ptn_array_key_free(key);
         free(storage_key);
@@ -5220,7 +5369,7 @@ static PTN_UNUSED void ptn_object_unset_property(
     free(storage_key);
 }
 
-static PTN_UNUSED PtnValue ptn_object_declare_property(
+static PTN_UNUSED PtnValue ptn_object_declare_property_with_hooks(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
@@ -5228,6 +5377,10 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
     PtnPropertyVisibility read_visibility,
     PtnPropertyVisibility set_visibility,
     int is_readonly,
+    int has_hooks,
+    int is_virtual,
+    int hook_has_get,
+    int hook_has_set,
     PtnPropertyTypeKind type_kind,
     const char *type_class_name,
     const char *type_text,
@@ -5245,6 +5398,10 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
             read_visibility,
             set_visibility,
             is_readonly,
+            has_hooks,
+            is_virtual,
+            hook_has_get,
+            hook_has_set,
             type_kind,
             type_class_name,
             type_text,
@@ -5255,6 +5412,44 @@ static PTN_UNUSED PtnValue ptn_object_declare_property(
         return ptn_null();
     }
     return ptn_object_write_property(runtime, receiver, property, declaring_class, value, line);
+}
+
+static PTN_UNUSED PtnValue ptn_object_declare_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *declaring_class,
+    PtnPropertyVisibility read_visibility,
+    PtnPropertyVisibility set_visibility,
+    int is_readonly,
+    PtnPropertyTypeKind type_kind,
+    const char *type_class_name,
+    const char *type_text,
+    int type_allows_null,
+    int has_value,
+    PtnValue value,
+    size_t line
+) {
+    return ptn_object_declare_property_with_hooks(
+        runtime,
+        receiver,
+        property,
+        declaring_class,
+        read_visibility,
+        set_visibility,
+        is_readonly,
+        0,
+        0,
+        0,
+        0,
+        type_kind,
+        type_class_name,
+        type_text,
+        type_allows_null,
+        has_value,
+        value,
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtime, size_t line) {

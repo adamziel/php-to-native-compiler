@@ -39,6 +39,10 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     PtnPropertyVisibility read_visibility,
     PtnPropertyVisibility set_visibility,
     int is_readonly,
+    int has_hooks,
+    int is_virtual,
+    int hook_has_get,
+    int hook_has_set,
     PtnPropertyTypeKind type_kind,
     const char *type_class_name,
     const char *type_text,
@@ -1297,6 +1301,10 @@ static PTN_UNUSED PtnValue ptn_enum_case_with_backing(
         PTN_PROPERTY_PUBLIC,
         PTN_PROPERTY_PUBLIC,
         1,
+        0,
+        0,
+        0,
+        0,
         PTN_PROPERTY_TYPE_STRING,
         NULL,
         "string",
@@ -1315,6 +1323,10 @@ static PTN_UNUSED PtnValue ptn_enum_case_with_backing(
             PTN_PROPERTY_PUBLIC,
             PTN_PROPERTY_PUBLIC,
             1,
+            0,
+            0,
+            0,
+            0,
             backing_type_kind,
             NULL,
             backing_type_text,
@@ -1402,6 +1414,10 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     PtnPropertyVisibility read_visibility,
     PtnPropertyVisibility set_visibility,
     int is_readonly,
+    int has_hooks,
+    int is_virtual,
+    int hook_has_get,
+    int hook_has_set,
     PtnPropertyTypeKind type_kind,
     const char *type_class_name,
     const char *type_text,
@@ -1425,6 +1441,10 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].read_visibility = read_visibility;
             object->property_metadata[i].set_visibility = set_visibility;
             object->property_metadata[i].is_readonly = is_readonly;
+            object->property_metadata[i].has_hooks = has_hooks;
+            object->property_metadata[i].is_virtual = is_virtual;
+            object->property_metadata[i].hook_has_get = hook_has_get;
+            object->property_metadata[i].hook_has_set = hook_has_set;
             object->property_metadata[i].is_unset = 0;
             object->property_metadata[i].lazy_skip = 0;
             object->property_metadata[i].readonly_clone_reinitialized = 0;
@@ -1467,6 +1487,10 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->read_visibility = read_visibility;
     metadata->set_visibility = set_visibility;
     metadata->is_readonly = is_readonly;
+    metadata->has_hooks = has_hooks;
+    metadata->is_virtual = is_virtual;
+    metadata->hook_has_get = hook_has_get;
+    metadata->hook_has_set = hook_has_set;
     metadata->is_unset = 0;
     metadata->lazy_skip = 0;
     metadata->readonly_clone_reinitialized = 0;
