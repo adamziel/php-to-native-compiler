@@ -37,6 +37,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->owned_exceptions.try_frame = NULL;
     ptn_exception_handlers_init(&runtime->owned_exceptions);
     runtime->exceptions = caller_runtime->exceptions;
+    runtime->native_argc = caller_runtime->native_argc;
+    runtime->native_argv = caller_runtime->native_argv;
     runtime->owned_call_frame.argc = 0;
     runtime->owned_call_frame.args = NULL;
     runtime->owned_call_frame.parameter_count = 0;
