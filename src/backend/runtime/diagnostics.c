@@ -1753,6 +1753,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->magic_property_set = NULL;
     runtime->magic_property_unset = NULL;
     runtime->magic_debug_info = NULL;
+    runtime->property_hook_get = NULL;
     runtime->class_constant_initializer = NULL;
     runtime->new_instance_without_constructor = NULL;
     runtime->in_magic_property_dispatch = 0;

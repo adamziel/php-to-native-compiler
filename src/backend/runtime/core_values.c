@@ -686,6 +686,10 @@ typedef struct {
     PtnPropertyVisibility read_visibility;
     PtnPropertyVisibility set_visibility;
     int is_readonly;
+    int has_hooks;
+    int is_virtual;
+    int hook_has_get;
+    int hook_has_set;
     int is_unset;
     int lazy_skip;
     int readonly_clone_reinitialized;
@@ -1063,6 +1067,14 @@ typedef int (*PtnMagicDebugInfoHandler)(
     size_t line,
     PtnValue *value_out
 );
+typedef int (*PtnPropertyHookGetHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *class_name,
+    const char *property_name,
+    size_t line,
+    PtnValue *value_out
+);
 typedef int (*PtnClassConstantInitializerHandler)(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1147,6 +1159,7 @@ struct PtnRuntime {
     PtnMagicPropertySetHandler magic_property_set;
     PtnMagicPropertyUnsetHandler magic_property_unset;
     PtnMagicDebugInfoHandler magic_debug_info;
+    PtnPropertyHookGetHandler property_hook_get;
     PtnClassConstantInitializerHandler class_constant_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
     int in_magic_property_dispatch;

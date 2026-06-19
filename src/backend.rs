@@ -193,6 +193,9 @@ pub fn emit_c(module: &Module) -> String {
         &module.functions,
         &module.traits,
         &module.instructions,
+        &module.includes,
+        &module.source_file,
+        &module.source_dir,
         runtime_requirements.internal_function_dispatch,
     );
     if has_declared_class_constants {
@@ -329,6 +332,14 @@ pub fn emit_c(module: &Module) -> String {
     }
     if needs_magic_debug_info {
         out.push_str("    runtime.magic_debug_info = ptn_declared_magic_debug_info;\n");
+    }
+    if module.classes.iter().any(|class| {
+        class
+            .properties
+            .iter()
+            .any(|property| property.hook_get_value.is_some())
+    }) {
+        out.push_str("    runtime.property_hook_get = ptn_declared_class_property_hook_get;\n");
     }
     if has_declared_class_constants {
         out.push_str(
@@ -4865,6 +4876,9 @@ fn emit_class_metadata_helpers(
     functions: &[FunctionDecl],
     traits: &[TraitDecl],
     instructions: &[Instruction],
+    includes: &[IncludeFile],
+    source_file: &str,
+    source_dir: &str,
     emit_reflection_helpers: bool,
 ) {
     let has_user_classes = classes.iter().any(|class| !class.is_interface);
@@ -6542,6 +6556,15 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     emit_property_hook_deprecation_helper(out, classes, traits);
+    emit_property_hook_get_helper(
+        out,
+        classes,
+        functions,
+        includes,
+        source_file,
+        source_dir,
+        emit_reflection_helpers,
+    );
 
     if emit_reflection_helpers {
         emit_class_reflection_metadata_helpers(out, classes, functions, traits, instructions);
@@ -9070,6 +9093,109 @@ fn emit_property_hook_deprecation_helper(
         }
         out.push_str("    }\n");
     }
+    out.push_str("}\n");
+}
+
+fn emit_property_hook_get_helper(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    includes: &[IncludeFile],
+    source_file: &str,
+    source_dir: &str,
+    full_internal_dispatch: bool,
+) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_property_hook_get(PtnRuntime *caller_runtime, PtnValue receiver, const char *class_name, const char *property_name, size_t line, PtnValue *value_out) {\n",
+    );
+    let has_get_values = classes.iter().any(|class| {
+        class
+            .properties
+            .iter()
+            .any(|property| property.hook_get_value.is_some())
+    });
+    if !has_get_values {
+        out.push_str("    (void)caller_runtime;\n");
+        out.push_str("    (void)receiver;\n");
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)line;\n");
+        out.push_str("    (void)value_out;\n");
+        out.push_str("    return 0;\n");
+        out.push_str("}\n");
+        return;
+    }
+
+    out.push_str("    PtnValue resolved_receiver = ptn_value_deref(receiver);\n");
+    let mut emitted_branch = false;
+    for class in classes {
+        for property in class
+            .properties
+            .iter()
+            .filter(|property| property.hook_get_value.is_some())
+        {
+            out.push_str("    ");
+            if emitted_branch {
+                out.push_str("} else ");
+            }
+            out.push_str("if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("        PtnRuntime runtime;\n");
+            out.push_str("        ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+            let hook_name = property_hook_method_name(&property.name, "get");
+            let display_name = format!("{}::{hook_name}", class.name);
+            out.push_str("        runtime.current_function_name = \"");
+            out.push_str(&c_string(&display_name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.current_class_name = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.current_called_class_name = resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object->class_name : \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.call_site_line = line;\n");
+            out.push_str("        runtime.has_current_receiver = 1;\n");
+            out.push_str("        runtime.current_receiver = receiver;\n");
+            out.push_str("        ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
+            out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
+
+            let mut values = ValueEmitter::new_with_scope(
+                source_file,
+                source_dir,
+                functions,
+                classes,
+                includes,
+                full_internal_dispatch,
+                None,
+                Some(display_name.as_str()),
+                Some(hook_name.as_str()),
+                Some(class.name.as_str()),
+                None,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+            );
+            let value_temp =
+                values.emit_materialized_value(out, property.hook_get_value.as_ref().unwrap());
+            out.push_str("        *value_out = ");
+            out.push_str(&value_temp);
+            out.push_str(";\n");
+            out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        return 1;\n");
+            emitted_branch = true;
+        }
+    }
+    if emitted_branch {
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
     out.push_str("}\n");
 }
 
@@ -12160,17 +12286,14 @@ fn class_property_initialization_chain(
                 collect(parent, classes, seen_classes, properties);
             }
         }
-        properties.extend(class.properties.iter().cloned().filter_map(|property| {
-            if property.has_hooks && property.is_virtual {
-                return None;
-            }
+        properties.extend(class.properties.iter().cloned().map(|property| {
             let hook_get_value = inherited_hook_property(class, &property.name, classes)
                 .and_then(|(_, hook_property)| hook_property.hook_get_value.clone());
-            Some((
+            (
                 property_runtime_declaring_class(class, &property, classes),
                 property,
                 hook_get_value,
-            ))
+            )
         }));
     }
 
@@ -18824,6 +18947,9 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
             if let Some(value) = &property.value {
                 collect_value_runtime_requirements(value, &module.functions, &mut requirements);
             }
+            if let Some(value) = &property.hook_get_value {
+                collect_value_runtime_requirements(value, &module.functions, &mut requirements);
+            }
         }
         for property in &class.static_properties {
             if let Some(value) = &property.value {
@@ -18836,6 +18962,13 @@ fn module_runtime_requirements(module: &Module) -> RuntimeRequirements {
                 &module.functions,
                 &mut requirements,
             );
+        }
+    }
+    for trait_decl in &module.traits {
+        for property in &trait_decl.properties {
+            if let Some(value) = &property.hook_get_value {
+                collect_value_runtime_requirements(value, &module.functions, &mut requirements);
+            }
         }
     }
     for include in &module.includes {
@@ -29325,7 +29458,7 @@ impl ValueEmitter {
             let assigned_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&assigned_temp);
-            out.push_str(" = ptn_object_declare_property(&runtime, ");
+            out.push_str(" = ptn_object_declare_property_with_hooks(&runtime, ");
             out.push_str(result_temp);
             out.push_str(", \"");
             out.push_str(&c_string(&property.name));
@@ -29338,6 +29471,14 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(if property.is_readonly { "1" } else { "0" });
             out.push_str(", ");
+            out.push_str(if property.has_hooks { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(if property.is_virtual { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(if property.hook_has_get { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(if property.hook_has_set { "1" } else { "0" });
+            out.push_str(", ");
             out.push_str(c_property_type_kind(property.type_hint.as_ref()));
             out.push_str(", ");
             out.push_str(&c_property_type_class_name(property.type_hint.as_ref()));
@@ -29346,16 +29487,16 @@ impl ValueEmitter {
             out.push_str(", ");
             out.push_str(c_property_type_allows_null(property.type_hint.as_ref()));
             out.push_str(", ");
-            out.push_str(
-                if property.type_hint.is_some()
-                    && property.value.is_none()
-                    && hook_get_value.is_none()
-                {
-                    "0"
-                } else {
-                    "1"
-                },
-            );
+            out.push_str(if property.has_hooks && property.is_virtual {
+                "0"
+            } else if property.type_hint.is_some()
+                && property.value.is_none()
+                && hook_get_value.is_none()
+            {
+                "0"
+            } else {
+                "1"
+            });
             out.push_str(", ");
             out.push_str(&value_temp);
             out.push_str(", ");

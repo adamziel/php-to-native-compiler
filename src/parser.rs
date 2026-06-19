@@ -3181,12 +3181,6 @@ impl Parser<'_> {
                         self.advance();
                         let value = self.parse_expr()?;
                         let uses_backing_property = expr_uses_this_property(&value, property_name);
-                        if !uses_backing_property && !is_supported_property_default_expr(&value) {
-                            return Err(Diagnostic::new(
-                                "property hook get expression must be a supported constant expression",
-                                Some(value.span()),
-                            ));
-                        }
                         self.expect_semicolon()?;
                         hooks.has_get = true;
                         if uses_backing_property {
