@@ -59658,6 +59658,23 @@ static PtnValue ptn_internal_date_create_immutable(PtnRuntime *runtime, size_t a
     return ptn_datetime_new(runtime, "DateTimeImmutable", argc, args, line);
 }
 
+static PtnValue ptn_internal_date_diff(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnDateTimeData *base = ptn_datetime_data_from_value(args[0]);
+    if (base == NULL) {
+        ptn_date_throw_type_error(runtime, "date_diff", 1, "baseObject", "DateTimeInterface", args[0]);
+        return ptn_null();
+    }
+    PtnDateTimeData *target = ptn_datetime_data_from_value(args[1]);
+    if (target == NULL) {
+        ptn_date_throw_type_error(runtime, "date_diff", 2, "targetObject", "DateTimeInterface", args[1]);
+        return ptn_null();
+    }
+    int absolute = argc >= 3 && ptn_is_truthy(args[2]);
+    (void)base;
+    (void)target;
+    return ptn_datetime_diff_interval(runtime, args[0], args[1], absolute, line);
+}
+
 static PtnValue ptn_internal_date_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_datetime_call_method(runtime, args[0], "format", 1, &args[1], line);
@@ -66125,6 +66142,7 @@ static PtnValue ptn_internal_date_create_immutable(PtnRuntime *runtime, size_t a
 static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_default_timezone_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_date_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_date_diff(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_get_last_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_date_interval_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -66433,6 +66451,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "date_date_set", 4, 4, ptn_internal_date_date_set },
         { "date_default_timezone_get", 0, 0, ptn_internal_date_default_timezone_get },
         { "date_default_timezone_set", 1, 1, ptn_internal_date_default_timezone_set },
+        { "date_diff", 2, 3, ptn_internal_date_diff },
         { "date_format", 2, 2, ptn_internal_date_format },
         { "date_get_last_errors", 0, 0, ptn_internal_date_get_last_errors },
         { "date_interval_format", 2, 2, ptn_internal_date_interval_format },

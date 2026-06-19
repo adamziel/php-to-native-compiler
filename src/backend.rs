@@ -13192,6 +13192,18 @@ fn emit_instruction(
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("        }\n");
+            if !class.is_interface
+                && class
+                    .interfaces
+                    .iter()
+                    .any(|interface| interface.eq_ignore_ascii_case("DateTimeInterface"))
+            {
+                out.push_str("        ptn_emit_fatal_error_at(&runtime, \"DateTimeInterface can't be implemented by user classes\", \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
             if let Some(parent_name) = &class.parent_name {
                 let parent_temp = format!("ptn_declared_parent_{}", class_index);
                 out.push_str("        const char *");

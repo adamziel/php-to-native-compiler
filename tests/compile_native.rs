@@ -14052,6 +14052,83 @@ p=02-00-04 06:08:00 (unknown)\n"
 }
 
 #[test]
+fn compile_date_diff_function_to_native_binary() {
+    let root = temp_dir("ptn-native-date-diff-function");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-diff-function.php");
+    let output = root.join("date-diff-function-bin");
+    fs::write(
+        &input,
+        "<?php
+date_default_timezone_set('UTC');
+$dt1 = new DateTime('2010-10-20');
+$dti1 = new DateTimeImmutable('2010-10-25');
+$dti2 = new DateTimeImmutable('2010-10-28');
+
+$diff1 = $dt1->diff($dti1);
+echo $diff1->y, ' ', $diff1->m, ' ', $diff1->d, ' ',
+     $diff1->h, ' ', $diff1->i, ' ', $diff1->s, \"\\n\";
+
+$diff2 = $dti1->diff($dti2);
+echo $diff2->y, ' ', $diff2->m, ' ', $diff2->d, ' ',
+     $diff2->h, ' ', $diff2->i, ' ', $diff2->s, \"\\n\";
+
+$diff3 = date_diff($dt1, $dti2);
+echo $diff3->y, ' ', $diff3->m, ' ', $diff3->d, ' ',
+     $diff3->h, ' ', $diff3->i, ' ', $diff3->s, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "0 0 5 0 0 0\n0 0 3 0 0 0\n0 0 8 0 0 0\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("{ \"date_diff\", 2, 3, ptn_internal_date_diff }"));
+}
+
+#[test]
+fn compile_conditional_datetimeinterface_implementation_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-conditional-datetimeinterface-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("conditional-datetimeinterface-fatal.php");
+    let output = root.join("conditional-datetimeinterface-fatal-bin");
+    fs::write(
+        &input,
+        "<?php
+echo \"before\\n\";
+if (true) {
+    class cdt1 extends DateTime implements DateTimeInterface {}
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "before\n");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: DateTimeInterface can't be implemented by user classes in {} on line 4\n",
+            input.display()
+        )
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("DateTimeInterface can't be implemented by user classes"));
+}
+
+#[test]
 fn compile_date_object_aliases_and_round_trips_to_native_binary() {
     let root = temp_dir("ptn-native-date-object-aliases-round-trips");
     fs::create_dir_all(&root).unwrap();
