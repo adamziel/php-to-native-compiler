@@ -157,6 +157,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->variables_order = NULL;
     runtime->register_argc_argv = NULL;
     runtime->enable_post_data_reading = NULL;
+    runtime->native_argc = caller_runtime->native_argc;
+    runtime->native_argv = caller_runtime->native_argv;
     runtime->file_uploads = NULL;
     runtime->max_input_vars = NULL;
     runtime->max_input_nesting_level = NULL;

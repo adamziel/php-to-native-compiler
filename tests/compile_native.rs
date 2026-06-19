@@ -39687,6 +39687,39 @@ var_dump($rest);\n",
 }
 
 #[test]
+fn phpc_cli_dynamic_getopt_inside_user_function_inherits_forwarded_script_arguments() {
+    let root = temp_dir("ptn-phpc-cli-dynamic-getopt-function-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cli-dynamic-getopt-function-frame.php");
+    fs::write(
+        &input,
+        "<?php\n\
+function run_dynamic($function) {\n\
+    try { @$function(); } catch (Throwable) {}\n\
+    return @$function('a:');\n\
+}\n\
+var_dump(run_dynamic('getopt'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .arg("--")
+        .arg("-a")
+        .arg("value")
+        .arg("tail")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [\"a\"]=>\n  string(5) \"value\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_variables_order_controls_env_and_server_superglobals() {
     let root = temp_dir("ptn-phpc-variables-order-gpc");
     fs::create_dir_all(&root).unwrap();
