@@ -54789,6 +54789,14 @@ static int ptn_session_is_active(PtnRuntime *runtime) {
     return root != NULL && root->session_active;
 }
 
+static int ptn_session_reject_active_change(PtnRuntime *runtime, const char *message, size_t line) {
+    if (!ptn_session_is_active(runtime)) {
+        return 0;
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+    return 1;
+}
+
 static void ptn_session_set_active(PtnRuntime *runtime, int active) {
     PtnRuntime *root = ptn_session_root(runtime);
     if (root != NULL) {
@@ -54807,8 +54815,38 @@ static int64_t ptn_session_ini_integer(PtnRuntime *runtime, const char *name, in
     return end == value || errno == ERANGE ? fallback : (int64_t)parsed;
 }
 
+static void ptn_session_seed_rng_once(void) {
+    static int seeded = 0;
+    if (!seeded) {
+#if defined(_WIN32)
+        unsigned int process_part = (unsigned int)_getpid();
+#else
+        unsigned int process_part = (unsigned int)getpid();
+#endif
+        srand((unsigned int)time(NULL) ^ (process_part << 16) ^ process_part);
+        seeded = 1;
+    }
+}
+
+static int ptn_session_prefix_is_valid(PtnStringOperand prefix) {
+    if (prefix.len > 256) {
+        return 0;
+    }
+    for (size_t i = 0; i < prefix.len; i++) {
+        unsigned char c = (unsigned char)prefix.data[i];
+        if (c == '\0') {
+            return 0;
+        }
+        if (!(isalnum(c) || c == '-' || c == ',')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static char *ptn_session_create_id_string(PtnRuntime *runtime, const char *prefix) {
     static const char alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ,-";
+    ptn_session_seed_rng_once();
     int64_t configured_len = ptn_session_ini_integer(runtime, "session.sid_length", 32);
     size_t id_len = configured_len <= 0 ? 32 : (configured_len > 256 ? 256 : (size_t)configured_len);
     size_t prefix_len = prefix == NULL ? 0 : strlen(prefix);
@@ -54938,6 +54976,69 @@ static void ptn_session_delete_file(PtnRuntime *runtime, const char *id) {
         (void)remove(path);
         free(path);
     }
+}
+
+static int ptn_session_save_path_dirdepth(PtnRuntime *runtime) {
+    const char *configured = ptn_runtime_session_ini(runtime, "session.save_path");
+    if (configured == NULL || configured[0] == '\0') {
+        return 0;
+    }
+    char *end = NULL;
+    long parsed = strtol(configured, &end, 10);
+    if (end == configured || *end != ';' || parsed <= 0 || parsed > 8) {
+        return 0;
+    }
+    return (int)parsed;
+}
+
+static int64_t ptn_session_gc_directory(const char *dir, int remaining_depth, time_t cutoff) {
+    DIR *handle = opendir(dir);
+    if (handle == NULL) {
+        return 0;
+    }
+    int64_t removed = 0;
+    struct dirent *entry;
+    while ((entry = readdir(handle)) != NULL) {
+        const char *name = entry->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        size_t dir_len = strlen(dir);
+        size_t name_len = strlen(name);
+        int needs_slash = dir_len != 0 && dir[dir_len - 1] != '/';
+        if (dir_len > SIZE_MAX - (size_t)needs_slash - name_len - 1) {
+            closedir(handle);
+            ptn_abort_out_of_memory();
+        }
+        char *path = malloc(dir_len + (size_t)needs_slash + name_len + 1);
+        if (path == NULL) {
+            closedir(handle);
+            ptn_abort_out_of_memory();
+        }
+        memcpy(path, dir, dir_len);
+        size_t offset = dir_len;
+        if (needs_slash) {
+            path[offset++] = '/';
+        }
+        memcpy(path + offset, name, name_len + 1);
+
+        struct stat st;
+        if (stat(path, &st) == 0) {
+            if (remaining_depth > 0 && S_ISDIR(st.st_mode)) {
+                removed += ptn_session_gc_directory(path, remaining_depth - 1, cutoff);
+            } else if (remaining_depth == 0 &&
+                       S_ISREG(st.st_mode) &&
+                       strncmp(name, "sess_", 5) == 0 &&
+                       st.st_mtime < cutoff) {
+                if (remove(path) == 0) {
+                    removed++;
+                }
+            }
+        }
+        free(path);
+    }
+    closedir(handle);
+    return removed;
 }
 
 static PtnArrayEntry *ptn_session_array_string_entry(PtnArray *array, const char *key_name) {
@@ -55193,10 +55294,24 @@ static PtnValue ptn_session_encode_array(PtnRuntime *runtime, PtnValue session_a
 }
 
 static PtnValue ptn_internal_session_create_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     char *prefix = NULL;
     if (argc >= 1) {
         PtnStringOperand prefix_operand = ptn_value_to_string_operand(args[0]);
+        if (memchr(prefix_operand.data, '\0', prefix_operand.len) != NULL) {
+            ptn_string_operand_free(prefix_operand);
+            ptn_throw_exception(runtime, "ValueError", "session_create_id(): Argument #1 ($prefix) must not contain any null bytes");
+            return ptn_null();
+        }
+        if (prefix_operand.len > 256) {
+            ptn_string_operand_free(prefix_operand);
+            ptn_throw_exception(runtime, "ValueError", "session_create_id(): Argument #1 ($prefix) cannot be longer than 256 characters");
+            return ptn_null();
+        }
+        if (!ptn_session_prefix_is_valid(prefix_operand)) {
+            ptn_string_operand_free(prefix_operand);
+            ptn_emit_runtime_warning(runtime, "session_create_id(): Prefix cannot contain special characters. Only the A-Z, a-z, 0-9, \"-\", and \",\" characters are allowed", line);
+            return ptn_bool(0);
+        }
         prefix = ptn_duplicate_string_len(prefix_operand.data, prefix_operand.len);
         ptn_string_operand_free(prefix_operand);
     }
@@ -55206,9 +55321,11 @@ static PtnValue ptn_internal_session_create_id(PtnRuntime *runtime, size_t argc,
 }
 
 static PtnValue ptn_internal_session_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     char *previous = ptn_duplicate_string(ptn_session_id_current(runtime));
     if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_id(): Session ID cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            return ptn_owned_string(previous);
+        }
         PtnStringOperand id = ptn_value_to_string_operand(args[0]);
         char *next = ptn_duplicate_string_len(id.data, id.len);
         ptn_session_id_set(runtime, next);
@@ -55233,9 +55350,12 @@ static PtnValue ptn_internal_session_name(PtnRuntime *runtime, size_t argc, cons
 }
 
 static PtnValue ptn_internal_session_save_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.save_path")));
     if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_save_path(): Session save path cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         PtnStringOperand value = ptn_value_to_string_operand(args[0]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_session_ini(runtime, "session.save_path", next);
@@ -55248,6 +55368,10 @@ static PtnValue ptn_internal_session_save_path(PtnRuntime *runtime, size_t argc,
 static PtnValue ptn_internal_session_module_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.save_handler")));
     if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_module_name(): Session module name cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         PtnStringOperand value = ptn_value_to_string_operand(args[0]);
         if (value.len == 0 ||
             (!ptn_string_operand_ascii_case_equal(value, "files") &&
@@ -55270,9 +55394,12 @@ static PtnValue ptn_internal_session_module_name(PtnRuntime *runtime, size_t arg
 }
 
 static PtnValue ptn_internal_session_cache_limiter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.cache_limiter")));
     if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_cache_limiter(): Session cache limiter cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
         PtnStringOperand value = ptn_value_to_string_operand(args[0]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_session_ini(runtime, "session.cache_limiter", next);
@@ -55355,6 +55482,9 @@ static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, con
     }
     ptn_runtime_write_global_variable(runtime, "_SESSION", session_data);
     ptn_value_destroy(&session_data);
+    ptn_session_set_active(runtime, 1);
+    PtnValue create_file_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
+    ptn_value_destroy(&create_file_result);
     ptn_session_set_active(runtime, 1);
     if (read_and_close) {
         PtnValue close_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
@@ -55478,6 +55608,16 @@ static PtnValue ptn_internal_session_regenerate_id(PtnRuntime *runtime, size_t a
     }
     char *new_id = ptn_session_create_id_string(runtime, "");
     ptn_session_id_set(runtime, new_id);
+    if (ptn_session_is_active(runtime)) {
+        PtnValue session_array = ptn_session_current_array_value(runtime);
+        PtnValue encoded_result = ptn_session_encode_array(runtime, session_array, line);
+        ptn_value_destroy(&session_array);
+        PtnValue encoded = ptn_value_deref(encoded_result);
+        if (encoded.type == PTN_STRING) {
+            (void)ptn_session_write_file(runtime, new_id, (const char *)encoded.as.string.data, encoded.as.string.len);
+        }
+        ptn_value_destroy(&encoded_result);
+    }
     free(new_id);
     free(old_id);
     return ptn_bool(1);
@@ -55488,11 +55628,20 @@ static PtnValue ptn_internal_session_commit(PtnRuntime *runtime, size_t argc, co
 }
 
 static PtnValue ptn_internal_session_gc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)args;
-    (void)line;
-    return ptn_int(0);
+    if (!ptn_session_is_active(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_gc(): Session cannot be garbage collected when there is no active session", line);
+        return ptn_bool(0);
+    }
+    char *dir = ptn_session_storage_dir(runtime);
+    int depth = ptn_session_save_path_dirdepth(runtime);
+    int64_t max_lifetime = ptn_session_ini_integer(runtime, "session.gc_maxlifetime", 1440);
+    time_t now = time(NULL);
+    time_t cutoff = now - (time_t)(max_lifetime < 0 ? 0 : max_lifetime);
+    int64_t removed = ptn_session_gc_directory(dir, depth, cutoff);
+    free(dir);
+    return ptn_int(removed);
 }
 
 static PtnValue ptn_internal_session_get_cookie_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -55519,7 +55668,10 @@ static void ptn_session_set_cookie_param_from_value(PtnRuntime *runtime, const c
 }
 
 static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
+    if (ptn_session_is_active(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_set_cookie_params(): Session cookie parameters cannot be changed when a session is active (started from ptn on line 0)", line);
+        return ptn_bool(0);
+    }
     if (argc >= 1 && ptn_value_deref(args[0]).type == PTN_ARRAY) {
         PtnArray *options = ptn_value_deref(args[0]).as.array;
         PtnArrayEntry *entry;
