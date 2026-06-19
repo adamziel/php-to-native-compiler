@@ -357,6 +357,18 @@ pub enum Instruction {
         dimensions: Vec<ValueExpr>,
         line: usize,
     },
+    UnsetStaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<ValueExpr>,
+        line: usize,
+    },
+    UnsetDynamicStaticPropertyArrayDim {
+        receiver: ValueExpr,
+        name: String,
+        dimensions: Vec<ValueExpr>,
+        line: usize,
+    },
     UnsetProperty {
         receiver: ValueExpr,
         name: String,
@@ -3466,6 +3478,34 @@ impl<'a> LoweringContext<'a> {
                 dimensions,
                 span,
             } => Instruction::UnsetPropertyArrayDim {
+                receiver: self.lower_expr(receiver),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| self.lower_expr(dimension))
+                    .collect(),
+                line: span.line,
+            },
+            AstUnsetTarget::StaticPropertyArrayDim {
+                class_name,
+                name,
+                dimensions,
+                span,
+            } => Instruction::UnsetStaticPropertyArrayDim {
+                class_name: class_name.clone(),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| self.lower_expr(dimension))
+                    .collect(),
+                line: span.line,
+            },
+            AstUnsetTarget::DynamicStaticPropertyArrayDim {
+                receiver,
+                name,
+                dimensions,
+                span,
+            } => Instruction::UnsetDynamicStaticPropertyArrayDim {
                 receiver: self.lower_expr(receiver),
                 name: name.clone(),
                 dimensions: dimensions

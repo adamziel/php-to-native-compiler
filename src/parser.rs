@@ -16300,6 +16300,17 @@ fn validate_control_transfers_in_unset_target(target: &UnsetTarget) -> Result<()
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_exprs(dimensions)?;
         }
+        UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            validate_control_transfers_in_exprs(dimensions)?;
+        }
+        UnsetTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            validate_control_transfers_in_expr(receiver)?;
+            validate_control_transfers_in_exprs(dimensions)?;
+        }
         UnsetTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
@@ -17252,6 +17263,14 @@ fn unset_target_contains_yield(target: &UnsetTarget) -> bool {
             name, dimensions, ..
         } => expr_contains_yield(name) || dimensions.iter().any(expr_contains_yield),
         UnsetTarget::PropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => expr_contains_yield(receiver) || dimensions.iter().any(expr_contains_yield),
+        UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            dimensions.iter().any(expr_contains_yield)
+        }
+        UnsetTarget::DynamicStaticPropertyArrayDim {
             receiver,
             dimensions,
             ..
@@ -19344,6 +19363,32 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
             } => {
                 dimensions.reverse();
                 return Ok(UnsetTarget::PropertyArrayDim {
+                    receiver,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, span),
+                });
+            }
+            Expr::StaticPropertyFetch {
+                class_name,
+                name,
+                span: property_span,
+            } => {
+                dimensions.reverse();
+                return Ok(UnsetTarget::StaticPropertyArrayDim {
+                    class_name,
+                    name,
+                    dimensions,
+                    span: combine_spans(property_span, span),
+                });
+            }
+            Expr::DynamicStaticPropertyFetch {
+                receiver,
+                name,
+                span: property_span,
+            } => {
+                dimensions.reverse();
+                return Ok(UnsetTarget::DynamicStaticPropertyArrayDim {
                     receiver,
                     name,
                     dimensions,

@@ -248,6 +248,21 @@ impl IncludeCollector {
                                 self.collect_expr(dimension, source_file, source_dir)?;
                             }
                         }
+                        UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => {
+                            for dimension in dimensions {
+                                self.collect_expr(dimension, source_file, source_dir)?;
+                            }
+                        }
+                        UnsetTarget::DynamicStaticPropertyArrayDim {
+                            receiver,
+                            dimensions,
+                            ..
+                        } => {
+                            self.collect_expr(receiver, source_file, source_dir)?;
+                            for dimension in dimensions {
+                                self.collect_expr(dimension, source_file, source_dir)?;
+                            }
+                        }
                         UnsetTarget::Property { receiver, .. } => {
                             self.collect_expr(receiver, source_file, source_dir)?;
                         }

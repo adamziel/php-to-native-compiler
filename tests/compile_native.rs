@@ -4426,6 +4426,36 @@ fn parser_accepts_static_property_unset() {
 }
 
 #[test]
+fn parser_accepts_static_property_array_dimension_unsets() {
+    let program =
+        parser::parse("<?php unset(Box::$items[0]['drop'], $class::$items[$key]);").unwrap();
+    let Statement::Unset { targets, .. } = &program.statements[0] else {
+        panic!("expected unset statement");
+    };
+    assert_eq!(targets.len(), 2);
+    assert!(matches!(
+        &targets[0],
+        UnsetTarget::StaticPropertyArrayDim {
+            class_name,
+            name,
+            dimensions,
+            ..
+        } if class_name == "Box" && name == "items" && dimensions.len() == 2
+    ));
+    assert!(matches!(
+        &targets[1],
+        UnsetTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } if matches!(receiver.as_ref(), Expr::Variable(variable, _) if variable == "class")
+            && name == "items"
+            && dimensions.len() == 1
+    ));
+}
+
+#[test]
 fn parser_accepts_property_root_array_assignment_expressions() {
     let program =
         parser::parse("<?php $this->children[$name] = $value; $this->counts[$name] += 2;").unwrap();
@@ -49335,6 +49365,64 @@ try {
 }
 
 #[test]
+fn compile_static_property_array_dimension_unsets_to_native_binary() {
+    let root = temp_dir("ptn-native-static-property-array-dim-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("static-property-array-dim-unset.php");
+    let output = root.join("static-property-array-dim-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public static $items = [
+        \"keep\" => \"yes\",
+        \"drop\" => \"gone\",
+        \"nested\" => [\"x\" => 1, \"gone\" => 2],
+    ];
+}
+
+$copy = Box::$items;
+unset(Box::$items[\"drop\"], Box::$items[\"nested\"][\"gone\"]);
+var_dump(
+    array_key_exists(\"drop\", Box::$items),
+    array_key_exists(\"gone\", Box::$items[\"nested\"]),
+    $copy[\"drop\"],
+    $copy[\"nested\"][\"gone\"]
+);
+
+$class = \"Box\";
+unset($class::$items[\"keep\"]);
+var_dump(
+    array_key_exists(\"keep\", Box::$items),
+    array_key_exists(\"keep\", $copy)
+);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "bool(false)\n",
+            "string(4) \"gone\"\n",
+            "int(2)\n",
+            "bool(false)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_array_path_unset(&runtime"));
+    assert!(c_source.contains("ptn_runtime_write_static_property_indirect(&runtime"));
+}
+
+#[test]
 fn compile_autoload_exception_static_member_surfaces_to_native_binary() {
     let root = temp_dir("ptn-native-autoload-static-members");
     fs::create_dir_all(&root).unwrap();
@@ -50619,6 +50707,50 @@ fn parser_accepts_dynamic_variable_array_dimension_unsets() {
         } if dimensions.len() == 2
             && matches!(name.as_ref(), Expr::DynamicVariable { .. })
     ));
+}
+
+#[test]
+fn compile_dynamic_variable_isset_and_empty_are_quiet_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-isset-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-isset-empty.php");
+    let output = root.join("dynamic-variable-isset-empty-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$name = \"slot\";\n\
+$slot = [\"present\" => 1, \"nullish\" => null];\n\
+var_dump(isset($$name));\n\
+var_dump(isset($$name[\"missing\"]));\n\
+var_dump(isset($$name[\"present\"]));\n\
+var_dump(empty($$name[\"nullish\"]));\n\
+var_dump(empty($$name[\"missing\"]));\n\
+unset($$name);\n\
+var_dump(isset($$name));\n\
+var_dump(empty($$name));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, ptn_tmp_"));
 }
 
 #[test]

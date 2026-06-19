@@ -741,6 +741,18 @@ pub enum UnsetTarget {
         dimensions: Vec<Expr>,
         span: SourceSpan,
     },
+    StaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<Expr>,
+        span: SourceSpan,
+    },
+    DynamicStaticPropertyArrayDim {
+        receiver: Box<Expr>,
+        name: String,
+        dimensions: Vec<Expr>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
