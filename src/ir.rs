@@ -151,6 +151,8 @@ pub struct PropertyDecl {
     pub hook_get_line: usize,
     pub hook_set_line: usize,
     pub hook_get_value: Option<ValueExpr>,
+    pub hook_set_value: Option<ValueExpr>,
+    pub hook_set_parameter_name: Option<String>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,
     pub value: Option<ValueExpr>,
@@ -1704,6 +1706,11 @@ impl<'a> LoweringContext<'a> {
                     .hook_get_value
                     .as_ref()
                     .map(|value| self.lower_expr(value)),
+                hook_set_value: property
+                    .hook_set_value
+                    .as_ref()
+                    .map(|value| self.lower_expr(value)),
+                hook_set_parameter_name: property.hook_set_parameter_name.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,
@@ -2325,6 +2332,11 @@ impl<'a> LoweringContext<'a> {
                     .hook_get_value
                     .as_ref()
                     .map(|value| self.lower_expr(value)),
+                hook_set_value: property
+                    .hook_set_value
+                    .as_ref()
+                    .map(|value| self.lower_expr(value)),
+                hook_set_parameter_name: property.hook_set_parameter_name.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 attributes: self.lower_class_scoped_attribute_metadata(
                     &property.attributes,

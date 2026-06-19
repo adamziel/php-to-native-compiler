@@ -1075,6 +1075,14 @@ typedef int (*PtnPropertyHookGetHandler)(
     size_t line,
     PtnValue *value_out
 );
+typedef int (*PtnPropertyHookSetHandler)(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *class_name,
+    const char *property_name,
+    PtnValue value,
+    size_t line
+);
 typedef int (*PtnClassConstantInitializerHandler)(
     PtnRuntime *runtime,
     const char *class_name,
@@ -1160,6 +1168,7 @@ struct PtnRuntime {
     PtnMagicPropertyUnsetHandler magic_property_unset;
     PtnMagicDebugInfoHandler magic_debug_info;
     PtnPropertyHookGetHandler property_hook_get;
+    PtnPropertyHookSetHandler property_hook_set;
     PtnClassConstantInitializerHandler class_constant_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
     int in_magic_property_dispatch;

@@ -4671,6 +4671,10 @@ static PTN_UNUSED int ptn_object_property_is_set(
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
+        if (ptn_property_is_set_only_virtual(metadata)) {
+            ptn_throw_set_only_virtual_property_read_error(runtime, metadata, line);
+            return 0;
+        }
         if (metadata == NULL || metadata->is_unset) {
             int magic_isset = 0;
             if (ptn_magic_property_isset(runtime, receiver, property, line, &magic_isset)) {
@@ -4803,6 +4807,35 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         );
         return ptn_null();
     }
+    int hook_set_deprecation_emitted = 0;
+    if (
+        !indirect_write &&
+        metadata != NULL &&
+        metadata->hook_has_set &&
+        runtime != NULL &&
+        runtime->property_hook_set != NULL
+    ) {
+        ptn_declared_class_property_hook_deprecation(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            2,
+            line
+        );
+        hook_set_deprecation_emitted = 1;
+        if (runtime->property_hook_set(
+            runtime,
+            receiver,
+            metadata->declaring_class,
+            metadata->display_name,
+            value,
+            line
+        )) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_value_clone_deref(value);
+        }
+    }
     int readonly_clone_reinit = 0;
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
         readonly_clone_reinit =
@@ -4825,7 +4858,7 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     if (metadata == NULL && entry == NULL) {
         ptn_emit_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
     }
-    if (metadata != NULL) {
+    if (metadata != NULL && !hook_set_deprecation_emitted) {
         ptn_declared_class_property_hook_deprecation(
             runtime,
             metadata->declaring_class,

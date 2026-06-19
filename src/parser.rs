@@ -363,6 +363,8 @@ struct ParsedPropertyHookBlock {
     get_span: Option<SourceSpan>,
     set_span: Option<SourceSpan>,
     get_value: Option<Expr>,
+    set_value: Option<Expr>,
+    set_parameter_name: Option<String>,
 }
 
 enum ParsedClassMember {
@@ -2969,6 +2971,8 @@ impl Parser<'_> {
                     hook_get_span: hooks.get_span,
                     hook_set_span: hooks.set_span,
                     hook_get_value: hooks.get_value,
+                    hook_set_value: hooks.set_value,
+                    hook_set_parameter_name: hooks.set_parameter_name,
                     type_hint,
                     attributes: attributes.clone(),
                     has_override_attribute: attributes.has_override,
@@ -3009,6 +3013,8 @@ impl Parser<'_> {
                 hook_get_span: None,
                 hook_set_span: None,
                 hook_get_value: None,
+                hook_set_value: None,
+                hook_set_parameter_name: None,
                 type_hint,
                 attributes: attributes.clone(),
                 has_override_attribute: attributes.has_override,
@@ -3188,6 +3194,45 @@ impl Parser<'_> {
                         } else {
                             hooks.get_value = Some(value);
                         }
+                    } else if !hook_is_abstract {
+                        if let Some((value, uses_backing_property)) =
+                            self.parse_simple_property_hook_get_body(property_name)
+                        {
+                            validate_property_hook_modifiers(
+                                hook_is_final,
+                                false,
+                                hook_visibility,
+                                token.span,
+                            )?;
+                            hooks.has_get = true;
+                            if uses_backing_property {
+                                hooks.is_virtual = false;
+                            } else {
+                                hooks.get_value = Some(value);
+                            }
+                        } else {
+                            if matches!(self.peek().kind, TokenKind::LeftParen) {
+                                return Err(Diagnostic::new(
+                                    format!(
+                                        "get hook of property {class_name}::${property_name} must not have a parameter list"
+                                    ),
+                                    Some(self.peek().span),
+                                ));
+                            }
+                            let is_abstract_hook = hook_is_abstract
+                                || matches!(self.peek().kind, TokenKind::Semicolon);
+                            validate_property_hook_modifiers(
+                                hook_is_final,
+                                is_abstract_hook,
+                                hook_visibility,
+                                token.span,
+                            )?;
+                            hooks.has_get = true;
+                            hooks.get_is_abstract = is_abstract_hook;
+                            if self.skip_property_hook_body("get", property_name)? {
+                                hooks.is_virtual = false;
+                            }
+                        }
                     } else {
                         if matches!(self.peek().kind, TokenKind::LeftParen) {
                             return Err(Diagnostic::new(
@@ -3229,9 +3274,11 @@ impl Parser<'_> {
                     }
                     hooks.set_attributes = hook_attributes;
                     hooks.set_span = Some(token.span);
-                    if matches!(self.peek().kind, TokenKind::LeftParen) {
-                        self.parse_property_hook_set_parameters(class_name, property_name)?;
-                    }
+                    let set_parameter_name = if matches!(self.peek().kind, TokenKind::LeftParen) {
+                        self.parse_property_hook_set_parameters(class_name, property_name)?
+                    } else {
+                        "value".to_string()
+                    };
                     let is_abstract_hook =
                         hook_is_abstract || matches!(self.peek().kind, TokenKind::Semicolon);
                     validate_property_hook_modifiers(
@@ -3242,7 +3289,20 @@ impl Parser<'_> {
                     )?;
                     hooks.has_set = true;
                     hooks.set_is_abstract = is_abstract_hook;
-                    if self.skip_property_hook_body(&name, property_name)? {
+                    if !is_abstract_hook {
+                        if let Some((value, uses_backing_property)) =
+                            self.parse_simple_property_hook_set_body(property_name)
+                        {
+                            if uses_backing_property {
+                                hooks.is_virtual = false;
+                            } else {
+                                hooks.set_value = Some(value);
+                                hooks.set_parameter_name = Some(set_parameter_name);
+                            }
+                        } else if self.skip_property_hook_body(&name, property_name)? {
+                            hooks.is_virtual = false;
+                        }
+                    } else if self.skip_property_hook_body(&name, property_name)? {
                         hooks.is_virtual = false;
                     }
                 }
@@ -3278,11 +3338,72 @@ impl Parser<'_> {
         Ok(hooks)
     }
 
+    fn parse_simple_property_hook_get_body(&mut self, property_name: &str) -> Option<(Expr, bool)> {
+        if !matches!(self.peek().kind, TokenKind::LeftBrace)
+            || !matches!(self.peek_n(1).kind, TokenKind::Return)
+        {
+            return None;
+        }
+
+        let saved_index = self.index;
+        let saved_block_depth = self.block_depth;
+        self.advance();
+        self.advance();
+        let value = match self.parse_expr() {
+            Ok(value) => value,
+            Err(_) => {
+                self.index = saved_index;
+                self.block_depth = saved_block_depth;
+                return None;
+            }
+        };
+        if !matches!(self.peek().kind, TokenKind::Semicolon)
+            || !matches!(self.peek_n(1).kind, TokenKind::RightBrace)
+        {
+            self.index = saved_index;
+            self.block_depth = saved_block_depth;
+            return None;
+        }
+        self.advance();
+        self.advance();
+        let uses_backing_property = expr_uses_this_property(&value, property_name);
+        Some((value, uses_backing_property))
+    }
+
+    fn parse_simple_property_hook_set_body(&mut self, property_name: &str) -> Option<(Expr, bool)> {
+        if !matches!(self.peek().kind, TokenKind::LeftBrace) {
+            return None;
+        }
+
+        let saved_index = self.index;
+        let saved_block_depth = self.block_depth;
+        self.advance();
+        let value = match self.parse_expr() {
+            Ok(value) => value,
+            Err(_) => {
+                self.index = saved_index;
+                self.block_depth = saved_block_depth;
+                return None;
+            }
+        };
+        if !matches!(self.peek().kind, TokenKind::Semicolon)
+            || !matches!(self.peek_n(1).kind, TokenKind::RightBrace)
+        {
+            self.index = saved_index;
+            self.block_depth = saved_block_depth;
+            return None;
+        }
+        self.advance();
+        self.advance();
+        let uses_backing_property = expr_uses_this_property(&value, property_name);
+        Some((value, uses_backing_property))
+    }
+
     fn parse_property_hook_set_parameters(
         &mut self,
         class_name: &str,
         property_name: &str,
-    ) -> Result<()> {
+    ) -> Result<String> {
         let parameters = self.parse_function_parameters()?;
         if let Some(parameter) = parameters.first() {
             if parameter.by_ref {
@@ -3312,8 +3433,9 @@ impl Parser<'_> {
                     Some(parameter.span),
                 ));
             }
+            return Ok(parameter.name.clone());
         }
-        Ok(())
+        Ok("value".to_string())
     }
 
     fn skip_property_hook_body(&mut self, hook_name: &str, property_name: &str) -> Result<bool> {
@@ -11072,6 +11194,8 @@ fn promoted_properties_from_constructor(
                 hook_get_span: None,
                 hook_set_span: None,
                 hook_get_value: None,
+                hook_set_value: None,
+                hook_set_parameter_name: None,
                 type_hint: parameter
                     .type_hint
                     .as_ref()

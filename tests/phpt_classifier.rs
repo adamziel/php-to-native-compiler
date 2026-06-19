@@ -1472,6 +1472,38 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "Zend/tests/attributes/nodiscard/unsupported_property_hook_set.phpt",
             "--TEST--\nnodiscard hook set\n--FILE--\n<?php\nclass Demo { public string $hooked { get => $this->hooked; #[NoDiscard] set => $value; } }\n--EXPECTF--\n",
         ),
+        (
+            "Zend/tests/property_hooks/get.phpt",
+            "--TEST--\nplain get hook\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } }\nvar_dump((new Test())->prop);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/get_type_check.phpt",
+            "--TEST--\nget hook return type check\n--FILE--\n<?php\nclass Test { public int $prop { get { return '42'; } } }\nvar_dump((new Test())->prop);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/set.phpt",
+            "--TEST--\nplain set hook\n--FILE--\n<?php\nclass Test { public $_prop; public $prop { set { $this->_prop = $value; } } }\n$test = new Test(); $test->prop = 42; var_dump($test->_prop);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/explicit_set_value_parameter.phpt",
+            "--TEST--\nexplicit set parameter\n--FILE--\n<?php\nclass Test { public $prop { set($customName) { var_dump($customName); } } }\n(new Test())->prop = 42;\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/direct_hook_call.phpt",
+            "--TEST--\ndirect hook call\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } }\nvar_dump(Test::$prop::get(...));\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/isset.phpt",
+            "--TEST--\nisset get hook\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } }\nvar_dump(isset((new Test())->prop));\n--EXPECT--\nbool(true)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/object_in_hook.phpt",
+            "--TEST--\nobject in hook\n--FILE--\n<?php\nclass Box { public $other; public $prop { get { $this->other = new stdClass; return 1; } } }\nvar_dump((new Box())->prop);\n--EXPECT--\nint(1)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/unset.phpt",
+            "--TEST--\nunset hook\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } }\ntry { unset((new Test())->prop); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n--EXPECTF--\n",
+        ),
     ];
 
     for (path, phpt) in cases {

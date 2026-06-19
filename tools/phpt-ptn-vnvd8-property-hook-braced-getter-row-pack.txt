@@ -1,0 +1,9 @@
+# ptn-vnvd8: simple braced property-hook getter/setter execution.
+Zend/tests/property_hooks/direct_hook_call.phpt
+Zend/tests/property_hooks/explicit_set_value_parameter.phpt
+Zend/tests/property_hooks/get.phpt
+Zend/tests/property_hooks/get_type_check.phpt
+Zend/tests/property_hooks/isset.phpt
+Zend/tests/property_hooks/object_in_hook.phpt
+Zend/tests/property_hooks/set.phpt
+Zend/tests/property_hooks/unset.phpt
