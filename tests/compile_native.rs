@@ -47787,11 +47787,11 @@ var_dump($a);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(
-        c_source.contains("PtnValue ptn_typed_return_value = ptn_cast_string(ptn_return_value);")
-    );
-    assert!(c_source
-        .contains("ptn_reference_assign(ptn_return_value.as.reference, ptn_typed_return_value);"));
+    assert!(c_source.contains("PtnValue ptn_typed_return_value;"));
+    assert!(c_source.contains("ptn_coerce_user_return_string(&runtime, \"test2\", \"string\", ptn_return_value, ptn_return_value_was_set, ptn_return_line, &ptn_typed_return_value)"));
+    assert!(c_source.contains(
+        "ptn_reference_assign(caller_runtime, ptn_return_value.as.reference, ptn_typed_return_value);"
+    ));
 }
 
 #[test]
