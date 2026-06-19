@@ -991,8 +991,20 @@ fn phpt_classifier_keeps_supported_attribute_metadata_rows_runnable_by_path() {
             "--TEST--\nattribute class metadata\n--FILE--\n<?php\n#[SingleArgument(\"Hello World\")]\nclass Foo {}\n$attributes = (new ReflectionClass(Foo::class))->getAttributes();\nvar_dump($attributes[0]->getName(), $attributes[0]->getArguments());\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/attributes/003_ast_nodes.phpt",
+            "--TEST--\nattribute ast nodes\n--FILE--\n<?php\n#[A1(1 + 2)]\nclass C {}\nvar_dump((new ReflectionClass(C::class))->getAttributes()[0]->getArguments());\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/attributes/004_name_resolution.phpt",
             "--TEST--\nattribute function metadata\n--FILE--\n<?php\nnamespace Foo { #[Entity(\"imported\")] function foo() {} }\nnamespace { var_dump((new ReflectionFunction('Foo\\foo'))->getAttributes()); }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/009_doctrine_annotations_example.phpt",
+            "--TEST--\ndoctrine attributes\n--FILE--\n<?php\nnamespace Demo { class Entity {} }\nnamespace { #[Demo\\Entity] class User {} var_dump((new ReflectionClass(User::class))->getAttributes()[0]->getName()); }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/attributes/011_inheritance.phpt",
+            "--TEST--\nattribute inheritance\n--FILE--\n<?php\n#[A] class P {}\nclass C extends P {}\nvar_dump((new ReflectionClass(C::class))->getAttributes());\n--EXPECT--\n",
         ),
         (
             "Zend/tests/attributes/015_property_group.phpt",
@@ -1065,6 +1077,18 @@ fn phpt_classifier_keeps_supported_attribute_metadata_rows_runnable_by_path() {
         (
             "Zend/tests/attributes/constants/constant_redefined_addition.phpt",
             "--TEST--\nconstant attribute addition\n--FILE--\n<?php\nconst MY_CONST = \"No attributes\";\n#[\\MyAttribute]\nconst MY_CONST = \"Has attributes\";\nvar_dump((new ReflectionConstant('MY_CONST'))->getAttributes());\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/constants/constant_listed_as_target-userland.phpt",
+            "--TEST--\nconstant target validation\n--FILE--\n<?php\n#[Attribute(Attribute::TARGET_CONSTANT)] class MyConstantAttribute {}\n#[MyConstantAttribute] class Example {}\n(new ReflectionClass(Example::class))->getAttributes()[0]->newInstance();\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/constants/must_target_const-userland.phpt",
+            "--TEST--\nconstant target validation\n--FILE--\n<?php\n#[Attribute(Attribute::TARGET_FUNCTION)] class MyFunctionAttribute {}\n#[MyFunctionAttribute] const EXAMPLE = 'Foo';\n(new ReflectionConstant('EXAMPLE'))->getAttributes()[0]->newInstance();\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/constants/not_repeatable-userland.phpt",
+            "--TEST--\nconstant repetition validation\n--FILE--\n<?php\n#[Attribute] class MyAttribute {}\n#[MyAttribute]\n#[MyAttribute]\nconst MY_CONST = true;\n(new ReflectionConstant('MY_CONST'))->getAttributes()[0]->newInstance();\n--EXPECTF--\n",
         ),
         (
             "Zend/tests/attributes/deprecated/property_readonly_001.phpt",

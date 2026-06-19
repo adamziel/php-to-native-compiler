@@ -1780,9 +1780,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return line ~ /->[[:space:]]*getfilename[[:space:]]*\(/
         }
         function ptn_supported_internal_attribute_metadata_row() {
-            return ptn_path ~ /Zend\/tests\/attributes\/(001_placement|005_objects|006_filter|013_class_scope|014_class_const_group|020_userland_attribute_validation|031_backtrace|gh8421)[.]phpt$/ ||
+            return ptn_path ~ /Zend\/tests\/attributes\/(001_placement|003_ast_nodes|005_objects|006_filter|009_doctrine_annotations_example|011_inheritance|013_class_scope|014_class_const_group|020_userland_attribute_validation|031_backtrace|gh8421)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/(021_attribute_flags_type_is_validated|022_attribute_flags_value_is_validated|023_ast_node_in_validation|ossfuzz371445205)[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/attributes\/constants\/(allow_named_parameters|constant_redefined_(addition|change|removal)|multiple_attributes_(grouped|ungrouped)|oss_fuzz_428053935|repeatable-userland|target_all_targets_const-(default|explicit))[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/constants\/(allow_named_parameters|constant_listed_as_target-userland|constant_redefined_(addition|change|removal)|multiple_attributes_(grouped|ungrouped)|must_target_const-userland|not_repeatable-userland|oss_fuzz_428053935|repeatable-userland|target_all_targets_const-(default|explicit))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/validator_success[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionAttribute_(constructor_001|newInstance_(deprecated|exception))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
