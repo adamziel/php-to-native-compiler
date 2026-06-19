@@ -873,7 +873,7 @@ static PTN_UNUSED void ptn_emit_by_reference_argument_warning(
         position,
         has_parameter_name ? parameter_name : ""
     );
-    ptn_emit_warning(&runtime->diagnostics, message, line);
+    ptn_emit_warning_with_handler_frame(&runtime->diagnostics, message, line, 1);
     free(message);
 }
 

@@ -7367,6 +7367,42 @@ call_user_func(function (array &$ref) {}, 'not_an_array_variable');
 }
 
 #[test]
+fn compile_error_handler_source_warning_trace_keeps_user_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-error-handler-source-warning-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-handler-source-warning-frame.php");
+    let output = root.join("error-handler-source-warning-frame-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function ($severity, $message, $file, $line) {
+    throw new Exception($message);
+});
+
+$x = \"foo\";
+$y = &$x[\"2bar\"];
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: Illegal string offset \"2bar\""),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("error-handler-source-warning-frame.php(7): {closure:"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("#0 [internal function]:"), "{stderr}");
+}
+
+#[test]
 fn compile_numeric_and_array_diagnostics_route_through_user_error_handler_to_native_binary() {
     let root = temp_dir("ptn-native-numeric-array-diagnostics-handler");
     fs::create_dir_all(&root).unwrap();

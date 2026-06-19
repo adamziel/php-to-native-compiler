@@ -1022,12 +1022,13 @@ static PTN_UNUSED const char *ptn_runtime_source_path_or(PtnRuntime *runtime, co
     return fallback == NULL ? "" : fallback;
 }
 
-static PTN_UNUSED int ptn_diagnostics_try_error_handler(
+static PTN_UNUSED int ptn_diagnostics_try_error_handler_with_frame(
     PtnDiagnosticSink *diagnostics,
     int64_t severity,
     const char *message,
     const char *path,
-    size_t line
+    size_t line,
+    int suppress_user_call_frame_location
 ) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (diagnostics == NULL || diagnostics->runtime == NULL) {
@@ -1087,7 +1088,9 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
         ptn_rethrow_exception(runtime);
         return 1;
     }
-    runtime->suppress_user_call_frame_location = 1;
+    if (suppress_user_call_frame_location) {
+        runtime->suppress_user_call_frame_location = 1;
+    }
     result = ptn_call_callable(runtime, saved_handler, 4, args, line, 0);
     ptn_try_frame_pop(runtime, &handler_frame);
     runtime->trace_frame = saved_trace_frame;
@@ -1122,6 +1125,23 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     (void)line;
     return 0;
 #endif
+}
+
+static PTN_UNUSED int ptn_diagnostics_try_error_handler(
+    PtnDiagnosticSink *diagnostics,
+    int64_t severity,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    return ptn_diagnostics_try_error_handler_with_frame(
+        diagnostics,
+        severity,
+        message,
+        path,
+        line,
+        0
+    );
 }
 
 static void ptn_emit_undefined_variable_warning(
@@ -1412,12 +1432,24 @@ static PTN_UNUSED void ptn_emit_runtime_deprecation(PtnRuntime *runtime, const c
     );
 }
 
-static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+static PTN_UNUSED void ptn_emit_warning_with_handler_frame(
+    PtnDiagnosticSink *diagnostics,
+    const char *message,
+    size_t line,
+    int suppress_user_call_frame_location
+) {
     if (!ptn_diagnostics_should_emit(diagnostics, PTN_E_WARNING)) {
         return;
     }
     diagnostics->emitted_warning = 1;
-    if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
+    if (ptn_diagnostics_try_error_handler_with_frame(
+        diagnostics,
+        PTN_E_WARNING,
+        message,
+        NULL,
+        line,
+        suppress_user_call_frame_location
+    )) {
         return;
     }
     if (diagnostics->html_errors) {
@@ -1437,6 +1469,10 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
         ptn_diagnostic_builtin_path(line),
         line
     );
+}
+
+static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
+    ptn_emit_warning_with_handler_frame(diagnostics, message, line, 0);
 }
 
 static PTN_UNUSED void ptn_emit_user_warning(PtnDiagnosticSink *diagnostics, const char *message, size_t line) {
