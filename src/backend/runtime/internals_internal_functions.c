@@ -1270,6 +1270,8 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
     PtnDirectValueDumpSeen *seen
 );
 
+static int ptn_weak_map_debug_properties(PtnObject *object, PtnValue *properties_out);
+
 static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     PtnRuntime *runtime,
     PtnException *exception,
@@ -1400,6 +1402,45 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure(
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
 
+static PTN_UNUSED int ptn_direct_var_dump_weak_map_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+) {
+    PtnValue properties_value = ptn_null();
+    if (!ptn_weak_map_debug_properties(object, &properties_value)) {
+        return 0;
+    }
+    PtnValue resolved = ptn_value_deref(properties_value);
+    if (resolved.type != PTN_ARRAY) {
+        ptn_value_destroy(&properties_value);
+        return 0;
+    }
+
+    PtnArray *properties = resolved.as.array;
+    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+    ptn_direct_dump_printf(
+        runtime,
+        "object(%.*s)#%zu (%zu) {\n",
+        (int)class_len,
+        object->class_name,
+        object->object_id,
+        properties->len
+    );
+    ptn_direct_value_dump_seen_object_push(seen, object);
+    for (size_t i = 0; i < properties->len; i++) {
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_array_key(runtime, properties->entries[i].key);
+        ptn_direct_value_var_dump_value_indented(runtime, properties->entries[i].value, indent + 1, seen);
+    }
+    ptn_direct_value_dump_seen_object_pop(seen);
+    ptn_direct_value_var_dump_indent(runtime, indent);
+    ptn_direct_dump_write_cstr(runtime, "}\n");
+    ptn_value_destroy(&properties_value);
+    return 1;
+}
+
 static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
@@ -1469,6 +1510,9 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             PtnObject *object = value.as.object;
             if (object->enum_case_name != NULL) {
                 ptn_direct_dump_printf(runtime, "enum(%s::%s)\n", object->class_name, object->enum_case_name);
+                break;
+            }
+            if (ptn_direct_var_dump_weak_map_object(runtime, object, indent, seen)) {
                 break;
             }
             size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
@@ -82424,6 +82468,33 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     }
     *reference_out = ptn_null();
     receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type == PTN_OBJECT &&
+        ptn_internal_class_name_is_weak_map(receiver.as.object->class_name)
+    ) {
+        if (offset_value == NULL) {
+            ptn_throw_exception(runtime, "Error", "Cannot append to WeakMap");
+            return 1;
+        }
+        PtnWeakMapData *map = ptn_weak_map_data(runtime, receiver);
+        if (map == NULL) {
+            *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            return 1;
+        }
+        PtnObject *object = NULL;
+        if (!ptn_weak_map_key_object(runtime, "offsetGet", *offset_value, &object)) {
+            *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            return 1;
+        }
+        size_t index = 0;
+        if (!ptn_weak_map_find_index(map, object, &index)) {
+            ptn_weak_map_throw_not_contained(runtime, object);
+            *reference_out = ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+            return 1;
+        }
+        *reference_out = ptn_weak_map_entry_reference(map, index, 0);
+        return 1;
+    }
     PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(receiver);
     if (data == NULL) {
         return 0;
@@ -87269,7 +87340,10 @@ static PTN_UNUSED PtnValue ptn_weak_map_call_method(
             ptn_weak_map_throw_not_contained(runtime, object);
             return ptn_null();
         }
-        return ptn_weak_map_entry_reference(map, index, 0);
+        PtnValue reference = ptn_weak_map_entry_reference(map, index, 0);
+        PtnValue result = ptn_value_clone_deref(reference);
+        ptn_value_destroy(&reference);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "offsetSet")) {
         if (argc != 2) {

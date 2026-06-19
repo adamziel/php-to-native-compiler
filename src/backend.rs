@@ -15131,18 +15131,6 @@ fn emit_instruction(
                     values.emit_store_assignment_target_from_temp(out, key, &key_temp);
                 emit_value_cleanup(out, "        ", &key_result_temp);
                 emit_value_cleanup(out, "        ", &key_temp);
-            } else {
-                let key_temp = values.next_temp();
-                out.push_str("        if (");
-                out.push_str(&iterator_temp);
-                out.push_str(".protocol_iterator) {\n");
-                out.push_str("            PtnValue ");
-                out.push_str(&key_temp);
-                out.push_str(" = ptn_array_iterator_current_key(&");
-                out.push_str(&iterator_temp);
-                out.push_str(");\n");
-                emit_value_cleanup(out, "            ", &key_temp);
-                out.push_str("        }\n");
             }
             if *value_by_ref {
                 values.emit_bind_assignment_target_reference(out, value, &value_temp);

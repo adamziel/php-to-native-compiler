@@ -1538,6 +1538,12 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
+    if (value.type == PTN_STRING && value.as.string.payload == NULL) {
+        return ptn_owned_string_len(
+            ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len),
+            value.as.string.len
+        );
+    }
     return ptn_value_share(value);
 }
 
