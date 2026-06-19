@@ -388,6 +388,7 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
             function->callback,
             function->argc,
             function->args,
+            0,
             0
         );
         ptn_try_frame_pop(runtime, &callback_frame);

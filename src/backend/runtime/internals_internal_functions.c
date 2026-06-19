@@ -2830,7 +2830,7 @@ static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *clos
 
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
-static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);
 static PtnValue ptn_declared_class_new_instance(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_pdo_drivers_value(void);
 static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -3497,7 +3497,7 @@ static int ptn_internal_call_callback_capturing_exception_impl(
         runtime->suppress_user_call_frame_location = 1;
         runtime->suppress_user_argument_count_location = 1;
     }
-    *result_out = ptn_call_callable(runtime, callback, argc, args, line);
+    *result_out = ptn_call_callable(runtime, callback, argc, args, line, include_user_call_site);
     ptn_try_frame_pop(runtime, &callback_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->suppress_user_call_frame_location =
@@ -67967,7 +67967,7 @@ static PtnValue ptn_fiber_start(
     PtnObject *previous_fiber = runtime->current_fiber;
     runtime->current_fiber = data->object;
     data->running = 1;
-    PtnValue result = ptn_call_callable(runtime, data->callback, argc, args, line);
+    PtnValue result = ptn_call_callable(runtime, data->callback, argc, args, line, 0);
     data->running = 0;
     runtime->current_fiber = previous_fiber;
     if (runtime->exceptions->active_exception != NULL) {
@@ -68894,7 +68894,7 @@ static void ptn_zip_archive_poll_cancel_callback(
     if (data == NULL || !data->has_cancel_callback) {
         return;
     }
-    PtnValue result = ptn_call_callable(runtime, data->cancel_callback, 0, NULL, line);
+    PtnValue result = ptn_call_callable(runtime, data->cancel_callback, 0, NULL, line, 0);
     ptn_value_destroy(&result);
 }
 
@@ -84840,7 +84840,7 @@ static PtnValue ptn_reflection_function_dispatch_invoke(
     runtime->warn_by_ref_argument_mismatch = 1;
     runtime->throw_argument_count_errors = 1;
     PtnValue result = data->has_closure
-        ? ptn_call_callable(runtime, data->closure, function_argc, function_args, line)
+        ? ptn_call_callable(runtime, data->closure, function_argc, function_args, line, 0)
         : ptn_call_function(runtime, data->metadata.name, function_argc, function_args, line);
     runtime->throw_argument_count_errors = previous_throw_argument_count_errors;
     runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;

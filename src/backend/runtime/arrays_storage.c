@@ -1206,7 +1206,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             return 0;
         }
     }
-    result = ptn_call_callable(runtime, initializer, 1, &arg, line);
+    result = ptn_call_callable(runtime, initializer, 1, &arg, line, 0);
     if (initializer_frame_active) {
         ptn_try_frame_pop(runtime, &initializer_frame);
     }

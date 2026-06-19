@@ -806,7 +806,7 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
             active_callback = ptn_value_clone(root->autoload_callbacks[i]);
             PtnValue callback_args[1] = { ptn_string(class_name) };
             PtnValue result =
-                ptn_call_callable(runtime, active_callback, 1, callback_args, line);
+                ptn_call_callable(runtime, active_callback, 1, callback_args, line, 0);
             ptn_value_destroy(&result);
             ptn_value_destroy(&active_callback);
             active_callback = ptn_null();

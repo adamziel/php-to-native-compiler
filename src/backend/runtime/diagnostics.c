@@ -795,7 +795,7 @@ static PTN_UNUSED int ptn_exception_handlers_try_uncaught(
     }
     state->in_exception_handler = 1;
     PtnValue arg = ptn_exception_borrow(exception);
-    PtnValue result = ptn_call_callable(runtime, handler, 1, &arg, 0);
+    PtnValue result = ptn_call_callable(runtime, handler, 1, &arg, 0, 0);
     ptn_value_destroy(&result);
     state->in_exception_handler = 0;
     ptn_value_destroy(&handler);
@@ -1083,7 +1083,7 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
         ptn_rethrow_exception(runtime);
         return 1;
     }
-    result = ptn_call_callable(runtime, saved_handler, 4, args, line);
+    result = ptn_call_callable(runtime, saved_handler, 4, args, line, 0);
     ptn_try_frame_pop(runtime, &handler_frame);
     runtime->trace_frame = saved_trace_frame;
     runtime->warn_by_ref_argument_mismatch = saved_warn_by_ref_argument_mismatch;

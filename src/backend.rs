@@ -1430,7 +1430,7 @@ fn emit_user_function_prototypes(
             "\nstatic PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);\n",
         );
         out.push_str(
-            "static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);\n",
+            "static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func);\n",
         );
         out.push_str(
             "static PTN_UNUSED int ptn_callable_argument_by_ref(PtnRuntime *runtime, PtnValue callable, size_t argument_index);\n",
@@ -14243,7 +14243,7 @@ fn emit_method_dispatch(
             "            ptn_closure_set_scope(bound, scope_class_name, scope_class_name);\n",
         );
         out.push_str("            ptn_closure_set_capture(bound, \"this\", new_this);\n");
-        out.push_str("            PtnValue call_result = ptn_call_callable(runtime, bound, argc - 1, argc > 1 ? args + 1 : NULL, line);\n");
+        out.push_str("            PtnValue call_result = ptn_call_callable(runtime, bound, argc - 1, argc > 1 ? args + 1 : NULL, line, 0);\n");
         out.push_str("            ptn_value_destroy(&bound);\n");
         out.push_str("            return call_result;\n");
         out.push_str("        }\n");
@@ -14252,7 +14252,7 @@ fn emit_method_dispatch(
         out.push_str("        if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
         out.push_str("            const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
         out.push_str("            runtime->by_ref_argument_function_name_override = \"Closure::__invoke\";\n");
-        out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved, argc, args, line);\n");
+        out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved, argc, args, line, 0);\n");
         out.push_str(
             "            runtime->by_ref_argument_function_name_override = previous_name;\n",
         );
@@ -15190,7 +15190,7 @@ fn emit_callable_dispatch(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line) {\n",
+        "\nstatic PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line, int from_call_user_func) {\n",
     );
     out.push_str("    PtnValue resolved = ptn_value_deref(callable);\n");
     if needs_method_dispatch {
@@ -15216,7 +15216,7 @@ fn emit_callable_dispatch(
         out.push_str("                if (ptn_ascii_case_equal(method_name, \"__invoke\")) {\n");
         out.push_str("                    const char *previous_name = runtime->by_ref_argument_function_name_override;\n");
         out.push_str("                    runtime->by_ref_argument_function_name_override = \"Closure::__invoke\";\n");
-        out.push_str("                    PtnValue result = ptn_call_callable(runtime, receiver, argc, args, line);\n");
+        out.push_str("                    PtnValue result = ptn_call_callable(runtime, receiver, argc, args, line, from_call_user_func);\n");
         out.push_str("                    runtime->by_ref_argument_function_name_override = previous_name;\n");
         out.push_str("                    free(method_name);\n");
         out.push_str("                    return result;\n");
@@ -15313,7 +15313,7 @@ fn emit_callable_dispatch(
         out.push_str("                    free(scope_name);\n");
         out.push_str("                    return result;\n");
         out.push_str("                }\n");
-        out.push_str("                if (separator == NULL && runtime->has_current_receiver && ptn_declared_class_has_call_magic(target_class_name)) {\n");
+        out.push_str("                if (from_call_user_func && separator == NULL && runtime->has_current_receiver && ptn_declared_class_has_call_magic(target_class_name)) {\n");
         out.push_str("                    PtnValue ptn_magic_receiver = ptn_value_deref(runtime->current_receiver);\n");
         out.push_str("                    if (ptn_magic_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(ptn_magic_receiver.as.object->class_name, target_class_name)) {\n");
         out.push_str("                        result = ptn_call_declared_method(runtime, ptn_magic_receiver, target_method_name, argc, args, line);\n");
@@ -15443,7 +15443,7 @@ fn emit_callable_dispatch(
     out.push_str("                runtime->has_current_receiver = 1;\n");
     out.push_str("                runtime->current_receiver = ptn_wrapped_bound_this;\n");
     out.push_str("            }\n");
-    out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line);\n");
+    out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line, from_call_user_func);\n");
     out.push_str("            runtime->current_receiver = previous_current_receiver;\n");
     out.push_str("            runtime->has_current_receiver = previous_has_current_receiver;\n");
     out.push_str("            runtime->current_called_class_name = previous_called_class_name;\n");
@@ -30722,7 +30722,7 @@ impl ValueEmitter {
                 out.push_str(&args_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(");\n");
+                out.push_str(", 0);\n");
                 for temp in &unwrap_array_dim_reference_temps {
                     emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
                 }
@@ -30901,7 +30901,7 @@ impl ValueEmitter {
                 out.push_str(&args_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(");\n");
+                out.push_str(", 0);\n");
                 for index in 0..argument_temps.len() {
                     emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
                 }
@@ -35983,7 +35983,7 @@ impl ValueEmitter {
             out.push_str(&args_temp);
             out.push_str(".values, ");
             out.push_str(&line.to_string());
-            out.push_str(");\n");
+            out.push_str(", 0);\n");
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -36000,7 +36000,7 @@ impl ValueEmitter {
             out.push_str(&callee_temp);
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
-            out.push_str(");\n");
+            out.push_str(", 0);\n");
             emit_value_cleanup(out, "    ", &callee_temp);
             return result_temp;
         }
@@ -36047,7 +36047,7 @@ impl ValueEmitter {
         out.push_str(&args_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
-        out.push_str(");\n");
+        out.push_str(", 0);\n");
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }
