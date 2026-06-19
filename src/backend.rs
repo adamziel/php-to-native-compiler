@@ -11126,6 +11126,10 @@ fn emit_reflection_class_to_string_runtime(
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
 ) {
+    if class.is_enum {
+        emit_reflection_enum_to_string_runtime(out, class, classes, functions);
+        return;
+    }
     let header = reflection_class_to_string_header(class);
     let methods = reflection_class_to_string_methods_tail(class, classes, functions);
     out.push_str("        PtnStringBuffer ptn_reflection_buffer;\n");
@@ -11133,17 +11137,49 @@ fn emit_reflection_class_to_string_runtime(
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
     out.push_str(&c_string(&header));
     out.push_str("\");\n");
-    emit_reflection_class_constants_to_string_runtime(out, class);
+    emit_reflection_class_constants_to_string_runtime(out, class, true);
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
     out.push_str(&c_string(&methods));
     out.push_str("\");\n");
 }
 
-fn emit_reflection_class_constants_to_string_runtime(out: &mut String, class: &ClassDecl) {
+fn emit_reflection_enum_to_string_runtime(
+    out: &mut String,
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) {
+    let header = reflection_enum_to_string_header(class);
+    let enum_cases = reflection_enum_cases_to_string(class);
+    let methods = reflection_enum_to_string_methods_tail(class, classes, functions);
+    out.push_str("        PtnStringBuffer ptn_reflection_buffer;\n");
+    out.push_str("        ptn_string_buffer_init(&ptn_reflection_buffer);\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&header));
+    out.push_str("\");\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&enum_cases));
+    out.push_str("\");\n");
+    emit_reflection_class_constants_to_string_runtime(out, class, false);
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&methods));
+    out.push_str("\");\n");
+}
+
+fn emit_reflection_class_constants_to_string_runtime(
+    out: &mut String,
+    class: &ClassDecl,
+    include_enum_cases: bool,
+) {
+    let constants = class
+        .constants
+        .iter()
+        .filter(|constant| include_enum_cases || !constant.is_enum_case)
+        .collect::<Vec<_>>();
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"  - Constants [");
-    out.push_str(&class.constants.len().to_string());
+    out.push_str(&constants.len().to_string());
     out.push_str("] {\\n\");\n");
-    for (index, constant) in class.constants.iter().enumerate() {
+    for (index, constant) in constants.iter().enumerate() {
         let value_temp = format!("ptn_reflection_constant_value_{index}");
         let repr_temp = format!("ptn_reflection_constant_repr_{index}");
         out.push_str("        PtnValue ");
@@ -11192,6 +11228,66 @@ fn emit_reflection_class_constants_to_string_runtime(out: &mut String, class: &C
         out.push_str(");\n");
     }
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"  }\\n\\n\");\n");
+}
+
+fn reflection_enum_to_string_header(class: &ClassDecl) -> String {
+    let mut out = String::new();
+    out.push_str("Enum [ <user> enum ");
+    out.push_str(&class.name);
+    if let Some(backing_type) = class.enum_backing_type {
+        out.push_str(": ");
+        out.push_str(c_enum_backing_type_name(backing_type));
+    }
+    out.push_str(" implements ");
+    if !class.interfaces.is_empty() {
+        out.push_str(&class.interfaces.join(", "));
+        out.push_str(", ");
+    }
+    out.push_str("UnitEnum");
+    if class.enum_backing_type.is_some() {
+        out.push_str(", BackedEnum");
+    }
+    out.push_str(" ] {\n");
+    out.push_str("  @@ ");
+    out.push_str(&class.source_file);
+    out.push(' ');
+    out.push_str(&class.line.to_string());
+    out.push('-');
+    out.push_str(&class.end_line.to_string());
+    out.push_str("\n\n");
+    out
+}
+
+fn reflection_enum_cases_to_string(class: &ClassDecl) -> String {
+    let enum_cases = class
+        .constants
+        .iter()
+        .filter(|constant| constant.is_enum_case)
+        .collect::<Vec<_>>();
+    let mut out = String::new();
+    out.push_str("  - Enum cases [");
+    out.push_str(&enum_cases.len().to_string());
+    out.push_str("] {\n");
+    for constant in enum_cases {
+        out.push_str("    Case ");
+        out.push_str(&constant.name);
+        if class.enum_backing_type.is_some() {
+            if let Some(value) = reflection_enum_case_backing_to_string(constant) {
+                out.push_str(" = ");
+                out.push_str(&value);
+            }
+        }
+        out.push('\n');
+    }
+    out.push_str("  }\n\n");
+    out
+}
+
+fn reflection_enum_case_backing_to_string(constant: &ClassConstantDecl) -> Option<String> {
+    match enum_case_backing_literal(constant)? {
+        EnumBackingLiteral::Int(value) => Some(value.to_string()),
+        EnumBackingLiteral::String(value) => Some(value),
+    }
 }
 
 fn reflection_class_to_string_header(class: &ClassDecl) -> String {
@@ -11272,6 +11368,160 @@ fn reflection_class_to_string_methods_tail(
 
     out.push_str("}\n");
     out
+}
+
+fn reflection_enum_to_string_methods_tail(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+) -> String {
+    let mut out = String::new();
+    reflection_class_properties_to_string(&mut out, "Static properties", &class.static_properties);
+
+    let visible_methods = reflection_class_visible_method_entries(class, classes);
+    let static_methods = visible_methods
+        .iter()
+        .copied()
+        .filter(|entry| entry.method.is_static)
+        .collect::<Vec<_>>();
+    let instance_methods = visible_methods
+        .iter()
+        .copied()
+        .filter(|entry| !entry.method.is_static)
+        .collect::<Vec<_>>();
+    reflection_enum_static_methods_to_string(&mut out, class, &static_methods, functions);
+    out.push('\n');
+    reflection_enum_properties_to_string(&mut out, class);
+    reflection_class_methods_to_string(&mut out, "Methods", class, &instance_methods, functions);
+
+    out.push_str("}\n");
+    out
+}
+
+fn reflection_enum_static_methods_to_string(
+    out: &mut String,
+    class: &ClassDecl,
+    methods: &[ClassMethodLookupEntry<'_>],
+    functions: &[FunctionDecl],
+) {
+    let internal_method_count = if class.enum_backing_type.is_some() {
+        3
+    } else {
+        1
+    };
+    out.push_str("  - Static methods [");
+    out.push_str(&(internal_method_count + methods.len()).to_string());
+    out.push_str("] {\n");
+    reflection_enum_internal_static_method_cases_to_string(out);
+    if class.enum_backing_type.is_some() {
+        out.push('\n');
+        reflection_enum_internal_static_method_from_to_string(out, "from", "static");
+        out.push('\n');
+        reflection_enum_internal_static_method_from_to_string(out, "tryFrom", "?static");
+    }
+    if !methods.is_empty() {
+        out.push('\n');
+        reflection_user_method_entries_to_string(out, class, methods, functions);
+    }
+    out.push_str("  }\n");
+}
+
+fn reflection_enum_internal_static_method_cases_to_string(out: &mut String) {
+    out.push_str("    Method [ <internal, prototype UnitEnum> static public method cases ] {\n\n");
+    out.push_str("      - Parameters [0] {\n");
+    out.push_str("      }\n");
+    out.push_str("      - Return [ array ]\n");
+    out.push_str("    }\n");
+}
+
+fn reflection_enum_internal_static_method_from_to_string(
+    out: &mut String,
+    method_name: &str,
+    return_type: &str,
+) {
+    out.push_str("    Method [ <internal, prototype BackedEnum> static public method ");
+    out.push_str(method_name);
+    out.push_str(" ] {\n\n");
+    out.push_str("      - Parameters [1] {\n");
+    out.push_str("        Parameter #0 [ <required> string|int $value ]\n");
+    out.push_str("      }\n");
+    out.push_str("      - Return [ ");
+    out.push_str(return_type);
+    out.push_str(" ]\n");
+    out.push_str("    }\n");
+}
+
+fn reflection_enum_properties_to_string(out: &mut String, class: &ClassDecl) {
+    out.push_str("  - Properties [");
+    out.push_str(if class.enum_backing_type.is_some() {
+        "2"
+    } else {
+        "1"
+    });
+    out.push_str("] {\n");
+    out.push_str("    Property [ public protected(set) readonly string $name ]\n");
+    if let Some(backing_type) = class.enum_backing_type {
+        out.push_str("    Property [ public protected(set) readonly ");
+        out.push_str(c_enum_backing_type_name(backing_type));
+        out.push_str(" $value ]\n");
+    }
+    out.push_str("  }\n\n");
+}
+
+fn reflection_user_method_entries_to_string(
+    out: &mut String,
+    class: &ClassDecl,
+    methods: &[ClassMethodLookupEntry<'_>],
+    functions: &[FunctionDecl],
+) {
+    for (index, entry) in methods.iter().enumerate() {
+        reflection_user_method_entry_to_string(out, class, *entry, functions);
+        if index + 1 < methods.len() {
+            out.push('\n');
+        }
+    }
+}
+
+fn reflection_user_method_entry_to_string(
+    out: &mut String,
+    class: &ClassDecl,
+    entry: ClassMethodLookupEntry<'_>,
+    functions: &[FunctionDecl],
+) {
+    let method = entry.method;
+    let function = &functions[method.function_index];
+    out.push_str("    Method [ <user");
+    if !entry.declaring_class.eq_ignore_ascii_case(&class.name) {
+        out.push_str(", inherits ");
+        out.push_str(entry.declaring_class);
+    }
+    if method.name.eq_ignore_ascii_case("__construct") {
+        out.push_str(", ctor");
+    }
+    out.push_str("> ");
+    out.push_str(method_visibility_name(method.visibility));
+    if method.is_static {
+        out.push_str(" static");
+    }
+    out.push_str(" method ");
+    out.push_str(&method.name);
+    out.push_str(" ] {\n");
+    out.push_str("      @@ %s ");
+    out.push_str(&method.line.to_string());
+    out.push_str(" - ");
+    out.push_str(&method.end_line.to_string());
+    out.push_str("\n\n");
+    reflection_parameters_to_string(
+        out,
+        &function.parameters,
+        function_required_parameter_count(function),
+    );
+    if let Some(return_type) = &function.return_type {
+        out.push_str("      - Return [ ");
+        out.push_str(&type_hint_label(return_type));
+        out.push_str(" ]\n");
+    }
+    out.push_str("    }\n");
 }
 
 trait ReflectionPropertySummary {
