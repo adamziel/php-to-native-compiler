@@ -174,6 +174,7 @@ pub enum PropertyTypeKind {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub type_hint: Option<TypeHint>,
     pub attributes: AttributeMetadata,
     pub value: Expr,
     pub is_enum_case: bool,

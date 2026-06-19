@@ -1576,8 +1576,8 @@ fn phpt_classifier_excludes_unsupported_class_metadata_surfaces() {
         (
             "typed class constant metadata",
             "--TEST--\ntyped class constant\n--FILE--\n<?php\nclass Bag { const string NAME = 'bag'; }\n--EXPECT--\n",
-            "unsupported-class-constant-metadata\t",
-            "requires typed class constant metadata",
+            "runnable\t",
+            "selected for PTN semantic measurement",
         ),
         (
             "non-public class constant direct access",

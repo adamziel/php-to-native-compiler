@@ -278,6 +278,7 @@ struct ParsedTypeHint {
 enum TypeHintContext {
     Parameter,
     Return,
+    ClassConstant,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1787,6 +1788,7 @@ impl Parser<'_> {
                 constants.push(ClassConstantDecl {
                     name,
                     visibility: PropertyVisibility::Public,
+                    type_hint: None,
                     attributes,
                     value: Expr::Null(token.span),
                     is_enum_case: true,
@@ -2146,6 +2148,7 @@ impl Parser<'_> {
                 self.parse_class_constant_declarations(
                     modifiers.visibility,
                     modifiers.is_final,
+                    class_name,
                     attributes,
                 )?,
             ));
@@ -2503,12 +2506,16 @@ impl Parser<'_> {
         &mut self,
         visibility: PropertyVisibility,
         is_final: bool,
+        class_name: &str,
         attributes: ParsedAttributes,
     ) -> Result<Vec<ClassConstantDecl>> {
         self.expect_const()?;
+        let type_hint = self.parse_optional_class_constant_type_hint()?;
         let mut constants = vec![self.parse_class_constant_declaration(
             visibility,
             is_final,
+            class_name,
+            type_hint.clone(),
             attributes.clone(),
         )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
@@ -2516,6 +2523,8 @@ impl Parser<'_> {
             constants.push(self.parse_class_constant_declaration(
                 visibility,
                 is_final,
+                class_name,
+                type_hint.clone(),
                 attributes.clone(),
             )?);
         }
@@ -2535,17 +2544,10 @@ impl Parser<'_> {
         &mut self,
         visibility: PropertyVisibility,
         is_final: bool,
+        class_name: &str,
+        type_hint: Option<TypeHint>,
         attributes: ParsedAttributes,
     ) -> Result<ClassConstantDecl> {
-        let looks_like_typed_constant = (self.peek_is_type_hint()
-            || matches!(self.peek().kind, TokenKind::Identifier(_)))
-            && matches!(self.peek_next().kind, TokenKind::Identifier(_));
-        if looks_like_typed_constant {
-            return Err(Diagnostic::new(
-                "typed class constants are unsupported",
-                Some(self.peek().span),
-            ));
-        }
         let token = self.advance().clone();
         let Some(name) = name_segment_from_token(&token.kind) else {
             return Err(Diagnostic::new(
@@ -2575,9 +2577,12 @@ impl Parser<'_> {
                 Some(value.span()),
             ));
         }
+        validate_class_constant_type_allowed(class_name, &name, &type_hint, token.span)?;
+        validate_class_constant_literal_type(class_name, &name, &type_hint, &value, token.span)?;
         Ok(ClassConstantDecl {
             name,
             visibility,
+            type_hint,
             attributes,
             value,
             is_enum_case: false,
@@ -2585,6 +2590,25 @@ impl Parser<'_> {
             is_final,
             span: token.span,
         })
+    }
+
+    fn parse_optional_class_constant_type_hint(&mut self) -> Result<Option<TypeHint>> {
+        if matches!(
+            self.peek_next().kind,
+            TokenKind::Equal | TokenKind::Comma | TokenKind::Semicolon
+        ) {
+            return Ok(None);
+        }
+        if !(self.peek_is_type_hint()
+            || matches!(
+                self.peek().kind,
+                TokenKind::Question | TokenKind::LeftParen | TokenKind::Identifier(_)
+            ))
+        {
+            return Ok(None);
+        }
+        let parsed = self.parse_type_hint_with_context(TypeHintContext::ClassConstant)?;
+        Ok(Some(parsed.type_hint))
     }
 
     fn parse_property_declarations(
@@ -13266,6 +13290,102 @@ fn type_hint_accepts_null_default(type_hint: &TypeHint) -> bool {
             .iter()
             .any(|member| type_hint_accepts_null_default(member)),
         _ => false,
+    }
+}
+
+fn validate_class_constant_literal_type(
+    class_name: &str,
+    constant_name: &str,
+    type_hint: &Option<TypeHint>,
+    value: &Expr,
+    span: SourceSpan,
+) -> Result<()> {
+    let Some(type_hint) = type_hint else {
+        return Ok(());
+    };
+    let Some(given_type) = class_constant_literal_type_name(value) else {
+        return Ok(());
+    };
+    if class_constant_type_accepts_literal(type_hint, value) {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!(
+            "Cannot use {given_type} as value for class constant {class_name}::{constant_name} of type {}",
+            type_hint_display(type_hint)
+        ),
+        Some(span),
+    ))
+}
+
+fn validate_class_constant_type_allowed(
+    class_name: &str,
+    constant_name: &str,
+    type_hint: &Option<TypeHint>,
+    span: SourceSpan,
+) -> Result<()> {
+    let Some(type_hint) = type_hint else {
+        return Ok(());
+    };
+    let Some(disallowed_type) = class_constant_disallowed_type_name(type_hint) else {
+        return Ok(());
+    };
+    Err(Diagnostic::new(
+        format!("Class constant {class_name}::{constant_name} cannot have type {disallowed_type}"),
+        Some(span),
+    ))
+}
+
+fn class_constant_disallowed_type_name(type_hint: &TypeHint) -> Option<&'static str> {
+    match type_hint {
+        TypeHint::Callable => Some("callable"),
+        TypeHint::Void => Some("void"),
+        TypeHint::Never => Some("never"),
+        TypeHint::Nullable(inner) => class_constant_disallowed_type_name(inner),
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            types.iter().find_map(class_constant_disallowed_type_name)
+        }
+        _ => None,
+    }
+}
+
+fn class_constant_literal_type_name(value: &Expr) -> Option<&'static str> {
+    match value {
+        Expr::Null(_) => Some("null"),
+        Expr::Array { .. } => Some("array"),
+        Expr::Int(_, _) => Some("int"),
+        Expr::Float(_, _) => Some("float"),
+        Expr::String(_, _) => Some("string"),
+        Expr::Bool(_, _) => Some("bool"),
+        _ => None,
+    }
+}
+
+fn class_constant_type_accepts_literal(type_hint: &TypeHint, value: &Expr) -> bool {
+    match type_hint {
+        TypeHint::Null => matches!(value, Expr::Null(_)),
+        TypeHint::Array => matches!(value, Expr::Array { .. }),
+        TypeHint::Int => matches!(value, Expr::Int(_, _)),
+        TypeHint::Float => matches!(value, Expr::Float(_, _) | Expr::Int(_, _)),
+        TypeHint::String => matches!(value, Expr::String(_, _)),
+        TypeHint::Bool => matches!(value, Expr::Bool(_, _)),
+        TypeHint::True => matches!(value, Expr::Bool(true, _)),
+        TypeHint::False => matches!(value, Expr::Bool(false, _)),
+        TypeHint::Mixed => true,
+        TypeHint::Iterable => matches!(value, Expr::Array { .. }),
+        TypeHint::Nullable(inner) => {
+            matches!(value, Expr::Null(_)) || class_constant_type_accepts_literal(inner, value)
+        }
+        TypeHint::Union(types) => types
+            .iter()
+            .any(|member| class_constant_type_accepts_literal(member, value)),
+        TypeHint::Callable
+        | TypeHint::Object
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Static
+        | TypeHint::Intersection(_)
+        | TypeHint::Class(_) => false,
     }
 }
 

@@ -191,6 +191,7 @@ pub enum PropertyTypeKind {
 pub struct ClassConstantDecl {
     pub name: String,
     pub visibility: PropertyVisibility,
+    pub type_hint: Option<TypeHint>,
     pub attributes: AttributeMetadata,
     pub deprecated_message: Option<String>,
     pub deprecated_since: Option<String>,
@@ -1632,6 +1633,7 @@ impl<'a> LoweringContext<'a> {
                 ClassConstantDecl {
                     name: constant.name.clone(),
                     visibility: lower_property_visibility(constant.visibility),
+                    type_hint: constant.type_hint.clone().map(lower_type_hint),
                     attributes,
                     deprecated_message: metadata.message,
                     deprecated_since: metadata.since,

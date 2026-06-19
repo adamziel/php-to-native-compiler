@@ -5109,6 +5109,53 @@ echo \\Sample::Label;",
 }
 
 #[test]
+fn parser_accepts_typed_class_constants_and_reports_literal_type_mismatches() {
+    let program = parser::parse(
+        "<?php
+class Sample {
+    public const int A = 1, B = 2;
+    protected const float C = 3;
+    private const string|null D = null;
+}",
+    )
+    .unwrap();
+
+    let constants = &program.classes[0].constants;
+    assert_eq!(constants.len(), 4);
+    assert!(matches!(constants[0].type_hint, Some(TypeHint::Int)));
+    assert!(matches!(constants[1].type_hint, Some(TypeHint::Int)));
+    assert!(matches!(constants[2].type_hint, Some(TypeHint::Float)));
+    assert!(matches!(
+        constants[3].type_hint,
+        Some(TypeHint::Union(ref members))
+            if matches!(members.as_slice(), [TypeHint::String, TypeHint::Null])
+    ));
+
+    let error = parser::parse("<?php class Sample { public const string A = 1; }").unwrap_err();
+    assert_eq!(
+        error.message,
+        "Cannot use int as value for class constant Sample::A of type string"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+
+    for (type_name, expected) in [
+        (
+            "callable",
+            "Class constant Sample::A cannot have type callable",
+        ),
+        ("void", "Class constant Sample::A cannot have type void"),
+        ("never", "Class constant Sample::A cannot have type never"),
+    ] {
+        let error = parser::parse(&format!(
+            "<?php class Sample {{ public const {type_name} A = 1; }}"
+        ))
+        .unwrap_err();
+        assert_eq!(error.message, expected);
+        assert_eq!(error.kind, DiagnosticKind::Fatal);
+    }
+}
+
+#[test]
 fn parser_accepts_dynamic_class_name_fetch_syntax() {
     let program =
         parser::parse("<?php $e = new Exception; echo $e::class; echo (new stdClass)::CLASS;")
@@ -5262,11 +5309,6 @@ fn parser_accepts_semi_reserved_class_constant_names() {
 #[test]
 fn parser_rejects_unsupported_class_constant_boundaries() {
     let cases = [
-        (
-            "typed",
-            "<?php class Sample { public const int A = 1; }",
-            "typed class constants are unsupported",
-        ),
         (
             "dynamic constant expression",
             "<?php $foo = 'test'; const C = $foo::BAR;",
@@ -21786,6 +21828,66 @@ show_access(\"child-dynamic-protected\", function() { return ConstScopeChild::dy
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_declared_class_constant_metadata"));
     assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope"));
+}
+
+#[test]
+fn compile_typed_class_constants_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-class-constants");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-class-constants.php");
+    let output = root.join("typed-class-constants-bin");
+    fs::write(
+        &input,
+        "<?php
+class TypedConstantBox {
+    public const null N = null;
+    public const false F = false;
+    public const true T = true;
+    public const float FROM_INT = 3;
+    public const string|array|null MAYBE = null;
+}
+
+define(\"DYNAMIC_TEXT\", \"nope\");
+
+class RuntimeBad {
+    public const int VALUE = DYNAMIC_TEXT;
+}
+
+var_dump(TypedConstantBox::N);
+var_dump(TypedConstantBox::F);
+var_dump(TypedConstantBox::T);
+var_dump(TypedConstantBox::FROM_INT);
+var_dump(TypedConstantBox::MAYBE);
+
+try {
+    var_dump(RuntimeBad::VALUE);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "NULL\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "float(3)\n",
+            "NULL\n",
+            "Cannot assign string to class constant RuntimeBad::VALUE of type int\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot assign %s to class constant RuntimeBad::VALUE of type int"));
+    assert!(c_source.contains("ptn_class_constant_float_value"));
 }
 
 #[test]

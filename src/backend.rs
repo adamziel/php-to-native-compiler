@@ -2904,6 +2904,7 @@ fn emit_class_constant_initializer_helper(
                 out.push_str(";\n");
                 value_temp
             };
+            emit_class_constant_type_boundary(out, class, constant, &value_temp);
             out.push_str("            ptn_runtime_define_class_constant(&runtime, \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\", \"");
@@ -3369,6 +3370,81 @@ fn type_hint_condition(value_expr: &str, runtime_expr: &str, type_hint: &TypeHin
             "ptn_value_satisfies_class_type_hint({runtime_expr}, {value_expr}, \"{}\")",
             c_string(class_name)
         ),
+    }
+}
+
+fn emit_class_constant_type_boundary(
+    out: &mut String,
+    class: &ClassDecl,
+    constant: &ClassConstantDecl,
+    value_temp: &str,
+) {
+    let Some(type_hint) = constant.type_hint.as_ref() else {
+        return;
+    };
+    if class_constant_type_allows_float_coercion(type_hint) {
+        let condition = type_hint_condition(value_temp, "&runtime", type_hint);
+        out.push_str("            if (!(");
+        out.push_str(&condition);
+        out.push_str(") && ptn_value_deref(");
+        out.push_str(value_temp);
+        out.push_str(").type == PTN_INT) {\n");
+        out.push_str("                PtnValue ptn_class_constant_float_value = ptn_float((double)ptn_value_deref(");
+        out.push_str(value_temp);
+        out.push_str(").as.integer);\n");
+        out.push_str("                ptn_value_destroy(&");
+        out.push_str(value_temp);
+        out.push_str(");\n");
+        out.push_str("                ");
+        out.push_str(value_temp);
+        out.push_str(" = ptn_class_constant_float_value;\n");
+        out.push_str("            }\n");
+    }
+    let condition = type_hint_condition(value_temp, "&runtime", type_hint);
+    out.push_str("            if (!(");
+    out.push_str(&condition);
+    out.push_str(")) {\n");
+    out.push_str(
+        "                const char *ptn_class_constant_given = ptn_user_type_hint_given_name(",
+    );
+    out.push_str(value_temp);
+    out.push_str(");\n");
+    out.push_str("                int ptn_class_constant_type_needed = snprintf(NULL, 0, \"Cannot assign %s to class constant ");
+    out.push_str(&c_string(&class.name));
+    out.push_str("::");
+    out.push_str(&c_string(&constant.name));
+    out.push_str(" of type ");
+    out.push_str(&c_string(&type_hint_label(type_hint)));
+    out.push_str("\", ptn_class_constant_given);\n");
+    out.push_str("                if (ptn_class_constant_type_needed < 0) {\n");
+    out.push_str("                    ptn_abort_out_of_memory();\n");
+    out.push_str("                }\n");
+    out.push_str("                char *ptn_class_constant_type_message = malloc((size_t)ptn_class_constant_type_needed + 1);\n");
+    out.push_str("                if (ptn_class_constant_type_message == NULL) {\n");
+    out.push_str("                    ptn_abort_out_of_memory();\n");
+    out.push_str("                }\n");
+    out.push_str("                snprintf(ptn_class_constant_type_message, (size_t)ptn_class_constant_type_needed + 1, \"Cannot assign %s to class constant ");
+    out.push_str(&c_string(&class.name));
+    out.push_str("::");
+    out.push_str(&c_string(&constant.name));
+    out.push_str(" of type ");
+    out.push_str(&c_string(&type_hint_label(type_hint)));
+    out.push_str("\", ptn_class_constant_given);\n");
+    out.push_str("                ptn_throw_exception_owned_message_at(&runtime, \"TypeError\", ptn_class_constant_type_message, runtime.source_path, 0);\n");
+    out.push_str("            }\n");
+}
+
+fn class_constant_type_allows_float_coercion(type_hint: &TypeHint) -> bool {
+    match type_hint {
+        TypeHint::Float => true,
+        TypeHint::Nullable(inner) => class_constant_type_allows_float_coercion(inner),
+        TypeHint::Union(types) => {
+            types.iter().any(class_constant_type_allows_float_coercion)
+                && !types
+                    .iter()
+                    .any(|member| matches!(member, TypeHint::Int | TypeHint::Mixed))
+        }
+        _ => false,
     }
 }
 
