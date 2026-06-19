@@ -2617,12 +2617,6 @@ impl Parser<'_> {
         let value = self.parse_const_context_expr()?;
         validate_constant_expression_closures(&value)?;
         validate_constant_expression_runtime_restrictions(&value)?;
-        if const_expr_contains_new_object(&value) {
-            return Err(Diagnostic::new(
-                "New expressions are not supported in this context",
-                Some(value.span()),
-            ));
-        }
         if !is_supported_const_declaration_expr(&value) {
             return Err(Diagnostic::new(
                 "class constant value must be a supported constant expression",
@@ -21119,17 +21113,18 @@ fn scalar_constant_expr_type(expr: &Expr) -> Option<&'static str> {
 }
 
 fn is_supported_global_const_expr(expr: &Expr) -> bool {
-    is_supported_global_const_expr_with_options(expr, false, false)
+    is_supported_global_const_expr_with_options(expr, false, false, false)
 }
 
 fn is_supported_const_declaration_expr(expr: &Expr) -> bool {
-    is_supported_global_const_expr_with_options(expr, true, true)
+    is_supported_global_const_expr_with_options(expr, true, true, true)
 }
 
 fn is_supported_global_const_expr_with_options(
     expr: &Expr,
     allow_const_array_unpack_error_operands: bool,
     allow_array_access: bool,
+    allow_new_object: bool,
 ) -> bool {
     match expr {
         Expr::String(_, _)
@@ -21146,6 +21141,7 @@ fn is_supported_global_const_expr_with_options(
                     key,
                     allow_const_array_unpack_error_operands,
                     allow_array_access,
+                    allow_new_object,
                 )
             }) && match &element.value {
                 ArrayElementValue::Hole(_) => false,
@@ -21153,12 +21149,14 @@ fn is_supported_global_const_expr_with_options(
                     value,
                     allow_const_array_unpack_error_operands,
                     allow_array_access,
+                    allow_new_object,
                 ),
                 ArrayElementValue::Unpack(value) => {
                     is_supported_global_const_expr_with_options(
                         value,
                         allow_const_array_unpack_error_operands,
                         allow_array_access,
+                        allow_new_object,
                     ) || (allow_const_array_unpack_error_operands
                         && is_supported_const_array_unpack_error_operand(value))
                 }
@@ -21170,6 +21168,7 @@ fn is_supported_global_const_expr_with_options(
                 expr,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             )
         }
         Expr::AnonymousFunction(function) => is_supported_constant_closure(function),
@@ -21185,16 +21184,19 @@ fn is_supported_global_const_expr_with_options(
             name,
             allow_const_array_unpack_error_operands,
             allow_array_access,
+            allow_new_object,
         ),
         Expr::Binary { left, right, .. } => {
             is_supported_global_const_expr_with_options(
                 left,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             ) && is_supported_global_const_expr_with_options(
                 right,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             )
         }
         Expr::Ternary {
@@ -21207,16 +21209,19 @@ fn is_supported_global_const_expr_with_options(
                 condition,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             ) && if_true.as_ref().is_none_or(|if_true| {
                 is_supported_global_const_expr_with_options(
                     if_true,
                     allow_const_array_unpack_error_operands,
                     allow_array_access,
+                    allow_new_object,
                 )
             }) && is_supported_global_const_expr_with_options(
                 if_false,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             )
         }
         Expr::ArrayAccess {
@@ -21228,10 +21233,12 @@ fn is_supported_global_const_expr_with_options(
                 array,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             ) && is_supported_global_const_expr_with_options(
                 index,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             )
         }
         Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
@@ -21239,7 +21246,27 @@ fn is_supported_global_const_expr_with_options(
                 receiver,
                 allow_const_array_unpack_error_operands,
                 allow_array_access,
+                allow_new_object,
             )
+        }
+        Expr::NewObject {
+            arguments,
+            argument_names,
+            argument_unpacks,
+            anonymous_class_source,
+            ..
+        } if allow_new_object => {
+            anonymous_class_source.is_none()
+                && argument_names.iter().all(Option::is_none)
+                && argument_unpacks.iter().all(|unpack| !*unpack)
+                && arguments.iter().all(|argument| {
+                    is_supported_global_const_expr_with_options(
+                        argument,
+                        allow_const_array_unpack_error_operands,
+                        allow_array_access,
+                        allow_new_object,
+                    )
+                })
         }
         Expr::Match { .. } => false,
         Expr::InterpolatedString(_, _)
@@ -21493,7 +21520,7 @@ fn reference_target_contains_object_cast(target: &ReferenceTarget) -> bool {
 fn is_supported_property_default_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Grouped { expr, .. } => is_supported_property_default_expr(expr),
-        _ => is_supported_global_const_expr_with_options(expr, false, true),
+        _ => is_supported_global_const_expr_with_options(expr, false, true, false),
     }
 }
 

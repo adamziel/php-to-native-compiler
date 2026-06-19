@@ -5398,24 +5398,30 @@ fn parser_accepts_semi_reserved_class_constant_names() {
 
 #[test]
 fn parser_rejects_unsupported_class_constant_boundaries() {
-    let cases = [
-        (
-            "dynamic constant expression",
-            "<?php $foo = 'test'; const C = $foo::BAR;",
-            "Dynamic class names are not allowed in compile-time class constant references",
-        ),
-        (
-            "new class constant value",
-            "<?php class Test { const X = new stdClass; }",
-            "New expressions are not supported in this context",
-        ),
-    ];
+    let cases = [(
+        "dynamic constant expression",
+        "<?php $foo = 'test'; const C = $foo::BAR;",
+        "Dynamic class names are not allowed in compile-time class constant references",
+    )];
 
     for (name, source, message) in cases {
         let error = parser::parse(source).unwrap_err();
         assert_eq!(error.message, message, "{name}");
         assert_eq!(error.kind, DiagnosticKind::Fatal, "{name}");
     }
+}
+
+#[test]
+fn parser_accepts_new_object_constant_initializers() {
+    parser::parse(
+        "<?php
+const GLOBAL_OBJECT = new stdClass();
+class Test {
+    const X = new stdClass(GLOBAL_OBJECT);
+}
+",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -22629,6 +22635,57 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("Cannot assign %s to class constant RuntimeBad::VALUE of type int"));
     assert!(c_source.contains("ptn_class_constant_float_value"));
+}
+
+#[test]
+fn compile_new_object_constant_initializers_to_native_binary() {
+    let root = temp_dir("ptn-native-new-object-constant-initializers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("new-object-constant-initializers.php");
+    let output = root.join("new-object-constant-initializers-bin");
+    fs::write(
+        &input,
+        "<?php
+const GLOBAL_OBJECT = new stdClass();
+
+class GoodConstantBox {
+    public const object OBJECT_VALUE = GLOBAL_OBJECT;
+    public const ?int MAYBE = 1;
+}
+
+class BadConstantBox {
+    public const array BAD_VALUE = GLOBAL_OBJECT;
+}
+
+var_dump(GoodConstantBox::OBJECT_VALUE);
+echo new ReflectionClass(GoodConstantBox::class);
+
+try {
+    var_dump(BadConstantBox::BAD_VALUE);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(stdClass)#1 (0) {\n}\n"));
+    assert!(stdout.contains("Constant [ public object OBJECT_VALUE ] { Object }\n"));
+    assert!(stdout.contains("Constant [ public ?int MAYBE ] { 1 }\n"));
+    assert!(stdout.contains(
+        "Cannot assign stdClass to class constant BadConstantBox::BAD_VALUE of type array\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_define_constant_if_absent(&runtime, \"GLOBAL_OBJECT\""));
+    assert!(c_source
+        .contains("Cannot assign %s to class constant BadConstantBox::BAD_VALUE of type array"));
 }
 
 #[test]

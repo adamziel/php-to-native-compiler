@@ -10445,9 +10445,17 @@ fn emit_reflection_class_constants_to_string_runtime(out: &mut String, class: &C
         out.push_str(method_visibility_name(constant.visibility));
         out.push_str(" %s ");
         out.push_str(&c_string(&constant.name));
-        out.push_str(" ] { %s }\\n\", ptn_reflection_class_constant_value_type_name(");
-        out.push_str(&value_temp);
-        out.push_str("), ");
+        out.push_str(" ] { %s }\\n\", ");
+        if let Some(type_hint) = constant.type_hint.as_ref() {
+            out.push('"');
+            out.push_str(&c_string(&type_hint_label(type_hint)));
+            out.push('"');
+        } else {
+            out.push_str("ptn_reflection_class_constant_value_type_name(");
+            out.push_str(&value_temp);
+            out.push(')');
+        }
+        out.push_str(", ");
         out.push_str(&repr_temp);
         out.push_str(");\n");
         out.push_str("        free(");
