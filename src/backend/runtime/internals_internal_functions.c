@@ -88728,13 +88728,16 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
         if (!ptn_object_property_visible_for_foreach(runtime, object, entry->key, access_scope)) {
             continue;
         }
-        PtnArrayKey result_key = ptn_array_key_clone(entry->key);
+        PtnArrayKey result_key = ptn_public_object_property_array_key(entry->key);
         if (entry->key.type == PTN_ARRAY_KEY_STRING) {
             const PtnObjectPropertyMetadata *metadata =
                 ptn_object_property_metadata(object, entry->key.as.string);
             if (metadata != NULL) {
                 ptn_array_key_free(result_key);
-                result_key = ptn_array_string_key(metadata->display_name);
+                result_key = ptn_public_object_property_array_key_from_name_len(
+                    metadata->display_name,
+                    strlen(metadata->display_name)
+                );
             }
         }
         ptn_array_set_entry(result.as.array, result_key, ptn_value_clone_deref(entry->value));

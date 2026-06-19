@@ -19852,28 +19852,27 @@ fn validate_coalesce_assignment_target(
             "null coalescing assignment currently supports variables, array/string offsets, and properties",
             Some(span),
         )),
-        AssignmentTarget::ValueArrayDim { array, .. } => {
+        AssignmentTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            if dimensions.iter().any(Option::is_none) {
+                return Err(Diagnostic::new(
+                    "null coalescing assignment cannot use append array access",
+                    Some(span),
+                ));
+            }
             if let Some(call_span) = modeled_internal_write_context_error_span(array) {
                 return Err(Diagnostic::new(
                     "Cannot use result of built-in function in write context",
                     Some(call_span),
                 ));
             }
-            Err(Diagnostic::new(
-                "null coalescing assignment currently supports variables, array/string offsets, and properties",
-                Some(span),
-            ))
+            Ok(())
         }
         AssignmentTarget::Property { .. } => Ok(()),
-        AssignmentTarget::DynamicProperty { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports variables, array/string offsets, and properties",
-            Some(span),
-        )),
+        AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
-        AssignmentTarget::DynamicStaticProperty { .. } => Err(Diagnostic::new(
-            "null coalescing assignment currently supports variables, array/string offsets, and properties",
-            Some(span),
-        )),
+        AssignmentTarget::DynamicStaticProperty { .. } => Ok(()),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),

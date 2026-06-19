@@ -43724,10 +43724,12 @@ fn compile_offset_null_coalescing_assignment_to_native_binary() {
     fs::write(
         &input,
         "<?php\n\
-function rhs($label) { echo \"rhs:$label\\n\"; return $label; }\n\
-$items = [\"hit\" => \"kept\", \"nullish\" => null, \"nested\" => [\"leaf\" => null]];\n\
-var_dump($items[\"hit\"] ??= rhs(\"hit\"));\n\
-var_dump($items[\"nullish\"] ??= rhs(\"nullish\"));\n\
+	function rhs($label) { echo \"rhs:$label\\n\"; return $label; }\n\
+	$refItems = [];\n\
+	function &items_ref($label) { global $refItems; echo \"items_ref:$label\\n\"; return $refItems; }\n\
+	$items = [\"hit\" => \"kept\", \"nullish\" => null, \"nested\" => [\"leaf\" => null]];\n\
+	var_dump($items[\"hit\"] ??= rhs(\"hit\"));\n\
+	var_dump($items[\"nullish\"] ??= rhs(\"nullish\"));\n\
 var_dump($items[\"missing\"] ??= rhs(\"missing\"));\n\
 var_dump($items[\"nested\"][\"leaf\"] ??= rhs(\"nested\"));\n\
 $items[\"standalone\"] ??= rhs(\"standalone\");\n\
@@ -43736,10 +43738,13 @@ var_dump($undef[\"key\"] ??= rhs(\"undef\"));\n\
 $nullbase = null;\n\
 var_dump($nullbase[\"key\"] ??= rhs(\"nullbase\"));\n\
 $string = \"abc\";\n\
-var_dump($string[1] ??= rhs(\"string-hit\"));\n\
-var_dump($string[5] ??= rhs(\"string-missing\"));\n\
-var_dump($string);\n\
-var_dump($items[\"hit\"], $items[\"nullish\"], $items[\"missing\"], $items[\"nested\"][\"leaf\"], $undef[\"key\"], $nullbase[\"key\"]);\n",
+	var_dump($string[1] ??= rhs(\"string-hit\"));\n\
+	var_dump($string[5] ??= rhs(\"string-missing\"));\n\
+	var_dump($string);\n\
+	var_dump(items_ref(\"missing\")[\"bar\"] ??= rhs(\"ref-missing\"));\n\
+	var_dump(items_ref(\"hit\")[\"bar\"] ??= rhs(\"ref-hit\"));\n\
+	var_dump($refItems[\"bar\"]);\n\
+	var_dump($items[\"hit\"], $items[\"nullish\"], $items[\"missing\"], $items[\"nested\"][\"leaf\"], $undef[\"key\"], $nullbase[\"key\"]);\n",
     )
     .unwrap();
 
@@ -43765,9 +43770,15 @@ string(8) \"nullbase\"\n\
 string(1) \"b\"\n\
 rhs:string-missing\n\
 \n\
-Warning: Only the first byte will be assigned to the string offset in ptn on line 15\n\
+Warning: Only the first byte will be assigned to the string offset in ptn on line 17\n\
 string(1) \"s\"\n\
 string(6) \"abc  s\"\n\
+items_ref:missing\n\
+rhs:ref-missing\n\
+string(11) \"ref-missing\"\n\
+items_ref:hit\n\
+string(11) \"ref-missing\"\n\
+string(11) \"ref-missing\"\n\
 string(4) \"kept\"\n\
 string(7) \"nullish\"\n\
 string(7) \"missing\"\n\
@@ -43779,7 +43790,9 @@ string(8) \"nullbase\"\n"
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_array_path_lookup_quiet(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_lookup_quiet(&runtime"));
     assert!(c_source.contains("ptn_runtime_array_path_set(&runtime"));
+    assert!(c_source.contains("ptn_value_array_path_set(&runtime"));
 }
 
 #[test]
@@ -46600,6 +46613,10 @@ function rhs($label) {
     echo \"rhs:$label\\n\";
     return $label;
 }
+function prop_name($label, $name) {
+    echo \"prop:$label\\n\";
+    return $name;
+}
 
 $object = new stdClass;
 var_dump(receiver($object, \"missing\")->missing ??= rhs(\"missing\"));
@@ -46607,7 +46624,12 @@ $object->nullish = null;
 var_dump(receiver($object, \"nullish\")->nullish ??= rhs(\"nullish\"));
 $object->hit = \"kept\";
 var_dump(receiver($object, \"hit\")->hit ??= rhs(\"hit\"));
-var_dump($object->missing, $object->nullish, $object->hit);
+var_dump(receiver($object, \"dyn-missing\")->{prop_name(\"dyn-missing\", \"dynMissing\")} ??= rhs(\"dyn-missing\"));
+$object->dynNullish = null;
+var_dump(receiver($object, \"dyn-nullish\")->{prop_name(\"dyn-nullish\", \"dynNullish\")} ??= rhs(\"dyn-nullish\"));
+$object->dynHit = \"dynamic-kept\";
+var_dump(receiver($object, \"dyn-hit\")->{prop_name(\"dyn-hit\", \"dynHit\")} ??= rhs(\"dyn-hit\"));
+var_dump($object->missing, $object->nullish, $object->hit, $object->dynMissing, $object->dynNullish, $object->dynHit);
 
 $scalar = 3;
 try {
@@ -46627,17 +46649,29 @@ try {
         String::from_utf8(execution.stdout).unwrap(),
         "receiver:missing\n\
 rhs:missing\n\
-receiver:missing\n\
 string(7) \"missing\"\n\
 receiver:nullish\n\
 rhs:nullish\n\
-receiver:nullish\n\
 string(7) \"nullish\"\n\
 receiver:hit\n\
 string(4) \"kept\"\n\
+receiver:dyn-missing\n\
+prop:dyn-missing\n\
+rhs:dyn-missing\n\
+string(11) \"dyn-missing\"\n\
+receiver:dyn-nullish\n\
+prop:dyn-nullish\n\
+rhs:dyn-nullish\n\
+string(11) \"dyn-nullish\"\n\
+receiver:dyn-hit\n\
+prop:dyn-hit\n\
+string(12) \"dynamic-kept\"\n\
 string(7) \"missing\"\n\
 string(7) \"nullish\"\n\
 string(4) \"kept\"\n\
+string(11) \"dyn-missing\"\n\
+string(11) \"dyn-nullish\"\n\
+string(12) \"dynamic-kept\"\n\
 rhs:bad\n\
 Attempt to assign property \"bad\" on int\n"
     );
@@ -48969,6 +49003,8 @@ function rhs($label) {
 var_dump(Counter::$nullish ??= rhs(\"nullish\"));
 var_dump(Counter::$hit ??= rhs(\"hit\"));
 var_dump(Counter::$nullish, Counter::$hit);
+$class = \"Counter\";
+var_dump($class::$hit ??= rhs(\"dynamic-class-hit\"));
 Counter::initSelf();
 ",
     )
@@ -48986,6 +49022,7 @@ Counter::initSelf();
             "string(4) \"kept\"\n",
             "string(7) \"nullish\"\n",
             "string(4) \"kept\"\n",
+            "string(4) \"kept\"\n",
             "rhs:self\n",
             "string(4) \"self\"\n",
             "string(4) \"self\"\n",
@@ -48996,6 +49033,53 @@ Counter::initSelf();
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_read_static_property_quiet(&runtime"));
     assert!(c_source.contains("ptn_runtime_write_static_property(&runtime"));
+}
+
+#[test]
+fn compile_stdclass_numeric_object_vars_and_property_warning_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-stdclass-object-vars-warning-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stdclass-object-vars-warning-handler.php");
+    let output = root.join("stdclass-object-vars-warning-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+$a = new stdClass;
+$a->{1234} = \"Numeric\";
+$a->a1234 = \"String\";
+$properties = get_object_vars($a);
+var_dump(array_key_exists(1234, $properties));
+echo \"Value: {$properties[1234]}\\n\";
+
+set_error_handler(function($severity, $message) {
+    echo \"handled:$message\\n\";
+    return true;
+});
+
+$b = new stdClass;
+$b->undefined .= \"test\";
+var_dump($b);
+",
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "Value: Numeric\n",
+            "handled:Undefined property: stdClass::$undefined\n",
+            "object(stdClass)#3 (1) {\n",
+            "  [\"undefined\"]=>\n",
+            "  string(4) \"test\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

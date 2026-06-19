@@ -1346,6 +1346,21 @@ static PTN_UNUSED PtnValue ptn_cast_object(PtnRuntime *runtime, PtnValue value) 
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out);
 #endif
 
+static PtnArrayKey ptn_public_object_property_array_key_from_name_len(const char *name, size_t len) {
+    int64_t integer = 0;
+    if (ptn_string_is_integer_array_key_len(name, len, &integer)) {
+        return ptn_array_int_key(integer);
+    }
+    return ptn_array_string_key_len(name, len);
+}
+
+static PtnArrayKey ptn_public_object_property_array_key(PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_STRING) {
+        return ptn_public_object_property_array_key_from_name_len(key.as.string, key.string_len);
+    }
+    return ptn_array_key_clone(key);
+}
+
 static PtnArrayKey ptn_cast_array_object_property_key(PtnObject *object, PtnArrayKey key) {
     if (object == NULL || key.type != PTN_ARRAY_KEY_STRING) {
         return ptn_array_key_clone(key);
@@ -1353,7 +1368,7 @@ static PtnArrayKey ptn_cast_array_object_property_key(PtnObject *object, PtnArra
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(object, key.as.string);
     if (metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
-        return ptn_array_key_clone(key);
+        return ptn_public_object_property_array_key(key);
     }
 
     size_t display_len = strlen(metadata->display_name);
@@ -1608,8 +1623,17 @@ static PTN_UNUSED void ptn_emit_undefined_property_warning(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
-    fputc('\n', stdout);
     runtime->diagnostics.emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_WARNING,
+        message,
+        runtime->source_path,
+        line
+    )) {
+        return;
+    }
+    fputc('\n', stdout);
     fputs("Warning: ", stdout);
     fputs(message, stdout);
     fputs(" in ", stdout);
@@ -8578,6 +8602,51 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_array_path_lookup_quiet(
     }
 
     PtnValue container = ptn_value_deref(root.value);
+    PtnValue owned_container = ptn_null();
+    int has_owned_container = 0;
+    for (size_t i = 0; i < segment_count; i++) {
+        const PtnArrayPathSegment *segment = &segments[i];
+        if (segment->append) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return ptn_lookup_missing();
+        }
+
+        PtnLookupResult result = ptn_offset_lookup(runtime, container, segment->value, line, 1);
+        if (!result.exists || i + 1 == segment_count) {
+            if (has_owned_container) {
+                ptn_value_destroy(&owned_container);
+            }
+            return result;
+        }
+
+        if (has_owned_container) {
+            ptn_value_destroy(&owned_container);
+        }
+        owned_container = result.value;
+        has_owned_container = 1;
+        container = ptn_value_deref(owned_container);
+    }
+
+    if (has_owned_container) {
+        ptn_value_destroy(&owned_container);
+    }
+    return ptn_lookup_missing();
+}
+
+static PTN_UNUSED PtnLookupResult ptn_value_array_path_lookup_quiet(
+    PtnRuntime *runtime,
+    PtnValue target,
+    const PtnArrayPathSegment *segments,
+    size_t segment_count,
+    size_t line
+) {
+    if (segment_count == 0) {
+        return ptn_lookup_found(ptn_value_clone_deref(target));
+    }
+
+    PtnValue container = ptn_value_deref(target);
     PtnValue owned_container = ptn_null();
     int has_owned_container = 0;
     for (size_t i = 0; i < segment_count; i++) {
