@@ -391,13 +391,24 @@ static PTN_UNUSED void ptn_array_index_insert_appended_entry(
     ptn_array_index_insert(array, key, entry_index);
 }
 
-static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
+static PTN_UNUSED int ptn_array_entry_default_by_ref_argument_eligible(PtnValue value) {
+    return value.type == PTN_REFERENCE;
+}
+
+static PTN_UNUSED void ptn_array_set_entry_with_by_ref_argument_eligibility(
+    PtnArray *array,
+    PtnArrayKey key,
+    PtnValue value,
+    int by_ref_argument_eligible
+) {
     size_t index = ptn_array_find_key(array, key);
     ptn_array_update_next_auto_key(array, key);
     ptn_array_note_mutation(array);
     if (index < array->len) {
         ptn_value_destroy(&array->entries[index].value);
         array->entries[index].value = value;
+        array->entries[index].by_ref_argument_eligible =
+            value.type == PTN_REFERENCE && by_ref_argument_eligible;
         ptn_array_key_free(key);
         return;
     }
@@ -416,8 +427,19 @@ static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, Ptn
     size_t entry_index = array->len;
     array->entries[entry_index].key = key;
     array->entries[entry_index].value = value;
+    array->entries[entry_index].by_ref_argument_eligible =
+        value.type == PTN_REFERENCE && by_ref_argument_eligible;
     array->len++;
     ptn_array_index_insert_appended_entry(array, key, entry_index);
+}
+
+static PTN_UNUSED void ptn_array_set_entry(PtnArray *array, PtnArrayKey key, PtnValue value) {
+    ptn_array_set_entry_with_by_ref_argument_eligibility(
+        array,
+        key,
+        value,
+        ptn_array_entry_default_by_ref_argument_eligible(value)
+    );
 }
 
 static PTN_UNUSED void ptn_array_set_entry_publish_first(PtnArray *array, PtnArrayKey key, PtnValue value) {
@@ -427,6 +449,8 @@ static PTN_UNUSED void ptn_array_set_entry_publish_first(PtnArray *array, PtnArr
     if (index < array->len) {
         PtnValue old_value = array->entries[index].value;
         array->entries[index].value = value;
+        array->entries[index].by_ref_argument_eligible =
+            ptn_array_entry_default_by_ref_argument_eligible(value);
         ptn_array_key_free(key);
         ptn_value_destroy(&old_value);
         return;
@@ -2069,7 +2093,12 @@ static PTN_UNUSED PtnArray *ptn_array_clone(PtnArray *source) {
     for (size_t i = 0; i < source->len; i++) {
         PtnArrayKey key = ptn_array_key_clone(source->entries[i].key);
         PtnValue value = ptn_value_clone(source->entries[i].value);
-        ptn_array_set_entry(array, key, value);
+        ptn_array_set_entry_with_by_ref_argument_eligibility(
+            array,
+            key,
+            value,
+            source->entries[i].by_ref_argument_eligible
+        );
     }
     array->next_auto_key = source->next_auto_key;
     return array;

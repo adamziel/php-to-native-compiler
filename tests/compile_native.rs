@@ -34516,6 +34516,66 @@ var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_
 }
 
 #[test]
+fn compile_call_user_func_array_array_slice_reference_entries_warn_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-array-array-slice-reference-entries-warn");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-array-array-slice-reference-entries-warn.php");
+    let output = root.join("call-user-func-array-array-slice-reference-entries-warn-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function ref_dump(&$ref) {\n\
+    var_dump($ref);\n\
+}\n\
+function ref_assign(&$ref) {\n\
+    var_dump($ref);\n\
+    $ref = 1;\n\
+}\n\
+new class {\n\
+    function __construct() {\n\
+        $args = [&$this];\n\
+        $a = array_slice($args, 0, 1);\n\
+        call_user_func_array('ref_dump', $a);\n\
+    }\n\
+};\n\
+new class {\n\
+    function __construct() {\n\
+        $b = 0;\n\
+        $args = [&$b];\n\
+        unset($b);\n\
+        for ($i = 0; $i < 2; $i++) {\n\
+            $a = array_slice($args, 0, 1);\n\
+            call_user_func_array('ref_assign', $a);\n\
+        }\n\
+    }\n\
+};",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: ref_dump(): Argument #1 ($ref) must be passed by reference, value given in ptn on line 13\n",
+            "object(class@anonymous)#1 (0) {\n",
+            "}\n",
+            "\nWarning: ref_assign(): Argument #1 ($ref) must be passed by reference, value given in ptn on line 23\n",
+            "int(0)\n",
+            "\nWarning: ref_assign(): Argument #1 ($ref) must be passed by reference, value given in ptn on line 23\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_call_user_func_array"));
+    assert!(c_source.contains("ptn_value_disable_by_ref_argument_source"));
+}
+
+#[test]
 fn compile_call_user_func_array_internal_by_ref_count_warns_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-array-internal-by-ref-count-warns");
     fs::create_dir_all(&root).unwrap();

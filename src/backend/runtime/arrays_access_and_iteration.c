@@ -11875,6 +11875,7 @@ static PTN_UNUSED int64_t ptn_array_unshift_values(PtnArray *array, size_t argc,
     for (size_t i = 0; i < argc; i++) {
         new_entries[out].key = ptn_array_int_key(next_integer_key);
         new_entries[out].value = ptn_value_clone_deref(values[i]);
+        new_entries[out].by_ref_argument_eligible = 0;
         out++;
         if (next_integer_key < INT64_MAX) {
             next_integer_key++;
@@ -11892,6 +11893,8 @@ static PTN_UNUSED int64_t ptn_array_unshift_values(PtnArray *array, size_t argc,
             new_entries[out].key = array->entries[i].key;
         }
         new_entries[out].value = array->entries[i].value;
+        new_entries[out].by_ref_argument_eligible =
+            array->entries[i].by_ref_argument_eligible;
         out++;
     }
 

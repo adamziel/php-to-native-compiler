@@ -734,6 +734,7 @@ typedef struct {
 typedef struct {
     PtnArrayKey key;
     PtnValue value;
+    int by_ref_argument_eligible;
 } PtnArrayEntry;
 
 typedef struct {
