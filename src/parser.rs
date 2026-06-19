@@ -2217,6 +2217,7 @@ impl Parser<'_> {
                     member_is_readonly,
                     modifiers.is_final,
                     modifiers.is_abstract || class_is_interface,
+                    class_is_interface,
                     attributes,
                     true,
                     class_name,
@@ -2251,6 +2252,7 @@ impl Parser<'_> {
                     member_is_readonly,
                     modifiers.is_final,
                     modifiers.is_abstract || class_is_interface,
+                    class_is_interface,
                     attributes,
                     true,
                     class_name,
@@ -2280,8 +2282,13 @@ impl Parser<'_> {
         }
         let method_is_final = modifiers.is_final;
         let final_span = modifiers.final_span;
-        let method =
-            self.parse_method_decl(attributes, modifiers, class_is_readonly, class_name)?;
+        let method = self.parse_method_decl(
+            attributes,
+            modifiers,
+            class_is_readonly,
+            class_is_interface,
+            class_name,
+        )?;
         if class_is_interface && method_is_final {
             return Err(Diagnostic::new(
                 format!(
@@ -2651,6 +2658,7 @@ impl Parser<'_> {
         is_readonly: bool,
         is_final: bool,
         is_abstract: bool,
+        class_is_interface: bool,
         attributes: ParsedAttributes,
         allow_property_hooks: bool,
         class_name: &str,
@@ -2688,6 +2696,7 @@ impl Parser<'_> {
             type_hint.clone(),
             attributes.clone(),
             allow_property_hooks,
+            class_is_interface,
             class_name,
         )?;
         let mut properties = vec![first_property];
@@ -2718,6 +2727,7 @@ impl Parser<'_> {
                 type_hint.clone(),
                 attributes.clone(),
                 allow_property_hooks,
+                class_is_interface,
                 class_name,
             )?;
             properties.push(property);
@@ -2806,6 +2816,7 @@ impl Parser<'_> {
         type_hint: Option<PropertyTypeHint>,
         attributes: ParsedAttributes,
         allow_property_hooks: bool,
+        class_is_interface: bool,
         class_name: &str,
     ) -> Result<(PropertyDecl, bool)> {
         let token = self.advance().clone();
@@ -2958,7 +2969,11 @@ impl Parser<'_> {
         }
         if is_abstract {
             return Err(Diagnostic::new(
-                "Only hooked properties may be declared abstract",
+                if class_is_interface {
+                    "Interfaces may only include hooked properties"
+                } else {
+                    "Only hooked properties may be declared abstract"
+                },
                 Some(token.span),
             ));
         }
@@ -3356,6 +3371,7 @@ impl Parser<'_> {
         attributes: ParsedAttributes,
         modifiers: ClassModifiers,
         class_is_readonly: bool,
+        class_is_interface: bool,
         class_name: &str,
     ) -> Result<MethodDecl> {
         let start_span = self.expect_function()?;
@@ -3369,7 +3385,10 @@ impl Parser<'_> {
         let name = method_name_from_token(&name_token.kind)
             .ok_or_else(|| Diagnostic::new("expected method name", Some(name_token.span)))?;
         let allow_promoted_properties = name.eq_ignore_ascii_case("__construct");
-        if modifiers.is_abstract && matches!(modifiers.visibility, PropertyVisibility::Private) {
+        if !class_is_interface
+            && modifiers.is_abstract
+            && matches!(modifiers.visibility, PropertyVisibility::Private)
+        {
             return Err(Diagnostic::new(
                 format!("Abstract function {class_name}::{name}() cannot be declared private"),
                 modifiers.abstract_span.or(modifiers.visibility_span),
@@ -3422,6 +3441,12 @@ impl Parser<'_> {
             None
         };
         let (mut body, end_span) = if modifiers.is_abstract {
+            if class_is_interface && matches!(self.peek().kind, TokenKind::LeftBrace) {
+                return Err(Diagnostic::new(
+                    format!("Interface function {class_name}::{name}() cannot contain body"),
+                    Some(self.peek().span),
+                ));
+            }
             let semicolon_span = self.expect_semicolon()?;
             (Vec::new(), semicolon_span)
         } else {
@@ -12441,9 +12466,6 @@ fn validate_method_signature_compatibility(
 ) -> Result<()> {
     for class in classes {
         for method in &class.methods {
-            if method.visibility == PropertyVisibility::Private {
-                continue;
-            }
             let has_visible_parent_method = if let Some((parent_class, parent_method)) =
                 find_visible_parent_method(class, &method.name, classes)
             {
@@ -12455,6 +12477,48 @@ fn validate_method_signature_compatibility(
                         ),
                         Some(method.span),
                     ));
+                }
+                if parent_method.is_static != method.is_static {
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Cannot make {} method {}::{}() {} in class {}",
+                            if parent_method.is_static {
+                                "static"
+                            } else {
+                                "non static"
+                            },
+                            parent_class.name,
+                            parent_method.name,
+                            if method.is_static {
+                                "static"
+                            } else {
+                                "non static"
+                            },
+                            class.name
+                        ),
+                        Some(method.span),
+                    ));
+                }
+                if visibility_rank(method.visibility) > visibility_rank(parent_method.visibility) {
+                    let suffix = if parent_method.visibility == PropertyVisibility::Public {
+                        ""
+                    } else {
+                        " or weaker"
+                    };
+                    return Err(Diagnostic::new(
+                        format!(
+                            "Access level to {}::{}() must be {} (as in class {}){}",
+                            class.name,
+                            method.name,
+                            property_visibility_name(parent_method.visibility),
+                            parent_class.name,
+                            suffix
+                        ),
+                        Some(method.span),
+                    ));
+                }
+                if method.visibility == PropertyVisibility::Private {
+                    continue;
                 }
                 if method_requires_parent_signature_compatibility(method, parent_method) {
                     validate_method_signature_pair(
@@ -12470,6 +12534,10 @@ fn validate_method_signature_compatibility(
             } else {
                 false
             };
+
+            if method.visibility == PropertyVisibility::Private {
+                continue;
+            }
 
             if !has_visible_parent_method {
                 if let Some(tentative_method) =
