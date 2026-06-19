@@ -10523,6 +10523,10 @@ debug_zval_dump($unserialized_payload[1]);
         String::from_utf8_lossy(&execution.stderr)
     );
     let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        !stdout.contains("Creation of dynamic property ZipArchive::$filename"),
+        "{stdout}"
+    );
     assert!(stdout.contains("array(1) refcount(3){"), "{stdout}");
     assert!(!stdout.contains("array(1) packed refcount(3){"), "{stdout}");
     assert!(stdout.contains("object(stdClass)#"), "{stdout}");

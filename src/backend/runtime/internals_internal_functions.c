@@ -6480,6 +6480,57 @@ static void ptn_unserialize_emit_non_enum_class_warning(
     free(message);
 }
 
+static void ptn_zip_archive_declare_public_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *property_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        property_name,
+        "ZipArchive",
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        1,
+        /* ext/zip hydration accepts arbitrary serialized slot payloads before resetting defaults. */
+        PTN_PROPERTY_TYPE_NONE,
+        NULL,
+        NULL,
+        0,
+        1,
+        value,
+        line
+    );
+    ptn_value_destroy(&assigned);
+    ptn_value_destroy(&value);
+}
+
+static PtnValue ptn_zip_archive_new_shell(PtnRuntime *runtime, size_t line) {
+    PtnValue object = ptn_object_new_shell(runtime, "ZipArchive");
+    ptn_zip_archive_declare_public_property(runtime, object, "lastId", ptn_int(-1), line);
+    ptn_zip_archive_declare_public_property(runtime, object, "status", ptn_int(0), line);
+    ptn_zip_archive_declare_public_property(runtime, object, "statusSys", ptn_int(0), line);
+    ptn_zip_archive_declare_public_property(runtime, object, "numFiles", ptn_int(0), line);
+    ptn_zip_archive_declare_public_property(
+        runtime,
+        object,
+        "filename",
+        ptn_owned_string(ptn_duplicate_string("")),
+        line
+    );
+    ptn_zip_archive_declare_public_property(
+        runtime,
+        object,
+        "comment",
+        ptn_owned_string(ptn_duplicate_string("")),
+        line
+    );
+    return object;
+}
+
 static PtnValue ptn_unserialize_new_object_shell(
     PtnRuntime *runtime,
     const char *class_name,
@@ -6497,6 +6548,9 @@ static PtnValue ptn_unserialize_new_object_shell(
             ptn_declared_user_class_or_interface_exists(resolved_name)) {
             return runtime->new_instance_without_constructor(runtime, resolved_name, line);
         }
+        if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
+            return ptn_zip_archive_new_shell(runtime, line);
+        }
         return ptn_object_new_shell(runtime, resolved_name);
     }
 
@@ -6512,6 +6566,9 @@ static PtnValue ptn_unserialize_new_object_shell(
             if (runtime->new_instance_without_constructor != NULL &&
                 ptn_declared_user_class_or_interface_exists(resolved_name)) {
                 return runtime->new_instance_without_constructor(runtime, resolved_name, line);
+            }
+            if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
+                return ptn_zip_archive_new_shell(runtime, line);
             }
             return ptn_object_new_shell(runtime, resolved_name);
         }
@@ -6538,6 +6595,9 @@ static PtnValue ptn_unserialize_new_object_shell(
                 runtime->new_instance_without_constructor != NULL &&
                 ptn_declared_user_class_or_interface_exists(resolved_name)) {
                 return runtime->new_instance_without_constructor(runtime, resolved_name, line);
+            }
+            if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
+                return ptn_zip_archive_new_shell(runtime, line);
             }
             return ptn_object_new_shell(runtime, resolved_name);
         }
@@ -6858,6 +6918,7 @@ static void ptn_unserialize_clear_array(PtnArray *array) {
 }
 
 static void ptn_zip_archive_hydrate_unserialized(
+    PtnRuntime *runtime,
     PtnUnserializeState *state,
     PtnValue object
 ) {
@@ -6869,19 +6930,23 @@ static void ptn_zip_archive_hydrate_unserialized(
     PtnArray *properties = object.as.object->properties;
     ptn_unserialize_retain_array_entry_values(state, properties);
     ptn_unserialize_clear_array(properties);
-    ptn_array_set_entry(properties, ptn_array_string_key("lastId"), ptn_int(-1));
-    ptn_array_set_entry(properties, ptn_array_string_key("status"), ptn_int(0));
-    ptn_array_set_entry(properties, ptn_array_string_key("statusSys"), ptn_int(0));
-    ptn_array_set_entry(properties, ptn_array_string_key("numFiles"), ptn_int(0));
-    ptn_array_set_entry(
-        properties,
-        ptn_array_string_key("filename"),
-        ptn_owned_string(ptn_duplicate_string(""))
+    ptn_zip_archive_declare_public_property(runtime, object, "lastId", ptn_int(-1), state->line);
+    ptn_zip_archive_declare_public_property(runtime, object, "status", ptn_int(0), state->line);
+    ptn_zip_archive_declare_public_property(runtime, object, "statusSys", ptn_int(0), state->line);
+    ptn_zip_archive_declare_public_property(runtime, object, "numFiles", ptn_int(0), state->line);
+    ptn_zip_archive_declare_public_property(
+        runtime,
+        object,
+        "filename",
+        ptn_owned_string(ptn_duplicate_string("")),
+        state->line
     );
-    ptn_array_set_entry(
-        properties,
-        ptn_array_string_key("comment"),
-        ptn_owned_string(ptn_duplicate_string(""))
+    ptn_zip_archive_declare_public_property(
+        runtime,
+        object,
+        "comment",
+        ptn_owned_string(ptn_duplicate_string("")),
+        state->line
     );
 }
 
@@ -7362,7 +7427,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
             ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
-            ptn_zip_archive_hydrate_unserialized(state, result.value);
+            ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
             return result;
         }
         case 'C': {
@@ -65769,7 +65834,6 @@ static PTN_UNUSED PtnValue ptn_zip_archive_new(
     size_t line
 ) {
     (void)args;
-    (void)line;
     if (argc != 0) {
         char message[128];
         int written = snprintf(message, sizeof(message), "ZipArchive::__construct() expects exactly 0 arguments, %zu given", argc);
@@ -65779,7 +65843,7 @@ static PTN_UNUSED PtnValue ptn_zip_archive_new(
         ptn_throw_exception(runtime, "ArgumentCountError", message);
         return ptn_null();
     }
-    return ptn_object_new_shell(runtime, "ZipArchive");
+    return ptn_zip_archive_new_shell(runtime, line);
 }
 
 typedef struct PtnZipArchiveData {
