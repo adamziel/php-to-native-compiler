@@ -41439,6 +41439,70 @@ echo (new autoload_derived())->label(), \"\\n\";
 }
 
 #[test]
+fn compile_autoload_new_object_instantiates_runtime_class_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-new-runtime-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let base = root.join("autoload_root.inc");
+    let derived = root.join("autoload_derived.inc");
+    let output = root.join("autoload-new-runtime-class-bin");
+    fs::write(
+        &base,
+        "<?php
+class autoload_root {
+    public function label() {
+        return 'root';
+    }
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &derived,
+        "<?php
+class autoload_derived extends autoload_root {
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($class_name) {
+    require_once __DIR__ . '/' . $class_name . '.inc';
+    echo 'autoload(' . $class_name . \")\\n\";
+});
+
+var_dump(class_exists('autoload_derived', false));
+$object = new autoload_derived();
+var_dump($object instanceof autoload_root);
+echo $object->label(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(false)\n",
+            "autoload(autoload_root)\n",
+            "autoload(autoload_derived)\n",
+            "bool(true)\n",
+            "root\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_new_object(&runtime"));
+    assert!(c_source.contains("ptn_declared_class_new_instance"));
+}
+
+#[test]
 fn compile_include_exports_include_path_variable_to_native_binary() {
     let root = temp_dir("ptn-native-include-exported-path-variable");
     fs::create_dir_all(&root).unwrap();

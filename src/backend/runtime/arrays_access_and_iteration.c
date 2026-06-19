@@ -788,6 +788,35 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
 #endif
 }
 
+static int ptn_class_name_autoload_char_is_valid(unsigned char ch) {
+    return ch == '_' ||
+        ch == '\\' ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= 'A' && ch <= 'Z') ||
+        (ch >= '0' && ch <= '9') ||
+        ch >= 0x80;
+}
+
+static int ptn_class_name_should_autoload(const char *name) {
+    if (name == NULL || *name == '\0') {
+        return 0;
+    }
+    for (const unsigned char *cursor = (const unsigned char *)name; *cursor != '\0'; cursor++) {
+        if (!ptn_class_name_autoload_char_is_valid(*cursor)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_declared_class_new_instance(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+
 static PTN_UNUSED PtnValue ptn_new_object(
     PtnRuntime *runtime,
     const char *class_name,
@@ -801,7 +830,8 @@ static PTN_UNUSED PtnValue ptn_new_object(
     );
     if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
-        if (!ptn_internal_class_exists_name(lookup_class_name)) {
+        if (!ptn_internal_class_exists_name(lookup_class_name) &&
+            ptn_class_name_should_autoload(lookup_class_name)) {
             ptn_runtime_autoload_class(runtime, lookup_class_name, line);
             lookup_class_name = ptn_runtime_resolve_class_alias(
                 runtime,
@@ -809,15 +839,20 @@ static PTN_UNUSED PtnValue ptn_new_object(
             );
         }
 #else
-        ptn_runtime_autoload_class(runtime, lookup_class_name, line);
-        lookup_class_name = ptn_runtime_resolve_class_alias(
-            runtime,
-            ptn_symbol_name_without_leading_slash(class_name)
-        );
+        if (ptn_class_name_should_autoload(lookup_class_name)) {
+            ptn_runtime_autoload_class(runtime, lookup_class_name, line);
+            lookup_class_name = ptn_runtime_resolve_class_alias(
+                runtime,
+                ptn_symbol_name_without_leading_slash(class_name)
+            );
+        }
 #endif
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
+    }
+    if (ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
+        return ptn_declared_class_new_instance(runtime, lookup_class_name, argc, args, line);
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     if (ptn_internal_class_name_is_reflection_class(lookup_class_name)) {
