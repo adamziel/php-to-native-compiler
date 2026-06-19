@@ -13220,27 +13220,114 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
     out.push_str("}\n");
 }
 
-fn emit_declare_class_dependency_check(
+fn emit_dependency_not_found_throw(
     out: &mut String,
-    resolved_name_temp: &str,
+    indent: &str,
     dependency_label: &str,
-    runtime_exists_fn: &str,
-    internal_exists_fn: &str,
+    resolved_name_temp: &str,
     source_path: &str,
     line: usize,
 ) {
-    out.push_str("        if (!");
-    out.push_str(runtime_exists_fn);
-    out.push_str("(&runtime, ");
+    out.push_str(indent);
+    out.push_str("char dependency_message[1024];\n");
+    out.push_str(indent);
+    out.push_str("snprintf(dependency_message, sizeof(dependency_message), \"");
+    out.push_str(dependency_label);
+    out.push_str(" \\\"%s\\\" not found\", ");
     out.push_str(resolved_name_temp);
-    out.push_str(")) {\n");
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("ptn_throw_exception_at(&runtime, \"Error\", dependency_message, \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("ptn_rethrow_exception(&runtime);\n");
+}
+
+fn emit_parent_interface_kind_fatal(
+    out: &mut String,
+    indent: &str,
+    class_name: &str,
+    resolved_name_temp: &str,
+    source_path: &str,
+    line: usize,
+) {
+    out.push_str(indent);
+    out.push_str("char kind_message[1024];\n");
+    out.push_str(indent);
+    out.push_str("snprintf(kind_message, sizeof(kind_message), \"Class ");
+    out.push_str(&c_string(class_name));
+    out.push_str(" cannot extend interface %s\", ");
+    out.push_str(resolved_name_temp);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("ptn_emit_fatal_error_at(&runtime, kind_message, \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
+fn emit_implemented_class_kind_fatal(
+    out: &mut String,
+    indent: &str,
+    class_name: &str,
+    resolved_name_temp: &str,
+    source_path: &str,
+    line: usize,
+) {
+    out.push_str(indent);
+    out.push_str("char kind_message[1024];\n");
+    out.push_str(indent);
+    out.push_str("snprintf(kind_message, sizeof(kind_message), \"");
+    out.push_str(&c_string(class_name));
+    out.push_str(" cannot implement %s - it is not an interface\", ");
+    out.push_str(resolved_name_temp);
+    out.push_str(");\n");
+    out.push_str(indent);
+    out.push_str("ptn_emit_fatal_error_at(&runtime, kind_message, \"");
+    out.push_str(&c_string(source_path));
+    out.push_str("\", ");
+    out.push_str(&line.to_string());
+    out.push_str(");\n");
+}
+
+fn emit_declare_parent_class_dependency_check(
+    out: &mut String,
+    class_name: &str,
+    resolved_name_temp: &str,
+    source_path: &str,
+    line: usize,
+) {
+    out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("            if (!");
-    out.push_str(internal_exists_fn);
-    out.push('(');
+    out.push_str("            && !ptn_internal_class_exists_name(");
     out.push_str(resolved_name_temp);
-    out.push_str(")) {\n");
+    out.push_str(")\n");
     out.push_str("#endif\n");
+    out.push_str("        ) {\n");
+    out.push_str("            if (ptn_declared_runtime_interface_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("                || ptn_internal_interface_exists_name(");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#endif\n");
+    out.push_str("            ) {\n");
+    emit_parent_interface_kind_fatal(
+        out,
+        "                ",
+        class_name,
+        resolved_name_temp,
+        source_path,
+        line,
+    );
+    out.push_str("            } else {\n");
     out.push_str("                ptn_runtime_autoload_class(&runtime, ");
     out.push_str(resolved_name_temp);
     out.push_str(", ");
@@ -13249,35 +13336,127 @@ fn emit_declare_class_dependency_check(
     out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
     out.push_str("                    ptn_rethrow_exception(&runtime);\n");
     out.push_str("                }\n");
-    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
     out.push_str("            }\n");
-    out.push_str("#endif\n");
     out.push_str("        }\n");
-    out.push_str("        if (!");
-    out.push_str(runtime_exists_fn);
-    out.push_str("(&runtime, ");
+    out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, ");
     out.push_str(resolved_name_temp);
     out.push_str(")\n");
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("            && !");
-    out.push_str(internal_exists_fn);
-    out.push('(');
+    out.push_str("            && !ptn_internal_class_exists_name(");
     out.push_str(resolved_name_temp);
     out.push_str(")\n");
     out.push_str("#endif\n");
     out.push_str("        ) {\n");
-    out.push_str("            char dependency_message[1024];\n");
-    out.push_str("            snprintf(dependency_message, sizeof(dependency_message), \"");
-    out.push_str(dependency_label);
-    out.push_str(" \\\"%s\\\" not found\", ");
+    out.push_str("            if (ptn_declared_runtime_interface_exists(&runtime, ");
     out.push_str(resolved_name_temp);
-    out.push_str(");\n");
-    out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", dependency_message, \"");
-    out.push_str(&c_string(source_path));
-    out.push_str("\", ");
+    out.push_str(")\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("                || ptn_internal_interface_exists_name(");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#endif\n");
+    out.push_str("            ) {\n");
+    emit_parent_interface_kind_fatal(
+        out,
+        "                ",
+        class_name,
+        resolved_name_temp,
+        source_path,
+        line,
+    );
+    out.push_str("            } else {\n");
+    emit_dependency_not_found_throw(
+        out,
+        "                ",
+        "Class",
+        resolved_name_temp,
+        source_path,
+        line,
+    );
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+}
+
+fn emit_declare_interface_dependency_check(
+    out: &mut String,
+    class_name: &str,
+    resolved_name_temp: &str,
+    source_path: &str,
+    line: usize,
+) {
+    out.push_str("        if (!ptn_declared_runtime_interface_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            && !ptn_internal_interface_exists_name(");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#endif\n");
+    out.push_str("        ) {\n");
+    out.push_str("            if (ptn_declared_runtime_class_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("                || ptn_internal_class_exists_name(");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#endif\n");
+    out.push_str("            ) {\n");
+    emit_implemented_class_kind_fatal(
+        out,
+        "                ",
+        class_name,
+        resolved_name_temp,
+        source_path,
+        line,
+    );
+    out.push_str("            } else {\n");
+    out.push_str("                ptn_runtime_autoload_class(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(", ");
     out.push_str(&line.to_string());
     out.push_str(");\n");
-    out.push_str("            ptn_rethrow_exception(&runtime);\n");
+    out.push_str("                if (runtime.exceptions->active_exception != NULL) {\n");
+    out.push_str("                    ptn_rethrow_exception(&runtime);\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        if (!ptn_declared_runtime_interface_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("            && !ptn_internal_interface_exists_name(");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#endif\n");
+    out.push_str("        ) {\n");
+    out.push_str("            if (ptn_declared_runtime_class_exists(&runtime, ");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("                || ptn_internal_class_exists_name(");
+    out.push_str(resolved_name_temp);
+    out.push_str(")\n");
+    out.push_str("#endif\n");
+    out.push_str("            ) {\n");
+    emit_implemented_class_kind_fatal(
+        out,
+        "                ",
+        class_name,
+        resolved_name_temp,
+        source_path,
+        line,
+    );
+    out.push_str("            } else {\n");
+    emit_dependency_not_found_throw(
+        out,
+        "                ",
+        "Interface",
+        resolved_name_temp,
+        source_path,
+        line,
+    );
+    out.push_str("            }\n");
     out.push_str("        }\n");
 }
 
@@ -13308,12 +13487,10 @@ fn emit_class_declaration_validation(
         out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
         out.push_str(&c_string(parent_name));
         out.push_str("\");\n");
-        emit_declare_class_dependency_check(
+        emit_declare_parent_class_dependency_check(
             out,
+            &class.name,
             &parent_temp,
-            "Class",
-            "ptn_declared_runtime_class_exists",
-            "ptn_internal_class_exists_name",
             source_path,
             line,
         );
@@ -13342,12 +13519,10 @@ fn emit_class_declaration_validation(
         out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
         out.push_str(&c_string(interface_name));
         out.push_str("\");\n");
-        emit_declare_class_dependency_check(
+        emit_declare_interface_dependency_check(
             out,
+            &class.name,
             &interface_temp,
-            "Interface",
-            "ptn_declared_runtime_interface_exists",
-            "ptn_internal_interface_exists_name",
             source_path,
             line,
         );

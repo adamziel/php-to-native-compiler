@@ -2170,20 +2170,27 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
+            let constants = self.parse_class_constant_declarations(
+                modifiers.visibility,
+                modifiers.is_final,
+                class_name,
+                attributes,
+            )?;
             if class_is_interface && modifiers.visibility != PropertyVisibility::Public {
+                let constant_name = constants
+                    .first()
+                    .map(|constant| constant.name.as_str())
+                    .unwrap_or("");
                 return Err(Diagnostic::new(
-                    format!("Access type for interface constant {class_name} must be public"),
-                    modifiers.visibility_span,
+                    format!(
+                        "Access type for interface constant {class_name}::{constant_name} must be public"
+                    ),
+                    modifiers
+                        .visibility_span
+                        .or_else(|| constants.first().map(|constant| constant.span)),
                 ));
             }
-            return Ok(ParsedClassMember::Constants(
-                self.parse_class_constant_declarations(
-                    modifiers.visibility,
-                    modifiers.is_final,
-                    class_name,
-                    attributes,
-                )?,
-            ));
+            return Ok(ParsedClassMember::Constants(constants));
         }
         let member_is_readonly = class_is_readonly || modifiers.is_readonly;
         let set_visibility = modifiers
@@ -12554,17 +12561,8 @@ fn validate_method_signature_compatibility(
                 }
             }
 
-            let mut seen_interfaces = HashSet::new();
             let mut interface_methods = Vec::new();
-            for interface_name in &class.interfaces {
-                collect_interface_methods(
-                    interface_name,
-                    &method.name,
-                    classes,
-                    &mut seen_interfaces,
-                    &mut interface_methods,
-                );
-            }
+            collect_class_interface_methods(class, &method.name, classes, &mut interface_methods);
             for (interface, interface_method) in interface_methods {
                 validate_method_signature_pair(
                     class,
@@ -12578,6 +12576,58 @@ fn validate_method_signature_compatibility(
         }
     }
     Ok(())
+}
+
+fn collect_class_interface_methods<'a>(
+    class: &'a ClassDecl,
+    method_name: &str,
+    classes: &'a [ClassDecl],
+    methods: &mut Vec<(&'a ClassDecl, &'a MethodDecl)>,
+) {
+    fn collect_class<'a>(
+        class: &'a ClassDecl,
+        method_name: &str,
+        classes: &'a [ClassDecl],
+        seen_classes: &mut HashSet<String>,
+        seen_interfaces: &mut HashSet<String>,
+        methods: &mut Vec<(&'a ClassDecl, &'a MethodDecl)>,
+    ) {
+        if !seen_classes.insert(class.name.to_ascii_lowercase()) {
+            return;
+        }
+        for interface_name in &class.interfaces {
+            collect_interface_methods(
+                interface_name,
+                method_name,
+                classes,
+                seen_interfaces,
+                methods,
+            );
+        }
+        if let Some(parent_name) = &class.parent_name {
+            if let Some(parent) = find_class(classes, parent_name) {
+                collect_class(
+                    parent,
+                    method_name,
+                    classes,
+                    seen_classes,
+                    seen_interfaces,
+                    methods,
+                );
+            }
+        }
+    }
+
+    let mut seen_classes = HashSet::new();
+    let mut seen_interfaces = HashSet::new();
+    collect_class(
+        class,
+        method_name,
+        classes,
+        &mut seen_classes,
+        &mut seen_interfaces,
+        methods,
+    );
 }
 
 #[derive(Clone)]
@@ -12795,6 +12845,7 @@ fn validate_method_signature_pair(
         };
         if parameter.by_ref != parent_parameter.by_ref
             || parameter.is_variadic != parent_parameter.is_variadic
+            || (parent_parameter.default_value.is_some() && parameter.default_value.is_none())
         {
             return Err(method_signature_compatibility_error(
                 class,
@@ -12809,6 +12860,20 @@ fn validate_method_signature_pair(
             classes,
             runtime_class_aliases,
         ) {
+            return Err(method_signature_compatibility_error(
+                class,
+                method,
+                parent_class,
+                parent_method,
+            ));
+        }
+    }
+    for parameter in method
+        .parameters
+        .iter()
+        .skip(parent_method.parameters.len())
+    {
+        if parameter.default_value.is_none() && !parameter.is_variadic {
             return Err(method_signature_compatibility_error(
                 class,
                 method,
