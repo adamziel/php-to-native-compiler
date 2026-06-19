@@ -681,13 +681,17 @@ static PTN_UNUSED PtnValue ptn_array_key_exists_value(PtnRuntime *runtime, PtnVa
     if (key_value.type == PTN_RESOURCE) {
         ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
     }
-    if (key_value.type == PTN_FLOAT && ptn_float_to_int_loses_precision(key_value.as.floating)) {
-        ptn_emit_float_to_int_precision_deprecation_at(
-            &runtime->diagnostics,
-            key_value.as.floating,
-            runtime->source_path == NULL ? "ptn" : runtime->source_path,
-            line
-        );
+    if (key_value.type == PTN_FLOAT) {
+        if (ptn_float_to_int_out_of_range(key_value.as.floating)) {
+            ptn_emit_array_float_offset_out_of_range_warning(runtime, key_value.as.floating, line);
+        } else if (ptn_float_to_int_loses_precision(key_value.as.floating)) {
+            ptn_emit_float_to_int_precision_deprecation_at(
+                &runtime->diagnostics,
+                key_value.as.floating,
+                runtime->source_path == NULL ? "ptn" : runtime->source_path,
+                line
+            );
+        }
     }
     PtnArrayKey key = ptn_array_key_from_value(key_value);
     int exists = ptn_array_entry_for_key(array_value.as.array, key) != NULL;

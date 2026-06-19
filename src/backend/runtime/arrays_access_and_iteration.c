@@ -5511,6 +5511,42 @@ static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtim
     );
 }
 
+static PTN_UNUSED void ptn_emit_array_float_offset_out_of_range_warning(
+    PtnRuntime *runtime,
+    double value,
+    size_t line
+) {
+    if (!ptn_diagnostics_should_emit(&runtime->diagnostics, PTN_E_WARNING)) {
+        return;
+    }
+    char formatted[64];
+    int formatted_len = snprintf(formatted, sizeof(formatted), "%.16G", value);
+    if (formatted_len < 0 || (size_t)formatted_len >= sizeof(formatted)) {
+        ptn_abort_out_of_memory();
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The float %s is not representable as an int, cast occurred",
+        formatted
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    runtime->diagnostics.emitted_warning = 1;
+    if (ptn_diagnostics_try_error_handler(
+        &runtime->diagnostics,
+        PTN_E_WARNING,
+        message,
+        runtime->source_path,
+        line
+    )) {
+        return;
+    }
+    ptn_emit_array_runtime_diagnostic(runtime, "Warning", message, line);
+}
+
 static PTN_UNUSED void ptn_emit_array_offset_key_conversion_diagnostic(
     PtnRuntime *runtime,
     PtnValue key_value,
@@ -5526,7 +5562,7 @@ static PTN_UNUSED void ptn_emit_array_offset_key_conversion_diagnostic(
         ptn_emit_resource_offset_warning(runtime, key_value.as.resource, line);
     } else if (key_value.type == PTN_FLOAT) {
         if (ptn_float_to_int_out_of_range(key_value.as.floating)) {
-            ptn_emit_bitwise_float_out_of_range_warning(&runtime->diagnostics, key_value.as.floating, line);
+            ptn_emit_array_float_offset_out_of_range_warning(runtime, key_value.as.floating, line);
         } else if (ptn_float_to_int_loses_precision(key_value.as.floating)) {
             ptn_emit_float_to_int_precision_deprecation_at(
                 &runtime->diagnostics,

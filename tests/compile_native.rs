@@ -32230,6 +32230,43 @@ try { array_key_exists(\"public_var\", new KeyCheck); } catch (TypeError $e) { e
 }
 
 #[test]
+fn compile_array_non_finite_float_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-array-non-finite-float-offsets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-non-finite-float-offsets.php");
+    let output = root.join("array-non-finite-float-offsets-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [];\n\
+$a[INF] = \"inf\";\n\
+var_dump(array_key_exists(0, $a), $a[0]);\n\
+$b = [];\n\
+$b[NAN] = \"nan\";\n\
+var_dump(array_key_exists(0, $b), $b[0]);\n\
+$c = false;\n\
+$c[-INF] = \"neg\";\n\
+var_dump($c[0]);\n\
+var_dump(array_key_exists(INF, [0 => \"zero\"]));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let expected_stdout = format!(
+        "\nWarning: The float INF is not representable as an int, cast occurred in {0} on line 3\nbool(true)\nstring(3) \"inf\"\n\nWarning: The float NAN is not representable as an int, cast occurred in {0} on line 6\nbool(true)\nstring(3) \"nan\"\n\nDeprecated: Automatic conversion of false to array is deprecated in {0} on line 9\n\nWarning: The float -INF is not representable as an int, cast occurred in {0} on line 9\nstring(3) \"neg\"\n\nWarning: The float INF is not representable as an int, cast occurred in {0} on line 11\nbool(true)\n",
+        input.display()
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        expected_stdout
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_key_first_and_last_to_native_binary() {
     let root = temp_dir("ptn-native-array-key-first-last");
     fs::create_dir_all(&root).unwrap();
