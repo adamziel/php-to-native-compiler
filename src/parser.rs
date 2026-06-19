@@ -6689,15 +6689,10 @@ impl Parser<'_> {
                                 }
                             }
                         } else {
-                            if nullsafe {
-                                return Err(Diagnostic::new(
-                                    "dynamic nullsafe property fetches are unsupported",
-                                    Some(member_span),
-                                ));
-                            }
                             Expr::DynamicPropertyFetch {
                                 receiver: Box::new(expr),
                                 name: Box::new(dynamic_name.expect("dynamic member name")),
+                                nullsafe,
                                 span,
                             }
                         };
@@ -19631,6 +19626,7 @@ fn reference_target_from_expr(expr: Expr) -> Result<ReferenceTarget> {
             receiver,
             name,
             span,
+            ..
         } => Ok(ReferenceTarget::DynamicProperty {
             receiver,
             name,
@@ -19713,6 +19709,7 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             receiver,
             name,
             span,
+            ..
         } => Ok(AssignmentTarget::DynamicProperty {
             receiver,
             name,
@@ -19812,10 +19809,12 @@ fn expr_is_nullsafe_chain(expr: &Expr) -> bool {
         Expr::MethodCall { nullsafe: true, .. } => true,
         Expr::Grouped { expr, .. } => expr_is_nullsafe_chain(expr),
         Expr::PropertyFetch { receiver, .. }
-        | Expr::DynamicPropertyFetch { receiver, .. }
         | Expr::DynamicMethodCall { receiver, .. }
         | Expr::DynamicStaticPropertyFetch { receiver, .. }
         | Expr::DynamicClassNameFetch { receiver, .. } => expr_is_nullsafe_chain(receiver),
+        Expr::DynamicPropertyFetch {
+            receiver, nullsafe, ..
+        } => *nullsafe || expr_is_nullsafe_chain(receiver),
         Expr::MethodCall { receiver, .. } => expr_is_nullsafe_chain(receiver),
         Expr::ArrayAccess { array, .. } => expr_is_nullsafe_chain(array),
         Expr::DynamicClassConstantFetch {

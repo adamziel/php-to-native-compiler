@@ -2658,8 +2658,24 @@ static PTN_UNUSED PtnValue ptn_missing(void) {
     return value;
 }
 
+static PTN_UNUSED PtnValue ptn_nullsafe_short_circuit(void) {
+    PtnValue value;
+    value.type = PTN_NULL;
+    value.owned = -2;
+    value.by_ref_return_fallback = 0;
+    value.by_ref_argument_source_disabled = 0;
+    return value;
+}
+
 static PTN_UNUSED int ptn_value_is_missing(PtnValue value) {
     return value.type == PTN_NULL && value.owned == -1;
+}
+
+static PTN_UNUSED int ptn_value_is_nullsafe_short_circuit(PtnValue value) {
+    while (value.type == PTN_REFERENCE) {
+        value = value.as.reference->value;
+    }
+    return value.type == PTN_NULL && value.owned == -2;
 }
 
 static PTN_UNUSED int ptn_value_is_return_reference_fallback(PtnValue value) {

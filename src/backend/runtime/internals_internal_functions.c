@@ -15499,6 +15499,7 @@ static int64_t ptn_array_slice_integer_arg(
     size_t position,
     const char *argument_name,
     PtnValue value,
+    size_t line,
     int nullable,
     int *is_null
 ) {
@@ -15518,6 +15519,19 @@ static int64_t ptn_array_slice_integer_arg(
             if (runtime->strict_types) {
                 break;
             }
+            char deprecation[192];
+            int deprecation_written = snprintf(
+                deprecation,
+                sizeof(deprecation),
+                "%s(): Passing null to parameter #%zu ($%s) of type int is deprecated",
+                function_name,
+                position,
+                argument_name
+            );
+            if (deprecation_written < 0 || (size_t)deprecation_written >= sizeof(deprecation)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_emit_deprecation(&runtime->diagnostics, deprecation, line);
             return 0;
         case PTN_BOOL:
             if (runtime->strict_types) {
@@ -15937,12 +15951,11 @@ static PTN_UNUSED void ptn_runtime_array_splice_discard_result(
 }
 
 static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnArray *array = ptn_internal_expect_array_arg(runtime, "array_slice", 1, "array", args[0]);
-    int64_t offset = ptn_array_slice_integer_arg(runtime, "array_slice", 2, "offset", args[1], 0, NULL);
+    int64_t offset = ptn_array_slice_integer_arg(runtime, "array_slice", 2, "offset", args[1], line, 0, NULL);
     int length_is_null = 0;
     int64_t length = argc >= 3
-        ? ptn_array_slice_integer_arg(runtime, "array_slice", 3, "length", args[2], 1, &length_is_null)
+        ? ptn_array_slice_integer_arg(runtime, "array_slice", 3, "length", args[2], line, 1, &length_is_null)
         : 0;
     int has_length = argc >= 3 && !length_is_null;
     int preserve_keys = argc >= 4 && ptn_is_truthy(args[3]);
@@ -15971,10 +15984,10 @@ static PtnValue ptn_internal_array_splice(PtnRuntime *runtime, size_t argc, cons
     if (args[0].type == PTN_REFERENCE && args[0].as.reference->value.type == PTN_ARRAY) {
         array = ptn_array_detach_value(&args[0].as.reference->value);
     }
-    int64_t offset = ptn_array_slice_integer_arg(runtime, "array_splice", 2, "offset", args[1], 0, NULL);
+    int64_t offset = ptn_array_slice_integer_arg(runtime, "array_splice", 2, "offset", args[1], line, 0, NULL);
     int length_is_null = 0;
     int64_t length = argc >= 3
-        ? ptn_array_slice_integer_arg(runtime, "array_splice", 3, "length", args[2], 1, &length_is_null)
+        ? ptn_array_slice_integer_arg(runtime, "array_splice", 3, "length", args[2], line, 1, &length_is_null)
         : 0;
     int has_length = argc >= 3 && !length_is_null;
     PtnValue replacement = argc >= 4 ? args[3] : ptn_null();
@@ -90901,9 +90914,17 @@ static PtnValue ptn_internal_interface_exists(PtnRuntime *runtime, size_t argc, 
 
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    char *name = ptn_value_to_string(args[0]);
+    PtnStringOperand name_arg = ptn_direct_internal_expect_string_arg(
+        runtime,
+        "defined",
+        1,
+        "constant_name",
+        args[0],
+        line
+    );
+    char *name = ptn_duplicate_string_len(name_arg.data, name_arg.len);
     int exists = ptn_runtime_constant_is_defined(runtime, ptn_symbol_name_without_leading_slash(name));
+    ptn_string_operand_free(name_arg);
     free(name);
     return ptn_bool(exists);
 }

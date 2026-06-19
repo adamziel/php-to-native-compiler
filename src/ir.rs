@@ -652,6 +652,7 @@ pub enum ValueExpr {
     DynamicPropertyFetch {
         receiver: Box<ValueExpr>,
         name: Box<ValueExpr>,
+        nullsafe: bool,
         line: usize,
     },
     StaticPropertyFetch {
@@ -3982,10 +3983,12 @@ impl<'a> LoweringContext<'a> {
             Expr::DynamicPropertyFetch {
                 receiver,
                 name,
+                nullsafe,
                 span,
             } => ValueExpr::DynamicPropertyFetch {
                 receiver: Box::new(self.lower_expr(receiver)),
                 name: Box::new(self.lower_expr(name)),
+                nullsafe: *nullsafe,
                 line: span.line,
             },
             Expr::StaticPropertyFetch {
@@ -4451,10 +4454,16 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::NullsafePropertyFetch { receiver, name, .. } => {
             format!("{}?->{name}", assertion_expr_text(receiver))
         }
-        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+        Expr::DynamicPropertyFetch {
+            receiver,
+            name,
+            nullsafe,
+            ..
+        } => {
             format!(
-                "{}->{{{}}}",
+                "{}{}{{{}}}",
                 assertion_expr_text(receiver),
+                if *nullsafe { "?->" } else { "->" },
                 assertion_expr_text(name)
             )
         }

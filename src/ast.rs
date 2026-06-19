@@ -932,6 +932,7 @@ pub enum Expr {
     DynamicPropertyFetch {
         receiver: Box<Expr>,
         name: Box<Expr>,
+        nullsafe: bool,
         span: SourceSpan,
     },
     StaticPropertyFetch {

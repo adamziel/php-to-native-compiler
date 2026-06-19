@@ -457,11 +457,7 @@ static PTN_UNUSED void ptn_emit_array_runtime_diagnostic_at_path(
 }
 
 static PTN_UNUSED const char *ptn_array_runtime_diagnostic_path(PtnRuntime *runtime) {
-    if (
-        runtime != NULL &&
-        runtime->compiled_include_depth > 0 &&
-        runtime->source_path != NULL
-    ) {
+    if (runtime != NULL && runtime->source_path != NULL) {
         return runtime->source_path;
     }
     return "ptn";
@@ -605,7 +601,7 @@ static PTN_UNUSED int ptn_class_name_is_generator(const char *class_name) {
     return *class_name == '\0' && *generator == '\0';
 }
 
-static PTN_UNUSED char *ptn_dynamic_new_class_name_from_value(PtnValue value) {
+static PTN_UNUSED char *ptn_dynamic_new_class_name_from_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     switch (value.type) {
         case PTN_OBJECT:
@@ -614,8 +610,17 @@ static PTN_UNUSED char *ptn_dynamic_new_class_name_from_value(PtnValue value) {
             return ptn_duplicate_string(value.as.exception->class_name);
         case PTN_CLOSURE:
             return ptn_duplicate_string("Closure");
-        default:
+        case PTN_STRING:
             return ptn_value_to_string(value);
+        default:
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "Class name must be a valid object or a string",
+                runtime != NULL ? runtime->source_path : NULL,
+                line
+            );
+            return NULL;
     }
 }
 

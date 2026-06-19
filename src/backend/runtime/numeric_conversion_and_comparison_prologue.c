@@ -4843,6 +4843,43 @@ static PTN_UNUSED void ptn_emit_no_discard_for_internal_method(
     }
 }
 
+static PTN_UNUSED void ptn_throw_undefined_method_for_receiver(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    const char *class_name = NULL;
+    if (receiver.type == PTN_OBJECT) {
+        class_name = receiver.as.object->class_name;
+    } else if (receiver.type == PTN_EXCEPTION) {
+        class_name = receiver.as.exception->class_name;
+    } else if (receiver.type == PTN_CLOSURE) {
+        class_name = "Closure";
+    }
+    if (class_name == NULL) {
+        ptn_throw_exception(runtime, "Error", "Call to undefined method");
+        return;
+    }
+    int needed = snprintf(NULL, 0, "Call to undefined method %s::%s()", class_name, name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Call to undefined method %s::%s()", class_name, name);
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "Error",
+        message,
+        runtime != NULL ? runtime->source_path : NULL,
+        line
+    );
+}
+
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static int64_t ptn_internal_expect_integer_arg(
     PtnRuntime *runtime,
@@ -4890,7 +4927,7 @@ static PTN_UNUSED PtnValue ptn_datetime_immutable_call_method(
         }
         return ptn_object_new_shell(runtime, "DateTimeImmutable");
     }
-    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    ptn_throw_undefined_method_for_receiver(runtime, receiver, name, line);
     return ptn_null();
 }
 #endif
@@ -5364,7 +5401,7 @@ static PTN_UNUSED PtnValue ptn_call_method(
         return ptn_sqlite3_result_call_method(runtime, receiver, name, argc, args, line);
     }
 #endif
-    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    ptn_throw_undefined_method_for_receiver(runtime, receiver, name, line);
     return ptn_null();
 }
 
