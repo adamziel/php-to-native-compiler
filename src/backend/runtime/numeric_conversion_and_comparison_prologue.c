@@ -134,6 +134,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->called_class_name_override = NULL;
     runtime->forward_static_called_class_name = NULL;
     runtime->current_generator = NULL;
+    runtime->current_fiber = caller_runtime->current_fiber;
     runtime->has_current_receiver = 0;
     runtime->current_receiver = ptn_null();
     runtime->by_ref_argument_function_name_override =
@@ -1792,6 +1793,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "ValueError")) {
         return "ValueError";
     }
+    if (ptn_exception_name_equal(class_name, "FiberError")) {
+        return "FiberError";
+    }
     if (ptn_exception_name_equal(class_name, "Uri\\InvalidUriException")) {
         return "Uri\\InvalidUriException";
     }
@@ -1847,6 +1851,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "TypeError") ||
             ptn_exception_name_equal(class_name, "ArgumentCountError") ||
             ptn_exception_name_equal(class_name, "ValueError") ||
+            ptn_exception_name_equal(class_name, "FiberError") ||
             ptn_exception_name_equal(class_name, "Uri\\InvalidUriException") ||
             ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException") ||
             ptn_exception_name_equal(class_name, "DateRangeError") ||

@@ -1247,6 +1247,28 @@ fn phpt_classifier_excludes_generator_fiber_reference_boundaries() {
 }
 
 #[test]
+fn phpt_classifier_allows_supported_fiber_constructor_and_current_surface() {
+    let cases = [
+        (
+            "fiber constructor only",
+            "--TEST--\nfiber constructor\n--FILE--\n<?php\n$fiber = new Fiber(fn() => null);\necho \"done\";\n--EXPECT--\ndone\n",
+        ),
+        (
+            "fiber get current",
+            "--TEST--\nfiber get current\n--FILE--\n<?php\nvar_dump(Fiber::getCurrent());\n$fiber = new Fiber(function (): void {\n    var_dump(Fiber::getCurrent());\n});\n$fiber->start();\n--EXPECTF--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        let classification = classify(phpt);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{name}: {classification:?}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_allows_collected_generator_runtime_subset() {
     let cases = [
         (

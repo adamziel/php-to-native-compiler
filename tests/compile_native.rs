@@ -979,6 +979,47 @@ var_dump($fiber->getReturn());
 }
 
 #[test]
+fn compile_fiber_get_current_tracks_active_fiber_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-get-current");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-get-current.php");
+    let output = root.join("fiber-get-current-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(Fiber::getCurrent());
+
+$fiber = new Fiber(function (): void {
+    var_dump(Fiber::getCurrent() instanceof Fiber);
+    var_dump(Fiber::getCurrent() === Fiber::getCurrent());
+    var_dump(Fiber::getCurrent()->isRunning());
+});
+
+$fiber->start();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_class_static_call_method"));
+    assert!(c_source.contains("current_fiber"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "NULL\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_uri_whatwg_url_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-uri-whatwg-url-semantics");
     fs::create_dir_all(&root).unwrap();

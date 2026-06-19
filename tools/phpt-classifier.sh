@@ -1451,6 +1451,12 @@ ptn_phpt_first_unsupported_language_surface() {
         function ptn_supported_generator_by_reference_yield_from_diagnostic_row() {
             return ptn_path ~ /Zend\/tests\/generators\/yield_from_by_reference[.]phpt$/
         }
+        function ptn_supported_fiber_surface_line(line) {
+            if (line ~ /(^|[^[:alnum:]_$])new[[:space:]]+fiber([^[:alnum:]_]|$)/) {
+                return line !~ /(^|[^[:alnum:]_$])function[[:space:]]*&/
+            }
+            return line ~ /(^|[^[:alnum:]_$])fiber[[:space:]]*::[[:space:]]*getcurrent[[:space:]]*\(/
+        }
         function ptn_spread_context(line,    i, ch, triple, prefix, stack_depth, stack) {
             stack_depth = 0
             for (i = 1; i <= length(line); i++) {
@@ -1537,7 +1543,8 @@ ptn_phpt_first_unsupported_language_surface() {
             if (!saw_anonymous_class && saw_interface && match(line, /function[[:space:]]+([a-z_][a-z0-9_]*)[[:space:]]*[(]/, method_match)) {
                 override_interface_methods[method_match[1]] = 1
             }
-            if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/) {
+            if (line ~ /(^|[^[:alnum:]_$])(new[[:space:]]+fiber|fiber[[:space:]]*::)/ &&
+                !ptn_supported_fiber_surface_line(line)) {
                 print "unsupported-generator-runtime\trequires Fiber coroutine runtime and by-reference return/getReturn boundary, outside PTN execution model"
                 found = 1
                 exit

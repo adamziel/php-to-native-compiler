@@ -1183,6 +1183,7 @@ struct PtnRuntime {
     const char *called_class_name_override;
     const char *forward_static_called_class_name;
     PtnGenerator *current_generator;
+    PtnObject *current_fiber;
     int has_current_receiver;
     PtnValue current_receiver;
     const char *by_ref_argument_function_name_override;
