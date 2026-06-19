@@ -23305,6 +23305,37 @@ call_user_func(\"\\\\absolute\");
 }
 
 #[test]
+fn compile_keyword_like_user_function_names_to_native_binary() {
+    let root = temp_dir("ptn-native-keyword-like-user-functions");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("keyword-like-user-functions.php");
+    let output = root.join("keyword-like-user-functions-bin");
+    fs::write(
+        &input,
+        "<?php
+function NULL() { echo __FUNCTION__, \"\\n\"; }
+function false() { echo __FUNCTION__, \"\\n\"; }
+
+var_dump(is_callable(\"NULL\"));
+var_dump(is_callable(\"false\"));
+call_user_func(\"NULL\");
+call_user_func(\"false\");
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nnull\nfalse\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_user_function_null_type_errors_with_direct_call_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-null-type-error-direct");
     fs::create_dir_all(&root).unwrap();
@@ -32654,6 +32685,56 @@ var_dump(function_exists(\"get_called_class\"));
     assert!(c_source.contains("ptn_internal_get_called_class"));
     assert!(c_source.contains("current_called_class_name"));
     assert!(c_source.contains("ptn_emit_scoped_callable_deprecation"));
+}
+
+#[test]
+fn compile_dynamic_scoped_array_callable_validation_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-scoped-array-callable-validation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-scoped-array-callable-validation.php");
+    let output = root.join("dynamic-scoped-array-callable-validation-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public static function who() { var_dump(get_called_class()); }
+}
+class B extends A {
+    public static function who() { parent::who(); }
+}
+class C {
+    public static function test($callable) { call_user_func($callable); }
+}
+
+$parentCallable = array(B::class, \"parent::who\");
+$selfCallable = array(B::class, \"self::who\");
+call_user_func($parentCallable);
+call_user_func($selfCallable);
+C::test($parentCallable);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nDeprecated: Callables of the form [\"B\", \"parent::who\"] are deprecated in ptn on line 14\n",
+            "string(1) \"A\"\n",
+            "\nDeprecated: Callables of the form [\"B\", \"self::who\"] are deprecated in ptn on line 15\n",
+            "string(1) \"B\"\n",
+            "\nDeprecated: Callables of the form [\"B\", \"parent::who\"] are deprecated in ptn on line 9\n",
+            "string(1) \"A\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("scoped_method_separator"));
+    assert!(c_source.contains("ptn_callable_resolve_class_scope"));
 }
 
 #[test]
@@ -53301,6 +53382,45 @@ echo strlen("hello"), "\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Test\\Ns1\\strlen\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_absolute_dynamic_string_callables_to_native_binary() {
+    let root = temp_dir("ptn-native-absolute-dynamic-string-callables");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("absolute-dynamic-string-callables.php");
+    let output = root.join("absolute-dynamic-string-callables-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Test {
+    public static function foo() {
+        echo __CLASS__, "::", __FUNCTION__, "\n";
+    }
+}
+
+function foo() {
+    echo __FUNCTION__, "\n";
+}
+
+$prefix = __NAMESPACE__ . "\\";
+call_user_func($prefix . "foo");
+call_user_func($prefix . "Test::foo");
+var_dump(is_callable($prefix . "foo"));
+var_dump(is_callable($prefix . "Test::foo"));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "foo\nTest::foo\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

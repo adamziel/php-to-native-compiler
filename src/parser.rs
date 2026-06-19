@@ -3655,13 +3655,15 @@ impl Parser<'_> {
         } else {
             false
         };
-        if !matches!(self.peek().kind, TokenKind::Identifier(_)) {
-            return Err(syntax_error_unexpected(self.peek(), Some("\"(\"")));
-        }
-        if let TokenKind::Identifier(name) = &self.peek().kind {
-            if is_exit_construct_name(name) {
-                return Err(exit_reserved_name_syntax_error(self.peek(), "\"(\""));
+        let next_name = match &self.peek().kind {
+            TokenKind::Identifier(name) => name.clone(),
+            TokenKind::True | TokenKind::False | TokenKind::Null => {
+                token_text(&self.peek().kind).to_string()
             }
+            _ => return Err(syntax_error_unexpected(self.peek(), Some("\"(\""))),
+        };
+        if is_exit_construct_name(&next_name) {
+            return Err(exit_reserved_name_syntax_error(self.peek(), "\"(\""));
         }
         let (name, name_span) = self.parse_declaration_name("expected function name")?;
         self.register_declared_function_name(&name, name_span)?;

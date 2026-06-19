@@ -11861,7 +11861,8 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
     out.push_str("        if (!valid) {\n");
-    out.push_str("            valid = ptn_user_function_exists(runtime, name) || ptn_find_internal_function(name) != NULL;\n");
+    out.push_str("            const char *function_lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("            valid = ptn_user_function_exists(runtime, function_lookup_name) || ptn_find_internal_function(function_lookup_name) != NULL;\n");
     out.push_str("        }\n");
     out.push_str("        free(name);\n");
     out.push_str("        return valid;\n");
@@ -11964,6 +11965,46 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                }\n");
     out.push_str("                resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);\n");
     out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        char *scoped_method_separator = strstr(method_name, \"::\");\n");
+    out.push_str("        if (scoped_method_separator != NULL && scoped_method_separator != method_name && scoped_method_separator[2] != '\\0') {\n");
+    out.push_str("            *scoped_method_separator = '\\0';\n");
+    out.push_str("            const char *target_class_name = method_name;\n");
+    out.push_str("            if (ptn_ascii_case_equal(method_name, \"self\") || ptn_ascii_case_equal(method_name, \"static\")) {\n");
+    out.push_str("                target_class_name = resolved_class_name;\n");
+    out.push_str("            } else if (ptn_ascii_case_equal(method_name, \"parent\")) {\n");
+    out.push_str("                const char *parent = ptn_declared_class_parent_name(resolved_class_name);\n");
+    out.push_str("                if (parent != NULL) {\n");
+    out.push_str("                    target_class_name = parent;\n");
+    out.push_str("                }\n");
+    out.push_str("            } else {\n");
+    out.push_str("                const char *lookup_target_class_name = ptn_symbol_name_without_leading_slash(method_name);\n");
+    out.push_str("                target_class_name = runtime == NULL ? lookup_target_class_name : ptn_runtime_resolve_class_alias(runtime, lookup_target_class_name);\n");
+    out.push_str("            }\n");
+    out.push_str("            const char *target_method_name = scoped_method_separator + 2;\n");
+    out.push_str("            int valid = ptn_declared_class_static_method_is_callable(target_class_name, target_method_name, access_scope) || (ptn_internal_class_exists_name(target_class_name) && ptn_internal_class_static_method_exists(target_class_name, target_method_name));\n");
+    out.push_str("            if (!valid && runtime != NULL && runtime->has_current_receiver) {\n");
+    out.push_str(
+        "                PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n",
+    );
+    out.push_str("                const char *current_receiver_class = NULL;\n");
+    out.push_str("                if (current_receiver.type == PTN_OBJECT) {\n");
+    out.push_str(
+        "                    current_receiver_class = current_receiver.as.object->class_name;\n",
+    );
+    out.push_str("                } else if (current_receiver.type == PTN_EXCEPTION) {\n");
+    out.push_str(
+        "                    current_receiver_class = current_receiver.as.exception->class_name;\n",
+    );
+    out.push_str("                }\n");
+    out.push_str("                if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, target_class_name)) {\n");
+    out.push_str("                    valid = ptn_declared_class_method_is_callable(target_class_name, target_method_name, access_scope);\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            *scoped_method_separator = ':';\n");
+    out.push_str("            free(method_name);\n");
+    out.push_str("            free(class_name);\n");
+    out.push_str("            return valid;\n");
     out.push_str("        }\n");
     out.push_str("        int needed = snprintf(NULL, 0, \"%s::%s\", class_name, method_name);\n");
     out.push_str("        if (needed < 0) {\n");
