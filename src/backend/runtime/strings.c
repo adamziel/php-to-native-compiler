@@ -856,6 +856,9 @@ static PTN_UNUSED PtnValue ptn_cast_string_with_runtime(PtnRuntime *runtime, Ptn
         exit(255);
     }
 
+    if (runtime != NULL && value.type == PTN_ARRAY) {
+        ptn_emit_warning(&runtime->diagnostics, "Array to string conversion", line);
+    }
     PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
     char *copy = ptn_duplicate_string_len(string.data, string.len);
     size_t len = string.len;

@@ -33270,6 +33270,52 @@ var_dump(function_exists(\"get_called_class\"));
 }
 
 #[test]
+fn compile_forward_static_call_self_keeps_scope_and_called_class_to_native_binary() {
+    let root = temp_dir("ptn-native-forward-static-call-self-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("forward-static-call-self-scope.php");
+    let output = root.join("forward-static-call-self-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    const NAME = 'A';
+    public static function test() { echo static::NAME, \"\\n\"; }
+}
+class B extends A {
+    const NAME = 'B';
+    public static function test() {
+        echo self::NAME, \"\\n\";
+        forward_static_call(['parent', 'test']);
+    }
+    public static function test2() {
+        echo self::NAME, \"\\n\";
+        forward_static_call(['self', 'test']);
+    }
+}
+class C extends B {
+    const NAME = 'C';
+}
+C::test2();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("B\n\nDeprecated: Use of \"self\" in callables is deprecated"));
+    assert!(stdout.contains("\nB\n\nDeprecated: Use of \"parent\" in callables is deprecated"));
+    assert!(stdout.ends_with("\nC\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("forward_static_called_class_name"));
+}
+
+#[test]
 fn compile_dynamic_scoped_array_callable_validation_to_native_binary() {
     let root = temp_dir("ptn-native-dynamic-scoped-array-callable-validation");
     fs::create_dir_all(&root).unwrap();
@@ -42998,7 +43044,7 @@ var_dump(class_exists(__NAMESPACE__ . '\\\\Included', false));
 require __DIR__ . '/included-class.inc.php';
 var_dump(class_exists(__NAMESPACE__ . '\\\\Included', false));
 $object = new Included;
-echo get_class($object), \"\\n\";
+echo strstr(get_class($object), \"\\0\", true), \"\\n\";
 ",
     )
     .unwrap();
@@ -44551,6 +44597,35 @@ fn compile_direct_variable_interpolation_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "name=Ada count=3\nliteral$name\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_direct_array_interpolation_warns_to_native_binary() {
+    let root = temp_dir("ptn-native-array-interpolation-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-interpolation-warning.php");
+    let output = root.join("array-interpolation-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function ($errno, $errstr) {
+    echo \"Error: $errno - $errstr\\n\";
+});
+$value = [];
+echo \"Arg value $value\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error: 2 - Array to string conversion\nArg value Array\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -52422,6 +52497,115 @@ var_dump(get_object_vars(new Child()));
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_get_object_vars"));
+}
+
+#[test]
+fn compile_get_object_vars_preserves_referenced_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-get-object-vars-references");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("get-object-vars-references.php");
+    let output = root.join("get-object-vars-references-bin");
+    fs::write(
+        &input,
+        "<?php
+class Holder {
+    public $ref;
+    public $plain = 1;
+}
+
+$value = 10;
+$object = new Holder();
+$object->ref =& $value;
+$vars = get_object_vars($object);
+$vars['ref'] = 20;
+var_dump($value, $object->ref, $vars['ref']);
+$value = 30;
+var_dump($vars['ref']);
+$vars['plain'] = 9;
+var_dump($object->plain, $vars['plain']);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(20)\n",
+            "int(20)\n",
+            "int(20)\n",
+            "int(30)\n",
+            "int(1)\n",
+            "int(9)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_object_vars"));
+}
+
+#[test]
+fn compile_jsonserializable_anonymous_class_interface_to_native_binary() {
+    let root = temp_dir("ptn-native-jsonserializable-anonymous-interface");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("jsonserializable-anonymous-interface.php");
+    let output = root.join("jsonserializable-anonymous-interface-bin");
+    fs::write(
+        &input,
+        "<?php
+$object = new class implements JsonSerializable {
+    public function jsonSerialize(): mixed {
+        echo \"jsonSerialize\\n\";
+        return [\"ok\" => 1];
+    }
+};
+echo strstr(get_class($object), \"\\0\", true), \"\\n\";
+echo json_encode($object), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "JsonSerializable@anonymous\njsonSerialize\n{\"ok\":1}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_interface_exists_name"));
+}
+
+#[test]
+fn compile_incomplete_class_is_internal_final_to_native_binary() {
+    let root = temp_dir("ptn-native-incomplete-class-final");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("incomplete-class-final.php");
+    let output = root.join("incomplete-class-final-bin");
+    fs::write(
+        &input,
+        "<?php
+new class extends __PHP_Incomplete_Class {
+};
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert!(String::from_utf8(execution.stderr)
+        .unwrap()
+        .contains("cannot extend final class __PHP_Incomplete_Class"));
 }
 
 #[test]

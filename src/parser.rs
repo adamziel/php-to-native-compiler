@@ -18455,6 +18455,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "usleep"
             | "call_user_func"
             | "call_user_func_array"
+            | "forward_static_call"
             | "class_alias"
             | "class_exists"
             | "class_implements"

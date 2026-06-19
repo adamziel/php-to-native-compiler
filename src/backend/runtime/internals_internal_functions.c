@@ -9005,6 +9005,29 @@ static int ptn_json_encode_append_object(
         ptn_json_note_error(error, PTN_JSON_ERROR_RECURSION);
         return 0;
     }
+    if (ptn_var_dump_active_runtime != NULL &&
+        ptn_var_dump_active_runtime->method_dispatch != NULL &&
+        ptn_declared_class_implements_interface(object->class_name, "JsonSerializable")) {
+        ptn_dump_seen_objects_push(seen, object);
+        PtnValue receiver = ptn_object(object);
+        PtnValue serialized = ptn_var_dump_active_runtime->method_dispatch(
+            ptn_var_dump_active_runtime,
+            receiver,
+            "jsonSerialize",
+            0,
+            NULL,
+            ptn_var_dump_active_runtime->call_site_line
+        );
+        if (ptn_var_dump_active_runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&serialized);
+            ptn_dump_seen_objects_pop(seen);
+            return 0;
+        }
+        int ok = ptn_json_encode_append_value(buffer, serialized, seen, depth - 1, flags, error);
+        ptn_value_destroy(&serialized);
+        ptn_dump_seen_objects_pop(seen);
+        return ok;
+    }
     ptn_dump_seen_objects_push(seen, object);
     ptn_string_buffer_append_char(buffer, '{');
     size_t emitted = 0;
@@ -9131,7 +9154,6 @@ static int ptn_json_encode_append_value(
 }
 
 static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     PtnRuntime *previous_dump_runtime = ptn_var_dump_active_runtime;
     ptn_var_dump_active_runtime = runtime;
     int64_t flags = argc >= 2 ? ptn_value_to_integer(args[1]) : 0;
@@ -9144,11 +9166,14 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
                 "ValueError",
                 "json_encode(): Argument #3 ($depth) must be greater than 0"
             );
+            ptn_var_dump_active_runtime = previous_dump_runtime;
             return ptn_null();
         }
         depth = (size_t)requested_depth;
     }
 
+    size_t previous_call_site_line = runtime->call_site_line;
+    runtime->call_site_line = line;
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
     PtnDumpSeenArrays seen;
@@ -9156,6 +9181,7 @@ static PtnValue ptn_internal_json_encode(PtnRuntime *runtime, size_t argc, const
     int error = PTN_JSON_ERROR_NONE;
     int ok = ptn_json_encode_append_value(&buffer, args[0], &seen, depth, flags, &error);
     ptn_dump_seen_arrays_free(&seen);
+    runtime->call_site_line = previous_call_site_line;
     ptn_var_dump_active_runtime = previous_dump_runtime;
     if (!ok) {
         free(buffer.data);
@@ -57443,6 +57469,56 @@ static PtnValue ptn_internal_call_user_func_array(PtnRuntime *runtime, size_t ar
     return result;
 }
 
+static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (runtime->current_class_name == NULL && runtime->current_called_class_name == NULL) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot call forward_static_call() when no class scope is active",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+
+    size_t previous_call_site_line = runtime->call_site_line;
+    runtime->call_site_line = line;
+    PtnValue callback = ptn_internal_expect_callback_arg(runtime, "forward_static_call", 1, "callback", args[0]);
+    if (runtime->exceptions->active_exception != NULL) {
+        runtime->call_site_line = previous_call_site_line;
+        return ptn_null();
+    }
+
+    const char *previous_forward_static_called_class_name =
+        runtime->forward_static_called_class_name;
+    int previous_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
+    const char *forward_called_class = runtime->current_called_class_name != NULL
+        ? runtime->current_called_class_name
+        : runtime->current_class_name;
+    runtime->forward_static_called_class_name = forward_called_class;
+    runtime->warn_by_ref_argument_mismatch = 1;
+
+    PtnValue result = ptn_null();
+    int ok = ptn_internal_call_callback_capturing_exception_impl(
+        runtime,
+        callback,
+        argc - 1,
+        argc > 1 ? args + 1 : NULL,
+        line,
+        1,
+        &result
+    );
+
+    runtime->warn_by_ref_argument_mismatch = previous_warn_by_ref_argument_mismatch;
+    runtime->forward_static_called_class_name = previous_forward_static_called_class_name;
+    ptn_value_destroy(&callback);
+    runtime->call_site_line = previous_call_site_line;
+    if (!ok) {
+        ptn_rethrow_exception(runtime);
+    }
+    return result;
+}
+
 static int ptn_spl_object_id(PtnValue value, size_t *id_out) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -68187,6 +68263,7 @@ static PtnValue ptn_internal_date_timezone_set(PtnRuntime *runtime, size_t argc,
 static PtnValue ptn_internal_datetimezone_list_abbreviations(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_datetimezone_list_identifiers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -68551,6 +68628,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "flush", 0, 0, ptn_internal_flush },
         { "flock", 2, 3, ptn_internal_flock },
         { "fmod", 2, 2, ptn_internal_fmod },
+        { "forward_static_call", 1, PTN_VARIADIC_ARGS, ptn_internal_forward_static_call },
         { "fopen", 2, 4, ptn_internal_fopen },
         { "fpassthru", 1, 1, ptn_internal_fpassthru },
         { "fpow", 2, 2, ptn_internal_fpow },
@@ -70088,6 +70166,7 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "DOMParentNode")
         || ptn_ascii_case_equal(name, "DOMChildNode")
         || ptn_ascii_case_equal(name, "Countable")
+        || ptn_ascii_case_equal(name, "JsonSerializable")
         || ptn_ascii_case_equal(name, "Serializable");
 }
 
@@ -70163,6 +70242,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_ascii_case_equal(class_name, "Generator")
         || ptn_ascii_case_equal(class_name, "DateTime")
         || ptn_ascii_case_equal(class_name, "ArrayObject")
+        || ptn_ascii_case_equal(class_name, "__PHP_Incomplete_Class")
         || ptn_builtin_exception_class_name(class_name) != NULL;
 }
 
@@ -90990,12 +91070,23 @@ static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, c
 }
 
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
-    (void)line;
     char *name = ptn_value_to_string(args[0]);
     const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    int autoload = argc < 2 || ptn_is_truthy(args[1]);
     int exists = ptn_declared_trait_exists(resolved_name);
+    if (!exists && autoload && ptn_class_lookup_name_is_valid(lookup_name)) {
+        size_t previous_call_site_line = runtime->call_site_line;
+        runtime->call_site_line = line;
+        ptn_runtime_autoload_class(runtime, lookup_name, line);
+        runtime->call_site_line = previous_call_site_line;
+        if (runtime->exceptions->active_exception != NULL) {
+            free(name);
+            return ptn_null();
+        }
+        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        exists = ptn_declared_trait_exists(resolved_name);
+    }
     free(name);
     return ptn_bool(exists);
 }
@@ -91246,7 +91337,7 @@ static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, c
                 );
             }
         }
-        ptn_array_set_entry(result.as.array, result_key, ptn_value_clone_deref(entry->value));
+        ptn_array_set_entry(result.as.array, result_key, ptn_value_clone(entry->value));
     }
     return result;
 }

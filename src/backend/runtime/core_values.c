@@ -1156,6 +1156,7 @@ struct PtnRuntime {
     const char *current_class_name;
     const char *current_called_class_name;
     const char *called_class_name_override;
+    const char *forward_static_called_class_name;
     PtnGenerator *current_generator;
     int has_current_receiver;
     PtnValue current_receiver;

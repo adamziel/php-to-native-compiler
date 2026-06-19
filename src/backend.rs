@@ -5713,7 +5713,13 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_class_is_final(const char *name) {\n");
-    for class_name in ["Generator", "BcMath\\Number", "WeakMap", "WeakReference"] {
+    for class_name in [
+        "__PHP_Incomplete_Class",
+        "Generator",
+        "BcMath\\Number",
+        "WeakMap",
+        "WeakReference",
+    ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
         out.push_str("\")) {\n");
@@ -12363,6 +12369,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "soapclient" => Some("SoapClient"),
                 "soapserver" => Some("SoapServer"),
                 "phptoken" => Some("PhpToken"),
+                "__php_incomplete_class" => Some("__PHP_Incomplete_Class"),
                 "weakmap" => Some("WeakMap"),
                 "weakreference" => Some("WeakReference"),
                 "xmlwriter" => Some("XMLWriter"),
@@ -14210,11 +14217,20 @@ fn emit_callable_dispatch(
             "                    target_method_name = ptn_duplicate_string(method_name);\n",
         );
         out.push_str("                }\n");
+        out.push_str("                if (runtime->forward_static_called_class_name != NULL && ptn_ascii_case_equal(scope_name, \"self\") && runtime->current_class_name != NULL) {\n");
+        out.push_str("                    free(target_class_name);\n");
+        out.push_str("                    target_class_name = ptn_duplicate_string(runtime->current_class_name);\n");
+        out.push_str("                }\n");
         out.push_str("                PtnValue scoped_receiver = ptn_null();\n");
         out.push_str("                const char *called_class_name = target_class_name;\n");
         out.push_str("                if (separator == NULL && runtime->current_called_class_name != NULL && (ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\"))) {\n");
         out.push_str(
             "                    called_class_name = runtime->current_called_class_name;\n",
+        );
+        out.push_str("                }\n");
+        out.push_str("                if (runtime->forward_static_called_class_name != NULL && !ptn_ascii_case_equal(scope_name, \"self\") && !ptn_ascii_case_equal(scope_name, \"static\") && !ptn_ascii_case_equal(scope_name, \"parent\") && ptn_declared_class_is_same_or_descendant(runtime->forward_static_called_class_name, target_class_name)) {\n");
+        out.push_str(
+            "                    called_class_name = runtime->forward_static_called_class_name;\n",
         );
         out.push_str("                }\n");
         out.push_str("                if (runtime->has_current_receiver) {\n");
@@ -14264,10 +14280,19 @@ fn emit_callable_dispatch(
         out.push_str(
             "            char *target_method_name = ptn_duplicate_string(separator + 2);\n",
         );
+        out.push_str("            if (runtime->forward_static_called_class_name != NULL && ptn_ascii_case_equal(scope_name, \"self\") && runtime->current_class_name != NULL) {\n");
+        out.push_str("                free(target_class_name);\n");
+        out.push_str("                target_class_name = ptn_duplicate_string(runtime->current_class_name);\n");
+        out.push_str("            }\n");
         out.push_str("            PtnValue scoped_receiver = ptn_null();\n");
         out.push_str("            const char *called_class_name = target_class_name;\n");
         out.push_str("            if (runtime->current_called_class_name != NULL && (ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\"))) {\n");
         out.push_str("                called_class_name = runtime->current_called_class_name;\n");
+        out.push_str("            }\n");
+        out.push_str("            if (runtime->forward_static_called_class_name != NULL && !ptn_ascii_case_equal(scope_name, \"self\") && !ptn_ascii_case_equal(scope_name, \"static\") && !ptn_ascii_case_equal(scope_name, \"parent\") && ptn_declared_class_is_same_or_descendant(runtime->forward_static_called_class_name, target_class_name)) {\n");
+        out.push_str(
+            "                called_class_name = runtime->forward_static_called_class_name;\n",
+        );
         out.push_str("            }\n");
         out.push_str("            if (runtime->has_current_receiver) {\n");
         out.push_str("                PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
@@ -21188,6 +21213,7 @@ fn internal_call_may_invoke_callable(name: &str) -> bool {
         || name.eq_ignore_ascii_case("array_walk_recursive")
         || name.eq_ignore_ascii_case("call_user_func")
         || name.eq_ignore_ascii_case("call_user_func_array")
+        || name.eq_ignore_ascii_case("forward_static_call")
         || name.eq_ignore_ascii_case("ob_start")
         || name.eq_ignore_ascii_case("preg_replace_callback")
         || name.eq_ignore_ascii_case("preg_replace_callback_array")
@@ -29028,7 +29054,8 @@ impl ValueEmitter {
                     .iter()
                     .enumerate()
                     .find(|(_, class)| {
-                        class.initially_declared && class.name.eq_ignore_ascii_case(name)
+                        (class.initially_declared || class.is_anonymous)
+                            && class.name.eq_ignore_ascii_case(name)
                     })
                     .map(|(index, class)| (index, class.clone()))
             })
