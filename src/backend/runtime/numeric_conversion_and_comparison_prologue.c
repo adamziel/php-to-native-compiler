@@ -3211,6 +3211,21 @@ static PTN_UNUSED const char *ptn_uri_url_host_type_case_name(const char *case_n
     return NULL;
 }
 
+static PTN_UNUSED const char *ptn_uri_rfc3986_uri_type_constant_case_name(const char *case_name) {
+    static const char *const names[] = {
+        "Uri",
+        "NetworkPathReference",
+        "AbsolutePathReference",
+        "RelativePathReference",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        if (strcmp(case_name, names[i]) == 0) {
+            return names[i];
+        }
+    }
+    return NULL;
+}
+
 static PTN_UNUSED const char *ptn_uri_comparison_mode_case_name(const char *case_name) {
     if (strcmp(case_name, "IncludeFragment") == 0) {
         return "IncludeFragment";
@@ -4092,6 +4107,12 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_impl(
         : NULL;
     if (url_host_type_case != NULL) {
         return ptn_enum_case(runtime, "Uri\\WhatWg\\UrlHostType", url_host_type_case);
+    }
+    const char *uri_type_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\Rfc3986\\UriType")
+        ? ptn_uri_rfc3986_uri_type_constant_case_name(constant)
+        : NULL;
+    if (uri_type_case != NULL) {
+        return ptn_enum_case(runtime, "Uri\\Rfc3986\\UriType", uri_type_case);
     }
     const char *comparison_mode_case = ptn_ascii_case_equal(resolved_class_name, "Uri\\UriComparisonMode")
         ? ptn_uri_comparison_mode_case_name(constant)

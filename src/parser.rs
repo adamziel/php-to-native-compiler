@@ -11152,6 +11152,7 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
             | "reflectionexception"
             | "jsonexception"
             | "soapfault"
+            | "uri\\invaliduriexception"
             | "uri\\whatwg\\invalidurlexception"
             | "runtimeexception"
             | "invalidargumentexception"
@@ -11262,7 +11263,11 @@ fn is_modeled_archive_network_class_name(name: &str) -> bool {
 fn is_modeled_builtin_uri_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
-        "uri\\whatwg\\url" | "uri\\uricomparisonmode" | "uri\\whatwg\\urlhosttype"
+        "uri\\rfc3986\\uri"
+            | "uri\\rfc3986\\uritype"
+            | "uri\\whatwg\\url"
+            | "uri\\uricomparisonmode"
+            | "uri\\whatwg\\urlhosttype"
     )
 }
 
