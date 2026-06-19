@@ -22697,6 +22697,90 @@ try {
 }
 
 #[test]
+fn compile_reflection_enum_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-enum-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-enum-metadata.php");
+    let output = root.join("reflection-enum-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Suit {
+    case Hearts;
+    case Clubs;
+    const Alias = self::Hearts;
+}
+
+enum Code: int {
+    case Ok = 200;
+    case Missing = 404;
+}
+
+$unit = new ReflectionEnum(Suit::class);
+var_dump($unit->getName());
+var_dump($unit->isBacked());
+var_dump($unit->hasCase('Hearts'));
+var_dump($unit->hasCase('Alias'));
+var_dump(count($unit->getCases()));
+var_dump(get_class($unit->getCase('Hearts')));
+var_dump($unit->getCase('Hearts')->getValue() === Suit::Hearts);
+
+try {
+    $unit->getCase('Alias');
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$backed = new ReflectionEnum(Code::class);
+echo $backed->getBackingType(), \"\\n\";
+var_dump(count($backed->getCases()));
+var_dump(get_class($backed->getCases()[0]));
+var_dump($backed->getCases()[0]->getBackingValue());
+var_dump((new ReflectionEnumBackedCase(Code::class, 'Ok'))->getBackingValue());
+var_dump((new ReflectionEnumUnitCase(Suit::class, 'Hearts'))->getEnum()->getName());
+
+try {
+    new ReflectionEnumBackedCase(Suit::class, 'Hearts');
+} catch (ReflectionException $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(4) \"Suit\"\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "int(2)\n",
+            "string(22) \"ReflectionEnumUnitCase\"\n",
+            "bool(true)\n",
+            "Suit::Alias is not a case\n",
+            "int\n",
+            "int(2)\n",
+            "string(24) \"ReflectionEnumBackedCase\"\n",
+            "int(200)\n",
+            "int(200)\n",
+            "string(4) \"Suit\"\n",
+            "Enum case Suit::Hearts is not a backed case\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_enum_backing_type_name"));
+    assert!(c_source.contains("ptn_declared_class_reflection_enum_cases"));
+    assert!(c_source.contains("ptn_reflection_enum_call_method"));
+}
+
+#[test]
 fn compile_non_public_class_constant_visibility_to_native_binary() {
     let root = temp_dir("ptn-native-non-public-class-constant-visibility");
     fs::create_dir_all(&root).unwrap();

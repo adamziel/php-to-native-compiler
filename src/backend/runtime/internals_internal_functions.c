@@ -69395,6 +69395,7 @@ static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *na
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
+static const char *ptn_declared_class_enum_backing_type_name(const char *name);
 static int ptn_declared_class_is_abstract(const char *name);
 static int ptn_declared_class_is_final(const char *name);
 static int ptn_declared_class_is_readonly(const char *name);
@@ -69451,6 +69452,8 @@ static int ptn_declared_class_reflection_constant_modifiers(const char *class_na
 static const char *ptn_declared_class_reflection_constant_doc_comment(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_enum_case(const char *class_name, const char *constant_name);
+static PtnValue ptn_declared_class_reflection_enum_cases(PtnRuntime *runtime, const char *class_name, size_t line);
+static PtnValue ptn_declared_class_reflection_enum_case(PtnRuntime *runtime, const char *class_name, const char *case_name, size_t line);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
 static PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
@@ -75325,7 +75328,8 @@ static PtnReflectionClassConstantData *ptn_reflection_class_constant_data(
     receiver = ptn_value_deref(receiver);
     if (
         receiver.type != PTN_OBJECT
-        || !ptn_internal_class_name_is_reflection_class_constant(receiver.as.object->class_name)
+        || (!ptn_internal_class_name_is_reflection_class_constant(receiver.as.object->class_name)
+            && !ptn_internal_class_name_is_reflection_enum_case(receiver.as.object->class_name))
         || receiver.as.object->native_data == NULL
     ) {
         ptn_throw_exception(runtime, "Error", "Invalid ReflectionClassConstant object");
@@ -75342,8 +75346,9 @@ static char *ptn_reflection_class_target_name(
 );
 static void ptn_reflection_class_throw_missing_class(PtnRuntime *runtime, const char *name);
 
-static PtnValue ptn_reflection_class_constant_object_from_name(
+static PtnValue ptn_reflection_class_constant_object_from_name_as(
     PtnRuntime *runtime,
+    const char *reflection_class_name,
     const char *class_name,
     const char *constant_name
 ) {
@@ -75354,7 +75359,7 @@ static PtnValue ptn_reflection_class_constant_object_from_name(
     data->class_name = ptn_duplicate_string(class_name);
     data->name = ptn_duplicate_string(constant_name);
 
-    PtnValue object = ptn_object_new_shell(runtime, "ReflectionClassConstant");
+    PtnValue object = ptn_object_new_shell(runtime, reflection_class_name);
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_class_constant_data_free;
     PtnValue name_value = ptn_owned_string(ptn_duplicate_string(constant_name));
@@ -75396,6 +75401,33 @@ static PtnValue ptn_reflection_class_constant_object_from_name(
     ptn_value_destroy(&assigned);
     ptn_value_destroy(&class_value);
     return object;
+}
+
+static PtnValue ptn_reflection_class_constant_object_from_name(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant_name
+) {
+    return ptn_reflection_class_constant_object_from_name_as(
+        runtime,
+        "ReflectionClassConstant",
+        class_name,
+        constant_name
+    );
+}
+
+static PtnValue ptn_reflection_enum_case_object_from_name(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant_name,
+    int backed
+) {
+    return ptn_reflection_class_constant_object_from_name_as(
+        runtime,
+        backed ? "ReflectionEnumBackedCase" : "ReflectionEnumUnitCase",
+        class_name,
+        constant_name
+    );
 }
 
 static PtnValue ptn_reflection_class_constant_throw_missing(
@@ -84212,6 +84244,536 @@ static void ptn_reflection_check_exact_arguments(
     ptn_throw_exception(runtime, "ArgumentCountError", message);
 }
 
+static PtnValue ptn_reflection_enum_object_from_name(PtnRuntime *runtime, const char *name) {
+    return ptn_reflection_class_object_from_name_as(runtime, "ReflectionEnum", name);
+}
+
+static PtnReflectionClassData *ptn_reflection_enum_data(PtnRuntime *runtime, PtnValue receiver) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_enum(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionEnum object");
+        return NULL;
+    }
+    return (PtnReflectionClassData *)receiver.as.object->native_data;
+}
+
+static PtnReflectionClassConstantData *ptn_reflection_enum_case_data(
+    PtnRuntime *runtime,
+    PtnValue receiver
+) {
+    receiver = ptn_value_deref(receiver);
+    if (
+        receiver.type != PTN_OBJECT
+        || !ptn_internal_class_name_is_reflection_enum_case(receiver.as.object->class_name)
+        || receiver.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid ReflectionEnumUnitCase object");
+        return NULL;
+    }
+    return (PtnReflectionClassConstantData *)receiver.as.object->native_data;
+}
+
+static void ptn_reflection_enum_throw_not_enum(PtnRuntime *runtime, const char *class_name) {
+    int needed = snprintf(NULL, 0, "Class \"%s\" is not an enum", class_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Class \"%s\" is not an enum", class_name);
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static char *ptn_reflection_enum_class_arg_name(
+    PtnRuntime *runtime,
+    const char *context,
+    const char *parameter_name,
+    PtnValue target,
+    size_t line
+) {
+    target = ptn_value_deref(target);
+    if (target.type == PTN_OBJECT) {
+        if (ptn_internal_class_name_is_reflection_class(target.as.object->class_name) ||
+            ptn_internal_class_name_is_reflection_enum(target.as.object->class_name)) {
+            PtnReflectionClassData *data = ptn_reflection_class_data(runtime, target);
+            return data == NULL ? NULL : ptn_duplicate_string(data->name);
+        }
+        return ptn_duplicate_string(target.as.object->class_name);
+    }
+    if (target.type == PTN_CLOSURE) {
+        return ptn_duplicate_string("Closure");
+    }
+    if (target.type == PTN_EXCEPTION) {
+        return ptn_duplicate_string(target.as.exception->class_name);
+    }
+    if (target.type == PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Argument #1 ($%s) must be of type object|string, array given",
+            context,
+            parameter_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return NULL;
+    }
+    if (target.type == PTN_NULL) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s(): Passing null to parameter #1 ($%s) of type object|string is deprecated",
+            context,
+            parameter_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_deprecation(&runtime->diagnostics, message, line);
+    }
+    return ptn_value_to_string(target);
+}
+
+static char *ptn_reflection_enum_resolved_class_name(
+    PtnRuntime *runtime,
+    const char *context,
+    const char *parameter_name,
+    PtnValue target,
+    size_t line
+) {
+    char *class_name = ptn_reflection_enum_class_arg_name(
+        runtime,
+        context,
+        parameter_name,
+        target,
+        line
+    );
+    if (class_name == NULL || runtime->exceptions->active_exception != NULL) {
+        free(class_name);
+        return NULL;
+    }
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(class_name);
+    const char *resolved_name = NULL;
+    if (!ptn_reflection_class_runtime_symbol_exists_after_autoload(
+            runtime,
+            lookup_name,
+            line,
+            &resolved_name
+        )) {
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_reflection_class_throw_missing_class(runtime, lookup_name);
+        }
+        free(class_name);
+        return NULL;
+    }
+    if (!ptn_declared_class_is_enum(resolved_name)) {
+        ptn_reflection_enum_throw_not_enum(runtime, lookup_name);
+        free(class_name);
+        return NULL;
+    }
+    char *resolved_copy = ptn_duplicate_string(resolved_name);
+    free(class_name);
+    return resolved_copy;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_enum_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_reflection_check_exact_arguments(runtime, "ReflectionEnum", "__construct", argc, 1);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char *class_name = ptn_reflection_enum_resolved_class_name(
+        runtime,
+        "ReflectionEnum::__construct",
+        "objectOrClass",
+        args[0],
+        line
+    );
+    if (class_name == NULL) {
+        return ptn_null();
+    }
+    PtnValue object = ptn_reflection_enum_object_from_name(runtime, class_name);
+    free(class_name);
+    return object;
+}
+
+static void ptn_reflection_enum_throw_missing_case(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name
+) {
+    int needed = snprintf(NULL, 0, "Case %s::%s does not exist", class_name, case_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Case %s::%s does not exist", class_name, case_name);
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static void ptn_reflection_enum_throw_not_case(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name,
+    int use_constant_prefix
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        use_constant_prefix ? "Constant %s::%s is not a case" : "%s::%s is not a case",
+        class_name,
+        case_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        use_constant_prefix ? "Constant %s::%s is not a case" : "%s::%s is not a case",
+        class_name,
+        case_name
+    );
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static void ptn_reflection_enum_throw_unbacked_case(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name
+) {
+    int needed = snprintf(NULL, 0, "Enum case %s::%s is not a backed case", class_name, case_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(message, (size_t)needed + 1, "Enum case %s::%s is not a backed case", class_name, case_name);
+    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+}
+
+static char *ptn_reflection_enum_string_arg(
+    PtnRuntime *runtime,
+    const char *context,
+    const char *parameter_name,
+    size_t position,
+    PtnValue arg,
+    size_t line
+) {
+    PtnStringOperand operand = ptn_internal_expect_string_arg(
+        runtime,
+        context,
+        position,
+        parameter_name,
+        arg,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(operand);
+        return NULL;
+    }
+    char *result = ptn_duplicate_string_len(operand.data, operand.len);
+    ptn_string_operand_free(operand);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_enum_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_reflection_enum_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+
+    PtnReflectionClassData *data = ptn_reflection_enum_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    const char *class_name = data->name;
+
+    if (ptn_ascii_case_equal(name, "isBacked")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionEnum", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(ptn_declared_class_enum_backing_type_name(class_name) != NULL);
+    }
+    if (ptn_ascii_case_equal(name, "getBackingType")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionEnum", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        const char *backing_type = ptn_declared_class_enum_backing_type_name(class_name);
+        return backing_type == NULL
+            ? ptn_null()
+            : ptn_reflection_named_type_object_from_metadata(
+                runtime,
+                backing_type,
+                backing_type,
+                0,
+                1
+            );
+    }
+    if (ptn_ascii_case_equal(name, "getCases")) {
+        ptn_reflection_check_no_arguments(runtime, "ReflectionEnum", name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_declared_class_reflection_enum_cases(runtime, class_name, line);
+    }
+    if (ptn_ascii_case_equal(name, "hasCase")) {
+        ptn_reflection_check_exact_arguments(runtime, "ReflectionEnum", name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        char *case_name = ptn_reflection_enum_string_arg(
+            runtime,
+            "ReflectionEnum::hasCase",
+            "name",
+            1,
+            args[0],
+            line
+        );
+        if (case_name == NULL) {
+            return ptn_null();
+        }
+        int result = ptn_declared_class_constant_exists(class_name, case_name)
+            && ptn_declared_class_reflection_constant_is_enum_case(class_name, case_name);
+        free(case_name);
+        return ptn_bool(result);
+    }
+    if (ptn_ascii_case_equal(name, "getCase")) {
+        ptn_reflection_check_exact_arguments(runtime, "ReflectionEnum", name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        char *case_name = ptn_reflection_enum_string_arg(
+            runtime,
+            "ReflectionEnum::getCase",
+            "name",
+            1,
+            args[0],
+            line
+        );
+        if (case_name == NULL) {
+            return ptn_null();
+        }
+        if (!ptn_declared_class_constant_exists(class_name, case_name)) {
+            ptn_reflection_enum_throw_missing_case(runtime, class_name, case_name);
+            free(case_name);
+            return ptn_null();
+        }
+        if (!ptn_declared_class_reflection_constant_is_enum_case(class_name, case_name)) {
+            ptn_reflection_enum_throw_not_case(runtime, class_name, case_name, 0);
+            free(case_name);
+            return ptn_null();
+        }
+        PtnValue result = ptn_declared_class_reflection_enum_case(
+            runtime,
+            class_name,
+            case_name,
+            line
+        );
+        free(case_name);
+        return result;
+    }
+
+    return ptn_reflection_class_call_method(runtime, receiver, name, argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
+    PtnRuntime *runtime,
+    const char *reflection_class_name,
+    int require_backed,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_reflection_check_exact_arguments(runtime, reflection_class_name, "__construct", argc, 2);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    char context[80];
+    int context_written = snprintf(
+        context,
+        sizeof(context),
+        "%s::__construct",
+        reflection_class_name
+    );
+    if (context_written < 0 || (size_t)context_written >= sizeof(context)) {
+        ptn_abort_out_of_memory();
+    }
+    char *class_name = ptn_reflection_enum_resolved_class_name(
+        runtime,
+        context,
+        "class",
+        args[0],
+        line
+    );
+    if (class_name == NULL) {
+        return ptn_null();
+    }
+    char *case_name = ptn_reflection_enum_string_arg(
+        runtime,
+        context,
+        "constant",
+        2,
+        args[1],
+        line
+    );
+    if (case_name == NULL) {
+        free(class_name);
+        return ptn_null();
+    }
+    if (!ptn_declared_class_constant_exists(class_name, case_name)) {
+        PtnValue result = ptn_reflection_class_constant_throw_missing(
+            runtime,
+            class_name,
+            case_name
+        );
+        free(class_name);
+        free(case_name);
+        return result;
+    }
+    if (!ptn_declared_class_reflection_constant_is_enum_case(class_name, case_name)) {
+        ptn_reflection_enum_throw_not_case(runtime, class_name, case_name, 1);
+        free(class_name);
+        free(case_name);
+        return ptn_null();
+    }
+    int is_backed = ptn_declared_class_enum_backing_type_name(class_name) != NULL;
+    if (require_backed && !is_backed) {
+        ptn_reflection_enum_throw_unbacked_case(runtime, class_name, case_name);
+        free(class_name);
+        free(case_name);
+        return ptn_null();
+    }
+    PtnValue result = ptn_reflection_class_constant_object_from_name_as(
+        runtime,
+        reflection_class_name,
+        class_name,
+        case_name
+    );
+    free(class_name);
+    free(case_name);
+    return result;
+}
+
+static PTN_UNUSED PtnValue ptn_reflection_enum_case_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    const char *reflection_class_name =
+        resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object->class_name : "ReflectionEnumUnitCase";
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        int require_backed = ptn_internal_class_name_is_reflection_enum_backed_case(reflection_class_name);
+        PtnValue replacement = ptn_reflection_enum_case_new(
+            runtime,
+            reflection_class_name,
+            require_backed,
+            argc,
+            args,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (replacement.type == PTN_OBJECT &&
+            replacement.as.object->native_data != NULL &&
+            resolved_receiver.type == PTN_OBJECT) {
+            ptn_adopt_internal_parent_object_state(resolved_receiver, replacement);
+        }
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
+
+    PtnReflectionClassConstantData *data = ptn_reflection_enum_case_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "getEnum")) {
+        ptn_reflection_check_no_arguments(runtime, reflection_class_name, name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_enum_object_from_name(runtime, data->class_name);
+    }
+    if (ptn_ascii_case_equal(name, "getBackingValue")) {
+        ptn_reflection_check_no_arguments(runtime, reflection_class_name, name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue enum_case = ptn_runtime_read_class_constant(
+            runtime,
+            data->class_name,
+            data->name,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&enum_case);
+            return ptn_null();
+        }
+        PtnValue backing_value = ptn_object_read_property(
+            runtime,
+            enum_case,
+            "value",
+            data->class_name,
+            line
+        );
+        ptn_value_destroy(&enum_case);
+        return backing_value;
+    }
+    if (ptn_ascii_case_equal(name, "getValue")) {
+        ptn_reflection_check_no_arguments(runtime, reflection_class_name, name, argc);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_runtime_read_class_constant(runtime, data->class_name, data->name, line);
+    }
+    return ptn_reflection_class_constant_call_method(runtime, receiver, name, argc, args, line);
+}
+
 static PtnValue ptn_reflection_function_dispatch_invoke(
     PtnRuntime *runtime,
     PtnReflectionFunctionData *data,
@@ -84523,12 +85085,7 @@ static void ptn_reflection_extension_add_enum(
     int objects
 ) {
     if (objects) {
-        PtnValue object = ptn_object_new_shell(runtime, "ReflectionEnum");
-        ptn_array_set_entry(
-            object.as.object->properties,
-            ptn_array_string_key("name"),
-            ptn_owned_string(ptn_duplicate_string(enum_name))
-        );
+        PtnValue object = ptn_reflection_enum_object_from_name(runtime, enum_name);
         ptn_array_set_entry(result.as.array, ptn_array_string_key(enum_name), object);
         return;
     }

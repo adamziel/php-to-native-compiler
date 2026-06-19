@@ -1538,6 +1538,10 @@ static PTN_UNUSED void ptn_runtime_release_object_id(PtnRuntime *runtime, size_t
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_attribute(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_object(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_unit_case(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_backed_case(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_case(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_extension(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_function(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_method(const char *class_name);
@@ -1628,6 +1632,20 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
 );
 static PTN_UNUSED PtnValue ptn_reflection_object_new(
     PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_enum_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
+    PtnRuntime *runtime,
+    const char *reflection_class_name,
+    int require_backed,
     size_t argc,
     const PtnValue *args,
     size_t line
@@ -1958,6 +1976,22 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_enum_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_reflection_enum_case_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

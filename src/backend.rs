@@ -5046,6 +5046,9 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     out.push_str("static const char *ptn_declared_class_parent_name(const char *name);\n");
     out.push_str("static int ptn_declared_class_exists(const char *name);\n");
     out.push_str("static int ptn_declared_class_is_enum(const char *name);\n");
+    out.push_str(
+        "static const char *ptn_declared_class_enum_backing_type_name(const char *name);\n",
+    );
     out.push_str("static int ptn_declared_class_is_final(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_call_magic(const char *class_name);\n");
     out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
@@ -5170,6 +5173,9 @@ fn emit_class_metadata_helpers(
         "ReflectionClass",
         "ReflectionClassConstant",
         "ReflectionConstant",
+        "ReflectionEnum",
+        "ReflectionEnumBackedCase",
+        "ReflectionEnumUnitCase",
         "ReflectionExtension",
         "ReflectionFunction",
         "ReflectionMethod",
@@ -5388,6 +5394,30 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str(
+        "\nstatic PTN_UNUSED const char *ptn_declared_class_enum_backing_type_name(const char *name) {\n",
+    );
+    if classes
+        .iter()
+        .all(|class| !class.is_enum || class.enum_backing_type.is_none())
+    {
+        out.push_str("    (void)name;\n");
+    }
+    for class in classes
+        .iter()
+        .filter(|class| class.is_enum && class.enum_backing_type.is_some())
+    {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return \"");
+        out.push_str(c_enum_backing_type_name(class.enum_backing_type.unwrap()));
+        out.push_str("\";\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return NULL;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_interface_exists(const char *name) {\n");
     for builtin in [
         "ArrayAccess",
@@ -5551,6 +5581,9 @@ fn emit_class_metadata_helpers(
         "ReflectionClass",
         "ReflectionClassConstant",
         "ReflectionConstant",
+        "ReflectionEnum",
+        "ReflectionEnumBackedCase",
+        "ReflectionEnumUnitCase",
         "ReflectionExtension",
         "ReflectionFunction",
         "ReflectionMethod",
@@ -6013,6 +6046,9 @@ fn emit_class_metadata_helpers(
         ("RecursiveArrayIterator", "ArrayIterator"),
         ("ReflectionFunction", "ReflectionFunctionAbstract"),
         ("ReflectionMethod", "ReflectionFunctionAbstract"),
+        ("ReflectionEnum", "ReflectionClass"),
+        ("ReflectionEnumBackedCase", "ReflectionEnumUnitCase"),
+        ("ReflectionEnumUnitCase", "ReflectionClassConstant"),
         ("ReflectionObject", "ReflectionClass"),
         ("SplFileObject", "SplFileInfo"),
         ("SplMaxHeap", "SplHeap"),
@@ -6501,6 +6537,95 @@ fn emit_class_metadata_helpers(
             out.push_str("    }\n");
         }
         out.push_str("    return result;\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_enum_cases(PtnRuntime *runtime, const char *class_name, size_t line) {\n",
+        );
+        out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
+        out.push_str("    int64_t index = 0;\n");
+        out.push_str("    (void)line;\n");
+        let has_enum_classes = classes.iter().any(|class| class.is_enum);
+        let has_enum_cases = classes
+            .iter()
+            .flat_map(|class| class.constants.iter())
+            .any(|constant| constant.is_enum_case);
+        if !has_enum_classes {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_enum_cases {
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    (void)index;\n");
+        }
+        for class in classes.iter().filter(|class| class.is_enum) {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for constant in class
+                .constants
+                .iter()
+                .filter(|constant| constant.is_enum_case)
+            {
+                out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_enum_case_object_from_name(runtime, \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\", ");
+                out.push_str(if class.enum_backing_type.is_some() {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str("));\n");
+            }
+            out.push_str("        return result;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return result;\n");
+        out.push_str("}\n");
+
+        out.push_str(
+            "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_enum_case(PtnRuntime *runtime, const char *class_name, const char *case_name, size_t line) {\n",
+        );
+        out.push_str("    (void)line;\n");
+        if !has_enum_classes {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_enum_cases {
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    (void)case_name;\n");
+        }
+        for class in classes.iter().filter(|class| class.is_enum) {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for constant in class
+                .constants
+                .iter()
+                .filter(|constant| constant.is_enum_case)
+            {
+                out.push_str("        if (strcmp(case_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                out.push_str(
+                    "            return ptn_reflection_enum_case_object_from_name(runtime, \"",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\", ");
+                out.push_str(if class.enum_backing_type.is_some() {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(");\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return ptn_null();\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return ptn_null();\n");
         out.push_str("}\n");
 
         out.push_str(
@@ -8781,6 +8906,9 @@ fn attribute_class_constant_class_available(class_name: &str, classes: &[ClassDe
         || class_name.eq_ignore_ascii_case("ReflectionClass")
         || class_name.eq_ignore_ascii_case("ReflectionClassConstant")
         || class_name.eq_ignore_ascii_case("ReflectionConstant")
+        || class_name.eq_ignore_ascii_case("ReflectionEnum")
+        || class_name.eq_ignore_ascii_case("ReflectionEnumBackedCase")
+        || class_name.eq_ignore_ascii_case("ReflectionEnumUnitCase")
         || class_name.eq_ignore_ascii_case("ReflectionFunction")
         || class_name.eq_ignore_ascii_case("ReflectionMethod")
         || class_name.eq_ignore_ascii_case("ReflectionProperty")
@@ -12895,6 +13023,9 @@ fn modeled_reflection_internal_class_name(name: &str) -> Option<&'static str> {
         "reflectionclass" => Some("ReflectionClass"),
         "reflectionclassconstant" => Some("ReflectionClassConstant"),
         "reflectionconstant" => Some("ReflectionConstant"),
+        "reflectionenum" => Some("ReflectionEnum"),
+        "reflectionenumbackedcase" => Some("ReflectionEnumBackedCase"),
+        "reflectionenumunitcase" => Some("ReflectionEnumUnitCase"),
         "reflectionextension" => Some("ReflectionExtension"),
         "reflectionfunction" => Some("ReflectionFunction"),
         "reflectionfunctionabstract" => Some("ReflectionFunctionAbstract"),
@@ -12982,11 +13113,18 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
 }
 
 fn emit_modeled_internal_class_vars(out: &mut String, indent: &str, class_name: &str) {
-    let property_names: &[&str] = if matches!(class_name, "ReflectionClass" | "ReflectionObject") {
+    let property_names: &[&str] = if matches!(
+        class_name,
+        "ReflectionClass" | "ReflectionEnum" | "ReflectionObject"
+    ) {
         &["name"]
     } else if matches!(
         class_name,
-        "ReflectionClassConstant" | "ReflectionMethod" | "ReflectionProperty"
+        "ReflectionClassConstant"
+            | "ReflectionEnumBackedCase"
+            | "ReflectionEnumUnitCase"
+            | "ReflectionMethod"
+            | "ReflectionProperty"
     ) {
         &["name", "class"]
     } else if matches!(
@@ -14041,6 +14179,16 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_class_name_is_reflection_enum(class_name)) {\n");
+    out.push_str(
+        "        return ptn_reflection_enum_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_reflection_enum_case(class_name)) {\n");
+    out.push_str(
+        "        return ptn_reflection_enum_case_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_fiber(class_name)) {\n");
     out.push_str(
         "        return ptn_fiber_call_method(runtime, resolved, method_name, argc, args, line);\n",

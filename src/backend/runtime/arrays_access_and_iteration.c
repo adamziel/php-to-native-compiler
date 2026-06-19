@@ -903,6 +903,29 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_reflection_object(lookup_class_name)) {
         return ptn_reflection_object_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_reflection_enum(lookup_class_name)) {
+        return ptn_reflection_enum_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_reflection_enum_unit_case(lookup_class_name)) {
+        return ptn_reflection_enum_case_new(
+            runtime,
+            "ReflectionEnumUnitCase",
+            0,
+            argc,
+            args,
+            line
+        );
+    }
+    if (ptn_internal_class_name_is_reflection_enum_backed_case(lookup_class_name)) {
+        return ptn_reflection_enum_case_new(
+            runtime,
+            "ReflectionEnumBackedCase",
+            1,
+            argc,
+            args,
+            line
+        );
+    }
     if (ptn_internal_class_name_is_reflection_extension(lookup_class_name)) {
         return ptn_reflection_extension_new(runtime, argc, args, line);
     }
