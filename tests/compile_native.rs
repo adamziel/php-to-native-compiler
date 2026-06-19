@@ -32053,7 +32053,7 @@ var_dump(function_exists(\"call_user_func_array\"), function_exists(\"CALL_USER_
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_call_user_func_array"));
-    assert!(c_source.contains("ptn_internal_call_callback(runtime, args[0], arguments->len"));
+    assert!(c_source.contains("ptn_internal_call_user_callback(runtime, callback, arguments->len"));
 }
 
 #[test]
@@ -44046,6 +44046,47 @@ var_dump(call_user_func(\"inspect_args\", \"one\", \"two\"));
     assert!(c_source.contains("ptn_call_callable("));
     assert!(c_source.contains("args[0]"));
     assert!(c_source.contains("argc - 1"));
+}
+
+#[test]
+fn compile_call_user_func_static_string_callback_autoloads_before_type_error() {
+    let root = temp_dir("ptn-native-call-user-func-static-autoload-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-static-autoload-type-error.php");
+    let output = root.join("call-user-func-static-autoload-type-error-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($name) {
+    echo \"In autoload: \";
+    var_dump($name);
+});
+
+try {
+    call_user_func(\"UndefC::test\");
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "In autoload: string(6) \"UndefC\"\n",
+            "call_user_func(): Argument #1 ($callback) must be a valid callback, class \"UndefC\" not found\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_expect_callback_arg"));
+    assert!(c_source.contains("ptn_internal_call_user_func"));
 }
 
 #[test]

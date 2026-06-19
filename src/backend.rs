@@ -11445,10 +11445,24 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        char *name = ptn_value_to_string(resolved);\n");
     out.push_str("        char *separator = strstr(name, \"::\");\n");
     out.push_str("        int valid = 0;\n");
-    out.push_str("        if (separator != NULL) {\n");
+    out.push_str(
+        "        if (separator != NULL && separator != name && separator[2] != '\\0') {\n",
+    );
     out.push_str("            *separator = '\\0';\n");
     out.push_str(
-        "            valid = ptn_declared_class_static_method_is_callable(name, separator + 2, access_scope);\n",
+        "            const char *class_name = ptn_symbol_name_without_leading_slash(name);\n",
+    );
+    out.push_str("            const char *resolved_class_name = runtime == NULL ? class_name : ptn_runtime_resolve_class_alias(runtime, class_name);\n");
+    out.push_str("            if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name)) {\n");
+    out.push_str("                ptn_runtime_autoload_class(runtime, class_name, runtime->call_site_line);\n");
+    out.push_str("                if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("                    free(name);\n");
+    out.push_str("                    return 0;\n");
+    out.push_str("                }\n");
+    out.push_str("                resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);\n");
+    out.push_str("            }\n");
+    out.push_str(
+        "            valid = ptn_declared_class_static_method_is_callable(resolved_class_name, separator + 2, access_scope) || (ptn_internal_class_exists_name(resolved_class_name) && ptn_internal_class_static_method_exists(resolved_class_name, separator + 2));\n",
     );
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
@@ -11505,6 +11519,32 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        }\n");
     out.push_str("        char *class_name = ptn_value_to_string(scope);\n");
     out.push_str("        char *method_name = ptn_value_to_string(method);\n");
+    out.push_str("        char *resolved_class_name_owned = NULL;\n");
+    out.push_str("        const char *resolved_class_name = class_name;\n");
+    out.push_str("        if (ptn_ascii_case_equal(class_name, \"self\") || ptn_ascii_case_equal(class_name, \"static\")) {\n");
+    out.push_str("            const char *resolved = runtime == NULL ? NULL : (runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name);\n");
+    out.push_str("            if (resolved != NULL) {\n");
+    out.push_str("                resolved_class_name = resolved;\n");
+    out.push_str("            }\n");
+    out.push_str("        } else if (ptn_ascii_case_equal(class_name, \"parent\")) {\n");
+    out.push_str("            const char *base = runtime == NULL ? NULL : runtime->current_class_name;\n");
+    out.push_str("            const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);\n");
+    out.push_str("            if (parent != NULL) {\n");
+    out.push_str("                resolved_class_name = parent;\n");
+    out.push_str("            }\n");
+    out.push_str("        } else {\n");
+    out.push_str("            const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);\n");
+    out.push_str("            resolved_class_name = runtime == NULL ? lookup_class_name : ptn_runtime_resolve_class_alias(runtime, lookup_class_name);\n");
+    out.push_str("            if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name)) {\n");
+    out.push_str("                ptn_runtime_autoload_class(runtime, lookup_class_name, runtime->call_site_line);\n");
+    out.push_str("                if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("                    free(method_name);\n");
+    out.push_str("                    free(class_name);\n");
+    out.push_str("                    return 0;\n");
+    out.push_str("                }\n");
+    out.push_str("                resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
     out.push_str("        int needed = snprintf(NULL, 0, \"%s::%s\", class_name, method_name);\n");
     out.push_str("        if (needed < 0) {\n");
     out.push_str("            free(method_name);\n");
@@ -11518,8 +11558,9 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            ptn_abort_out_of_memory();\n");
     out.push_str("        }\n");
     out.push_str("        snprintf(function_name, (size_t)needed + 1, \"%s::%s\", class_name, method_name);\n");
-    out.push_str("        int valid = ptn_declared_class_static_method_is_callable(class_name, method_name, access_scope) || ptn_find_internal_function(function_name) != NULL;\n");
+    out.push_str("        int valid = ptn_declared_class_static_method_is_callable(resolved_class_name, method_name, access_scope) || (ptn_internal_class_exists_name(resolved_class_name) && ptn_internal_class_static_method_exists(resolved_class_name, method_name)) || ptn_find_internal_function(function_name) != NULL;\n");
     out.push_str("        free(function_name);\n");
+    out.push_str("        free(resolved_class_name_owned);\n");
     out.push_str("        free(method_name);\n");
     out.push_str("        free(class_name);\n");
     out.push_str("        return valid;\n");
