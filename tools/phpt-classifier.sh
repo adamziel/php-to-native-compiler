@@ -1837,6 +1837,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
         }
         function ptn_supported_enum_metadata_row() {
             return ptn_path ~ /Zend\/tests\/enum\/(__call|__callStatic|__class__|__clone|__function__|__get|__invoke|__isset|__method__|__serialize|__set|__set_state|__sleep|__toString|__unserialize|__unset|__wakeup|backed-cases-int|backed-cases-string|backed-duplicate-int|backed-duplicate-string|backed-from-invalid-int|backed-from-invalid-string)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/enum\/(backed-int-case-without-value|backed-int-const-invalid-expr|backed-invalid|backed-mismatch|backed-tryFrom-casing|backed-type-no-union|comparison|enum-in-var-export|var_export)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/Attribute\/Attribute_on_enum[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/allow_dynamic_properties_on_enum[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/deprecated\/(class_constants\/101|error_on_enum)[.]phpt$/ ||

@@ -8468,6 +8468,13 @@ static void ptn_var_export_append_object(
             return;
         }
     }
+    if (object != NULL && object->enum_case_name != NULL) {
+        ptn_string_buffer_append_char(buffer, '\\');
+        ptn_string_buffer_append(buffer, object->class_name);
+        ptn_string_buffer_append(buffer, "::");
+        ptn_string_buffer_append(buffer, object->enum_case_name);
+        return;
+    }
     if (ptn_dump_seen_objects_contains(seen, object)) {
         ptn_emit_warning(
             &runtime->diagnostics,
@@ -69507,6 +69514,7 @@ static int ptn_declared_class_property_exists(const char *class_name, const char
 static const char *ptn_property_exists_target_type_name(PtnValue value);
 static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_enum_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_implements(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_parents(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_class_uses(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -69859,6 +69867,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
         { "doubleval", 1, 1, ptn_internal_floatval },
         { "end", 1, 1, ptn_internal_end },
+        { "enum_exists", 1, 2, ptn_internal_enum_exists },
         { "error_log", 1, 4, ptn_internal_error_log },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
         { "escapeshellarg", 1, 1, ptn_internal_escapeshellarg },
@@ -70612,6 +70621,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "constant") ||
         ptn_ascii_case_equal(name, "define") ||
         ptn_ascii_case_equal(name, "defined") ||
+        ptn_ascii_case_equal(name, "enum_exists") ||
         ptn_ascii_case_equal(name, "extension_loaded") ||
         ptn_ascii_case_equal(name, "function_exists") ||
         ptn_ascii_case_equal(name, "gc_collect_cycles") ||
@@ -71084,7 +71094,8 @@ static PtnValue ptn_internal_closure_bind(PtnRuntime *runtime, size_t argc, cons
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *class_name) {
-    return ptn_ascii_case_equal(class_name, "ReflectionClass");
+    return ptn_ascii_case_equal(class_name, "ReflectionClass")
+        || ptn_ascii_case_equal(class_name, "ReflectionEnum");
 }
 
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum(const char *class_name) {
@@ -92865,6 +92876,28 @@ static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, cons
         const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
         exists = ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_internal_class_exists_name(resolved_name);
     }
+    free(name);
+    return ptn_bool(exists);
+}
+
+static PtnValue ptn_internal_enum_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *name = ptn_value_to_string(args[0]);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    int autoload = argc < 2 || ptn_is_truthy(args[1]);
+    const char *resolved_name;
+    if (autoload) {
+        runtime->call_site_line = line;
+        (void)ptn_runtime_class_exists(runtime, lookup_name);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(name);
+            return ptn_null();
+        }
+        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    } else {
+        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    }
+    int exists = ptn_declared_runtime_class_exists(runtime, resolved_name) &&
+        ptn_declared_class_is_enum(resolved_name);
     free(name);
     return ptn_bool(exists);
 }

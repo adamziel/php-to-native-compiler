@@ -3222,6 +3222,27 @@ fn emit_class_constant_initializer_helper(
                         .enum_case_value
                         .as_ref()
                         .unwrap_or(&ValueExpr::Null);
+                    let backing_mismatch_type = match (backing_type, backing_value) {
+                        (EnumBackingType::Int, ValueExpr::String(_)) => Some("string"),
+                        (EnumBackingType::String, ValueExpr::Int(_)) => Some("int"),
+                        (
+                            EnumBackingType::String,
+                            ValueExpr::Unary {
+                                op: UnaryOp::Positive | UnaryOp::Negate,
+                                expr,
+                                ..
+                            },
+                        ) if matches!(expr.as_ref(), ValueExpr::Int(_)) => Some("int"),
+                        _ => None,
+                    };
+                    if let Some(actual_type) = backing_mismatch_type {
+                        out.push_str("            ptn_throw_exception(&runtime, \"TypeError\", \"Enum case type ");
+                        out.push_str(actual_type);
+                        out.push_str(" does not match enum backing type ");
+                        out.push_str(c_enum_backing_type_name(backing_type));
+                        out.push_str("\");\n");
+                        out.push_str("            return 1;\n");
+                    }
                     let backing_temp = values.emit_const_materialized_value(out, backing_value);
                     extra_cleanup_temps.push(backing_temp.clone());
                     out.push_str("            PtnValue ");
@@ -6768,6 +6789,19 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"from\")) {\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"tryFrom\")) {\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
@@ -6953,6 +6987,15 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")");
+            if class.enum_backing_type.is_some() {
+                out.push_str(" || ptn_ascii_case_equal(method_name, \"from\") || ptn_ascii_case_equal(method_name, \"tryFrom\")");
+            }
+            out.push_str(") {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
@@ -7002,6 +7045,16 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"from\") || ptn_ascii_case_equal(method_name, \"tryFrom\")) {\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             if !method.is_static {
@@ -7512,6 +7565,20 @@ fn emit_declared_enum_static_method(out: &mut String, classes: &[ClassDecl]) {
             if let Some(message) = enum_duplicate_message(class) {
                 out.push_str("            ptn_throw_exception(runtime, \"Error\", \"");
                 out.push_str(&c_string(&message));
+                out.push_str("\");\n");
+                out.push_str("            *result_out = ptn_null();\n");
+                out.push_str("            return 1;\n");
+            }
+            if let Some(actual_type) = enum_invalid_case_backing_type(class, backing_type) {
+                out.push_str(
+                    "            ptn_throw_exception(runtime, \"TypeError\", \"Enum case type ",
+                );
+                out.push_str(actual_type);
+                out.push_str(" does not match enum backing type ");
+                out.push_str(match backing_type {
+                    EnumBackingType::Int => "int",
+                    EnumBackingType::String => "string",
+                });
                 out.push_str("\");\n");
                 out.push_str("            *result_out = ptn_null();\n");
                 out.push_str("            return 1;\n");
@@ -9763,6 +9830,29 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")) {\n");
+            out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"cases\");\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"from\")) {\n");
+                out.push_str(
+                    "            return ptn_reflection_method_object_from_name(runtime, \"",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"from\");\n");
+                out.push_str("        }\n");
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"tryFrom\")) {\n");
+                out.push_str(
+                    "            return ptn_reflection_method_object_from_name(runtime, \"",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"tryFrom\");\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
@@ -37847,6 +37937,39 @@ fn enum_duplicate_message(class: &ClassDecl) -> Option<String> {
         seen.insert(literal, &constant.name);
     }
     None
+}
+
+fn enum_invalid_case_backing_type(
+    class: &ClassDecl,
+    backing_type: EnumBackingType,
+) -> Option<&'static str> {
+    class
+        .constants
+        .iter()
+        .filter(|constant| constant.is_enum_case)
+        .find_map(|constant| enum_invalid_case_value_type(constant, backing_type))
+}
+
+fn enum_invalid_case_value_type(
+    constant: &ClassConstantDecl,
+    backing_type: EnumBackingType,
+) -> Option<&'static str> {
+    match (backing_type, constant.enum_case_value.as_ref()?) {
+        (EnumBackingType::Int, ValueExpr::String(_)) => Some("string"),
+        (EnumBackingType::String, ValueExpr::Int(_)) => Some("int"),
+        (
+            EnumBackingType::String,
+            ValueExpr::Unary {
+                op: UnaryOp::Positive | UnaryOp::Negate,
+                expr,
+                ..
+            },
+        ) => match expr.as_ref() {
+            ValueExpr::Int(_) => Some("int"),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn enum_case_backing_literal(constant: &ClassConstantDecl) -> Option<EnumBackingLiteral> {

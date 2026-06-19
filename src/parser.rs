@@ -1770,12 +1770,41 @@ impl Parser<'_> {
                     Some(token.span),
                 ));
             };
+            if matches!(self.peek().kind, TokenKind::Pipe) {
+                let mut type_names = vec![type_name.to_string()];
+                while matches!(self.peek().kind, TokenKind::Pipe) {
+                    self.advance();
+                    let next = self.advance().clone();
+                    if let Some(next_name) = name_segment_from_token(&next.kind) {
+                        type_names.push(next_name.to_string());
+                    } else {
+                        break;
+                    }
+                }
+                if type_names.len() == 2
+                    && type_names
+                        .iter()
+                        .any(|name| name.eq_ignore_ascii_case("int"))
+                    && type_names
+                        .iter()
+                        .any(|name| name.eq_ignore_ascii_case("string"))
+                {
+                    type_names = vec!["string".to_string(), "int".to_string()];
+                }
+                return Err(Diagnostic::new(
+                    format!(
+                        "Enum backing type must be int or string, {} given",
+                        type_names.join("|")
+                    ),
+                    Some(token.span),
+                ));
+            }
             match type_name.to_ascii_lowercase().as_str() {
                 "int" => Some(EnumBackingType::Int),
                 "string" => Some(EnumBackingType::String),
                 _ => {
                     return Err(Diagnostic::new(
-                        "Enum backing type must be int or string",
+                        format!("Enum backing type must be int or string, {type_name} given"),
                         Some(token.span),
                     ));
                 }
@@ -1823,7 +1852,7 @@ impl Parser<'_> {
                     }
                     if !is_supported_const_declaration_expr(&value) {
                         return Err(Diagnostic::new(
-                            "enum case value must be a supported constant expression",
+                            "Constant expression contains invalid operations",
                             Some(value.span()),
                         ));
                     }
@@ -1833,9 +1862,7 @@ impl Parser<'_> {
                 };
                 if enum_backing_type.is_some() && enum_case_value.is_none() {
                     return Err(Diagnostic::new(
-                        format!(
-                            "Case {class_name}::{name} of backed enum {class_name} must have a value"
-                        ),
+                        format!("Case {name} of backed enum {class_name} must have a value"),
                         Some(token.span),
                     ));
                 }
@@ -13917,7 +13944,9 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         || candidate_name.eq_ignore_ascii_case("ReflectionMethod")
     {
         &["ReflectionFunctionAbstract"][..]
-    } else if candidate_name.eq_ignore_ascii_case("ReflectionObject") {
+    } else if candidate_name.eq_ignore_ascii_case("ReflectionObject")
+        || candidate_name.eq_ignore_ascii_case("ReflectionEnum")
+    {
         &["ReflectionClass"][..]
     } else {
         &[][..]

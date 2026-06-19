@@ -351,6 +351,15 @@ static PTN_UNUSED int ptn_value_is_enum_case_object(PtnValue value) {
     return value.type == PTN_OBJECT && value.as.object->enum_case_name != NULL;
 }
 
+static PTN_UNUSED int ptn_enum_cases_same_identity(PtnObject *left, PtnObject *right) {
+    return left != NULL &&
+        right != NULL &&
+        left->enum_case_name != NULL &&
+        right->enum_case_name != NULL &&
+        ptn_ascii_case_equal(left->class_name, right->class_name) &&
+        strcmp(left->enum_case_name, right->enum_case_name) == 0;
+}
+
 static PTN_UNUSED void ptn_emit_object_to_number_notice(
     PtnRuntime *runtime,
     PtnValue object,
@@ -434,6 +443,9 @@ static int ptn_compare_equal_inner(
             case PTN_ARRAY:
                 return ptn_compare_arrays_equal(runtime, left.as.array, right.as.array, line, stack);
             case PTN_OBJECT:
+                if (left.as.object->enum_case_name != NULL || right.as.object->enum_case_name != NULL) {
+                    return ptn_enum_cases_same_identity(left.as.object, right.as.object);
+                }
                 return ptn_compare_objects_equal(runtime, left.as.object, right.as.object, line, stack);
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure;
@@ -540,6 +552,9 @@ static int ptn_compare_identical_inner(
             }
             return ptn_compare_arrays_identical(runtime, left.as.array, right.as.array, line, stack);
         case PTN_OBJECT:
+            if (left.as.object->enum_case_name != NULL || right.as.object->enum_case_name != NULL) {
+                return ptn_enum_cases_same_identity(left.as.object, right.as.object);
+            }
             return left.as.object == right.as.object;
         case PTN_CLOSURE:
             return left.as.closure == right.as.closure;
@@ -610,6 +625,11 @@ static int ptn_compare_order_inner(
             case PTN_ARRAY:
                 return ptn_compare_arrays_order(runtime, left.as.array, right.as.array, line, stack);
             case PTN_OBJECT:
+                if (left.as.object->enum_case_name != NULL || right.as.object->enum_case_name != NULL) {
+                    return ptn_enum_cases_same_identity(left.as.object, right.as.object)
+                        ? PTN_COMPARE_EQUAL
+                        : PTN_COMPARE_UNORDERED;
+                }
                 return ptn_compare_objects_order(runtime, left.as.object, right.as.object, line, stack);
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
