@@ -14447,7 +14447,19 @@ fn emit_instruction(
                 if values.current_function_return_by_ref {
                     out.push_str("    ptn_return_value_from_declared_reference_call = 0;\n");
                     if let Some(value) = value {
-                        if let Some(target) = reference_target_from_value(value) {
+                        if let ValueExpr::StaticPropertyFetch {
+                            class_name,
+                            name,
+                            line,
+                        } = value
+                        {
+                            let reference_value =
+                                values.emit_static_property_reference(out, class_name, name, *line);
+                            out.push_str("    ptn_return_value = ptn_value_share(");
+                            out.push_str(&reference_value);
+                            out.push_str(");\n");
+                            emit_value_cleanup(out, "    ", &reference_value);
+                        } else if let Some(target) = reference_target_from_value(value) {
                             let reference_value = values.emit_reference_target(out, &target);
                             out.push_str("    ptn_return_value = ptn_value_share(");
                             out.push_str(&reference_value);
@@ -31467,6 +31479,15 @@ impl ValueEmitter {
         source: &ValueExpr,
         line: usize,
     ) -> String {
+        if let ValueExpr::StaticPropertyFetch {
+            class_name,
+            name,
+            line,
+        } = source
+        {
+            return self.emit_static_property_reference(out, class_name, name, *line);
+        }
+
         if let Some(target) = reference_target_from_value(source) {
             return self.emit_reference_target(out, &target);
         }
@@ -31494,7 +31515,14 @@ impl ValueEmitter {
         let key_temp = key.map(|key| self.emit_materialized_value(out, key));
         let value_temp = match value {
             Some(value) if self.current_function_return_by_ref => {
-                if let Some(target) = reference_target_from_value(value) {
+                if let ValueExpr::StaticPropertyFetch {
+                    class_name,
+                    name,
+                    line,
+                } = value
+                {
+                    self.emit_static_property_reference(out, class_name, name, *line)
+                } else if let Some(target) = reference_target_from_value(value) {
                     self.emit_reference_target(out, &target)
                 } else {
                     self.emit_raw_materialized_value(out, value)

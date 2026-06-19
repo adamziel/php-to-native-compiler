@@ -2172,10 +2172,20 @@ fn phpt_classifier_keeps_debug_backtrace_runnable() {
 }
 
 #[test]
-fn phpt_classifier_excludes_function_call_array_lvalue_assignment() {
+fn phpt_classifier_keeps_function_call_array_lvalue_assignment_runnable() {
     let classification = classify(
         "--TEST--\nfunction call lvalue\n--FILE--\n<?php\ndebug_backtrace()[1]['args'][0] = 'Modified';\n--EXPECT--\n",
     );
+    assert!(
+        classification.starts_with("runnable\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
+fn phpt_classifier_excludes_function_call_array_lvalue_compound_assignment() {
+    let classification =
+        classify("--TEST--\nfunction call lvalue\n--FILE--\n<?php\nfoo()[0] += 2;\n--EXPECT--\n");
     assert!(
         classification.starts_with("unsupported-lvalue-runtime\t"),
         "{classification:?}"

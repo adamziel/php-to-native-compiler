@@ -2138,8 +2138,8 @@ ptn_phpt_first_unsupported_runtime_diagnostics_surface() {
         {
             raw = tolower($0)
             line = ptn_php_code_line($0)
-            if (line ~ /\)[[:space:]]*\[[^]]*\]([[:space:]]*\[[^]]*\])*[[:space:]]*([+*\/%.&|^-]?=|<<=|>>=)/) {
-                print "unsupported-lvalue-runtime\trequires writable function-call array-dimension temporaries, outside PTN modeled assignment target set"
+            if (line ~ /\)[[:space:]]*\[[^]]*\]([[:space:]]*\[[^]]*\])*[[:space:]]*([+*\/%.&|^-]=|<<=|>>=|\+\+|--)/) {
+                print "unsupported-lvalue-runtime\trequires compound writable function-call array-dimension temporaries, outside PTN modeled assignment target set"
                 found = 1
                 exit
             }

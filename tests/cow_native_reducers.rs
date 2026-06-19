@@ -167,6 +167,22 @@ echo count($items), \":\", $items[0], \":\", $items[1], \"\\n\";",
             expected_stdout: "2:2:3\n",
         },
         CowReducerCase {
+            name: "method_static_property_return_reference_array_dim_assignment",
+            oracle: "Zend/tests/dereference/dereference_012.phpt",
+            source: "<?php\n\
+class Box {\n\
+    static $items = [];\n\
+    public function &items() {\n\
+        self::$items = [1, 2, 3];\n\
+        return self::$items;\n\
+    }\n\
+}\n\
+$box = new Box;\n\
+$box->items()[0] = 2;\n\
+echo Box::$items[0], \":\", Box::$items[1], \":\", Box::$items[2], \"\\n\";",
+            expected_stdout: "2:2:3\n",
+        },
+        CowReducerCase {
             name: "dynamic_method_reference_source",
             oracle: "Zend/tests/dereference/dereference_008.phpt",
             source: "<?php\n\
@@ -616,7 +632,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 41, "COW reducer pass count changed");
+    assert_eq!(passed, 42, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
