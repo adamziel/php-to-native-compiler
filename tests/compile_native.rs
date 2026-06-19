@@ -7322,6 +7322,51 @@ echo \"after\\n\";
 }
 
 #[test]
+fn compile_error_handler_callback_trace_uses_internal_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-error-handler-internal-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-handler-internal-frame.php");
+    let output = root.join("error-handler-internal-frame-bin");
+    fs::write(
+        &input,
+        "<?php
+set_error_handler(function (int $errno, string $errstr, ?string $errfile = null, ?int $errline = null) {
+    throw new Exception($errstr);
+});
+
+call_user_func(function (array &$ref) {}, 'not_an_array_variable');
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: {closure:"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("Argument #1 ($ref) must be passed by reference, value given"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("\n#0 [internal function]: {closure:"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("call_user_func(Object(Closure), 'not_an_array_va...')"),
+        "{stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("suppress_user_call_frame_location = 1"));
+}
+
+#[test]
 fn compile_numeric_and_array_diagnostics_route_through_user_error_handler_to_native_binary() {
     let root = temp_dir("ptn-native-numeric-array-diagnostics-handler");
     fs::create_dir_all(&root).unwrap();

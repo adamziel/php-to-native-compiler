@@ -1062,12 +1062,16 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
     PtnValue result = ptn_null();
     PtnTryFrame handler_frame;
     PtnTraceFrame *saved_trace_frame = runtime->trace_frame;
+    int saved_suppress_user_call_frame_location =
+        runtime->suppress_user_call_frame_location;
     int saved_warn_by_ref_argument_mismatch = runtime->warn_by_ref_argument_mismatch;
     int saved_throw_argument_count_errors = runtime->throw_argument_count_errors;
     ptn_try_frame_push(runtime, &handler_frame);
     if (setjmp(handler_frame.jump) != 0) {
         ptn_try_frame_pop(runtime, &handler_frame);
         runtime->trace_frame = saved_trace_frame;
+        runtime->suppress_user_call_frame_location =
+            saved_suppress_user_call_frame_location;
         runtime->warn_by_ref_argument_mismatch = saved_warn_by_ref_argument_mismatch;
         runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
         if (!handler_diagnostics->has_error_handler) {
@@ -1083,9 +1087,12 @@ static PTN_UNUSED int ptn_diagnostics_try_error_handler(
         ptn_rethrow_exception(runtime);
         return 1;
     }
+    runtime->suppress_user_call_frame_location = 1;
     result = ptn_call_callable(runtime, saved_handler, 4, args, line, 0);
     ptn_try_frame_pop(runtime, &handler_frame);
     runtime->trace_frame = saved_trace_frame;
+    runtime->suppress_user_call_frame_location =
+        saved_suppress_user_call_frame_location;
     runtime->warn_by_ref_argument_mismatch = saved_warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = saved_throw_argument_count_errors;
     if (!handler_diagnostics->has_error_handler) {
