@@ -13635,6 +13635,45 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_sprintf_resource_string_conversion_to_native_binary() {
+    let root = temp_dir("ptn-native-sprintf-resource-string-conversion");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("sprintf-resource-string-conversion.php");
+    let output = root.join("sprintf-resource-string-conversion-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$fp = fopen(__FILE__, 'r');\n\
+$name = sprintf('%s', $fp);\n\
+ob_start();\n\
+$printed = printf('%s', $fp);\n\
+$printfOutput = ob_get_clean();\n\
+ob_start();\n\
+$vprinted = vprintf('%s', [$fp]);\n\
+$vprintfOutput = ob_get_clean();\n\
+var_dump(str_starts_with($name, 'Resource id #'));\n\
+var_dump($printfOutput === $name, $printed === strlen($name));\n\
+var_dump($vprintfOutput === $name, $vprinted === strlen($name));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    let sprintf_body =
+        generated_c_static_function_body(&c_source, "static PtnValue ptn_internal_sprintf_named(");
+    assert!(!sprintf_body.contains("ptn_string_operand_borrowed(\"Resource\")"));
+}
+
+#[test]
 fn compile_sprintf_positional_specifier_errors_to_native_binary() {
     let root = temp_dir("ptn-native-sprintf-positional-specifier-errors");
     fs::create_dir_all(&root).unwrap();
