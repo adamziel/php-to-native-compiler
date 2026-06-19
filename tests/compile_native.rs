@@ -27488,6 +27488,56 @@ foreach ($items as $key => $value) {\n\
 }
 
 #[test]
+fn compile_array_next_auto_key_stays_monotonic_to_native_binary() {
+    let root = temp_dir("ptn-native-array-next-auto-key-monotonic");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-next-auto-key-monotonic.php");
+    let output = root.join("array-next-auto-key-monotonic-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$mixed = [\n\
+    \"f\" => \"fff\",\n\
+    \"1\" => \"one\",\n\
+    4 => 6,\n\
+    \"\" => \"blank\",\n\
+    2 => \"float\",\n\
+    \"F\" => \"FFF\",\n\
+    \"blank\" => \"\",\n\
+    3 => 3.7,\n\
+    5 => 7,\n\
+    6 => 8.6,\n\
+    \"5\" => \"Five\",\n\
+    \"4name\" => \"jonny\",\n\
+    \"a\" => null,\n\
+];\n\
+var_dump(count($mixed));\n\
+var_dump(array_push($mixed, 22, \"abc\"));\n\
+var_dump($mixed[6], $mixed[7], $mixed[8]);\n\
+$overwrites = [\"one\" => 2, \"three\" => 3, 3, 4, 3 => 33, 4 => 44, 5, 6, 5 => 57, \"5.4\" => 554, \"5.7\" => 557];\n\
+var_dump(count($overwrites));\n\
+var_dump(array_push($overwrites, 22, \"abc\"));\n\
+var_dump($overwrites[6], $overwrites[7], $overwrites[8]);\n\
+$manual = [];\n\
+$manual[6] = \"six\";\n\
+$manual[5] = \"five\";\n\
+$manual[] = \"seven\";\n\
+var_dump($manual);",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(12)\nint(14)\nfloat(8.6)\nint(22)\nstring(3) \"abc\"\nint(10)\nint(12)\nint(6)\nint(22)\nstring(3) \"abc\"\narray(3) {\n  [6]=>\n  string(3) \"six\"\n  [5]=>\n  string(4) \"five\"\n  [7]=>\n  string(5) \"seven\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_legacy_array_count_and_abs_to_native_binary() {
     let root = temp_dir("ptn-native-legacy-array-count-abs");
     fs::create_dir_all(&root).unwrap();

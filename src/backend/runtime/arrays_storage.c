@@ -292,7 +292,7 @@ static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayK
     }
 
     int64_t next = ptn_array_next_auto_key_after_integer(key.as.integer);
-    if (key.as.integer >= 0 || next > array->next_auto_key) {
+    if (next > array->next_auto_key) {
         array->next_auto_key = next;
         return;
     }
