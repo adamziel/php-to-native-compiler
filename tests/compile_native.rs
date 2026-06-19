@@ -42997,26 +42997,40 @@ try { $a = []; $a--; } catch (\\TypeError $e) { echo $e->getMessage(), \"\\n\"; 
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout)
+        .unwrap()
+        .replace(input.to_str().unwrap(), "{source}");
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+        stdout,
         "NULL\n\
 int(1)\n\
+\nWarning: Decrement on type null has no effect, this will change in the next major version of PHP in ptn on line 3\n\
 NULL\n\
 NULL\n\
+\nWarning: Increment on type bool has no effect, this will change in the next major version of PHP in ptn on line 4\n\
+\nWarning: Decrement on type bool has no effect, this will change in the next major version of PHP in ptn on line 4\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
+\nDeprecated: Increment on non-numeric string is deprecated, use str_increment() instead in {source} on line 5\n\
 string(1) \"1\"\n\
+\nDeprecated: Decrement on empty string is deprecated as non-numeric in {source} on line 6\n\
 int(-1)\n\
+\nDeprecated: Increment on non-numeric string is deprecated, use str_increment() instead in {source} on line 7\n\
 string(1) \"a\"\n\
 string(1) \"b\"\n\
+\nDeprecated: Increment on non-numeric string is deprecated, use str_increment() instead in {source} on line 8\n\
 string(2) \"aa\"\n\
+\nDeprecated: Increment on non-numeric string is deprecated, use str_increment() instead in {source} on line 9\n\
 string(2) \"b0\"\n\
+\nDeprecated: Increment on non-numeric string is deprecated, use str_increment() instead in {source} on line 10\n\
 string(3) \"10a\"\n\
 string(3) \"099\"\n\
 int(100)\n\
 float(0.5)\n\
+\nDeprecated: Increment on non-numeric string is deprecated, use str_increment() instead in {source} on line 13\n\
 string(2) \"aa\"\n\
+\nDeprecated: Increment on non-numeric string is deprecated, use str_increment() instead in {source} on line 14\n\
 string(1) \"z\"\n\
 Cannot increment array\n\
 Cannot decrement array\n"
@@ -50249,6 +50263,111 @@ echo $ordered, \"\\n\";\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "initial\nupdated\n7\nnumber\ntruthy\nempty\nordered\nrhs\nrhs\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_variable_isset_empty_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-variable-isset-empty");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-variable-isset-empty.php");
+    let output = root.join("dynamic-variable-isset-empty-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$name = \"var\";\n\
+$ref =& $name;\n\
+$$name = 42;\n\
+var_dump(isset($$name));\n\
+unset($$name);\n\
+var_dump(isset($$name));\n\
+var_dump(empty($$name));\n\
+${\"\"} = \"blank\";\n\
+var_dump(isset($$missing));\n\
+var_dump(empty($$missing));\n\
+unset(${\"\"});\n\
+var_dump(isset($$missing));\n\
+var_dump(empty($$missing));\n\
+$arrayName = \"items\";\n\
+$items = [\"x\" => 1];\n\
+var_dump(isset(${$arrayName}[\"x\"]));\n\
+unset($items);\n\
+var_dump(isset(${$arrayName}[\"x\"]));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, ptn_tmp_"));
+    assert!(c_source.contains("ptn_runtime_read_variable_quiet(&runtime, \"missing\")"));
+}
+
+#[test]
+fn compile_variable_variable_function_and_method_calls_to_native_binary() {
+    let root = temp_dir("ptn-native-variable-variable-calls");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("variable-variable-calls.php");
+    let output = root.join("variable-variable-calls-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = \"ucfirst\";\n\
+$b = \"a\";\n\
+print $$b(\"test\");\n\
+print \"\\n\";\n\
+\n\
+class bar {\n\
+    public function a() { return \"bar!\"; }\n\
+}\n\
+\n\
+class foo {\n\
+    public function test() {\n\
+        print \"foo!\\n\";\n\
+        return new bar;\n\
+    }\n\
+}\n\
+\n\
+function test() { return new foo; }\n\
+\n\
+$a = \"test\";\n\
+$b = \"a\";\n\
+var_dump($$b()->$$b()->$b());\n\
+\n\
+$a = \"strtoupper\";\n\
+$b = \"a\";\n\
+$c = \"b\";\n\
+$d = \"c\";\n\
+var_dump($$$$d(\"foo\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Test\nfoo!\nstring(4) \"bar!\"\nstring(3) \"FOO\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

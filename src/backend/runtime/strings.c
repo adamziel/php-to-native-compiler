@@ -307,13 +307,6 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
 
 static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
-    if (value.type == PTN_STRING && ptn_string_has_embedded_nul(value.as.string)) {
-        ptn_emit_type_error(
-            &runtime->diagnostics,
-            "Unsupported dynamic variable name containing embedded NUL"
-        );
-        exit(255);
-    }
 
     switch (value.type) {
         case PTN_NULL:

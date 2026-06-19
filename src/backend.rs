@@ -22690,6 +22690,48 @@ impl ValueEmitter {
         name_temp
     }
 
+    fn emit_dynamic_variable_name_for_direct_quiet_probe(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let ValueExpr::Load {
+            name: variable_name,
+            ..
+        } = name
+        else {
+            return self.emit_dynamic_variable_name(out, name, line);
+        };
+
+        let lookup_temp = self.next_temp();
+        out.push_str("    PtnLookupResult ");
+        out.push_str(&lookup_temp);
+        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, \"");
+        out.push_str(&c_string(variable_name));
+        out.push_str("\");\n");
+
+        let value_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&value_temp);
+        out.push_str(" = ");
+        out.push_str(&lookup_temp);
+        out.push_str(".exists ? ");
+        out.push_str(&lookup_temp);
+        out.push_str(".value : ptn_null();\n");
+
+        let name_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&name_temp);
+        out.push_str(" = ptn_dynamic_variable_name(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        emit_value_cleanup(out, "    ", &value_temp);
+        name_temp
+    }
+
     fn emit_dynamic_property_name(
         &mut self,
         out: &mut String,
@@ -22783,6 +22825,25 @@ impl ValueEmitter {
         out.push_str(&line.to_string());
         out.push_str(");\n");
         out.push_str("    free(");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_dynamic_variable_quiet_lookup(
+        &mut self,
+        out: &mut String,
+        name: &ValueExpr,
+        line: usize,
+    ) -> String {
+        let name_temp = self.emit_dynamic_variable_name(out, name, line);
+        let result_temp = self.next_temp();
+        out.push_str("        PtnLookupResult ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, ");
+        out.push_str(&name_temp);
+        out.push_str(");\n");
+        out.push_str("        free(");
         out.push_str(&name_temp);
         out.push_str(");\n");
         result_temp
@@ -29906,6 +29967,29 @@ impl ValueEmitter {
                 out.push_str("\");\n");
                 result_temp
             }
+            ValueExpr::DynamicVariable { name, line } => {
+                let name_temp =
+                    self.emit_dynamic_variable_name_for_direct_quiet_probe(out, name, *line);
+                let lookup_temp = self.next_temp();
+                out.push_str("        PtnLookupResult ");
+                out.push_str(&lookup_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists && ");
+                out.push_str(&lookup_temp);
+                out.push_str(".value.type != PTN_NULL;\n");
+                emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+                out.push_str("        free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                result_temp
+            }
             ValueExpr::ArrayAccess { array, index, line } => {
                 let container_temp = self.emit_quiet_lookup(out, array);
                 let index_temp = self.emit_materialized_value(out, index);
@@ -30033,6 +30117,29 @@ impl ValueEmitter {
                 out.push_str("\");\n");
                 result_temp
             }
+            ValueExpr::DynamicVariable { name, line } => {
+                let name_temp =
+                    self.emit_dynamic_variable_name_for_direct_quiet_probe(out, name, *line);
+                let lookup_temp = self.next_temp();
+                out.push_str("        PtnLookupResult ");
+                out.push_str(&lookup_temp);
+                out.push_str(" = ptn_runtime_read_variable_quiet(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                let result_temp = self.next_temp();
+                out.push_str("        int ");
+                out.push_str(&result_temp);
+                out.push_str(" = !");
+                out.push_str(&lookup_temp);
+                out.push_str(".exists || !ptn_is_truthy(");
+                out.push_str(&lookup_temp);
+                out.push_str(".value);\n");
+                emit_value_cleanup(out, "        ", &format!("{lookup_temp}.value"));
+                out.push_str("        free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                result_temp
+            }
             ValueExpr::ArrayAccess { array, index, line } => {
                 let container_temp = self.emit_quiet_lookup(out, array);
                 let index_temp = self.emit_materialized_value(out, index);
@@ -30126,6 +30233,9 @@ impl ValueEmitter {
                 out.push_str(&c_string(name));
                 out.push_str("\");\n");
                 result_temp
+            }
+            ValueExpr::DynamicVariable { name, line } => {
+                self.emit_dynamic_variable_quiet_lookup(out, name, *line)
             }
             ValueExpr::ArrayAccess { array, index, line } => {
                 let container_temp = self.emit_quiet_lookup(out, array);

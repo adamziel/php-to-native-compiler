@@ -1521,16 +1521,22 @@ static PTN_UNUSED int ptn_increment_string_byte_is_alnum(unsigned char byte) {
         (byte >= 'A' && byte <= 'Z');
 }
 
-static PTN_UNUSED PtnValue ptn_increment_string(PtnString string) {
-    if (string.len == 0) {
-        return ptn_string_literal("1", 1);
-    }
-
+static PTN_UNUSED PtnValue ptn_increment_string(PtnRuntime *runtime, PtnString string, size_t line) {
     PtnNumber number;
     int has_trailing_non_numeric_data = 0;
     if (ptn_arithmetic_string_to_number(string, &number, &has_trailing_non_numeric_data) &&
         !has_trailing_non_numeric_data) {
         return ptn_increment_number(number);
+    }
+
+    ptn_emit_runtime_deprecation(
+        runtime,
+        "Increment on non-numeric string is deprecated, use str_increment() instead",
+        line
+    );
+
+    if (string.len == 0) {
+        return ptn_string_literal("1", 1);
     }
 
     if (!ptn_increment_string_byte_is_alnum(string.data[string.len - 1])) {
@@ -1601,17 +1607,28 @@ static PTN_UNUSED PtnValue ptn_increment_string(PtnString string) {
     return ptn_owned_string_len(result, string.len);
 }
 
-static PTN_UNUSED PtnValue ptn_decrement_string(PtnString string) {
-    if (string.len == 0) {
-        return ptn_subtract_integers(0, 1);
-    }
-
+static PTN_UNUSED PtnValue ptn_decrement_string(PtnRuntime *runtime, PtnString string, size_t line) {
     PtnNumber number;
     int has_trailing_non_numeric_data = 0;
     if (ptn_arithmetic_string_to_number(string, &number, &has_trailing_non_numeric_data) &&
         !has_trailing_non_numeric_data) {
         return ptn_decrement_number(number);
     }
+
+    if (string.len == 0) {
+        ptn_emit_runtime_deprecation(
+            runtime,
+            "Decrement on empty string is deprecated as non-numeric",
+            line
+        );
+        return ptn_subtract_integers(0, 1);
+    }
+
+    ptn_emit_runtime_deprecation(
+        runtime,
+        "Decrement on non-numeric string has no effect and is deprecated",
+        line
+    );
 
     return ptn_owned_string_len(
         ptn_duplicate_string_len((const char *)string.data, string.len),
@@ -1703,13 +1720,18 @@ static PTN_UNUSED PtnValue ptn_increment_value(PtnRuntime *runtime, PtnValue val
         case PTN_NULL:
             return ptn_int(1);
         case PTN_BOOL:
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "Increment on type bool has no effect, this will change in the next major version of PHP",
+                line
+            );
             return ptn_bool(value.as.boolean);
         case PTN_INT:
             return ptn_add_integers(value.as.integer, 1);
         case PTN_FLOAT:
             return ptn_float(value.as.floating + 1.0);
         case PTN_STRING:
-            return ptn_increment_string(value.as.string);
+            return ptn_increment_string(runtime, value.as.string, line);
         case PTN_ARRAY:
         case PTN_RESOURCE:
         case PTN_OBJECT:
@@ -1735,15 +1757,25 @@ static PTN_UNUSED PtnValue ptn_decrement_value(PtnRuntime *runtime, PtnValue val
 #endif
     switch (value.type) {
         case PTN_NULL:
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "Decrement on type null has no effect, this will change in the next major version of PHP",
+                line
+            );
             return ptn_null();
         case PTN_BOOL:
+            ptn_emit_warning(
+                &runtime->diagnostics,
+                "Decrement on type bool has no effect, this will change in the next major version of PHP",
+                line
+            );
             return ptn_bool(value.as.boolean);
         case PTN_INT:
             return ptn_subtract_integers(value.as.integer, 1);
         case PTN_FLOAT:
             return ptn_float(value.as.floating - 1.0);
         case PTN_STRING:
-            return ptn_decrement_string(value.as.string);
+            return ptn_decrement_string(runtime, value.as.string, line);
         case PTN_ARRAY:
         case PTN_RESOURCE:
         case PTN_OBJECT:

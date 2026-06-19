@@ -6632,6 +6632,11 @@ impl Parser<'_> {
                         TokenKind::Variable(name) => {
                             (None, Some(Expr::Variable(name, member.span)), member.span)
                         }
+                        TokenKind::Dollar => {
+                            let name_expr = self.parse_dynamic_variable_expr(member.span)?;
+                            let member_span = name_expr.span();
+                            (None, Some(name_expr), member_span)
+                        }
                         TokenKind::LeftBrace => {
                             let name_expr = self.parse_expr()?;
                             let right_span = self.expect_right_brace()?;
