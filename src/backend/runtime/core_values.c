@@ -1524,6 +1524,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_spl_file_object(const char *cla
 static PTN_UNUSED int ptn_internal_class_name_is_directory(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter_value(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_weak_map(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_weak_reference(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_attribute(const char *class_name);
@@ -1619,6 +1620,12 @@ static PTN_UNUSED PtnValue ptn_sensitive_parameter_new(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_sensitive_parameter_value_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_fiber_new(
     PtnRuntime *runtime,
     size_t argc,
     const PtnValue *args,

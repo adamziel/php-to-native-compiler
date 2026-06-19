@@ -32,6 +32,7 @@ const LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE: &str =
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "Phar",
+    "Fiber",
     "WeakMap",
     "WeakReference",
     "ZipArchive",
@@ -4642,6 +4643,7 @@ fn emit_class_metadata_helpers(
         "stdClass",
         "BcMath\\Number",
         "Generator",
+        "Fiber",
         "Attribute",
         "AllowDynamicProperties",
         "DelayedTargetValidation",
@@ -4770,6 +4772,9 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(name, \"Fiber\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     for class_name in MODELED_EXTENSION_INTERNAL_CLASS_NAMES {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -4827,6 +4832,9 @@ fn emit_class_metadata_helpers(
         out.push_str("    }\n");
     }
     out.push_str("    if (ptn_ascii_case_equal(name, \"Generator\")) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(name, \"Fiber\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
     for class_name in MODELED_EXTENSION_INTERNAL_CLASS_NAMES {
@@ -5026,6 +5034,7 @@ fn emit_class_metadata_helpers(
         "stdClass",
         "BcMath\\Number",
         "Generator",
+        "Fiber",
         "Reflection",
         "ReflectionAttribute",
         "ReflectionClass",
@@ -11811,6 +11820,11 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+    out.push_str("    if (ptn_internal_class_name_is_fiber(class_name)) {\n");
+    out.push_str(
+        "        return ptn_fiber_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_php_token(class_name)) {\n");
     out.push_str(
         "        return ptn_php_token_call_method(runtime, resolved, method_name, argc, args, line);\n",
@@ -13675,7 +13689,38 @@ fn emit_instruction(
                         None
                     }
                     _ => {
-                        if let Some(target) = reference_target_from_value(iterable) {
+                        if values.source_is_declared_by_ref_call(iterable) {
+                            let iterable_temp =
+                                values.emit_reference_candidate_value(out, iterable);
+                            out.push_str("    if (");
+                            out.push_str(&iterable_temp);
+                            out.push_str(".type == PTN_REFERENCE) {\n");
+                            out.push_str("        ");
+                            out.push_str(&iterator_temp);
+                            out.push_str(" = ptn_array_iterator_by_ref_from_reference(&runtime, ");
+                            out.push_str(&iterable_temp);
+                            out.push_str(", ");
+                            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+                            out.push_str(", \"");
+                            out.push_str(&c_string(source_path));
+                            out.push_str("\", ");
+                            out.push_str(&line.to_string());
+                            out.push_str(");\n");
+                            out.push_str("    } else {\n");
+                            out.push_str("        ");
+                            out.push_str(&iterator_temp);
+                            out.push_str(" = ptn_array_iterator_by_ref_from_value(&runtime, &");
+                            out.push_str(&iterable_temp);
+                            out.push_str(", ");
+                            out.push_str(&c_optional_string(values.current_class_name.as_deref()));
+                            out.push_str(", \"");
+                            out.push_str(&c_string(source_path));
+                            out.push_str("\", ");
+                            out.push_str(&line.to_string());
+                            out.push_str(");\n");
+                            out.push_str("    }\n");
+                            Some(iterable_temp)
+                        } else if let Some(target) = reference_target_from_value(iterable) {
                             let reference_temp = values.emit_reference_target(out, &target);
                             out.push_str("    ");
                             out.push_str(&iterator_temp);

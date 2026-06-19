@@ -2649,6 +2649,7 @@ static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_s
 static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
 static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);
 static int ptn_internal_class_exists_name(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
@@ -64312,6 +64313,25 @@ static PTN_UNUSED PtnValue ptn_internal_class_static_call_method(
     if (ptn_internal_class_name_is_xml_writer(class_name)) {
         return ptn_xmlwriter_static_call_method(runtime, name, argc, args, line);
     }
+    if (ptn_internal_class_name_is_fiber(class_name)) {
+        if (ptn_ascii_case_equal(name, "suspend")) {
+            if (argc > 1) {
+                char message[128];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Fiber::suspend() expects at most 1 argument, %zu given",
+                    argc
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "ArgumentCountError", message);
+                return ptn_null();
+            }
+            return argc == 0 ? ptn_null() : ptn_value_clone_deref(args[0]);
+        }
+    }
     if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {
         if (ptn_ascii_case_equal(name, "parse")) {
             return ptn_uri_whatwg_url_static_parse(runtime, argc, args, line);
@@ -64348,6 +64368,242 @@ static PtnValue ptn_internal_reflection_get_modifier_names(
     size_t line
 ) {
     return ptn_internal_class_static_call_method(runtime, "Reflection", "getModifierNames", argc, args, line);
+}
+
+typedef struct PtnFiberData {
+    PtnValue callback;
+    PtnValue return_value;
+    int started;
+    int completed;
+    int resume_credit;
+} PtnFiberData;
+
+static void ptn_fiber_data_free(void *opaque) {
+    PtnFiberData *data = (PtnFiberData *)opaque;
+    if (data == NULL) {
+        return;
+    }
+    ptn_value_destroy(&data->callback);
+    ptn_value_destroy(&data->return_value);
+    free(data);
+}
+
+static PtnFiberData *ptn_fiber_data(PtnRuntime *runtime, PtnValue receiver) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (
+        resolved.type != PTN_OBJECT ||
+        !ptn_internal_class_name_is_fiber(resolved.as.object->class_name) ||
+        resolved.as.object->native_data == NULL
+    ) {
+        ptn_throw_exception(runtime, "Error", "Invalid Fiber object");
+        return NULL;
+    }
+    return (PtnFiberData *)resolved.as.object->native_data;
+}
+
+static int ptn_fiber_check_exact_arguments(
+    PtnRuntime *runtime,
+    const char *method_name,
+    size_t argc,
+    size_t expected
+) {
+    if (argc == expected) {
+        return 1;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Fiber::%s() expects exactly %zu argument%s, %zu given",
+        method_name,
+        expected,
+        expected == 1 ? "" : "s",
+        argc
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ArgumentCountError", message);
+    return 0;
+}
+
+static int ptn_fiber_init_object(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)line;
+    if (!ptn_fiber_check_exact_arguments(runtime, "__construct", argc, 1)) {
+        return 0;
+    }
+    if (!ptn_callable_is_valid(runtime, args[0], 0)) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "Fiber::__construct(): Argument #1 ($callback) must be of type callable"
+        );
+        return 0;
+    }
+    PtnFiberData *data = malloc(sizeof(PtnFiberData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->callback = ptn_value_clone_deref(args[0]);
+    data->return_value = ptn_null();
+    data->started = 0;
+    data->completed = 0;
+    data->resume_credit = 0;
+
+    if (object->native_data_free != NULL) {
+        object->native_data_free(object->native_data);
+    }
+    object->native_data = data;
+    object->native_data_free = ptn_fiber_data_free;
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_fiber_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue object = ptn_object_new_shell(runtime, "Fiber");
+    if (!ptn_fiber_init_object(runtime, object.as.object, argc, args, line)) {
+        ptn_value_destroy(&object);
+        return ptn_null();
+    }
+    return object;
+}
+
+static PtnValue ptn_fiber_start(
+    PtnRuntime *runtime,
+    PtnFiberData *data,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (data->started) {
+        ptn_throw_exception(runtime, "Error", "Cannot start a fiber that has already been started");
+        return ptn_null();
+    }
+    data->started = 1;
+    PtnValue result = ptn_call_callable(runtime, data->callback, argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&result);
+        return ptn_null();
+    }
+    PtnValue copied_result = ptn_value_clone_deref(result);
+    ptn_value_destroy(&result);
+    ptn_value_destroy(&data->return_value);
+    data->return_value = copied_result;
+    data->completed = 1;
+    data->resume_credit = 1;
+    return ptn_null();
+}
+
+static PtnValue ptn_fiber_resume(
+    PtnRuntime *runtime,
+    PtnFiberData *data,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (argc > 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Fiber::resume() expects at most 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    (void)args;
+    if (!data->started) {
+        ptn_throw_exception(runtime, "Error", "Cannot resume a fiber that has not been started");
+        return ptn_null();
+    }
+    if (data->resume_credit) {
+        data->resume_credit = 0;
+        return ptn_null();
+    }
+    if (data->completed) {
+        ptn_throw_exception(runtime, "Error", "Cannot resume a fiber that has already terminated");
+        return ptn_null();
+    }
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_fiber_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        if (resolved.type != PTN_OBJECT || !ptn_internal_class_name_is_fiber(resolved.as.object->class_name)) {
+            ptn_throw_exception(runtime, "Error", "Invalid Fiber object");
+            return ptn_null();
+        }
+        ptn_fiber_init_object(runtime, resolved.as.object, argc, args, line);
+        return ptn_null();
+    }
+
+    PtnFiberData *data = ptn_fiber_data(runtime, receiver);
+    if (data == NULL) {
+        return ptn_null();
+    }
+    if (ptn_ascii_case_equal(name, "start")) {
+        return ptn_fiber_start(runtime, data, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "resume")) {
+        return ptn_fiber_resume(runtime, data, argc, args);
+    }
+    if (ptn_ascii_case_equal(name, "getReturn")) {
+        if (!ptn_fiber_check_exact_arguments(runtime, "getReturn", argc, 0)) {
+            return ptn_null();
+        }
+        if (!data->completed) {
+            ptn_throw_exception(runtime, "Error", "Cannot get fiber return value: The fiber has not returned");
+            return ptn_null();
+        }
+        return ptn_value_clone_deref(data->return_value);
+    }
+    if (ptn_ascii_case_equal(name, "isStarted")) {
+        if (!ptn_fiber_check_exact_arguments(runtime, "isStarted", argc, 0)) {
+            return ptn_null();
+        }
+        return ptn_bool(data->started);
+    }
+    if (ptn_ascii_case_equal(name, "isSuspended")) {
+        if (!ptn_fiber_check_exact_arguments(runtime, "isSuspended", argc, 0)) {
+            return ptn_null();
+        }
+        return ptn_bool(data->started && data->resume_credit);
+    }
+    if (ptn_ascii_case_equal(name, "isRunning")) {
+        if (!ptn_fiber_check_exact_arguments(runtime, "isRunning", argc, 0)) {
+            return ptn_null();
+        }
+        return ptn_bool(0);
+    }
+    if (ptn_ascii_case_equal(name, "isTerminated")) {
+        if (!ptn_fiber_check_exact_arguments(runtime, "isTerminated", argc, 0)) {
+            return ptn_null();
+        }
+        return ptn_bool(data->completed && !data->resume_credit);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method Fiber");
+    return ptn_null();
 }
 
 typedef struct PtnWeakReferenceData {
@@ -67466,6 +67722,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_closure(const char *class_name)
     return ptn_ascii_case_equal(class_name, "Closure");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Fiber");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_sensitive_parameter(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "SensitiveParameter");
 }
@@ -67690,6 +67950,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_spl_file_object(class_name)
         || ptn_internal_class_name_is_directory(class_name)
         || ptn_internal_class_name_is_closure(class_name)
+        || ptn_internal_class_name_is_fiber(class_name)
         || ptn_internal_class_name_is_sensitive_parameter(class_name)
         || ptn_internal_class_name_is_sensitive_parameter_value(class_name)
         || ptn_internal_class_name_is_weak_map(class_name)
@@ -69187,6 +69448,16 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_closure_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_fiber(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "start")
+            || ptn_ascii_case_equal(method_name, "resume")
+            || ptn_ascii_case_equal(method_name, "getReturn")
+            || ptn_ascii_case_equal(method_name, "isStarted")
+            || ptn_ascii_case_equal(method_name, "isSuspended")
+            || ptn_ascii_case_equal(method_name, "isRunning")
+            || ptn_ascii_case_equal(method_name, "isTerminated");
+    }
     if (ptn_ascii_case_equal(class_name, "Generator")) {
         return ptn_generator_method_exists(method_name);
     }
@@ -69331,6 +69602,9 @@ static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_
     if (ptn_internal_class_name_is_closure(class_name)) {
         return ptn_ascii_case_equal(method_name, "bind")
             || ptn_ascii_case_equal(method_name, "fromCallable");
+    }
+    if (ptn_internal_class_name_is_fiber(class_name)) {
+        return ptn_ascii_case_equal(method_name, "suspend");
     }
     if (ptn_ascii_case_equal(class_name, "Reflection")) {
         return ptn_ascii_case_equal(method_name, "getModifierNames");
@@ -69663,6 +69937,21 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_sensitive_parameter_value(class_name)) {
         static const char *const names[] = { "getValue" };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_fiber(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "start",
+            "resume",
+            "getReturn",
+            "isStarted",
+            "isSuspended",
+            "isRunning",
+            "isTerminated",
+            "suspend",
+        };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
     }

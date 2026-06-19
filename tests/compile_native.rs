@@ -936,6 +936,42 @@ echo new DateTimeZoneExt('Europe/Kyiv'), "\n";
 }
 
 #[test]
+fn compile_fiber_by_ref_callback_return_to_native_binary() {
+    let root = temp_dir("ptn-native-fiber-by-ref-callback-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("fiber-by-ref-callback-return.php");
+    let output = root.join("fiber-by-ref-callback-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$fiber = new Fiber(function &() {
+    Fiber::suspend();
+    return $var;
+});
+$fiber->start();
+$fiber->resume();
+var_dump($fiber->getReturn());
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_fiber_call_method"));
+    assert!(c_source.contains("ptn_value_clone_deref(data->return_value)"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_uri_whatwg_url_semantics_to_native_binary() {
     let root = temp_dir("ptn-native-uri-whatwg-url-semantics");
     fs::create_dir_all(&root).unwrap();
@@ -11547,6 +11583,69 @@ foreach (notice_gen() as $v) {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "array(3) {\n  [0]=>\n  int(-1)\n  [1]=>\n  int(-2)\n  [2]=>\n  &int(-3)\n}\narray(2) {\n  [0]=>\n  int(-1)\n  [1]=>\n  &int(-2)\n}\nYou can only iterate a generator by-reference if it declared that it yields by-reference\n\nNotice: Only variable references should be yielded by reference in ptn on line 30\nint(0)\n\nNotice: Only variable references should be yielded by reference in ptn on line 31\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_foreach_by_ref_declared_reference_return_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-by-ref-reference-return");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-by-ref-reference-return.php");
+    let output = root.join("foreach-by-ref-reference-return-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function id($x) {
+    return $x;
+}
+
+function &ref_id(&$x) {
+    return $x;
+}
+
+$c = "c";
+$array = ["a", "b", $c];
+
+foreach (id($array) as &$value) {
+    $value .= "q";
+}
+var_dump($array);
+
+foreach (ref_id($array) as &$value) {
+    $value .= "q";
+}
+var_dump($array);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_array_iterator_by_ref_from_reference"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(1) \"a\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "  [2]=>\n",
+            "  string(1) \"c\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(2) \"aq\"\n",
+            "  [1]=>\n",
+            "  string(2) \"bq\"\n",
+            "  [2]=>\n",
+            "  &string(2) \"cq\"\n",
+            "}\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

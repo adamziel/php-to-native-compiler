@@ -851,6 +851,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     if (ptn_internal_class_name_is_sensitive_parameter_value(lookup_class_name)) {
         return ptn_sensitive_parameter_value_new(runtime, argc, args, line);
     }
+    if (ptn_internal_class_name_is_fiber(lookup_class_name)) {
+        return ptn_fiber_new(runtime, argc, args, line);
+    }
     if (ptn_internal_class_name_is_weak_reference(lookup_class_name)) {
         return ptn_weak_reference_new(runtime, argc, args, line);
     }
