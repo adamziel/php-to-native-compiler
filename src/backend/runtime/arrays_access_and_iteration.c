@@ -828,6 +828,13 @@ static PTN_UNUSED PtnValue ptn_new_object(
         runtime,
         ptn_symbol_name_without_leading_slash(class_name)
     );
+    if (ptn_class_name_is_stdclass(lookup_class_name)) {
+        if (argc != 0) {
+            ptn_throw_exception(runtime, "ArgumentCountError", "stdClass constructor expects 0 arguments");
+            return ptn_null();
+        }
+        return ptn_object_new_shell(runtime, "stdClass");
+    }
     if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (!ptn_internal_class_exists_name(lookup_class_name) &&
@@ -1097,20 +1104,13 @@ static PTN_UNUSED PtnValue ptn_new_object(
         );
         return ptn_null();
     }
-    if (!ptn_class_name_is_stdclass(lookup_class_name)) {
-        char message[192];
-        int written = snprintf(message, sizeof(message), "Class \"%s\" not found", lookup_class_name);
-        if (written < 0 || (size_t)written >= sizeof(message)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
-        return ptn_null();
+    char message[192];
+    int written = snprintf(message, sizeof(message), "Class \"%s\" not found", lookup_class_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
     }
-    if (argc != 0) {
-        ptn_throw_exception(runtime, "ArgumentCountError", "stdClass constructor expects 0 arguments");
-        return ptn_null();
-    }
-    return ptn_object_new_shell(runtime, "stdClass");
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+    return ptn_null();
 }
 
 static PTN_UNUSED void ptn_object_copy_storage_for_clone(PtnObject *cloned, PtnObject *source) {
