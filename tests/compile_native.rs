@@ -29436,6 +29436,47 @@ var_dump($nested);",
 }
 
 #[test]
+fn compile_scalar_offset_unset_boundaries_to_native_binary() {
+    let root = temp_dir("ptn-native-scalar-offset-unset-boundaries");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("scalar-offset-unset-boundaries.php");
+    let output = root.join("scalar-offset-unset-boundaries-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$truth = true;\n\
+try { unset($truth[null]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($truth);\n\
+$items = [1];\n\
+try { unset($items[0][null]); } catch (\\Error $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump($items);\n\
+$nil = null;\n\
+unset($nil[0]);\n\
+var_dump($nil);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot unset offset in a non-array variable\n",
+            "bool(true)\n",
+            "Cannot unset offset in a non-array variable\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  int(1)\n",
+            "}\n",
+            "NULL\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_object_offset_errors_and_false_type_name_to_native_binary() {
     let root = temp_dir("ptn-native-object-offset-errors-and-false-type");
     fs::create_dir_all(&root).unwrap();
@@ -40336,6 +40377,41 @@ fn phpc_run_alias_executes_compiled_native_binary() {
 }
 
 #[test]
+fn phpc_preserves_script_dir_for_directory_separator_require_once() {
+    let root = temp_dir("ptn-phpc-script-dir-require-once");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let helper = root.join("helper.inc");
+    fs::write(
+        &helper,
+        "<?php function helper_dir_basename() { return basename(__DIR__); }",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+require_once __DIR__ . DIRECTORY_SEPARATOR . 'helper.inc';\n\
+echo helper_dir_basename(), \"\\n\";\n\
+echo basename(__DIR__), \"\\n\";\n\
+var_dump($argv[0] === __FILE__);\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let root_name = root.file_name().unwrap().to_string_lossy();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("{root_name}\n{root_name}\nbool(true)\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_version_banner_matches_php_cli_shape() {
     let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
         .arg("-v")
@@ -42968,6 +43044,37 @@ var_dump($value);\n",
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+}
+
+#[test]
+fn compile_include_array_diagnostics_use_included_source_path_to_native_binary() {
+    let root = temp_dir("ptn-native-include-array-diagnostic-path");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let helper = root.join("helper.inc");
+    let output = root.join("include-array-diagnostic-path-bin");
+    fs::write(
+        &helper,
+        "<?php\n$items = [];\nvar_dump($items['missing']);\n",
+    )
+    .unwrap();
+    fs::write(&input, "<?php require 'helper.inc';").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nWarning: Undefined array key \"missing\" in {} on line 3\nNULL\n",
+            helper.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("runtime.compiled_include_depth++"));
 }
 
 #[test]

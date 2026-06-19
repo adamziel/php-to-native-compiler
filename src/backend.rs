@@ -2653,6 +2653,7 @@ fn emit_include_helpers(
         out.push_str("    runtime.source_path = \"");
         out.push_str(&c_string(&include.source_file));
         out.push_str("\";\n");
+        out.push_str("    runtime.compiled_include_depth++;\n");
         out.push_str("    runtime.strict_types = ");
         out.push_str(if include.strict_types { "1" } else { "0" });
         out.push_str(";\n");
@@ -2689,6 +2690,7 @@ fn emit_include_helpers(
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
+        out.push_str("    runtime.compiled_include_depth--;\n");
         out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
         out.push_str("    runtime.strict_types = ptn_previous_strict_types;\n");
         out.push_str("#undef runtime\n");

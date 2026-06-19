@@ -1144,6 +1144,7 @@ struct PtnRuntime {
     size_t magic_property_frame_len;
     size_t magic_property_frame_capacity;
     const char *source_path;
+    size_t compiled_include_depth;
     const char *current_function_name;
     const char *current_class_name;
     const char *current_called_class_name;

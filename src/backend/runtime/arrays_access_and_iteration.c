@@ -456,13 +456,30 @@ static PTN_UNUSED void ptn_emit_array_runtime_diagnostic_at_path(
     );
 }
 
+static PTN_UNUSED const char *ptn_array_runtime_diagnostic_path(PtnRuntime *runtime) {
+    if (
+        runtime != NULL &&
+        runtime->compiled_include_depth > 0 &&
+        runtime->source_path != NULL
+    ) {
+        return runtime->source_path;
+    }
+    return "ptn";
+}
+
 static PTN_UNUSED void ptn_emit_array_runtime_diagnostic(
     PtnRuntime *runtime,
     const char *kind,
     const char *message,
     size_t line
 ) {
-    ptn_emit_array_runtime_diagnostic_at_path(runtime, kind, message, "ptn", line);
+    ptn_emit_array_runtime_diagnostic_at_path(
+        runtime,
+        kind,
+        message,
+        ptn_array_runtime_diagnostic_path(runtime),
+        line
+    );
 }
 
 static PTN_UNUSED void ptn_emit_array_runtime_warning(PtnRuntime *runtime, const char *message, size_t line) {
@@ -5208,7 +5225,8 @@ static PTN_UNUSED void ptn_emit_null_array_offset_deprecation(PtnRuntime *runtim
     }
     ptn_diagnostic_printf(
         &runtime->diagnostics,
-        "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line %zu\n",
+        "\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in %s on line %zu\n",
+        ptn_array_runtime_diagnostic_path(runtime),
         line
     );
 }
@@ -9922,6 +9940,9 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         if (segment->append) {
             return ptn_null();
         }
+        if (container.type != PTN_ARRAY && container.type != PTN_NULL) {
+            return ptn_null();
+        }
         if (ptn_value_deref(segment->value).type == PTN_NULL) {
             ptn_emit_null_array_offset_deprecation(runtime, line);
         }
@@ -10341,6 +10362,15 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op(
     return ptn_null();
 }
 
+static PTN_UNUSED int ptn_array_unset_non_array_value(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 0;
+    }
+    ptn_throw_exception(runtime, "Error", "Cannot unset offset in a non-array variable");
+    return 1;
+}
+
 static PTN_UNUSED void ptn_value_array_path_unset(
     PtnRuntime *runtime,
     PtnValue *target,
@@ -10382,6 +10412,7 @@ static PTN_UNUSED void ptn_value_array_path_unset(
         return;
     }
     if (value->type != PTN_ARRAY) {
+        (void)ptn_array_unset_non_array_value(runtime, *value);
         return;
     }
 
@@ -10425,6 +10456,7 @@ static PTN_UNUSED void ptn_value_array_path_unset(
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
+            (void)ptn_array_unset_non_array_value(runtime, *entry_value);
             return;
         }
         array = ptn_array_detach_value(entry_value);
@@ -10632,6 +10664,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
         return;
     }
     if (value->type != PTN_ARRAY) {
+        (void)ptn_array_unset_non_array_value(runtime, *value);
         return;
     }
 
@@ -10675,6 +10708,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
+            (void)ptn_array_unset_non_array_value(runtime, *entry_value);
             return;
         }
         array = ptn_array_detach_value(entry_value);
@@ -10761,6 +10795,7 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
         return;
     }
     if (value->type != PTN_ARRAY) {
+        (void)ptn_array_unset_non_array_value(runtime, *value);
         return;
     }
 
@@ -10804,6 +10839,7 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
             return;
         }
         if (entry_value->type != PTN_ARRAY) {
+            (void)ptn_array_unset_non_array_value(runtime, *entry_value);
             return;
         }
         array = ptn_array_detach_value(entry_value);
