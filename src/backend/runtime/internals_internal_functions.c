@@ -6423,13 +6423,36 @@ static PtnValue ptn_unserialize_new_object_shell(
     const char *class_name,
     size_t line
 ) {
-    if (ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) {
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(class_name);
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    int class_exists = (runtime != NULL
+        ? ptn_declared_runtime_class_exists(runtime, resolved_name)
+        : ptn_declared_class_exists(resolved_name)) ||
+        ptn_internal_class_exists_name(resolved_name);
+    if (class_exists) {
         if (runtime != NULL &&
             runtime->new_instance_without_constructor != NULL &&
-            ptn_declared_user_class_or_interface_exists(class_name)) {
-            return runtime->new_instance_without_constructor(runtime, class_name, line);
+            ptn_declared_user_class_or_interface_exists(resolved_name)) {
+            return runtime->new_instance_without_constructor(runtime, resolved_name, line);
         }
-        return ptn_object_new_shell(runtime, class_name);
+        return ptn_object_new_shell(runtime, resolved_name);
+    }
+
+    if (runtime != NULL && ptn_class_name_should_autoload(lookup_name)) {
+        runtime->call_site_line = line;
+        ptn_runtime_autoload_class(runtime, lookup_name, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        if (ptn_declared_runtime_class_exists(runtime, resolved_name) ||
+            ptn_internal_class_exists_name(resolved_name)) {
+            if (runtime->new_instance_without_constructor != NULL &&
+                ptn_declared_user_class_or_interface_exists(resolved_name)) {
+                return runtime->new_instance_without_constructor(runtime, resolved_name, line);
+            }
+            return ptn_object_new_shell(runtime, resolved_name);
+        }
     }
 
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -6441,13 +6464,20 @@ static PtnValue ptn_unserialize_new_object_shell(
             ptn_internal_call_callback(runtime, callback, 1, &callback_arg, line);
         ptn_value_destroy(&callback_result);
         ptn_value_destroy(&callback_arg);
-        if (ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) {
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        if ((runtime != NULL
+                ? ptn_declared_runtime_class_exists(runtime, resolved_name)
+                : ptn_declared_class_exists(resolved_name)) ||
+            ptn_internal_class_exists_name(resolved_name)) {
             if (runtime != NULL &&
                 runtime->new_instance_without_constructor != NULL &&
-                ptn_declared_user_class_or_interface_exists(class_name)) {
-                return runtime->new_instance_without_constructor(runtime, class_name, line);
+                ptn_declared_user_class_or_interface_exists(resolved_name)) {
+                return runtime->new_instance_without_constructor(runtime, resolved_name, line);
             }
-            return ptn_object_new_shell(runtime, class_name);
+            return ptn_object_new_shell(runtime, resolved_name);
         }
     }
 #endif
@@ -7243,6 +7273,10 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             result.value = ptn_unserialize_new_object_shell(runtime, class_name, state->line);
             free(class_name);
             result.id = ptn_unserialize_add_slot(state, &result.value);
+            if ((runtime != NULL && runtime->exceptions->active_exception != NULL) ||
+                result.value.type != PTN_OBJECT) {
+                return result;
+            }
             for (size_t i = 0; i < property_count; i++) {
                 PtnArrayKey key;
                 if (!ptn_unserialize_parse_key(state, &key)) {
@@ -70723,27 +70757,6 @@ static int ptn_reflection_class_runtime_symbol_exists(PtnRuntime *runtime, const
         || ptn_internal_interface_exists_name(name);
 }
 
-static int ptn_reflection_class_autoload_name_char_is_valid(unsigned char ch) {
-    return ch == '_' ||
-        ch == '\\' ||
-        (ch >= 'a' && ch <= 'z') ||
-        (ch >= 'A' && ch <= 'Z') ||
-        (ch >= '0' && ch <= '9') ||
-        ch >= 0x80;
-}
-
-static int ptn_reflection_class_name_should_autoload(const char *name) {
-    if (name == NULL || *name == '\0') {
-        return 0;
-    }
-    for (const unsigned char *cursor = (const unsigned char *)name; *cursor != '\0'; cursor++) {
-        if (!ptn_reflection_class_autoload_name_char_is_valid(*cursor)) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
 static int ptn_reflection_class_runtime_symbol_exists_after_autoload(
     PtnRuntime *runtime,
     const char *lookup_name,
@@ -70753,7 +70766,7 @@ static int ptn_reflection_class_runtime_symbol_exists_after_autoload(
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
     if (
         !ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name) &&
-        ptn_reflection_class_name_should_autoload(lookup_name)
+        ptn_class_name_should_autoload(lookup_name)
     ) {
         runtime->call_site_line = line;
         ptn_runtime_autoload_class(runtime, lookup_name, line);
@@ -71939,7 +71952,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_new(
     const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
     if (
         !ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name) &&
-        ptn_reflection_class_name_should_autoload(lookup_name)
+        ptn_class_name_should_autoload(lookup_name)
     ) {
         runtime->call_site_line = line;
         ptn_runtime_autoload_class(runtime, lookup_name, line);

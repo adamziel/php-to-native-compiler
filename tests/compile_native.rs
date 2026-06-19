@@ -41503,6 +41503,75 @@ echo $object->label(), \"\\n\";
 }
 
 #[test]
+fn compile_unserialize_autoloads_missing_class_before_incomplete_object() {
+    let root = temp_dir("ptn-native-unserialize-autoload-incomplete-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-autoload-incomplete-class.php");
+    let output = root.join("unserialize-autoload-incomplete-class-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($name) {
+    echo \"in autoload: $name\\n\";
+});
+
+var_dump(unserialize('O:1:\"C\":0:{}'));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("in autoload: C\nobject(__PHP_Incomplete_Class)#"));
+    assert!(
+        stdout.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n  string(1) \"C\""),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_autoload_class"));
+    assert!(c_source.contains("__PHP_Incomplete_Class"));
+}
+
+#[test]
+fn compile_dynamic_new_invalid_class_name_skips_autoload() {
+    let root = temp_dir("ptn-native-dynamic-new-invalid-class-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-new-invalid-class-name.php");
+    let output = root.join("dynamic-new-invalid-class-name-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($name) {
+    echo \"autoload:$name\\n\";
+});
+
+$className = '../BUG';
+new $className;
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Error: Class \"../BUG\" not found"),
+        "{stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_class_name_should_autoload"));
+}
+
+#[test]
 fn compile_include_exports_include_path_variable_to_native_binary() {
     let root = temp_dir("ptn-native-include-exported-path-variable");
     fs::create_dir_all(&root).unwrap();
