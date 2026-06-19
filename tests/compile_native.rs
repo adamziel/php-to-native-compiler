@@ -29333,6 +29333,59 @@ var_dump($box->items);",
 }
 
 #[test]
+fn compile_stdclass_reference_assignments_to_native_binary() {
+    let root = temp_dir("ptn-native-stdclass-reference-assignments");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stdclass-reference-assignments.php");
+    let output = root.join("stdclass-reference-assignments-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function notRef() { return null; }\n\
+$first = new stdClass;\n\
+$first->prop =& notRef();\n\
+var_dump($first);\n\
+$second = new stdClass;\n\
+$second->ref =& $ref;\n\
+$second->val = $second->ref = 42;\n\
+var_dump($second);\n\
+$exception = new Exception('kept');\n\
+echo get_class($exception), ':', $exception->getMessage(), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nNotice: Only variables should be assigned by reference in {} on line 4\n",
+                "object(stdClass)#1 (1) {{\n",
+                "  [\"prop\"]=>\n",
+                "  NULL\n",
+                "}}\n",
+                "object(stdClass)#2 (2) {{\n",
+                "  [\"ref\"]=>\n",
+                "  &int(42)\n",
+                "  [\"val\"]=>\n",
+                "  int(42)\n",
+                "}}\n",
+                "Exception:kept\n",
+            ),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_runtime_user_class_exists"));
+    assert!(c_source.contains("ptn_object_bind_property_reference"));
+}
+
+#[test]
 fn compile_exception_subclass_by_reference_message_to_native_binary() {
     let root = temp_dir("ptn-native-exception-subclass-by-ref-message");
     fs::create_dir_all(&root).unwrap();

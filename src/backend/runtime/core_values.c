@@ -1279,6 +1279,7 @@ static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
+static PTN_UNUSED int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_user_class_or_interface_exists(const char *name);
 static PTN_UNUSED const char *ptn_declared_class_canonical_name(const char *name);

@@ -4826,6 +4826,25 @@ fn emit_class_metadata_helpers(
     }
     out.push_str("}\n");
 
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name) {\n");
+    if !has_user_classes {
+        out.push_str("    (void)runtime;\n");
+    }
+    for (index, class) in classes.iter().enumerate() {
+        if class.is_interface {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&index.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name) {\n");
     if !has_user_classes {
         out.push_str("    (void)runtime;\n");
