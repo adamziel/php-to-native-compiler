@@ -39368,6 +39368,53 @@ var_dump(empty($str[$f]));",
 }
 
 #[test]
+fn compile_offset_key_conversion_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-offset-key-conversion-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("offset-key-conversion-diagnostics.php");
+    let output = root.join("offset-key-conversion-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$array = [0 => 'zero', 5 => 'five'];\n\
+$fp = fopen(__FILE__, 'r');\n\
+var_dump($array[0.5]);\n\
+var_dump($array[$fp]);\n\
+$string = 'abcdef';\n\
+try {\n\
+    var_dump($string[$fp]);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    var_dump($string[new stdClass]);\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
+    assert_eq!(
+        normalized_stdout,
+        concat!(
+            "\nDeprecated: Implicit conversion from float 0.5 to int loses precision in ptn on line 4\n",
+            "string(4) \"zero\"\n",
+            "\nWarning: Resource ID#5 used as offset, casting to integer (5) in ptn on line 5\n",
+            "string(4) \"five\"\n",
+            "Cannot access offset of type resource on string\n",
+            "Cannot access offset of type stdClass on string\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_string_offset_writes_to_native_binary() {
     let root = temp_dir("ptn-native-string-offset-writes");
     fs::create_dir_all(&root).unwrap();

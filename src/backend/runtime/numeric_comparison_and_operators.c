@@ -1261,12 +1261,15 @@ static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
     if (diagnostics != NULL) {
         diagnostics->emitted_deprecation = 1;
     }
+    char formatted[128];
+    ptn_format_scalar_float(value, formatted, sizeof(formatted));
+
     char message[128];
     int written = snprintf(
         message,
         sizeof(message),
-        "Implicit conversion from float %.16G to int loses precision",
-        value
+        "Implicit conversion from float %s to int loses precision",
+        formatted
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
@@ -1279,8 +1282,8 @@ static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
     }
     ptn_diagnostic_printf(
         diagnostics,
-        "\nDeprecated: Implicit conversion from float %.16G to int loses precision in %s on line %zu\n",
-        value,
+        "\nDeprecated: Implicit conversion from float %s to int loses precision in %s on line %zu\n",
+        formatted,
         path,
         line
     );

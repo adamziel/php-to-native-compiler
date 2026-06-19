@@ -1714,7 +1714,7 @@ static PTN_UNUSED PtnArray *ptn_direct_expect_mutable_array_path_arg(
         if (segment->append) {
             return ptn_direct_expect_array_arg(runtime, function_name, position, argument_name, null_value);
         }
-        ptn_array_path_emit_null_key_deprecation(runtime, segment, line, 1);
+        ptn_array_path_emit_key_conversion_diagnostic(runtime, segment, line, 1);
         PtnArrayKey key = ptn_array_key_from_value(segment->value);
         PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
         ptn_array_key_free(key);
@@ -9986,7 +9986,7 @@ static PtnArray *ptn_internal_expect_mutable_array_path_arg(
         if (segment->append) {
             return ptn_internal_expect_array_arg(runtime, function_name, position, argument_name, null_value);
         }
-        ptn_array_path_emit_null_key_deprecation(runtime, segment, line, 1);
+        ptn_array_path_emit_key_conversion_diagnostic(runtime, segment, line, 1);
         PtnArrayKey key = ptn_array_key_from_value(segment->value);
         PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
         ptn_array_key_free(key);
@@ -82191,6 +82191,7 @@ static int ptn_spl_offset_key_from_value(
     PtnArrayKey *key_out
 ) {
     offset = ptn_value_deref(offset);
+    ptn_emit_array_offset_key_conversion_diagnostic(runtime, offset, line, !for_unset);
     if (ptn_array_offset_key_is_invalid(offset)) {
         const char *type_name = ptn_offset_key_type_name(offset);
         char message[256];
