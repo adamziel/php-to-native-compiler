@@ -24217,9 +24217,8 @@ static PtnValue ptn_internal_sprintf_named(PtnRuntime *runtime, const char *func
                 if (value.type == PTN_ARRAY) {
                     ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
                 }
-                PtnStringOperand string = value.type == PTN_RESOURCE
-                    ? ptn_string_operand_borrowed("Resource")
-                    : ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame(runtime, value, line);
+                PtnStringOperand string =
+                    ptn_value_to_string_operand_with_runtime_skipping_current_trace_frame(runtime, value, line);
                 ptn_sprintf_append_string(&output, string, &spec);
                 ptn_string_operand_free(string);
                 break;
@@ -51512,6 +51511,11 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_string(configured == NULL ? "1" : configured);
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "html_errors")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        *out = ptn_ini_int_string(root == NULL ? runtime->diagnostics.html_errors : root->diagnostics.html_errors);
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_arg_separator_input(runtime)));
         return 1;
@@ -52074,6 +52078,15 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "html_errors")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        root->diagnostics.html_errors = 0;
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "zend.exception_ignore_args")) {
         ptn_runtime_set_exception_ignore_args(runtime, 0);
         ptn_string_operand_free(option);
@@ -52413,6 +52426,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
     if (ptn_string_operand_ascii_case_equal(option, "assert.warning")) {
         PtnValue previous = ptn_ini_int_string(ptn_runtime_assert_warning(runtime));
         ptn_runtime_set_assert_warning(runtime, ptn_is_truthy(args[1]));
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "html_errors")) {
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        if (root == NULL) {
+            root = runtime;
+        }
+        PtnValue previous = ptn_ini_int_string(root->diagnostics.html_errors);
+        root->diagnostics.html_errors = ptn_is_truthy(args[1]);
         ptn_string_operand_free(option);
         return previous;
     }
@@ -79805,6 +79828,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
     if (ptn_ascii_case_equal(extension_name, "Core")) {
         ptn_extension_ini_set_entry(runtime, result, "display_errors");
+        ptn_extension_ini_set_entry(runtime, result, "html_errors");
         ptn_extension_ini_set_entry(runtime, result, "error_reporting");
         ptn_extension_ini_set_entry(runtime, result, "include_path");
         ptn_extension_ini_set_entry(runtime, result, "memory_limit");

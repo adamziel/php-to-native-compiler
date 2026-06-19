@@ -970,6 +970,7 @@ typedef struct {
     int suppressed;
     int64_t error_reporting;
     int display_errors;
+    int html_errors;
     int has_error_handler;
     PtnValue error_handler;
     int64_t error_handler_levels;

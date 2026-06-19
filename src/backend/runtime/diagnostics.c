@@ -535,6 +535,7 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->suppressed = 0;
     diagnostics->error_reporting = PTN_E_ALL;
     diagnostics->display_errors = 1;
+    diagnostics->html_errors = 0;
     diagnostics->has_error_handler = 0;
     diagnostics->error_handler = ptn_null();
     diagnostics->error_handler_levels = PTN_E_ALL;
@@ -548,6 +549,10 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     int configured_display_errors = 1;
     if (ptn_parse_bool_env("PTN_PHP_DISPLAY_ERRORS", &configured_display_errors)) {
         diagnostics->display_errors = configured_display_errors;
+    }
+    int configured_html_errors = 0;
+    if (ptn_parse_bool_env("PTN_PHP_HTML_ERRORS", &configured_html_errors)) {
+        diagnostics->html_errors = configured_html_errors;
     }
 }
 
@@ -809,6 +814,128 @@ static PTN_UNUSED void ptn_diagnostic_printf(PtnDiagnosticSink *diagnostics, con
     free(buffer);
 }
 
+static int ptn_diagnostic_utf8_continuation(unsigned char byte) {
+    return byte >= 0x80 && byte <= 0xbf;
+}
+
+static int ptn_diagnostic_utf8_sequence_len(const unsigned char *data, size_t len, size_t *sequence_len) {
+    if (len == 0) {
+        return 0;
+    }
+    unsigned char first = data[0];
+    if (first < 0x80) {
+        *sequence_len = 1;
+        return 1;
+    }
+    if (first >= 0xc2 && first <= 0xdf) {
+        if (len < 2 || !ptn_diagnostic_utf8_continuation(data[1])) {
+            return 0;
+        }
+        *sequence_len = 2;
+        return 1;
+    }
+    if (first == 0xe0) {
+        if (len < 3 || data[1] < 0xa0 || data[1] > 0xbf || !ptn_diagnostic_utf8_continuation(data[2])) {
+            return 0;
+        }
+        *sequence_len = 3;
+        return 1;
+    }
+    if ((first >= 0xe1 && first <= 0xec) || (first >= 0xee && first <= 0xef)) {
+        if (
+            len < 3 ||
+            !ptn_diagnostic_utf8_continuation(data[1]) ||
+            !ptn_diagnostic_utf8_continuation(data[2])
+        ) {
+            return 0;
+        }
+        *sequence_len = 3;
+        return 1;
+    }
+    if (first == 0xed) {
+        if (len < 3 || data[1] < 0x80 || data[1] > 0x9f || !ptn_diagnostic_utf8_continuation(data[2])) {
+            return 0;
+        }
+        *sequence_len = 3;
+        return 1;
+    }
+    if (first == 0xf0) {
+        if (
+            len < 4 ||
+            data[1] < 0x90 ||
+            data[1] > 0xbf ||
+            !ptn_diagnostic_utf8_continuation(data[2]) ||
+            !ptn_diagnostic_utf8_continuation(data[3])
+        ) {
+            return 0;
+        }
+        *sequence_len = 4;
+        return 1;
+    }
+    if (first >= 0xf1 && first <= 0xf3) {
+        if (
+            len < 4 ||
+            !ptn_diagnostic_utf8_continuation(data[1]) ||
+            !ptn_diagnostic_utf8_continuation(data[2]) ||
+            !ptn_diagnostic_utf8_continuation(data[3])
+        ) {
+            return 0;
+        }
+        *sequence_len = 4;
+        return 1;
+    }
+    if (first == 0xf4) {
+        if (
+            len < 4 ||
+            data[1] < 0x80 ||
+            data[1] > 0x8f ||
+            !ptn_diagnostic_utf8_continuation(data[2]) ||
+            !ptn_diagnostic_utf8_continuation(data[3])
+        ) {
+            return 0;
+        }
+        *sequence_len = 4;
+        return 1;
+    }
+    return 0;
+}
+
+static PTN_UNUSED void ptn_diagnostic_output_html_text(PtnDiagnosticSink *diagnostics, const char *data) {
+    if (data == NULL) {
+        return;
+    }
+    const unsigned char *bytes = (const unsigned char *)data;
+    size_t len = strlen(data);
+    size_t offset = 0;
+    while (offset < len) {
+        size_t sequence_len = 0;
+        if (ptn_diagnostic_utf8_sequence_len(bytes + offset, len - offset, &sequence_len)) {
+            ptn_diagnostic_output_write(diagnostics, data + offset, sequence_len);
+            offset += sequence_len;
+            continue;
+        }
+        ptn_diagnostic_output_write(diagnostics, "\xef\xbf\xbd", 3);
+        offset++;
+    }
+}
+
+static PTN_UNUSED void ptn_diagnostic_emit_html_message(
+    PtnDiagnosticSink *diagnostics,
+    const char *label,
+    const char *message,
+    const char *path,
+    size_t line
+) {
+    ptn_diagnostic_printf(diagnostics, "<br />\n<b>%s</b>:  ", label);
+    ptn_diagnostic_output_html_text(diagnostics, message);
+    ptn_diagnostic_printf(
+        diagnostics,
+        " in <b>%s</b> on line <b>%zu</b><br />\n",
+        path,
+        line
+    );
+}
+
 static PTN_UNUSED int ptn_diagnostics_should_emit(PtnDiagnosticSink *diagnostics, int64_t severity) {
     return diagnostics->display_errors &&
         diagnostics->suppressed <= 0 &&
@@ -834,6 +961,16 @@ static PTN_UNUSED const char *ptn_diagnostic_builtin_path(size_t line) {
         return script_filename;
     }
     return "ptn";
+}
+
+static PTN_UNUSED const char *ptn_diagnostic_html_path(PtnDiagnosticSink *diagnostics, const char *path, size_t line) {
+    if (path != NULL) {
+        return path;
+    }
+    if (line == 0) {
+        return "Unknown";
+    }
+    return ptn_diagnostic_path(diagnostics, NULL);
 }
 
 static PTN_UNUSED const char *ptn_runtime_source_path_or(PtnRuntime *runtime, const char *fallback) {
@@ -1208,6 +1345,16 @@ static PTN_UNUSED void ptn_emit_warning(PtnDiagnosticSink *diagnostics, const ch
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
         return;
     }
+    if (diagnostics->html_errors) {
+        ptn_diagnostic_emit_html_message(
+            diagnostics,
+            "Warning",
+            message,
+            ptn_diagnostic_html_path(diagnostics, NULL, line),
+            line
+        );
+        return;
+    }
     ptn_diagnostic_printf(
         diagnostics,
         "\nWarning: %s in %s on line %zu\n",
@@ -1350,6 +1497,16 @@ static PTN_UNUSED void ptn_emit_spaced_warning(PtnDiagnosticSink *diagnostics, c
     }
     diagnostics->emitted_warning = 1;
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
+        return;
+    }
+    if (diagnostics->html_errors) {
+        ptn_diagnostic_emit_html_message(
+            diagnostics,
+            "Warning",
+            message,
+            ptn_diagnostic_html_path(diagnostics, NULL, line),
+            line
+        );
         return;
     }
     ptn_diagnostic_printf(diagnostics, "\nWarning: %s in ptn on line %zu\n", message, line);

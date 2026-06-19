@@ -208,6 +208,7 @@ struct RuntimeIni {
     assert_exception: Option<String>,
     assert_warning: Option<String>,
     display_errors: Option<String>,
+    html_errors: Option<String>,
     error_reporting: Option<i64>,
     output_handler: Option<String>,
     filter_default: Option<String>,
@@ -382,6 +383,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.default_charset = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("display_errors") {
         ini.display_errors = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("html_errors") {
+        ini.html_errors = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("highlight.comment") {
         ini.highlight_comment = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("highlight.default") {
@@ -800,6 +803,7 @@ fn compile_and_run(
         assert_exception: ini.assert_exception.clone(),
         assert_warning: ini.assert_warning.clone(),
         display_errors: ini.display_errors.clone(),
+        html_errors: ini.html_errors.clone(),
         error_reporting: ini.error_reporting,
         output_handler: ini.output_handler.clone(),
         filter_default: ini.filter_default.clone(),
@@ -922,6 +926,9 @@ fn compile_and_run(
     }
     if let Some(display_errors) = &ini.display_errors {
         command.env("PTN_PHP_DISPLAY_ERRORS", display_errors);
+    }
+    if let Some(html_errors) = &ini.html_errors {
+        command.env("PTN_PHP_HTML_ERRORS", html_errors);
     }
     if let Some(error_reporting) = ini.error_reporting {
         command.env("PTN_PHP_ERROR_REPORTING", error_reporting.to_string());

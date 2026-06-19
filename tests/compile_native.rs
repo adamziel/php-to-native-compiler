@@ -14216,6 +14216,17 @@ var_dump(function_exists(\"fprintf\"), function_exists(\"vfprintf\"), function_e
 echo vsprintf(\"%s:%04d:%x\", [\"id\", 7, 255]), \"\\n\";\n\
 var_dump(vprintf(\"[%s|%d]\\n\", [\"ok\", 12]));\n\
 $fp = fopen(\"{}\", \"wb\");\n\
+$resource_text = sprintf(\"%s\", $fp);\n\
+var_dump(str_starts_with($resource_text, \"Resource id #\"));\n\
+var_dump(vsprintf(\"%s\", [$fp]) === $resource_text);\n\
+ob_start();\n\
+$printf_len = printf(\"%s\", $fp);\n\
+$printf_text = ob_get_clean();\n\
+var_dump($printf_text === $resource_text, $printf_len === strlen($resource_text));\n\
+ob_start();\n\
+$vprintf_len = vprintf(\"%s\", [$fp]);\n\
+$vprintf_text = ob_get_clean();\n\
+var_dump($vprintf_text === $resource_text, $vprintf_len === strlen($resource_text));\n\
 var_dump(fprintf($fp, \"%s=%d\\n\", \"a\", 5));\n\
 var_dump(vfprintf($fp, \"%s=%X\\n\", [\"b\", 15]));\n\
 fclose($fp);\n\
@@ -14242,6 +14253,12 @@ bool(true)\n\
 id:0007:ff\n\
 [ok|12]\n\
 int(8)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
+bool(true)\n\
 int(4)\n\
 int(4)\n\
 a=5\n\
@@ -39679,6 +39696,36 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
         String::from_utf8(execution.stdout).unwrap(),
         "string(0) \"\"\nstring(1) \"1\"\nstring(1) \"0\"\ndone\n"
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_html_errors_ini_formats_internal_warnings_as_html() {
+    let root = temp_dir("ptn-phpc-html-errors-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("html-errors-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('html_errors'));\n\
+fopen(__DIR__ . '/missing.txt', 'r');\n\
+var_dump(ini_set('html_errors', '0'), ini_get('html_errors'));\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("html_errors=1")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("string(1) \"1\"\n<br />\n<b>Warning</b>:  fopen("));
+    assert!(stdout.contains("): Failed to open stream: No such file or directory in <b>"));
+    assert!(stdout.contains("</b> on line <b>3</b><br />\n"));
+    assert!(stdout.ends_with("string(1) \"1\"\nstring(1) \"0\"\n"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
