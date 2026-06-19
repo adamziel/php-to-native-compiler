@@ -3315,6 +3315,10 @@ fn parser_rejects_user_function_redeclaring_modeled_internal() {
         parser::parse("<?php function STR_SPLIT($value, $length = 1) { return []; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function str_split()");
 
+    let error =
+        parser::parse("<?php function Str_Decrement($value) { return $value; }").unwrap_err();
+    assert_eq!(error.message, "Cannot redeclare function str_decrement()");
+
     let error = parser::parse("<?php function Strip_Tags($value) { return $value; }").unwrap_err();
     assert_eq!(error.message, "Cannot redeclare function strip_tags()");
 

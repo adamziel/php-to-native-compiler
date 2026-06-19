@@ -69010,7 +69010,6 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "str_ireplace", 3, 4, ptn_internal_str_ireplace },
         { "str_increment", 1, 1, ptn_internal_str_increment },
         { "str_ends_with", 2, 2, ptn_internal_str_ends_with },
-        { "str_increment", 1, 1, ptn_internal_str_increment },
         { "str_pad", 2, 4, ptn_internal_str_pad },
         { "str_repeat", 2, 2, ptn_internal_str_repeat },
         { "str_replace", 3, 4, ptn_internal_str_replace },

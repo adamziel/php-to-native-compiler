@@ -17963,6 +17963,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "strtolower"
             | "strtoupper"
             | "str_increment"
+            | "str_decrement"
             | "ucfirst"
             | "lcfirst"
             | "chop"
