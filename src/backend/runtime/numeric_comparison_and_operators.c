@@ -1994,7 +1994,11 @@ static PTN_UNUSED int64_t ptn_bitwise_integer_operand(PtnValue value) {
 }
 
 static PTN_UNUSED void ptn_format_bitwise_float_diagnostic(double value, char *buffer, size_t buffer_size) {
-    ptn_format_scalar_float(value, buffer, buffer_size);
+    if (isfinite(value)) {
+        ptn_format_scalar_shortest_float(value, buffer, buffer_size);
+    } else {
+        ptn_format_scalar_float(value, buffer, buffer_size);
+    }
 }
 
 static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
@@ -2025,7 +2029,7 @@ static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
         diagnostics,
         "\nWarning: The float %s is not representable as an int, cast occurred in %s on line %zu\n",
         formatted,
-        ptn_diagnostic_path(diagnostics, NULL),
+        ptn_diagnostic_builtin_path(line),
         line
     );
 }
