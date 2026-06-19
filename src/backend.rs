@@ -1269,7 +1269,7 @@ fn emit_user_function_prototypes(
                 "static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);\n",
         );
     }
-    if needs_dynamic_function_dispatch {
+    if needs_function_dispatch {
         out.push_str(
             "static PTN_UNUSED void ptn_emit_no_discard_for_callable(PtnRuntime *runtime, PtnValue callable, size_t line);\n",
         );
@@ -13296,6 +13296,64 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
         out.push_str("        free(name);\n");
         out.push_str("    }\n");
     }
+    let method_targets: Vec<_> = functions
+        .iter()
+        .filter_map(|function| {
+            let class_name = function.class_name.as_deref()?;
+            let method_name = function.method_name.as_deref()?;
+            no_discard_warning_message(function).map(|message| (class_name, method_name, message))
+        })
+        .collect();
+    let has_method_targets = !method_targets.is_empty();
+    if has_method_targets {
+        out.push_str("    if (resolved.type == PTN_ARRAY && resolved.as.array->len == 2) {\n");
+        out.push_str("        PtnArrayKey receiver_key = ptn_array_int_key(0);\n");
+        out.push_str("        PtnArrayKey method_key = ptn_array_int_key(1);\n");
+        out.push_str("        PtnArrayEntry *receiver_entry = ptn_array_entry_for_key(resolved.as.array, receiver_key);\n");
+        out.push_str("        PtnArrayEntry *method_entry = ptn_array_entry_for_key(resolved.as.array, method_key);\n");
+        out.push_str("        ptn_array_key_free(receiver_key);\n");
+        out.push_str("        ptn_array_key_free(method_key);\n");
+        out.push_str("        if (receiver_entry != NULL && method_entry != NULL) {\n");
+        out.push_str("            PtnValue receiver = ptn_value_deref(receiver_entry->value);\n");
+        out.push_str("            PtnValue method = ptn_value_deref(method_entry->value);\n");
+        out.push_str("            if ((receiver.type == PTN_OBJECT || receiver.type == PTN_EXCEPTION || receiver.type == PTN_STRING) && method.type == PTN_STRING) {\n");
+        out.push_str("                char *method_name = ptn_value_to_string(method);\n");
+        out.push_str("                char *owned_receiver_class_name = NULL;\n");
+        out.push_str("                const char *receiver_class_name = NULL;\n");
+        out.push_str("                if (receiver.type == PTN_OBJECT) {\n");
+        out.push_str("                    receiver_class_name = receiver.as.object->class_name;\n");
+        out.push_str("                } else if (receiver.type == PTN_EXCEPTION) {\n");
+        out.push_str(
+            "                    receiver_class_name = receiver.as.exception->class_name;\n",
+        );
+        out.push_str("                } else {\n");
+        out.push_str(
+            "                    owned_receiver_class_name = ptn_value_to_string(receiver);\n",
+        );
+        out.push_str("                    receiver_class_name = ptn_runtime_resolve_class_alias(runtime, ptn_symbol_name_without_leading_slash(owned_receiver_class_name));\n");
+        out.push_str("                }\n");
+    }
+    for (class_name, method_name, message) in method_targets {
+        out.push_str("                if (receiver_class_name != NULL && ptn_declared_class_is_same_or_descendant(receiver_class_name, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\") && ptn_ascii_case_equal(method_name, \"");
+        out.push_str(&c_string(method_name));
+        out.push_str("\")) {\n");
+        out.push_str("                    ptn_emit_user_warning(&runtime->diagnostics, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", line);\n");
+        out.push_str("                    free(owned_receiver_class_name);\n");
+        out.push_str("                    free(method_name);\n");
+        out.push_str("                    return;\n");
+        out.push_str("                }\n");
+    }
+    if has_method_targets {
+        out.push_str("                free(owned_receiver_class_name);\n");
+        out.push_str("                free(method_name);\n");
+        out.push_str("            }\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+    }
     let object_targets: Vec<_> = functions
         .iter()
         .filter(|function| {
@@ -13332,7 +13390,7 @@ fn emit_no_discard_callable_dispatch(out: &mut String, functions: &[FunctionDecl
     let has_anonymous_targets = functions
         .iter()
         .any(|function| function.is_anonymous && function.no_discard_message.is_some());
-    if !(has_anonymous_targets || has_string_targets || has_object_targets) {
+    if !(has_anonymous_targets || has_string_targets || has_method_targets || has_object_targets) {
         out.push_str("    (void)line;\n");
     }
     out.push_str("}\n");
@@ -32072,6 +32130,14 @@ impl ValueEmitter {
             out.push(')');
         }
         out.push_str(" };\n");
+        if discarded
+            && (name.eq_ignore_ascii_case("call_user_func")
+                || name.eq_ignore_ascii_case("call_user_func_array"))
+        {
+            if let Some(callable_temp) = temps.first() {
+                self.emit_no_discard_warning_for_callable_temp(out, callable_temp, line);
+            }
+        }
         if let Some(direct_user) = &direct_user {
             self.emit_direct_user_function_call(
                 out,
