@@ -3435,6 +3435,32 @@ static PTN_UNUSED int ptn_object_static_property_accessible(
     return 1;
 }
 
+static PTN_UNUSED int ptn_object_instance_property_accessible(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    const char *property,
+    const char *access_scope,
+    int access_mode
+) {
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_private_property_for_scope(object, property, access_scope);
+    if (metadata == NULL) {
+        metadata = ptn_object_named_shared_property(object, property);
+    }
+    if (metadata == NULL) {
+        return 0;
+    }
+    PtnPropertyVisibility visibility = access_mode == PTN_PROPERTY_ACCESS_READ
+        ? metadata->read_visibility
+        : metadata->set_visibility;
+    return ptn_property_visibility_allows(
+        runtime,
+        visibility,
+        metadata->declaring_class,
+        access_scope
+    );
+}
+
 static PTN_UNUSED void ptn_emit_static_property_non_static_notice(
     PtnRuntime *runtime,
     const char *declaring_class,
@@ -3465,6 +3491,15 @@ static PTN_UNUSED void ptn_emit_static_property_non_static_notice_if_accessible(
     int access_mode,
     size_t line
 ) {
+    if (ptn_object_instance_property_accessible(
+        runtime,
+        object,
+        property,
+        access_scope,
+        access_mode
+    )) {
+        return;
+    }
     const char *declaring_class = NULL;
     if (ptn_object_static_property_accessible(
         runtime,
@@ -3887,7 +3922,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
     const char *static_declaring_class = NULL;
-    int static_property_as_instance = ptn_object_static_property_accessible(
+    int static_property_as_instance = metadata == NULL && ptn_object_static_property_accessible(
         runtime,
         receiver.as.object,
         property,
@@ -4209,7 +4244,7 @@ static PTN_UNUSED PtnValue ptn_object_read_property_no_magic(
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
     const char *static_declaring_class = NULL;
-    int static_property_as_instance = ptn_object_static_property_accessible(
+    int static_property_as_instance = metadata == NULL && ptn_object_static_property_accessible(
         runtime,
         receiver.as.object,
         property,

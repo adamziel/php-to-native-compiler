@@ -14829,6 +14829,9 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
             if parent_property.visibility == PropertyVisibility::Private {
                 continue;
             }
+            if visibility_rank(property.visibility) > visibility_rank(parent_property.visibility) {
+                continue;
+            }
             if parent_property.is_final
                 || (parent_property.set_visibility == PropertyVisibility::Private
                     && parent_property.visibility != PropertyVisibility::Private)

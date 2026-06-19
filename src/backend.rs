@@ -10277,6 +10277,162 @@ fn abstract_methods_runtime_message(
     )
 }
 
+struct ClassPropertyValidationEntry<'a> {
+    name: &'a str,
+    visibility: PropertyVisibility,
+    is_static: bool,
+    source_order: usize,
+}
+
+struct InheritedPropertyValidationEntry<'a> {
+    declaring_class: &'a str,
+    visibility: PropertyVisibility,
+    is_static: bool,
+}
+
+struct ClassPropertyValidationConflict {
+    message: String,
+    line: usize,
+}
+
+fn class_inherited_property_conflicts(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Vec<ClassPropertyValidationConflict> {
+    let mut child_properties = Vec::new();
+    child_properties.extend(
+        class
+            .properties
+            .iter()
+            .map(|property| ClassPropertyValidationEntry {
+                name: property.name.as_str(),
+                visibility: property.visibility,
+                is_static: false,
+                source_order: property.source_order,
+            }),
+    );
+    child_properties.extend(class.static_properties.iter().map(|property| {
+        ClassPropertyValidationEntry {
+            name: property.name.as_str(),
+            visibility: property.visibility,
+            is_static: true,
+            source_order: property.source_order,
+        }
+    }));
+    child_properties.sort_by_key(|property| property.source_order);
+
+    child_properties
+        .into_iter()
+        .filter_map(|property| {
+            let inherited = inherited_non_private_property(class, property.name, classes)?;
+            inherited_property_conflict_message(&class.name, &property, inherited).map(|message| {
+                ClassPropertyValidationConflict {
+                    message,
+                    line: class.line,
+                }
+            })
+        })
+        .collect()
+}
+
+fn inherited_non_private_property<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<InheritedPropertyValidationEntry<'a>> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            return None;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            return None;
+        };
+        let mut parent_properties = Vec::new();
+        parent_properties.extend(parent.properties.iter().map(|property| {
+            (
+                property.source_order,
+                property.name.as_str(),
+                property.visibility,
+                false,
+            )
+        }));
+        parent_properties.extend(parent.static_properties.iter().map(|property| {
+            (
+                property.source_order,
+                property.name.as_str(),
+                property.visibility,
+                true,
+            )
+        }));
+        parent_properties.sort_by_key(|property| property.0);
+        for (_, inherited_name, inherited_visibility, inherited_is_static) in parent_properties {
+            if inherited_name == property_name
+                && inherited_visibility != PropertyVisibility::Private
+            {
+                return Some(InheritedPropertyValidationEntry {
+                    declaring_class: parent.name.as_str(),
+                    visibility: inherited_visibility,
+                    is_static: inherited_is_static,
+                });
+            }
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn inherited_property_conflict_message(
+    class_name: &str,
+    property: &ClassPropertyValidationEntry<'_>,
+    inherited: InheritedPropertyValidationEntry<'_>,
+) -> Option<String> {
+    if inherited.is_static != property.is_static {
+        return Some(format!(
+            "Cannot redeclare {} {}::${} as {} {}::${}",
+            if inherited.is_static {
+                "static"
+            } else {
+                "non static"
+            },
+            inherited.declaring_class,
+            property.name,
+            if property.is_static {
+                "static"
+            } else {
+                "non static"
+            },
+            class_name,
+            property.name
+        ));
+    }
+    if property_visibility_rank(property.visibility)
+        < property_visibility_rank(inherited.visibility)
+    {
+        return Some(match inherited.visibility {
+            PropertyVisibility::Public => format!(
+                "Access level to {}::${} must be public (as in class {})",
+                class_name, property.name, inherited.declaring_class
+            ),
+            PropertyVisibility::Protected => format!(
+                "Access level to {}::${} must be protected (as in class {}) or weaker",
+                class_name, property.name, inherited.declaring_class
+            ),
+            PropertyVisibility::Private => unreachable!("private inherited properties are ignored"),
+        });
+    }
+    None
+}
+
+fn property_visibility_rank(visibility: PropertyVisibility) -> u8 {
+    match visibility {
+        PropertyVisibility::Private => 0,
+        PropertyVisibility::Protected => 1,
+        PropertyVisibility::Public => 2,
+    }
+}
+
 fn builtin_parent_interfaces(interface_name: &str) -> &'static [&'static str] {
     match interface_name
         .trim_start_matches('\\')
@@ -13195,6 +13351,15 @@ fn emit_class_declaration_validation(
             source_path,
             line,
         );
+    }
+    for conflict in class_inherited_property_conflicts(class, classes) {
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
+        out.push_str(&c_string(&conflict.message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&conflict.line.to_string());
+        out.push_str(");\n");
     }
     let abstract_methods = class_runtime_unsatisfied_abstract_methods(class, classes);
     if !abstract_methods.is_empty() {
