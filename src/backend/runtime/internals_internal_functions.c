@@ -82242,7 +82242,7 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
         const char *extension_name = ptn_reflection_function_extension_name(metadata);
         ptn_string_buffer_append_format(
             &buffer,
-            "Function [ <internal:%s> function %s ] {\n\n",
+            "Function [ <internal:%s> function %s ] {\n",
             extension_name == NULL ? "Core" : extension_name,
             metadata.name
         );
