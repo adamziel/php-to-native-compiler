@@ -2009,6 +2009,18 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_CRYPT_SHA512);
         return 1;
     }
+    if (strcmp(name, "PASSWORD_BCRYPT") == 0) {
+        *out = ptn_string(PTN_PASSWORD_BCRYPT);
+        return 1;
+    }
+    if (strcmp(name, "PASSWORD_DEFAULT") == 0) {
+        *out = ptn_string(PTN_PASSWORD_BCRYPT);
+        return 1;
+    }
+    if (strcmp(name, "PASSWORD_BCRYPT_DEFAULT_COST") == 0) {
+        *out = ptn_int(PTN_PASSWORD_BCRYPT_DEFAULT_COST);
+        return 1;
+    }
     if (strcmp(name, "COUNT_NORMAL") == 0) {
         *out = ptn_int(PTN_COUNT_NORMAL);
         return 1;

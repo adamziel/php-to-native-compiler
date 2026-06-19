@@ -1729,6 +1729,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->output_buffer_callback_depth = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
+    runtime->http_response_code_initialized = 0;
+    runtime->http_response_code = 0;
     runtime->shutdown_functions = NULL;
     runtime->shutdown_functions_len = 0;
     runtime->shutdown_functions_capacity = 0;
@@ -1969,6 +1971,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->expose_php = ptn_duplicate_string(
         configured_expose_php == NULL ? "1" : configured_expose_php
     );
+    runtime->docref_root = ptn_duplicate_string("");
     runtime->user_agent = ptn_duplicate_string(
         configured_user_agent == NULL ? "" : configured_user_agent
     );

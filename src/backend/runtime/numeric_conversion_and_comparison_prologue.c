@@ -78,6 +78,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffer_callback_depth = 0;
     runtime->output_at_line_start = 1;
     runtime->output_has_started = 0;
+    runtime->http_response_code_initialized = 0;
+    runtime->http_response_code = 0;
     runtime->shutdown_functions = NULL;
     runtime->shutdown_functions_len = 0;
     runtime->shutdown_functions_capacity = 0;
@@ -167,6 +169,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->always_populate_raw_post_data = NULL;
     runtime->upload_tmp_dir = NULL;
     runtime->expose_php = NULL;
+    runtime->docref_root = NULL;
     runtime->unserialize_callback_func = NULL;
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
@@ -531,6 +534,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->upload_tmp_dir = NULL;
         free(runtime->expose_php);
         runtime->expose_php = NULL;
+        free(runtime->docref_root);
+        runtime->docref_root = NULL;
         free(runtime->user_agent);
         runtime->user_agent = NULL;
         free(runtime->unserialize_callback_func);

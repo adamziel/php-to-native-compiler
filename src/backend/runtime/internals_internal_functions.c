@@ -836,6 +836,13 @@ static size_t ptn_class_name_dump_len(const char *class_name) {
     if (anonymous_suffix != NULL) {
         return (size_t)(anonymous_suffix - class_name) + strlen("@anonymous");
     }
+    anonymous_suffix = strstr(class_name, "@anonymous");
+    if (anonymous_suffix != NULL) {
+        const char *cursor = anonymous_suffix + strlen("@anonymous");
+        if (*cursor == '\0') {
+            return (size_t)(cursor - class_name);
+        }
+    }
     return strlen(class_name);
 }
 
@@ -857,6 +864,17 @@ static PtnValue ptn_runtime_class_name_string(const char *class_name) {
     memcpy(name + visible_len + 1, "ptn", 3);
     name[len] = '\0';
     return ptn_owned_string_len(name, len);
+}
+
+static PtnValue ptn_runtime_debug_class_name_string(const char *class_name) {
+    if (class_name == NULL) {
+        return ptn_owned_string(ptn_duplicate_string(""));
+    }
+    if (strstr(class_name, "@anonymous") == NULL) {
+        return ptn_owned_string(ptn_duplicate_string(class_name));
+    }
+    size_t visible_len = ptn_class_name_dump_len(class_name);
+    return ptn_owned_string_len(ptn_duplicate_string_len(class_name, visible_len), visible_len);
 }
 
 static PTN_UNUSED PtnValue ptn_get_class_value(PtnRuntime *runtime, PtnValue value, size_t line) {
@@ -17835,6 +17853,33 @@ static PtnValue ptn_internal_http_build_query(PtnRuntime *runtime, size_t argc, 
     free(numeric_prefix);
     free(arg_separator);
     return ptn_owned_string_len(output.data, output.len);
+}
+
+static PtnValue ptn_internal_http_response_code(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        return ptn_bool(0);
+    }
+    if (argc == 0) {
+        return root->http_response_code_initialized
+            ? ptn_int(root->http_response_code)
+            : ptn_bool(0);
+    }
+    int64_t code = ptn_internal_expect_integer_arg(runtime, "http_response_code", 1, "response_code", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (root->output_has_started) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "http_response_code(): Cannot set response code - headers already sent (output started at ptn:0)",
+            line
+        );
+        return ptn_bool(0);
+    }
+    root->http_response_code_initialized = 1;
+    root->http_response_code = code;
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_url_decode_value(PtnStringOperand string, int plus_as_space) {
@@ -35494,6 +35539,345 @@ static PtnValue ptn_internal_crypt(PtnRuntime *runtime, size_t argc, const PtnVa
     return result;
 }
 
+typedef enum {
+    PTN_PASSWORD_ALGO_UNKNOWN = 0,
+    PTN_PASSWORD_ALGO_BCRYPT = 1
+} PtnPasswordAlgorithm;
+
+static void ptn_password_throw_algo_type_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value
+) {
+    value = ptn_value_deref(value);
+    const char *given = value.type == PTN_OBJECT
+        ? value.as.object->class_name
+        : ptn_offset_container_type_name(value);
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #%zu ($%s) must be of type string|int|null, %s given",
+        function_name,
+        position,
+        argument_name,
+        given
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+}
+
+static int ptn_password_string_algo(PtnStringOperand algo) {
+    return algo.len == 2 && memcmp(algo.data, PTN_PASSWORD_BCRYPT, 2) == 0
+        ? PTN_PASSWORD_ALGO_BCRYPT
+        : PTN_PASSWORD_ALGO_UNKNOWN;
+}
+
+static int ptn_password_resolve_algo(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnValue value,
+    size_t line,
+    PtnPasswordAlgorithm *out
+) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+            *out = PTN_PASSWORD_ALGO_BCRYPT;
+            return 1;
+        case PTN_BOOL:
+            *out = value.as.boolean ? PTN_PASSWORD_ALGO_BCRYPT : PTN_PASSWORD_ALGO_BCRYPT;
+            return 1;
+        case PTN_INT:
+            *out = (value.as.integer == 0 || value.as.integer == PTN_PASSWORD_LEGACY_BCRYPT)
+                ? PTN_PASSWORD_ALGO_BCRYPT
+                : PTN_PASSWORD_ALGO_UNKNOWN;
+            return 1;
+        case PTN_FLOAT: {
+            int64_t integer = ptn_value_to_integer(value);
+            *out = (integer == 0 || integer == PTN_PASSWORD_LEGACY_BCRYPT)
+                ? PTN_PASSWORD_ALGO_BCRYPT
+                : PTN_PASSWORD_ALGO_UNKNOWN;
+            return 1;
+        }
+        case PTN_STRING: {
+            PtnStringOperand algo = ptn_string_operand_borrowed_len(
+                (const char *)value.as.string.data,
+                value.as.string.len
+            );
+            *out = (PtnPasswordAlgorithm)ptn_password_string_algo(algo);
+            return 1;
+        }
+        case PTN_OBJECT: {
+            PtnStringOperand algo;
+            if (ptn_try_object_to_string_operand(runtime, value, line, &algo)) {
+                *out = (PtnPasswordAlgorithm)ptn_password_string_algo(algo);
+                ptn_string_operand_free(algo);
+                return 1;
+            }
+            break;
+        }
+        case PTN_ARRAY:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            break;
+    }
+    ptn_password_throw_algo_type_error(runtime, function_name, position, argument_name, value);
+    return 0;
+}
+
+static PtnArrayEntry *ptn_password_options_entry(PtnArray *options, const char *name) {
+    if (options == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(options, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static int ptn_password_bcrypt_cost(
+    PtnRuntime *runtime,
+    PtnArray *options,
+    int validate,
+    int *out
+) {
+    int64_t cost = PTN_PASSWORD_BCRYPT_DEFAULT_COST;
+    PtnArrayEntry *entry = ptn_password_options_entry(options, "cost");
+    if (entry != NULL) {
+        cost = ptn_value_to_integer(entry->value);
+    }
+    if (validate && (cost < 4 || cost > 31)) {
+        char message[96];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Invalid bcrypt cost parameter specified: %lld",
+            (long long)cost
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ValueError", message);
+        return 0;
+    }
+    *out = (int)cost;
+    return 1;
+}
+
+static void ptn_password_emit_salt_ignored_warning(PtnRuntime *runtime, PtnArray *options, size_t line) {
+    if (ptn_password_options_entry(options, "salt") != NULL) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "password_hash(): The \"salt\" option has been ignored, since providing a custom salt is no longer supported",
+            line
+        );
+    }
+}
+
+static void ptn_password_bcrypt_salt(char salt[30], int cost) {
+    static const char alphabet[] =
+        "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    int written = snprintf(salt, 8, "$2y$%02d$", cost);
+    if (written != 7) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < 22; i++) {
+        salt[7 + i] = alphabet[(unsigned int)rand() & 0x3f];
+    }
+    salt[29] = '\0';
+}
+
+static PtnValue ptn_password_bcrypt_hash_value(PtnStringOperand password, int cost) {
+    char *password_copy = ptn_duplicate_string_len(password.data, password.len);
+    char salt[30];
+    ptn_password_bcrypt_salt(salt, cost);
+
+    char output[PTN_CRYPT_OUTPUT_SIZE];
+    memset(output, 0, sizeof(output));
+    char *crypted = ptn_php_crypt_port(password_copy, salt, output, sizeof(output));
+    free(password_copy);
+    if (crypted == NULL || crypted[0] == '*') {
+        return ptn_bool(0);
+    }
+    return ptn_owned_string(ptn_duplicate_string(crypted));
+}
+
+static int ptn_password_bcrypt_info(const char *hash, size_t hash_len, int *cost_out) {
+    if (hash_len != 60) {
+        return 0;
+    }
+    if (
+        hash[0] != '$' ||
+        hash[1] != '2' ||
+        !(hash[2] == 'a' || hash[2] == 'b' || hash[2] == 'y') ||
+        hash[3] != '$' ||
+        !isdigit((unsigned char)hash[4]) ||
+        !isdigit((unsigned char)hash[5]) ||
+        hash[6] != '$'
+    ) {
+        return 0;
+    }
+    int cost = (hash[4] - '0') * 10 + (hash[5] - '0');
+    if (cost < 4 || cost > 31) {
+        return 0;
+    }
+    *cost_out = cost;
+    return 1;
+}
+
+static PtnValue ptn_password_info_array(int found, int cost) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnValue options = ptn_array_from_literal_entries(0, NULL);
+    if (found) {
+        ptn_array_set_entry(options.as.array, ptn_array_string_key("cost"), ptn_int(cost));
+    }
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("algo"),
+        found ? ptn_string(PTN_PASSWORD_BCRYPT) : ptn_null()
+    );
+    ptn_array_set_entry(
+        result.as.array,
+        ptn_array_string_key("algoName"),
+        ptn_string(found ? "bcrypt" : "unknown")
+    );
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("options"), options);
+    return result;
+}
+
+static PtnValue ptn_internal_password_get_info(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand hash = ptn_internal_expect_string_arg(runtime, "password_get_info", 1, "hash", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hash);
+        return ptn_null();
+    }
+    int cost = 0;
+    int found = ptn_password_bcrypt_info(hash.data, hash.len, &cost);
+    ptn_string_operand_free(hash);
+    return ptn_password_info_array(found, cost);
+}
+
+static PtnValue ptn_internal_password_hash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand password = ptn_internal_expect_string_arg(runtime, "password_hash", 1, "password", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(password);
+        return ptn_null();
+    }
+    PtnPasswordAlgorithm algorithm = PTN_PASSWORD_ALGO_UNKNOWN;
+    if (!ptn_password_resolve_algo(runtime, "password_hash", 2, "algo", args[1], line, &algorithm)) {
+        ptn_string_operand_free(password);
+        return ptn_null();
+    }
+    PtnArray *options = NULL;
+    if (argc >= 3) {
+        options = ptn_internal_expect_array_arg(runtime, "password_hash", 3, "options", args[2]);
+        if (options == NULL || runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(password);
+            return ptn_null();
+        }
+    }
+    if (algorithm != PTN_PASSWORD_ALGO_BCRYPT) {
+        ptn_string_operand_free(password);
+        ptn_throw_exception_at(
+            runtime,
+            "ValueError",
+            "password_hash(): Argument #2 ($algo) must be a valid password hashing algorithm",
+            runtime->source_path,
+            line
+        );
+        return ptn_null();
+    }
+    int cost = PTN_PASSWORD_BCRYPT_DEFAULT_COST;
+    if (!ptn_password_bcrypt_cost(runtime, options, 1, &cost)) {
+        ptn_string_operand_free(password);
+        return ptn_null();
+    }
+    if (memchr(password.data, '\0', password.len) != NULL) {
+        ptn_string_operand_free(password);
+        ptn_throw_exception(runtime, "ValueError", "Bcrypt password must not contain null character");
+        return ptn_null();
+    }
+    ptn_password_emit_salt_ignored_warning(runtime, options, line);
+    PtnValue result = ptn_password_bcrypt_hash_value(password, cost);
+    ptn_string_operand_free(password);
+    return result;
+}
+
+static PtnValue ptn_internal_password_needs_rehash(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand hash = ptn_internal_expect_string_arg(runtime, "password_needs_rehash", 1, "hash", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(hash);
+        return ptn_null();
+    }
+    PtnPasswordAlgorithm algorithm = PTN_PASSWORD_ALGO_UNKNOWN;
+    if (!ptn_password_resolve_algo(runtime, "password_needs_rehash", 2, "algo", args[1], line, &algorithm)) {
+        ptn_string_operand_free(hash);
+        return ptn_null();
+    }
+    PtnArray *options = NULL;
+    if (argc >= 3) {
+        options = ptn_internal_expect_array_arg(runtime, "password_needs_rehash", 3, "options", args[2]);
+        if (options == NULL || runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(hash);
+            return ptn_null();
+        }
+    }
+    if (algorithm != PTN_PASSWORD_ALGO_BCRYPT) {
+        ptn_string_operand_free(hash);
+        return ptn_bool(0);
+    }
+    int existing_cost = 0;
+    int desired_cost = PTN_PASSWORD_BCRYPT_DEFAULT_COST;
+    int found = ptn_password_bcrypt_info(hash.data, hash.len, &existing_cost);
+    ptn_string_operand_free(hash);
+    if (!found) {
+        return ptn_bool(1);
+    }
+    if (!ptn_password_bcrypt_cost(runtime, options, 0, &desired_cost)) {
+        return ptn_null();
+    }
+    return ptn_bool(existing_cost != desired_cost);
+}
+
+static PtnValue ptn_internal_password_verify(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand password = ptn_internal_expect_string_arg(runtime, "password_verify", 1, "password", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(password);
+        return ptn_null();
+    }
+    PtnStringOperand hash = ptn_internal_expect_string_arg(runtime, "password_verify", 2, "hash", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(password);
+        ptn_string_operand_free(hash);
+        return ptn_null();
+    }
+
+    char *password_copy = ptn_duplicate_string_len(password.data, password.len);
+    char *salt = ptn_duplicate_string_len(hash.data, hash.len);
+    char output[PTN_CRYPT_OUTPUT_SIZE];
+    memset(output, 0, sizeof(output));
+    char *crypted = ptn_php_crypt_port(password_copy, salt, output, sizeof(output));
+    int ok = crypted != NULL &&
+        strlen(crypted) == hash.len &&
+        memcmp(crypted, hash.data, hash.len) == 0;
+    free(password_copy);
+    free(salt);
+    ptn_string_operand_free(password);
+    ptn_string_operand_free(hash);
+    return ptn_bool(ok);
+}
+
 static void ptn_sha1_digest_bytes(const unsigned char *input, size_t input_len, unsigned char digest[20]) {
     size_t padded_len = input_len + 1;
     while ((padded_len % 64) != 56) {
@@ -42241,11 +42625,11 @@ static PtnValue ptn_internal_get_debug_type(PtnRuntime *runtime, size_t argc, co
         case PTN_ARRAY:
             return ptn_string("array");
         case PTN_OBJECT:
-            return ptn_runtime_class_name_string(value.as.object->class_name);
+            return ptn_runtime_debug_class_name_string(value.as.object->class_name);
         case PTN_CLOSURE:
             return ptn_string("Closure");
         case PTN_EXCEPTION:
-            return ptn_runtime_class_name_string(value.as.exception->class_name);
+            return ptn_runtime_debug_class_name_string(value.as.exception->class_name);
         case PTN_RESOURCE:
             if (ptn_resource_is_open(value.as.resource)) {
                 int needed = snprintf(NULL, 0, "resource (%s)", value.as.resource->type_name);
@@ -42592,6 +42976,103 @@ static PtnValue ptn_internal_gethostbyname(PtnRuntime *runtime, size_t argc, con
     return ptn_owned_string(input);
 }
 
+static PtnValue ptn_internal_getprotobyname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, "getprotobyname", 1, "protocol", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(name);
+        return ptn_null();
+    }
+    char *input = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+#if !defined(_WIN32)
+    struct protoent *entry = getprotobyname(input);
+    free(input);
+    return entry == NULL ? ptn_bool(0) : ptn_int(entry->p_proto);
+#else
+    free(input);
+    return ptn_bool(0);
+#endif
+}
+
+static PtnValue ptn_internal_getprotobynumber(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    int64_t number = ptn_internal_expect_integer_arg(runtime, "getprotobynumber", 1, "protocol", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+#if !defined(_WIN32)
+    if (number < 0 || number > INT_MAX) {
+        return ptn_bool(0);
+    }
+    struct protoent *entry = getprotobynumber((int)number);
+    return entry == NULL || entry->p_name == NULL
+        ? ptn_bool(0)
+        : ptn_owned_string(ptn_duplicate_string(entry->p_name));
+#else
+    (void)number;
+    return ptn_bool(0);
+#endif
+}
+
+static PtnValue ptn_internal_getservbyname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnStringOperand service = ptn_internal_expect_string_arg(runtime, "getservbyname", 1, "service", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(service);
+        return ptn_null();
+    }
+    PtnStringOperand protocol = ptn_internal_expect_string_arg(runtime, "getservbyname", 2, "protocol", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(service);
+        ptn_string_operand_free(protocol);
+        return ptn_null();
+    }
+    char *service_name = ptn_duplicate_string_len(service.data, service.len);
+    char *protocol_name = ptn_duplicate_string_len(protocol.data, protocol.len);
+    ptn_string_operand_free(service);
+    ptn_string_operand_free(protocol);
+#if !defined(_WIN32)
+    struct servent *entry = getservbyname(service_name, protocol_name);
+    free(service_name);
+    free(protocol_name);
+    return entry == NULL ? ptn_bool(0) : ptn_int((int)ntohs((uint16_t)entry->s_port));
+#else
+    free(service_name);
+    free(protocol_name);
+    return ptn_bool(0);
+#endif
+}
+
+static PtnValue ptn_internal_getservbyport(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    int64_t port = ptn_internal_expect_integer_arg(runtime, "getservbyport", 1, "port", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (port < 0 || port > 65535) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand protocol = ptn_internal_expect_string_arg(runtime, "getservbyport", 2, "protocol", args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(protocol);
+        return ptn_null();
+    }
+    char *protocol_name = ptn_duplicate_string_len(protocol.data, protocol.len);
+    ptn_string_operand_free(protocol);
+#if !defined(_WIN32)
+    struct servent *entry = getservbyport((int)htons((uint16_t)port), protocol_name);
+    free(protocol_name);
+    return entry == NULL || entry->s_name == NULL
+        ? ptn_bool(0)
+        : ptn_owned_string(ptn_duplicate_string(entry->s_name));
+#else
+    free(protocol_name);
+    return ptn_bool(0);
+#endif
+}
+
 static PtnValue ptn_internal_get_current_user(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     (void)args;
@@ -42635,10 +43116,10 @@ static PtnValue ptn_internal_settype(PtnRuntime *runtime, size_t argc, const Ptn
         converted = ptn_null();
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "integer") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "int")) {
-        converted = ptn_int(ptn_value_to_integer(current));
+        converted = ptn_cast_int_with_runtime(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "double") ||
         ptn_ascii_case_equal_span_to_string(type.data, type.len, "float")) {
-        converted = ptn_float(ptn_value_to_double(current));
+        converted = ptn_cast_float_with_runtime(runtime, current, line);
     } else if (ptn_ascii_case_equal_span_to_string(type.data, type.len, "string")) {
         PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, current, line);
         converted = ptn_owned_string_len(
@@ -42711,7 +43192,18 @@ static PtnValue ptn_internal_is_iterable(PtnRuntime *runtime, size_t argc, const
     (void)runtime;
     (void)argc;
     (void)line;
-    return ptn_is_type(args[0], PTN_ARRAY);
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type == PTN_ARRAY) {
+        return ptn_bool(1);
+    }
+    if (value.type == PTN_OBJECT) {
+        return ptn_bool(
+            ptn_ascii_case_equal(value.as.object->class_name, "Generator") ||
+            ptn_object_implements_builtin_interface(value.as.object, "Iterator") ||
+            ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate")
+        );
+    }
+    return ptn_bool(0);
 }
 
 static PtnValue ptn_internal_is_bool(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -51797,6 +52289,10 @@ static PtnValue ptn_ini_int_string(int value) {
     return ptn_owned_string(ptn_duplicate_string(buffer));
 }
 
+static PtnValue ptn_ini_bool_string(int value) {
+    return value ? ptn_string("1") : ptn_string("");
+}
+
 static PtnValue ptn_ini_size_string(size_t value) {
     char buffer[32];
     int written = snprintf(buffer, sizeof(buffer), "%zu", value);
@@ -52197,6 +52693,14 @@ static const char *ptn_runtime_expose_php(PtnRuntime *runtime) {
     return root->expose_php;
 }
 
+static const char *ptn_runtime_docref_root(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->docref_root == NULL) {
+        return "";
+    }
+    return root->docref_root;
+}
+
 static const char *ptn_runtime_user_agent(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->user_agent == NULL) {
@@ -52526,6 +53030,26 @@ static int ptn_runtime_set_serialize_precision(PtnRuntime *runtime, PtnValue val
     return 1;
 }
 
+static int ptn_ini_set_value_type_is_allowed(PtnValue value) {
+    value = ptn_value_deref(value);
+    switch (value.type) {
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+        case PTN_STRING:
+            return 1;
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_RESOURCE:
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
 static void ptn_runtime_set_memory_limit(PtnRuntime *runtime, const char *memory_limit) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->memory_limit, memory_limit);
@@ -52731,7 +53255,7 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "html_errors")) {
         PtnRuntime *root = ptn_runtime_root(runtime);
-        *out = ptn_ini_int_string(root == NULL ? runtime->diagnostics.html_errors : root->diagnostics.html_errors);
+        *out = ptn_ini_bool_string(root == NULL ? runtime->diagnostics.html_errors : root->diagnostics.html_errors);
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "arg_separator.input")) {
@@ -52914,6 +53438,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_expose_php(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "docref_root")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_docref_root(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "user_agent")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_user_agent(runtime)));
         return 1;
@@ -53062,6 +53590,11 @@ static void ptn_runtime_set_output_encoding(PtnRuntime *runtime, const char *val
 static void ptn_runtime_set_user_agent(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->user_agent, value);
+}
+
+static void ptn_runtime_set_docref_root(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->docref_root, value);
 }
 
 static void ptn_runtime_set_unserialize_callback_func(PtnRuntime *runtime, const char *value) {
@@ -53320,6 +53853,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "docref_root")) {
+        ptn_runtime_set_docref_root(runtime, "");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "unserialize_callback_func")) {
         ptn_runtime_set_unserialize_callback_func(runtime, "");
         ptn_string_operand_free(option);
@@ -53337,6 +53875,15 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
 static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnStringOperand option = ptn_internal_expect_string_arg(runtime, "ini_set", 1, "option", args[0], line);
+    if (!ptn_ini_set_value_type_is_allowed(args[1])) {
+        ptn_string_operand_free(option);
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "ini_set(): Argument #2 ($value) must be of type string|int|float|bool|null"
+        );
+        return ptn_null();
+    }
     if (ptn_string_operand_ascii_case_equal(option, "mbstring.http_output")) {
         ptn_emit_deprecation(&runtime->diagnostics, "ini_set(): Use of mbstring.http_output is deprecated", line);
         ptn_string_operand_free(option);
@@ -53652,8 +54199,18 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         if (root == NULL) {
             root = runtime;
         }
-        PtnValue previous = ptn_ini_int_string(root->diagnostics.html_errors);
+        PtnValue previous = ptn_ini_bool_string(root->diagnostics.html_errors);
         root->diagnostics.html_errors = ptn_is_truthy(args[1]);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "docref_root")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_docref_root(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_docref_root(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
         ptn_string_operand_free(option);
         return previous;
     }
@@ -54403,6 +54960,9 @@ static PtnValue ptn_defined_constants_core_table(void) {
     ptn_get_defined_constants_add_int(table, "CRYPT_BLOWFISH", PTN_CRYPT_BLOWFISH);
     ptn_get_defined_constants_add_int(table, "CRYPT_SHA256", PTN_CRYPT_SHA256);
     ptn_get_defined_constants_add_int(table, "CRYPT_SHA512", PTN_CRYPT_SHA512);
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("PASSWORD_BCRYPT"), ptn_string(PTN_PASSWORD_BCRYPT));
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("PASSWORD_DEFAULT"), ptn_string(PTN_PASSWORD_BCRYPT));
+    ptn_get_defined_constants_add_int(table, "PASSWORD_BCRYPT_DEFAULT_COST", PTN_PASSWORD_BCRYPT_DEFAULT_COST);
     ptn_get_defined_constants_add_int(table, "PHP_QUERY_RFC1738", PTN_PHP_QUERY_RFC1738);
     ptn_get_defined_constants_add_int(table, "PHP_QUERY_RFC3986", PTN_PHP_QUERY_RFC3986);
     ptn_get_defined_constants_add_int(table, "LOCK_SH", PTN_LOCK_SH);
@@ -54675,6 +55235,26 @@ static PtnValue ptn_defined_constants_soap_table(void) {
     return table;
 }
 
+static void ptn_defined_constants_add_user(PtnRuntime *runtime, PtnValue table) {
+    if (runtime == NULL || runtime->constants == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < runtime->constants->len; i++) {
+        PtnSymbol *symbol = &runtime->constants->items[i];
+        ptn_array_set_entry(
+            table.as.array,
+            ptn_array_string_key(symbol->name),
+            ptn_value_clone_deref(symbol->value)
+        );
+    }
+}
+
+static PtnValue ptn_defined_constants_user_table(PtnRuntime *runtime) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_defined_constants_add_user(runtime, table);
+    return table;
+}
+
 static int ptn_reflection_constant_is_json(const char *name) {
     static const char *const names[] = {
         "JSON_ERROR_NONE",
@@ -54917,7 +55497,6 @@ static const char *ptn_reflection_constant_extension_name(const char *name) {
 }
 
 static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
     PtnValue core = ptn_defined_constants_core_table();
     if (argc >= 1 && ptn_is_truthy(args[0])) {
@@ -54933,6 +55512,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("sockets"), ptn_defined_constants_sockets_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("soap"), ptn_defined_constants_soap_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("standard"), ptn_defined_constants_standard_table());
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("user"), ptn_defined_constants_user_table(runtime));
         return categorized;
     }
     ptn_defined_constants_add_libxml(core);
@@ -54945,6 +55525,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
     ptn_defined_constants_add_sockets(core);
     ptn_defined_constants_add_soap(core);
     ptn_defined_constants_add_standard(core);
+    ptn_defined_constants_add_user(runtime, core);
     return core;
 }
 
@@ -56096,8 +56677,6 @@ static PtnValue ptn_internal_strval(PtnRuntime *runtime, size_t argc, const PtnV
 }
 
 static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
-    (void)line;
     if (argc >= 2 && args[0].type == PTN_STRING) {
         int64_t base = ptn_number_to_integer(ptn_to_number(args[1]));
         return ptn_int(ptn_intval_string_to_integer(
@@ -56106,7 +56685,7 @@ static PtnValue ptn_internal_intval(PtnRuntime *runtime, size_t argc, const PtnV
             (int)base
         ));
     }
-    return ptn_cast_int(args[0]);
+    return ptn_cast_int_with_runtime(runtime, args[0], line);
 }
 
 static PtnValue ptn_internal_chr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -56437,7 +57016,6 @@ static PtnValue ptn_internal_user_error(PtnRuntime *runtime, size_t argc, const 
 }
 
 static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)argc;
     PtnStringOperand message = ptn_internal_expect_string_arg(
         runtime,
         "error_log",
@@ -56446,6 +57024,40 @@ static PtnValue ptn_internal_error_log(PtnRuntime *runtime, size_t argc, const P
         args[0],
         line
     );
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
+    int64_t message_type = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "error_log", 2, "message_type", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(message);
+        return ptn_null();
+    }
+    if (message_type == 3) {
+        PtnStringOperand destination = argc >= 3
+            ? ptn_value_to_string_operand(args[2])
+            : ptn_string_operand_borrowed_len("", 0);
+        if (destination.len == 0) {
+            ptn_string_operand_free(destination);
+            ptn_string_operand_free(message);
+            ptn_throw_exception(runtime, "ValueError", "Path must not be empty");
+            return ptn_null();
+        }
+        char *path = ptn_duplicate_string_len(destination.data, destination.len);
+        ptn_string_operand_free(destination);
+        FILE *stream = fopen(path, "ab");
+        free(path);
+        if (stream == NULL) {
+            ptn_string_operand_free(message);
+            return ptn_bool(0);
+        }
+        fwrite(message.data, 1, message.len, stream);
+        fclose(stream);
+        ptn_string_operand_free(message);
+        return ptn_bool(1);
+    }
     fwrite(message.data, 1, message.len, stderr);
     fputc('\n', stderr);
     ptn_string_operand_free(message);
@@ -67922,6 +68534,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
         { "gethostbyname", 1, 1, ptn_internal_gethostbyname },
         { "gethostname", 0, 0, ptn_internal_gethostname },
+        { "getprotobyname", 1, 1, ptn_internal_getprotobyname },
+        { "getprotobynumber", 1, 1, ptn_internal_getprotobynumber },
         { "getcwd", 0, 0, ptn_internal_getcwd },
         { "getdate", 0, 1, ptn_internal_getdate },
         { "getenv", 0, 2, ptn_internal_getenv },
@@ -67929,6 +68543,8 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
         { "get_resource_id", 1, 1, ptn_internal_get_resource_id },
         { "get_resource_type", 1, 1, ptn_internal_get_resource_type },
+        { "getservbyname", 2, 2, ptn_internal_getservbyname },
+        { "getservbyport", 2, 2, ptn_internal_getservbyport },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "glob", 1, 2, ptn_internal_glob },
         { "gmdate", 1, 2, ptn_internal_gmdate },
@@ -67950,6 +68566,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "htmlspecialchars", 1, 4, ptn_internal_htmlspecialchars },
         { "htmlspecialchars_decode", 1, 2, ptn_internal_htmlspecialchars_decode },
         { "http_build_query", 1, 4, ptn_internal_http_build_query },
+        { "http_response_code", 0, 1, ptn_internal_http_response_code },
         { "hypot", 2, 2, ptn_internal_hypot },
         { "iconv", 3, 3, ptn_internal_iconv },
         { "iconv_strpos", 2, 4, ptn_internal_iconv_strpos },
@@ -68145,6 +68762,10 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "parse_ini_string", 1, 3, ptn_internal_parse_ini_string },
         { "parse_url", 1, 2, ptn_internal_parse_url },
         { "passthru", 1, 2, ptn_internal_passthru },
+        { "password_get_info", 1, 1, ptn_internal_password_get_info },
+        { "password_hash", 2, 3, ptn_internal_password_hash },
+        { "password_needs_rehash", 2, 3, ptn_internal_password_needs_rehash },
+        { "password_verify", 2, 2, ptn_internal_password_verify },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },
@@ -90776,6 +91397,25 @@ static PTN_UNUSED PtnValue ptn_reflection_reference_call_method(
     return ptn_null();
 }
 
+static void ptn_internal_apply_sensitive_trace_frame(PtnTraceFrame *frame, const char *name) {
+    static const unsigned char password_hash_sensitive[] = { 1, 0, 0 };
+    static const unsigned char password_verify_sensitive[] = { 1, 0 };
+    if (frame == NULL || name == NULL) {
+        return;
+    }
+    if (ptn_ascii_case_equal(name, "password_hash")) {
+        frame->sensitive_parameter_count = sizeof(password_hash_sensitive) / sizeof(password_hash_sensitive[0]);
+        frame->sensitive_parameters = password_hash_sensitive;
+        frame->sensitive_variadic_position = (size_t)-1;
+        return;
+    }
+    if (ptn_ascii_case_equal(name, "password_verify")) {
+        frame->sensitive_parameter_count = sizeof(password_verify_sensitive) / sizeof(password_verify_sensitive[0]);
+        frame->sensitive_parameters = password_verify_sensitive;
+        frame->sensitive_variadic_position = (size_t)-1;
+    }
+}
+
 static void ptn_throw_internal_argument_count_error(
     PtnRuntime *runtime,
     const char *name,
@@ -90812,18 +91452,35 @@ static void ptn_throw_internal_argument_count_error(
         expected == 1 ? "" : "s",
         argc
     );
-    ptn_throw_exception_owned_message_at_with_trace_frame(
+    PtnTraceFrame trace_frame;
+    ptn_runtime_push_trace_frame(
         runtime,
-        "ArgumentCountError",
-        message,
-        runtime->source_path,
-        line,
+        &trace_frame,
         name,
         runtime->source_path,
         line,
         argc,
         args
     );
+    ptn_internal_apply_sensitive_trace_frame(&trace_frame, name);
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "ArgumentCountError",
+        message,
+        strlen(message),
+        0,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        line
+    );
+    ptn_runtime_pop_trace_frame(runtime, &trace_frame);
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
 }
 
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
@@ -90863,6 +91520,7 @@ static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *na
             argc,
             args
         );
+        ptn_internal_apply_sensitive_trace_frame(&trace_frame, function->name);
         PtnValue result = function->handler(runtime, argc, args, line);
         ptn_runtime_pop_trace_frame(runtime, &trace_frame);
         return result;

@@ -658,29 +658,7 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     'u' if self.rest().starts_with("u{") => {
-                        self.bump_char();
-                        self.bump_char();
-                        let mut digits = String::new();
-                        while let Some(hex) = self.peek_char() {
-                            if hex.is_ascii_hexdigit() {
-                                digits.push(hex);
-                                self.bump_char();
-                            } else {
-                                break;
-                            }
-                        }
-                        if !digits.is_empty() && self.peek_char() == Some('}') {
-                            self.bump_char();
-                            if let Ok(value) = u32::from_str_radix(&digits, 16) {
-                                if value <= 0x10ffff {
-                                    push_php_codepoint_escape(&mut literal, value);
-                                    at_line_start = false;
-                                    continue;
-                                }
-                            }
-                        }
-                        literal.push_str("\\u{");
-                        literal.push_str(&digits);
+                        self.lex_unicode_codepoint_escape(&mut literal)?;
                         at_line_start = false;
                         continue;
                     }
@@ -895,28 +873,7 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     'u' if self.rest().starts_with("u{") => {
-                        self.bump_char();
-                        self.bump_char();
-                        let mut digits = String::new();
-                        while let Some(hex) = self.peek_char() {
-                            if hex.is_ascii_hexdigit() {
-                                digits.push(hex);
-                                self.bump_char();
-                            } else {
-                                break;
-                            }
-                        }
-                        if !digits.is_empty() && self.peek_char() == Some('}') {
-                            self.bump_char();
-                            if let Ok(value) = u32::from_str_radix(&digits, 16) {
-                                if value <= 0x10ffff {
-                                    push_php_codepoint_escape(&mut literal, value);
-                                    continue;
-                                }
-                            }
-                        }
-                        literal.push_str("\\u{");
-                        literal.push_str(&digits);
+                        self.lex_unicode_codepoint_escape(&mut literal)?;
                         continue;
                     }
                     '0'..='7' => {
@@ -1315,6 +1272,10 @@ impl<'a> Lexer<'a> {
                         }
                         continue;
                     }
+                    'u' if quote == '"' && self.rest().starts_with("u{") => {
+                        self.lex_unicode_codepoint_escape(&mut value)?;
+                        continue;
+                    }
                     '0'..='7' if quote == '"' => {
                         let mut digits = String::new();
                         for _ in 0..3 {
@@ -1344,6 +1305,44 @@ impl<'a> Lexer<'a> {
         }
 
         Err(Diagnostic::new("unterminated string literal", Some(start)))
+    }
+
+    fn lex_unicode_codepoint_escape(&mut self, literal: &mut String) -> Result<()> {
+        let span = self.current_char_span();
+        self.bump_char();
+        self.bump_char();
+        let mut digits = String::new();
+        while let Some(hex) = self.peek_char() {
+            if hex.is_ascii_hexdigit() {
+                digits.push(hex);
+                self.bump_char();
+            } else {
+                break;
+            }
+        }
+
+        if digits.is_empty() || self.peek_char() != Some('}') {
+            return Err(Diagnostic::parse_error(
+                "Invalid UTF-8 codepoint escape sequence",
+                Some(span),
+            ));
+        }
+        self.bump_char();
+
+        let value = u32::from_str_radix(&digits, 16).map_err(|_| {
+            Diagnostic::parse_error(
+                "Invalid UTF-8 codepoint escape sequence: Codepoint too large",
+                Some(span),
+            )
+        })?;
+        if value > 0x10ffff {
+            return Err(Diagnostic::parse_error(
+                "Invalid UTF-8 codepoint escape sequence: Codepoint too large",
+                Some(span),
+            ));
+        }
+        push_php_codepoint_escape(literal, value);
+        Ok(())
     }
 
     fn lex_interpolation_index_int(&mut self) -> Result<StringInterpolationIndex> {

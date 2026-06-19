@@ -190,6 +190,9 @@ typedef struct {
 #define PTN_CRYPT_BLOWFISH 1
 #define PTN_CRYPT_SHA256 1
 #define PTN_CRYPT_SHA512 1
+#define PTN_PASSWORD_BCRYPT "2y"
+#define PTN_PASSWORD_LEGACY_BCRYPT 1
+#define PTN_PASSWORD_BCRYPT_DEFAULT_COST 12
 #define PTN_STR_PAD_LEFT 0
 #define PTN_STR_PAD_RIGHT 1
 #define PTN_STR_PAD_BOTH 2
@@ -1115,6 +1118,8 @@ struct PtnRuntime {
     size_t output_buffer_callback_depth;
     int output_at_line_start;
     int output_has_started;
+    int http_response_code_initialized;
+    int64_t http_response_code;
     PtnShutdownFunction *shutdown_functions;
     size_t shutdown_functions_len;
     size_t shutdown_functions_capacity;
@@ -1213,6 +1218,7 @@ struct PtnRuntime {
     char *always_populate_raw_post_data;
     char *upload_tmp_dir;
     char *expose_php;
+    char *docref_root;
     char *user_agent;
     char *unserialize_callback_func;
     char *request_body;
