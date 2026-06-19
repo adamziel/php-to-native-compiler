@@ -440,6 +440,15 @@ static PTN_UNUSED int ptn_array_offset_key_from_value(
         case PTN_REFERENCE:
             return ptn_array_offset_key_from_value(runtime, key_value, line, quiet, key_out);
         default:
+            if (key_value.type == PTN_FLOAT && ptn_float_to_int_out_of_range(key_value.as.floating)) {
+                PtnRuntime *root = runtime == NULL ? NULL : ptn_runtime_root(runtime);
+                if (root == NULL) {
+                    root = runtime;
+                }
+                if (root != NULL && root->diagnostics.has_error_handler) {
+                    return 0;
+                }
+            }
             *key_out = ptn_array_key_from_value(key_value);
             return 1;
     }
