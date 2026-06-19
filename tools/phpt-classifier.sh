@@ -1783,7 +1783,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_path ~ /Zend\/tests\/attributes\/(001_placement|003_ast_nodes|005_objects|006_filter|009_doctrine_annotations_example|011_inheritance|013_class_scope|014_class_const_group|020_userland_attribute_validation|031_backtrace|gh8421)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/(021_attribute_flags_type_is_validated|022_attribute_flags_value_is_validated|023_ast_node_in_validation|ossfuzz371445205)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/constants\/(allow_named_parameters|constant_listed_as_target-userland|constant_redefined_(addition|change|removal)|multiple_attributes_(grouped|ungrouped)|must_target_const-userland|not_repeatable-userland|oss_fuzz_428053935|repeatable-userland|target_all_targets_const-(default|explicit))[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/validator_success[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(has_runtime_errors|validator_(NoDiscard|success)|with_Attribute)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionAttribute_(constructor_001|newInstance_(deprecated|exception))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/002_rfcexample[.]phpt$/ ||
@@ -1805,7 +1805,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/asymmetric_visibility\/virtual_(get|set)_only[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/with_Override_(okay|error_get|error_set)[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(has_runtime_errors|validator_NoDiscard|no_compile_errors|with_(AllowDynamicProperties|Deprecated|NoDiscard|ReturnTypeWillChange|SensitiveParameter))[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(has_runtime_errors|validator_NoDiscard|no_compile_errors|with_(AllowDynamicProperties|Attribute|Deprecated|NoDiscard|ReturnTypeWillChange|SensitiveParameter))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/unsupported_property_hook_(get|set)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/closures\/closure_0(49|51|53|55|62)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(abstract_get_set_readonly|abstract_hook(_in_non_abstract_class|_not_implemented)?|abstract_prop_(final|hooks|not_implemented|without_hooks)|backed_invariant|bug004|default_on_virtual(_with_inheritance)?|duplicate_hook|final_private_prop|final_prop(_2|_promoted_[234])?|gh15419_[12]|interface(_explicit_abstract|_final_hook|_final_prop|_get_only|_get_set_readonly|_invalid_explicitly_abstract|_not_implemented|_not_public)?|invalid_(abstract_(body|final|indirect(_2)?|private)|empty_hooks|final_private|hook_visibility|static|static_prop)|no_get_parameters|parent_get_not_in_class|parent_outside_property|private_prop_final_hook|readonly|set_by_ref|set_variadic|syntax|traits_abstract|unknown_hook(_private)?)[.]phpt$/ ||
@@ -1984,7 +1984,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                     found = 1
                     exit
                 }
-                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(")) {
+                if (line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\\(") &&
+                    !(ptn_supported_property_hook_metadata_row() && line ~ ("(^|[^[:alnum:]_$])[$]" reflection_property_var "[[:space:]]*->[[:space:]]*gethook[[:space:]]*\\("))) {
                     print "unsupported-internal-reflection-metadata\trequires ReflectionProperty dynamic/internal/property-hook metadata beyond the declared property subset"
                     found = 1
                     exit
@@ -1999,7 +2000,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             if (line ~ /(^|[^[:alnum:]_$\\])new[[:space:]]+\\?reflectionproperty[[:space:]]*\([[:space:]]*new[[:space:]]+/ ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*getattributes[[:space:]]*\(/ &&
                     !ptn_supported_internal_attribute_metadata_row()) ||
-                line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ ||
+                (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(getdoccomment|gethook|skiplazyinitialization|setrawvaluewithoutlazyinitialization)[[:space:]]*\(/ &&
+                    !(ptn_supported_property_hook_metadata_row() && line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*gethook[[:space:]]*\(/)) ||
                 (line ~ /new[[:space:]]+\\?reflectionproperty[[:space:]]*\([^;]*\)[[:space:]]*->[[:space:]]*(gettype|isreadonly)[[:space:]]*\(/ &&
                     !ptn_supported_reflection_property_named_type_metadata_row()) ||
                 line ~ /(^|[^[:alnum:]_$\\])reflectionproperty[[:space:]]*::[[:space:]]*(is_[a-z0-9_]*|export|setaccessible|getmodifiernames)[[:space:]]*[(]/) {

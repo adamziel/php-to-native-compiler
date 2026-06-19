@@ -1446,11 +1446,15 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
         ),
         (
             "Zend/tests/attributes/delayed_target_validation/has_runtime_errors.phpt",
-            "--TEST--\ndelayed hook runtime errors\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Deprecated] get => $this->hooked; #[DelayedTargetValidation] #[NoDiscard] set => $value; } }\n--EXPECTF--\n",
+            "--TEST--\ndelayed hook runtime errors\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Attribute] get => $this->hooked; #[DelayedTargetValidation] #[Attribute] set => $value; } }\n$cases = [new ReflectionProperty('Demo', 'hooked')->getHook(PropertyHookType::Get)];\nforeach ($cases as $r) { var_dump($r->getAttributes()); }\n--EXPECTF--\n",
         ),
         (
             "Zend/tests/attributes/delayed_target_validation/validator_NoDiscard.phpt",
-            "--TEST--\ndelayed nodiscard validator\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[NoDiscard] get => $this->hooked; set => $value; } }\n--EXPECTF--\n",
+            "--TEST--\ndelayed nodiscard validator\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[NoDiscard] get => $this->hooked; set => $value; } }\n$hook = new ReflectionProperty('Demo', 'hooked')->getHook(PropertyHookType::Get);\nvar_dump($hook->getAttributes());\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/with_Attribute.phpt",
+            "--TEST--\ndelayed attribute hook\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Attribute] get => $this->hooked; set => $value; } }\n--EXPECTF--\n",
         ),
         (
             "Zend/tests/attributes/delayed_target_validation/with_Deprecated.phpt",
