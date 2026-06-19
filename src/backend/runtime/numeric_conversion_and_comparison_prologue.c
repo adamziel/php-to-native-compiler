@@ -1400,6 +1400,14 @@ static void ptn_exception_append_display_function(
     ptn_string_buffer_append(buffer, function_name);
 }
 
+static PTN_UNUSED int ptn_trace_function_omits_printed_args(const char *function_name) {
+    return function_name != NULL &&
+        (ptn_ascii_case_equal(function_name, "include") ||
+         ptn_ascii_case_equal(function_name, "include_once") ||
+         ptn_ascii_case_equal(function_name, "require") ||
+         ptn_ascii_case_equal(function_name, "require_once"));
+}
+
 static void ptn_exception_trace_warning(PtnRuntime *runtime, const char *message, size_t line) {
     if (runtime != NULL) {
         ptn_emit_warning(&runtime->diagnostics, message, line);
@@ -1448,6 +1456,7 @@ static int ptn_exception_append_trace_frame(
     PtnValue class_value = class_slot == NULL ? ptn_null() : ptn_value_deref(*class_slot);
     PtnValue type_value = type_slot == NULL ? ptn_null() : ptn_value_deref(*type_slot);
     PtnValue function_value = function_slot == NULL ? ptn_null() : ptn_value_deref(*function_slot);
+    int omit_args = 0;
     if (class_slot != NULL) {
         if (class_value.type == PTN_STRING) {
             ptn_string_buffer_append_len(
@@ -1477,6 +1486,7 @@ static int ptn_exception_append_trace_frame(
             (const char *)function_value.as.string.data,
             function_value.as.string.len
         );
+        omit_args = ptn_trace_function_omits_printed_args(function_name);
         ptn_exception_append_display_function(buffer, function_name);
         free(function_name);
     } else if (function_slot != NULL) {
@@ -1486,7 +1496,7 @@ static int ptn_exception_append_trace_frame(
     ptn_string_buffer_append_char(buffer, '(');
     PtnValue *args_slot = ptn_trace_array_string_slot(frame, "args");
     PtnValue args_value = args_slot == NULL ? ptn_null() : ptn_value_deref(*args_slot);
-    if (args_value.type == PTN_ARRAY && args_value.as.array != NULL) {
+    if (!omit_args && args_value.type == PTN_ARRAY && args_value.as.array != NULL) {
         for (size_t i = 0; i < args_value.as.array->len; i++) {
             if (i != 0) {
                 ptn_string_buffer_append(buffer, ", ");

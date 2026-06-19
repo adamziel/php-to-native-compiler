@@ -7692,6 +7692,7 @@ var_dump($worker instanceof Base, $worker instanceof Contract);
 
     assert_eq!(program.classes.len(), 3);
     assert_eq!(program.classes[2].name, "Base@anonymous");
+    assert!(program.classes[2].is_anonymous);
     assert_eq!(program.classes[2].parent_name.as_deref(), Some("Base"));
     assert_eq!(program.classes[2].interfaces, vec!["Contract"]);
     assert_eq!(program.classes[2].properties[0].name, "name");
@@ -19327,6 +19328,38 @@ namespace UsingNS {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_get_class_value(&runtime"));
     assert!(c_source.contains("ptn_runtime_class_name_string"));
+}
+
+#[test]
+fn compile_anonymous_class_missing_abstract_method_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-anonymous-class-missing-abstract-method");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("anonymous-class-missing-abstract-method.php");
+    let output = root.join("anonymous-class-missing-abstract-method-bin");
+    fs::write(
+        &input,
+        "<?php
+abstract class ParentClass {
+    abstract public function f();
+}
+
+$object = new class extends ParentClass {};
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Class ParentClass@anonymous must implement 1 abstract method (ParentClass::f) in {} on line 6\n",
+            input.display()
+        )
+    );
 }
 
 #[test]
@@ -41862,6 +41895,50 @@ var_dump(interface_exists('I', false));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_include_file_0(&runtime)"));
     assert!(c_source.contains("runtime.declared_user_classes[1] = 1"));
+}
+
+#[test]
+fn compile_repeated_include_with_anonymous_class_to_native_binary() {
+    let root = temp_dir("ptn-native-repeated-include-anonymous-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("anonymous.inc");
+    let output = root.join("repeated-include-anonymous-class-bin");
+    fs::write(
+        &included,
+        "<?php
+return [
+    'I' => function() {
+        return new class implements I {};
+    },
+];
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+interface I {}
+require __DIR__ . '/anonymous.inc';
+$data = require __DIR__ . '/anonymous.inc';
+print_r(class_implements($data['I']()));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Array\n(\n    [I] => I\n)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_new_shell(&runtime, \"I@anonymous\")"));
+    assert!(!c_source.contains("Cannot redeclare class I@anonymous"));
 }
 
 #[test]

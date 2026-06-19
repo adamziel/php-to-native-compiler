@@ -10293,6 +10293,22 @@ fn abstract_methods_runtime_message(
     )
 }
 
+fn anonymous_abstract_methods_runtime_message(
+    class_name: &str,
+    methods: &[RuntimeAbstractMethodRequirement],
+) -> String {
+    let remaining = methods
+        .iter()
+        .map(|method| format!("{}::{}", method.declaring_class, method.method_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "Class {class_name} must implement {} abstract method{} ({remaining})",
+        methods.len(),
+        if methods.len() == 1 { "" } else { "s" },
+    )
+}
+
 struct ClassPropertyValidationEntry<'a> {
     name: &'a str,
     visibility: PropertyVisibility,
@@ -10542,8 +10558,13 @@ fn class_interface_lookup_chain<'a>(
         interface_name: &'a str,
         classes: &'a [ClassDecl],
         seen_interfaces: &mut HashSet<String>,
+        active_interfaces: &mut HashSet<String>,
         interfaces: &mut Vec<&'a str>,
     ) {
+        let active_key = interface_name.to_ascii_lowercase();
+        if !active_interfaces.insert(active_key.clone()) {
+            return;
+        }
         let direct_interfaces = direct_interface_names(interface_name, classes);
         for interface in &direct_interfaces {
             if seen_interfaces.insert(interface.to_ascii_lowercase()) {
@@ -10553,13 +10574,20 @@ fn class_interface_lookup_chain<'a>(
         for interface in direct_interfaces {
             let mut parent_seen = HashSet::new();
             let mut parent_interfaces = Vec::new();
-            collect_interface_chain(interface, classes, &mut parent_seen, &mut parent_interfaces);
+            collect_interface_chain(
+                interface,
+                classes,
+                &mut parent_seen,
+                active_interfaces,
+                &mut parent_interfaces,
+            );
             for parent_interface in parent_interfaces.into_iter().rev() {
                 if seen_interfaces.insert(parent_interface.to_ascii_lowercase()) {
                     interfaces.push(parent_interface);
                 }
             }
         }
+        active_interfaces.remove(&active_key);
     }
 
     fn collect_class<'a>(
@@ -10590,8 +10618,15 @@ fn class_interface_lookup_chain<'a>(
         }
         for interface in direct_interfaces {
             let mut parent_seen = HashSet::new();
+            let mut active_interfaces = HashSet::new();
             let mut parent_interfaces = Vec::new();
-            collect_interface_chain(interface, classes, &mut parent_seen, &mut parent_interfaces);
+            collect_interface_chain(
+                interface,
+                classes,
+                &mut parent_seen,
+                &mut active_interfaces,
+                &mut parent_interfaces,
+            );
             for parent_interface in parent_interfaces.into_iter().rev() {
                 if seen_interfaces.insert(parent_interface.to_ascii_lowercase()) {
                     interfaces.push(parent_interface);
@@ -13554,7 +13589,11 @@ fn emit_class_declaration_validation(
     }
     let abstract_methods = class_runtime_unsatisfied_abstract_methods(class, classes);
     if !abstract_methods.is_empty() {
-        let message = abstract_methods_runtime_message(&class.name, &abstract_methods);
+        let message = if class.is_anonymous {
+            anonymous_abstract_methods_runtime_message(&class.name, &abstract_methods)
+        } else {
+            abstract_methods_runtime_message(&class.name, &abstract_methods)
+        };
         out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
         out.push_str(&c_string(&message));
         out.push_str("\", \"");
@@ -13817,22 +13856,28 @@ fn emit_instruction(
             out.push_str("        if (runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
             out.push_str("]) {\n");
-            out.push_str("            char message[1024];\n");
-            out.push_str(
-                "            snprintf(message, sizeof(message), \"Cannot redeclare class ",
-            );
-            out.push_str(&c_string(&class.name));
-            out.push_str(" (previously declared in %s:%zu)\", \"");
-            out.push_str(&c_string(&class.source_file));
-            out.push_str("\", (size_t)");
-            out.push_str(&class.line.to_string());
-            out.push_str(");\n");
-            out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
-            out.push_str(&c_string(source_path));
-            out.push_str("\", ");
-            out.push_str(&line.to_string());
-            out.push_str(");\n");
-            out.push_str("        }\n");
+            if class.is_anonymous {
+                out.push_str(
+                    "            /* Anonymous class expressions may be evaluated repeatedly. */\n",
+                );
+            } else {
+                out.push_str("            char message[1024];\n");
+                out.push_str(
+                    "            snprintf(message, sizeof(message), \"Cannot redeclare class ",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str(" (previously declared in %s:%zu)\", \"");
+                out.push_str(&c_string(&class.source_file));
+                out.push_str("\", (size_t)");
+                out.push_str(&class.line.to_string());
+                out.push_str(");\n");
+                out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            out.push_str("        } else {\n");
             emit_class_declaration_validation(
                 out,
                 &values.classes,
@@ -13843,6 +13888,7 @@ fn emit_instruction(
             out.push_str("        runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
             out.push_str("] = 1;\n");
+            out.push_str("        }\n");
             out.push_str("    }\n");
         }
         Instruction::UnsetArrayDim {
@@ -27000,12 +27046,26 @@ impl ValueEmitter {
         } else {
             Some(self.class_name_fetch_name(class_name))
         };
-        if let Some(declared_class) = compile_time_class_name.as_deref().and_then(|name| {
-            self.classes
-                .iter()
-                .find(|class| class.initially_declared && class.name.eq_ignore_ascii_case(name))
-                .cloned()
-        }) {
+        if let Some((declared_class_index, declared_class)) =
+            compile_time_class_name.as_deref().and_then(|name| {
+                self.classes
+                    .iter()
+                    .enumerate()
+                    .find(|(_, class)| {
+                        class.initially_declared && class.name.eq_ignore_ascii_case(name)
+                    })
+                    .map(|(index, class)| (index, class.clone()))
+            })
+        {
+            if declared_class.is_anonymous {
+                emit_class_declaration_validation(
+                    out,
+                    &self.classes,
+                    declared_class_index,
+                    line,
+                    &self.source_file,
+                );
+            }
             self.emit_declared_new_object(
                 out,
                 &result_temp,
@@ -27040,14 +27100,14 @@ impl ValueEmitter {
                 out.push_str("\");\n");
             }
 
-            let declared_classes = self.classes.clone();
+            let declared_classes: Vec<_> = self.classes.iter().cloned().enumerate().collect();
             out.push_str("    if (");
             out.push_str(&class_lookup_temp);
             out.push_str(" == NULL) {\n");
             out.push_str("        ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_null();\n");
-            for declared_class in declared_classes {
+            for (declared_class_index, declared_class) in declared_classes {
                 out.push_str("    } else ");
                 out.push_str("if (ptn_ascii_case_equal(");
                 out.push_str(&class_lookup_temp);
@@ -27056,6 +27116,15 @@ impl ValueEmitter {
                 out.push_str("\") && ptn_declared_runtime_class_exists(&runtime, ");
                 out.push_str(&class_lookup_temp);
                 out.push_str(")) {\n");
+                if declared_class.is_anonymous {
+                    emit_class_declaration_validation(
+                        out,
+                        &self.classes,
+                        declared_class_index,
+                        line,
+                        &self.source_file,
+                    );
+                }
                 self.emit_declared_new_object(
                     out,
                     &result_temp,

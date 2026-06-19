@@ -4858,7 +4858,10 @@ static PtnValue ptn_internal_debug_print_backtrace(PtnRuntime *runtime, size_t a
         }
         ptn_exception_append_display_function(&buffer, frame->function_name);
         ptn_string_buffer_append_char(&buffer, '(');
-        if ((options & PTN_DEBUG_BACKTRACE_IGNORE_ARGS) == 0) {
+        if (
+            (options & PTN_DEBUG_BACKTRACE_IGNORE_ARGS) == 0 &&
+            !ptn_trace_function_omits_printed_args(frame->function_name)
+        ) {
             for (size_t i = 0; i < frame->argc; i++) {
                 if (i != 0) {
                     ptn_string_buffer_append(&buffer, ", ");

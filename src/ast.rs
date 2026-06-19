@@ -32,6 +32,7 @@ pub struct ClassDecl {
     pub trait_uses: Vec<TraitUseDecl>,
     pub attributes: AttributeMetadata,
     pub is_conditionally_declared: bool,
+    pub is_anonymous: bool,
     pub is_abstract: bool,
     pub is_final: bool,
     pub is_interface: bool,
