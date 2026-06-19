@@ -4861,23 +4861,6 @@ fn emit_user_function_dispatch(
             out.push_str(&c_string(&method.name));
             out.push_str("\")) {\n");
             out.push_str("        *found = 1;\n");
-            out.push_str("        if (runtime->has_current_receiver) {\n");
-            out.push_str(
-                "            PtnValue ptn_scoped_receiver = ptn_value_deref(runtime->current_receiver);\n",
-            );
-            out.push_str("            if (ptn_scoped_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(ptn_scoped_receiver.as.object->class_name, \"");
-            out.push_str(&c_string(&class.name));
-            out.push_str("\")) {\n");
-            out.push_str("                PtnValue ptn_scoped_result;\n");
-            out.push_str("                if (ptn_call_declared_method_in_scope(runtime, ptn_scoped_receiver, \"");
-            out.push_str(&c_string(&class.name));
-            out.push_str("\", \"");
-            out.push_str(&c_string(&method.name));
-            out.push_str("\", ptn_scoped_receiver.as.object->class_name, argc, args, line, &ptn_scoped_result)) {\n");
-            out.push_str("                    return ptn_scoped_result;\n");
-            out.push_str("                }\n");
-            out.push_str("            }\n");
-            out.push_str("        }\n");
             out.push_str("        char ptn_nonstatic_message[512];\n");
             out.push_str("        int ptn_nonstatic_written = snprintf(ptn_nonstatic_message, sizeof(ptn_nonstatic_message), \"Non-static method %s::%s() cannot be called statically\", \"");
             out.push_str(&c_string(&class.name));
@@ -4918,18 +4901,6 @@ fn emit_user_function_dispatch(
     out.push_str("            return ptn_null();\n");
     out.push_str("        }\n");
     out.push_str("        PtnValue ptn_static_magic_result;\n");
-    out.push_str("        if (runtime->has_current_receiver) {\n");
-    out.push_str(
-        "            PtnValue ptn_scoped_receiver = ptn_value_deref(runtime->current_receiver);\n",
-    );
-    out.push_str("            if (ptn_scoped_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(ptn_scoped_receiver.as.object->class_name, ptn_static_magic_class)) {\n");
-    out.push_str("                if (ptn_call_declared_method_in_scope(runtime, ptn_scoped_receiver, ptn_static_magic_class, ptn_static_magic_method, ptn_scoped_receiver.as.object->class_name, argc, args, line, &ptn_static_magic_result)) {\n");
-    out.push_str("                    free(ptn_static_magic_name);\n");
-    out.push_str("                    *found = 1;\n");
-    out.push_str("                    return ptn_static_magic_result;\n");
-    out.push_str("                }\n");
-    out.push_str("            }\n");
-    out.push_str("        }\n");
     out.push_str("        if (ptn_declared_magic_static_call(runtime, ptn_static_magic_class, ptn_static_magic_method, ptn_static_magic_class, argc, args, line, &ptn_static_magic_result)) {\n");
     out.push_str("            free(ptn_static_magic_name);\n");
     out.push_str("            *found = 1;\n");
@@ -15247,10 +15218,22 @@ fn emit_callable_dispatch(
         out.push_str("                    free(scope_name);\n");
         out.push_str("                    return result;\n");
         out.push_str("                }\n");
+        out.push_str("                int ptn_static_callable_needed = snprintf(NULL, 0, \"%s::%s\", target_class_name, target_method_name);\n");
+        out.push_str("                if (ptn_static_callable_needed < 0) {\n");
+        out.push_str("                    ptn_abort_out_of_memory();\n");
+        out.push_str("                }\n");
+        out.push_str("                char *ptn_static_callable_name = malloc((size_t)ptn_static_callable_needed + 1);\n");
+        out.push_str("                if (ptn_static_callable_name == NULL) {\n");
+        out.push_str("                    ptn_abort_out_of_memory();\n");
+        out.push_str("                }\n");
+        out.push_str("                snprintf(ptn_static_callable_name, (size_t)ptn_static_callable_needed + 1, \"%s::%s\", target_class_name, target_method_name);\n");
+        out.push_str("                result = ptn_call_function(runtime, ptn_static_callable_name, argc, args, line);\n");
+        out.push_str("                free(ptn_static_callable_name);\n");
         out.push_str("                free(target_method_name);\n");
         out.push_str("                free(target_class_name);\n");
         out.push_str("                free(method_name);\n");
         out.push_str("                free(scope_name);\n");
+        out.push_str("                return result;\n");
         out.push_str("            }\n");
         out.push_str(
             "            if (receiver.type == PTN_STRING && method.type != PTN_STRING) {\n",
