@@ -14103,7 +14103,8 @@ static PtnArray **ptn_array_map_arrays(PtnRuntime *runtime, size_t argc, const P
 
     size_t max_len = 0;
     for (size_t i = 0; i < array_count; i++) {
-        arrays[i] = ptn_internal_expect_array_arg(runtime, "array_map", i + 2, "array", args[i + 1]);
+        const char *argument_name = i == 0 ? "array" : NULL;
+        arrays[i] = ptn_internal_expect_array_arg(runtime, "array_map", i + 2, argument_name, args[i + 1]);
         if (arrays[i]->len > max_len) {
             max_len = arrays[i]->len;
         }
@@ -33611,7 +33612,7 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
         }
     } else {
         PtnStringOperand subject =
-            ptn_internal_expect_string_arg(runtime, "preg_replace_callback", 3, "subject", args[2], line);
+            ptn_internal_expect_str_replace_arg(runtime, "preg_replace_callback", 3, "subject", args[2], line);
         result = ptn_preg_replace_apply_to_string(
             runtime,
             "preg_replace_callback",
@@ -33681,7 +33682,7 @@ static PtnValue ptn_preg_replace_callback_array_apply_subject(
     }
 
     PtnStringOperand subject =
-        ptn_internal_expect_string_arg(runtime, "preg_replace_callback_array", 2, "subject", subject_arg, line);
+        ptn_internal_expect_str_replace_arg(runtime, "preg_replace_callback_array", 2, "subject", subject_arg, line);
     PtnValue result = ptn_preg_replace_apply_to_string(
         runtime,
         "preg_replace_callback_array",

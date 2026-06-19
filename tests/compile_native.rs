@@ -33685,6 +33685,59 @@ report([[1], 'method']);
 }
 
 #[test]
+fn compile_array_callback_subject_type_diagnostics_to_native_binary() {
+    let root = temp_dir("ptn-native-array-callback-subject-type-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-callback-subject-type-diagnostics.php");
+    let output = root.join("array-callback-subject-type-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php
+function report($callback) {
+    try {
+        $callback();
+    } catch (Throwable $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+
+report(fn() => array_map('trim', array(), 1));
+report(fn() => array_map('trim', array(), array(), true));
+report(fn() => array_map('trim', array(), array(), array(), null));
+report(fn() => preg_replace_callback('/./', fn($matches) => '', new stdClass));
+
+class SubjectString {
+    public function __toString() {
+        return 'abc';
+    }
+}
+var_dump(preg_replace_callback('/b/', fn($matches) => 'X', new SubjectString));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "array_map(): Argument #3 must be of type array, int given\n",
+            "array_map(): Argument #4 must be of type array, true given\n",
+            "array_map(): Argument #5 must be of type array, null given\n",
+            "preg_replace_callback(): Argument #3 ($subject) must be of type array|string, stdClass given\n",
+            "string(3) \"aXc\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_expect_str_replace_arg"));
+    assert!(c_source.contains("i == 0 ? \"array\" : NULL"));
+}
+
+#[test]
 fn compile_internal_callback_arity_errors_to_native_binary() {
     let root = temp_dir("ptn-native-internal-callback-arity-errors");
     fs::create_dir_all(&root).unwrap();
