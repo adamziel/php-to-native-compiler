@@ -828,6 +828,8 @@ typedef struct {
 } PtnShutdownFunction;
 
 typedef struct {
+    size_t function_index;
+    const char *name;
     PtnReference *reference;
 } PtnStaticLocalSlot;
 

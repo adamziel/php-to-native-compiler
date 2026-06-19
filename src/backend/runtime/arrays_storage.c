@@ -642,6 +642,8 @@ static PTN_UNUSED void ptn_runtime_run_static_property_value_destructors(
 
 static PTN_UNUSED void ptn_runtime_register_static_local(
     PtnRuntime *runtime,
+    size_t function_index,
+    const char *name,
     PtnReference *reference
 ) {
     if (runtime == NULL || reference == NULL) {
@@ -650,6 +652,8 @@ static PTN_UNUSED void ptn_runtime_register_static_local(
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
     for (size_t i = 0; i < root->static_local_slots_len; i++) {
         if (root->static_local_slots[i].reference == reference) {
+            root->static_local_slots[i].function_index = function_index;
+            root->static_local_slots[i].name = name;
             return;
         }
     }
@@ -671,7 +675,62 @@ static PTN_UNUSED void ptn_runtime_register_static_local(
         root->static_local_slots = new_slots;
         root->static_local_slots_capacity = new_capacity;
     }
-    root->static_local_slots[root->static_local_slots_len++].reference = reference;
+    root->static_local_slots[root->static_local_slots_len].function_index = function_index;
+    root->static_local_slots[root->static_local_slots_len].name = name;
+    root->static_local_slots[root->static_local_slots_len].reference = reference;
+    root->static_local_slots_len++;
+}
+
+static PTN_UNUSED size_t ptn_runtime_static_local_count(
+    PtnRuntime *runtime,
+    size_t function_index
+) {
+    if (runtime == NULL) {
+        return 0;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    size_t count = 0;
+    for (size_t i = 0; i < root->static_local_slots_len; i++) {
+        PtnStaticLocalSlot *slot = &root->static_local_slots[i];
+        if (
+            slot->reference != NULL &&
+            slot->name != NULL &&
+            slot->function_index == function_index
+        ) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_static_local_values(
+    PtnRuntime *runtime,
+    size_t function_index,
+    PtnFunctionMetadata metadata
+) {
+    PtnValue result = metadata.static_variables_provider == NULL
+        ? ptn_array_from_literal_entries(0, NULL)
+        : metadata.static_variables_provider(runtime);
+    if (runtime == NULL) {
+        return result;
+    }
+    PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
+    for (size_t i = 0; i < root->static_local_slots_len; i++) {
+        PtnStaticLocalSlot *slot = &root->static_local_slots[i];
+        if (
+            slot->reference == NULL ||
+            slot->name == NULL ||
+            slot->function_index != function_index
+        ) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(slot->name),
+            ptn_value_clone_deref(ptn_reference_value(slot->reference))
+        );
+    }
+    return result;
 }
 
 static PTN_UNUSED void ptn_runtime_run_static_local_destructors(PtnRuntime *runtime) {
@@ -695,6 +754,8 @@ static PTN_UNUSED void ptn_runtime_release_static_locals(PtnRuntime *runtime) {
     PtnRuntime *root = runtime->lifecycle_root == NULL ? runtime : runtime->lifecycle_root;
     for (size_t i = 0; i < root->static_local_slots_len; i++) {
         ptn_reference_release(root->static_local_slots[i].reference);
+        root->static_local_slots[i].function_index = 0;
+        root->static_local_slots[i].name = NULL;
         root->static_local_slots[i].reference = NULL;
     }
     free(root->static_local_slots);

@@ -2699,6 +2699,38 @@ static PTN_UNUSED void ptn_throw_user_argument_count_error(
     ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
 }
 
+static PTN_UNUSED void ptn_throw_user_missing_argument_error(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "%s(): Argument #%zu ($%s) not passed",
+        function_name,
+        position,
+        parameter_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "%s(): Argument #%zu ($%s) not passed",
+        function_name,
+        position,
+        parameter_name
+    );
+    ptn_throw_exception_owned_message(runtime, "ArgumentCountError", message);
+}
+
 static PTN_UNUSED PtnSymbolTable *ptn_runtime_static_property_table(PtnRuntime *runtime) {
     return runtime->static_properties == NULL ? &runtime->owned_static_properties : runtime->static_properties;
 }

@@ -460,7 +460,8 @@ typedef struct {
 } PtnClosureSourceLocation;
 
 static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure);
-static size_t ptn_closure_dump_field_count(PtnClosure *closure);
+static int ptn_closure_has_static_variables(PtnRuntime *runtime, PtnClosure *closure);
+static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *closure);
 
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
 static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
@@ -1340,7 +1341,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     ptn_direct_dump_write_cstr(runtime, "}\n");
 }
 
-static PTN_UNUSED size_t ptn_direct_closure_dump_field_count(PtnClosure *closure) {
+static PTN_UNUSED size_t ptn_direct_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *closure) {
     if (closure == NULL) {
         return 0;
     }
@@ -1351,6 +1352,9 @@ static PTN_UNUSED size_t ptn_direct_closure_dump_field_count(PtnClosure *closure
         count += 3;
     }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        count++;
+    }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
         count++;
     }
     if (metadata.found && metadata.parameter_count > 0) {
@@ -1393,7 +1397,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure(
 ) {
     PtnFunctionMetadata metadata = closure->metadata;
     PtnClosureSourceLocation location = ptn_closure_source_location(closure);
-    size_t field_count = ptn_direct_closure_dump_field_count(closure);
+    size_t field_count = ptn_direct_closure_dump_field_count(runtime, closure);
     ptn_direct_dump_printf(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
     if (location.found) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
@@ -1412,6 +1416,16 @@ static PTN_UNUSED void ptn_direct_value_var_dump_closure(
         ptn_direct_dump_write_cstr(runtime, "[\"line\"]=>\n");
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
         ptn_direct_dump_printf(runtime, "int(%zu)\n", location.line);
+    }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
+        PtnValue static_variables = ptn_runtime_static_local_values(runtime, closure->function_index, metadata);
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_dump_write_cstr(runtime, "[\"static\"]=>\n");
+        PtnDirectValueDumpSeen static_seen;
+        ptn_direct_value_dump_seen_init(&static_seen);
+        ptn_direct_value_var_dump_value_indented(runtime, static_variables, indent + 1, &static_seen);
+        ptn_direct_value_dump_seen_free(&static_seen);
+        ptn_value_destroy(&static_variables);
     }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_direct_value_var_dump_indent(runtime, indent + 1);
@@ -2531,7 +2545,7 @@ static PTN_UNUSED void ptn_direct_var_dump_closure_indented(
 ) {
     PtnFunctionMetadata metadata = closure->metadata;
     PtnClosureSourceLocation location = ptn_closure_source_location(closure);
-    size_t field_count = ptn_closure_dump_field_count(closure);
+    size_t field_count = ptn_closure_dump_field_count(runtime, closure);
     ptn_direct_var_dump_writef(runtime, "object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
     if (location.found) {
         ptn_direct_var_dump_indent(runtime, indent + 1);
@@ -2550,6 +2564,16 @@ static PTN_UNUSED void ptn_direct_var_dump_closure_indented(
         ptn_output_write_cstr(runtime, "[\"line\"]=>\n");
         ptn_direct_var_dump_indent(runtime, indent + 1);
         ptn_direct_var_dump_writef(runtime, "int(%zu)\n", location.line);
+    }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
+        PtnValue static_variables = ptn_runtime_static_local_values(runtime, closure->function_index, metadata);
+        ptn_direct_var_dump_indent(runtime, indent + 1);
+        ptn_output_write_cstr(runtime, "[\"static\"]=>\n");
+        PtnDirectDumpSeen static_seen;
+        ptn_direct_dump_seen_init(&static_seen);
+        ptn_direct_var_dump_value_indented(runtime, static_variables, indent + 1, &static_seen);
+        ptn_direct_dump_seen_free(&static_seen);
+        ptn_value_destroy(&static_variables);
     }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_direct_var_dump_indent(runtime, indent + 1);
@@ -2776,7 +2800,16 @@ static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure)
     return location;
 }
 
-static size_t ptn_closure_dump_field_count(PtnClosure *closure) {
+static int ptn_closure_has_static_variables(PtnRuntime *runtime, PtnClosure *closure) {
+    if (closure == NULL) {
+        return 0;
+    }
+    PtnFunctionMetadata metadata = closure->metadata;
+    return metadata.static_variables_provider != NULL ||
+        ptn_runtime_static_local_count(runtime, closure->function_index) > 0;
+}
+
+static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *closure) {
     PtnFunctionMetadata metadata = closure->metadata;
     PtnClosureSourceLocation location = ptn_closure_source_location(closure);
     size_t count = 0;
@@ -2784,6 +2817,9 @@ static size_t ptn_closure_dump_field_count(PtnClosure *closure) {
         count += 3;
     }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
+        count++;
+    }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
         count++;
     }
     if (metadata.found && metadata.parameter_count > 0) {
@@ -4753,7 +4789,10 @@ static void ptn_var_dump_closure_parameters(PtnFunctionMetadata metadata, size_t
 static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
     PtnFunctionMetadata metadata = closure->metadata;
     PtnClosureSourceLocation location = ptn_closure_source_location(closure);
-    size_t field_count = ptn_closure_dump_field_count(closure);
+    PtnRuntime *runtime = ptn_var_dump_active_runtime != NULL
+        ? ptn_var_dump_active_runtime
+        : closure->lifecycle_runtime;
+    size_t field_count = ptn_closure_dump_field_count(runtime, closure);
     printf("object(Closure)#%zu (%zu) {\n", closure->object_id, field_count);
     if (location.found) {
         ptn_var_dump_string_property(
@@ -4767,6 +4806,16 @@ static void ptn_var_dump_closure(PtnClosure *closure, size_t indent) {
         fputs("[\"line\"]=>\n", stdout);
         ptn_var_dump_indent(indent + 1);
         printf("int(%zu)\n", location.line);
+    }
+    if (ptn_closure_has_static_variables(runtime, closure)) {
+        PtnValue static_variables = ptn_runtime_static_local_values(runtime, closure->function_index, metadata);
+        ptn_var_dump_indent(indent + 1);
+        fputs("[\"static\"]=>\n", stdout);
+        PtnDumpSeenArrays static_seen;
+        ptn_dump_seen_arrays_init(&static_seen);
+        ptn_var_dump_value_indented(static_variables, indent + 1, &static_seen);
+        ptn_dump_seen_arrays_free(&static_seen);
+        ptn_value_destroy(&static_variables);
     }
     if (closure->has_wrapped_callable && metadata.found && metadata.name != NULL) {
         ptn_var_dump_indent(indent + 1);

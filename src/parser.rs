@@ -22335,19 +22335,10 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
 }
 
 fn validate_function_parameter_defaults(parameters: &[FunctionParameter]) -> Result<()> {
-    let mut seen_default = false;
     for parameter in parameters {
         if parameter.is_variadic && parameter.default_value.is_some() {
             return Err(Diagnostic::new(
                 "variadic function parameter cannot have a default value",
-                Some(parameter.span),
-            ));
-        }
-        if parameter.default_value.is_some() {
-            seen_default = true;
-        } else if seen_default && !parameter.is_variadic {
-            return Err(Diagnostic::new(
-                "required function parameter cannot follow an optional parameter",
                 Some(parameter.span),
             ));
         }

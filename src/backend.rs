@@ -1803,13 +1803,30 @@ fn emit_user_functions(
             functions,
             classes,
             includes,
+            index,
             function,
             full_internal_dispatch,
         );
         for (parameter_index, parameter) in function.parameters.iter().enumerate() {
-            let guard_required_argument = parameter_index < required_parameter_count
-                && parameter.default_value.is_none()
-                && !parameter.is_variadic;
+            let parameter_is_required =
+                parameter_index < required_parameter_count && !parameter.is_variadic;
+            let guard_required_argument = parameter_is_required;
+            if parameter_is_required {
+                out.push_str("    if (argc > ");
+                out.push_str(&parameter_index.to_string());
+                out.push_str(" && ptn_value_is_missing(args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("])) {\n");
+                out.push_str("        ptn_throw_user_missing_argument_error(caller_runtime, \"");
+                out.push_str(&c_string(&function.display_name));
+                out.push_str("\", ");
+                out.push_str(&(parameter_index + 1).to_string());
+                out.push_str(", \"");
+                out.push_str(&c_string(&parameter.name));
+                out.push_str("\");\n");
+                out.push_str("        return ptn_null();\n");
+                out.push_str("    }\n");
+            }
             if guard_required_argument {
                 out.push_str("    if (argc > ");
                 out.push_str(&parameter_index.to_string());
@@ -1829,41 +1846,42 @@ fn emit_user_functions(
                 }
                 continue;
             }
-            let (parameter_source, default_guard) =
-                if let Some(default_value) = &parameter.default_value {
-                    let guard_name = format!("ptn_parameter_{parameter_index}_uses_default");
-                    let value_name = format!("ptn_parameter_{parameter_index}_value");
-                    out.push_str("    int ");
-                    out.push_str(&guard_name);
-                    out.push_str(" = argc <= ");
-                    out.push_str(&parameter_index.to_string());
-                    out.push_str(" || ptn_value_is_missing(args[");
-                    out.push_str(&parameter_index.to_string());
-                    out.push_str("])");
-                    out.push_str(";\n");
-                    out.push_str("    PtnValue ");
-                    out.push_str(&value_name);
-                    out.push_str(";\n");
-                    out.push_str("    if (");
-                    out.push_str(&guard_name);
-                    out.push_str(") {\n");
-                    let default_temp = values.emit_const_materialized_value(out, default_value);
-                    out.push_str("        ");
-                    out.push_str(&value_name);
-                    out.push_str(" = ");
-                    out.push_str(&default_temp);
-                    out.push_str(";\n");
-                    out.push_str("    } else {\n");
-                    out.push_str("        ");
-                    out.push_str(&value_name);
-                    out.push_str(" = args[");
-                    out.push_str(&parameter_index.to_string());
-                    out.push_str("];\n");
-                    out.push_str("    }\n");
-                    (value_name, Some(guard_name))
-                } else {
-                    (format!("args[{parameter_index}]"), None)
-                };
+            let (parameter_source, default_guard) = if parameter_is_required {
+                (format!("args[{parameter_index}]"), None)
+            } else if let Some(default_value) = &parameter.default_value {
+                let guard_name = format!("ptn_parameter_{parameter_index}_uses_default");
+                let value_name = format!("ptn_parameter_{parameter_index}_value");
+                out.push_str("    int ");
+                out.push_str(&guard_name);
+                out.push_str(" = argc <= ");
+                out.push_str(&parameter_index.to_string());
+                out.push_str(" || ptn_value_is_missing(args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("])");
+                out.push_str(";\n");
+                out.push_str("    PtnValue ");
+                out.push_str(&value_name);
+                out.push_str(";\n");
+                out.push_str("    if (");
+                out.push_str(&guard_name);
+                out.push_str(") {\n");
+                let default_temp = values.emit_const_materialized_value(out, default_value);
+                out.push_str("        ");
+                out.push_str(&value_name);
+                out.push_str(" = ");
+                out.push_str(&default_temp);
+                out.push_str(";\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&value_name);
+                out.push_str(" = args[");
+                out.push_str(&parameter_index.to_string());
+                out.push_str("];\n");
+                out.push_str("    }\n");
+                (value_name, Some(guard_name))
+            } else {
+                (format!("args[{parameter_index}]"), None)
+            };
             if parameter.by_ref {
                 let check_indent = if let Some(default_guard) = &default_guard {
                     out.push_str("    if (!");
@@ -2259,11 +2277,15 @@ fn emit_user_argument_count_check(
 }
 
 fn function_required_parameter_count(function: &FunctionDecl) -> usize {
-    function
-        .parameters
+    required_parameter_count(&function.parameters)
+}
+
+fn required_parameter_count(parameters: &[FunctionParameter]) -> usize {
+    parameters
         .iter()
-        .take_while(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
-        .count()
+        .rposition(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
+        .map(|index| index + 1)
+        .unwrap_or(0)
 }
 
 fn function_call_frame_parameter_count(function: &FunctionDecl) -> usize {
@@ -3244,10 +3266,18 @@ struct ParameterDefaultDiagnostics {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct ParameterDefaultDeprecation {
-    function_name: String,
-    parameter_name: String,
-    line: usize,
+enum ParameterDefaultDeprecation {
+    ImplicitNullable {
+        function_name: String,
+        parameter_name: String,
+        line: usize,
+    },
+    OptionalBeforeRequired {
+        function_name: String,
+        optional_parameter_name: String,
+        required_parameter_name: String,
+        line: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3283,14 +3313,37 @@ fn emit_parameter_default_diagnostics(
     source_file: &str,
 ) {
     for deprecation in &diagnostics.deprecations {
-        out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
-        out.push_str(&c_string(&format!(
-            "{}(): Implicitly marking parameter ${} as nullable is deprecated, the explicit nullable type must be used instead",
-            deprecation.function_name, deprecation.parameter_name
-        )));
-        out.push_str("\", ");
-        out.push_str(&deprecation.line.to_string());
-        out.push_str(");\n");
+        match deprecation {
+            ParameterDefaultDeprecation::ImplicitNullable {
+                function_name,
+                parameter_name,
+                line,
+            } => {
+                out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+                out.push_str(&c_string(&format!(
+                    "{}(): Implicitly marking parameter ${} as nullable is deprecated, the explicit nullable type must be used instead",
+                    function_name, parameter_name
+                )));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            ParameterDefaultDeprecation::OptionalBeforeRequired {
+                function_name,
+                optional_parameter_name,
+                required_parameter_name,
+                line,
+            } => {
+                out.push_str("    ptn_emit_deprecation(&runtime.diagnostics, \"");
+                out.push_str(&c_string(&format!(
+                    "{}(): Optional parameter ${} declared before required parameter ${} is implicitly treated as a required parameter",
+                    function_name, optional_parameter_name, required_parameter_name
+                )));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+        }
     }
     let Some(fatal) = &diagnostics.fatal else {
         return;
@@ -4378,11 +4431,7 @@ fn emit_user_function_dispatch(
         if function.is_anonymous || function.class_name.is_some() {
             continue;
         }
-        let required_parameter_count = function
-            .parameters
-            .iter()
-            .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
-            .count();
+        let required_parameter_count = function_required_parameter_count(function);
         let is_variadic = function
             .parameters
             .iter()
@@ -4419,11 +4468,7 @@ fn emit_user_function_dispatch(
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             let function = &functions[method.function_index];
-            let required_parameter_count = function
-                .parameters
-                .iter()
-                .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
-                .count();
+            let required_parameter_count = function_required_parameter_count(function);
             let is_variadic = function
                 .parameters
                 .iter()
@@ -6379,11 +6424,7 @@ fn emit_class_metadata_helpers(
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             let function = &functions[method.function_index];
-            let required_parameter_count = function
-                .parameters
-                .iter()
-                .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
-                .count();
+            let required_parameter_count = function_required_parameter_count(function);
             let is_variadic = function
                 .parameters
                 .iter()
@@ -10753,7 +10794,11 @@ fn reflection_class_methods_to_string(
         out.push_str(" - ");
         out.push_str(&method.end_line.to_string());
         out.push_str("\n\n");
-        reflection_parameters_to_string(out, &function.parameters);
+        reflection_parameters_to_string(
+            out,
+            &function.parameters,
+            function_required_parameter_count(function),
+        );
         if let Some(return_type) = &function.return_type {
             out.push_str("      - Return [ ");
             out.push_str(&type_hint_label(return_type));
@@ -10811,7 +10856,13 @@ fn reflection_method_to_string(
     out.push('\n');
     if !function.parameters.is_empty() {
         out.push('\n');
-        reflection_parameters_to_string_with_indent(&mut out, &function.parameters, "  ", "    ");
+        reflection_parameters_to_string_with_indent(
+            &mut out,
+            &function.parameters,
+            function_required_parameter_count(function),
+            "  ",
+            "    ",
+        );
     }
     if let Some(return_type) = &function.return_type {
         if function.parameters.is_empty() {
@@ -10918,13 +10969,24 @@ fn reflection_method_parent_prototype<'a>(
     None
 }
 
-fn reflection_parameters_to_string(out: &mut String, parameters: &[FunctionParameter]) {
-    reflection_parameters_to_string_with_indent(out, parameters, "      ", "        ");
+fn reflection_parameters_to_string(
+    out: &mut String,
+    parameters: &[FunctionParameter],
+    required_parameter_count: usize,
+) {
+    reflection_parameters_to_string_with_indent(
+        out,
+        parameters,
+        required_parameter_count,
+        "      ",
+        "        ",
+    );
 }
 
 fn reflection_parameters_to_string_with_indent(
     out: &mut String,
     parameters: &[FunctionParameter],
+    required_parameter_count: usize,
     block_indent: &str,
     parameter_indent: &str,
 ) {
@@ -10933,15 +10995,12 @@ fn reflection_parameters_to_string_with_indent(
     out.push_str(&parameters.len().to_string());
     out.push_str("] {\n");
     for (index, parameter) in parameters.iter().enumerate() {
+        let is_required = index < required_parameter_count && !parameter.is_variadic;
         out.push_str(parameter_indent);
         out.push_str("Parameter #");
         out.push_str(&index.to_string());
         out.push_str(" [ <");
-        out.push_str(if parameter.default_value.is_some() {
-            "optional"
-        } else {
-            "required"
-        });
+        out.push_str(if is_required { "required" } else { "optional" });
         out.push_str("> ");
         if let Some(type_hint) = &parameter.type_hint {
             out.push_str(&reflection_parameter_type_label(parameter, type_hint));
@@ -10955,9 +11014,11 @@ fn reflection_parameters_to_string_with_indent(
         }
         out.push('$');
         out.push_str(&parameter.name);
-        if let Some(default_value) = &parameter.default_value {
-            out.push_str(" = ");
-            out.push_str(&reflection_default_repr(Some(default_value)));
+        if !is_required {
+            if let Some(default_value) = &parameter.default_value {
+                out.push_str(" = ");
+                out.push_str(&reflection_default_repr(Some(default_value)));
+            }
         }
         out.push_str(" ]\n");
     }
@@ -12844,7 +12905,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                }\n");
     out.push_str("            } else {\n");
     out.push_str("                resolved_class_name = runtime == NULL ? class_name : ptn_runtime_resolve_class_alias(runtime, class_name);\n");
-    out.push_str("                if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name)) {\n");
+    out.push_str("                if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name) && ptn_class_name_should_autoload(class_name)) {\n");
     out.push_str("                    ptn_runtime_autoload_class(runtime, class_name, runtime->call_site_line);\n");
     out.push_str("                    if (runtime->exceptions->active_exception != NULL) {\n");
     out.push_str("                        free(name);\n");
@@ -12980,7 +13041,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        } else {\n");
     out.push_str("            const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);\n");
     out.push_str("            resolved_class_name = runtime == NULL ? lookup_class_name : ptn_runtime_resolve_class_alias(runtime, lookup_class_name);\n");
-    out.push_str("            if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name)) {\n");
+    out.push_str("            if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name) && ptn_class_name_should_autoload(lookup_class_name)) {\n");
     out.push_str("                ptn_runtime_autoload_class(runtime, lookup_class_name, runtime->call_site_line);\n");
     out.push_str("                if (runtime->exceptions->active_exception != NULL) {\n");
     out.push_str("                    free(method_name);\n");
@@ -14903,6 +14964,10 @@ fn emit_instruction(
         }
         Instruction::BindStatic { name, value, .. } => {
             let slot = values.next_static_local();
+            let function_index = values
+                .current_function_index
+                .map(|index| index.to_string())
+                .unwrap_or_else(|| "((size_t)-1)".to_string());
             out.push_str("    static PtnReference *");
             out.push_str(&slot);
             out.push_str(" = NULL;\n");
@@ -14921,6 +14986,10 @@ fn emit_instruction(
                 out.push_str(&initial_value);
                 out.push_str("));\n");
                 out.push_str("            ptn_runtime_register_static_local(&runtime, ");
+                out.push_str(&function_index);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
                 out.push_str(&slot);
                 out.push_str(");\n");
                 out.push_str("        }\n");
@@ -14930,6 +14999,10 @@ fn emit_instruction(
                 out.push_str(&slot);
                 out.push_str(" = ptn_reference_new_owned(ptn_null());\n");
                 out.push_str("        ptn_runtime_register_static_local(&runtime, ");
+                out.push_str(&function_index);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
                 out.push_str(&slot);
                 out.push_str(");\n");
             }
@@ -17574,11 +17647,13 @@ fn collect_function_parameter_default_diagnostics(
         if matches!(default_value, ValueExpr::Null)
             && type_hint_allows_implicit_nullable_default(type_hint)
         {
-            diagnostics.deprecations.push(ParameterDefaultDeprecation {
-                function_name: function.display_name.clone(),
-                parameter_name: parameter.name.clone(),
-                line: function.line,
-            });
+            diagnostics
+                .deprecations
+                .push(ParameterDefaultDeprecation::ImplicitNullable {
+                    function_name: function.display_name.clone(),
+                    parameter_name: parameter.name.clone(),
+                    line: function.line,
+                });
             continue;
         }
         let Some(default_type_name) = default_value_type_name(default_value) else {
@@ -17592,6 +17667,47 @@ fn collect_function_parameter_default_diagnostics(
         });
         break;
     }
+    if diagnostics.fatal.is_some() {
+        return;
+    }
+    let Some((required_index, required_parameter)) = function
+        .parameters
+        .iter()
+        .enumerate()
+        .rfind(|(_, parameter)| !parameter.is_variadic && parameter.default_value.is_none())
+    else {
+        return;
+    };
+    for optional_parameter in function.parameters.iter().take(required_index) {
+        if optional_parameter.default_value.is_none() {
+            continue;
+        }
+        if parameter_default_emits_implicit_nullable_deprecation(optional_parameter) {
+            continue;
+        }
+        diagnostics
+            .deprecations
+            .push(ParameterDefaultDeprecation::OptionalBeforeRequired {
+                function_name: function.display_name.clone(),
+                optional_parameter_name: optional_parameter.name.clone(),
+                required_parameter_name: required_parameter.name.clone(),
+                line: function.line,
+            });
+    }
+}
+
+fn parameter_default_emits_implicit_nullable_deprecation(parameter: &FunctionParameter) -> bool {
+    let Some(default_value) = parameter.default_value.as_ref() else {
+        return false;
+    };
+    if !matches!(default_value, ValueExpr::Null) {
+        return false;
+    }
+    let Some(type_hint) = parameter.type_hint.as_ref() else {
+        return false;
+    };
+    !type_hint_accepts_default_value(type_hint, default_value)
+        && type_hint_allows_implicit_nullable_default(type_hint)
 }
 
 fn type_hint_accepts_default_value(type_hint: &TypeHint, value: &ValueExpr) -> bool {
@@ -22001,6 +22117,7 @@ struct ValueEmitter {
     current_function_tracks_return_line: bool,
     current_function_tracks_return_value_was_set: bool,
     current_function_is_anonymous: bool,
+    current_function_index: Option<usize>,
     user_functions: Vec<FunctionDecl>,
     classes: Vec<ClassDecl>,
     includes: Vec<IncludeFile>,
@@ -23453,6 +23570,7 @@ impl ValueEmitter {
             None,
             None,
             None,
+            None,
             false,
             false,
             false,
@@ -23468,6 +23586,7 @@ impl ValueEmitter {
         functions: &[FunctionDecl],
         classes: &[ClassDecl],
         includes: &[IncludeFile],
+        function_index: usize,
         function: &FunctionDecl,
         full_internal_dispatch: bool,
     ) -> Self {
@@ -23497,6 +23616,7 @@ impl ValueEmitter {
             classes,
             includes,
             full_internal_dispatch,
+            Some(function_index),
             Some(function_magic_name),
             Some(method_magic_name.as_str()),
             function.class_name.as_deref(),
@@ -23526,6 +23646,7 @@ impl ValueEmitter {
         classes: &[ClassDecl],
         includes: &[IncludeFile],
         full_internal_dispatch: bool,
+        current_function_index: Option<usize>,
         current_function_name: Option<&str>,
         current_method_name: Option<&str>,
         current_class_name: Option<&str>,
@@ -23555,6 +23676,7 @@ impl ValueEmitter {
             current_function_tracks_return_line,
             current_function_tracks_return_value_was_set,
             current_function_is_anonymous,
+            current_function_index,
             user_functions: functions.to_vec(),
             classes: classes.to_vec(),
             includes: includes.to_vec(),
@@ -28767,11 +28889,7 @@ impl ValueEmitter {
     ) -> String {
         let closure_temp = self.next_temp();
         let function = &self.user_functions[function_index];
-        let required_parameter_count = function
-            .parameters
-            .iter()
-            .filter(|parameter| !parameter.is_variadic && parameter.default_value.is_none())
-            .count();
+        let required_parameter_count = function_required_parameter_count(function);
         let is_variadic = function
             .parameters
             .iter()

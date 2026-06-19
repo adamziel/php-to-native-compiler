@@ -2506,13 +2506,11 @@ fn parser_rejects_unsupported_function_parameter_default_expression() {
 }
 
 #[test]
-fn parser_rejects_required_parameter_after_optional_parameter() {
-    let error =
-        parser::parse("<?php function unsupported($optional = 1, $required) {}").unwrap_err();
-    assert_eq!(
-        error.message,
-        "required function parameter cannot follow an optional parameter"
-    );
+fn parser_accepts_required_parameter_after_optional_parameter() {
+    let program = parser::parse("<?php function supported($optional = 1, $required) {}").unwrap();
+    assert_eq!(program.functions[0].parameters.len(), 2);
+    assert!(program.functions[0].parameters[0].default_value.is_some());
+    assert!(program.functions[0].parameters[1].default_value.is_none());
 }
 
 #[test]
@@ -18505,6 +18503,59 @@ try {
 }
 
 #[test]
+fn compile_optional_before_required_parameter_to_native_binary() {
+    let root = temp_dir("ptn-native-optional-before-required-parameter");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("optional-before-required-parameter.php");
+    let output = root.join("optional-before-required-parameter-bin");
+    fs::write(
+        &input,
+        "<?php
+function optional_before_required($optional = 1, $required) {
+    return $optional + $required;
+}
+
+$reflection = new ReflectionFunction(\"optional_before_required\");
+var_dump($reflection->getNumberOfRequiredParameters());
+foreach ($reflection->getParameters() as $parameter) {
+    var_dump($parameter->getName(), $parameter->getPosition());
+}
+try {
+    optional_before_required(10);
+} catch (ArgumentCountError $e) {
+    echo \"positional: \", $e->getMessage(), \"\\n\";
+}
+try {
+    optional_before_required(required: 2);
+} catch (ArgumentCountError $e) {
+    echo \"named: \", $e->getMessage(), \"\\n\";
+}
+var_dump(optional_before_required(3, 4));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let input_path = input.display();
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "\nDeprecated: optional_before_required(): Optional parameter $optional declared before required parameter $required is implicitly treated as a required parameter in ptn on line 2\nint(2)\nstring(8) \"optional\"\nint(0)\nstring(8) \"required\"\nint(1)\npositional: Too few arguments to function optional_before_required(), 1 passed in {input_path} on line 12 and exactly 2 expected\nnamed: optional_before_required(): Argument #1 ($optional) not passed\nint(7)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_throw_user_missing_argument_error"));
+    assert!(c_source.contains("ptn_function_metadata_found(\"optional_before_required\", 0, 2, 2"));
+    assert!(c_source
+        .contains("Optional parameter $optional declared before required parameter $required"));
+}
+
+#[test]
 fn compile_user_function_func_introspection_to_native_binary() {
     let root = temp_dir("ptn-native-user-function-func-introspection");
     fs::create_dir_all(&root).unwrap();
@@ -32955,6 +33006,49 @@ var_dump(next_value());
 }
 
 #[test]
+fn compile_closure_var_dump_shows_static_locals_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-var-dump-static-locals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-var-dump-static-locals.php");
+    let output = root.join("closure-var-dump-static-locals-bin");
+    fs::write(
+        &input,
+        "<?php
+$factory = function () {
+    static $instance;
+    if ($instance === null) {
+        $instance = function () {
+            return 'OK';
+        };
+    }
+    return $instance;
+};
+
+var_dump($factory);
+$factory();
+var_dump($factory);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("[\"static\"]=>\n  array(1) {\n    [\"instance\"]=>\n    NULL\n  }\n"));
+    assert!(
+        stdout.contains("[\"static\"]=>\n  array(1) {\n    [\"instance\"]=>\n    object(Closure)#")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_static_local_values"));
+    assert!(c_source.contains("ptn_runtime_register_static_local(&runtime"));
+    assert!(c_source.contains("\"instance\""));
+}
+
+#[test]
 fn compile_call_user_func_by_ref_class_type_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-call-user-func-by-ref-class-type");
     fs::create_dir_all(&root).unwrap();
@@ -45751,6 +45845,51 @@ try {
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_expect_callback_arg"));
+    assert!(c_source.contains("ptn_internal_call_user_func"));
+}
+
+#[test]
+fn compile_array_static_callable_skips_autoload_for_invalid_class_names() {
+    let root = temp_dir("ptn-native-array-static-callable-invalid-autoload");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-static-callable-invalid-autoload.php");
+    let output = root.join("array-static-callable-invalid-autoload-bin");
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($name) {
+    echo \"autoload:\";
+    var_dump($name);
+});
+
+foreach ([[\"foo\", \"bar\"], [\"\", \"bar\"], [null, \"bar\"]] as $callback) {
+    try {
+        call_user_func($callback);
+    } catch (TypeError $e) {
+        echo $e->getMessage(), \"\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "autoload:string(3) \"foo\"\n",
+            "call_user_func(): Argument #1 ($callback) must be a valid callback, class \"foo\" not found\n",
+            "call_user_func(): Argument #1 ($callback) must be a valid callback, class \"\" not found\n",
+            "call_user_func(): Argument #1 ($callback) must be a valid callback, first array member is not a valid class name or object\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_class_name_should_autoload"));
     assert!(c_source.contains("ptn_internal_call_user_func"));
 }
 
