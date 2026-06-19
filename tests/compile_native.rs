@@ -25608,6 +25608,135 @@ echo xmlwriter_flush($xw);
 }
 
 #[test]
+fn compile_libxml_xml_dom_boundary_to_native_binary() {
+    let root = temp_dir("ptn-native-libxml-xml-dom-boundary");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("libxml-xml-dom-boundary.php");
+    let output = root.join("libxml-xml-dom-boundary-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(LIBXML_NOENT, LIBXML_DTDLOAD, LIBXML_ERR_FATAL, defined('LIBXML_LOADED_VERSION'));
+$constants = get_defined_constants(true);
+var_dump(isset($constants['libxml']['LIBXML_PARSEHUGE']), isset($constants['xml']['XML_OPTION_PARSE_HUGE']));
+
+var_dump(libxml_use_internal_errors(false));
+var_dump(libxml_use_internal_errors(true));
+var_dump(libxml_use_internal_errors());
+var_dump(libxml_get_errors());
+var_dump(libxml_get_last_error());
+var_dump(libxml_clear_errors());
+
+$dom = new DOMDocument('1.0', 'utf-8');
+$dom->formatOutput = true;
+$root = $dom->createElementNS('urn:root', 'root');
+$root->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:g', 'urn:g');
+$dom->appendChild($root);
+$root->append($dom->createElementNS('urn:g', 'g:item', 'house'));
+echo $dom->saveXML();
+$other = new DOMDocument('1.0', 'utf-8');
+$other->loadXML('<other><child/></other>');
+$method = 'append';
+try {
+    $root->$method($other->documentElement->firstChild);
+    echo \"dynamic DOM append did not throw\\n\";
+} catch (DOMException $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+
+$reader = new XMLReader();
+var_dump($reader->XML('<books><book/></books>'));
+while ($reader->read()) {
+    echo 'R:', $reader->name, \"\\n\";
+}
+$reader->close();
+try {
+    $reader->XML('');
+} catch (ValueError $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+
+function ptn_xml_boundary_start($parser, $name, $attribs) {
+    echo 'S:', $name, \"\\n\";
+}
+function ptn_xml_boundary_end() {}
+
+$parser = xml_parser_create_ns('ISO-8859-1', '@');
+xml_set_element_handler($parser, 'ptn_xml_boundary_start', 'ptn_xml_boundary_end');
+xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+xml_parse($parser, '<foo:a xmlns:foo=\"urn:f\"><bar:b xmlns:bar=\"urn:b\"/></foo:a>');
+
+$long = str_repeat('A', 1025);
+$parser = xml_parser_create();
+var_dump(xml_parse($parser, \"<$long/>\"));
+var_dump(xml_get_error_code($parser));
+var_dump(xml_error_string(xml_get_error_code($parser)));
+xml_parser_set_option($parser, XML_OPTION_PARSE_HUGE, true);
+var_dump(xml_parse($parser, \"<$long/>\"));
+
+$writer = XMLWriter::toMemory();
+$writer->startDocument('1.0', 'UTF-8');
+$writer->startElementNs('g', 'item', 'urn:g');
+$writer->writeAttribute('kind', 'house');
+$writer->text('text & <');
+$writer->endElement();
+$writer->endDocument();
+echo $writer->flush();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(2)\n",
+            "int(4)\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "array(0) {\n",
+            "}\n",
+            "bool(false)\n",
+            "NULL\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n",
+            "<root xmlns=\"urn:root\" xmlns:g=\"urn:g\">\n",
+            "  <g:item>house</g:item>\n",
+            "</root>\n",
+            "Wrong Document Error\n",
+            "bool(true)\n",
+            "R:books\n",
+            "R:book\n",
+            "R:book\n",
+            "R:books\n",
+            "XMLReader::XML(): Argument #1 ($source) must not be empty\n",
+            "S:urn:f@a\n",
+            "S:urn:b@b\n",
+            "int(0)\n",
+            "int(68)\n",
+            "string(21) \"XML_ERR_NAME_REQUIRED\"\n",
+            "int(1)\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<g:item kind=\"house\" xmlns:g=\"urn:g\">text &amp; &lt;</g:item>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PtnLibxmlBoundary"));
+    assert!(c_source.contains("PTN_LIBXML_SURFACE_SIMPLEXML_HANDOFF"));
+    assert!(c_source.contains("PTN_LIBXML_XML_PARSER_BOUNDARY"));
+    assert!(c_source.contains("PTN_LIBXML_XML_WRITER_BOUNDARY"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();

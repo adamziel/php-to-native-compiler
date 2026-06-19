@@ -53378,9 +53378,62 @@ static PtnValue ptn_defined_constants_core_table(void) {
     return table;
 }
 
+#define PTN_LIBXML_DOTTED_VERSION "2.9.14"
+#define PTN_LIBXML_VERSION 20914
+#define PTN_LIBXML_LOADED_VERSION "20914"
+#define PTN_LIBXML_NOENT 2
+#define PTN_LIBXML_DTDLOAD 4
+#define PTN_LIBXML_DTDATTR 8
+#define PTN_LIBXML_DTDVALID 16
+#define PTN_LIBXML_NOERROR 32
+#define PTN_LIBXML_NOWARNING 64
+#define PTN_LIBXML_PEDANTIC 128
+#define PTN_LIBXML_NOBLANKS 256
+#define PTN_LIBXML_XINCLUDE 1024
+#define PTN_LIBXML_NONET 2048
+#define PTN_LIBXML_NSCLEAN 8192
+#define PTN_LIBXML_NOCDATA 16384
+#define PTN_LIBXML_COMPACT 65536
+#define PTN_LIBXML_PARSEHUGE 524288
+#define PTN_LIBXML_BIGLINES 4194304
+#define PTN_LIBXML_NOXMLDECL 2
+#define PTN_LIBXML_NOEMPTYTAG 4
+#define PTN_LIBXML_SCHEMA_CREATE 1
+#define PTN_LIBXML_HTML_NODEFDTD 4
+#define PTN_LIBXML_HTML_NOIMPLIED 8192
+#define PTN_LIBXML_ERR_NONE 0
+#define PTN_LIBXML_ERR_WARNING 1
+#define PTN_LIBXML_ERR_ERROR 2
+#define PTN_LIBXML_ERR_FATAL 3
+
 static void ptn_defined_constants_add_libxml(PtnValue table) {
-    ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_DOTTED_VERSION"), ptn_string("2.9.14"));
-    ptn_get_defined_constants_add_int(table, "LIBXML_VERSION", 20914);
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_DOTTED_VERSION"), ptn_string(PTN_LIBXML_DOTTED_VERSION));
+    ptn_get_defined_constants_add_int(table, "LIBXML_VERSION", PTN_LIBXML_VERSION);
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("LIBXML_LOADED_VERSION"), ptn_string(PTN_LIBXML_LOADED_VERSION));
+    ptn_get_defined_constants_add_int(table, "LIBXML_NOENT", PTN_LIBXML_NOENT);
+    ptn_get_defined_constants_add_int(table, "LIBXML_DTDLOAD", PTN_LIBXML_DTDLOAD);
+    ptn_get_defined_constants_add_int(table, "LIBXML_DTDATTR", PTN_LIBXML_DTDATTR);
+    ptn_get_defined_constants_add_int(table, "LIBXML_DTDVALID", PTN_LIBXML_DTDVALID);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NOERROR", PTN_LIBXML_NOERROR);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NOWARNING", PTN_LIBXML_NOWARNING);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NOBLANKS", PTN_LIBXML_NOBLANKS);
+    ptn_get_defined_constants_add_int(table, "LIBXML_XINCLUDE", PTN_LIBXML_XINCLUDE);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NSCLEAN", PTN_LIBXML_NSCLEAN);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NOCDATA", PTN_LIBXML_NOCDATA);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NONET", PTN_LIBXML_NONET);
+    ptn_get_defined_constants_add_int(table, "LIBXML_PEDANTIC", PTN_LIBXML_PEDANTIC);
+    ptn_get_defined_constants_add_int(table, "LIBXML_COMPACT", PTN_LIBXML_COMPACT);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NOXMLDECL", PTN_LIBXML_NOXMLDECL);
+    ptn_get_defined_constants_add_int(table, "LIBXML_PARSEHUGE", PTN_LIBXML_PARSEHUGE);
+    ptn_get_defined_constants_add_int(table, "LIBXML_BIGLINES", PTN_LIBXML_BIGLINES);
+    ptn_get_defined_constants_add_int(table, "LIBXML_NOEMPTYTAG", PTN_LIBXML_NOEMPTYTAG);
+    ptn_get_defined_constants_add_int(table, "LIBXML_SCHEMA_CREATE", PTN_LIBXML_SCHEMA_CREATE);
+    ptn_get_defined_constants_add_int(table, "LIBXML_HTML_NOIMPLIED", PTN_LIBXML_HTML_NOIMPLIED);
+    ptn_get_defined_constants_add_int(table, "LIBXML_HTML_NODEFDTD", PTN_LIBXML_HTML_NODEFDTD);
+    ptn_get_defined_constants_add_int(table, "LIBXML_ERR_NONE", PTN_LIBXML_ERR_NONE);
+    ptn_get_defined_constants_add_int(table, "LIBXML_ERR_WARNING", PTN_LIBXML_ERR_WARNING);
+    ptn_get_defined_constants_add_int(table, "LIBXML_ERR_ERROR", PTN_LIBXML_ERR_ERROR);
+    ptn_get_defined_constants_add_int(table, "LIBXML_ERR_FATAL", PTN_LIBXML_ERR_FATAL);
 }
 
 static PtnValue ptn_defined_constants_libxml_table(void) {
@@ -53643,6 +53696,31 @@ static int ptn_reflection_constant_is_libxml(const char *name) {
     static const char *const names[] = {
         "LIBXML_DOTTED_VERSION",
         "LIBXML_VERSION",
+        "LIBXML_LOADED_VERSION",
+        "LIBXML_NOENT",
+        "LIBXML_DTDLOAD",
+        "LIBXML_DTDATTR",
+        "LIBXML_DTDVALID",
+        "LIBXML_NOERROR",
+        "LIBXML_NOWARNING",
+        "LIBXML_NOBLANKS",
+        "LIBXML_XINCLUDE",
+        "LIBXML_NSCLEAN",
+        "LIBXML_NOCDATA",
+        "LIBXML_NONET",
+        "LIBXML_PEDANTIC",
+        "LIBXML_COMPACT",
+        "LIBXML_NOXMLDECL",
+        "LIBXML_PARSEHUGE",
+        "LIBXML_BIGLINES",
+        "LIBXML_NOEMPTYTAG",
+        "LIBXML_SCHEMA_CREATE",
+        "LIBXML_HTML_NOIMPLIED",
+        "LIBXML_HTML_NODEFDTD",
+        "LIBXML_ERR_NONE",
+        "LIBXML_ERR_WARNING",
+        "LIBXML_ERR_ERROR",
+        "LIBXML_ERR_FATAL",
     };
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
@@ -60242,6 +60320,91 @@ static PtnValue ptn_internal_timezone_version_get(PtnRuntime *runtime, size_t ar
     return ptn_string("2026.1");
 }
 
+typedef enum {
+    PTN_LIBXML_BACKEND_LOCAL_BOUNDED,
+    PTN_LIBXML_BACKEND_NATIVE_LIBXML
+} PtnLibxmlBackend;
+
+typedef enum {
+    PTN_LIBXML_SURFACE_DOM_TREE,
+    PTN_LIBXML_SURFACE_XML_READER,
+    PTN_LIBXML_SURFACE_XML_PARSER,
+    PTN_LIBXML_SURFACE_XML_WRITER,
+    PTN_LIBXML_SURFACE_ERROR_BUFFER,
+    PTN_LIBXML_SURFACE_SIMPLEXML_HANDOFF
+} PtnLibxmlSurface;
+
+typedef struct {
+    PtnLibxmlSurface surface;
+    PtnLibxmlBackend backend;
+    const char *surface_name;
+    const char *policy;
+} PtnLibxmlBoundary;
+
+static const PtnLibxmlBoundary PTN_LIBXML_DOM_TREE_BOUNDARY = {
+    PTN_LIBXML_SURFACE_DOM_TREE,
+    PTN_LIBXML_BACKEND_LOCAL_BOUNDED,
+    "dom-tree",
+    "DOM document ownership, namespaces, node mutation, and serialization are bounded local PtnXmlNode adapters until native libxml tree ownership lands."
+};
+
+static const PtnLibxmlBoundary PTN_LIBXML_XML_READER_BOUNDARY = {
+    PTN_LIBXML_SURFACE_XML_READER,
+    PTN_LIBXML_BACKEND_LOCAL_BOUNDED,
+    "xmlreader",
+    "XMLReader is a bounded local element-name cursor over the DOM parse adapter; full libxml reader events remain a native-libxml boundary."
+};
+
+static const PtnLibxmlBoundary PTN_LIBXML_XML_PARSER_BOUNDARY = {
+    PTN_LIBXML_SURFACE_XML_PARSER,
+    PTN_LIBXML_BACKEND_LOCAL_BOUNDED,
+    "xml-parser",
+    "ext/xml parser callbacks, namespaces, options, and error codes are bounded local SAX-compatible adapters pending native libxml parser state."
+};
+
+static const PtnLibxmlBoundary PTN_LIBXML_XML_WRITER_BOUNDARY = {
+    PTN_LIBXML_SURFACE_XML_WRITER,
+    PTN_LIBXML_BACKEND_LOCAL_BOUNDED,
+    "xmlwriter",
+    "XMLWriter targets and namespace/name validation are bounded local string-buffer adapters pending native libxml writer state."
+};
+
+static const PtnLibxmlBoundary PTN_LIBXML_ERROR_BUFFER_BOUNDARY = {
+    PTN_LIBXML_SURFACE_ERROR_BUFFER,
+    PTN_LIBXML_BACKEND_LOCAL_BOUNDED,
+    "libxml-errors",
+    "libxml error mode and buffers are bounded request-global adapters; parsed libxml error objects remain native-libxml work."
+};
+
+static const PtnLibxmlBoundary PTN_LIBXML_SIMPLEXML_HANDOFF_BOUNDARY = {
+    PTN_LIBXML_SURFACE_SIMPLEXML_HANDOFF,
+    PTN_LIBXML_BACKEND_LOCAL_BOUNDED,
+    "simplexml-handoff",
+    "SimpleXML must hand off to the shared libxml DOM/tree boundary; PTN intentionally does not grow a separate local SimpleXML tree."
+};
+
+static PTN_UNUSED const PtnLibxmlBoundary *ptn_libxml_boundary_for_surface(PtnLibxmlSurface surface) {
+    switch (surface) {
+        case PTN_LIBXML_SURFACE_DOM_TREE:
+            return &PTN_LIBXML_DOM_TREE_BOUNDARY;
+        case PTN_LIBXML_SURFACE_XML_READER:
+            return &PTN_LIBXML_XML_READER_BOUNDARY;
+        case PTN_LIBXML_SURFACE_XML_PARSER:
+            return &PTN_LIBXML_XML_PARSER_BOUNDARY;
+        case PTN_LIBXML_SURFACE_XML_WRITER:
+            return &PTN_LIBXML_XML_WRITER_BOUNDARY;
+        case PTN_LIBXML_SURFACE_ERROR_BUFFER:
+            return &PTN_LIBXML_ERROR_BUFFER_BOUNDARY;
+        case PTN_LIBXML_SURFACE_SIMPLEXML_HANDOFF:
+            return &PTN_LIBXML_SIMPLEXML_HANDOFF_BOUNDARY;
+    }
+    return &PTN_LIBXML_ERROR_BUFFER_BOUNDARY;
+}
+
+static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBoundary *boundary) {
+    return boundary == NULL || boundary->backend == PTN_LIBXML_BACKEND_LOCAL_BOUNDED;
+}
+
 #define PTN_XML_NODE_ELEMENT 1
 #define PTN_XML_NODE_ATTRIBUTE 2
 #define PTN_XML_NODE_TEXT 3
@@ -60258,6 +60421,7 @@ static PtnValue ptn_internal_timezone_version_get(PtnRuntime *runtime, size_t ar
 typedef struct PtnXmlNode PtnXmlNode;
 
 struct PtnXmlNode {
+    const PtnLibxmlBoundary *boundary;
     int type;
     char *name;
     char *value;
@@ -60282,6 +60446,7 @@ typedef struct {
 } PtnXmlNodeListData;
 
 typedef struct {
+    const PtnLibxmlBoundary *boundary;
     char **names;
     size_t name_count;
     size_t name_capacity;
@@ -60296,6 +60461,7 @@ typedef struct {
 } PtnXmlNamespaceEntry;
 
 typedef struct {
+    const PtnLibxmlBoundary *boundary;
     PtnValue start_handler;
     PtnValue end_handler;
     int has_start_handler;
@@ -60395,6 +60561,7 @@ static PtnXmlNode *ptn_xml_node_alloc(int type, const char *name, const char *va
     if (node == NULL) {
         ptn_abort_out_of_memory();
     }
+    node->boundary = ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_DOM_TREE);
     node->type = type;
     node->name = name == NULL ? ptn_xml_node_default_name(type) : ptn_duplicate_string(name);
     node->value = ptn_duplicate_string(value == NULL ? "" : value);
@@ -60980,6 +61147,7 @@ static void ptn_xml_parse_attributes(PtnRuntime *runtime, PtnXmlNode *element, c
 }
 
 static int ptn_xml_parse_document_into(PtnRuntime *runtime, PtnXmlNode *document, const char *data, size_t len) {
+    (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_DOM_TREE));
     PtnXmlNode **stack = NULL;
     size_t stack_len = 0;
     size_t stack_capacity = 0;
@@ -62048,6 +62216,7 @@ static PTN_UNUSED PtnValue ptn_xml_reader_new(PtnRuntime *runtime, size_t argc, 
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
+    data->boundary = ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_XML_READER);
     PtnValue object = ptn_object_new_shell(runtime, "XMLReader");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_xml_reader_data_free;
@@ -62105,6 +62274,7 @@ static PtnValue ptn_xml_reader_load_string(PtnRuntime *runtime, PtnValue receive
     if (data == NULL) {
         return ptn_bool(0);
     }
+    (void)ptn_libxml_boundary_is_local_bounded(data->boundary);
     if (source_len == 0) {
         char message[128];
         int written = snprintf(message, sizeof(message), "%s(): Argument #1 ($%s) must not be empty", method_name, ptn_ascii_case_equal(method_name, "XMLReader::open") ? "uri" : "source");
@@ -62222,6 +62392,7 @@ static PTN_UNUSED PtnValue ptn_xml_parser_new(PtnRuntime *runtime, size_t argc, 
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
+    data->boundary = ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_XML_PARSER);
     data->case_folding = 1;
     data->separator = ptn_duplicate_string(":");
     data->error_code = PTN_XML_ERROR_NONE;
@@ -62429,6 +62600,7 @@ static int ptn_xml_parser_emit_start(PtnRuntime *runtime, PtnValue parser_value,
 }
 
 static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *data, size_t len, size_t line, int into_struct, PtnValue *values_out, PtnValue *index_out) {
+    (void)ptn_libxml_boundary_is_local_bounded(parser == NULL ? NULL : parser->boundary);
     parser->error_code = PTN_XML_ERROR_NONE;
     int64_t values_count = 0;
     int64_t unique_count = 0;
@@ -62579,6 +62751,7 @@ static PtnValue ptn_internal_xml_parser_free(PtnRuntime *runtime, size_t argc, c
 static int ptn_libxml_internal_errors = 0;
 
 static PtnValue ptn_internal_libxml_use_internal_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_ERROR_BUFFER));
     (void)runtime;
     (void)line;
     int previous = ptn_libxml_internal_errors;
@@ -62589,6 +62762,7 @@ static PtnValue ptn_internal_libxml_use_internal_errors(PtnRuntime *runtime, siz
 }
 
 static PtnValue ptn_internal_libxml_get_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_ERROR_BUFFER));
     (void)runtime;
     (void)argc;
     (void)args;
@@ -62597,6 +62771,7 @@ static PtnValue ptn_internal_libxml_get_errors(PtnRuntime *runtime, size_t argc,
 }
 
 static PtnValue ptn_internal_libxml_get_last_error(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_ERROR_BUFFER));
     (void)runtime;
     (void)argc;
     (void)args;
@@ -62605,6 +62780,7 @@ static PtnValue ptn_internal_libxml_get_last_error(PtnRuntime *runtime, size_t a
 }
 
 static PtnValue ptn_internal_libxml_clear_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_ERROR_BUFFER));
     (void)runtime;
     (void)argc;
     (void)args;
@@ -62906,6 +63082,7 @@ typedef struct {
 } PtnXmlWriterFrame;
 
 typedef struct {
+    const PtnLibxmlBoundary *boundary;
     PtnStringBuffer buffer;
     PtnXmlWriterFrame *frames;
     size_t depth;
@@ -63147,6 +63324,7 @@ static PtnXmlWriterData *ptn_xmlwriter_data_new(void) {
     if (data == NULL) {
         ptn_abort_out_of_memory();
     }
+    data->boundary = ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_XML_WRITER);
     ptn_string_buffer_init(&data->buffer);
     data->frames = NULL;
     data->depth = 0;
@@ -63504,6 +63682,7 @@ static PtnValue ptn_xmlwriter_dispatch(
     const char *function_name,
     size_t position_offset
 ) {
+    (void)ptn_libxml_boundary_is_local_bounded(data == NULL ? NULL : data->boundary);
     if (ptn_ascii_case_equal(method_name, "__construct")) {
         if (argc != 0) {
             char message[128];

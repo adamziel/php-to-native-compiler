@@ -1,0 +1,37 @@
+# Focused libxml boundary PHPT evidence for ptn-hvvb4.4.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Run:
+#   tools/run-phpt-manifest.sh tools/phpt-ptn-hvvb4.4-libxml-boundary-row-pack.txt
+#
+# This pack covers the boundary surfaces PTN routes through the shared
+# libxml policy: DOM tree ownership/namespaces, ext/xml parser options and
+# errors, XMLReader string/file cursors, XMLWriter targets, and libxml error
+# mode. SimpleXML rows stay in the broader XML/DOM pack until a DOM handoff
+# exists; PTN should not grow a second local SimpleXML tree.
+
+# bucket: libxml error mode/constants rows=1
+ext/libxml/tests/001.phpt
+
+# bucket: DOM ownership and namespace mutation rows=5
+ext/dom/tests/DOM4_ChildNode_wrong_document.phpt
+ext/dom/tests/DOM4_DOMNode_append_ns.phpt
+ext/dom/tests/DOM4_ParentNode_append_wrong_document.phpt
+ext/dom/tests/DOMAttr_name_basic_001.phpt
+ext/dom/tests/DOMCharacterData_appendData_basic.phpt
+
+# bucket: ext/xml parser options, namespaces, and errors rows=3
+ext/xml/tests/XML_OPTION_PARSE_HUGE.phpt
+ext/xml/tests/XML_OPTION_PARSE_HUGE_during_parsing.phpt
+ext/xml/tests/bug25666.phpt
+
+# bucket: XMLReader source cursor rows=2
+ext/xmlreader/tests/001.phpt
+ext/xmlreader/tests/002.phpt
+
+# bucket: XMLWriter memory/URI/stream targets rows=5
+ext/xmlwriter/tests/001.phpt
+ext/xmlwriter/tests/002.phpt
+ext/xmlwriter/tests/xmlwriter_toMemory_normal_usage.phpt
+ext/xmlwriter/tests/xmlwriter_toStream_normal_usage.phpt
+ext/xmlwriter/tests/xmlwriter_open_uri_error_001.phpt

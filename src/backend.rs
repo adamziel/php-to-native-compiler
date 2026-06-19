@@ -30898,6 +30898,53 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn emit_runtime_dynamic_declared_method_call_argument(
+        &mut self,
+        out: &mut String,
+        receiver_temp: &str,
+        method_name_temp: &str,
+        argument_index: usize,
+        argument: &ValueExpr,
+    ) -> String {
+        let mode_temp = self.next_temp();
+        out.push_str("    int ");
+        out.push_str(&mode_temp);
+        out.push_str(" = ptn_declared_method_argument_by_ref(&runtime, ");
+        out.push_str(receiver_temp);
+        out.push_str(", ");
+        out.push_str(method_name_temp);
+        out.push_str(", ");
+        out.push_str(&argument_index.to_string());
+        out.push_str(");\n");
+
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(";\n");
+
+        out.push_str("    if (");
+        out.push_str(&mode_temp);
+        out.push_str(" == 0) {\n");
+        let by_value_temp =
+            self.emit_call_argument(out, "dynamic method call", argument_index, argument);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&by_value_temp);
+        out.push_str(";\n");
+
+        out.push_str("    } else {\n");
+        let dynamic_temp = self.emit_dynamic_call_argument(out, argument);
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&dynamic_temp);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+
+        result_temp
+    }
+
     fn emit_runtime_callable_call_argument(
         &mut self,
         out: &mut String,
@@ -34245,8 +34292,14 @@ impl ValueEmitter {
 
         let mut temps = Vec::with_capacity(arguments.len());
         let mut unwrap_array_dim_reference_temps = Vec::new();
-        for argument in arguments {
-            let temp = self.emit_dynamic_call_argument(out, argument);
+        for (argument_index, argument) in arguments.iter().enumerate() {
+            let temp = self.emit_runtime_dynamic_declared_method_call_argument(
+                out,
+                &receiver_temp,
+                &method_name_temp,
+                argument_index,
+                argument,
+            );
             if value_is_array_dim_reference_target(argument) {
                 unwrap_array_dim_reference_temps.push(temp.clone());
             }

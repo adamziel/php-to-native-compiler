@@ -1209,6 +1209,106 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(20914);
         return 1;
     }
+    if (strcmp(name, "LIBXML_LOADED_VERSION") == 0) {
+        *out = ptn_string("20914");
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NOENT") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_DTDLOAD") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_DTDATTR") == 0) {
+        *out = ptn_int(8);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_DTDVALID") == 0) {
+        *out = ptn_int(16);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NOERROR") == 0) {
+        *out = ptn_int(32);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NOWARNING") == 0) {
+        *out = ptn_int(64);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_PEDANTIC") == 0) {
+        *out = ptn_int(128);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NOBLANKS") == 0) {
+        *out = ptn_int(256);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_XINCLUDE") == 0) {
+        *out = ptn_int(1024);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NONET") == 0) {
+        *out = ptn_int(2048);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NSCLEAN") == 0) {
+        *out = ptn_int(8192);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NOCDATA") == 0) {
+        *out = ptn_int(16384);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_COMPACT") == 0) {
+        *out = ptn_int(65536);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_PARSEHUGE") == 0) {
+        *out = ptn_int(524288);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_BIGLINES") == 0) {
+        *out = ptn_int(4194304);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NOXMLDECL") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_NOEMPTYTAG") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_SCHEMA_CREATE") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_HTML_NODEFDTD") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_HTML_NOIMPLIED") == 0) {
+        *out = ptn_int(8192);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_ERR_NONE") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_ERR_WARNING") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_ERR_ERROR") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "LIBXML_ERR_FATAL") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
     if (strcmp(name, "XML_OPTION_CASE_FOLDING") == 0) {
         *out = ptn_int(1);
         return 1;
