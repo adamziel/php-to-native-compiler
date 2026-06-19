@@ -92,6 +92,12 @@ pub struct ClassDecl {
     pub methods: Vec<MethodDecl>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClassNameEntry {
+    source_file: String,
+    name: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnumBackingType {
     Int,
@@ -329,9 +335,14 @@ pub enum Instruction {
     DeclareFunction {
         function_index: usize,
     },
+    EarlyDeclareClass {
+        class_index: usize,
+        line: usize,
+    },
     DeclareClass {
         class_index: usize,
         line: usize,
+        allow_predeclared: bool,
     },
     ValidateClass {
         class_index: usize,
@@ -1017,8 +1028,9 @@ struct LoweringContext<'a> {
     source_dir: String,
     strict_types: bool,
     include_resolutions: &'a IncludeResolutionMap,
-    class_names: Vec<String>,
-    runtime_class_names: HashSet<String>,
+    class_names: Vec<ClassNameEntry>,
+    runtime_class_names: HashSet<(String, String)>,
+    early_bound_class_names: HashSet<(String, String)>,
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
     current_function_display_name: Option<String>,
@@ -1070,6 +1082,10 @@ pub enum IncDecTarget {
     },
 }
 
+fn class_runtime_declaration_key(source_file: &str, name: &str) -> (String, String) {
+    (source_file.to_string(), name.to_ascii_lowercase())
+}
+
 impl<'a> LoweringContext<'a> {
     fn new(
         program: &Program,
@@ -1079,6 +1095,20 @@ impl<'a> LoweringContext<'a> {
     ) -> Self {
         let constant_values = collect_constant_values(program);
         let constant_deprecations = collect_constant_deprecations(program, &constant_values);
+        let class_names = program
+            .classes
+            .iter()
+            .map(|class| ClassNameEntry {
+                source_file: source_file.clone(),
+                name: class.name.clone(),
+            })
+            .collect();
+        let runtime_class_names = program
+            .classes
+            .iter()
+            .filter(|class| class.is_conditionally_declared)
+            .map(|class| class_runtime_declaration_key(&source_file, &class.name))
+            .collect();
         let mut context = Self {
             functions: Vec::new(),
             constant_deprecations,
@@ -1087,17 +1117,9 @@ impl<'a> LoweringContext<'a> {
             source_dir,
             strict_types: program.strict_types,
             include_resolutions,
-            class_names: program
-                .classes
-                .iter()
-                .map(|class| class.name.clone())
-                .collect(),
-            runtime_class_names: program
-                .classes
-                .iter()
-                .filter(|class| class.is_conditionally_declared)
-                .map(|class| class.name.to_ascii_lowercase())
-                .collect(),
+            class_names,
+            runtime_class_names,
+            early_bound_class_names: HashSet::new(),
             current_class_name: None,
             current_trait_name: None,
             current_function_display_name: None,
@@ -1110,20 +1132,25 @@ impl<'a> LoweringContext<'a> {
 
     fn declare_include_class_names(&mut self, include_sources: &[IncludeSource]) {
         for include in include_sources {
-            self.class_names.extend(
-                include
-                    .program
-                    .classes
-                    .iter()
-                    .map(|class| class.name.clone()),
-            );
+            self.class_names
+                .extend(include.program.classes.iter().map(|class| ClassNameEntry {
+                    source_file: include.source_file.clone(),
+                    name: class.name.clone(),
+                }));
             self.runtime_class_names.extend(
                 include
                     .program
                     .classes
                     .iter()
-                    .filter(|class| class.is_conditionally_declared)
-                    .map(|class| class.name.to_ascii_lowercase()),
+                    .map(|class| class_runtime_declaration_key(&include.source_file, &class.name)),
+            );
+            self.early_bound_class_names.extend(
+                include
+                    .program
+                    .classes
+                    .iter()
+                    .filter(|class| !class.is_conditionally_declared)
+                    .map(|class| class_runtime_declaration_key(&include.source_file, &class.name)),
             );
         }
     }
@@ -1268,7 +1295,15 @@ impl<'a> LoweringContext<'a> {
     fn class_index_by_name(&self, name: &str) -> Option<usize> {
         self.class_names
             .iter()
-            .position(|class_name| class_name.eq_ignore_ascii_case(name))
+            .position(|class_name| {
+                class_name.source_file == self.source_file
+                    && class_name.name.eq_ignore_ascii_case(name)
+            })
+            .or_else(|| {
+                self.class_names
+                    .iter()
+                    .position(|class_name| class_name.name.eq_ignore_ascii_case(name))
+            })
     }
 
     fn lower_include_source(&mut self, include: &IncludeSource) -> IncludeFile {
@@ -1305,7 +1340,7 @@ impl<'a> LoweringContext<'a> {
             .filter(|class| !class.is_conditionally_declared)
         {
             if let Some(class_index) = self.class_index_by_name(&class.name) {
-                instructions.push(Instruction::DeclareClass {
+                instructions.push(Instruction::EarlyDeclareClass {
                     class_index,
                     line: class.span.line,
                 });
@@ -1827,13 +1862,15 @@ impl<'a> LoweringContext<'a> {
                             class_index,
                             line: span.line,
                         });
-                        if self
-                            .runtime_class_names
-                            .contains(&name.to_ascii_lowercase())
-                        {
+                        let declaration_key =
+                            class_runtime_declaration_key(&self.source_file, name);
+                        if self.runtime_class_names.contains(&declaration_key) {
+                            let allow_predeclared =
+                                self.early_bound_class_names.contains(&declaration_key);
                             instructions.push(Instruction::DeclareClass {
                                 class_index,
                                 line: span.line,
+                                allow_predeclared,
                             });
                         }
                     }

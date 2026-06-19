@@ -14359,15 +14359,46 @@ fn emit_instruction(
                 source_path,
             );
         }
-        Instruction::DeclareClass { class_index, line } => {
+        Instruction::EarlyDeclareClass { class_index, line } => {
+            let class = &values.classes[*class_index];
+            out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
+            out.push_str("        if (!ptn_declared_runtime_class_exists(&runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && !ptn_declared_runtime_interface_exists(&runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")\n");
+            out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+            out.push_str("            && !ptn_internal_class_exists_name(\"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")\n");
+            out.push_str("#endif\n");
+            out.push_str("        ) {\n");
+            emit_class_declaration_validation(
+                out,
+                &values.classes,
+                *class_index,
+                *line,
+                source_path,
+            );
+            out.push_str("            runtime.declared_user_classes[");
+            out.push_str(&class_index.to_string());
+            out.push_str("] = 1;\n");
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+        }
+        Instruction::DeclareClass {
+            class_index,
+            line,
+            allow_predeclared,
+        } => {
             let class = &values.classes[*class_index];
             out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
             out.push_str("        if (runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
             out.push_str("]) {\n");
-            if class.is_anonymous {
+            if *allow_predeclared || class.is_anonymous {
                 out.push_str(
-                    "            /* Anonymous class expressions may be evaluated repeatedly. */\n",
+                    "            /* This class was already declared before its statement was reached. */\n",
                 );
             } else {
                 out.push_str("            char message[1024];\n");
@@ -14380,6 +14411,61 @@ fn emit_instruction(
                 out.push_str("\", (size_t)");
                 out.push_str(&class.line.to_string());
                 out.push_str(");\n");
+                out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            for (other_index, other_class) in values.classes.iter().enumerate() {
+                if other_index == *class_index
+                    || class.is_interface
+                    || other_class.is_interface
+                    || !other_class.name.eq_ignore_ascii_case(&class.name)
+                {
+                    continue;
+                }
+                out.push_str("        } else if (runtime.declared_user_classes[");
+                out.push_str(&other_index.to_string());
+                out.push_str("]) {\n");
+                out.push_str("            char message[1024];\n");
+                out.push_str(
+                    "            snprintf(message, sizeof(message), \"Cannot redeclare class ",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str(" (previously declared in %s:%zu)\", \"");
+                out.push_str(&c_string(&other_class.source_file));
+                out.push_str("\", (size_t)");
+                out.push_str(&other_class.line.to_string());
+                out.push_str(");\n");
+                out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
+                out.push_str(&c_string(source_path));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            out.push_str("        } else if (ptn_declared_runtime_class_exists(&runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") || ptn_declared_runtime_interface_exists(&runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")\n");
+            out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
+            out.push_str("            || ptn_internal_class_exists_name(\"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")\n");
+            out.push_str("#endif\n");
+            out.push_str("        ) {\n");
+            if class.is_anonymous {
+                out.push_str(
+                    "            /* Anonymous class expressions may be evaluated repeatedly. */\n",
+                );
+            } else {
+                out.push_str("            char message[1024];\n");
+                out.push_str(
+                    "            snprintf(message, sizeof(message), \"Cannot declare class ",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str(", because the name is already in use\");\n");
                 out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
                 out.push_str(&c_string(source_path));
                 out.push_str("\", ");
@@ -17336,6 +17422,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }
         | Instruction::Break { .. }
@@ -17947,6 +18034,7 @@ fn collect_instruction_runtime_requirements(
             collect_value_runtime_requirements(name, functions, requirements);
         }
         Instruction::DeclareFunction { .. }
+        | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. } => {}
         Instruction::UnsetDynamicVariable { name, .. } => {
@@ -21626,6 +21714,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }
         | Instruction::Label { .. }
@@ -22280,6 +22369,7 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         Instruction::UnsetVariable { .. }
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
+        | Instruction::EarlyDeclareClass { .. }
         | Instruction::DeclareClass { .. }
         | Instruction::ValidateClass { .. }
         | Instruction::Break { .. }

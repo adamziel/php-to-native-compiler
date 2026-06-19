@@ -42925,6 +42925,94 @@ echo get_class($object), \"\\n\";
 }
 
 #[test]
+fn compile_include_class_early_binding_skips_existing_runtime_name_to_native_binary() {
+    let root = temp_dir("ptn-native-include-class-early-binding-existing-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let early = root.join("early.inc.php");
+    let guarded = root.join("guarded.inc.php");
+    let output = root.join("include-class-early-binding-existing-name-bin");
+    fs::write(
+        &early,
+        "<?php
+var_dump(class_exists('EarlyBound', false));
+class EarlyBound {}
+",
+    )
+    .unwrap();
+    fs::write(
+        &guarded,
+        "<?php
+if (class_exists(B::class)) {
+    return;
+}
+class B extends A {}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+include __DIR__ . '/early.inc.php';
+var_dump(class_exists('EarlyBound', false));
+class A {}
+class B extends A {}
+include __DIR__ . '/guarded.inc.php';
+echo \"done\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nbool(true)\ndone\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("!ptn_declared_runtime_class_exists(&runtime, \"B\")"));
+    assert!(c_source.contains("Cannot declare class B, because the name is already in use"));
+}
+
+#[test]
+fn compile_include_class_duplicate_runtime_name_reports_previous_declaration() {
+    let root = temp_dir("ptn-native-include-class-duplicate-runtime-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let first = root.join("first.inc.php");
+    let second = root.join("second.inc.php");
+    let output = root.join("include-class-duplicate-runtime-name-bin");
+    fs::write(&first, "<?php\nclass Bar extends Foo {}\n").unwrap();
+    fs::write(&second, "<?php\nclass Bar extends Foo {}\n").unwrap();
+    fs::write(
+        &input,
+        "<?php
+class Foo {}
+include __DIR__ . '/first.inc.php';
+include __DIR__ . '/second.inc.php';
+",
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Cannot redeclare class Bar (previously declared in")
+            && stderr.contains("first.inc.php:2)")
+            && stderr.contains("second.inc.php on line 2"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn compile_internal_class_exists_prunes_fallback_include_to_native_binary() {
     let root = temp_dir("ptn-native-internal-class-exists-fallback-include");
     fs::create_dir_all(&root).unwrap();
