@@ -2053,6 +2053,10 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->suppress_user_argument_count_location = 0;
     runtime->warn_by_ref_argument_mismatch = 0;
     runtime->throw_argument_count_errors = 0;
+    runtime->gc_running = 0;
+    runtime->gc_runs = 0;
+    runtime->gc_collected = 0;
+    runtime->gc_roots = 0;
     runtime->active_serialize_state = NULL;
     runtime->active_unserialize_state = NULL;
     runtime->strtok_string = NULL;

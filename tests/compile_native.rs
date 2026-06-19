@@ -10051,6 +10051,53 @@ var_dump($ref->get());
 }
 
 #[test]
+fn compile_gc_status_to_native_binary() {
+    let root = temp_dir("ptn-native-gc-status");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("gc-status.php");
+    let output = root.join("gc-status-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump(function_exists('gc_status'));
+foreach (array_keys(gc_status()) as $key) {
+    echo $key, \"\\n\";
+}
+$status = gc_status();
+var_dump($status['running'], $status['threshold'] > 0, $status['buffer_size'] > 0);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "running\n",
+            "protected\n",
+            "full\n",
+            "runs\n",
+            "collected\n",
+            "threshold\n",
+            "buffer_size\n",
+            "roots\n",
+            "application_time\n",
+            "collector_time\n",
+            "destructor_time\n",
+            "free_time\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_var_dump_recursive_object_to_native_binary() {
     let root = temp_dir("ptn-native-var-dump-recursive-object");
     fs::create_dir_all(&root).unwrap();
@@ -36513,6 +36560,53 @@ var_dump(array_slice($input, 1, 2, true));
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_value_clone(source->value)"));
+}
+
+#[test]
+fn compile_array_slice_reference_entries_are_not_by_ref_call_sources_to_native_binary() {
+    let root = temp_dir("ptn-native-array-slice-reference-call-sources");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-slice-reference-call-sources.php");
+    let output = root.join("array-slice-reference-call-sources-bin");
+    fs::write(
+        &input,
+        "<?php
+function ref_arg(&$ref) {
+    var_dump($ref);
+    $ref = 1;
+}
+$b = 0;
+$args = [&$b];
+unset($b);
+for ($i = 0; $i < 2; $i++) {
+    $slice = array_slice($args, 0, 1);
+    call_user_func_array('ref_arg', $slice);
+    var_dump($slice[0]);
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: ref_arg(): Argument #1 ($ref) must be passed by reference, value given in ptn on line 11\n",
+            "int(0)\n",
+            "int(0)\n",
+            "\nWarning: ref_arg(): Argument #1 ($ref) must be passed by reference, value given in ptn on line 11\n",
+            "int(0)\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_disable_by_ref_argument_source"));
+    assert!(c_source.contains("ptn_value_is_by_ref_argument_source"));
 }
 
 #[test]

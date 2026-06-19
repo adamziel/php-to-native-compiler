@@ -1702,7 +1702,9 @@ fn emit_user_functions(
                 out.push_str(check_indent);
                 out.push_str("if (");
                 out.push_str(&parameter_source);
-                out.push_str(".type != PTN_REFERENCE) {\n");
+                out.push_str(".type != PTN_REFERENCE || !ptn_value_is_by_ref_argument_source(");
+                out.push_str(&parameter_source);
+                out.push_str(")) {\n");
                 out.push_str(check_indent);
                 out.push_str("    if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
                 out.push_str(check_indent);
@@ -1920,7 +1922,9 @@ fn emit_user_functions(
                 }
                 out.push_str("    if (");
                 out.push_str(&parameter_source);
-                out.push_str(".type == PTN_REFERENCE) {\n");
+                out.push_str(".type == PTN_REFERENCE && ptn_value_is_by_ref_argument_source(");
+                out.push_str(&parameter_source);
+                out.push_str(")) {\n");
                 if let Some(temp) = &parameter_cast_temp {
                     out.push_str("        ptn_reference_assign(caller_runtime, ");
                     out.push_str(&parameter_source);
@@ -1937,7 +1941,13 @@ fn emit_user_functions(
                 out.push_str("        ptn_runtime_write_variable(&runtime, \"");
                 out.push_str(&c_string(&parameter.name));
                 out.push_str("\", ");
-                out.push_str(&parameter_value);
+                if parameter_cast_temp.is_some() {
+                    out.push_str(&parameter_value);
+                } else {
+                    out.push_str("ptn_value_deref(");
+                    out.push_str(&parameter_source);
+                    out.push(')');
+                }
                 out.push_str(");\n");
                 out.push_str("    }\n");
                 if default_guard.is_some() {
@@ -2214,7 +2224,9 @@ fn emit_variadic_parameter_binding(
     if parameter.by_ref {
         out.push_str("        if (args[");
         out.push_str(&index_temp);
-        out.push_str("].type != PTN_REFERENCE) {\n");
+        out.push_str("].type != PTN_REFERENCE || !ptn_value_is_by_ref_argument_source(args[");
+        out.push_str(&index_temp);
+        out.push_str("])) {\n");
         out.push_str("            if (caller_runtime->warn_by_ref_argument_mismatch) {\n");
         out.push_str("                ptn_emit_by_reference_argument_warning(caller_runtime, ptn_by_reference_argument_function_name(caller_runtime, \"");
         out.push_str(&c_string(&function.display_name));
@@ -2424,7 +2436,9 @@ fn emit_variadic_parameter_binding(
         if parameter.by_ref {
             out.push_str("        if (args[");
             out.push_str(&index_temp);
-            out.push_str("].type == PTN_REFERENCE) {\n");
+            out.push_str("].type == PTN_REFERENCE && ptn_value_is_by_ref_argument_source(args[");
+            out.push_str(&index_temp);
+            out.push_str("])) {\n");
             out.push_str("            ptn_reference_assign(caller_runtime, args[");
             out.push_str(&index_temp);
             out.push_str("].as.reference, ");
@@ -2433,13 +2447,15 @@ fn emit_variadic_parameter_binding(
             emit_value_cleanup(out, "            ", &value_temp);
             out.push_str("        }\n");
             format!(
-                "args[{index_temp}].type == PTN_REFERENCE ? ptn_value_clone(args[{index_temp}]) : {value_temp}"
+                "ptn_value_is_by_ref_argument_source(args[{index_temp}]) ? ptn_value_clone(args[{index_temp}]) : {value_temp}"
             )
         } else {
             value_temp
         }
     } else if parameter.by_ref {
-        format!("ptn_value_clone(args[{index_temp}])")
+        format!(
+            "ptn_value_is_by_ref_argument_source(args[{index_temp}]) ? ptn_value_clone(args[{index_temp}]) : ptn_value_clone_deref(args[{index_temp}])"
+        )
     } else {
         format!("ptn_value_clone_deref(args[{index_temp}])")
     };
@@ -12813,7 +12829,7 @@ fn emit_dynamic_call_reference_argument_helpers(out: &mut String) {
     );
     out.push_str("            continue;\n");
     out.push_str("        }\n");
-    out.push_str("        if (args[i].type == PTN_REFERENCE) {\n");
+    out.push_str("        if (ptn_value_is_by_ref_argument_source(args[i])) {\n");
     out.push_str("            continue;\n");
     out.push_str("        }\n");
     out.push_str("        char fallback[64];\n");

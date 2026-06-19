@@ -17919,6 +17919,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "vfprintf"
             | "json_encode"
             | "gc_collect_cycles"
+            | "gc_status"
             | "ceil"
             | "clamp"
             | "floor"

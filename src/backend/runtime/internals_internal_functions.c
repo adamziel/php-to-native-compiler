@@ -15204,14 +15204,26 @@ static int64_t ptn_array_slice_integer_arg(
                 }
                 return 0;
             }
+            if (runtime->strict_types) {
+                break;
+            }
             return 0;
         case PTN_BOOL:
+            if (runtime->strict_types) {
+                break;
+            }
             return value.as.boolean ? 1 : 0;
         case PTN_INT:
             return value.as.integer;
         case PTN_FLOAT:
+            if (runtime->strict_types) {
+                break;
+            }
             return (int64_t)value.as.floating;
         case PTN_STRING: {
+            if (runtime->strict_types) {
+                break;
+            }
             int64_t integer = 0;
             if (ptn_array_slice_string_to_integer(value.as.string, &integer)) {
                 return integer;
@@ -15632,10 +15644,11 @@ static PtnValue ptn_internal_array_slice(PtnRuntime *runtime, size_t argc, const
         PtnArrayKey key = (preserve_keys || source->key.type == PTN_ARRAY_KEY_STRING)
             ? ptn_array_key_clone(source->key)
             : ptn_array_int_key(result.as.array->next_auto_key);
+        PtnValue value = ptn_value_disable_by_ref_argument_source(ptn_value_clone(source->value));
         ptn_array_set_entry(
             result.as.array,
             key,
-            ptn_value_clone(source->value)
+            value
         );
     }
 
@@ -48565,18 +48578,53 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
     (void)argc;
     (void)args;
     (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    root->gc_running = 1;
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
+    int64_t collected = 0;
     if (weak_map_cycles > 0) {
         if (weak_map_cycles > (size_t)INT64_MAX) {
             ptn_abort_out_of_memory();
         }
-        return ptn_int((int64_t)weak_map_cycles);
-    }
-    if (ptn_intl_cycle_collection_pending) {
+        collected = (int64_t)weak_map_cycles;
+    } else if (ptn_intl_cycle_collection_pending) {
         ptn_intl_cycle_collection_pending = 0;
-        return ptn_int(1);
+        collected = 1;
     }
-    return ptn_int(0);
+    if (collected > 0) {
+        root->gc_runs++;
+        root->gc_collected += (size_t)collected;
+        root->gc_roots = 0;
+    }
+    root->gc_running = 0;
+    return ptn_int(collected);
+}
+
+static PtnValue ptn_internal_gc_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL) {
+        root = runtime;
+    }
+    PtnValue status = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("running"), ptn_bool(root->gc_running));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("protected"), ptn_bool(0));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("full"), ptn_bool(0));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("runs"), ptn_int((int64_t)root->gc_runs));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("collected"), ptn_int((int64_t)root->gc_collected));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("threshold"), ptn_int(10001));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("buffer_size"), ptn_int(16384));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("roots"), ptn_int((int64_t)root->gc_roots));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("application_time"), ptn_float(0.0));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("collector_time"), ptn_float(0.0));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("destructor_time"), ptn_float(0.0));
+    ptn_array_set_entry(status.as.array, ptn_array_string_key("free_time"), ptn_float(0.0));
+    return status;
 }
 
 typedef struct {
@@ -66913,6 +66961,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "function_exists", 1, 1, ptn_internal_function_exists },
         { "fwrite", 2, 3, ptn_internal_fwrite },
         { "gc_collect_cycles", 0, 0, ptn_internal_gc_collect_cycles },
+        { "gc_status", 0, 0, ptn_internal_gc_status },
         { "get_called_class", 0, 0, ptn_internal_get_called_class },
         { "get_cfg_var", 1, 1, ptn_internal_get_cfg_var },
         { "get_class", 0, 1, ptn_internal_get_class },
@@ -67572,6 +67621,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "extension_loaded") ||
         ptn_ascii_case_equal(name, "function_exists") ||
         ptn_ascii_case_equal(name, "gc_collect_cycles") ||
+        ptn_ascii_case_equal(name, "gc_status") ||
         ptn_ascii_case_equal(name, "get_called_class") ||
         ptn_ascii_case_equal(name, "get_cfg_var") ||
         ptn_ascii_case_equal(name, "get_class") ||

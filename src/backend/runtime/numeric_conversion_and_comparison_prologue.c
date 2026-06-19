@@ -193,6 +193,10 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         caller_runtime->suppress_user_argument_count_location;
     runtime->warn_by_ref_argument_mismatch = caller_runtime->warn_by_ref_argument_mismatch;
     runtime->throw_argument_count_errors = caller_runtime->throw_argument_count_errors;
+    runtime->gc_running = caller_runtime->gc_running;
+    runtime->gc_runs = caller_runtime->gc_runs;
+    runtime->gc_collected = caller_runtime->gc_collected;
+    runtime->gc_roots = caller_runtime->gc_roots;
     runtime->active_serialize_state = caller_runtime->active_serialize_state;
     runtime->active_unserialize_state = caller_runtime->active_unserialize_state;
     runtime->strtok_string = NULL;
@@ -875,7 +879,7 @@ static PTN_UNUSED PtnValue ptn_call_result_for_value_context(PtnValue value) {
 }
 
 static PTN_UNUSED PtnValue ptn_by_ref_argument_source_or_temporary(PtnRuntime *runtime, PtnValue value, size_t line) {
-    if (value.type == PTN_REFERENCE) {
+    if (ptn_value_is_by_ref_argument_source(value)) {
         return ptn_value_clone(value);
     }
     if (!ptn_value_is_return_reference_fallback(value)) {
