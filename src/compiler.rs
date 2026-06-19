@@ -51,6 +51,7 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         include_program.traits.clone(),
     );
     includes.collect_program(&include_program, &source_file, &source_dir)?;
+    includes.finalize_sources()?;
     let (included_classes, included_traits) = includes.validation_symbols(None);
     let program = parse_with_runtime_class_aliases_and_symbols(
         &source,
@@ -1101,14 +1102,25 @@ impl IncludeCollector {
             program: program.clone(),
         });
         self.collect_program(&program, &source_file, &source_dir)?;
-        let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
-        self.sources[index].program = parse_with_runtime_class_aliases_and_symbols(
-            &source,
-            &self.runtime_class_aliases,
-            &included_classes,
-            &included_traits,
-        )?;
         Ok(index)
+    }
+
+    fn finalize_sources(&mut self) -> Result<()> {
+        for index in 0..self.sources.len() {
+            let source_file = self.sources[index].source_file.clone();
+            let source_bytes = fs::read(&source_file).map_err(|error| {
+                Diagnostic::new(format!("failed to read {source_file}: {error}"), None)
+            })?;
+            let source = decode_php_source_bytes(&source_bytes);
+            let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
+            self.sources[index].program = parse_with_runtime_class_aliases_and_symbols(
+                &source,
+                &self.runtime_class_aliases,
+                &included_classes,
+                &included_traits,
+            )?;
+        }
+        Ok(())
     }
 
     fn validation_symbols(

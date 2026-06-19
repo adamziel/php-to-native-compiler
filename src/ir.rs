@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ast::{
     AnonymousFunction as AstAnonymousFunction, ArrayDimTarget as AstArrayDimTarget,
@@ -995,6 +995,7 @@ struct LoweringContext<'a> {
     strict_types: bool,
     include_resolutions: &'a IncludeResolutionMap,
     class_names: Vec<String>,
+    runtime_class_names: HashSet<String>,
     current_class_name: Option<String>,
     current_trait_name: Option<String>,
     current_function_display_name: Option<String>,
@@ -1068,6 +1069,12 @@ impl<'a> LoweringContext<'a> {
                 .iter()
                 .map(|class| class.name.clone())
                 .collect(),
+            runtime_class_names: program
+                .classes
+                .iter()
+                .filter(|class| class.is_conditionally_declared)
+                .map(|class| class.name.to_ascii_lowercase())
+                .collect(),
             current_class_name: None,
             current_trait_name: None,
             current_function_display_name: None,
@@ -1086,6 +1093,14 @@ impl<'a> LoweringContext<'a> {
                     .classes
                     .iter()
                     .map(|class| class.name.clone()),
+            );
+            self.runtime_class_names.extend(
+                include
+                    .program
+                    .classes
+                    .iter()
+                    .filter(|class| class.is_conditionally_declared)
+                    .map(|class| class.name.to_ascii_lowercase()),
             );
         }
     }
@@ -1758,11 +1773,16 @@ impl<'a> LoweringContext<'a> {
             match statement {
                 Statement::Empty { .. } => {}
                 Statement::ClassDeclaration { name, span, .. } => {
-                    if let Some(class_index) = self.class_index_by_name(name) {
-                        instructions.push(Instruction::DeclareClass {
-                            class_index,
-                            line: span.line,
-                        });
+                    if self
+                        .runtime_class_names
+                        .contains(&name.to_ascii_lowercase())
+                    {
+                        if let Some(class_index) = self.class_index_by_name(name) {
+                            instructions.push(Instruction::DeclareClass {
+                                class_index,
+                                line: span.line,
+                            });
+                        }
                     }
                 }
                 Statement::FunctionDeclaration { name, .. } => {

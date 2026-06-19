@@ -41381,6 +41381,64 @@ fn compile_include_path_dynamic_filename_segment_to_native_binary() {
 }
 
 #[test]
+fn compile_dynamic_include_candidates_validate_after_sibling_discovery() {
+    let root = temp_dir("ptn-native-dynamic-include-sibling-classes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let base = root.join("autoload_root.inc");
+    let derived = root.join("autoload_derived.inc");
+    let output = root.join("dynamic-include-sibling-classes-bin");
+    fs::write(
+        &base,
+        "<?php
+class autoload_root {
+    public function label() {
+        return 'root';
+    }
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &derived,
+        "<?php
+class autoload_derived extends autoload_root {
+}
+",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        "<?php
+spl_autoload_register(function ($class_name) {
+    require_once __DIR__ . '/' . $class_name . '.inc';
+    echo 'autoload(' . $class_name . \")\\n\";
+});
+
+var_dump(class_exists('autoload_derived'));
+echo (new autoload_derived())->label(), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "autoload(autoload_root)\nautoload(autoload_derived)\nbool(true)\nroot\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("autoload_root.inc"));
+    assert!(c_source.contains("autoload_derived.inc"));
+    assert!(c_source.contains("ptn_include_file_0(&runtime)"));
+    assert!(c_source.contains("ptn_include_file_1(&runtime)"));
+}
+
+#[test]
 fn compile_include_exports_include_path_variable_to_native_binary() {
     let root = temp_dir("ptn-native-include-exported-path-variable");
     fs::create_dir_all(&root).unwrap();

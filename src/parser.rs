@@ -404,8 +404,15 @@ impl Parser<'_> {
         let mut validation_traits = traits.clone();
         validation_traits.extend(self.external_traits.iter().cloned());
         if self.validate_method_signatures {
-            validate_parent_class_names(&validation_classes)?;
-            validate_interface_references(&validation_classes, &mut self.compile_warnings)?;
+            let local_class_count = classes.len();
+            validate_parent_class_names(&mut validation_classes)?;
+            validate_interface_references(&mut validation_classes, &mut self.compile_warnings)?;
+            for (class, validation_class) in classes
+                .iter_mut()
+                .zip(validation_classes.iter().take(local_class_count))
+            {
+                class.is_conditionally_declared = validation_class.is_conditionally_declared;
+            }
             validate_interface_method_conflicts(&validation_classes)?;
             validate_override_attributes(&validation_classes, &validation_traits)?;
             validate_traversable_implementations(&validation_classes)?;
@@ -551,13 +558,29 @@ impl Parser<'_> {
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let class = self.parse_enum_decl(attributes)?;
                 self.register_declared_class_name(&class)?;
+                let name = class.name.clone();
+                let span = class.span;
+                let source = self
+                    .source
+                    .get(span.byte_start..span.byte_end)
+                    .unwrap_or("")
+                    .to_string();
                 classes.push(class);
+                statements.push(Statement::ClassDeclaration { name, source, span });
             } else if self.peek_starts_class_decl() {
                 self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
                 let class = self.parse_class_decl(attributes)?;
                 self.register_declared_class_name(&class)?;
+                let name = class.name.clone();
+                let span = class.span;
+                let source = self
+                    .source
+                    .get(span.byte_start..span.byte_end)
+                    .unwrap_or("")
+                    .to_string();
                 classes.push(class);
+                statements.push(Statement::ClassDeclaration { name, source, span });
             } else {
                 self.strict_types_declare_allowed = false;
                 self.reject_code_outside_bracketed_namespace(scope)?;
@@ -12203,13 +12226,13 @@ fn validate_trait_names(traits: &[TraitDecl]) -> Result<()> {
     Ok(())
 }
 
-fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
+fn validate_parent_class_names(classes: &mut [ClassDecl]) -> Result<()> {
     let names = classes
         .iter()
         .filter(|class| !class.is_interface)
         .map(|class| class.name.to_ascii_lowercase())
         .collect::<HashSet<_>>();
-    for class in classes {
+    for class in classes.iter_mut() {
         if class.is_interface {
             continue;
         }
@@ -12231,20 +12254,14 @@ fn validate_parent_class_names(classes: &[ClassDecl]) -> Result<()> {
             continue;
         }
         if !names.contains(&parent_name.to_ascii_lowercase()) {
-            if class.is_conditionally_declared {
-                continue;
-            }
-            return Err(Diagnostic::new(
-                format!("Class \"{parent_name}\" not found"),
-                Some(class.span),
-            ));
+            class.is_conditionally_declared = true;
         }
     }
     Ok(())
 }
 
 fn validate_interface_references(
-    classes: &[ClassDecl],
+    classes: &mut [ClassDecl],
     compile_warnings: &mut Vec<CompileWarning>,
 ) -> Result<()> {
     let interface_names = classes
@@ -12252,7 +12269,7 @@ fn validate_interface_references(
         .filter(|class| class.is_interface)
         .map(|class| class.name.to_ascii_lowercase())
         .collect::<HashSet<_>>();
-    for class in classes {
+    for class in classes.iter_mut() {
         let mut seen_interfaces = HashSet::new();
         for interface_name in &class.interfaces {
             if !seen_interfaces.insert(interface_name.to_ascii_lowercase()) {
@@ -12282,12 +12299,7 @@ fn validate_interface_references(
             {
                 continue;
             }
-            if !class.is_conditionally_declared {
-                return Err(Diagnostic::new(
-                    format!("Interface \"{interface_name}\" not found"),
-                    Some(class.span),
-                ));
-            }
+            class.is_conditionally_declared = true;
         }
     }
     Ok(())
