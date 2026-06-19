@@ -1272,6 +1272,14 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
 
 static int ptn_weak_map_debug_properties(PtnObject *object, PtnValue *properties_out);
 
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static int ptn_weak_map_debug_properties(PtnObject *object, PtnValue *properties_out) {
+    (void)object;
+    (void)properties_out;
+    return 0;
+}
+#endif
+
 static PTN_UNUSED void ptn_direct_value_var_dump_exception(
     PtnRuntime *runtime,
     PtnException *exception,

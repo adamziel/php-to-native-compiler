@@ -20392,6 +20392,33 @@ try {
 }
 
 #[test]
+fn compile_direct_get_class_helper_links_without_internal_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-get-class-helper-link");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-get-class-helper-link.php");
+    let output = root.join("direct-get-class-helper-link-bin");
+    fs::write(
+        &input,
+        "<?php
+class EmptyClass {}
+echo get_class(new EmptyClass()), \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "EmptyClass\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_weak_map_debug_properties"));
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH"));
+}
+
+#[test]
 fn compile_conditional_class_metadata_visibility_to_native_binary() {
     let root = temp_dir("ptn-native-conditional-class-metadata-visibility");
     fs::create_dir_all(&root).unwrap();
