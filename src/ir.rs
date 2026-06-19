@@ -1139,7 +1139,9 @@ impl<'a> LoweringContext<'a> {
                 std::mem::replace(&mut self.strict_types, include.program.strict_types);
             starts.push(self.functions.len());
             for function in &include.program.functions {
+                let function_index = self.functions.len();
                 self.declare_function(function);
+                self.functions[function_index].initially_declared = false;
             }
             self.source_file = previous_source_file;
             self.source_dir = previous_source_dir;
@@ -1246,11 +1248,21 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn function_index_by_name(&self, name: &str) -> Option<usize> {
-        self.functions.iter().position(|function| {
-            function.class_name.is_none()
-                && !function.is_anonymous
-                && function.name.eq_ignore_ascii_case(name)
-        })
+        self.functions
+            .iter()
+            .position(|function| {
+                function.class_name.is_none()
+                    && !function.is_anonymous
+                    && function.source_file == self.source_file
+                    && function.name.eq_ignore_ascii_case(name)
+            })
+            .or_else(|| {
+                self.functions.iter().position(|function| {
+                    function.class_name.is_none()
+                        && !function.is_anonymous
+                        && function.name.eq_ignore_ascii_case(name)
+                })
+            })
     }
 
     fn class_index_by_name(&self, name: &str) -> Option<usize> {
@@ -1276,6 +1288,16 @@ impl<'a> LoweringContext<'a> {
         let previous_constant_values =
             std::mem::replace(&mut self.constant_values, include_constant_values);
         let mut instructions = Vec::new();
+        for function in include
+            .program
+            .functions
+            .iter()
+            .filter(|function| !function.is_conditionally_declared)
+        {
+            if let Some(function_index) = self.function_index_by_name(&function.name) {
+                instructions.push(Instruction::DeclareFunction { function_index });
+            }
+        }
         for class in include
             .program
             .classes

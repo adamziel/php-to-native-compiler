@@ -43314,6 +43314,48 @@ try { do_strict_call($fn); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; 
 }
 
 #[test]
+fn compile_repeated_include_function_redeclaration_fatals_to_native_binary() {
+    let root = temp_dir("ptn-native-repeated-include-function-redeclare");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let included = root.join("functions.inc");
+    let output = root.join("repeated-include-function-redeclare-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+require __DIR__ . '/functions.inc';\n\
+require __DIR__ . '/functions.inc';\n",
+    )
+    .unwrap();
+    fs::write(
+        &included,
+        "<?php\n\
+function repeated_include_function() {\n\
+    return 42;\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "Fatal error: Cannot redeclare function repeated_include_function() (previously declared in {}:2) in {} on line 2\n",
+            included.display(),
+            included.display()
+        )
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("Cannot redeclare function repeated_include_function"));
+    assert!(c_source.contains("ptn_emit_fatal_error_at"));
+}
+
+#[test]
 fn compile_file_get_contents_uses_include_path_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-include-path");
     let cwd = root.join("cwd");

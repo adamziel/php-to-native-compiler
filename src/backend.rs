@@ -14323,10 +14323,31 @@ fn emit_instruction(
             out.push_str(");\n");
         }
         Instruction::DeclareFunction { function_index } => {
+            let function = &values.user_functions[*function_index];
             out.push_str("    if (runtime.declared_user_functions != NULL) {\n");
+            out.push_str("        if (runtime.declared_user_functions[");
+            out.push_str(&function_index.to_string());
+            out.push_str("]) {\n");
+            out.push_str("            char message[1024];\n");
+            out.push_str(
+                "            snprintf(message, sizeof(message), \"Cannot redeclare function ",
+            );
+            out.push_str(&c_string(&function.name));
+            out.push_str("() (previously declared in %s:%zu)\", \"");
+            out.push_str(&c_string(&function.source_file));
+            out.push_str("\", (size_t)");
+            out.push_str(&function.line.to_string());
+            out.push_str(");\n");
+            out.push_str("            ptn_emit_fatal_error_at(&runtime, message, \"");
+            out.push_str(&c_string(source_path));
+            out.push_str("\", ");
+            out.push_str(&function.line.to_string());
+            out.push_str(");\n");
+            out.push_str("        } else {\n");
             out.push_str("        runtime.declared_user_functions[");
             out.push_str(&function_index.to_string());
             out.push_str("] = 1;\n");
+            out.push_str("        }\n");
             out.push_str("    }\n");
         }
         Instruction::ValidateClass { class_index, line } => {
