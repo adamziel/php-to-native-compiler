@@ -7409,6 +7409,14 @@ fn parser_rejects_invariant_property_type_overrides() {
 }
 
 #[test]
+fn parser_accepts_null_default_for_mixed_properties() {
+    parser::parse(
+        "<?php class Foo { public mixed $value = null; public static mixed $shared = null; }",
+    )
+    .unwrap();
+}
+
+#[test]
 fn parser_accepts_closure_as_callable_covariant_return() {
     parser::parse(
         "<?php
@@ -42979,6 +42987,7 @@ $fp = fopen(__FILE__, 'r');\n\
 var_dump(is_resource($fp));\n\
 fclose($fp);\n\
 echo basename(__FILE__), \"\\n\";\n\
+echo basename(__DIR__), \"\\n\";\n\
 echo declared_file_name(), \"\\n\";\n";
     fs::write(&input, source).unwrap();
     fs::write(&runtime_source, source).unwrap();
@@ -42991,9 +43000,10 @@ echo declared_file_name(), \"\\n\";\n";
         .output()
         .unwrap();
     assert!(execution.status.success());
+    let root_name = root.file_name().unwrap().to_string_lossy();
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nruntime-source.php\noriginal.php\n"
+        format!("bool(true)\nruntime-source.php\n{root_name}\noriginal.php\n")
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -53177,11 +53187,12 @@ fn compile_stream_resources_to_native_binary() {
         format!(
             "<?php\n\
 $fp = fopen(\"{}\", \"r\");\n\
-var_dump(gettype($fp), is_resource($fp), function_exists(\"fopen\"), function_exists(\"fclose\"), function_exists(\"is_resource\"), function_exists(\"get_resource_type\"));\n\
+var_dump(gettype($fp), is_resource($fp), function_exists(\"fopen\"), function_exists(\"fclose\"), function_exists(\"is_resource\"), function_exists(\"get_resource_type\"), function_exists(\"get_resource_id\"));\n\
 var_dump($fp);\n\
+var_dump(get_resource_id($fp) === (int) $fp);\n\
 var_dump(get_resource_type($fp));\n\
 var_dump(array_key_exists($fp, [2 => \"no\"]));\n\
-var_dump(fclose($fp), is_resource($fp), gettype($fp), get_resource_type($fp));\n\
+var_dump(fclose($fp), is_resource($fp), gettype($fp), get_resource_type($fp), get_resource_id($fp) === (int) $fp);\n\
 try {{\n\
     get_resource_type(\"not a resource\");\n\
 }} catch (TypeError $e) {{\n\
@@ -53206,15 +53217,18 @@ bool(true)\n\
 bool(true)\n\
 bool(true)\n\
 bool(true)\n\
+bool(true)\n\
 resource(5) of type (stream)\n\
+bool(true)\n\
 string(6) \"stream\"\n\
 \n\
-Warning: Resource ID#5 used as offset, casting to integer (5) in {} on line 6\n\
+Warning: Resource ID#5 used as offset, casting to integer (5) in {} on line 7\n\
 bool(false)\n\
 bool(true)\n\
 bool(false)\n\
 string(17) \"resource (closed)\"\n\
 string(7) \"Unknown\"\n\
+bool(true)\n\
 get_resource_type(): Argument #1 ($resource) must be of type resource, string given\n",
             input.display()
         )

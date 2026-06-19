@@ -26436,6 +26436,10 @@ impl ValueEmitter {
             ValueExpr::MagicConstant { kind, line } => match kind {
                 MagicConstantKind::Line => format!("ptn_int({line})"),
                 MagicConstantKind::File => {
+                    if self.top_level_scope {
+                        return "ptn_string(runtime.source_path != NULL ? runtime.source_path : \"\")"
+                            .to_string();
+                    }
                     format!(
                         "ptn_string_literal(\"{}\", {})",
                         c_string(&self.source_file),
@@ -26443,6 +26447,27 @@ impl ValueEmitter {
                     )
                 }
                 MagicConstantKind::Dir => {
+                    if self.top_level_scope {
+                        let dir_len_temp = self.next_temp();
+                        let dir_temp = self.next_temp();
+                        let result_temp = self.next_temp();
+                        out.push_str("    size_t ");
+                        out.push_str(&dir_len_temp);
+                        out.push_str(" = 0;\n");
+                        out.push_str("    char *");
+                        out.push_str(&dir_temp);
+                        out.push_str(" = ptn_runtime_source_dir(&runtime, &");
+                        out.push_str(&dir_len_temp);
+                        out.push_str(");\n");
+                        out.push_str("    PtnValue ");
+                        out.push_str(&result_temp);
+                        out.push_str(" = ptn_owned_string_len(");
+                        out.push_str(&dir_temp);
+                        out.push_str(", ");
+                        out.push_str(&dir_len_temp);
+                        out.push_str(");\n");
+                        return result_temp;
+                    }
                     format!(
                         "ptn_string_literal(\"{}\", {})",
                         c_string(&self.source_dir),

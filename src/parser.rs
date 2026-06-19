@@ -9253,7 +9253,11 @@ fn property_default_value_type_name(value: &Expr) -> Option<&'static str> {
 
 fn property_default_value_matches_type(type_hint: &PropertyTypeHint, default_type: &str) -> bool {
     if default_type == "null" {
-        return type_hint.allows_null || matches!(type_hint.kind, PropertyTypeKind::Null);
+        return type_hint.allows_null
+            || matches!(
+                type_hint.kind,
+                PropertyTypeKind::Null | PropertyTypeKind::Mixed
+            );
     }
     match type_hint.kind {
         PropertyTypeKind::Mixed => true,

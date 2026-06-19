@@ -41382,6 +41382,27 @@ static PtnValue ptn_internal_get_resource_type(PtnRuntime *runtime, size_t argc,
     return ptn_string(ptn_resource_is_open(value.as.resource) ? value.as.resource->type_name : "Unknown");
 }
 
+static PtnValue ptn_internal_get_resource_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "get_resource_id(): Argument #1 ($resource) must be of type resource, %s given",
+            ptn_offset_container_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    return ptn_int(value.as.resource->id);
+}
+
 static PtnValue ptn_internal_gethostname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -66994,6 +67015,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "getenv", 0, 2, ptn_internal_getenv },
         { "getmypid", 0, 0, ptn_internal_getmypid },
         { "getrandmax", 0, 0, ptn_internal_getrandmax },
+        { "get_resource_id", 1, 1, ptn_internal_get_resource_id },
         { "get_resource_type", 1, 1, ptn_internal_get_resource_type },
         { "gettype", 1, 1, ptn_internal_gettype },
         { "glob", 1, 2, ptn_internal_glob },
