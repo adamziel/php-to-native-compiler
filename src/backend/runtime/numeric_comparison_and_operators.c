@@ -31,43 +31,189 @@ static PTN_UNUSED PtnValue ptn_array_union(PtnArray *left, PtnArray *right) {
     return union_value;
 }
 
-static PTN_UNUSED int ptn_compare_arrays_equal(
+typedef struct {
+    PtnArray **items;
+    size_t len;
+    size_t capacity;
+} PtnComparisonArrayStack;
+
+static void ptn_comparison_array_stack_init(PtnComparisonArrayStack *stack) {
+    stack->items = NULL;
+    stack->len = 0;
+    stack->capacity = 0;
+}
+
+static void ptn_comparison_array_stack_free(PtnComparisonArrayStack *stack) {
+    free(stack->items);
+    stack->items = NULL;
+    stack->len = 0;
+    stack->capacity = 0;
+}
+
+static int ptn_comparison_array_stack_contains(PtnComparisonArrayStack *stack, PtnArray *array) {
+    for (size_t i = 0; i < stack->len; i++) {
+        if (stack->items[i] == array) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_comparison_array_stack_push(PtnComparisonArrayStack *stack, PtnArray *array) {
+    if (stack->len == stack->capacity) {
+        size_t new_capacity = stack->capacity == 0 ? 8 : stack->capacity * 2;
+        if (new_capacity < stack->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        PtnArray **new_items = realloc(stack->items, new_capacity * sizeof(PtnArray *));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        stack->items = new_items;
+        stack->capacity = new_capacity;
+    }
+    stack->items[stack->len++] = array;
+}
+
+static void ptn_comparison_array_stack_pop(PtnComparisonArrayStack *stack) {
+    if (stack->len > 0) {
+        stack->len--;
+    }
+}
+
+static void ptn_compare_throw_recursive_dependency(PtnRuntime *runtime, size_t line) {
+    if (runtime == NULL) {
+        return;
+    }
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Nesting level too deep - recursive dependency?",
+        runtime->source_path,
+        line
+    );
+}
+
+static int ptn_compare_arrays_enter(
     PtnRuntime *runtime,
     PtnArray *left,
     PtnArray *right,
-    size_t line
+    size_t line,
+    PtnComparisonArrayStack *stack,
+    int *right_pushed
 ) {
-    if (left->len != right->len) {
+    if (
+        ptn_comparison_array_stack_contains(stack, left) ||
+        ptn_comparison_array_stack_contains(stack, right)
+    ) {
+        ptn_compare_throw_recursive_dependency(runtime, line);
         return 0;
     }
-    for (size_t i = 0; i < left->len; i++) {
-        PtnArrayEntry *right_entry = ptn_array_entry_for_key(right, left->entries[i].key);
-        if (right_entry == NULL ||
-            !ptn_compare_equal(runtime, left->entries[i].value, right_entry->value, line)) {
-            return 0;
-        }
+    ptn_comparison_array_stack_push(stack, left);
+    *right_pushed = 0;
+    if (right != left) {
+        ptn_comparison_array_stack_push(stack, right);
+        *right_pushed = 1;
     }
     return 1;
 }
 
-static PTN_UNUSED int ptn_compare_arrays_identical(PtnArray *left, PtnArray *right) {
-    if (left->len != right->len) {
+static void ptn_compare_arrays_leave(PtnComparisonArrayStack *stack, int right_pushed) {
+    if (right_pushed) {
+        ptn_comparison_array_stack_pop(stack);
+    }
+    ptn_comparison_array_stack_pop(stack);
+}
+
+static int ptn_compare_equal_inner(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+);
+
+static int ptn_compare_identical_inner(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+);
+
+static int ptn_compare_order_inner(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+);
+
+static PTN_UNUSED int ptn_compare_arrays_equal(
+    PtnRuntime *runtime,
+    PtnArray *left,
+    PtnArray *right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
+    if (left == right) {
+        return 1;
+    }
+    int right_pushed = 0;
+    if (!ptn_compare_arrays_enter(runtime, left, right, line, stack, &right_pushed)) {
         return 0;
     }
-    for (size_t i = 0; i < left->len; i++) {
-        if (!ptn_array_keys_equal(left->entries[i].key, right->entries[i].key) ||
-            !ptn_compare_identical(left->entries[i].value, right->entries[i].value)) {
-            return 0;
+    int result = 1;
+    if (left->len != right->len) {
+        result = 0;
+    }
+    for (size_t i = 0; result && i < left->len; i++) {
+        PtnArrayEntry *right_entry = ptn_array_entry_for_key(right, left->entries[i].key);
+        if (right_entry == NULL ||
+            !ptn_compare_equal_inner(runtime, left->entries[i].value, right_entry->value, line, stack)) {
+            result = 0;
+            break;
         }
     }
-    return 1;
+    ptn_compare_arrays_leave(stack, right_pushed);
+    return result;
+}
+
+static PTN_UNUSED int ptn_compare_arrays_identical(
+    PtnRuntime *runtime,
+    PtnArray *left,
+    PtnArray *right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
+    if (left == right) {
+        return 1;
+    }
+    int right_pushed = 0;
+    if (!ptn_compare_arrays_enter(runtime, left, right, line, stack, &right_pushed)) {
+        return 0;
+    }
+    int result = 1;
+    if (left->len != right->len) {
+        result = 0;
+    }
+    for (size_t i = 0; result && i < left->len; i++) {
+        if (!ptn_array_keys_equal(left->entries[i].key, right->entries[i].key) ||
+            !ptn_compare_identical_inner(runtime, left->entries[i].value, right->entries[i].value, line, stack)) {
+            result = 0;
+            break;
+        }
+    }
+    ptn_compare_arrays_leave(stack, right_pushed);
+    return result;
 }
 
 static PTN_UNUSED int ptn_compare_objects_equal(
     PtnRuntime *runtime,
     PtnObject *left,
     PtnObject *right,
-    size_t line
+    size_t line,
+    PtnComparisonArrayStack *stack
 ) {
     if (left != NULL && left->lazy_uninitialized) {
         PtnValue value = ptn_value_borrow(ptn_object(left));
@@ -87,32 +233,44 @@ static PTN_UNUSED int ptn_compare_objects_equal(
     if (strcmp(left->class_name, right->class_name) != 0) {
         return 0;
     }
-    return ptn_compare_arrays_equal(runtime, left->properties, right->properties, line);
+    return ptn_compare_arrays_equal(runtime, left->properties, right->properties, line, stack);
 }
 
 static PTN_UNUSED int ptn_compare_arrays_order(
     PtnRuntime *runtime,
     PtnArray *left,
     PtnArray *right,
-    size_t line
+    size_t line,
+    PtnComparisonArrayStack *stack
 ) {
+    if (left == right) {
+        return PTN_COMPARE_EQUAL;
+    }
+    int right_pushed = 0;
+    if (!ptn_compare_arrays_enter(runtime, left, right, line, stack, &right_pushed)) {
+        return PTN_COMPARE_UNORDERED;
+    }
+    int result = PTN_COMPARE_EQUAL;
     if (left->len < right->len) {
-        return PTN_COMPARE_LESS;
+        result = PTN_COMPARE_LESS;
     }
     if (left->len > right->len) {
-        return PTN_COMPARE_GREATER;
+        result = PTN_COMPARE_GREATER;
     }
-    for (size_t i = 0; i < left->len; i++) {
+    for (size_t i = 0; result == PTN_COMPARE_EQUAL && i < left->len; i++) {
         PtnArrayEntry *right_entry = ptn_array_entry_for_key(right, left->entries[i].key);
         if (right_entry == NULL) {
-            return PTN_COMPARE_UNORDERED;
+            result = PTN_COMPARE_UNORDERED;
+            break;
         }
-        int compared = ptn_compare_order(runtime, left->entries[i].value, right_entry->value, line);
+        int compared = ptn_compare_order_inner(runtime, left->entries[i].value, right_entry->value, line, stack);
         if (compared != PTN_COMPARE_EQUAL) {
-            return compared;
+            result = compared;
+            break;
         }
     }
-    return PTN_COMPARE_EQUAL;
+    ptn_compare_arrays_leave(stack, right_pushed);
+    return result;
 }
 
 static PTN_UNUSED int ptn_compare_class_names(const char *left, const char *right) {
@@ -135,7 +293,8 @@ static PTN_UNUSED int ptn_compare_objects_order(
     PtnRuntime *runtime,
     PtnObject *left,
     PtnObject *right,
-    size_t line
+    size_t line,
+    PtnComparisonArrayStack *stack
 ) {
     if (left != NULL && left->lazy_uninitialized) {
         PtnValue value = ptn_value_borrow(ptn_object(left));
@@ -155,7 +314,7 @@ static PTN_UNUSED int ptn_compare_objects_order(
     if (ptn_compare_class_names(left->class_name, right->class_name) != PTN_COMPARE_EQUAL) {
         return PTN_COMPARE_UNORDERED;
     }
-    return ptn_compare_arrays_order(runtime, left->properties, right->properties, line);
+    return ptn_compare_arrays_order(runtime, left->properties, right->properties, line, stack);
 }
 
 static PTN_UNUSED int ptn_value_is_comparison_object(PtnValue value) {
@@ -245,7 +404,13 @@ static PTN_UNUSED int ptn_compare_object_and_number(
     return 0;
 }
 
-static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+static int ptn_compare_equal_inner(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -267,9 +432,9 @@ static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnV
             case PTN_STRING:
                 return ptn_compare_strings_loose(left.as.string, right.as.string) == PTN_COMPARE_EQUAL;
             case PTN_ARRAY:
-                return ptn_compare_arrays_equal(runtime, left.as.array, right.as.array, line);
+                return ptn_compare_arrays_equal(runtime, left.as.array, right.as.array, line, stack);
             case PTN_OBJECT:
-                return ptn_compare_objects_equal(runtime, left.as.object, right.as.object, line);
+                return ptn_compare_objects_equal(runtime, left.as.object, right.as.object, line, stack);
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure;
             case PTN_EXCEPTION:
@@ -316,7 +481,7 @@ static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnV
 
     if (left.type == PTN_ARRAY || right.type == PTN_ARRAY) {
         if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
-            return ptn_compare_arrays_equal(runtime, left.as.array, right.as.array, line);
+            return ptn_compare_arrays_equal(runtime, left.as.array, right.as.array, line, stack);
         }
         return 0;
     }
@@ -338,7 +503,21 @@ static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnV
     return 0;
 }
 
-static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
+static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    PtnComparisonArrayStack stack;
+    ptn_comparison_array_stack_init(&stack);
+    int result = ptn_compare_equal_inner(runtime, left, right, line, &stack);
+    ptn_comparison_array_stack_free(&stack);
+    return result;
+}
+
+static int ptn_compare_identical_inner(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
     if (left.type != right.type) {
@@ -359,7 +538,7 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
             if (left.as.array == right.as.array) {
                 return 1;
             }
-            return ptn_compare_arrays_identical(left.as.array, right.as.array);
+            return ptn_compare_arrays_identical(runtime, left.as.array, right.as.array, line, stack);
         case PTN_OBJECT:
             return left.as.object == right.as.object;
         case PTN_CLOSURE:
@@ -374,40 +553,26 @@ static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right) {
     return 0;
 }
 
-static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right) {
-    left = ptn_value_deref(left);
-    right = ptn_value_deref(right);
-    if (left.type != right.type) {
-        return 1;
-    }
-    switch (left.type) {
-        case PTN_NULL:
-            return 0;
-        case PTN_BOOL:
-            return left.as.boolean != right.as.boolean;
-        case PTN_INT:
-            return left.as.integer != right.as.integer;
-        case PTN_FLOAT:
-            return left.as.floating != right.as.floating;
-        case PTN_STRING:
-            return ptn_compare_value_strings(left.as.string, right.as.string) != PTN_COMPARE_EQUAL;
-        case PTN_ARRAY:
-            if (left.as.array == right.as.array) {
-                return 0;
-            }
-            return !ptn_compare_arrays_identical(left.as.array, right.as.array);
-        case PTN_OBJECT:
-            return left.as.object != right.as.object;
-        case PTN_CLOSURE:
-            return left.as.closure != right.as.closure;
-        case PTN_EXCEPTION:
-            return left.as.exception != right.as.exception;
-        case PTN_RESOURCE:
-            return left.as.resource != right.as.resource;
-        case PTN_REFERENCE:
-            return 1;
-    }
-    return 1;
+static PTN_UNUSED int ptn_compare_identical(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    PtnComparisonArrayStack stack;
+    ptn_comparison_array_stack_init(&stack);
+    int result = ptn_compare_identical_inner(runtime, left, right, line, &stack);
+    ptn_comparison_array_stack_free(&stack);
+    return result;
+}
+
+static PTN_UNUSED int ptn_compare_not_identical(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line
+) {
+    return !ptn_compare_identical(runtime, left, right, line);
 }
 
 static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
@@ -415,7 +580,13 @@ static PTN_UNUSED int ptn_value_is_nan(PtnValue value) {
     return value.type == PTN_FLOAT && isnan(value.as.floating);
 }
 
-static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+static int ptn_compare_order_inner(
+    PtnRuntime *runtime,
+    PtnValue left,
+    PtnValue right,
+    size_t line,
+    PtnComparisonArrayStack *stack
+) {
     left = ptn_value_deref(left);
     right = ptn_value_deref(right);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
@@ -437,9 +608,9 @@ static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnV
             case PTN_STRING:
                 return ptn_compare_strings_loose(left.as.string, right.as.string);
             case PTN_ARRAY:
-                return ptn_compare_arrays_order(runtime, left.as.array, right.as.array, line);
+                return ptn_compare_arrays_order(runtime, left.as.array, right.as.array, line, stack);
             case PTN_OBJECT:
-                return ptn_compare_objects_order(runtime, left.as.object, right.as.object, line);
+                return ptn_compare_objects_order(runtime, left.as.object, right.as.object, line, stack);
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_EXCEPTION:
@@ -488,7 +659,7 @@ static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnV
 
     if (left.type == PTN_ARRAY || right.type == PTN_ARRAY) {
         if (left.type == PTN_ARRAY && right.type == PTN_ARRAY) {
-            return ptn_compare_arrays_order(runtime, left.as.array, right.as.array, line);
+            return ptn_compare_arrays_order(runtime, left.as.array, right.as.array, line, stack);
         }
         if (ptn_value_is_comparison_object(left) || ptn_value_is_comparison_object(right)) {
             return ptn_value_is_comparison_object(left) ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;
@@ -526,6 +697,14 @@ static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnV
         return ptn_value_is_comparison_object(left) ? PTN_COMPARE_GREATER : PTN_COMPARE_LESS;
     }
     return ptn_compare_numbers((double)ptn_is_truthy(left), (double)ptn_is_truthy(right));
+}
+
+static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {
+    PtnComparisonArrayStack stack;
+    ptn_comparison_array_stack_init(&stack);
+    int result = ptn_compare_order_inner(runtime, left, right, line, &stack);
+    ptn_comparison_array_stack_free(&stack);
+    return result;
 }
 
 static PTN_UNUSED int ptn_compare_less(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line) {

@@ -27119,6 +27119,49 @@ echo _ptn_cow_debug_counter(\"array.live\"), \":\", _ptn_cow_debug_counter(\"str
 }
 
 #[test]
+fn compile_recursive_array_strict_comparison_throws_to_native_binary() {
+    let root = temp_dir("ptn-native-recursive-array-strict-comparison");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("recursive-array-strict-comparison.php");
+    let output = root.join("recursive-array-strict-comparison-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [&$a];\n\
+try {\n\
+    $a === [[]];\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    [[]] === $a;\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump($a === $a);\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Nesting level too deep - recursive dependency?\n",
+            "Nesting level too deep - recursive dependency?\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_compare_identical(&runtime"));
+    assert!(c_source.contains("Nesting level too deep - recursive dependency?"));
+}
+
+#[test]
 fn compile_less_equal_greater_equal_edges_to_native_binary() {
     let root = temp_dir("ptn-native-comparison-equality-bounds");
     fs::create_dir_all(&root).unwrap();
@@ -36678,6 +36721,50 @@ echo md5(var_export($explodeShape, true)), \"\\n\";\n",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_var_export_append_string"));
+}
+
+#[test]
+fn compile_var_export_recursive_values_warn_to_native_binary() {
+    let root = temp_dir("ptn-native-var-export-recursive-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("var-export-recursive-values.php");
+    let output = root.join("var-export-recursive-values-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$a = [];\n\
+$a['self'] =& $a;\n\
+echo var_export($a, true), \"\\n---\\n\";\n\
+$o = new stdClass;\n\
+$o->self = $o;\n\
+echo var_export($o, true), \"\\n\";\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "\nWarning: var_export does not handle circular references in ptn on line 4\n",
+            "array (\n",
+            "  'self' => NULL,\n",
+            ")\n",
+            "---\n",
+            "\nWarning: var_export does not handle circular references in ptn on line 7\n",
+            "(object) array(\n",
+            "   'self' => NULL,\n",
+            ")\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("var_export does not handle circular references"));
+    assert!(c_source.contains("ptn_dump_seen_arrays_contains"));
+    assert!(c_source.contains("ptn_dump_seen_objects_contains"));
 }
 
 #[test]

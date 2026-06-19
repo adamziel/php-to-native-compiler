@@ -6804,7 +6804,7 @@ static int ptn_unserialize_prepare_property_value(
                 ptn_value_destroy(&coerced);
                 return 0;
             }
-            if (!ptn_compare_identical(existing_coerced, coerced)) {
+            if (!ptn_compare_identical(runtime, existing_coerced, coerced, line)) {
                 PtnReferencePropertyTypeSource existing =
                     ptn_reference_primary_property_type_source(reference);
                 ptn_throw_reference_property_bind_incompatibility(
@@ -7860,7 +7860,9 @@ static void ptn_var_export_append_value(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
     PtnValue value,
-    size_t indent
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line
 );
 
 static void ptn_var_export_append_single_quoted_string(
@@ -7910,12 +7912,35 @@ static int ptn_var_export_is_complex_value(PtnValue value) {
     return value.type == PTN_ARRAY || value.type == PTN_OBJECT;
 }
 
+static int ptn_var_export_should_break_value(PtnValue value, PtnDumpSeenArrays *seen) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY && ptn_dump_seen_arrays_contains(seen, value.as.array)) {
+        return 0;
+    }
+    if (value.type == PTN_OBJECT && ptn_dump_seen_objects_contains(seen, value.as.object)) {
+        return 0;
+    }
+    return ptn_var_export_is_complex_value(value);
+}
+
 static void ptn_var_export_append_array(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
     PtnArray *array,
-    size_t indent
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line
 ) {
+    if (ptn_dump_seen_arrays_contains(seen, array)) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "var_export does not handle circular references",
+            line
+        );
+        ptn_string_buffer_append(buffer, "NULL");
+        return;
+    }
+    ptn_dump_seen_arrays_push(seen, array);
     ptn_string_buffer_append(buffer, "array (\n");
     for (size_t i = 0; i < array->len; i++) {
         PtnArrayEntry *entry = &array->entries[i];
@@ -7923,22 +7948,25 @@ static void ptn_var_export_append_array(
         ptn_string_buffer_append_indent(buffer, indent + 2);
         ptn_var_export_append_key(buffer, entry->key);
         ptn_string_buffer_append(buffer, " => ");
-        if (ptn_var_export_is_complex_value(entry_value)) {
+        if (ptn_var_export_should_break_value(entry_value, seen)) {
             ptn_string_buffer_append_char(buffer, '\n');
             ptn_string_buffer_append_indent(buffer, indent + 2);
         }
-        ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2);
+        ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2, seen, line);
         ptn_string_buffer_append(buffer, ",\n");
     }
     ptn_string_buffer_append_indent(buffer, indent);
     ptn_string_buffer_append_char(buffer, ')');
+    ptn_dump_seen_arrays_pop(seen);
 }
 
 static void ptn_var_export_append_object_state_array(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
     PtnObject *object,
-    size_t indent
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line
 ) {
     PtnArray *properties = object->properties;
     ptn_string_buffer_append(buffer, "array(\n");
@@ -7961,11 +7989,11 @@ static void ptn_var_export_append_object_state_array(
             ptn_array_key_free(display_key);
         }
         ptn_string_buffer_append(buffer, " => ");
-        if (ptn_var_export_is_complex_value(entry_value)) {
+        if (ptn_var_export_should_break_value(entry_value, seen)) {
             ptn_string_buffer_append_char(buffer, '\n');
             ptn_string_buffer_append_indent(buffer, indent + 2);
         }
-        ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2);
+        ptn_var_export_append_value(buffer, runtime, entry_value, indent + 2, seen, line);
         ptn_string_buffer_append(buffer, ",\n");
     }
     ptn_string_buffer_append_indent(buffer, indent);
@@ -7976,7 +8004,9 @@ static void ptn_var_export_append_object(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
     PtnObject *object,
-    size_t indent
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line
 ) {
     if (object != NULL && object->lazy_uninitialized) {
         PtnValue value = ptn_value_borrow(ptn_object(object));
@@ -7984,6 +8014,16 @@ static void ptn_var_export_append_object(
             return;
         }
     }
+    if (ptn_dump_seen_objects_contains(seen, object)) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "var_export does not handle circular references",
+            line
+        );
+        ptn_string_buffer_append(buffer, "NULL");
+        return;
+    }
+    ptn_dump_seen_objects_push(seen, object);
     if (strcmp(object->class_name, "stdClass") == 0) {
         ptn_string_buffer_append(buffer, "(object) ");
     } else {
@@ -7991,17 +8031,20 @@ static void ptn_var_export_append_object(
         ptn_string_buffer_append(buffer, object->class_name);
         ptn_string_buffer_append(buffer, "::__set_state(");
     }
-    ptn_var_export_append_object_state_array(buffer, runtime, object, indent);
+    ptn_var_export_append_object_state_array(buffer, runtime, object, indent, seen, line);
     if (strcmp(object->class_name, "stdClass") != 0) {
         ptn_string_buffer_append_char(buffer, ')');
     }
+    ptn_dump_seen_objects_pop(seen);
 }
 
 static void ptn_var_export_append_exception(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
     PtnException *exception,
-    size_t indent
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line
 ) {
     ptn_string_buffer_append_char(buffer, '\\');
     ptn_string_buffer_append(buffer, exception->class_name);
@@ -8037,11 +8080,11 @@ static void ptn_var_export_append_exception(
     ptn_string_buffer_append_indent(buffer, indent + 3);
     ptn_string_buffer_append(buffer, "'trace' => ");
     PtnValue trace = ptn_value_deref(exception->trace);
-    if (ptn_var_export_is_complex_value(trace)) {
+    if (ptn_var_export_should_break_value(trace, seen)) {
         ptn_string_buffer_append_char(buffer, '\n');
         ptn_string_buffer_append_indent(buffer, indent + 2);
     }
-    ptn_var_export_append_value(buffer, runtime, trace, indent + 2);
+    ptn_var_export_append_value(buffer, runtime, trace, indent + 2, seen, line);
     ptn_string_buffer_append(buffer, ",\n");
 
     ptn_string_buffer_append_indent(buffer, indent + 3);
@@ -8055,7 +8098,9 @@ static void ptn_var_export_append_value(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
     PtnValue value,
-    size_t indent
+    size_t indent,
+    PtnDumpSeenArrays *seen,
+    size_t line
 ) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -8085,32 +8130,34 @@ static void ptn_var_export_append_value(
             ptn_string_buffer_append(buffer, "NULL");
             break;
         case PTN_ARRAY:
-            ptn_var_export_append_array(buffer, runtime, value.as.array, indent);
+            ptn_var_export_append_array(buffer, runtime, value.as.array, indent, seen, line);
             break;
         case PTN_OBJECT:
-            ptn_var_export_append_object(buffer, runtime, value.as.object, indent);
+            ptn_var_export_append_object(buffer, runtime, value.as.object, indent, seen, line);
             break;
         case PTN_CLOSURE:
         case PTN_REFERENCE:
             ptn_string_buffer_append(buffer, "NULL");
             break;
         case PTN_EXCEPTION:
-            ptn_var_export_append_exception(buffer, runtime, value.as.exception, indent);
+            ptn_var_export_append_exception(buffer, runtime, value.as.exception, indent, seen, line);
             break;
     }
 }
 
 static PtnValue ptn_internal_var_export(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     int return_output = argc >= 2 && ptn_is_truthy(args[1]);
     PtnStringBuffer buffer;
     ptn_string_buffer_init(&buffer);
+    PtnDumpSeenArrays seen;
+    ptn_dump_seen_arrays_init(&seen);
     PtnValue value = ptn_value_deref(args[0]);
     if (value.type == PTN_EXCEPTION) {
-        ptn_var_export_append_exception(&buffer, runtime, value.as.exception, 0);
+        ptn_var_export_append_exception(&buffer, runtime, value.as.exception, 0, &seen, line);
     } else {
-        ptn_var_export_append_value(&buffer, runtime, value, 0);
+        ptn_var_export_append_value(&buffer, runtime, value, 0, &seen, line);
     }
+    ptn_dump_seen_arrays_free(&seen);
     if (return_output) {
         return ptn_owned_string_len(buffer.data, buffer.len);
     }
@@ -13145,7 +13192,7 @@ static PtnValue ptn_internal_array_keys(PtnRuntime *runtime, size_t argc, const 
         PtnArrayEntry *entry = &array->entries[i];
         if (has_search_value) {
             int matched = strict
-                ? ptn_compare_identical(args[1], entry->value)
+                ? ptn_compare_identical(runtime, args[1], entry->value, line)
                 : ptn_compare_equal(runtime, args[1], entry->value, line);
             if (!matched) {
                 continue;
@@ -14173,7 +14220,7 @@ static PtnValue ptn_internal_in_array(PtnRuntime *runtime, size_t argc, const Pt
     int strict = argc >= 3 && ptn_is_truthy(args[2]);
     for (size_t i = 0; i < array->len; i++) {
         int matched = strict
-            ? ptn_compare_identical(args[0], array->entries[i].value)
+            ? ptn_compare_identical(runtime, args[0], array->entries[i].value, line)
             : ptn_compare_equal(runtime, args[0], array->entries[i].value, line);
         if (matched) {
             return ptn_bool(1);
@@ -14187,7 +14234,7 @@ static PtnValue ptn_internal_array_search(PtnRuntime *runtime, size_t argc, cons
     int strict = argc >= 3 && ptn_is_truthy(args[2]);
     for (size_t i = 0; i < array->len; i++) {
         int matched = strict
-            ? ptn_compare_identical(args[0], array->entries[i].value)
+            ? ptn_compare_identical(runtime, args[0], array->entries[i].value, line)
             : ptn_compare_equal(runtime, args[0], array->entries[i].value, line);
         if (matched) {
             return ptn_array_key_value(array->entries[i].key);

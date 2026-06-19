@@ -245,8 +245,8 @@ static PTN_UNUSED void ptn_array_enforce_memory_limit_for_entry_write(
 }
 
 static PTN_UNUSED int ptn_compare_equal(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
-static PTN_UNUSED int ptn_compare_identical(PtnValue left, PtnValue right);
-static PTN_UNUSED int ptn_compare_not_identical(PtnValue left, PtnValue right);
+static PTN_UNUSED int ptn_compare_identical(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
+static PTN_UNUSED int ptn_compare_not_identical(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnValue right, size_t line);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand(PtnValue value);
@@ -2753,7 +2753,7 @@ static PTN_UNUSED int ptn_property_reference_coerce_assignment(
             ptn_value_destroy(&coerced);
             return 0;
         }
-        if (!ptn_compare_identical(coerced, next)) {
+        if (!ptn_compare_identical(runtime, coerced, next, line)) {
             ptn_throw_reference_inconsistent_assignment_error(
                 runtime,
                 value,
@@ -4820,7 +4820,7 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
                 free(storage_key);
                 return;
             }
-            if (!ptn_compare_identical(existing_coerced, coerced)) {
+            if (!ptn_compare_identical(runtime, existing_coerced, coerced, line)) {
                 PtnReferencePropertyTypeSource existing =
                     ptn_reference_primary_property_type_source(reference.as.reference);
                 ptn_throw_reference_property_bind_incompatibility(
