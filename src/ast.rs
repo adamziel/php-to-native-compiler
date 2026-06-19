@@ -953,6 +953,7 @@ pub enum Expr {
     },
     DynamicClassNameFetch {
         receiver: Box<Expr>,
+        allow_string: bool,
         span: SourceSpan,
     },
     InstanceOf {

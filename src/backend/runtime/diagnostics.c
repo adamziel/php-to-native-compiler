@@ -279,6 +279,9 @@ static PTN_UNUSED PtnValue ptn_closure_wrap_callable(
         runtime->current_class_name,
         runtime->current_called_class_name
     );
+    if (runtime->has_current_receiver) {
+        ptn_closure_set_capture(closure, "this", runtime->current_receiver);
+    }
     closure.as.closure->has_wrapped_callable = 1;
     closure.as.closure->wrapped_callable = ptn_value_clone_deref(callable);
     return closure;

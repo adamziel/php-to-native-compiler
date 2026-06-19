@@ -2710,6 +2710,32 @@ static char *ptn_format_missing_method_callback_reason(const char *class_name, c
     return reason;
 }
 
+static char *ptn_format_inactive_class_scope_callback_reason(const char *class_name) {
+    int needed = snprintf(NULL, 0, "cannot access \"%s\" when no class scope is active", class_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *reason = malloc((size_t)needed + 1);
+    if (reason == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(reason, (size_t)needed + 1, "cannot access \"%s\" when no class scope is active", class_name);
+    return reason;
+}
+
+static char *ptn_format_parentless_class_scope_callback_reason(const char *class_name) {
+    int needed = snprintf(NULL, 0, "cannot access \"%s\" when current class scope has no parent", class_name);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *reason = malloc((size_t)needed + 1);
+    if (reason == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(reason, (size_t)needed + 1, "cannot access \"%s\" when current class scope has no parent", class_name);
+    return reason;
+}
+
 static char *ptn_format_abstract_method_callback_reason(const char *class_name, const char *method_name) {
     int needed = snprintf(NULL, 0, "cannot call abstract method %s::%s()", class_name, method_name);
     if (needed < 0) {
@@ -2798,6 +2824,27 @@ static char *ptn_inaccessible_declared_method_callback_reason(
     return ptn_format_inaccessible_method_callback_reason(visibility, class_name, method_name);
 }
 
+static char *ptn_resolve_callback_class_scope(PtnRuntime *runtime, const char *class_name);
+
+static char *ptn_unresolved_callback_class_scope_reason(PtnRuntime *runtime, const char *class_name) {
+    if (ptn_ascii_case_equal(class_name, "self") || ptn_ascii_case_equal(class_name, "static")) {
+        if (
+            runtime == NULL ||
+            (runtime->current_class_name == NULL && runtime->current_called_class_name == NULL)
+        ) {
+            return ptn_format_inactive_class_scope_callback_reason(class_name);
+        }
+    } else if (ptn_ascii_case_equal(class_name, "parent")) {
+        if (runtime == NULL || runtime->current_class_name == NULL) {
+            return ptn_format_inactive_class_scope_callback_reason(class_name);
+        }
+        if (ptn_declared_class_parent_name(runtime->current_class_name) == NULL) {
+            return ptn_format_parentless_class_scope_callback_reason(class_name);
+        }
+    }
+    return NULL;
+}
+
 static char *ptn_invalid_array_callback_reason(PtnRuntime *runtime, PtnValue resolved) {
     if (resolved.type != PTN_ARRAY || resolved.as.array->len != 2) {
         return ptn_duplicate_string("array callback must have exactly two members");
@@ -2831,11 +2878,51 @@ static char *ptn_invalid_array_callback_reason(PtnRuntime *runtime, PtnValue res
     char *reason = NULL;
     if (scope.type == PTN_STRING) {
         char *class_name = ptn_value_to_string(scope);
-        if (!ptn_declared_class_exists(class_name) && !ptn_internal_class_exists_name(class_name)) {
-            reason = ptn_format_missing_class_callback_reason(class_name);
-        } else if ((reason = ptn_inaccessible_declared_method_callback_reason(runtime, class_name, method_name)) != NULL) {
-        } else if (!ptn_internal_class_method_exists(class_name, method_name)) {
-            reason = ptn_format_missing_method_callback_reason(class_name, method_name);
+        const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
+        reason = ptn_unresolved_callback_class_scope_reason(runtime, lookup_class_name);
+        if (reason == NULL) {
+            char *resolved_class_name = ptn_resolve_callback_class_scope(runtime, lookup_class_name);
+            int class_exists =
+                (runtime != NULL && ptn_declared_runtime_class_exists(runtime, resolved_class_name)) ||
+                ptn_internal_class_exists_name(resolved_class_name);
+            if (!class_exists) {
+                reason = ptn_format_missing_class_callback_reason(lookup_class_name);
+            } else if ((reason = ptn_inaccessible_declared_method_callback_reason(runtime, resolved_class_name, method_name)) != NULL) {
+            } else {
+                int valid =
+                    ptn_declared_class_static_method_is_callable(
+                        resolved_class_name,
+                        method_name,
+                        runtime == NULL ? NULL : runtime->current_class_name
+                    ) ||
+                    (ptn_internal_class_exists_name(resolved_class_name) &&
+                        ptn_internal_class_static_method_exists(resolved_class_name, method_name));
+                if (!valid && runtime != NULL && runtime->has_current_receiver) {
+                    PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);
+                    const char *current_receiver_class = NULL;
+                    if (current_receiver.type == PTN_OBJECT) {
+                        current_receiver_class = current_receiver.as.object->class_name;
+                    } else if (current_receiver.type == PTN_EXCEPTION) {
+                        current_receiver_class = current_receiver.as.exception->class_name;
+                    }
+                    if (
+                        current_receiver_class != NULL &&
+                        ptn_declared_class_is_same_or_descendant(current_receiver_class, resolved_class_name)
+                    ) {
+                        valid =
+                            ptn_declared_class_method_is_callable(
+                                resolved_class_name,
+                                method_name,
+                                runtime == NULL ? NULL : runtime->current_class_name
+                            ) ||
+                            ptn_declared_class_has_call_magic(resolved_class_name);
+                    }
+                }
+                if (!valid) {
+                    reason = ptn_format_missing_method_callback_reason(resolved_class_name, method_name);
+                }
+            }
+            free(resolved_class_name);
         }
         free(class_name);
     } else if (scope.type == PTN_OBJECT) {
@@ -2899,6 +2986,27 @@ static char *ptn_invalid_array_callback_reason(PtnRuntime *runtime, PtnValue res
     return reason;
 }
 
+static char *ptn_resolve_callback_class_scope(PtnRuntime *runtime, const char *class_name) {
+    if (ptn_ascii_case_equal(class_name, "self") || ptn_ascii_case_equal(class_name, "static")) {
+        const char *resolved = runtime == NULL
+            ? NULL
+            : (runtime->current_called_class_name != NULL
+                ? runtime->current_called_class_name
+                : runtime->current_class_name);
+        return ptn_duplicate_string(resolved != NULL ? ptn_declared_class_canonical_name(resolved) : class_name);
+    }
+    if (ptn_ascii_case_equal(class_name, "parent")) {
+        const char *base = runtime == NULL ? NULL : runtime->current_class_name;
+        const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);
+        return ptn_duplicate_string(parent != NULL ? ptn_declared_class_canonical_name(parent) : class_name);
+    }
+    const char *resolved =
+        runtime == NULL
+            ? class_name
+            : ptn_runtime_resolve_class_alias(runtime, class_name);
+    return ptn_duplicate_string(ptn_declared_class_canonical_name(resolved));
+}
+
 static char *ptn_invalid_callback_message(
     PtnRuntime *runtime,
     const char *function_name,
@@ -2916,28 +3024,30 @@ static char *ptn_invalid_callback_message(
             *separator = '\0';
             const char *class_name = ptn_symbol_name_without_leading_slash(name);
             const char *method_name = separator + 2;
-            const char *resolved_class_name = runtime == NULL
-                ? class_name
-                : ptn_runtime_resolve_class_alias(runtime, class_name);
-            int class_exists =
-                (runtime != NULL && ptn_declared_runtime_class_exists(runtime, resolved_class_name)) ||
-                ptn_internal_class_exists_name(resolved_class_name);
-            if (!class_exists) {
-                reason = ptn_format_missing_class_callback_reason(class_name);
-            } else if ((reason = ptn_inaccessible_declared_method_callback_reason(
-                    runtime,
-                    resolved_class_name,
-                    method_name
-                )) != NULL) {
-            } else if (
-                !ptn_declared_class_static_method_is_callable(
-                    resolved_class_name,
-                    method_name,
-                    runtime == NULL ? NULL : runtime->current_class_name
-                ) &&
-                !ptn_internal_class_static_method_exists(resolved_class_name, method_name)
-            ) {
-                reason = ptn_format_missing_method_callback_reason(resolved_class_name, method_name);
+            reason = ptn_unresolved_callback_class_scope_reason(runtime, class_name);
+            if (reason == NULL) {
+                char *resolved_class_name = ptn_resolve_callback_class_scope(runtime, class_name);
+                int class_exists =
+                    (runtime != NULL && ptn_declared_runtime_class_exists(runtime, resolved_class_name)) ||
+                    ptn_internal_class_exists_name(resolved_class_name);
+                if (!class_exists) {
+                    reason = ptn_format_missing_class_callback_reason(class_name);
+                } else if ((reason = ptn_inaccessible_declared_method_callback_reason(
+                        runtime,
+                        resolved_class_name,
+                        method_name
+                    )) != NULL) {
+                } else if (
+                    !ptn_declared_class_static_method_is_callable(
+                        resolved_class_name,
+                        method_name,
+                        runtime == NULL ? NULL : runtime->current_class_name
+                    ) &&
+                    !ptn_internal_class_static_method_exists(resolved_class_name, method_name)
+                ) {
+                    reason = ptn_format_missing_method_callback_reason(resolved_class_name, method_name);
+                }
+                free(resolved_class_name);
             }
             *separator = ':';
         }

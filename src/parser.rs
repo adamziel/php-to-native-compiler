@@ -6803,6 +6803,7 @@ impl Parser<'_> {
                                     }
                                     expr = Expr::DynamicClassNameFetch {
                                         receiver: Box::new(expr),
+                                        allow_string: false,
                                         span: combine_spans(start_span, member.span),
                                     };
                                     continue;
@@ -6891,6 +6892,7 @@ impl Parser<'_> {
                     let receiver_span = expr.span();
                     let class_name_fetch = Expr::DynamicClassNameFetch {
                         receiver: Box::new(expr),
+                        allow_string: true,
                         span: combine_spans(start_span, receiver_span),
                     };
                     let method_name = literal_name.map_or_else(

@@ -661,6 +661,7 @@ pub enum ValueExpr {
     },
     DynamicClassNameFetch {
         receiver: Box<ValueExpr>,
+        allow_string: bool,
         line: usize,
     },
     InstanceOf {
@@ -3920,8 +3921,13 @@ impl<'a> LoweringContext<'a> {
                 name: Box::new(self.lower_expr(name)),
                 line: span.line,
             },
-            Expr::DynamicClassNameFetch { receiver, span } => ValueExpr::DynamicClassNameFetch {
+            Expr::DynamicClassNameFetch {
+                receiver,
+                allow_string,
+                span,
+            } => ValueExpr::DynamicClassNameFetch {
                 receiver: Box::new(self.lower_expr(receiver)),
+                allow_string: *allow_string,
                 line: span.line,
             },
             Expr::InstanceOf { expr, target, span } => ValueExpr::InstanceOf {

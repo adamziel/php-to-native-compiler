@@ -1495,6 +1495,15 @@ fn emit_user_functions(
             out.push_str("    runtime.has_current_receiver = 1;\n");
             out.push_str("    runtime.current_receiver = receiver;\n");
         }
+        if function.is_anonymous && !function.is_static {
+            out.push_str("    if (receiver.type == PTN_CLOSURE) {\n");
+            out.push_str("        PtnValue ptn_closure_bound_this;\n");
+            out.push_str("        if (ptn_symbols_get(&receiver.as.closure->captures, \"this\", &ptn_closure_bound_this)) {\n");
+            out.push_str("            runtime.has_current_receiver = 1;\n");
+            out.push_str("            runtime.current_receiver = ptn_closure_bound_this;\n");
+            out.push_str("        }\n");
+            out.push_str("    }\n");
+        }
         let sensitive_variadic_position = function_sensitive_variadic_position(function);
         let sensitive_parameter_count = function.parameters.len();
         if function_has_sensitive_parameters(function) {
@@ -4497,7 +4506,7 @@ fn emit_user_function_dispatch(
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
-    out.push_str("        if (ptn_declared_magic_static_call(runtime, ptn_static_magic_class, ptn_static_magic_method, argc, args, line, &ptn_static_magic_result)) {\n");
+    out.push_str("        if (ptn_declared_magic_static_call(runtime, ptn_static_magic_class, ptn_static_magic_method, ptn_static_magic_class, argc, args, line, &ptn_static_magic_result)) {\n");
     out.push_str("            free(ptn_static_magic_name);\n");
     out.push_str("            *found = 1;\n");
     out.push_str("            return ptn_static_magic_result;\n");
@@ -4637,7 +4646,7 @@ fn emit_method_visibility_prototypes(out: &mut String) {
         "static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class_name);\n",
     );
     out.push_str("static PTN_UNUSED int ptn_declared_class_static_call_magic_applicable(const char *class_name, const char *method_name, const char *access_scope);\n");
-    out.push_str("static PTN_UNUSED int ptn_declared_magic_static_call(PtnRuntime *runtime, const char *class_name, const char *method_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n");
+    out.push_str("static PTN_UNUSED int ptn_declared_magic_static_call(PtnRuntime *runtime, const char *class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out);\n");
 }
 
 fn emit_class_metadata_helpers(
@@ -6686,11 +6695,12 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED int ptn_declared_magic_static_call(PtnRuntime *runtime, const char *class_name, const char *method_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {\n",
+        "\nstatic PTN_UNUSED int ptn_declared_magic_static_call(PtnRuntime *runtime, const char *class_name, const char *method_name, const char *called_class_name, size_t argc, const PtnValue *args, size_t line, PtnValue *result_out) {\n",
     );
     out.push_str("    (void)runtime;\n");
     out.push_str("    (void)class_name;\n");
     out.push_str("    (void)method_name;\n");
+    out.push_str("    (void)called_class_name;\n");
     out.push_str("    (void)argc;\n");
     out.push_str("    (void)args;\n");
     out.push_str("    (void)line;\n");
@@ -6736,7 +6746,7 @@ fn emit_class_metadata_helpers(
             "line",
         );
         out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
-        out.push_str("        runtime->called_class_name_override = \"");
+        out.push_str("        runtime->called_class_name_override = called_class_name != NULL ? called_class_name : \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\";\n");
         out.push_str("        *result_out = ");
@@ -11899,14 +11909,37 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str(
         "            const char *class_name = ptn_symbol_name_without_leading_slash(name);\n",
     );
-    out.push_str("            const char *resolved_class_name = runtime == NULL ? class_name : ptn_runtime_resolve_class_alias(runtime, class_name);\n");
-    out.push_str("            if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name)) {\n");
-    out.push_str("                ptn_runtime_autoload_class(runtime, class_name, runtime->call_site_line);\n");
-    out.push_str("                if (runtime->exceptions->active_exception != NULL) {\n");
-    out.push_str("                    free(name);\n");
-    out.push_str("                    return 0;\n");
+    out.push_str("            const char *resolved_class_name = class_name;\n");
+    out.push_str("            int relative_scope = ptn_ascii_case_equal(class_name, \"self\") || ptn_ascii_case_equal(class_name, \"static\") || ptn_ascii_case_equal(class_name, \"parent\");\n");
+    out.push_str("            if (ptn_ascii_case_equal(class_name, \"self\") || ptn_ascii_case_equal(class_name, \"static\")) {\n");
+    out.push_str("                const char *resolved = runtime == NULL ? NULL : (runtime->current_called_class_name != NULL ? runtime->current_called_class_name : runtime->current_class_name);\n");
+    out.push_str("                if (resolved != NULL) {\n");
+    out.push_str("                    resolved_class_name = resolved;\n");
     out.push_str("                }\n");
-    out.push_str("                resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);\n");
+    out.push_str("            } else if (ptn_ascii_case_equal(class_name, \"parent\")) {\n");
+    out.push_str("                const char *base = runtime == NULL ? NULL : runtime->current_class_name;\n");
+    out.push_str("                const char *parent = base == NULL ? NULL : ptn_declared_class_parent_name(base);\n");
+    out.push_str("                if (parent != NULL) {\n");
+    out.push_str("                    resolved_class_name = parent;\n");
+    out.push_str("                }\n");
+    out.push_str("            } else {\n");
+    out.push_str("                resolved_class_name = runtime == NULL ? class_name : ptn_runtime_resolve_class_alias(runtime, class_name);\n");
+    out.push_str("                if (runtime != NULL && !ptn_declared_runtime_class_exists(runtime, resolved_class_name) && !ptn_internal_class_exists_name(resolved_class_name)) {\n");
+    out.push_str("                    ptn_runtime_autoload_class(runtime, class_name, runtime->call_site_line);\n");
+    out.push_str("                    if (runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("                        free(name);\n");
+    out.push_str("                        return 0;\n");
+    out.push_str("                    }\n");
+    out.push_str("                    resolved_class_name = ptn_runtime_resolve_class_alias(runtime, class_name);\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            if (runtime != NULL && relative_scope && !ptn_ascii_case_equal(resolved_class_name, class_name)) {\n");
+    out.push_str("                char deprecation[96];\n");
+    out.push_str("                int deprecation_written = snprintf(deprecation, sizeof(deprecation), \"Use of \\\"%s\\\" in callables is deprecated\", class_name);\n");
+    out.push_str("                if (deprecation_written < 0 || (size_t)deprecation_written >= sizeof(deprecation)) {\n");
+    out.push_str("                    ptn_abort_out_of_memory();\n");
+    out.push_str("                }\n");
+    out.push_str("                ptn_emit_deprecation(&runtime->diagnostics, deprecation, runtime->call_site_line);\n");
     out.push_str("            }\n");
     out.push_str(
         "            valid = ptn_declared_class_static_method_is_callable(resolved_class_name, separator + 2, access_scope) || (ptn_internal_class_exists_name(resolved_class_name) && ptn_internal_class_static_method_exists(resolved_class_name, separator + 2));\n",
@@ -11926,7 +11959,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     );
     out.push_str("                }\n");
     out.push_str("                if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, resolved_class_name)) {\n");
-    out.push_str("                    valid = ptn_declared_class_method_is_callable(resolved_class_name, separator + 2, current_receiver_class);\n");
+    out.push_str("                    valid = ptn_declared_class_method_is_callable(resolved_class_name, separator + 2, current_receiver_class) || ptn_declared_class_has_call_magic(resolved_class_name);\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("            *separator = ':';\n");
@@ -11972,7 +12005,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("                target_class_name = ptn_runtime_resolve_class_alias(runtime, ptn_symbol_name_without_leading_slash(method_name));\n");
     out.push_str("            }\n");
     out.push_str("            if (ptn_declared_class_is_same_or_descendant(receiver_class_name, target_class_name)) {\n");
-    out.push_str("                valid = ptn_declared_class_method_is_callable(target_class_name, separator + 2, access_scope);\n");
+    out.push_str("                valid = ptn_declared_class_method_is_callable(target_class_name, separator + 2, access_scope) || ptn_declared_class_has_call_magic(target_class_name);\n");
     out.push_str("            }\n");
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
@@ -12069,7 +12102,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     );
     out.push_str("                }\n");
     out.push_str("                if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, target_class_name)) {\n");
-    out.push_str("                    valid = ptn_declared_class_method_is_callable(target_class_name, target_method_name, access_scope);\n");
+    out.push_str("                    valid = ptn_declared_class_method_is_callable(target_class_name, target_method_name, current_receiver_class) || ptn_declared_class_has_call_magic(target_class_name);\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
     out.push_str("            *scoped_method_separator = ':';\n");
@@ -12106,7 +12139,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     );
     out.push_str("            }\n");
     out.push_str("            if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, resolved_class_name)) {\n");
-    out.push_str("                valid = ptn_declared_class_method_is_callable(resolved_class_name, method_name, current_receiver_class);\n");
+    out.push_str("                valid = ptn_declared_class_method_is_callable(resolved_class_name, method_name, current_receiver_class) || ptn_declared_class_has_call_magic(resolved_class_name);\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("        free(function_name);\n");
@@ -12617,7 +12650,7 @@ fn emit_method_dispatch(
                 out.push_str(" || ptn_declared_protected_static_method_root_allows(runtime->current_class_name, target_class_name, method_name)");
             }
             out.push_str(")) {\n");
-            out.push_str("                if (resolved_receiver.type != PTN_OBJECT && ptn_declared_magic_static_call(runtime, target_class_name, method_name, argc, args, line, result_out)) {\n");
+            out.push_str("                if (resolved_receiver.type != PTN_OBJECT && ptn_declared_magic_static_call(runtime, target_class_name, method_name, effective_called_class, argc, args, line, result_out)) {\n");
             out.push_str("                    return 1;\n");
             out.push_str("                }\n");
             out.push_str("                ptn_throw_declared_method_visibility_error(runtime, \"");
@@ -12707,7 +12740,7 @@ fn emit_method_dispatch(
         out.push_str("            *result_out = ptn_null();\n");
         out.push_str("            return 1;\n");
         out.push_str("        }\n");
-        out.push_str("        if (ptn_declared_magic_static_call(runtime, target_class_name, method_name, argc, args, line, result_out)) {\n");
+        out.push_str("        if (ptn_declared_magic_static_call(runtime, target_class_name, method_name, effective_called_class, argc, args, line, result_out)) {\n");
         out.push_str("            return 1;\n");
         out.push_str("        }\n");
         out.push_str("        return 0;\n");
@@ -13193,6 +13226,11 @@ fn emit_callable_dispatch(
         out.push_str("                }\n");
         out.push_str("                PtnValue scoped_receiver = ptn_null();\n");
         out.push_str("                const char *called_class_name = target_class_name;\n");
+        out.push_str("                if (separator == NULL && runtime->current_called_class_name != NULL && (ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\"))) {\n");
+        out.push_str(
+            "                    called_class_name = runtime->current_called_class_name;\n",
+        );
+        out.push_str("                }\n");
         out.push_str("                if (runtime->has_current_receiver) {\n");
         out.push_str("                    PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
         out.push_str("                    if (current_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(current_receiver.as.object->class_name, target_class_name)) {\n");
@@ -13230,6 +13268,47 @@ fn emit_callable_dispatch(
         out.push_str("    if (resolved.type == PTN_OBJECT && ptn_declared_class_has_invoke_magic(resolved.as.object->class_name)) {\n");
         out.push_str("        return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
         out.push_str("    }\n");
+        out.push_str("    if (resolved.type == PTN_STRING) {\n");
+        out.push_str("        char *callable_name = ptn_value_to_string(resolved);\n");
+        out.push_str("        char *separator = strstr(callable_name, \"::\");\n");
+        out.push_str("        if (separator != NULL && separator != callable_name && separator[2] != '\\0') {\n");
+        out.push_str("            *separator = '\\0';\n");
+        out.push_str("            const char *scope_name = ptn_symbol_name_without_leading_slash(callable_name);\n");
+        out.push_str("            char *target_class_name = ptn_callable_resolve_class_scope(runtime, scope_name, NULL);\n");
+        out.push_str(
+            "            char *target_method_name = ptn_duplicate_string(separator + 2);\n",
+        );
+        out.push_str("            PtnValue scoped_receiver = ptn_null();\n");
+        out.push_str("            const char *called_class_name = target_class_name;\n");
+        out.push_str("            if (runtime->current_called_class_name != NULL && (ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\"))) {\n");
+        out.push_str("                called_class_name = runtime->current_called_class_name;\n");
+        out.push_str("            }\n");
+        out.push_str("            if (runtime->has_current_receiver) {\n");
+        out.push_str("                PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
+        out.push_str("                const char *current_receiver_class = NULL;\n");
+        out.push_str("                if (current_receiver.type == PTN_OBJECT) {\n");
+        out.push_str("                    current_receiver_class = current_receiver.as.object->class_name;\n");
+        out.push_str("                } else if (current_receiver.type == PTN_EXCEPTION) {\n");
+        out.push_str("                    current_receiver_class = current_receiver.as.exception->class_name;\n");
+        out.push_str("                }\n");
+        out.push_str("                if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, target_class_name)) {\n");
+        out.push_str("                    scoped_receiver = current_receiver;\n");
+        out.push_str("                    called_class_name = current_receiver_class;\n");
+        out.push_str("                }\n");
+        out.push_str("            }\n");
+        out.push_str("            PtnValue result;\n");
+        out.push_str("            if (ptn_call_declared_method_in_scope(runtime, scoped_receiver, target_class_name, target_method_name, called_class_name, argc, args, line, &result)) {\n");
+        out.push_str("                free(target_method_name);\n");
+        out.push_str("                free(target_class_name);\n");
+        out.push_str("                free(callable_name);\n");
+        out.push_str("                return result;\n");
+        out.push_str("            }\n");
+        out.push_str("            free(target_method_name);\n");
+        out.push_str("            free(target_class_name);\n");
+        out.push_str("            *separator = ':';\n");
+        out.push_str("        }\n");
+        out.push_str("        free(callable_name);\n");
+        out.push_str("    }\n");
     }
     out.push_str("    if (resolved.type == PTN_CLOSURE) {\n");
     out.push_str("        if (resolved.as.closure->has_wrapped_callable) {\n");
@@ -13243,7 +13322,18 @@ fn emit_callable_dispatch(
     out.push_str("            if (resolved.as.closure->called_class_name != NULL) {\n");
     out.push_str("                runtime->current_called_class_name = resolved.as.closure->called_class_name;\n");
     out.push_str("            }\n");
+    out.push_str(
+        "            int previous_has_current_receiver = runtime->has_current_receiver;\n",
+    );
+    out.push_str("            PtnValue previous_current_receiver = runtime->current_receiver;\n");
+    out.push_str("            PtnValue ptn_wrapped_bound_this;\n");
+    out.push_str("            if (ptn_symbols_get(&resolved.as.closure->captures, \"this\", &ptn_wrapped_bound_this)) {\n");
+    out.push_str("                runtime->has_current_receiver = 1;\n");
+    out.push_str("                runtime->current_receiver = ptn_wrapped_bound_this;\n");
+    out.push_str("            }\n");
     out.push_str("            PtnValue result = ptn_call_callable(runtime, resolved.as.closure->wrapped_callable, argc, args, line);\n");
+    out.push_str("            runtime->current_receiver = previous_current_receiver;\n");
+    out.push_str("            runtime->has_current_receiver = previous_has_current_receiver;\n");
     out.push_str("            runtime->current_called_class_name = previous_called_class_name;\n");
     out.push_str("            runtime->current_class_name = previous_class_name;\n");
     out.push_str("            return result;\n");
@@ -26404,9 +26494,11 @@ impl ValueEmitter {
                 name,
                 *line,
             ),
-            ValueExpr::DynamicClassNameFetch { receiver, line } => {
-                self.emit_dynamic_class_name_fetch(out, receiver, *line)
-            }
+            ValueExpr::DynamicClassNameFetch {
+                receiver,
+                allow_string,
+                line,
+            } => self.emit_dynamic_class_name_fetch(out, receiver, *allow_string, *line),
             ValueExpr::Isset { targets } => self.emit_isset(out, targets),
             ValueExpr::Empty { target } => self.emit_empty(out, target),
             ValueExpr::Print { expression } => self.emit_print(out, expression),
@@ -29136,13 +29228,18 @@ impl ValueEmitter {
         &mut self,
         out: &mut String,
         receiver: &ValueExpr,
+        allow_string: bool,
         line: usize,
     ) -> String {
         let receiver_temp = self.emit_materialized_value(out, receiver);
         let result_temp = self.next_temp();
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
-        out.push_str(" = ptn_runtime_fetch_dynamic_class_name(&runtime, ");
+        out.push_str(if allow_string {
+            " = ptn_runtime_fetch_dynamic_static_member_class_name(&runtime, "
+        } else {
+            " = ptn_runtime_fetch_dynamic_class_name(&runtime, "
+        });
         out.push_str(&receiver_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
@@ -33045,7 +33142,7 @@ impl ValueEmitter {
         out.push_str("    PtnValue ");
         out.push_str(result_temp);
         out.push_str(";\n");
-        out.push_str("    if (runtime.has_current_receiver && ptn_call_declared_method_in_scope(&runtime, runtime.current_receiver, \"");
+        out.push_str("    if (ptn_call_declared_method_in_scope(&runtime, runtime.has_current_receiver ? runtime.current_receiver : ptn_null(), \"");
         out.push_str(&c_string(target_class_name));
         out.push_str("\", \"");
         out.push_str(&c_string(method_name));
