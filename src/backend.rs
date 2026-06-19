@@ -23640,20 +23640,32 @@ impl ValueEmitter {
             return result_temp;
         }
 
-        if let AssignmentTarget::DynamicVariable { name, line } = target {
-            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+        if let AssignmentTarget::Variable { name, line } = target {
+            if name == "GLOBALS" {
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_null();\n");
+                self.emit_globals_reference_fatal(
+                    out,
+                    "$GLOBALS can only be modified using the $GLOBALS[$name] = $value syntax",
+                    *line,
+                );
+                return result_temp;
+            }
+
             let value_temp = self.emit_materialized_value(out, value);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 let current_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&current_temp);
-                out.push_str(" = ptn_runtime_read_variable(&runtime, ");
-                out.push_str(&name_temp);
-                out.push_str(", \"");
+                out.push_str(" = ptn_value_clone_deref(ptn_runtime_read_variable(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", \"");
                 out.push_str(&c_string(&self.source_file));
                 out.push_str("\", ");
                 out.push_str(&line.to_string());
-                out.push_str(");\n");
+                out.push_str("));\n");
                 let result_temp = self.emit_compound_binary_value(
                     out,
                     &current_temp,
@@ -23664,11 +23676,72 @@ impl ValueEmitter {
                 let assigned_temp = self.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&assigned_temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_runtime_write_variable_result(&runtime, \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                out.push_str(&result_temp);
+                out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_value_clone_deref(");
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                out.push_str("    }\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+                emit_value_cleanup(out, "    ", &result_temp);
+                emit_value_cleanup(out, "    ", &value_temp);
+                return assigned_temp;
+            }
+            let result_temp = self.emit_store_assignment_target_from_temp(out, target, &value_temp);
+            emit_value_cleanup(out, "    ", &value_temp);
+            return result_temp;
+        }
+
+        if let AssignmentTarget::DynamicVariable { name, line } = target {
+            let name_temp = self.emit_dynamic_variable_name(out, name, *line);
+            let value_temp = self.emit_materialized_value(out, value);
+            if let Some(compound_op) = assignment_compound_binary_op(op) {
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_value_clone_deref(ptn_runtime_read_variable(&runtime, ");
+                out.push_str(&name_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str("));\n");
+                let result_temp = self.emit_compound_binary_value(
+                    out,
+                    &current_temp,
+                    &value_temp,
+                    *line,
+                    compound_op,
+                );
+                let assigned_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_null();\n");
+                out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+                out.push_str("        ");
+                out.push_str(&assigned_temp);
                 out.push_str(" = ptn_runtime_write_variable_result(&runtime, ");
                 out.push_str(&name_temp);
                 out.push_str(", ");
                 out.push_str(&result_temp);
                 out.push_str(");\n");
+                out.push_str("    } else {\n");
+                out.push_str("        ");
+                out.push_str(&assigned_temp);
+                out.push_str(" = ptn_value_clone_deref(");
+                out.push_str(&current_temp);
+                out.push_str(");\n");
+                out.push_str("    }\n");
                 out.push_str("    free(");
                 out.push_str(&name_temp);
                 out.push_str(");\n");

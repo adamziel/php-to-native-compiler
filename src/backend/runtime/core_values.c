@@ -815,6 +815,7 @@ typedef struct {
     PtnStringBuffer buffer;
     int has_callback;
     PtnValue callback;
+    size_t chunk_size;
 } PtnOutputBuffer;
 
 typedef struct {

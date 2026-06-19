@@ -9561,6 +9561,36 @@ var_dump(str_starts_with($captured, \"\\nWarning:\"));\n",
 }
 
 #[test]
+fn compile_output_buffer_chunk_size_flushes_warning_callback_to_native_binary() {
+    let root = temp_dir("ptn-native-output-buffer-chunk-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("output-buffer-chunk-warning.php");
+    let output = root.join("output-buffer-chunk-warning-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$counter = 0;\n\
+ob_start(function ($buffer) use (&$c, &$counter) {\n\
+    $c = 0;\n\
+    ++$counter;\n\
+    return '';\n\
+}, 1);\n\
+$c .= [];\n\
+$c .= [];\n\
+ob_end_clean();\n\
+echo $counter, \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "3\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_ob_clean_clears_active_output_buffer_to_native_binary() {
     let root = temp_dir("ptn-native-output-buffer-clean");
     fs::create_dir_all(&root).unwrap();
@@ -44341,6 +44371,39 @@ fn compile_direct_compound_assignments_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Ada Lovelace 6\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_failed_direct_compound_assignments_preserve_lhs_to_native_binary() {
+    let root = temp_dir("ptn-native-failed-compound-assignment");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("failed-compound.php");
+    let output = root.join("failed-compound-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$x = new stdClass;\n\
+try { $x += 1; } catch (Throwable $e) {}\n\
+var_dump($x instanceof stdClass);\n\
+$x = 'foo';\n\
+try { $x ^= new stdClass; } catch (Throwable $e) {}\n\
+var_dump($x);\n\
+set_error_handler(function () use (&$text) { $text = 0x123; });\n\
+$text = 'a';\n\
+$text .= [];\n\
+var_dump($text);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nstring(3) \"foo\"\nstring(6) \"aArray\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

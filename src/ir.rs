@@ -1822,7 +1822,12 @@ impl<'a> LoweringContext<'a> {
                     value,
                     span,
                 } => {
-                    if matches!(op, AssignmentOp::CoalesceAssign) {
+                    if matches!(op, AssignmentOp::Assign) {
+                        instructions.push(Instruction::Store {
+                            name: name.clone(),
+                            value: self.lower_expr(value),
+                        });
+                    } else {
                         instructions.push(Instruction::Expression(ValueExpr::Assign {
                             target: AssignmentTarget::Variable {
                                 name: name.clone(),
@@ -1831,11 +1836,6 @@ impl<'a> LoweringContext<'a> {
                             op: *op,
                             value: Box::new(self.lower_expr(value)),
                         }));
-                    } else {
-                        instructions.push(Instruction::Store {
-                            name: name.clone(),
-                            value: self.lower_assignment_value(name, *op, value, span.line),
-                        });
                     }
                 }
                 Statement::AssignRef { name, source, span } => {
@@ -3566,56 +3566,6 @@ impl<'a> LoweringContext<'a> {
         }
     }
 
-    fn lower_assignment_value(
-        &mut self,
-        name: &str,
-        op: AssignmentOp,
-        value: &Expr,
-        line: usize,
-    ) -> ValueExpr {
-        let right = self.lower_expr(value);
-        match op {
-            AssignmentOp::Assign => right,
-            AssignmentOp::CoalesceAssign => {
-                unreachable!("direct null coalescing assignment lowers through ValueExpr::Assign")
-            }
-            AssignmentOp::AddAssign => lower_compound_assignment(name, line, BinaryOp::Add, right),
-            AssignmentOp::SubtractAssign => {
-                lower_compound_assignment(name, line, BinaryOp::Subtract, right)
-            }
-            AssignmentOp::MultiplyAssign => {
-                lower_compound_assignment(name, line, BinaryOp::Multiply, right)
-            }
-            AssignmentOp::PowerAssign => {
-                lower_compound_assignment(name, line, BinaryOp::Power, right)
-            }
-            AssignmentOp::DivideAssign => {
-                lower_compound_assignment(name, line, BinaryOp::Divide, right)
-            }
-            AssignmentOp::ModuloAssign => {
-                lower_compound_assignment(name, line, BinaryOp::Modulo, right)
-            }
-            AssignmentOp::ConcatAssign => {
-                lower_compound_assignment(name, line, BinaryOp::Concat, right)
-            }
-            AssignmentOp::BitwiseAndAssign => {
-                lower_compound_assignment(name, line, BinaryOp::BitwiseAnd, right)
-            }
-            AssignmentOp::BitwiseOrAssign => {
-                lower_compound_assignment(name, line, BinaryOp::BitwiseOr, right)
-            }
-            AssignmentOp::BitwiseXorAssign => {
-                lower_compound_assignment(name, line, BinaryOp::BitwiseXor, right)
-            }
-            AssignmentOp::ShiftLeftAssign => {
-                lower_compound_assignment(name, line, BinaryOp::ShiftLeft, right)
-            }
-            AssignmentOp::ShiftRightAssign => {
-                lower_compound_assignment(name, line, BinaryOp::ShiftRight, right)
-            }
-        }
-    }
-
     fn lower_assignment_expr_value(
         &mut self,
         target: AssignmentTarget,
@@ -3636,10 +3586,7 @@ impl<'a> LoweringContext<'a> {
             | AssignmentOp::BitwiseXorAssign
             | AssignmentOp::ShiftLeftAssign
             | AssignmentOp::ShiftRightAssign => match target {
-                AssignmentTarget::Variable { name, line } => (
-                    AssignmentOp::Assign,
-                    self.lower_assignment_value(&name, op, value, line),
-                ),
+                AssignmentTarget::Variable { .. } => (op, self.lower_expr(value)),
                 AssignmentTarget::ArrayDim { .. }
                 | AssignmentTarget::DynamicVariable { .. }
                 | AssignmentTarget::DynamicArrayDim { .. }
@@ -3656,18 +3603,6 @@ impl<'a> LoweringContext<'a> {
                 }
             },
         }
-    }
-}
-
-fn lower_compound_assignment(name: &str, line: usize, op: BinaryOp, right: ValueExpr) -> ValueExpr {
-    ValueExpr::Binary {
-        op,
-        left: Box::new(ValueExpr::Load {
-            name: name.to_string(),
-            line,
-        }),
-        right: Box::new(right),
-        line,
     }
 }
 

@@ -53,6 +53,8 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
     return ptn_null();
 }
 
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line);
+
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len) {
     if (data == NULL || len == 0) {
         return;
@@ -64,6 +66,9 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     if (root != NULL && root->output_buffers_len != 0) {
         PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len - 1];
         ptn_string_buffer_append_len(&buffer->buffer, data, len);
+        if (buffer->chunk_size != 0 && buffer->buffer.len >= buffer->chunk_size) {
+            (void)ptn_output_buffer_flush_top_chunk(runtime, 0);
+        }
         return;
     }
     fwrite(data, 1, len, stdout);
@@ -148,6 +153,12 @@ static PTN_UNUSED void ptn_echo(PtnRuntime *runtime, PtnValue value, size_t line
 }
 
 #ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line) {
+    (void)runtime;
+    (void)line;
+    return 0;
+}
+
 static PTN_UNUSED void ptn_output_buffer_flush_all(PtnRuntime *runtime) {
     (void)runtime;
 }
@@ -3283,9 +3294,15 @@ static void ptn_output_buffer_destroy(PtnOutputBuffer *buffer) {
     }
     buffer->has_callback = 0;
     buffer->callback = ptn_null();
+    buffer->chunk_size = 0;
 }
 
-static void ptn_output_buffer_push(PtnRuntime *runtime, int has_callback, PtnValue callback) {
+static void ptn_output_buffer_push(
+    PtnRuntime *runtime,
+    int has_callback,
+    PtnValue callback,
+    size_t chunk_size
+) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
         root = runtime;
@@ -3310,6 +3327,7 @@ static void ptn_output_buffer_push(PtnRuntime *runtime, int has_callback, PtnVal
     ptn_string_buffer_init(&buffer->buffer);
     buffer->has_callback = has_callback;
     buffer->callback = has_callback ? ptn_value_clone_deref(callback) : ptn_null();
+    buffer->chunk_size = chunk_size;
 }
 
 static int ptn_output_buffer_pop(PtnRuntime *runtime, PtnOutputBuffer *buffer_out) {
@@ -3382,6 +3400,35 @@ static PtnValue ptn_output_buffer_apply_callback(PtnRuntime *runtime, PtnOutputB
     root->output_buffer_callback_depth--;
     ptn_try_frame_pop(runtime, &handler_frame);
     return output;
+}
+
+static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root == NULL || root->output_buffers_len == 0) {
+        return 0;
+    }
+
+    PtnOutputBuffer *buffer = &root->output_buffers[root->output_buffers_len - 1];
+    PtnStringBuffer chunk_buffer = buffer->buffer;
+    ptn_string_buffer_init(&buffer->buffer);
+
+    PtnOutputBuffer chunk = *buffer;
+    chunk.buffer = chunk_buffer;
+    PtnValue output = ptn_output_buffer_apply_callback(runtime, &chunk, line);
+    free(chunk_buffer.data);
+
+    PtnValue string_output = ptn_value_deref(output);
+    if (string_output.type == PTN_STRING && string_output.as.string.len != 0) {
+        root->output_buffers_len--;
+        ptn_output_write(
+            runtime,
+            (const char *)string_output.as.string.data,
+            string_output.as.string.len
+        );
+        root->output_buffers_len++;
+    }
+    ptn_value_destroy(&output);
+    return 1;
 }
 
 static int ptn_output_buffer_close(PtnRuntime *runtime, int flush, size_t line) {
@@ -55589,9 +55636,9 @@ static PtnOutputBuffer *ptn_output_buffer_top(PtnRuntime *runtime) {
 }
 
 static PtnValue ptn_internal_ob_start(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     int has_callback = 0;
     PtnValue callback = ptn_null();
+    size_t chunk_size = 0;
     if (argc >= 1) {
         PtnValue resolved = ptn_value_deref(args[0]);
         if (resolved.type != PTN_NULL) {
@@ -55599,10 +55646,17 @@ static PtnValue ptn_internal_ob_start(PtnRuntime *runtime, size_t argc, const Pt
             has_callback = 1;
         }
     }
+    if (argc >= 2) {
+        int64_t requested_chunk_size =
+            ptn_internal_expect_integer_arg(runtime, "ob_start", 2, "chunk_size", args[1], line);
+        if (requested_chunk_size > 0) {
+            chunk_size = (size_t)requested_chunk_size;
+        }
+    }
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    ptn_output_buffer_push(runtime, has_callback, callback);
+    ptn_output_buffer_push(runtime, has_callback, callback, chunk_size);
     if (has_callback) {
         ptn_value_destroy(&callback);
     }

@@ -2068,6 +2068,11 @@ static PTN_UNUSED PtnValue ptn_bitwise_and(
         };
         return ptn_bitwise_string_and(left_string, right_string);
     }
+    if (ptn_numeric_operator_rejects_operand(left) ||
+        ptn_numeric_operator_rejects_operand(right)) {
+        ptn_throw_unsupported_operand_types(runtime, left, "&", right, line);
+        return ptn_null();
+    }
     return ptn_int(
         ptn_bitwise_integer_operand_checked(runtime, left, line) &
         ptn_bitwise_integer_operand_checked(runtime, right, line)
@@ -2095,6 +2100,11 @@ static PTN_UNUSED PtnValue ptn_bitwise_or(
         };
         return ptn_bitwise_string_or(left_string, right_string);
     }
+    if (ptn_numeric_operator_rejects_operand(left) ||
+        ptn_numeric_operator_rejects_operand(right)) {
+        ptn_throw_unsupported_operand_types(runtime, left, "|", right, line);
+        return ptn_null();
+    }
     return ptn_int(
         ptn_bitwise_integer_operand_checked(runtime, left, line) |
         ptn_bitwise_integer_operand_checked(runtime, right, line)
@@ -2121,6 +2131,11 @@ static PTN_UNUSED PtnValue ptn_bitwise_xor(
             right.as.string.len
         };
         return ptn_bitwise_string_xor(left_string, right_string);
+    }
+    if (ptn_numeric_operator_rejects_operand(left) ||
+        ptn_numeric_operator_rejects_operand(right)) {
+        ptn_throw_unsupported_operand_types(runtime, left, "^", right, line);
+        return ptn_null();
     }
     return ptn_int(
         ptn_bitwise_integer_operand_checked(runtime, left, line) ^
