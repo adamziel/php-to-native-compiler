@@ -1220,7 +1220,7 @@ static PTN_UNUSED int ptn_float_to_int_loses_precision(double value) {
 }
 
 static PTN_UNUSED int ptn_float_to_int_out_of_range(double value) {
-    return value < -9223372036854775808.0 || value >= 9223372036854775808.0;
+    return !isfinite(value) || value < -9223372036854775808.0 || value >= 9223372036854775808.0;
 }
 
 static PTN_UNUSED void ptn_emit_float_to_int_precision_deprecation_at(
@@ -1994,10 +1994,7 @@ static PTN_UNUSED int64_t ptn_bitwise_integer_operand(PtnValue value) {
 }
 
 static PTN_UNUSED void ptn_format_bitwise_float_diagnostic(double value, char *buffer, size_t buffer_size) {
-    int written = snprintf(buffer, buffer_size, "%.16G", value);
-    if (written < 0 || (size_t)written >= buffer_size) {
-        ptn_abort_out_of_memory();
-    }
+    ptn_format_scalar_float(value, buffer, buffer_size);
 }
 
 static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
@@ -2020,15 +2017,17 @@ static PTN_UNUSED void ptn_emit_bitwise_float_out_of_range_warning(
     if (written < 0 || (size_t)written >= sizeof(message)) {
         ptn_abort_out_of_memory();
     }
+    diagnostics->emitted_warning = 1;
     if (ptn_diagnostics_try_error_handler(diagnostics, PTN_E_WARNING, message, NULL, line)) {
         return;
     }
-    fputc('\n', stdout);
-    fputs("Warning: The float ", stdout);
-    fputs(formatted, stdout);
-    fputs(" is not representable as an int, cast occurred in ptn on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_diagnostic_printf(
+        diagnostics,
+        "\nWarning: The float %s is not representable as an int, cast occurred in %s on line %zu\n",
+        formatted,
+        ptn_diagnostic_path(diagnostics, NULL),
+        line
+    );
 }
 
 static PTN_UNUSED int64_t ptn_bitwise_integer_operand_checked(

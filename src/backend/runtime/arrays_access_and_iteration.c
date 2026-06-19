@@ -440,12 +440,6 @@ static PTN_UNUSED int ptn_array_offset_key_from_value(
         case PTN_REFERENCE:
             return ptn_array_offset_key_from_value(runtime, key_value, line, quiet, key_out);
         default:
-            if (
-                key_value.type == PTN_FLOAT &&
-                ptn_float_to_int_out_of_range(key_value.as.floating)
-            ) {
-                return 0;
-            }
             *key_out = ptn_array_key_from_value(key_value);
             return 1;
     }
@@ -9925,6 +9919,13 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
     }
 
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot != NULL && segments[0].append) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            return;
+        }
+    }
     if (slot != NULL && segment_count == 1) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type != PTN_STRING) {
@@ -9956,6 +9957,22 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
             return;
         }
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
+            if (segments[0].append) {
+                PtnValue append_reference = ptn_null();
+                if (ptn_arrayaccess_append_reference_temporary(runtime, slot_value, line, &append_reference)) {
+                    ptn_value_array_path_set_impl(
+                        runtime,
+                        &append_reference,
+                        segments + 1,
+                        segment_count - 1,
+                        value,
+                        line,
+                        emit_null_key_deprecation
+                    );
+                    ptn_value_destroy(&append_reference);
+                    return;
+                }
+            }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
             PtnValue nested_reference = ptn_null();
@@ -10043,6 +10060,13 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
     }
 
     PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    if (slot != NULL && segments[0].append) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            return ptn_null();
+        }
+    }
     if (slot != NULL && segment_count == 1) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
@@ -10070,6 +10094,21 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
             return ptn_null();
         }
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
+            if (segments[0].append) {
+                PtnValue append_reference = ptn_null();
+                if (ptn_arrayaccess_append_reference_temporary(runtime, slot_value, line, &append_reference)) {
+                    PtnValue result = ptn_value_array_path_set_result(
+                        runtime,
+                        &append_reference,
+                        segments + 1,
+                        segment_count - 1,
+                        value,
+                        line
+                    );
+                    ptn_value_destroy(&append_reference);
+                    return result;
+                }
+            }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
             const PtnValue *offset_value = segments[0].append ? NULL : &segments[0].value;
             PtnValue nested_reference = ptn_null();

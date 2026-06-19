@@ -124,6 +124,13 @@ static PTN_UNUSED void ptn_abort_illegal_array_key(void) {
     exit(255);
 }
 
+static PTN_UNUSED int64_t ptn_array_integer_key_from_float(double value) {
+    if (!isfinite(value) || value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
+        return 0;
+    }
+    return (int64_t)value;
+}
+
 static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -134,7 +141,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
         case PTN_INT:
             return ptn_array_int_key(value.as.integer);
         case PTN_FLOAT:
-            return ptn_array_int_key((int64_t)value.as.floating);
+            return ptn_array_int_key(ptn_array_integer_key_from_float(value.as.floating));
         case PTN_RESOURCE:
             return ptn_array_int_key(value.as.resource->id);
         case PTN_STRING: {
