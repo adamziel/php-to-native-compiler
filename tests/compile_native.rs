@@ -42655,6 +42655,36 @@ var_dump($argv[0] === __FILE__);\n",
 }
 
 #[test]
+fn phpc_preserves_script_dir_for_compiled_dir_includes() {
+    let root = temp_dir("ptn-phpc-script-dir-include");
+    let include_dir = root.join("sort");
+    fs::create_dir_all(&include_dir).unwrap();
+    let input = root.join("main.php");
+    fs::write(&include_dir.join("data.inc"), "<?php return \"included\";").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+$value = require __DIR__ . '/sort/data.inc';\n\
+echo $value, \"\\n\";\n\
+echo __FILE__ === $argv[0] ? \"file\\n\" : \"wrong-file\\n\";\n\
+echo dirname(__FILE__) === __DIR__ ? \"dir\\n\" : \"wrong-dir\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(phpc_bin())
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "included\nfile\ndir\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_version_banner_matches_php_cli_shape() {
     let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
         .arg("-v")
