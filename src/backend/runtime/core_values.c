@@ -1110,6 +1110,7 @@ struct PtnRuntime {
     size_t output_buffers_capacity;
     size_t output_buffer_callback_depth;
     int output_at_line_start;
+    int output_has_started;
     PtnShutdownFunction *shutdown_functions;
     size_t shutdown_functions_len;
     size_t shutdown_functions_capacity;

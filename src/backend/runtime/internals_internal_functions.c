@@ -68,6 +68,7 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
     }
     fwrite(data, 1, len, stdout);
     if (root != NULL) {
+        root->output_has_started = 1;
         root->output_at_line_start = data[len - 1] == '\n';
     }
 }

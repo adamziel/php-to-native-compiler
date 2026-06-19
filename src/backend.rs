@@ -11564,6 +11564,9 @@ fn emit_magic_debug_info_dispatch(out: &mut String, classes: &[ClassDecl]) {
 
 fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str(
+        "\nstatic PTN_UNUSED void ptn_emit_scoped_callable_deprecation(PtnRuntime *runtime, const char *scope_name, const char *method_name, size_t line);\n",
+    );
+    out.push_str(
         "\nstatic int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out) {\n",
     );
     out.push_str("    callable = ptn_value_deref(callable);\n");
@@ -11668,16 +11671,16 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            }\n");
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
-        out.push_str("        if (ptn_internal_class_exists_name(scope.as.object->class_name)) {\n");
-        out.push_str("            valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name);\n");
-        out.push_str("        }\n");
-        out.push_str("        valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
-        out.push_str("        if (!valid && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
-        out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime == NULL ? 0 : runtime->call_site_line);\n");
-        out.push_str("        }\n");
-        out.push_str("        free(method_name);\n");
-        out.push_str("        return valid;\n");
-        out.push_str("    }\n");
+    out.push_str("        if (ptn_internal_class_exists_name(scope.as.object->class_name)) {\n");
+    out.push_str("            valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name);\n");
+    out.push_str("        }\n");
+    out.push_str("        valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
+    out.push_str("        if (runtime != NULL && !valid && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
+    out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime->call_site_line);\n");
+    out.push_str("        }\n");
+    out.push_str("        free(method_name);\n");
+    out.push_str("        return valid;\n");
+    out.push_str("    }\n");
     out.push_str("    if (scope.type == PTN_EXCEPTION) {\n");
     out.push_str("        if (syntax_only) {\n");
     out.push_str("            return 1;\n");
@@ -13162,7 +13165,9 @@ fn emit_class_declaration_validation(
         out.push_str(&parent_temp);
         out.push_str(")) {\n");
         out.push_str("            char final_parent_message[1024];\n");
-        out.push_str("            snprintf(final_parent_message, sizeof(final_parent_message), \"Class ");
+        out.push_str(
+            "            snprintf(final_parent_message, sizeof(final_parent_message), \"Class ",
+        );
         out.push_str(&c_string(&class.name));
         out.push_str(" cannot extend final class %s\", ");
         out.push_str(&parent_temp);
@@ -13444,7 +13449,7 @@ fn emit_instruction(
         Instruction::ValidateClass { class_index, line } => {
             emit_class_declaration_validation(
                 out,
-                values.classes,
+                &values.classes,
                 *class_index,
                 *line,
                 source_path,
@@ -13474,7 +13479,7 @@ fn emit_instruction(
             out.push_str("        }\n");
             emit_class_declaration_validation(
                 out,
-                values.classes,
+                &values.classes,
                 *class_index,
                 *line,
                 source_path,
@@ -16242,6 +16247,7 @@ fn collect_instruction_legacy_dollar_brace_deprecations(
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
         | Instruction::DeclareClass { .. }
+        | Instruction::ValidateClass { .. }
         | Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }
@@ -16845,7 +16851,9 @@ fn collect_instruction_runtime_requirements(
             requirements.request_context = true;
             collect_value_runtime_requirements(name, functions, requirements);
         }
-        Instruction::DeclareFunction { .. } | Instruction::DeclareClass { .. } => {}
+        Instruction::DeclareFunction { .. }
+        | Instruction::DeclareClass { .. }
+        | Instruction::ValidateClass { .. } => {}
         Instruction::UnsetDynamicVariable { name, .. } => {
             collect_value_runtime_requirements(name, functions, requirements);
         }
@@ -20493,6 +20501,7 @@ fn instruction_runtime_line(instruction: &Instruction) -> Option<usize> {
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
         | Instruction::DeclareClass { .. }
+        | Instruction::ValidateClass { .. }
         | Instruction::Label { .. }
         | Instruction::Goto { .. } => None,
     }
@@ -21134,6 +21143,7 @@ fn instruction_uses_this(instruction: &Instruction) -> bool {
         | Instruction::BindGlobal { .. }
         | Instruction::DeclareFunction { .. }
         | Instruction::DeclareClass { .. }
+        | Instruction::ValidateClass { .. }
         | Instruction::Break { .. }
         | Instruction::Continue { .. }
         | Instruction::Label { .. }

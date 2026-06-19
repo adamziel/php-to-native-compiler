@@ -77,6 +77,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->output_buffers_capacity = 0;
     runtime->output_buffer_callback_depth = 0;
     runtime->output_at_line_start = 1;
+    runtime->output_has_started = 0;
     runtime->shutdown_functions = NULL;
     runtime->shutdown_functions_len = 0;
     runtime->shutdown_functions_capacity = 0;
@@ -552,6 +553,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->output_buffers_capacity = 0;
         runtime->output_buffer_callback_depth = 0;
         runtime->output_at_line_start = 1;
+        runtime->output_has_started = 0;
         for (size_t i = 0; i < runtime->shutdown_functions_len; i++) {
             ptn_shutdown_function_destroy(&runtime->shutdown_functions[i]);
         }
