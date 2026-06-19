@@ -1285,7 +1285,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         root->method_dispatch != NULL &&
         root->declared_method_exists != NULL &&
         root->declared_method_exists(cloned->class_name, "__clone")) {
+        cloned->readonly_clone_initializing = 1;
         PtnValue result = root->method_dispatch(root, clone, "__clone", 0, NULL, line);
+        cloned->readonly_clone_initializing = 0;
         ptn_value_destroy(&result);
     }
     return clone;
@@ -4617,17 +4619,27 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    PtnObjectPropertyMetadata *mutable_metadata = metadata == NULL
+        ? NULL
+        : ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
+    int readonly_clone_reinit = 0;
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
-        ptn_array_key_free(key);
-        free(storage_key);
-        ptn_throw_readonly_property_error(
-            runtime,
-            receiver.as.object->class_name,
-            metadata->declaring_class,
-            metadata->display_name,
-            line
-        );
-        return ptn_null();
+        readonly_clone_reinit =
+            receiver.as.object->readonly_clone_initializing &&
+            mutable_metadata != NULL &&
+            !mutable_metadata->readonly_clone_reinitialized;
+        if (!readonly_clone_reinit) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_readonly_property_error(
+                runtime,
+                receiver.as.object->class_name,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            return ptn_null();
+        }
     }
     if (metadata == NULL && entry == NULL) {
         ptn_emit_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
@@ -4655,11 +4667,14 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
         stored = ptn_value_clone_deref(value);
     }
     PtnValue result = ptn_value_clone(stored);
-    PtnObjectPropertyMetadata *mutable_metadata =
-        ptn_object_mutable_property_metadata(receiver.as.object, storage_key);
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 0;
         ptn_object_metadata_remember_value_type(mutable_metadata, stored);
+        if (metadata != NULL &&
+            metadata->is_readonly &&
+            receiver.as.object->readonly_clone_initializing) {
+            mutable_metadata->readonly_clone_reinitialized = 1;
+        }
     }
     if (entry != NULL && entry->value.type == PTN_REFERENCE) {
         ptn_array_update_next_auto_key(receiver.as.object->properties, key);

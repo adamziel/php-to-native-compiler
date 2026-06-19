@@ -9403,9 +9403,13 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(entry.name));
             out.push_str("\") == 0) {\n");
-            out.push_str("            return ptn_string(\"");
-            out.push_str(&c_string(&reflection_property_to_string(&entry)));
-            out.push_str("\");\n");
+            if reflection_property_to_string_needs_runtime_default(&entry) {
+                out.push_str("            return ptn_null();\n");
+            } else {
+                out.push_str("            return ptn_string(\"");
+                out.push_str(&c_string(&reflection_property_to_string(&entry)));
+                out.push_str("\");\n");
+            }
             out.push_str("        }\n");
         }
         out.push_str("        return ptn_null();\n");
@@ -9419,9 +9423,13 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("        if (strcmp(property_name, \"");
             out.push_str(&c_string(entry.name));
             out.push_str("\") == 0) {\n");
-            out.push_str("            return ptn_string(\"");
-            out.push_str(&c_string(&reflection_property_to_string(&entry)));
-            out.push_str("\");\n");
+            if reflection_property_to_string_needs_runtime_default(&entry) {
+                out.push_str("            return ptn_null();\n");
+            } else {
+                out.push_str("            return ptn_string(\"");
+                out.push_str(&c_string(&reflection_property_to_string(&entry)));
+                out.push_str("\");\n");
+            }
             out.push_str("        }\n");
         }
         out.push_str("        return ptn_null();\n");
@@ -9809,6 +9817,16 @@ fn reflection_property_to_string<T: ReflectionPropertySummary>(property: &T) -> 
     }
     out.push_str(" ]\n");
     out
+}
+
+fn reflection_property_to_string_needs_runtime_default<T: ReflectionPropertySummary>(
+    property: &T,
+) -> bool {
+    property.reflection_has_default()
+        && matches!(
+            property.reflection_value(),
+            Some(ValueExpr::Constant { .. })
+        )
 }
 
 fn reflection_class_properties_to_string<T: ReflectionPropertySummary>(
@@ -11888,6 +11906,24 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str(
         "            valid = ptn_declared_class_static_method_is_callable(resolved_class_name, separator + 2, access_scope) || (ptn_internal_class_exists_name(resolved_class_name) && ptn_internal_class_static_method_exists(resolved_class_name, separator + 2));\n",
     );
+    out.push_str("            if (!valid && runtime != NULL && runtime->has_current_receiver) {\n");
+    out.push_str(
+        "                PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n",
+    );
+    out.push_str("                const char *current_receiver_class = NULL;\n");
+    out.push_str("                if (current_receiver.type == PTN_OBJECT) {\n");
+    out.push_str(
+        "                    current_receiver_class = current_receiver.as.object->class_name;\n",
+    );
+    out.push_str("                } else if (current_receiver.type == PTN_EXCEPTION) {\n");
+    out.push_str(
+        "                    current_receiver_class = current_receiver.as.exception->class_name;\n",
+    );
+    out.push_str("                }\n");
+    out.push_str("                if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, resolved_class_name)) {\n");
+    out.push_str("                    valid = ptn_declared_class_method_is_callable(resolved_class_name, separator + 2, current_receiver_class);\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
     out.push_str("        if (!valid) {\n");
@@ -12065,7 +12101,7 @@ fn emit_callable_validation_helpers(out: &mut String) {
     );
     out.push_str("            }\n");
     out.push_str("            if (current_receiver_class != NULL && ptn_declared_class_is_same_or_descendant(current_receiver_class, resolved_class_name)) {\n");
-    out.push_str("                valid = ptn_declared_class_method_is_callable(resolved_class_name, method_name, access_scope);\n");
+    out.push_str("                valid = ptn_declared_class_method_is_callable(resolved_class_name, method_name, current_receiver_class);\n");
     out.push_str("            }\n");
     out.push_str("        }\n");
     out.push_str("        free(function_name);\n");

@@ -831,6 +831,7 @@ static PTN_UNUSED PtnValue ptn_object_new_shell(PtnRuntime *runtime, const char 
     object->lazy_is_proxy = 0;
     object->lazy_options = 0;
     object->lazy_initializing = 0;
+    object->readonly_clone_initializing = 0;
     object->lazy_initializer = ptn_null();
     object->lazy_proxy_instance = ptn_null();
     ptn_runtime_register_object(root, object);
@@ -1219,6 +1220,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
             object->property_metadata[i].is_readonly = is_readonly;
             object->property_metadata[i].is_unset = 0;
             object->property_metadata[i].lazy_skip = 0;
+            object->property_metadata[i].readonly_clone_reinitialized = 0;
             free(object->property_metadata[i].last_type_name);
             object->property_metadata[i].last_type_name = NULL;
             free(object->property_metadata[i].type_class_name);
@@ -1260,6 +1262,7 @@ static PTN_UNUSED void ptn_object_register_property_metadata(
     metadata->is_readonly = is_readonly;
     metadata->is_unset = 0;
     metadata->lazy_skip = 0;
+    metadata->readonly_clone_reinitialized = 0;
     metadata->last_type_name = NULL;
     metadata->type_kind = type_kind;
     metadata->type_class_name = type_class_name == NULL ? NULL : ptn_duplicate_string(type_class_name);

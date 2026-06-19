@@ -682,6 +682,7 @@ typedef struct {
     int is_readonly;
     int is_unset;
     int lazy_skip;
+    int readonly_clone_reinitialized;
     char *last_type_name;
     PtnPropertyTypeKind type_kind;
     char *type_class_name;
@@ -793,6 +794,7 @@ struct PtnObject {
     int lazy_is_proxy;
     int lazy_options;
     int lazy_initializing;
+    int readonly_clone_initializing;
     PtnValue lazy_initializer;
     PtnValue lazy_proxy_instance;
 };
