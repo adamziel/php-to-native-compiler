@@ -43185,6 +43185,44 @@ echo \"value=$value\\n\";\n";
 }
 
 #[test]
+fn compile_include_dispatch_uses_runtime_source_override_relative_path_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-source-include-override");
+    let compiled_dir = root.join("compiled");
+    let compiled_subdir = compiled_dir.join("sub");
+    let runtime_dir = root.join("runtime");
+    fs::create_dir_all(&compiled_subdir).unwrap();
+    fs::create_dir_all(&runtime_dir).unwrap();
+    let input = compiled_dir.join("main.php");
+    let included = compiled_subdir.join("payload.inc");
+    let runtime_source = runtime_dir.join("main.php");
+    let output = root.join("runtime-source-include-override-bin");
+    let source = "<?php\n\
+$path = __DIR__ . '/sub/payload.inc';\n\
+$value = require $path;\n\
+echo \"value=$value\\n\";\n";
+    fs::write(&input, source).unwrap();
+    fs::write(&runtime_source, source).unwrap();
+    fs::write(&included, "<?php echo \"included\\n\"; return 42;").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    assert!(!runtime_dir.join("sub/payload.inc").exists());
+
+    let execution = Command::new(&output)
+        .env("PTN_RUNTIME_SOURCE_PATH", &runtime_source)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "included\nvalue=42\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_include_runtime_source_alias_matches(&runtime"));
+}
+
+#[test]
 fn compile_file_get_contents_uses_include_path_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-include-path");
     let cwd = root.join("cwd");

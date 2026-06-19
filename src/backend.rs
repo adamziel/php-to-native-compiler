@@ -150,6 +150,9 @@ pub fn emit_c(module: &Module) -> String {
         || needs_magic_property_unset;
     emit_private_property_metadata_prototype(&mut out);
     emit_runtime(&mut out, &runtime_requirements);
+    if !runtime_requirements.internal_function_dispatch {
+        emit_runtime_source_path_helpers(&mut out);
+    }
     emit_method_visibility_prototypes(&mut out);
     emit_type_hint_runtime_helpers(&mut out);
     emit_include_prototypes(&mut out, &module.includes);
@@ -574,6 +577,53 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    return matches;\n");
     out.push_str("}\n");
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_include_runtime_source_alias_matches(PtnRuntime *runtime, const char *resolved_path, const char *compiled_source_dir, const char *alias) {\n",
+    );
+    out.push_str("    const char *override = getenv(\"PTN_RUNTIME_SOURCE_PATH\");\n");
+    out.push_str("    if (override == NULL || override[0] == '\\0' || runtime == NULL || runtime->source_path == NULL || resolved_path == NULL || compiled_source_dir == NULL || alias == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *source_path = runtime->source_path;\n");
+    out.push_str("    const char *source_separator = strrchr(source_path, '/');\n");
+    out.push_str("#if defined(_WIN32)\n");
+    out.push_str("    const char *source_backslash = strrchr(source_path, '\\\\');\n");
+    out.push_str("    if (source_backslash != NULL && (source_separator == NULL || source_backslash > source_separator)) {\n");
+    out.push_str("        source_separator = source_backslash;\n");
+    out.push_str("    }\n");
+    out.push_str("#endif\n");
+    out.push_str("    if (source_separator == NULL) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    size_t runtime_dir_len = source_separator == source_path ? 1 : (size_t)(source_separator - source_path);\n");
+    out.push_str("    size_t resolved_len = strlen(resolved_path);\n");
+    out.push_str("    if (resolved_len <= runtime_dir_len || strncmp(resolved_path, source_path, runtime_dir_len) != 0) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    size_t relative_offset = runtime_dir_len;\n");
+    out.push_str("    if (!(runtime_dir_len == 1 && (source_path[0] == '/' || source_path[0] == '\\\\'))) {\n");
+    out.push_str("        if (resolved_path[relative_offset] != '/' && resolved_path[relative_offset] != '\\\\') {\n");
+    out.push_str("            return 0;\n");
+    out.push_str("        }\n");
+    out.push_str("        relative_offset++;\n");
+    out.push_str("    }\n");
+    out.push_str("    const char *relative_path = resolved_path + relative_offset;\n");
+    out.push_str("    if (relative_path[0] == '\\0') {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    size_t compiled_dir_len = strlen(compiled_source_dir);\n");
+    out.push_str("    if (compiled_dir_len == 0 || strncmp(alias, compiled_source_dir, compiled_dir_len) != 0) {\n");
+    out.push_str("        return 0;\n");
+    out.push_str("    }\n");
+    out.push_str("    size_t alias_offset = compiled_dir_len;\n");
+    out.push_str("    if (!(compiled_dir_len == 1 && (compiled_source_dir[0] == '/' || compiled_source_dir[0] == '\\\\'))) {\n");
+    out.push_str("        if (alias[alias_offset] != '/' && alias[alias_offset] != '\\\\') {\n");
+    out.push_str("            return 0;\n");
+    out.push_str("        }\n");
+    out.push_str("        alias_offset++;\n");
+    out.push_str("    }\n");
+    out.push_str("    return strcmp(alias + alias_offset, relative_path) == 0;\n");
+    out.push_str("}\n");
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_compiled_include_path_error(PtnRuntime *runtime, const char *kind, size_t line, int required) {\n",
     );
     out.push_str("    char message[96];\n");
@@ -686,6 +736,54 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
         out.push_str(&runtime_c[internal_functions.after_start..internal_functions.end]);
     }
     out.push_str(&runtime_c[internal_functions.after_end..]);
+}
+
+fn emit_runtime_source_path_helpers(out: &mut String) {
+    out.push_str("\nstatic PTN_UNUSED int ptn_runtime_source_dir_is_separator(char byte) {\n");
+    out.push_str("#if defined(_WIN32)\n");
+    out.push_str("    return byte == '/' || byte == '\\\\';\n");
+    out.push_str("#else\n");
+    out.push_str("    return byte == '/';\n");
+    out.push_str("#endif\n");
+    out.push_str("}\n");
+    out.push_str(
+        "\nstatic PTN_UNUSED char *ptn_runtime_source_dir(PtnRuntime *runtime, size_t *dir_len) {\n",
+    );
+    out.push_str("    const char *source_path = runtime != NULL && runtime->source_path != NULL ? runtime->source_path : \"\";\n");
+    out.push_str("    size_t len = strlen(source_path);\n");
+    out.push_str("    if (len == 0) {\n");
+    out.push_str("        *dir_len = 0;\n");
+    out.push_str("        return ptn_duplicate_string(\"\");\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    while (len > 1 && ptn_runtime_source_dir_is_separator(source_path[len - 1])) {\n",
+    );
+    out.push_str("        len--;\n");
+    out.push_str("    }\n");
+    out.push_str("    size_t end = len;\n");
+    out.push_str(
+        "    while (end > 0 && !ptn_runtime_source_dir_is_separator(source_path[end - 1])) {\n",
+    );
+    out.push_str("        end--;\n");
+    out.push_str("    }\n");
+    out.push_str("    if (end == 0) {\n");
+    out.push_str("        *dir_len = 1;\n");
+    out.push_str("        return ptn_duplicate_string(\".\");\n");
+    out.push_str("    }\n");
+    out.push_str(
+        "    while (end > 1 && ptn_runtime_source_dir_is_separator(source_path[end - 1])) {\n",
+    );
+    out.push_str("        end--;\n");
+    out.push_str("    }\n");
+    out.push_str("    char *dir = malloc(end + 1);\n");
+    out.push_str("    if (dir == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    memcpy(dir, source_path, end);\n");
+    out.push_str("    dir[end] = '\\0';\n");
+    out.push_str("    *dir_len = end;\n");
+    out.push_str("    return dir;\n");
+    out.push_str("}\n");
 }
 
 fn emit_type_hint_runtime_helpers(out: &mut String) {
@@ -27163,7 +27261,13 @@ impl ValueEmitter {
             out.push_str(resolved_temp);
             out.push_str(", \"");
             out.push_str(&c_string(alias));
-            out.push_str("\") == 0");
+            out.push_str("\") == 0 || ptn_include_runtime_source_alias_matches(&runtime, ");
+            out.push_str(resolved_temp);
+            out.push_str(", \"");
+            out.push_str(&c_string(&self.source_dir));
+            out.push_str("\", \"");
+            out.push_str(&c_string(alias));
+            out.push_str("\")");
             emitted += 1;
         }
         for alias in runtime_relative_aliases {
