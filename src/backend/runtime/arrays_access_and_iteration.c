@@ -4031,6 +4031,15 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
             line
         );
     }
+    if (metadata != NULL) {
+        ptn_declared_class_property_hook_deprecation(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            1,
+            line
+        );
+    }
     return ptn_value_clone_deref(entry->value);
 }
 
@@ -4387,6 +4396,8 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
     }
     PtnArrayKey key = ptn_array_string_key(storage_key);
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(receiver.as.object, storage_key);
     ptn_array_key_free(key);
     free(storage_key);
     if (entry == NULL) {
@@ -4399,6 +4410,15 @@ static PTN_UNUSED PtnLookupResult ptn_object_property_lookup_quiet(
             return ptn_lookup_found(magic_value);
         }
         return ptn_lookup_missing();
+    }
+    if (metadata != NULL) {
+        ptn_declared_class_property_hook_deprecation(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            1,
+            line
+        );
     }
     return ptn_lookup_found(ptn_value_clone_deref(entry->value));
 }
@@ -4660,6 +4680,15 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     }
     if (metadata == NULL && entry == NULL) {
         ptn_emit_dynamic_property_deprecation(runtime, receiver.as.object, property, line);
+    }
+    if (metadata != NULL) {
+        ptn_declared_class_property_hook_deprecation(
+            runtime,
+            metadata->declaring_class,
+            metadata->display_name,
+            2,
+            line
+        );
     }
     PtnValue stored = ptn_null();
     if (metadata != NULL &&

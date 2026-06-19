@@ -68058,11 +68058,13 @@ static PtnValue ptn_declared_class_names(PtnRuntime *runtime, int include_intern
 static PtnValue ptn_declared_interface_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_trait_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name);
+static PtnValue ptn_declared_class_reflection_property_hook_method(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type);
 static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name);
 static int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
 static PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
+static void ptn_declared_class_property_hook_deprecation(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type, size_t line);
 static PtnValue ptn_declared_class_reflection_methods(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_properties(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static PtnValue ptn_declared_class_reflection_default_properties(PtnRuntime *runtime, const char *class_name);
@@ -70933,6 +70935,7 @@ static int ptn_reflection_property_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getDeclaringClass")
         || ptn_ascii_case_equal(method_name, "getDefaultValue")
+        || ptn_ascii_case_equal(method_name, "getHook")
         || ptn_ascii_case_equal(method_name, "getMangledName")
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
@@ -75261,6 +75264,58 @@ static PtnReflectionPropertyData *ptn_reflection_property_data(PtnRuntime *runti
     return (PtnReflectionPropertyData *)receiver.as.object->native_data;
 }
 
+static int ptn_reflection_property_hook_type_argument(
+    PtnRuntime *runtime,
+    PtnValue value,
+    int *hook_type_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT) {
+        if (value.as.integer == 1 || value.as.integer == 2) {
+            *hook_type_out = (int)value.as.integer;
+            return 1;
+        }
+    } else if (value.type == PTN_STRING) {
+        const char *name = (const char *)value.as.string.data;
+        size_t len = value.as.string.len;
+        if ((len == 3 && memcmp(name, "Get", 3) == 0) ||
+            (len == 3 && memcmp(name, "get", 3) == 0)) {
+            *hook_type_out = 1;
+            return 1;
+        }
+        if ((len == 3 && memcmp(name, "Set", 3) == 0) ||
+            (len == 3 && memcmp(name, "set", 3) == 0)) {
+            *hook_type_out = 2;
+            return 1;
+        }
+    } else if (
+        value.type == PTN_OBJECT &&
+        ptn_ascii_case_equal(value.as.object->class_name, "PropertyHookType") &&
+        value.as.object->enum_case_name != NULL
+    ) {
+        if (strcmp(value.as.object->enum_case_name, "Get") == 0) {
+            *hook_type_out = 1;
+            return 1;
+        }
+        if (strcmp(value.as.object->enum_case_name, "Set") == 0) {
+            *hook_type_out = 2;
+            return 1;
+        }
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "ReflectionProperty::getHook(): Argument #1 ($type) must be of type PropertyHookType, %s given",
+        ptn_offset_container_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
 static PtnValue ptn_reflection_property_object_from_name_ex(
     PtnRuntime *runtime,
     const char *class_name,
@@ -76626,6 +76681,28 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
         }
         return ptn_reflection_empty_attributes(runtime, "ReflectionProperty", "getAttributes", argc, args, line);
     }
+    if (ptn_ascii_case_equal(name, "getHook")) {
+        ptn_reflection_property_check_exact_arguments(runtime, name, argc, 1);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        int hook_type = 0;
+        if (!ptn_reflection_property_hook_type_argument(runtime, args[0], &hook_type)) {
+            return ptn_null();
+        }
+        const char *hook_class_name = declaring_class == NULL ? data->class_name : declaring_class;
+        if (!data->is_dynamic &&
+            (ptn_declared_user_class_or_interface_exists(hook_class_name) ||
+             ptn_declared_trait_exists(hook_class_name))) {
+            return ptn_declared_class_reflection_property_hook_method(
+                runtime,
+                hook_class_name,
+                data->name,
+                hook_type
+            );
+        }
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(name, "getDocComment")) {
         ptn_reflection_property_check_exact_arguments(runtime, name, argc, 0);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_bool(0);
@@ -77865,6 +77942,11 @@ static void ptn_reflection_class_append_builtin_constants(PtnValue result, const
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_VIRTUAL"), ptn_int(512));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PROTECTED_SET"), ptn_int(2048));
         ptn_array_set_entry(result.as.array, ptn_array_string_key("IS_PRIVATE_SET"), ptn_int(4096));
+        return;
+    }
+    if (ptn_ascii_case_equal(class_name, "PropertyHookType")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("Get"), ptn_int(1));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("Set"), ptn_int(2));
         return;
     }
     if (ptn_ascii_case_equal(class_name, "ReflectionAttribute")) {

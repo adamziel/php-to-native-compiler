@@ -1,3 +1,5 @@
+static void ptn_declared_class_property_hook_deprecation(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type, size_t line);
+
 static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnRuntime *caller_runtime) {
     ptn_symbols_init(&runtime->symbols);
     runtime->global_symbols = caller_runtime->global_symbols;
@@ -3452,6 +3454,16 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
         }
         if (strcmp(constant, "IS_PRIVATE_SET") == 0) {
             *out = ptn_int(4096);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "PropertyHookType")) {
+        if (strcmp(constant, "Get") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+        if (strcmp(constant, "Set") == 0) {
+            *out = ptn_int(2);
             return 1;
         }
     }

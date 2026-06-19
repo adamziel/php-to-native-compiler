@@ -48933,6 +48933,120 @@ try {
 }
 
 #[test]
+fn compile_property_hook_get_hook_attributes_and_deprecations_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-get-hook-attributes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-get-hook-attributes.php");
+    let output = root.join("property-hook-get-hook-attributes-bin");
+    fs::write(
+        &input,
+        "<?php
+class HookMeta {
+    public string $hooked {
+        #[DelayedTargetValidation]
+        #[NoDiscard]
+        get => $this->hooked;
+
+        #[DelayedTargetValidation]
+        #[Attribute]
+        set => $value;
+    }
+}
+
+class DeprecatedHook {
+    public string $value {
+        #[DelayedTargetValidation]
+        #[Deprecated]
+        get => $this->value;
+
+        #[DelayedTargetValidation]
+        #[Deprecated]
+        set => $value;
+    }
+}
+
+$rp = new ReflectionProperty(HookMeta::class, 'hooked');
+$get = $rp->getHook(PropertyHookType::Get);
+$set = $rp->getHook(PropertyHookType::Set);
+echo $get->getName(), \"\\n\";
+echo $set->getName(), \"\\n\";
+echo $get;
+$attributes = $get->getAttributes();
+echo $attributes[0]->getName(), \"\\n\";
+echo $attributes[1]->getName(), \"\\n\";
+try {
+    $attributes[1]->newInstance();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$deprecated = new DeprecatedHook();
+$deprecated->value = 'ok';
+echo $deprecated->value, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("$hooked::get\n"));
+    assert!(stdout.contains("$hooked::set\n"));
+    assert!(stdout.contains("Method [ <user> public method $hooked::get ]"));
+    assert!(stdout.contains("DelayedTargetValidation\n"));
+    assert!(stdout.contains("NoDiscard\n"));
+    assert!(stdout.contains("#[\\NoDiscard] is not supported for property hooks\n"));
+    assert!(stdout.contains("Deprecated: Method DeprecatedHook::$value::set() is deprecated"));
+    assert!(stdout.contains("Deprecated: Method DeprecatedHook::$value::get() is deprecated"));
+    assert!(stdout.ends_with("ok\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_property_hook_method"));
+    assert!(c_source.contains("ptn_declared_class_property_hook_deprecation"));
+}
+
+#[test]
+fn compile_nodiscard_property_hook_to_native_fatal() {
+    let root = temp_dir("ptn-native-nodiscard-property-hook-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nodiscard-property-hook-fatal.php");
+    let output = root.join("nodiscard-property-hook-fatal-bin");
+    fs::write(
+        &input,
+        "<?php
+class BadHook {
+    public string $test {
+        #[NoDiscard]
+        get {
+            return 'bad';
+        }
+    }
+}
+echo \"unreachable\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    assert!(String::from_utf8(execution.stderr)
+        .unwrap()
+        .contains("Fatal error: #[\\NoDiscard] is not supported for property hooks in "));
+}
+
+#[test]
 fn compile_reflection_class_get_properties_orders_hook_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-property-hook-order");
     fs::create_dir_all(&root).unwrap();
