@@ -14012,14 +14012,48 @@ fn emit_try(
     });
     let active_label_scope = try_label_scope.as_ref().or(label_scope);
     out.push_str("    {\n");
-    out.push_str("        PtnTryFrame ");
-    out.push_str(&frame_temp);
-    out.push_str(";\n");
     if let Some(entry_target_temp) = &entry_target_temp {
         out.push_str("        volatile int ");
         out.push_str(entry_target_temp);
+        out.push_str(";\n");
+    }
+    if let Some(entry_target_temp) = &entry_target_temp {
+        out.push_str("        if (0) {\n");
+        for (index, label) in entry_labels.iter().enumerate() {
+            let public_label = scoped_c_label(label, label_scope);
+            out.push_str("            if (0) { goto ");
+            out.push_str(&public_label);
+            out.push_str("; }\n");
+            out.push_str("            ");
+            out.push_str(&public_label);
+            out.push_str(":\n");
+            out.push_str("            ");
+            out.push_str(entry_target_temp);
+            out.push_str(" = ");
+            out.push_str(&(index + 1).to_string());
+            out.push_str(";\n");
+            out.push_str("            goto ");
+            out.push_str(
+                entry_setup_label
+                    .as_deref()
+                    .expect("entry setup label exists"),
+            );
+            out.push_str(";\n");
+        }
+        out.push_str("        }\n");
+        out.push_str("        ");
+        out.push_str(entry_target_temp);
         out.push_str(" = 0;\n");
     }
+    if let Some(entry_setup_label) = &entry_setup_label {
+        out.push_str("        ");
+        out.push_str(entry_setup_label);
+        out.push_str(":\n");
+        out.push_str("        ;\n");
+    }
+    out.push_str("        PtnTryFrame ");
+    out.push_str(&frame_temp);
+    out.push_str(";\n");
     if let Some(frame_active_temp) = &frame_active_temp {
         out.push_str("        int ");
         out.push_str(frame_active_temp);
@@ -14047,37 +14081,6 @@ fn emit_try(
     out.push_str("        (void)");
     out.push_str(&caught_temp);
     out.push_str(";\n");
-    if let Some(entry_target_temp) = &entry_target_temp {
-        out.push_str("        if (0) {\n");
-        for (index, label) in entry_labels.iter().enumerate() {
-            let public_label = scoped_c_label(label, label_scope);
-            out.push_str("            if (0) { goto ");
-            out.push_str(&public_label);
-            out.push_str("; }\n");
-            out.push_str("            ");
-            out.push_str(&public_label);
-            out.push_str(":\n");
-            out.push_str("            ");
-            out.push_str(entry_target_temp);
-            out.push_str(" = ");
-            out.push_str(&(index + 1).to_string());
-            out.push_str(";\n");
-            out.push_str("            goto ");
-            out.push_str(
-                entry_setup_label
-                    .as_deref()
-                    .expect("entry setup label exists"),
-            );
-            out.push_str(";\n");
-        }
-        out.push_str("        }\n");
-    }
-    if let Some(entry_setup_label) = &entry_setup_label {
-        out.push_str("        ");
-        out.push_str(entry_setup_label);
-        out.push_str(":\n");
-        out.push_str("        ;\n");
-    }
     out.push_str("        PtnTraceFrame *");
     out.push_str(&saved_trace_temp);
     out.push_str(" = runtime.trace_frame;\n");
@@ -14242,6 +14245,8 @@ fn emit_try(
         }
     }
     for catch in catches {
+        let catch_body_label = values.next_label("ptn_try_catch_body");
+        let catch_after_label = values.next_label("ptn_try_catch_after");
         out.push_str("            if (!");
         out.push_str(&caught_temp);
         out.push_str(" && (");
@@ -14268,6 +14273,17 @@ fn emit_try(
             out.push_str(catch_active_temp);
             out.push_str(" = 1;\n");
         }
+        out.push_str("                goto ");
+        out.push_str(&catch_body_label);
+        out.push_str(";\n");
+        out.push_str("            }\n");
+        out.push_str("            goto ");
+        out.push_str(&catch_after_label);
+        out.push_str(";\n");
+        out.push_str("            ");
+        out.push_str(&catch_body_label);
+        out.push_str(":\n");
+        out.push_str("            ;\n");
         for body_instruction in &catch.body {
             emit_instruction(
                 out,
@@ -14285,7 +14301,10 @@ fn emit_try(
             out.push_str(catch_active_temp);
             out.push_str(" = 0;\n");
         }
-        out.push_str("            }\n");
+        out.push_str("            ");
+        out.push_str(&catch_after_label);
+        out.push_str(":\n");
+        out.push_str("            ;\n");
     }
     out.push_str("            ptn_try_frame_pop(&runtime, &");
     out.push_str(&frame_temp);

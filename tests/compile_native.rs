@@ -8700,6 +8700,48 @@ fn phpc_renders_goto_out_of_finally_as_php_fatal() {
 }
 
 #[test]
+fn compile_goto_into_catch_with_finally_to_native_binary() {
+    let root = temp_dir("ptn-native-goto-into-catch-finally");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("jump17.php");
+    let output = root.join("jump17-bin");
+    fs::write(
+        &input,
+        "<?php
+goto b;
+try {
+    echo \"1\";
+a:
+    echo \"2\";
+    throw new Exception();
+} catch (Exception $e) {
+    echo \"3\";
+b:
+    echo \"4\";
+} finally {
+    echo \"5\";
+c:
+    echo \"6\";
+}
+echo \"7\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "4567\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_renders_break_continue_compile_time_control_errors() {
     let cases = [
         (
