@@ -71038,6 +71038,23 @@ static PTN_UNUSED int ptn_internal_class_name_is_reflection_class(const char *cl
     return ptn_ascii_case_equal(class_name, "ReflectionClass");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionEnum");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_unit_case(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionEnumUnitCase");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_backed_case(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "ReflectionEnumBackedCase");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_reflection_enum_case(const char *class_name) {
+    return ptn_internal_class_name_is_reflection_enum_unit_case(class_name)
+        || ptn_internal_class_name_is_reflection_enum_backed_case(class_name);
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_reflection_attribute(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "ReflectionAttribute");
 }
@@ -72181,6 +72198,43 @@ static int ptn_reflection_class_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "setStaticPropertyValue");
 }
 
+static int ptn_reflection_class_constant_method_exists(const char *method_name);
+
+static int ptn_reflection_enum_method_exists(const char *method_name) {
+    return ptn_reflection_class_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "getBackingType")
+        || ptn_ascii_case_equal(method_name, "getCase")
+        || ptn_ascii_case_equal(method_name, "getCases")
+        || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "hasCase")
+        || ptn_ascii_case_equal(method_name, "isBacked");
+}
+
+static int ptn_reflection_enum_case_method_exists(
+    const char *class_name,
+    const char *method_name
+) {
+    return ptn_reflection_class_constant_method_exists(method_name)
+        || ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "getDeclaringClass")
+        || ptn_ascii_case_equal(method_name, "getDocComment")
+        || ptn_ascii_case_equal(method_name, "getEnum")
+        || ptn_ascii_case_equal(method_name, "getModifiers")
+        || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getValue")
+        || ptn_ascii_case_equal(method_name, "isEnumCase")
+        || ptn_ascii_case_equal(method_name, "isFinal")
+        || ptn_ascii_case_equal(method_name, "isPrivate")
+        || ptn_ascii_case_equal(method_name, "isProtected")
+        || ptn_ascii_case_equal(method_name, "isPublic")
+        || (
+            ptn_internal_class_name_is_reflection_enum_backed_case(class_name)
+            && ptn_ascii_case_equal(method_name, "getBackingValue")
+        );
+}
+
 static int ptn_reflection_function_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__toString")
         || ptn_ascii_case_equal(method_name, "getAttributes")
@@ -72792,6 +72846,12 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
         ptn_internal_class_name_is_reflection_object(class_name)) {
         return ptn_reflection_class_method_exists(method_name);
     }
+    if (ptn_internal_class_name_is_reflection_enum(class_name)) {
+        return ptn_reflection_enum_method_exists(method_name);
+    }
+    if (ptn_internal_class_name_is_reflection_enum_case(class_name)) {
+        return ptn_reflection_enum_case_method_exists(class_name, method_name);
+    }
     if (ptn_ascii_case_equal(class_name, "ReflectionFunctionAbstract")) {
         return ptn_reflection_function_abstract_method_exists(method_name);
     }
@@ -73252,6 +73312,109 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "newInstance",
             "newInstanceArgs",
             "setStaticPropertyValue",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_enum(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "getAttributes",
+            "getBackingType",
+            "getCase",
+            "getCases",
+            "getConstant",
+            "getConstants",
+            "getConstructor",
+            "getDefaultProperties",
+            "getDocComment",
+            "getEndLine",
+            "getExtension",
+            "getExtensionName",
+            "getFileName",
+            "getInterfaceNames",
+            "getInterfaces",
+            "getMethod",
+            "getMethods",
+            "getModifiers",
+            "getName",
+            "getNamespaceName",
+            "getParentClass",
+            "getProperty",
+            "getProperties",
+            "getReflectionConstant",
+            "getReflectionConstants",
+            "getShortName",
+            "getStartLine",
+            "getStaticProperties",
+            "getStaticPropertyValue",
+            "hasCase",
+            "hasConstant",
+            "hasMethod",
+            "hasProperty",
+            "implementsInterface",
+            "inNamespace",
+            "isAbstract",
+            "isAnonymous",
+            "isBacked",
+            "isCloneable",
+            "isEnum",
+            "isFinal",
+            "isInstance",
+            "isInstantiable",
+            "isInterface",
+            "isInternal",
+            "isIterable",
+            "isIterateable",
+            "isReadOnly",
+            "isSubclassOf",
+            "isUserDefined",
+            "newInstance",
+            "newInstanceArgs",
+            "newInstanceWithoutConstructor",
+            "setStaticPropertyValue",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_enum_unit_case(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "getAttributes",
+            "getDeclaringClass",
+            "getDocComment",
+            "getEnum",
+            "getModifiers",
+            "getName",
+            "getValue",
+            "isEnumCase",
+            "isFinal",
+            "isPrivate",
+            "isProtected",
+            "isPublic",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_reflection_enum_backed_case(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "__toString",
+            "getAttributes",
+            "getBackingValue",
+            "getDeclaringClass",
+            "getDocComment",
+            "getEnum",
+            "getModifiers",
+            "getName",
+            "getValue",
+            "isEnumCase",
+            "isFinal",
+            "isPrivate",
+            "isProtected",
+            "isPublic",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -74226,6 +74389,7 @@ static PtnReflectionClassData *ptn_reflection_class_data(PtnRuntime *runtime, Pt
     if (
         receiver.type != PTN_OBJECT
         || (!ptn_internal_class_name_is_reflection_class(receiver.as.object->class_name)
+            && !ptn_internal_class_name_is_reflection_enum(receiver.as.object->class_name)
             && !ptn_internal_class_name_is_reflection_object(receiver.as.object->class_name))
         || receiver.as.object->native_data == NULL
     ) {
@@ -75340,7 +75504,8 @@ static char *ptn_reflection_class_target_name(
 ) {
     target = ptn_value_deref(target);
     if (target.type == PTN_OBJECT) {
-        if (ptn_internal_class_name_is_reflection_class(target.as.object->class_name)) {
+        if (ptn_internal_class_name_is_reflection_class(target.as.object->class_name) ||
+            ptn_internal_class_name_is_reflection_enum(target.as.object->class_name)) {
             PtnReflectionClassData *data = ptn_reflection_class_data(runtime, target);
             return data == NULL ? NULL : ptn_duplicate_string(data->name);
         }
@@ -75521,6 +75686,9 @@ static int ptn_reflection_class_is_instantiable(const char *class_name) {
     if (ptn_declared_class_is_abstract(class_name)) {
         return 0;
     }
+    if (ptn_declared_class_is_enum(class_name)) {
+        return 0;
+    }
     if (ptn_declared_class_has_non_public_constructor(class_name)) {
         return 0;
     }
@@ -75579,6 +75747,7 @@ static char *ptn_reflection_class_required_class_arg_name(
     char *name = NULL;
     if (arg.type == PTN_OBJECT && (
         ptn_internal_class_name_is_reflection_class(arg.as.object->class_name) ||
+        ptn_internal_class_name_is_reflection_enum(arg.as.object->class_name) ||
         ptn_internal_class_name_is_reflection_object(arg.as.object->class_name)
     )) {
         PtnReflectionClassData *data = ptn_reflection_class_data(runtime, arg);
