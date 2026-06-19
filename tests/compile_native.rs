@@ -6473,6 +6473,17 @@ class Book {
 }
 
 #[test]
+fn parser_rejects_spaced_asymmetric_property_set_visibility_as_parenthesized_type() {
+    let error = parser::parse("<?php class Demo { private (set) mixed $v1; }").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \")\", expecting token \"&\""
+    );
+}
+
+#[test]
 fn parser_accepts_property_hook_prototype_metadata() {
     let program = parser::parse(
         "<?php
