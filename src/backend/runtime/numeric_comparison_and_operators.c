@@ -443,7 +443,7 @@ static PTN_UNUSED int ptn_compare_order(PtnRuntime *runtime, PtnValue left, PtnV
             case PTN_CLOSURE:
                 return left.as.closure == right.as.closure ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
             case PTN_EXCEPTION:
-                return left.as.exception == right.as.exception ? PTN_COMPARE_EQUAL : PTN_COMPARE_GREATER;
+                return left.as.exception == right.as.exception ? PTN_COMPARE_EQUAL : PTN_COMPARE_UNORDERED;
             case PTN_RESOURCE:
                 return ptn_compare_integers(left.as.resource->id, right.as.resource->id);
             case PTN_REFERENCE:

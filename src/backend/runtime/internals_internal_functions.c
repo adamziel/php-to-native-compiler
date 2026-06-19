@@ -29805,12 +29805,143 @@ static PtnValue ptn_number_format_high_precision(
     return ptn_owned_string_len(output.data, output.len);
 }
 
+typedef enum {
+    PTN_ROUND_HALF_AWAY_FROM_ZERO,
+    PTN_ROUND_HALF_TOWARDS_ZERO,
+    PTN_ROUND_HALF_EVEN,
+    PTN_ROUND_HALF_ODD,
+    PTN_ROUND_TOWARDS_ZERO,
+    PTN_ROUND_AWAY_FROM_ZERO,
+    PTN_ROUND_NEGATIVE_INFINITY,
+    PTN_ROUND_POSITIVE_INFINITY
+} PtnRoundMode;
+
+static double ptn_round_integral(double value, PtnRoundMode mode) {
+    if (!isfinite(value)) {
+        return value;
+    }
+
+    switch (mode) {
+        case PTN_ROUND_TOWARDS_ZERO:
+            return trunc(value);
+        case PTN_ROUND_AWAY_FROM_ZERO:
+            return signbit(value) ? -ceil(fabs(value)) : ceil(fabs(value));
+        case PTN_ROUND_NEGATIVE_INFINITY:
+            return floor(value);
+        case PTN_ROUND_POSITIVE_INFINITY:
+            return ceil(value);
+        case PTN_ROUND_HALF_AWAY_FROM_ZERO:
+        case PTN_ROUND_HALF_TOWARDS_ZERO:
+        case PTN_ROUND_HALF_EVEN:
+        case PTN_ROUND_HALF_ODD:
+            break;
+    }
+
+    int negative = signbit(value);
+    double integral = floor(fabs(value));
+    double fraction = fabs(value) - integral;
+    int increment = 0;
+    if (fraction > 0.5) {
+        increment = 1;
+    } else if (fraction == 0.5) {
+        switch (mode) {
+            case PTN_ROUND_HALF_AWAY_FROM_ZERO:
+                increment = 1;
+                break;
+            case PTN_ROUND_HALF_TOWARDS_ZERO:
+                increment = 0;
+                break;
+            case PTN_ROUND_HALF_EVEN:
+                increment = fmod(integral, 2.0) != 0.0;
+                break;
+            case PTN_ROUND_HALF_ODD:
+                increment = fmod(integral, 2.0) == 0.0;
+                break;
+            case PTN_ROUND_TOWARDS_ZERO:
+            case PTN_ROUND_AWAY_FROM_ZERO:
+            case PTN_ROUND_NEGATIVE_INFINITY:
+            case PTN_ROUND_POSITIVE_INFINITY:
+                break;
+        }
+    }
+
+    double rounded = integral + (increment ? 1.0 : 0.0);
+    return negative ? -rounded : rounded;
+}
+
+static double ptn_round_double(double value, int precision, PtnRoundMode mode) {
+    if (!isfinite(value) || value == 0.0) {
+        return value;
+    }
+    if (precision == 0) {
+        return ptn_round_integral(value, mode);
+    }
+
+    if (precision > 0) {
+        double scale = pow(10.0, (double)precision);
+        if (!isfinite(scale) || scale == 0.0) {
+            return value;
+        }
+        double scaled = value * scale;
+        if (!isfinite(scaled)) {
+            return value;
+        }
+        return ptn_round_integral(scaled, mode) / scale;
+    }
+
+    double scale = pow(10.0, -(double)precision);
+    if (!isfinite(scale) || scale == 0.0) {
+        return copysign(0.0, value);
+    }
+    return ptn_round_integral(value / scale, mode) * scale;
+}
+
+static int64_t ptn_internal_number_format_decimals_arg(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2 || ptn_value_deref(args[1]).type == PTN_NULL) {
+        return 0;
+    }
+    return ptn_internal_expect_integer_arg(runtime, "number_format", 2, "decimals", args[1], line);
+}
+
+static PtnStringOperand ptn_internal_number_format_separator_arg(
+    PtnRuntime *runtime,
+    const PtnValue *args,
+    size_t position,
+    const char *argument_name,
+    const char *default_value,
+    size_t line
+) {
+    if (ptn_value_deref(args[position - 1]).type == PTN_NULL) {
+        return ptn_string_operand_borrowed(default_value);
+    }
+    return ptn_internal_expect_string_arg(
+        runtime,
+        "number_format",
+        position,
+        argument_name,
+        args[position - 1],
+        line
+    );
+}
+
 static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     double number = ptn_internal_expect_numeric_arg(runtime, "number_format", 1, "num", args[0], line);
-    int64_t decimals_arg = argc >= 2
-        ? ptn_internal_expect_integer_arg(runtime, "number_format", 2, "decimals", args[1], line)
-        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    int64_t decimals_arg = ptn_internal_number_format_decimals_arg(runtime, argc, args, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     if (decimals_arg < 0) {
+        number = decimals_arg < INT_MIN
+            ? copysign(0.0, number)
+            : ptn_round_double(number, (int)decimals_arg, PTN_ROUND_HALF_AWAY_FROM_ZERO);
         decimals_arg = 0;
     }
     if (decimals_arg > INT_MAX) {
@@ -29823,11 +29954,18 @@ static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, con
     }
     int decimals = (int)decimals_arg;
     PtnStringOperand decimal_separator = argc >= 3
-        ? ptn_internal_expect_string_arg(runtime, "number_format", 3, "decimal_separator", args[2], line)
+        ? ptn_internal_number_format_separator_arg(runtime, args, 3, "decimal_separator", ".", line)
         : ptn_string_operand_borrowed(".");
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     PtnStringOperand thousands_separator = argc >= 4
-        ? ptn_internal_expect_string_arg(runtime, "number_format", 4, "thousands_separator", args[3], line)
+        ? ptn_internal_number_format_separator_arg(runtime, args, 4, "thousands_separator", ",", line)
         : ptn_string_operand_borrowed(",");
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(decimal_separator);
+        return ptn_null();
+    }
 
     if (decimals > 18) {
         PtnValue result = ptn_number_format_high_precision(
@@ -49907,6 +50045,139 @@ static PtnValue ptn_internal_floor(PtnRuntime *runtime, size_t argc, const PtnVa
     return ptn_float(floor(ptn_internal_expect_numeric_arg(runtime, "floor", 1, "num", args[0], line)));
 }
 
+static int ptn_round_mode_from_case_name(const char *case_name, PtnRoundMode *out) {
+    if (case_name == NULL || strcmp(case_name, "HalfAwayFromZero") == 0) {
+        *out = PTN_ROUND_HALF_AWAY_FROM_ZERO;
+        return 1;
+    }
+    if (strcmp(case_name, "HalfTowardsZero") == 0) {
+        *out = PTN_ROUND_HALF_TOWARDS_ZERO;
+        return 1;
+    }
+    if (strcmp(case_name, "HalfEven") == 0) {
+        *out = PTN_ROUND_HALF_EVEN;
+        return 1;
+    }
+    if (strcmp(case_name, "HalfOdd") == 0) {
+        *out = PTN_ROUND_HALF_ODD;
+        return 1;
+    }
+    if (strcmp(case_name, "TowardsZero") == 0) {
+        *out = PTN_ROUND_TOWARDS_ZERO;
+        return 1;
+    }
+    if (strcmp(case_name, "AwayFromZero") == 0) {
+        *out = PTN_ROUND_AWAY_FROM_ZERO;
+        return 1;
+    }
+    if (strcmp(case_name, "NegativeInfinity") == 0) {
+        *out = PTN_ROUND_NEGATIVE_INFINITY;
+        return 1;
+    }
+    if (strcmp(case_name, "PositiveInfinity") == 0) {
+        *out = PTN_ROUND_POSITIVE_INFINITY;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_round_mode_from_int(int64_t mode, PtnRoundMode *out) {
+    switch (mode) {
+        case 1:
+            *out = PTN_ROUND_HALF_AWAY_FROM_ZERO;
+            return 1;
+        case 2:
+            *out = PTN_ROUND_HALF_TOWARDS_ZERO;
+            return 1;
+        case 3:
+            *out = PTN_ROUND_HALF_EVEN;
+            return 1;
+        case 4:
+            *out = PTN_ROUND_HALF_ODD;
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static void ptn_round_throw_invalid_mode(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "round(): Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)"
+    );
+}
+
+static int ptn_round_mode_from_value(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnRoundMode *out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_OBJECT && ptn_ascii_case_equal(value.as.object->class_name, "RoundingMode")) {
+        if (ptn_round_mode_from_case_name(value.as.object->enum_case_name, out)) {
+            return 1;
+        }
+        ptn_round_throw_invalid_mode(runtime);
+        return 0;
+    }
+    if (value.type == PTN_OBJECT || value.type == PTN_CLOSURE || value.type == PTN_EXCEPTION ||
+        value.type == PTN_ARRAY || value.type == PTN_RESOURCE) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "round(): Argument #3 ($mode) must be of type RoundingMode|int, %s given",
+            ptn_numeric_arg_type_name(value)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return 0;
+    }
+
+    int64_t integer_mode = ptn_internal_expect_integer_arg(runtime, "round", 3, "mode", value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    if (!ptn_round_mode_from_int(integer_mode, out)) {
+        ptn_round_throw_invalid_mode(runtime);
+        return 0;
+    }
+    return 1;
+}
+
+static PtnValue ptn_internal_round(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    double value = ptn_internal_expect_numeric_arg(runtime, "round", 1, "num", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    int64_t precision_arg = argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL
+        ? ptn_internal_expect_integer_arg(runtime, "round", 2, "precision", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    PtnRoundMode mode = PTN_ROUND_HALF_AWAY_FROM_ZERO;
+    if (argc >= 3 && !ptn_round_mode_from_value(runtime, args[2], line, &mode)) {
+        return ptn_null();
+    }
+
+    int precision = 0;
+    if (precision_arg > INT_MAX) {
+        precision = INT_MAX;
+    } else if (precision_arg < INT_MIN) {
+        precision = INT_MIN;
+    } else {
+        precision = (int)precision_arg;
+    }
+    return ptn_float(ptn_round_double(value, precision, mode));
+}
+
 static PtnValue ptn_internal_flush(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -50184,6 +50455,56 @@ static PtnValue ptn_internal_max(PtnRuntime *runtime, size_t argc, const PtnValu
 
 static PtnValue ptn_internal_min(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_minmax(runtime, "min", argc, args, 0, line);
+}
+
+static PtnValue ptn_internal_clamp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue value = ptn_value_deref(args[0]);
+    PtnValue min = ptn_value_deref(args[1]);
+    PtnValue max = ptn_value_deref(args[2]);
+
+    if (ptn_value_is_nan(min)) {
+        ptn_throw_exception(runtime, "ValueError", "clamp(): Argument #2 ($min) must not be NAN");
+        return ptn_null();
+    }
+    if (ptn_value_is_nan(max)) {
+        ptn_throw_exception(runtime, "ValueError", "clamp(): Argument #3 ($max) must not be NAN");
+        return ptn_null();
+    }
+
+    int min_vs_max = ptn_compare_order(runtime, min, max, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (min_vs_max == PTN_COMPARE_GREATER) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "clamp(): Argument #2 ($min) must be smaller than or equal to argument #3 ($max)"
+        );
+        return ptn_null();
+    }
+
+    if (ptn_value_is_nan(value)) {
+        return ptn_value_clone_deref(value);
+    }
+
+    int value_vs_min = ptn_compare_order(runtime, value, min, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (value_vs_min == PTN_COMPARE_LESS) {
+        return ptn_value_clone_deref(min);
+    }
+
+    int value_vs_max = ptn_compare_order(runtime, value, max, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (value_vs_max == PTN_COMPARE_GREATER) {
+        return ptn_value_clone_deref(max);
+    }
+    return ptn_value_clone_deref(value);
 }
 
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -53017,6 +53338,10 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "SORT_LOCALE_STRING", PTN_SORT_LOCALE_STRING);
     ptn_get_defined_constants_add_int(table, "SORT_NATURAL", PTN_SORT_NATURAL);
     ptn_get_defined_constants_add_int(table, "SORT_FLAG_CASE", PTN_SORT_FLAG_CASE);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_UP", 1);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_DOWN", 2);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_EVEN", 3);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_ODD", 4);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_BOTH", PTN_ARRAY_FILTER_USE_BOTH);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_KEY", PTN_ARRAY_FILTER_USE_KEY);
     ptn_get_defined_constants_add_int(table, "FNM_NOESCAPE", PTN_FNM_NOESCAPE);
@@ -53204,6 +53529,10 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "SORT_LOCALE_STRING",
         "SORT_NATURAL",
         "SORT_FLAG_CASE",
+        "PHP_ROUND_HALF_UP",
+        "PHP_ROUND_HALF_DOWN",
+        "PHP_ROUND_HALF_EVEN",
+        "PHP_ROUND_HALF_ODD",
         "ARRAY_FILTER_USE_BOTH",
         "ARRAY_FILTER_USE_KEY",
         "FNM_NOESCAPE",
@@ -54415,7 +54744,10 @@ static PtnValue ptn_internal_base_convert(PtnRuntime *runtime, size_t argc, cons
 
 static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "bindec", 1, "binary_string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line);
     ptn_string_operand_free(string);
     return value;
@@ -54454,7 +54786,10 @@ static PtnValue ptn_internal_decoct(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "hexdec", 1, "hex_string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line);
     ptn_string_operand_free(string);
     return value;
@@ -54462,7 +54797,10 @@ static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_octdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "octdec", 1, "octal_string", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 8, 'o', line);
     ptn_string_operand_free(string);
     return value;
@@ -65755,6 +66093,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "class_parents", 1, 2, ptn_internal_class_parents },
         { "class_uses", 1, 2, ptn_internal_class_uses },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
+        { "clamp", 3, 3, ptn_internal_clamp },
         { "closedir", 1, 1, ptn_internal_closedir },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
         { "Closure::fromCallable", 1, 1, ptn_internal_closure_from_callable },
@@ -66174,6 +66513,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
+        { "round", 1, 3, ptn_internal_round },
         { "RoundingMode::cases", 0, 0, ptn_internal_rounding_mode_cases },
         { "WeakReference::create", 1, 1, ptn_weak_reference_create },
         { "SplFileObject::fgetcsv", 0, 3, ptn_internal_method_metadata_stub },
@@ -79712,6 +80052,7 @@ static PtnValue ptn_reflection_extension_classes(
             "Exception",
             "Error",
             "ErrorException",
+            "LogicException",
             "RuntimeException",
             "InvalidArgumentException",
             "UnexpectedValueException",

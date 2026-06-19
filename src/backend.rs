@@ -57,6 +57,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("PDOException", "Exception"),
     ("IntlException", "Exception"),
     ("DOMException", "Exception"),
+    ("LogicException", "Exception"),
     ("RuntimeException", "Exception"),
     ("InvalidArgumentException", "RuntimeException"),
     ("UnexpectedValueException", "RuntimeException"),
@@ -17774,6 +17775,34 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::String(",")),
         },
     ];
+    static ROUND_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "num",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "precision",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "mode",
+            default: Some(InternalParameterDefault::Int(1)),
+        },
+    ];
+    static CLAMP_PARAMETERS: [InternalParameterSpec; 3] = [
+        InternalParameterSpec {
+            name: "value",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "min",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "max",
+            default: None,
+        },
+    ];
     static HTML_ENCODE_PARAMETERS: [InternalParameterSpec; 4] = [
         InternalParameterSpec {
             name: "string",
@@ -18314,6 +18343,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&HTTP_BUILD_QUERY_PARAMETERS)
     } else if name.eq_ignore_ascii_case("number_format") {
         Some(&NUMBER_FORMAT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("round") {
+        Some(&ROUND_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("clamp") {
+        Some(&CLAMP_PARAMETERS)
     } else if name.eq_ignore_ascii_case("htmlspecialchars")
         || name.eq_ignore_ascii_case("htmlentities")
     {

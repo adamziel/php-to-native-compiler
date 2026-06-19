@@ -1712,6 +1712,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "IntlException")) {
         return "IntlException";
     }
+    if (ptn_exception_name_equal(class_name, "LogicException")) {
+        return "LogicException";
+    }
     if (ptn_exception_name_equal(class_name, "RuntimeException")) {
         return "RuntimeException";
     }
