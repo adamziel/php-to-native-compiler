@@ -10114,6 +10114,48 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_reflection_method_visibility_metadata(const char *class_name, const char *method_name, const char **declaring_class, int *visibility, int *is_abstract) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if classes
+        .iter()
+        .all(|class| class_method_lookup_chain(class, classes).is_empty())
+    {
+        out.push_str("    (void)method_name;\n");
+        out.push_str("    (void)declaring_class;\n");
+        out.push_str("    (void)visibility;\n");
+        out.push_str("    (void)is_abstract;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_method_lookup_chain(class, classes) {
+            let method = entry.method;
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            out.push_str("            *declaring_class = \"");
+            out.push_str(&c_string(entry.declaring_class));
+            out.push_str("\";\n");
+            out.push_str("            *visibility = ");
+            out.push_str(c_method_visibility(method.visibility));
+            out.push_str(";\n");
+            out.push_str("            *is_abstract = ");
+            out.push_str(if method.is_abstract { "1" } else { "0" });
+            out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name) {\n",
     );
     out.push_str("    (void)runtime;\n");
@@ -14232,6 +14274,59 @@ fn emit_method_dispatch(
     out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
     out.push_str("    const char *class_name = resolved.as.object->class_name;\n");
+    for class in classes {
+        let private_methods: Vec<_> = class
+            .methods
+            .iter()
+            .filter(|method| method.visibility == PropertyVisibility::Private && !method.is_static)
+            .collect();
+        if private_methods.is_empty() {
+            continue;
+        }
+        out.push_str("    if (runtime->current_class_name != NULL && ptn_ascii_case_equal(runtime->current_class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\") && ptn_declared_class_is_same_or_descendant(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for method in private_methods {
+            let function = &functions[method.function_index];
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(&method.name));
+            out.push_str("\")) {\n");
+            if method.is_abstract {
+                out.push_str("            char ptn_private_abstract_message[512];\n");
+                out.push_str("            int ptn_private_abstract_written = snprintf(ptn_private_abstract_message, sizeof(ptn_private_abstract_message), \"Cannot call abstract method %s::%s()\", \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&method.name));
+                out.push_str("\");\n");
+                out.push_str("            if (ptn_private_abstract_written < 0 || (size_t)ptn_private_abstract_written >= sizeof(ptn_private_abstract_message)) {\n");
+                out.push_str("                ptn_abort_out_of_memory();\n");
+                out.push_str("            }\n");
+                out.push_str("            ptn_throw_exception_at(runtime, \"Error\", ptn_private_abstract_message, runtime->source_path, line);\n");
+                out.push_str("            return ptn_null();\n");
+            } else {
+                emit_deprecated_function_warning(
+                    out,
+                    "            ",
+                    "runtime",
+                    "runtime->source_path",
+                    "&runtime->diagnostics",
+                    function,
+                    "line",
+                );
+                out.push_str("            const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
+                out.push_str("            runtime->called_class_name_override = class_name;\n");
+                out.push_str("            PtnValue ptn_private_scope_result = ");
+                out.push_str(&user_function_c_name(method.function_index));
+                out.push_str("(runtime, resolved, argc, args, line);\n");
+                out.push_str("            runtime->called_class_name_override = ptn_previous_called_class;\n");
+                out.push_str("            return ptn_private_scope_result;\n");
+            }
+            out.push_str("        }\n");
+        }
+        out.push_str("    }\n");
+    }
     out.push_str("    if (ptn_object_is_generator(resolved.as.object)) {\n");
     out.push_str("        if (ptn_ascii_case_equal(method_name, \"current\")) {\n");
     out.push_str("            if (argc != 0) {\n");
@@ -15218,6 +15313,17 @@ fn emit_callable_dispatch(
         out.push_str("                    free(scope_name);\n");
         out.push_str("                    return result;\n");
         out.push_str("                }\n");
+        out.push_str("                if (separator == NULL && runtime->has_current_receiver && ptn_declared_class_has_call_magic(target_class_name)) {\n");
+        out.push_str("                    PtnValue ptn_magic_receiver = ptn_value_deref(runtime->current_receiver);\n");
+        out.push_str("                    if (ptn_magic_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(ptn_magic_receiver.as.object->class_name, target_class_name)) {\n");
+        out.push_str("                        result = ptn_call_declared_method(runtime, ptn_magic_receiver, target_method_name, argc, args, line);\n");
+        out.push_str("                        free(target_method_name);\n");
+        out.push_str("                        free(target_class_name);\n");
+        out.push_str("                        free(method_name);\n");
+        out.push_str("                        free(scope_name);\n");
+        out.push_str("                        return result;\n");
+        out.push_str("                    }\n");
+        out.push_str("                }\n");
         out.push_str("                int ptn_static_callable_needed = snprintf(NULL, 0, \"%s::%s\", target_class_name, target_method_name);\n");
         out.push_str("                if (ptn_static_callable_needed < 0) {\n");
         out.push_str("                    ptn_abort_out_of_memory();\n");
@@ -15244,11 +15350,25 @@ fn emit_callable_dispatch(
         out.push_str("        }\n");
         out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_ARRAY) {\n");
-        out.push_str("        ptn_throw_exception_at(runtime, \"Error\", \"Array callback has to contain indices 0 and 1\", runtime->source_path, line);\n");
+        out.push_str("        if (resolved.as.array->len != 2) {\n");
+        out.push_str("            ptn_throw_exception_at(runtime, \"Error\", \"Array callback must have exactly two elements\", runtime->source_path, line);\n");
+        out.push_str("        } else {\n");
+        out.push_str("            ptn_throw_exception_at(runtime, \"Error\", \"Array callback has to contain indices 0 and 1\", runtime->source_path, line);\n");
+        out.push_str("        }\n");
         out.push_str("        return ptn_null();\n");
         out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_OBJECT && ptn_declared_class_has_invoke_magic(resolved.as.object->class_name)) {\n");
         out.push_str("        return ptn_call_declared_method(runtime, resolved, \"__invoke\", argc, args, line);\n");
+        out.push_str("    }\n");
+        out.push_str("    if (resolved.type == PTN_OBJECT || resolved.type == PTN_EXCEPTION) {\n");
+        out.push_str("        const char *ptn_not_callable_class = resolved.type == PTN_OBJECT ? resolved.as.object->class_name : resolved.as.exception->class_name;\n");
+        out.push_str("        char ptn_not_callable_message[256];\n");
+        out.push_str("        int ptn_not_callable_written = snprintf(ptn_not_callable_message, sizeof(ptn_not_callable_message), \"Object of type %s is not callable\", ptn_not_callable_class);\n");
+        out.push_str("        if (ptn_not_callable_written < 0 || (size_t)ptn_not_callable_written >= sizeof(ptn_not_callable_message)) {\n");
+        out.push_str("            ptn_abort_out_of_memory();\n");
+        out.push_str("        }\n");
+        out.push_str("        ptn_throw_exception_at(runtime, \"Error\", ptn_not_callable_message, runtime->source_path, line);\n");
+        out.push_str("        return ptn_null();\n");
         out.push_str("    }\n");
         out.push_str("    if (resolved.type == PTN_STRING) {\n");
         out.push_str("        char *callable_name = ptn_value_to_string(resolved);\n");

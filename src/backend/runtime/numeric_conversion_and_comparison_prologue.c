@@ -4283,20 +4283,10 @@ static PTN_UNUSED PtnValue ptn_runtime_fetch_dynamic_static_member_class_name(
         return ptn_owned_string(ptn_duplicate_string(class_name));
     }
 
-    const char *type_name = ptn_dynamic_class_name_fetch_type_name(receiver);
-    int needed = snprintf(NULL, 0, "Class name must be a valid object or a string, %s given", type_name);
-    if (needed < 0) {
-        ptn_abort_out_of_memory();
-    }
-    char *message = malloc((size_t)needed + 1);
-    if (message == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    snprintf(message, (size_t)needed + 1, "Class name must be a valid object or a string, %s given", type_name);
-    ptn_throw_exception_owned_message_at(
+    ptn_throw_exception_at(
         runtime,
-        "TypeError",
-        message,
+        "Error",
+        "Class name must be a valid object or a string",
         runtime != NULL ? runtime->source_path : NULL,
         line
     );

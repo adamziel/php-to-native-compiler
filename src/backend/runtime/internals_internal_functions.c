@@ -2860,6 +2860,7 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
 static PTN_UNUSED int ptn_declared_class_static_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
+static PTN_UNUSED int ptn_declared_class_reflection_method_visibility_metadata(const char *class_name, const char *method_name, const char **declaring_class, int *visibility, int *is_abstract);
 static const char *ptn_runtime_default_charset(PtnRuntime *runtime);
 static const char *ptn_runtime_arg_separator_input(PtnRuntime *runtime);
 static const char *ptn_runtime_arg_separator_output(PtnRuntime *runtime);
@@ -2986,29 +2987,25 @@ static char *ptn_inaccessible_declared_method_callback_reason(
     const char *class_name,
     const char *method_name
 ) {
-    int is_static = 0;
+    const char *declaring_class = NULL;
     int visibility = PTN_PROPERTY_PUBLIC;
-    int is_final = 0;
     int is_abstract = 0;
     if (
-        !ptn_declared_class_reflection_method_metadata(
+        !ptn_declared_class_reflection_method_visibility_metadata(
             class_name,
             method_name,
-            &is_static,
+            &declaring_class,
             &visibility,
-            &is_final,
             &is_abstract
         )
     ) {
         return NULL;
     }
-    (void)is_static;
-    (void)is_final;
     if (is_abstract) {
         return ptn_format_abstract_method_callback_reason(class_name, method_name);
     }
     const char *access_scope = runtime == NULL ? NULL : runtime->current_class_name;
-    if (ptn_declared_method_visibility_allows(access_scope, class_name, visibility)) {
+    if (ptn_declared_method_visibility_allows(access_scope, declaring_class, visibility)) {
         return NULL;
     }
     return ptn_format_inaccessible_method_callback_reason(visibility, class_name, method_name);
