@@ -1,4 +1,39 @@
 
+static int ptn_runtime_disabled_function_list_contains(const char *list, const char *name) {
+    if (list == NULL || name == NULL || name[0] == '\0') {
+        return 0;
+    }
+
+    const char *cursor = list;
+    while (*cursor != '\0') {
+        while (*cursor == ',' || isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        const char *start = cursor;
+        while (*cursor != '\0' && *cursor != ',' && !isspace((unsigned char)*cursor)) {
+            cursor++;
+        }
+        const char *end = cursor;
+        while (end > start && isspace((unsigned char)end[-1])) {
+            end--;
+        }
+        size_t len = (size_t)(end - start);
+        if (len == strlen(name)) {
+            int matches = 1;
+            for (size_t i = 0; i < len; i++) {
+                if (tolower((unsigned char)start[i]) != tolower((unsigned char)name[i])) {
+                    matches = 0;
+                    break;
+                }
+            }
+            if (matches) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 static PTN_UNUSED void ptn_symbols_ensure_index(PtnSymbolTable *symbols, size_t expected_entries) {
     size_t capacity = ptn_symbol_index_capacity_for_entries(expected_entries);
     if (capacity > symbols->index_capacity) {
@@ -2087,6 +2122,16 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     int configured_assert_exception = 1;
     if (ptn_parse_bool_env("PTN_ASSERT_EXCEPTION", &configured_assert_exception)) {
         runtime->assert_exception = configured_assert_exception;
+    }
+    const char *configured_disabled_functions = getenv("PTN_DISABLE_FUNCTIONS");
+    runtime->disabled_functions = ptn_duplicate_string(
+        configured_disabled_functions == NULL ? "" : configured_disabled_functions
+    );
+    if (ptn_runtime_disabled_function_list_contains(runtime->disabled_functions, "exit")) {
+        ptn_emit_warning(&runtime->diagnostics, "Cannot disable function exit()", 0);
+    }
+    if (ptn_runtime_disabled_function_list_contains(runtime->disabled_functions, "die")) {
+        ptn_emit_warning(&runtime->diagnostics, "Cannot disable function die()", 0);
     }
     runtime->call_site_line = 0;
     runtime->suppress_user_call_frame_location = 0;

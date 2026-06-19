@@ -52397,6 +52397,15 @@ static PtnRuntime *ptn_runtime_config_root(PtnRuntime *runtime) {
     return root == NULL ? runtime : root;
 }
 
+static int ptn_runtime_function_disabled(PtnRuntime *runtime, const char *name) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->disabled_functions == NULL) {
+        return 0;
+    }
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    return ptn_runtime_disabled_function_list_contains(root->disabled_functions, lookup_name);
+}
+
 static PtnValue ptn_ini_int_string(int value) {
     char buffer[32];
     int written = snprintf(buffer, sizeof(buffer), "%d", value);
@@ -94078,7 +94087,9 @@ static void ptn_throw_internal_argument_count_error(
 }
 
 static PTN_UNUSED PtnValue ptn_call_internal(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line) {
-    const PtnInternalFunction *function = ptn_find_internal_function(name);
+    const PtnInternalFunction *function = ptn_runtime_function_disabled(runtime, name)
+        ? NULL
+        : ptn_find_internal_function(name);
     if (function != NULL) {
         if (argc < function->min_args) {
             ptn_throw_internal_argument_count_error(

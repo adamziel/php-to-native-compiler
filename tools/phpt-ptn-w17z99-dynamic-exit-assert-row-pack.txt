@@ -1,0 +1,32 @@
+# ptn-w17z.99: dynamic-call, exit, and assert diagnostics row pack.
+# Source sweep: /home/claude/.local/state/ptn-full-phpt-dashboard-loop/runs/20260617T122937Z/shards
+Zend/tests/assert/expect_015.phpt
+Zend/tests/assert/expect_020.phpt
+Zend/tests/assert/gh11580.phpt
+Zend/tests/assert/gh16293_001.phpt
+Zend/tests/assert/gh16293_002.phpt
+Zend/tests/assert/disable_assert_function.phpt
+Zend/tests/dynamic_call/bug46246.phpt
+Zend/tests/dynamic_call/bug48770_2.phpt
+Zend/tests/dynamic_call/bug48770_3.phpt
+Zend/tests/dynamic_call/bug54910.phpt
+Zend/tests/dynamic_call/bug63173.phpt
+Zend/tests/dynamic_call/bug68475.phpt
+Zend/tests/dynamic_call/dynamic_method_calls.phpt
+Zend/tests/dynamic_call/variable_variables_curly_syntax.phpt
+Zend/tests/dynamic_call/variable_variables_function_names.phpt
+Zend/tests/dynamic_call/bug78898.phpt
+Zend/tests/dynamic_call/dynamic_call_004.phpt
+Zend/tests/dynamic_call/dynamic_call_005.phpt
+Zend/tests/dynamic_call/dynamic_call_006.phpt
+Zend/tests/dynamic_call/dynamic_call_007.phpt
+Zend/tests/dynamic_call/dynamic_call_008.phpt
+Zend/tests/dynamic_call/dynamic_call_freeing.phpt
+Zend/tests/dynamic_call/dynamic_call_non_static.phpt
+Zend/tests/exit/ast_print_assert_die_const.phpt
+Zend/tests/exit/ast_print_assert_die_function.phpt
+Zend/tests/exit/ast_print_assert_exit_const.phpt
+Zend/tests/exit/ast_print_assert_exit_function.phpt
+Zend/tests/exit/bug79948.phpt
+Zend/tests/exit/disabling_die.phpt
+Zend/tests/exit/disabling_exit.phpt

@@ -199,6 +199,7 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->assert_callback_ini = NULL;
     runtime->assert_callback = ptn_null();
     runtime->assert_exception = caller_runtime->assert_exception;
+    runtime->disabled_functions = caller_runtime->disabled_functions;
     runtime->call_site_line = 0;
     runtime->suppress_user_call_frame_location =
         caller_runtime->suppress_user_call_frame_location;
@@ -562,6 +563,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->assert_callback_ini = NULL;
         ptn_value_destroy(&runtime->assert_callback);
         runtime->assert_callback = ptn_null();
+        free(runtime->disabled_functions);
+        runtime->disabled_functions = NULL;
         free(runtime->request_body);
         runtime->request_body = NULL;
         runtime->request_body_len = 0;

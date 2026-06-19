@@ -1272,6 +1272,7 @@ struct PtnRuntime {
     char *assert_callback_ini;
     PtnValue assert_callback;
     int assert_exception;
+    char *disabled_functions;
     size_t call_site_line;
     int suppress_user_call_frame_location;
     int suppress_user_argument_count_location;

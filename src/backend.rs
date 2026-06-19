@@ -15229,7 +15229,8 @@ fn emit_callable_dispatch(
             "                    called_class_name = runtime->forward_static_called_class_name;\n",
         );
         out.push_str("                }\n");
-        out.push_str("                if (runtime->has_current_receiver) {\n");
+        out.push_str("                int ptn_scoped_callable_can_bind_current_receiver = ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\") || separator != NULL;\n");
+        out.push_str("                if (ptn_scoped_callable_can_bind_current_receiver && runtime->has_current_receiver) {\n");
         out.push_str("                    PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
         out.push_str("                    if (current_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(current_receiver.as.object->class_name, target_class_name)) {\n");
         out.push_str("                        scoped_receiver = current_receiver;\n");
@@ -15290,7 +15291,8 @@ fn emit_callable_dispatch(
             "                called_class_name = runtime->forward_static_called_class_name;\n",
         );
         out.push_str("            }\n");
-        out.push_str("            if (runtime->has_current_receiver) {\n");
+        out.push_str("            int ptn_static_callable_can_bind_current_receiver = ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\");\n");
+        out.push_str("            if (ptn_static_callable_can_bind_current_receiver && runtime->has_current_receiver) {\n");
         out.push_str("                PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
         out.push_str("                const char *current_receiver_class = NULL;\n");
         out.push_str("                if (current_receiver.type == PTN_OBJECT) {\n");

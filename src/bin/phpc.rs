@@ -208,6 +208,7 @@ struct RuntimeIni {
     assert_callback: Option<String>,
     assert_exception: Option<String>,
     assert_warning: Option<String>,
+    disable_functions: Option<String>,
     display_errors: Option<String>,
     html_errors: Option<String>,
     error_reporting: Option<i64>,
@@ -379,6 +380,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.assert_callback = Some(raw_value.to_string());
     } else if name.eq_ignore_ascii_case("assert.warning") {
         ini.assert_warning = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("disable_functions") {
+        ini.disable_functions = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("date.timezone") {
         ini.date_timezone = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("default_charset") {
@@ -866,6 +869,7 @@ fn compile_and_run(
         assert_callback: ini.assert_callback.clone(),
         assert_exception: ini.assert_exception.clone(),
         assert_warning: ini.assert_warning.clone(),
+        disable_functions: ini.disable_functions.clone(),
         display_errors: ini.display_errors.clone(),
         html_errors: ini.html_errors.clone(),
         error_reporting: ini.error_reporting,
@@ -974,6 +978,9 @@ fn compile_and_run(
     }
     if let Some(assert_warning) = &ini.assert_warning {
         command.env("PTN_ASSERT_WARNING", assert_warning);
+    }
+    if let Some(disable_functions) = &ini.disable_functions {
+        command.env("PTN_DISABLE_FUNCTIONS", disable_functions);
     }
     if let Some(display_errors) = &ini.display_errors {
         command.env("PTN_PHP_DISPLAY_ERRORS", display_errors);
