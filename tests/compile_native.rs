@@ -34945,6 +34945,54 @@ St::e2();
 }
 
 #[test]
+fn compile_dynamic_static_self_method_call_avoids_callable_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-static-self-method-call-no-callable-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-static-self-method-call-no-callable-deprecation.php");
+    let output = root.join("dynamic-static-self-method-call-no-callable-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php
+function getMethodName(&$methodName) {
+    $methodName = Abc::METHOD_NAME;
+}
+
+class Abc {
+    const METHOD_NAME = \"goal\";
+
+    private static function goal() {
+        echo \"success\\n\";
+    }
+
+    public static function run() {
+        $method = \"foobar\";
+        getMethodName($method);
+        var_dump(is_callable(\"Abc::$method\"));
+        self::$method();
+    }
+}
+
+Abc::run();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nsuccess\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("suppress_scoped_callable_deprecation"));
+    assert!(c_source.contains("ptn_call_callable(&runtime"));
+}
+
+#[test]
 fn compile_get_called_class_through_call_user_func_to_native_binary() {
     let root = temp_dir("ptn-native-get-called-class-call-user-func");
     fs::create_dir_all(&root).unwrap();
@@ -58388,6 +58436,54 @@ echo http_build_query(["name" => "main page"], "", ini_get("arg_separator.output
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_reflection_reference_from_array_element_static_on_array_cast_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-reference-array-cast-static");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-reference-array-cast-static.php");
+    let output = root.join("reflection-reference-array-cast-static-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo
+{
+    public $foo;
+}
+
+function hydrate($properties, $object)
+{
+    foreach ($properties as $name => &$value) {
+        $object->$name = &$value;
+    }
+}
+
+$object = new Foo;
+hydrate(['foo' => 123], $object);
+$arrayCast = (array) $object;
+$object->foo = 234;
+var_dump(ReflectionReference::fromArrayElement($arrayCast, 'foo'));
+echo $arrayCast['foo'], "\n";
+?>"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n123\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_reflection_reference_from_array_element"));
+    assert!(c_source.contains("ptn_internal_class_static_method_exists"));
 }
 
 #[test]

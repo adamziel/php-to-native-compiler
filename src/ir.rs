@@ -619,6 +619,7 @@ pub enum ValueExpr {
         arguments: Vec<ValueExpr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        static_method_syntax: bool,
         line: usize,
     },
     MethodCall {
@@ -3982,6 +3983,7 @@ impl<'a> LoweringContext<'a> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                static_method_syntax,
                 span,
             } => ValueExpr::DynamicCall {
                 callee: Box::new(self.lower_expr(callee)),
@@ -3991,6 +3993,7 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 argument_names: argument_names.clone(),
                 argument_unpacks: argument_unpacks.clone(),
+                static_method_syntax: *static_method_syntax,
                 line: span.line,
             },
             Expr::MethodCall {

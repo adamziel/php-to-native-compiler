@@ -16543,7 +16543,9 @@ fn emit_callable_dispatch(
         out.push_str("                char *separator = strstr(method_name, \"::\");\n");
         out.push_str("                if (separator != NULL) {\n");
         out.push_str("                    const char *callable_scope_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name;\n");
-        out.push_str("                    ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line);\n");
+        out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation) {\n");
+        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, callable_scope_name, method_name, line);\n");
+        out.push_str("                    }\n");
         out.push_str("                    *separator = '\\0';\n");
         out.push_str("                    const char *relative_class_name = receiver.type == PTN_OBJECT ? receiver.as.object->class_name : receiver.as.exception->class_name;\n");
         out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, method_name, relative_class_name);\n");
@@ -16573,17 +16575,19 @@ fn emit_callable_dispatch(
         out.push_str("                char *target_method_name = NULL;\n");
         out.push_str("                char *separator = strstr(method_name, \"::\");\n");
         out.push_str("                if (separator != NULL) {\n");
-        out.push_str("                    ptn_emit_scoped_callable_deprecation(runtime, scope_name, method_name, line);\n");
+        out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation) {\n");
+        out.push_str("                        ptn_emit_scoped_callable_deprecation(runtime, scope_name, method_name, line);\n");
+        out.push_str("                    }\n");
         out.push_str("                    *separator = '\\0';\n");
         out.push_str("                    target_class_name = ptn_callable_resolve_class_scope(runtime, method_name, scope_name);\n");
         out.push_str(
             "                    target_method_name = ptn_duplicate_string(separator + 2);\n",
         );
         out.push_str("                } else {\n");
-        out.push_str("                    if (ptn_ascii_case_equal(scope_name, \"self\")) {\n");
+        out.push_str("                    if (!runtime->suppress_scoped_callable_deprecation && ptn_ascii_case_equal(scope_name, \"self\")) {\n");
         out.push_str("                        ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"self\\\" in callables is deprecated\", line);\n");
         out.push_str(
-            "                    } else if (ptn_ascii_case_equal(scope_name, \"parent\")) {\n",
+            "                    } else if (!runtime->suppress_scoped_callable_deprecation && ptn_ascii_case_equal(scope_name, \"parent\")) {\n",
         );
         out.push_str("                        ptn_emit_deprecation(&runtime->diagnostics, \"Use of \\\"parent\\\" in callables is deprecated\", line);\n");
         out.push_str("                    }\n");
@@ -26499,6 +26503,7 @@ impl ValueEmitter {
             arguments,
             argument_names,
             argument_unpacks,
+            static_method_syntax,
             line,
         } = value
         {
@@ -26508,6 +26513,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                *static_method_syntax,
                 *line,
                 true,
             );
@@ -30715,6 +30721,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                static_method_syntax,
                 line,
             } => self.emit_dynamic_call(
                 out,
@@ -30722,6 +30729,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                *static_method_syntax,
                 *line,
                 false,
             ),
@@ -35481,6 +35489,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                static_method_syntax,
                 line,
             } => Some(self.emit_dynamic_call(
                 out,
@@ -35488,6 +35497,7 @@ impl ValueEmitter {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                *static_method_syntax,
                 *line,
                 false,
             )),
@@ -37609,9 +37619,11 @@ impl ValueEmitter {
         arguments: &[ValueExpr],
         argument_names: &[Option<String>],
         argument_unpacks: &[bool],
+        static_method_syntax: bool,
         line: usize,
         discarded: bool,
     ) -> String {
+        let suppress_scoped_callable_deprecation = static_method_syntax;
         if argument_names.iter().any(Option::is_some) {
             let result_temp = self.next_temp();
             self.emit_fatal_value(
@@ -37640,6 +37652,16 @@ impl ValueEmitter {
                 if discarded {
                     self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
                 }
+                let scoped_callable_deprecation_temp = if suppress_scoped_callable_deprecation {
+                    let temp = self.next_temp();
+                    out.push_str("    int ");
+                    out.push_str(&temp);
+                    out.push_str(" = runtime.suppress_scoped_callable_deprecation;\n");
+                    out.push_str("    runtime.suppress_scoped_callable_deprecation = 1;\n");
+                    Some(temp)
+                } else {
+                    None
+                };
                 let saved_argument_count_errors_temp = self.next_temp();
                 out.push_str("    int ");
                 out.push_str(&saved_argument_count_errors_temp);
@@ -37658,6 +37680,11 @@ impl ValueEmitter {
                 out.push_str("    runtime.throw_argument_count_errors = ");
                 out.push_str(&saved_argument_count_errors_temp);
                 out.push_str(";\n");
+                if let Some(temp) = scoped_callable_deprecation_temp {
+                    out.push_str("    runtime.suppress_scoped_callable_deprecation = ");
+                    out.push_str(&temp);
+                    out.push_str(";\n");
+                }
                 emit_value_cleanup(out, "    ", &format!("{args_temp}[0]"));
                 emit_value_cleanup(out, "    ", &pipe_argument_temp);
                 emit_value_cleanup(out, "    ", &pipe_input_temp);
@@ -37680,6 +37707,16 @@ impl ValueEmitter {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
             }
+            let scoped_callable_deprecation_temp = if suppress_scoped_callable_deprecation {
+                let temp = self.next_temp();
+                out.push_str("    int ");
+                out.push_str(&temp);
+                out.push_str(" = runtime.suppress_scoped_callable_deprecation;\n");
+                out.push_str("    runtime.suppress_scoped_callable_deprecation = 1;\n");
+                Some(temp)
+            } else {
+                None
+            };
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
@@ -37691,6 +37728,11 @@ impl ValueEmitter {
             out.push_str(".values, ");
             out.push_str(&line.to_string());
             out.push_str(", 0);\n");
+            if let Some(temp) = scoped_callable_deprecation_temp {
+                out.push_str("    runtime.suppress_scoped_callable_deprecation = ");
+                out.push_str(&temp);
+                out.push_str(";\n");
+            }
             out.push_str("    ptn_call_arguments_destroy(&");
             out.push_str(&args_temp);
             out.push_str(");\n");
@@ -37701,6 +37743,16 @@ impl ValueEmitter {
             if discarded {
                 self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
             }
+            let scoped_callable_deprecation_temp = if suppress_scoped_callable_deprecation {
+                let temp = self.next_temp();
+                out.push_str("    int ");
+                out.push_str(&temp);
+                out.push_str(" = runtime.suppress_scoped_callable_deprecation;\n");
+                out.push_str("    runtime.suppress_scoped_callable_deprecation = 1;\n");
+                Some(temp)
+            } else {
+                None
+            };
             out.push_str("    PtnValue ");
             out.push_str(&result_temp);
             out.push_str(" = ptn_call_callable(&runtime, ");
@@ -37708,6 +37760,11 @@ impl ValueEmitter {
             out.push_str(", 0, NULL, ");
             out.push_str(&line.to_string());
             out.push_str(", 0);\n");
+            if let Some(temp) = scoped_callable_deprecation_temp {
+                out.push_str("    runtime.suppress_scoped_callable_deprecation = ");
+                out.push_str(&temp);
+                out.push_str(";\n");
+            }
             emit_value_cleanup(out, "    ", &callee_temp);
             return result_temp;
         }
@@ -37744,6 +37801,16 @@ impl ValueEmitter {
         if discarded {
             self.emit_no_discard_warning_for_callable_temp(out, &callee_temp, line);
         }
+        let scoped_callable_deprecation_temp = if suppress_scoped_callable_deprecation {
+            let temp = self.next_temp();
+            out.push_str("    int ");
+            out.push_str(&temp);
+            out.push_str(" = runtime.suppress_scoped_callable_deprecation;\n");
+            out.push_str("    runtime.suppress_scoped_callable_deprecation = 1;\n");
+            Some(temp)
+        } else {
+            None
+        };
         out.push_str("    PtnValue ");
         out.push_str(&result_temp);
         out.push_str(" = ptn_call_callable(&runtime, ");
@@ -37755,6 +37822,11 @@ impl ValueEmitter {
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", 0);\n");
+        if let Some(temp) = scoped_callable_deprecation_temp {
+            out.push_str("    runtime.suppress_scoped_callable_deprecation = ");
+            out.push_str(&temp);
+            out.push_str(";\n");
+        }
         for temp in &unwrap_array_dim_reference_temps {
             emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
         }

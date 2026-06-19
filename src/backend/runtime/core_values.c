@@ -1210,6 +1210,7 @@ struct PtnRuntime {
     int by_ref_argument_notice_pending;
     int by_ref_argument_notice_emitted;
     size_t by_ref_argument_notice_line;
+    int suppress_scoped_callable_deprecation;
     char *include_path;
     char **included_files;
     size_t included_files_len;

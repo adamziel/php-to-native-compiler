@@ -6658,6 +6658,7 @@ impl Parser<'_> {
                     }],
                     argument_names: vec![None],
                     argument_unpacks: vec![false],
+                    static_method_syntax: false,
                     span,
                 };
                 continue;
@@ -7112,6 +7113,7 @@ impl Parser<'_> {
                         arguments,
                         argument_names,
                         argument_unpacks,
+                        static_method_syntax: false,
                         span: combine_spans(start_span, right_span),
                     };
                 }
@@ -7948,6 +7950,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            static_method_syntax: true,
             span: combine_spans(class_span, right_span),
         })
     }

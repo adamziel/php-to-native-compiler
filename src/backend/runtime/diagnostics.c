@@ -1843,6 +1843,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->by_ref_argument_notice_pending = 0;
     runtime->by_ref_argument_notice_emitted = 0;
     runtime->by_ref_argument_notice_line = 0;
+    runtime->suppress_scoped_callable_deprecation = 0;
     runtime->include_path = ptn_duplicate_string(".");
     runtime->included_files = NULL;
     runtime->included_files_len = 0;

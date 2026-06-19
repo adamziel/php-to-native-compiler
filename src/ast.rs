@@ -897,6 +897,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        static_method_syntax: bool,
         span: SourceSpan,
     },
     MethodCall {
