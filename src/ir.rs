@@ -477,6 +477,10 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    LegacyDollarBraceExpressionVariable {
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     DynamicVariable {
         name: Box<ValueExpr>,
         line: usize,
@@ -3605,7 +3609,9 @@ impl<'a> LoweringContext<'a> {
     fn lower_expr(&mut self, expr: &Expr) -> ValueExpr {
         match expr {
             Expr::String(value, _) => ValueExpr::String(value.clone()),
-            Expr::InterpolatedString(parts, span) => lower_interpolated_string(parts, span.line),
+            Expr::InterpolatedString(parts, span) => {
+                lower_interpolated_string(parts, span.line, |expr| self.lower_expr(expr))
+            }
             Expr::ShellExec { command, span } => ValueExpr::InternalCall {
                 name: "shell_exec".to_string(),
                 arguments: vec![ValueExpr::String(command.clone())],
@@ -4029,7 +4035,11 @@ impl<'a> LoweringContext<'a> {
     }
 }
 
-fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr {
+fn lower_interpolated_string(
+    parts: &[AstStringPart],
+    line: usize,
+    mut lower_expr: impl FnMut(&Expr) -> ValueExpr,
+) -> ValueExpr {
     let mut values = parts.iter().filter_map(|part| match part {
         AstStringPart::Literal(value) if value.is_empty() => None,
         AstStringPart::Literal(value) => Some(ValueExpr::String(value.clone())),
@@ -4045,6 +4055,22 @@ fn lower_interpolated_string(parts: &[AstStringPart], line: usize) -> ValueExpr 
             kind: CastKind::String,
             expr: Box::new(ValueExpr::LegacyDollarBraceStringVariable {
                 name: name.clone(),
+                line,
+            }),
+            line,
+        }),
+        AstStringPart::LegacyDollarBraceExpression(name) => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(ValueExpr::LegacyDollarBraceExpressionVariable {
+                name: Box::new(lower_expr(name)),
+                line,
+            }),
+            line,
+        }),
+        AstStringPart::DynamicVariableExpression(name) => Some(ValueExpr::Cast {
+            kind: CastKind::String,
+            expr: Box::new(ValueExpr::DynamicVariable {
+                name: Box::new(lower_expr(name)),
                 line,
             }),
             line,

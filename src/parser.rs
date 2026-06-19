@@ -582,7 +582,10 @@ impl Parser<'_> {
 
     fn parse_halt_compiler_statement(&mut self, scope: TopLevelScope) -> Result<()> {
         let name_span = self.advance().span;
-        if scope != TopLevelScope::Program || self.block_depth != 0 || self.function_depth != 0 {
+        if (scope != TopLevelScope::Program && scope != TopLevelScope::NamespaceBlock)
+            || self.block_depth != 0
+            || self.function_depth != 0
+        {
             return Err(Diagnostic::new(
                 "__HALT_COMPILER() can only be used from the outermost scope",
                 Some(name_span),
@@ -672,7 +675,7 @@ impl Parser<'_> {
         functions: &mut Vec<FunctionDecl>,
         statements: &mut Vec<Statement>,
     ) -> Result<()> {
-        self.expect_left_brace()?;
+        let left_brace = self.expect_left_brace()?;
 
         let saved_namespace = self.current_namespace.clone();
         let saved_class_aliases = self.class_aliases.clone();
@@ -692,6 +695,12 @@ impl Parser<'_> {
                 statements,
                 TopLevelScope::NamespaceBlock,
             )?;
+            if matches!(self.peek().kind, TokenKind::Eof) {
+                return Err(Diagnostic::parse_error(
+                    format!("Unclosed '{{' on line {}", left_brace.line),
+                    Some(self.peek().span),
+                ));
+            }
             self.expect_right_brace()?;
             Ok(())
         })();
@@ -6788,7 +6797,10 @@ impl Parser<'_> {
         match token.kind {
             TokenKind::String(value) => Ok(Expr::String(value, token.span)),
             TokenKind::InterpolatedString(parts) => Ok(Expr::InterpolatedString(
-                parts.into_iter().map(lower_string_part).collect(),
+                parts
+                    .into_iter()
+                    .map(|part| self.lower_string_part(part, token.span))
+                    .collect::<Result<Vec<_>>>()?,
                 token.span,
             )),
             TokenKind::BacktickString(command) => Ok(Expr::ShellExec {
@@ -7005,6 +7017,101 @@ impl Parser<'_> {
             TokenKind::LeftBracket => self.parse_array_literal(token.span),
             _ => Err(Diagnostic::new("expected expression", Some(token.span))),
         }
+    }
+
+    fn lower_string_part(&self, part: TokenStringPart, span: SourceSpan) -> Result<StringPart> {
+        match part {
+            TokenStringPart::Literal(value) => Ok(StringPart::Literal(value)),
+            TokenStringPart::Variable(name) => Ok(StringPart::Variable(name)),
+            TokenStringPart::LegacyDollarBraceVariable(name) => {
+                Ok(StringPart::LegacyDollarBraceVariable(name))
+            }
+            TokenStringPart::LegacyDollarBraceExpression(expr) => {
+                Ok(StringPart::LegacyDollarBraceExpression(Box::new(
+                    self.parse_interpolation_expr_fragment(&expr, span)?,
+                )))
+            }
+            TokenStringPart::DynamicVariableExpression(expr) => {
+                Ok(StringPart::DynamicVariableExpression(Box::new(
+                    self.parse_interpolation_expr_fragment(&expr, span)?,
+                )))
+            }
+            TokenStringPart::PropertyFetch { variable, property } => {
+                Ok(StringPart::PropertyFetch { variable, property })
+            }
+            TokenStringPart::PropertyChain {
+                variable,
+                properties,
+            } => Ok(StringPart::PropertyChain {
+                variable,
+                properties,
+            }),
+            TokenStringPart::MethodCall { variable, method } => {
+                Ok(StringPart::MethodCall { variable, method })
+            }
+            TokenStringPart::ArrayAccess { array, indices } => Ok(StringPart::ArrayAccess {
+                array,
+                indices: indices
+                    .into_iter()
+                    .map(lower_string_interpolation_index)
+                    .collect(),
+            }),
+        }
+    }
+
+    fn parse_interpolation_expr_fragment(&self, expr: &str, span: SourceSpan) -> Result<Expr> {
+        let source = format!("<?php {expr};");
+        let tokens = lex(&source)?;
+        let mut parser = Parser {
+            source: &source,
+            tokens,
+            index: 0,
+            block_depth: 0,
+            function_depth: self.function_depth,
+            method_depth: self.method_depth,
+            current_namespace: self.current_namespace.clone(),
+            seen_namespace_declaration: self.seen_namespace_declaration,
+            namespace_declaration_style: self.namespace_declaration_style,
+            class_aliases: self.class_aliases.clone(),
+            function_aliases: self.function_aliases.clone(),
+            constant_aliases: self.constant_aliases.clone(),
+            seen_class_symbols: self.seen_class_symbols.clone(),
+            seen_function_symbols: self.seen_function_symbols.clone(),
+            seen_constant_symbols: self.seen_constant_symbols.clone(),
+            runtime_class_aliases: self.runtime_class_aliases.clone(),
+            external_classes: self.external_classes.clone(),
+            external_traits: self.external_traits.clone(),
+            declared_functions: self.declared_functions.clone(),
+            declared_constants: self.declared_constants.clone(),
+            declared_class_names: self.declared_class_names.clone(),
+            anonymous_classes: Vec::new(),
+            nested_functions: Vec::new(),
+            anonymous_class_name_counts: self.anonymous_class_name_counts.clone(),
+            allow_append_array_read: self.allow_append_array_read,
+            allow_standalone_list_array_element: self.allow_standalone_list_array_element,
+            active_type_scope: self.active_type_scope.clone(),
+            allow_unscoped_relative_types: self.allow_unscoped_relative_types,
+            return_by_ref_stack: self.return_by_ref_stack.clone(),
+            strict_types: self.strict_types,
+            strict_types_declare_allowed: self.strict_types_declare_allowed,
+            compiler_halt_offset: None,
+            compile_warnings: Vec::new(),
+            validate_method_signatures: false,
+        };
+        parser.expect_open_tag()?;
+        let parsed = parser.parse_expr().map_err(|mut diagnostic| {
+            if diagnostic.span.is_some() {
+                diagnostic.span = Some(span);
+            }
+            diagnostic
+        })?;
+        parser.expect_semicolon().map_err(|mut diagnostic| {
+            if diagnostic.span.is_some() {
+                diagnostic.span = Some(span);
+            }
+            diagnostic
+        })?;
+        Ok(parsed)
     }
 
     fn parse_match_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
@@ -10054,6 +10161,10 @@ fn collect_arrow_captures_from_string_part(
                 captures,
             );
         }
+        StringPart::LegacyDollarBraceExpression(expr)
+        | StringPart::DynamicVariableExpression(expr) => {
+            collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
+        }
         StringPart::PropertyFetch { variable, .. } | StringPart::PropertyChain { variable, .. } => {
             add_arrow_capture(
                 variable,
@@ -11144,7 +11255,7 @@ fn validate_trait_use_adaptations(
                             composer_name,
                             precedence.span,
                             all_traits,
-                            &adaptation_traits,
+                            used_traits,
                         )?;
                     }
                     if !trait_method_reference_exists(&precedence.method, &adaptation_traits) {
@@ -20533,36 +20644,6 @@ fn combine_spans(left: SourceSpan, right: SourceSpan) -> SourceSpan {
     )
 }
 
-fn lower_string_part(part: TokenStringPart) -> StringPart {
-    match part {
-        TokenStringPart::Literal(value) => StringPart::Literal(value),
-        TokenStringPart::Variable(name) => StringPart::Variable(name),
-        TokenStringPart::LegacyDollarBraceVariable(name) => {
-            StringPart::LegacyDollarBraceVariable(name)
-        }
-        TokenStringPart::PropertyFetch { variable, property } => {
-            StringPart::PropertyFetch { variable, property }
-        }
-        TokenStringPart::PropertyChain {
-            variable,
-            properties,
-        } => StringPart::PropertyChain {
-            variable,
-            properties,
-        },
-        TokenStringPart::MethodCall { variable, method } => {
-            StringPart::MethodCall { variable, method }
-        }
-        TokenStringPart::ArrayAccess { array, indices } => StringPart::ArrayAccess {
-            array,
-            indices: indices
-                .into_iter()
-                .map(lower_string_interpolation_index)
-                .collect(),
-        },
-    }
-}
-
 fn lower_string_interpolation_index(
     index: TokenStringInterpolationIndex,
 ) -> StringInterpolationIndex {
@@ -21424,6 +21505,10 @@ fn string_parts_use_this_property(parts: &[StringPart], property_name: &str) -> 
                 && properties
                     .first()
                     .is_some_and(|property| property == property_name)
+        }
+        StringPart::LegacyDollarBraceExpression(expr)
+        | StringPart::DynamicVariableExpression(expr) => {
+            expr_uses_this_property(expr, property_name)
         }
         _ => false,
     })

@@ -1234,6 +1234,17 @@ fn lexer_accepts_interpolating_heredoc_bodies() {
 }
 
 #[test]
+fn parser_rejects_flexible_heredoc_body_with_less_indent_than_closing_label() {
+    let error = parser::parse(concat!("<?php\n", "<<<X\n", "%0$a\n", " X;\n")).unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        error.message,
+        "Invalid body indentation level (expecting an indentation level of at least 1)"
+    );
+}
+
+#[test]
 fn lexer_accepts_keyword_boolean_operators() {
     let tokens = lexer::lex("<?php true and false or true xor false").unwrap();
     assert!(matches!(tokens[2].kind, TokenKind::KeywordAnd));
@@ -3111,6 +3122,14 @@ fn parser_rejects_halt_compiler_inside_block() {
         "__HALT_COMPILER() can only be used from the outermost scope"
     );
     assert_eq!(error.span.unwrap().line, 3);
+}
+
+#[test]
+fn parser_reports_halt_compiler_inside_bracketed_namespace_as_unclosed_block() {
+    let error = parser::parse("<?php\nnamespace foo {\n    __HALT_COMPILER();\n").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(error.message, "Unclosed '{' on line 2");
 }
 
 #[test]
@@ -7788,6 +7807,45 @@ Talker::statAlias();
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("Talker::talk"));
     assert!(c_source.contains("Talker::statAlias"));
+}
+
+#[test]
+fn compile_trait_adaptation_across_separate_use_blocks_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-adaptation-separate-use-blocks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-adaptation-separate-use-blocks.php");
+    let output = root.join("trait-adaptation-separate-use-blocks-bin");
+    fs::write(
+        &input,
+        "<?php
+trait TraitA {
+    public static function catch() { echo __METHOD__, \"\\n\"; }
+}
+trait TraitB {
+    protected static function try() { echo __METHOD__, \"\\n\"; }
+}
+class Foo {
+    use TraitA {
+        TraitA::catch insteadof TraitB;
+    }
+    use TraitB {
+        try as public attempt;
+    }
+}
+Foo::attempt();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "TraitB::try\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
@@ -32386,6 +32444,43 @@ echo $out, "|";
 }
 
 #[test]
+fn compile_heredoc_closing_label_before_comma_to_native_binary() {
+    let root = temp_dir("ptn-native-heredoc-closing-label-before-comma");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("heredoc-closing-label-before-comma.php");
+    let output = root.join("heredoc-closing-label-before-comma-bin");
+    fs::write(
+        &input,
+        r#"<?php
+echo <<<FOO
+FOO4
+FOO, PHP_EOL;
+
+echo <<<FOO
+bar
+FOO4
+FOO, PHP_EOL;
+
+echo <<<'FOO'
+bar
+FOO4
+FOO, PHP_EOL;
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "FOO4\nbar\nFOO4\nbar\nFOO4\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_fill_keys_to_native_binary() {
     let root = temp_dir("ptn-native-array-fill-keys");
     fs::create_dir_all(&root).unwrap();
@@ -42486,6 +42581,38 @@ echo \"item=$items[$key] bare=$items[name] legacy=${name}!\\n\";",
 item=compiler bare=Ada legacy=legacy!\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_legacy_dollar_brace_expression_interpolation_to_native_binary() {
+    let root = temp_dir("ptn-native-legacy-dollar-brace-expression-interpolation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("legacy-dollar-brace-expression-interpolation.php");
+    let output = root.join("legacy-dollar-brace-expression-interpolation-bin");
+    fs::write(
+        &input,
+        "<?php
+$la = \"ooxx\";
+echo \"${substr('laruence', 0, 2)}\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "\nDeprecated: Using ${expr} (variable variables) in strings is deprecated, use {${expr}} instead in ptn on line 3\n\
+ooxx"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn parser_accepts_braced_dynamic_variable_interpolation() {
+    parser::parse("<?php class A { function foo() { \"{${$a}}\"; } function list() {} }").unwrap();
 }
 
 #[test]

@@ -137,6 +137,8 @@ pub enum StringPart {
     Literal(String),
     Variable(String),
     LegacyDollarBraceVariable(String),
+    LegacyDollarBraceExpression(String),
+    DynamicVariableExpression(String),
     PropertyFetch {
         variable: String,
         property: String,
@@ -549,8 +551,54 @@ impl<'a> Lexer<'a> {
         let mut literal = String::new();
         let mut parts = Vec::new();
         let mut has_variable = false;
+        let body_start = self.cursor;
         let mut at_line_start = true;
         while self.peek_char().is_some() {
+            if at_line_start {
+                if let Some(indent_len) = self.heredoc_closing_label_indent_len(&label) {
+                    let close_start = self.cursor;
+                    let indent = self
+                        .source
+                        .get(close_start..close_start + indent_len)
+                        .unwrap_or("");
+                    self.validate_heredoc_body_indentation(body_start, close_start, indent, start)?;
+                    trim_heredoc_terminal_newline(&mut literal);
+                    if !indent.is_empty() {
+                        if has_variable {
+                            strip_heredoc_parts_indentation(&mut parts, indent);
+                            let mut line_start = heredoc_parts_end_at_line_start(&parts);
+                            literal = strip_heredoc_literal_indentation(
+                                &literal,
+                                indent,
+                                &mut line_start,
+                            );
+                        } else {
+                            literal = strip_heredoc_indentation(&literal, indent);
+                        }
+                    }
+                    for _ in 0..indent_len + label.len() {
+                        self.bump_char();
+                    }
+                    let kind = if has_variable {
+                        if !literal.is_empty() {
+                            parts.push(StringPart::Literal(literal));
+                        }
+                        TokenKind::InterpolatedString(parts)
+                    } else {
+                        TokenKind::String(literal)
+                    };
+                    self.tokens.push(Token {
+                        kind,
+                        span: SourceSpan::new(
+                            start.byte_start,
+                            self.cursor,
+                            start.line,
+                            start.column,
+                        ),
+                    });
+                    return Ok(());
+                }
+            }
             if at_line_start && self.starts_heredoc_closing_label(&label) {
                 trim_heredoc_terminal_newline(&mut literal);
                 for _ in 0..label.len() {
@@ -738,7 +786,12 @@ impl<'a> Lexer<'a> {
             at_line_start = ch == '\n';
         }
 
-        Err(Diagnostic::new("unterminated heredoc string", Some(start)))
+        let message = if literal.is_empty() && parts.is_empty() {
+            "syntax error, unexpected end of file"
+        } else {
+            "syntax error, unexpected end of file, expecting variable or heredoc end or \"${\" or \"{$\""
+        };
+        Err(Diagnostic::parse_error(message, Some(start)))
     }
 
     fn lex_heredoc_label(&mut self, start: SourceSpan) -> Result<(String, bool)> {
@@ -970,26 +1023,33 @@ impl<'a> Lexer<'a> {
         debug_assert_eq!(self.peek_char(), Some('{'));
         self.bump_char();
         if matches!(self.peek_char(), Some('$')) {
-            return Err(Diagnostic::new(
-                "complex string interpolation is unsupported",
-                Some(self.current_char_span()),
-            ));
+            let expr = self.read_balanced_interpolation_expression(start)?;
+            return Ok(StringPart::LegacyDollarBraceExpression(expr));
         }
-        let name = self.read_interpolation_variable_name(start)?;
-        match self.peek_char() {
-            Some('}') => {
-                self.bump_char();
-                Ok(StringPart::LegacyDollarBraceVariable(name))
+        if let Some(first) = self.peek_char() {
+            if is_ident_start(first) {
+                let name = self.read_interpolation_variable_name(start)?;
+                match self.peek_char() {
+                    Some('}') => {
+                        self.bump_char();
+                        return Ok(StringPart::LegacyDollarBraceVariable(name));
+                    }
+                    Some(_) => {
+                        let mut expr = name;
+                        expr.push_str(&self.read_balanced_interpolation_expression(start)?);
+                        return Ok(StringPart::LegacyDollarBraceExpression(expr));
+                    }
+                    None => {
+                        return Err(Diagnostic::new(
+                            "unterminated string interpolation",
+                            Some(start),
+                        ));
+                    }
+                }
             }
-            Some(_) => Err(Diagnostic::new(
-                "complex string interpolation is unsupported",
-                Some(self.current_char_span()),
-            )),
-            None => Err(Diagnostic::new(
-                "unterminated string interpolation",
-                Some(start),
-            )),
         }
+        let expr = self.read_balanced_interpolation_expression(start)?;
+        Ok(StringPart::LegacyDollarBraceExpression(expr))
     }
 
     fn lex_braced_interpolation_part(&mut self) -> Result<StringPart> {
@@ -997,6 +1057,18 @@ impl<'a> Lexer<'a> {
         self.bump_char();
         debug_assert_eq!(self.peek_char(), Some('$'));
         self.bump_char();
+        if matches!(self.peek_char(), Some('{')) {
+            self.bump_char();
+            let expr = self.read_balanced_interpolation_expression(start)?;
+            if !matches!(self.peek_char(), Some('}')) {
+                return Err(Diagnostic::new(
+                    "unterminated string interpolation",
+                    Some(start),
+                ));
+            }
+            self.bump_char();
+            return Ok(StringPart::DynamicVariableExpression(expr));
+        }
         let array = self.read_interpolation_variable_name(start)?;
         let mut indices = Vec::new();
 
@@ -1341,6 +1413,79 @@ impl<'a> Lexer<'a> {
         Ok(name)
     }
 
+    fn read_balanced_interpolation_expression(&mut self, span: SourceSpan) -> Result<String> {
+        let expr_start = self.cursor;
+        let mut paren_depth = 0usize;
+        let mut bracket_depth = 0usize;
+        let mut brace_depth = 0usize;
+        let mut quote = None;
+        let mut escaped = false;
+        while let Some(ch) = self.peek_char() {
+            if let Some(active_quote) = quote {
+                self.bump_char();
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == active_quote {
+                    quote = None;
+                }
+                continue;
+            }
+            match ch {
+                '\'' | '"' => {
+                    quote = Some(ch);
+                    self.bump_char();
+                }
+                '(' => {
+                    paren_depth += 1;
+                    self.bump_char();
+                }
+                ')' if paren_depth > 0 => {
+                    paren_depth -= 1;
+                    self.bump_char();
+                }
+                '[' => {
+                    bracket_depth += 1;
+                    self.bump_char();
+                }
+                ']' if bracket_depth > 0 => {
+                    bracket_depth -= 1;
+                    self.bump_char();
+                }
+                '{' => {
+                    brace_depth += 1;
+                    self.bump_char();
+                }
+                '}' if brace_depth > 0 => {
+                    brace_depth -= 1;
+                    self.bump_char();
+                }
+                '}' if paren_depth == 0 && bracket_depth == 0 => {
+                    let expr = self
+                        .source
+                        .get(expr_start..self.cursor)
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if expr.is_empty() {
+                        return Err(Diagnostic::new(
+                            "complex string interpolation is unsupported",
+                            Some(span),
+                        ));
+                    }
+                    self.bump_char();
+                    return Ok(expr);
+                }
+                _ => self.bump_char(),
+            }
+        }
+        Err(Diagnostic::new(
+            "unterminated string interpolation",
+            Some(span),
+        ))
+    }
+
     fn skip_interpolation_whitespace(&mut self) {
         while self.peek_char().is_some_and(char::is_whitespace) {
             self.bump_char();
@@ -1357,10 +1502,82 @@ impl<'a> Lexer<'a> {
         if !self.rest().starts_with(label) {
             return false;
         }
-        matches!(
-            self.rest()[label.len()..].chars().next(),
-            None | Some(';') | Some('\r') | Some('\n')
-        )
+        match self.rest()[label.len()..].chars().next() {
+            None => true,
+            Some(ch) => !is_ident_continue(ch),
+        }
+    }
+
+    fn heredoc_closing_label_indent_len(&self, label: &str) -> Option<usize> {
+        let rest = self.rest();
+        let indent_len = rest
+            .bytes()
+            .take_while(|byte| matches!(byte, b' ' | b'\t'))
+            .count();
+        if indent_len == 0 {
+            return None;
+        }
+        let after_indent = rest.get(indent_len..)?;
+        if !after_indent.starts_with(label) {
+            return None;
+        }
+        match after_indent[label.len()..].chars().next() {
+            None => Some(indent_len),
+            Some(ch) if !is_ident_continue(ch) => Some(indent_len),
+            _ => None,
+        }
+    }
+
+    fn validate_heredoc_body_indentation(
+        &self,
+        body_start: usize,
+        close_start: usize,
+        indent: &str,
+        span: SourceSpan,
+    ) -> Result<()> {
+        if indent.is_empty() {
+            return Ok(());
+        }
+        if heredoc_indent_contains_mixed_whitespace(indent) {
+            return Err(heredoc_mixed_indentation_error(span));
+        }
+        let Some(body) = self.source.get(body_start..close_start) else {
+            return Ok(());
+        };
+        let mut line_number = span.line + 1;
+        for line in body.split_inclusive('\n') {
+            let content = line.trim_end_matches(['\r', '\n']);
+            if content.trim_matches([' ', '\t']).is_empty() {
+                if line.ends_with('\n') {
+                    line_number += 1;
+                }
+                continue;
+            }
+            let line_span =
+                SourceSpan::new(span.byte_start, span.byte_end, line_number, span.column);
+            let line_indent = content
+                .bytes()
+                .take_while(|byte| matches!(byte, b' ' | b'\t'))
+                .collect::<Vec<_>>();
+            if heredoc_indent_bytes_contain_mixed_whitespace(&line_indent)
+                || heredoc_indent_kinds_conflict(indent.as_bytes(), &line_indent)
+            {
+                return Err(heredoc_mixed_indentation_error(line_span));
+            }
+            if !content.starts_with(indent) {
+                return Err(Diagnostic::parse_error(
+                    format!(
+                        "Invalid body indentation level (expecting an indentation level of at least {})",
+                        indent.chars().count()
+                    ),
+                    Some(line_span),
+                ));
+            }
+            if line.ends_with('\n') {
+                line_number += 1;
+            }
+        }
+        Ok(())
     }
 
     fn starts_heredoc_interpolation(&self) -> bool {
@@ -1807,6 +2024,88 @@ fn trim_heredoc_terminal_newline(value: &mut String) {
             value.pop();
         }
     }
+}
+
+fn strip_heredoc_indentation(value: &str, indent: &str) -> String {
+    let mut line_start = true;
+    strip_heredoc_literal_indentation(value, indent, &mut line_start)
+}
+
+fn strip_heredoc_parts_indentation(parts: &mut [StringPart], indent: &str) {
+    let mut line_start = true;
+    for part in parts {
+        match part {
+            StringPart::Literal(value) => {
+                *value = strip_heredoc_literal_indentation(value, indent, &mut line_start);
+            }
+            _ => {
+                line_start = false;
+            }
+        }
+    }
+}
+
+fn heredoc_parts_end_at_line_start(parts: &[StringPart]) -> bool {
+    let mut line_start = true;
+    for part in parts {
+        match part {
+            StringPart::Literal(value) => {
+                line_start = value.ends_with('\n');
+            }
+            _ => {
+                line_start = false;
+            }
+        }
+    }
+    line_start
+}
+
+fn strip_heredoc_literal_indentation(value: &str, indent: &str, line_start: &mut bool) -> String {
+    let mut stripped = String::with_capacity(value.len());
+    let mut rest = value;
+    while !rest.is_empty() {
+        if *line_start {
+            if let Some(after_indent) = rest.strip_prefix(indent) {
+                rest = after_indent;
+            }
+            *line_start = false;
+        }
+        if let Some(newline_index) = rest.find('\n') {
+            let through_newline = newline_index + 1;
+            stripped.push_str(&rest[..through_newline]);
+            rest = &rest[through_newline..];
+            *line_start = true;
+        } else {
+            stripped.push_str(rest);
+            break;
+        }
+    }
+    stripped
+}
+
+fn heredoc_indent_contains_mixed_whitespace(indent: &str) -> bool {
+    heredoc_indent_bytes_contain_mixed_whitespace(indent.as_bytes())
+}
+
+fn heredoc_indent_bytes_contain_mixed_whitespace(indent: &[u8]) -> bool {
+    indent.contains(&b' ') && indent.contains(&b'\t')
+}
+
+fn heredoc_indent_kinds_conflict(expected: &[u8], actual: &[u8]) -> bool {
+    let Some(expected_kind) = expected.first().copied() else {
+        return false;
+    };
+    actual
+        .iter()
+        .take(expected.len())
+        .any(|byte| matches!(byte, b' ' | b'\t') && *byte != expected_kind)
+}
+
+fn heredoc_mixed_indentation_error(span: SourceSpan) -> Diagnostic {
+    Diagnostic::parse_error(
+        "Invalid indentation - tabs and spaces cannot be mixed",
+        Some(span),
+    )
 }
 
 fn radix_integer_token_kind(text: &str, radix: u32, span: SourceSpan) -> Result<TokenKind> {

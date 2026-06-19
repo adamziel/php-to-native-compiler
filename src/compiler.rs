@@ -1588,7 +1588,9 @@ fn bounded_interpolated_string_templates(
             StringPart::PropertyFetch { .. }
             | StringPart::PropertyChain { .. }
             | StringPart::MethodCall { .. }
-            | StringPart::ArrayAccess { .. } => return None,
+            | StringPart::ArrayAccess { .. }
+            | StringPart::LegacyDollarBraceExpression(_)
+            | StringPart::DynamicVariableExpression(_) => return None,
         }
     }
     Some(templates)
@@ -1791,7 +1793,9 @@ fn bounded_interpolated_string_paths(
             StringPart::PropertyFetch { .. }
             | StringPart::PropertyChain { .. }
             | StringPart::MethodCall { .. }
-            | StringPart::ArrayAccess { .. } => return None,
+            | StringPart::ArrayAccess { .. }
+            | StringPart::LegacyDollarBraceExpression(_)
+            | StringPart::DynamicVariableExpression(_) => return None,
         }
     }
     Some(paths)

@@ -27,6 +27,8 @@ mod runtime;
 const PHP_BINARY_BYTE_SENTINEL_BASE: u32 = 0xE000;
 const LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE: &str =
     "Using ${var} in strings is deprecated, use {$var} instead";
+const LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE: &str =
+    "Using ${expr} (variable variables) in strings is deprecated, use {${expr}} instead";
 const BUILTIN_EXCEPTION_ROOT_NAMES: &[&str] = &["Exception", "Error"];
 const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "Phar",
@@ -2968,8 +2970,15 @@ fn emit_class_constant_initializer_helper(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LegacyDollarBraceDeprecationKind {
+    Variable,
+    Expression,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct LegacyDollarBraceDeprecation {
     line: usize,
+    kind: LegacyDollarBraceDeprecationKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3032,8 +3041,14 @@ fn emit_legacy_dollar_brace_deprecations(
     deprecations: &[LegacyDollarBraceDeprecation],
 ) {
     for deprecation in deprecations {
+        let message = match deprecation.kind {
+            LegacyDollarBraceDeprecationKind::Variable => LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE,
+            LegacyDollarBraceDeprecationKind::Expression => {
+                LEGACY_DOLLAR_BRACE_EXPR_DEPRECATION_MESSAGE
+            }
+        };
         out.push_str("    ptn_emit_user_deprecation(&runtime.diagnostics, \"");
-        out.push_str(&c_string(LEGACY_DOLLAR_BRACE_DEPRECATION_MESSAGE));
+        out.push_str(&c_string(message));
         out.push_str("\", ");
         out.push_str(&deprecation.line.to_string());
         out.push_str(");\n");
@@ -15394,6 +15409,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         ValueExpr::Closure { .. }
         | ValueExpr::Load { .. }
         | ValueExpr::LegacyDollarBraceStringVariable { .. }
+        | ValueExpr::LegacyDollarBraceExpressionVariable { .. }
         | ValueExpr::DynamicVariable { .. }
         | ValueExpr::IncDec { .. }
         | ValueExpr::Assign { .. }
@@ -16071,7 +16087,17 @@ fn collect_value_legacy_dollar_brace_deprecations(
 ) {
     match value {
         ValueExpr::LegacyDollarBraceStringVariable { line, .. } => {
-            deprecations.push(LegacyDollarBraceDeprecation { line: *line });
+            deprecations.push(LegacyDollarBraceDeprecation {
+                line: *line,
+                kind: LegacyDollarBraceDeprecationKind::Variable,
+            });
+        }
+        ValueExpr::LegacyDollarBraceExpressionVariable { name, line } => {
+            deprecations.push(LegacyDollarBraceDeprecation {
+                line: *line,
+                kind: LegacyDollarBraceDeprecationKind::Expression,
+            });
+            collect_value_legacy_dollar_brace_deprecations(name, deprecations);
         }
         ValueExpr::DynamicVariable { name, .. } => {
             collect_value_legacy_dollar_brace_deprecations(name, deprecations);
@@ -16828,6 +16854,10 @@ fn collect_value_runtime_requirements(
             if variable_needs_request_context(name) {
                 requirements.request_context = true;
             }
+        }
+        ValueExpr::LegacyDollarBraceExpressionVariable { name, .. } => {
+            requirements.request_context = true;
+            collect_value_runtime_requirements(name, functions, requirements);
         }
         ValueExpr::Yield { key, value, .. } => {
             if let Some(key) = key {
@@ -19860,6 +19890,9 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
     match value {
         ValueExpr::Load { name: target, .. } => target == name,
         ValueExpr::LegacyDollarBraceStringVariable { name: target, .. } => target == name,
+        ValueExpr::LegacyDollarBraceExpressionVariable { name: target, .. } => {
+            value_mentions_variable(target, name)
+        }
         ValueExpr::DynamicVariable { name: target, .. } => value_mentions_variable(target, name),
         ValueExpr::IncDec { target, .. } => inc_dec_target_mentions_variable(target, name),
         ValueExpr::Assign { target, value, .. } => {
@@ -20114,6 +20147,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         ValueExpr::Closure { line, .. }
         | ValueExpr::Load { line, .. }
         | ValueExpr::LegacyDollarBraceStringVariable { line, .. }
+        | ValueExpr::LegacyDollarBraceExpressionVariable { line, .. }
         | ValueExpr::DynamicVariable { line, .. }
         | ValueExpr::IncDec { line, .. }
         | ValueExpr::Constant { line, .. }
@@ -20761,7 +20795,8 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::StaticPropertyFetch { .. }
         | ValueExpr::ClassConstantFetch { .. } => false,
         ValueExpr::LegacyDollarBraceStringVariable { .. } => false,
-        ValueExpr::DynamicVariable { name, .. }
+        ValueExpr::LegacyDollarBraceExpressionVariable { name, .. }
+        | ValueExpr::DynamicVariable { name, .. }
         | ValueExpr::ArrayAppendAccess { array: name, .. }
         | ValueExpr::Empty { target: name }
         | ValueExpr::Print { expression: name }
@@ -25002,6 +25037,9 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 result_temp
+            }
+            ValueExpr::LegacyDollarBraceExpressionVariable { name, line } => {
+                self.emit_dynamic_variable_read(out, name, *line)
             }
             ValueExpr::DynamicVariable { name, line } => {
                 self.emit_dynamic_variable_read(out, name, *line)
@@ -29296,6 +29334,7 @@ impl ValueEmitter {
                 | ValueExpr::ArrayAccess { .. }
                 | ValueExpr::ArrayAppendAccess { .. }
                 | ValueExpr::LegacyDollarBraceStringVariable { .. }
+                | ValueExpr::LegacyDollarBraceExpressionVariable { .. }
                 | ValueExpr::DynamicVariable { .. }
                 | ValueExpr::Isset { .. }
                 | ValueExpr::Empty { .. }
