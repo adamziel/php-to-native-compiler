@@ -5828,6 +5828,52 @@ fn emit_class_metadata_helpers(
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
+        for property in &class.properties {
+            if property.hook_has_get {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\")) {\n");
+                out.push_str("            if (file_out != NULL) {\n");
+                out.push_str("                *file_out = \"");
+                out.push_str(&c_string(&class.source_file));
+                out.push_str("\";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (start_line_out != NULL) {\n");
+                out.push_str("                *start_line_out = ");
+                out.push_str(&property.hook_get_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (end_line_out != NULL) {\n");
+                out.push_str("                *end_line_out = ");
+                out.push_str(&property.hook_get_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\")) {\n");
+                out.push_str("            if (file_out != NULL) {\n");
+                out.push_str("                *file_out = \"");
+                out.push_str(&c_string(&class.source_file));
+                out.push_str("\";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (start_line_out != NULL) {\n");
+                out.push_str("                *start_line_out = ");
+                out.push_str(&property.hook_set_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (end_line_out != NULL) {\n");
+                out.push_str("                *end_line_out = ");
+                out.push_str(&property.hook_set_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
@@ -5986,6 +6032,52 @@ fn emit_class_metadata_helpers(
             out.push_str("\") == 0) {\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
+        }
+        for property in &class.properties {
+            if property.hook_has_get {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\")) {\n");
+                out.push_str("            if (file_out != NULL) {\n");
+                out.push_str("                *file_out = \"");
+                out.push_str(&c_string(&class.source_file));
+                out.push_str("\";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (start_line_out != NULL) {\n");
+                out.push_str("                *start_line_out = ");
+                out.push_str(&property.hook_get_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (end_line_out != NULL) {\n");
+                out.push_str("                *end_line_out = ");
+                out.push_str(&property.hook_get_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\")) {\n");
+                out.push_str("            if (file_out != NULL) {\n");
+                out.push_str("                *file_out = \"");
+                out.push_str(&c_string(&class.source_file));
+                out.push_str("\";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (start_line_out != NULL) {\n");
+                out.push_str("                *start_line_out = ");
+                out.push_str(&property.hook_set_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            if (end_line_out != NULL) {\n");
+                out.push_str("                *end_line_out = ");
+                out.push_str(&property.hook_set_line.to_string());
+                out.push_str(";\n");
+                out.push_str("            }\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
         }
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
@@ -7202,6 +7294,7 @@ fn emit_declared_class_reflection_attributes(
             1,
             classes,
             functions,
+            false,
         );
         out.push_str("    }\n");
     }
@@ -7253,6 +7346,7 @@ fn emit_declared_class_method_reflection_attributes(
                 4,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7275,6 +7369,7 @@ fn emit_declared_class_method_reflection_attributes(
                 4,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7335,6 +7430,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7355,6 +7451,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7377,6 +7474,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7397,6 +7495,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7443,6 +7542,7 @@ fn emit_declared_class_constant_reflection_attributes(
                 16,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7486,6 +7586,7 @@ fn emit_declared_function_reflection_attributes(
             2,
             classes,
             functions,
+            false,
         );
         out.push_str("    }\n");
     }
@@ -7516,6 +7617,7 @@ fn emit_declared_function_reflection_attributes(
             2,
             classes,
             functions,
+            false,
         );
         out.push_str("    }\n");
     }
@@ -7926,6 +8028,7 @@ fn emit_declared_function_parameter_reflection_attributes(
                 32,
                 classes,
                 functions,
+                false,
             );
             out.push_str("    }\n");
         }
@@ -7972,6 +8075,7 @@ fn emit_declared_constant_attributes(
                 64,
                 classes,
                 functions,
+                false,
             );
         }
         out.push_str("    }\n");
@@ -8102,6 +8206,7 @@ fn emit_declared_attribute_result(
     target: i32,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    property_hook_context: bool,
 ) {
     out.push_str("        PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("        int64_t index = 0;\n");
@@ -8130,7 +8235,7 @@ fn emit_declared_attribute_result(
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
         let constructor_plan = attribute_constructor_argument_plan(instance, classes, functions);
-        let constructor_error =
+        let mut constructor_error =
             reflection_attribute_arguments_error(instance, classes).or_else(|| {
                 if let AttributeConstructorArgumentPlan::Error(error) = &constructor_plan {
                     Some(error.clone())
@@ -8138,6 +8243,10 @@ fn emit_declared_attribute_result(
                     None
                 }
             });
+        if property_hook_context && instance.name.eq_ignore_ascii_case("NoDiscard") {
+            constructor_error =
+                Some("#[\\NoDiscard] is not supported for property hooks".to_string());
+        }
         if let Some(error_message) = constructor_error {
             out.push_str("            PtnValue constructor_args_");
             out.push_str(&attribute_index.to_string());
@@ -8838,6 +8947,104 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_property_hook_method(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type) {\n",
+    );
+    let has_property_hooks = classes
+        .iter()
+        .any(|class| class.properties.iter().any(|property| property.has_hooks))
+        || traits
+            .iter()
+            .any(|trait_decl| trait_decl.properties.iter().any(|property| property.has_hooks));
+    if !has_property_hooks {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)hook_type;\n");
+    }
+    for class in classes {
+        if !class.properties.iter().any(|property| property.has_hooks) {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for property in &class.properties {
+            if !property.has_hooks {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            if property.hook_has_get {
+                out.push_str("            if (hook_type == 1) {\n");
+                out.push_str("                return ptn_reflection_method_object_from_name(runtime, \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\");\n");
+                out.push_str("            }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("            if (hook_type == 2) {\n");
+                out.push_str("                return ptn_reflection_method_object_from_name(runtime, \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\");\n");
+                out.push_str("            }\n");
+            }
+            out.push_str("            return ptn_null();\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        if !trait_decl
+            .properties
+            .iter()
+            .any(|property| property.has_hooks)
+        {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        for property in &trait_decl.properties {
+            if !property.has_hooks {
+                continue;
+            }
+            out.push_str("        if (strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            if property.hook_has_get {
+                out.push_str("            if (hook_type == 1) {\n");
+                out.push_str("                return ptn_reflection_method_object_from_name(runtime, \"");
+                out.push_str(&c_string(&trait_decl.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\");\n");
+                out.push_str("            }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("            if (hook_type == 2) {\n");
+                out.push_str("                return ptn_reflection_method_object_from_name(runtime, \"");
+                out.push_str(&c_string(&trait_decl.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\");\n");
+                out.push_str("            }\n");
+            }
+            out.push_str("            return ptn_null();\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name) {\n",
     );
     if classes.is_empty() {
@@ -8932,6 +9139,46 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
+        for property in &class.properties {
+            if property.hook_has_get {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\")) {\n");
+                out.push_str("            *is_static = 0;\n");
+                out.push_str("            *visibility = ");
+                out.push_str(c_method_visibility(property.visibility));
+                out.push_str(";\n");
+                out.push_str("            *is_final = 0;\n");
+                out.push_str("            *is_abstract = ");
+                out.push_str(if property.hook_get_is_abstract {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(";\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\")) {\n");
+                out.push_str("            *is_static = 0;\n");
+                out.push_str("            *visibility = ");
+                out.push_str(c_method_visibility(property.visibility));
+                out.push_str(";\n");
+                out.push_str("            *is_final = 0;\n");
+                out.push_str("            *is_abstract = ");
+                out.push_str(if property.hook_set_is_abstract {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(";\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
     }
@@ -8957,6 +9204,46 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str(";\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
+        }
+        for property in &trait_decl.properties {
+            if property.hook_has_get {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\")) {\n");
+                out.push_str("            *is_static = 0;\n");
+                out.push_str("            *visibility = ");
+                out.push_str(c_method_visibility(property.visibility));
+                out.push_str(";\n");
+                out.push_str("            *is_final = 0;\n");
+                out.push_str("            *is_abstract = ");
+                out.push_str(if property.hook_get_is_abstract {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(";\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\")) {\n");
+                out.push_str("            *is_static = 0;\n");
+                out.push_str("            *visibility = ");
+                out.push_str(c_method_visibility(property.visibility));
+                out.push_str(";\n");
+                out.push_str("            *is_final = 0;\n");
+                out.push_str("            *is_abstract = ");
+                out.push_str(if property.hook_set_is_abstract {
+                    "1"
+                } else {
+                    "0"
+                });
+                out.push_str(";\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
         }
         out.push_str("        return 0;\n");
         out.push_str("    }\n");
@@ -8988,6 +9275,34 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("\");\n");
             out.push_str("        }\n");
         }
+        for property in &class.properties {
+            if property.hook_has_get {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\")) {\n");
+                out.push_str("            return ptn_string(\"");
+                out.push_str(&c_string(&reflection_property_hook_method_to_string(
+                    &class.source_file,
+                    property,
+                    "get",
+                )));
+                out.push_str("\");\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\")) {\n");
+                out.push_str("            return ptn_string(\"");
+                out.push_str(&c_string(&reflection_property_hook_method_to_string(
+                    &class.source_file,
+                    property,
+                    "set",
+                )));
+                out.push_str("\");\n");
+                out.push_str("        }\n");
+            }
+        }
         out.push_str("        return ptn_string(\"Object\");\n");
         out.push_str("    }\n");
     }
@@ -9005,6 +9320,34 @@ fn emit_class_reflection_metadata_helpers(
             )));
             out.push_str("\");\n");
             out.push_str("        }\n");
+        }
+        for property in &trait_decl.properties {
+            if property.hook_has_get {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "get")));
+                out.push_str("\")) {\n");
+                out.push_str("            return ptn_string(\"");
+                out.push_str(&c_string(&reflection_property_hook_method_to_string(
+                    "%s",
+                    property,
+                    "get",
+                )));
+                out.push_str("\");\n");
+                out.push_str("        }\n");
+            }
+            if property.hook_has_set {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+                out.push_str(&c_string(&property_hook_method_name(&property.name, "set")));
+                out.push_str("\")) {\n");
+                out.push_str("            return ptn_string(\"");
+                out.push_str(&c_string(&reflection_property_hook_method_to_string(
+                    "%s",
+                    property,
+                    "set",
+                )));
+                out.push_str("\");\n");
+                out.push_str("        }\n");
+            }
         }
         out.push_str("        return ptn_string(\"Object\");\n");
         out.push_str("    }\n");
@@ -10110,6 +10453,58 @@ fn reflection_method_to_string(
         out.push_str("  - Return [ ");
         out.push_str(&type_hint_label(return_type));
         out.push_str(" ]\n");
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn property_hook_method_name(property_name: &str, hook_name: &str) -> String {
+    format!("${property_name}::{hook_name}")
+}
+
+fn reflection_property_hook_method_to_string(
+    source_file: &str,
+    property: &crate::ir::PropertyDecl,
+    hook_name: &str,
+) -> String {
+    let line = if hook_name == "get" {
+        property.hook_get_line
+    } else {
+        property.hook_set_line
+    };
+    let mut out = String::new();
+    out.push_str("Method [ <user> ");
+    out.push_str(method_visibility_name(property.visibility));
+    out.push_str(" method $");
+    out.push_str(&property.name);
+    out.push_str("::");
+    out.push_str(hook_name);
+    out.push_str(" ] {\n");
+    out.push_str("  @@ ");
+    out.push_str(source_file);
+    out.push(' ');
+    out.push_str(&line.to_string());
+    out.push_str(" - ");
+    out.push_str(&line.to_string());
+    out.push_str("\n\n");
+    if hook_name == "set" {
+        out.push_str("  - Parameters [1] {\n");
+        out.push_str("    Parameter #0 [ <required> ");
+        if let Some(type_hint) = &property.type_hint {
+            out.push_str(&type_hint.text);
+            out.push(' ');
+        }
+        out.push_str("$value ]\n");
+        out.push_str("  }\n");
+        out.push_str("  - Return [ void ]\n");
+    } else {
+        out.push_str("  - Parameters [0] {\n");
+        out.push_str("  }\n");
+        if let Some(type_hint) = &property.type_hint {
+            out.push_str("  - Return [ ");
+            out.push_str(&type_hint.text);
+            out.push_str(" ]\n");
+        }
     }
     out.push_str("}\n");
     out

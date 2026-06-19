@@ -358,6 +358,10 @@ struct ParsedPropertyHookBlock {
     set_is_abstract: bool,
     get_override_span: Option<SourceSpan>,
     set_override_span: Option<SourceSpan>,
+    get_attributes: AttributeMetadata,
+    set_attributes: AttributeMetadata,
+    get_span: Option<SourceSpan>,
+    set_span: Option<SourceSpan>,
     get_value: Option<Expr>,
 }
 
@@ -2966,6 +2970,10 @@ impl Parser<'_> {
                     hook_set_is_abstract: hooks.set_is_abstract,
                     hook_get_override_span: hooks.get_override_span,
                     hook_set_override_span: hooks.set_override_span,
+                    hook_get_attributes: hooks.get_attributes,
+                    hook_set_attributes: hooks.set_attributes,
+                    hook_get_span: hooks.get_span,
+                    hook_set_span: hooks.set_span,
                     hook_get_value: hooks.get_value,
                     type_hint,
                     attributes: attributes.clone(),
@@ -3002,6 +3010,10 @@ impl Parser<'_> {
                 hook_set_is_abstract: false,
                 hook_get_override_span: None,
                 hook_set_override_span: None,
+                hook_get_attributes: AttributeMetadata::default(),
+                hook_set_attributes: AttributeMetadata::default(),
+                hook_get_span: None,
+                hook_set_span: None,
                 hook_get_value: None,
                 type_hint,
                 attributes: attributes.clone(),
@@ -3169,6 +3181,8 @@ impl Parser<'_> {
                     if hook_attributes.has_override {
                         hooks.get_override_span = Some(token.span);
                     }
+                    hooks.get_attributes = hook_attributes;
+                    hooks.get_span = Some(token.span);
                     if matches!(self.peek().kind, TokenKind::DoubleArrow) {
                         self.advance();
                         let value = self.parse_expr()?;
@@ -3225,6 +3239,8 @@ impl Parser<'_> {
                     if hook_attributes.has_override {
                         hooks.set_override_span = Some(token.span);
                     }
+                    hooks.set_attributes = hook_attributes;
+                    hooks.set_span = Some(token.span);
                     if matches!(self.peek().kind, TokenKind::LeftParen) {
                         self.parse_property_hook_set_parameters(class_name, property_name)?;
                     }
@@ -11068,6 +11084,10 @@ fn promoted_properties_from_constructor(
                 hook_set_is_abstract: false,
                 hook_get_override_span: None,
                 hook_set_override_span: None,
+                hook_get_attributes: AttributeMetadata::default(),
+                hook_set_attributes: AttributeMetadata::default(),
+                hook_get_span: None,
+                hook_set_span: None,
                 hook_get_value: None,
                 type_hint: parameter
                     .type_hint

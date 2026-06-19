@@ -146,6 +146,10 @@ pub struct PropertyDecl {
     pub hook_has_set: bool,
     pub hook_get_is_abstract: bool,
     pub hook_set_is_abstract: bool,
+    pub hook_get_attributes: AttributeMetadata,
+    pub hook_set_attributes: AttributeMetadata,
+    pub hook_get_line: usize,
+    pub hook_set_line: usize,
     pub hook_get_value: Option<ValueExpr>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,
@@ -1675,6 +1679,26 @@ impl<'a> LoweringContext<'a> {
                 hook_has_set: property.hook_has_set,
                 hook_get_is_abstract: property.hook_get_is_abstract,
                 hook_set_is_abstract: property.hook_set_is_abstract,
+                hook_get_attributes: self.lower_class_scoped_attribute_metadata(
+                    &property.hook_get_attributes,
+                    &class.name,
+                    parent_name,
+                ),
+                hook_set_attributes: self.lower_class_scoped_attribute_metadata(
+                    &property.hook_set_attributes,
+                    &class.name,
+                    parent_name,
+                ),
+                hook_get_line: property
+                    .hook_get_span
+                    .as_ref()
+                    .map(|span| span.line)
+                    .unwrap_or(property.span.line),
+                hook_set_line: property
+                    .hook_set_span
+                    .as_ref()
+                    .map(|span| span.line)
+                    .unwrap_or(property.span.line),
                 hook_get_value: property
                     .hook_get_value
                     .as_ref()
@@ -2276,6 +2300,26 @@ impl<'a> LoweringContext<'a> {
                 hook_has_set: property.hook_has_set,
                 hook_get_is_abstract: property.hook_get_is_abstract,
                 hook_set_is_abstract: property.hook_set_is_abstract,
+                hook_get_attributes: self.lower_class_scoped_attribute_metadata(
+                    &property.hook_get_attributes,
+                    &trait_decl.name,
+                    None,
+                ),
+                hook_set_attributes: self.lower_class_scoped_attribute_metadata(
+                    &property.hook_set_attributes,
+                    &trait_decl.name,
+                    None,
+                ),
+                hook_get_line: property
+                    .hook_get_span
+                    .as_ref()
+                    .map(|span| span.line)
+                    .unwrap_or(property.span.line),
+                hook_set_line: property
+                    .hook_set_span
+                    .as_ref()
+                    .map(|span| span.line)
+                    .unwrap_or(property.span.line),
                 hook_get_value: property
                     .hook_get_value
                     .as_ref()
