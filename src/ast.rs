@@ -120,6 +120,8 @@ pub struct PropertyDecl {
     pub hook_get_span: Option<SourceSpan>,
     pub hook_set_span: Option<SourceSpan>,
     pub hook_get_value: Option<Expr>,
+    pub hook_set_value: Option<Expr>,
+    pub hook_set_parameter_name: Option<String>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,
     pub has_override_attribute: bool,

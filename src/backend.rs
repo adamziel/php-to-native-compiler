@@ -341,6 +341,14 @@ pub fn emit_c(module: &Module) -> String {
     }) {
         out.push_str("    runtime.property_hook_get = ptn_declared_class_property_hook_get;\n");
     }
+    if module.classes.iter().any(|class| {
+        class
+            .properties
+            .iter()
+            .any(|property| property.hook_set_value.is_some())
+    }) {
+        out.push_str("    runtime.property_hook_set = ptn_declared_class_property_hook_set;\n");
+    }
     if has_declared_class_constants {
         out.push_str(
             "    runtime.class_constant_initializer = ptn_declared_class_constant_initializer;\n",
@@ -4263,6 +4271,27 @@ fn type_hint_scalar_return_coercion_helper(type_hint: Option<&TypeHint>) -> Opti
     }
 }
 
+fn property_type_scalar_return_coercion_helper(
+    type_hint: Option<&PropertyTypeHint>,
+) -> Option<&'static str> {
+    let type_hint = type_hint?;
+    if type_hint.allows_null {
+        return None;
+    }
+    match type_hint.kind {
+        PropertyTypeKind::Int => Some("ptn_coerce_user_return_int"),
+        PropertyTypeKind::Float => Some("ptn_coerce_user_return_float"),
+        PropertyTypeKind::String => Some("ptn_coerce_user_return_string"),
+        PropertyTypeKind::Bool => Some("ptn_coerce_user_return_bool"),
+        PropertyTypeKind::Null
+        | PropertyTypeKind::Array
+        | PropertyTypeKind::Mixed
+        | PropertyTypeKind::Object
+        | PropertyTypeKind::Class(_)
+        | PropertyTypeKind::Unsupported => None,
+    }
+}
+
 fn type_hint_scalar_parameter_coercion_helper(
     type_hint: Option<&TypeHint>,
 ) -> Option<&'static str> {
@@ -6557,6 +6586,15 @@ fn emit_class_metadata_helpers(
 
     emit_property_hook_deprecation_helper(out, classes, traits);
     emit_property_hook_get_helper(
+        out,
+        classes,
+        functions,
+        includes,
+        source_file,
+        source_dir,
+        emit_reflection_helpers,
+    );
+    emit_property_hook_set_helper(
         out,
         classes,
         functions,
@@ -9183,9 +9221,153 @@ fn emit_property_hook_get_helper(
             );
             let value_temp =
                 values.emit_materialized_value(out, property.hook_get_value.as_ref().unwrap());
+            let result_temp = if let Some(coercion_helper) =
+                property_type_scalar_return_coercion_helper(property.type_hint.as_ref())
+            {
+                let typed_temp = "ptn_typed_hook_get_value";
+                out.push_str("        PtnValue ");
+                out.push_str(typed_temp);
+                out.push_str(";\n");
+                out.push_str("        if (!");
+                out.push_str(coercion_helper);
+                out.push_str("(&runtime, \"");
+                out.push_str(&c_string(&display_name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&property.type_hint.as_ref().unwrap().text));
+                out.push_str("\", ");
+                out.push_str(&value_temp);
+                out.push_str(", 1, line, &");
+                out.push_str(typed_temp);
+                out.push_str(")) {\n");
+                out.push_str("            ptn_value_destroy(&");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                out.push_str("            *value_out = ptn_null();\n");
+                out.push_str("            caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+                out.push_str("            ptn_runtime_free(&runtime);\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+                out.push_str("        ptn_value_destroy(&");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+                typed_temp
+            } else {
+                value_temp.as_str()
+            };
             out.push_str("        *value_out = ");
-            out.push_str(&value_temp);
+            out.push_str(result_temp);
             out.push_str(";\n");
+            out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+            out.push_str("        ptn_runtime_free(&runtime);\n");
+            out.push_str("        return 1;\n");
+            emitted_branch = true;
+        }
+    }
+    if emitted_branch {
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+}
+
+fn emit_property_hook_set_helper(
+    out: &mut String,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    includes: &[IncludeFile],
+    source_file: &str,
+    source_dir: &str,
+    full_internal_dispatch: bool,
+) {
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_property_hook_set(PtnRuntime *caller_runtime, PtnValue receiver, const char *class_name, const char *property_name, PtnValue value, size_t line) {\n",
+    );
+    let has_set_values = classes.iter().any(|class| {
+        class
+            .properties
+            .iter()
+            .any(|property| property.hook_set_value.is_some())
+    });
+    if !has_set_values {
+        out.push_str("    (void)caller_runtime;\n");
+        out.push_str("    (void)receiver;\n");
+        out.push_str("    (void)class_name;\n");
+        out.push_str("    (void)property_name;\n");
+        out.push_str("    (void)value;\n");
+        out.push_str("    (void)line;\n");
+        out.push_str("    return 0;\n");
+        out.push_str("}\n");
+        return;
+    }
+
+    out.push_str("    PtnValue resolved_receiver = ptn_value_deref(receiver);\n");
+    let mut emitted_branch = false;
+    for class in classes {
+        for property in class
+            .properties
+            .iter()
+            .filter(|property| property.hook_set_value.is_some())
+        {
+            out.push_str("    ");
+            if emitted_branch {
+                out.push_str("} else ");
+            }
+            out.push_str("if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\") && strcmp(property_name, \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("        PtnRuntime runtime;\n");
+            out.push_str("        ptn_runtime_init_function_frame(&runtime, caller_runtime);\n");
+            let hook_name = property_hook_method_name(&property.name, "set");
+            let display_name = format!("{}::{hook_name}", class.name);
+            out.push_str("        runtime.current_function_name = \"");
+            out.push_str(&c_string(&display_name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.current_class_name = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.current_called_class_name = resolved_receiver.type == PTN_OBJECT ? resolved_receiver.as.object->class_name : \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.call_site_line = line;\n");
+            out.push_str("        runtime.has_current_receiver = 1;\n");
+            out.push_str("        runtime.current_receiver = receiver;\n");
+            out.push_str("        ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
+            out.push_str("        ptn_runtime_write_variable(&runtime, \"");
+            out.push_str(&c_string(
+                property
+                    .hook_set_parameter_name
+                    .as_deref()
+                    .unwrap_or("value"),
+            ));
+            out.push_str("\", value);\n");
+            out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
+
+            let mut values = ValueEmitter::new_with_scope(
+                source_file,
+                source_dir,
+                functions,
+                classes,
+                includes,
+                full_internal_dispatch,
+                None,
+                Some(display_name.as_str()),
+                Some(hook_name.as_str()),
+                Some(class.name.as_str()),
+                None,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+            );
+            let value_temp =
+                values.emit_materialized_value(out, property.hook_set_value.as_ref().unwrap());
+            out.push_str("        ptn_value_destroy(&");
+            out.push_str(&value_temp);
+            out.push_str(");\n");
             out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
             out.push_str("        return 1;\n");

@@ -49209,6 +49209,153 @@ try {
 }
 
 #[test]
+fn compile_braced_property_hook_getters_to_native_binary() {
+    let root = temp_dir("ptn-native-braced-property-hook-getters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("braced-property-hook-getters.php");
+    let output = root.join("braced-property-hook-getters-bin");
+    fs::write(
+        &input,
+        "<?php
+class BracedHookBag {
+    public $answer {
+        get { return 42; }
+    }
+
+    public $upper {
+        get { return strtoupper('ok'); }
+    }
+
+    public $backed = 'initial' {
+        get { return $this->backed; }
+    }
+
+    public int $coerced {
+        get { return '42'; }
+    }
+
+    public int $bad {
+        get { return 'nope'; }
+    }
+}
+
+$bag = new BracedHookBag();
+var_dump($bag->answer);
+var_dump($bag->upper);
+var_dump($bag->backed);
+var_dump($bag->coerced);
+
+try {
+    $bag->answer = 100;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    var_dump($bag->bad);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$bag->backed = 'updated';
+var_dump($bag->backed);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(42)\n",
+            "string(2) \"OK\"\n",
+            "string(7) \"initial\"\n",
+            "int(42)\n",
+            "Cannot write to get-only virtual property BracedHookBag::$answer\n",
+            "BracedHookBag::$bad::get(): Return value must be of type int, string returned\n",
+            "string(7) \"updated\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_hook_get"));
+}
+
+#[test]
+fn compile_simple_property_hook_setters_to_native_binary() {
+    let root = temp_dir("ptn-native-simple-property-hook-setters");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simple-property-hook-setters.php");
+    let output = root.join("simple-property-hook-setters-bin");
+    fs::write(
+        &input,
+        "<?php
+class SetterBag {
+    public $_prop;
+    public $prop {
+        set { $this->_prop = $value; }
+    }
+
+    public $custom {
+        set($customName) { var_dump($customName); }
+    }
+}
+
+$bag = new SetterBag();
+$bag->prop = 42;
+var_dump($bag->_prop);
+
+try {
+    var_dump($bag->prop);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    var_dump(isset($bag->prop));
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$bag->custom = 99;
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(42)\n",
+            "Cannot read from set-only virtual property SetterBag::$prop\n",
+            "Cannot read from set-only virtual property SetterBag::$prop\n",
+            "int(99)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_hook_set"));
+}
+
+#[test]
 fn compile_property_hook_get_hook_attributes_and_deprecations_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-get-hook-attributes");
     fs::create_dir_all(&root).unwrap();
