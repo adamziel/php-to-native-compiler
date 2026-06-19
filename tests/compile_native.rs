@@ -14119,7 +14119,7 @@ if (true) {
     assert_eq!(
         String::from_utf8(execution.stderr).unwrap(),
         format!(
-            "Fatal error: DateTimeInterface can't be implemented by user classes in {} on line 4\n",
+            "\nFatal error: DateTimeInterface can't be implemented by user classes in {} on line 4\n",
             input.display()
         )
     );
