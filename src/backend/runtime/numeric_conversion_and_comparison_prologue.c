@@ -175,6 +175,9 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->unserialize_callback_func = NULL;
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
+    ptn_symbols_init(&runtime->session_ini);
+    runtime->session_id = NULL;
+    runtime->session_active = caller_runtime->session_active;
     runtime->precision = caller_runtime->precision;
     runtime->serialize_precision = caller_runtime->serialize_precision;
     runtime->initial_precision = caller_runtime->initial_precision;
@@ -403,8 +406,11 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
 #endif
 }
 
+static void ptn_runtime_session_shutdown(PtnRuntime *runtime);
+
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {
+        ptn_runtime_session_shutdown(runtime);
         ptn_runtime_run_shutdown_functions(runtime);
         ptn_runtime_run_static_property_destructors(runtime);
         ptn_runtime_run_static_local_destructors(runtime);
@@ -549,6 +555,10 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         free(runtime->request_body);
         runtime->request_body = NULL;
         runtime->request_body_len = 0;
+        ptn_symbols_free(&runtime->session_ini);
+        free(runtime->session_id);
+        runtime->session_id = NULL;
+        runtime->session_active = 0;
         free(runtime->live_objects);
         runtime->live_objects = NULL;
         runtime->live_objects_len = 0;

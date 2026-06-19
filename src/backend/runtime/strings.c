@@ -1337,6 +1337,22 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(5);
         return 1;
     }
+    if (strcmp(name, "PHP_SESSION_DISABLED") == 0) {
+        *out = ptn_int(PTN_PHP_SESSION_DISABLED);
+        return 1;
+    }
+    if (strcmp(name, "PHP_SESSION_NONE") == 0) {
+        *out = ptn_int(PTN_PHP_SESSION_NONE);
+        return 1;
+    }
+    if (strcmp(name, "PHP_SESSION_ACTIVE") == 0) {
+        *out = ptn_int(PTN_PHP_SESSION_ACTIVE);
+        return 1;
+    }
+    if (strcmp(name, "SID") == 0) {
+        *out = ptn_string("");
+        return 1;
+    }
     if (strcmp(name, "DEBUG_BACKTRACE_PROVIDE_OBJECT") == 0) {
         *out = ptn_int(PTN_DEBUG_BACKTRACE_PROVIDE_OBJECT);
         return 1;
