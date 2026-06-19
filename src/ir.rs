@@ -331,6 +331,10 @@ pub enum Instruction {
         class_index: usize,
         line: usize,
     },
+    ValidateClass {
+        class_index: usize,
+        line: usize,
+    },
     BindStatic {
         name: String,
         value: Option<ValueExpr>,
@@ -1773,11 +1777,15 @@ impl<'a> LoweringContext<'a> {
             match statement {
                 Statement::Empty { .. } => {}
                 Statement::ClassDeclaration { name, span, .. } => {
-                    if self
-                        .runtime_class_names
-                        .contains(&name.to_ascii_lowercase())
-                    {
-                        if let Some(class_index) = self.class_index_by_name(name) {
+                    if let Some(class_index) = self.class_index_by_name(name) {
+                        instructions.push(Instruction::ValidateClass {
+                            class_index,
+                            line: span.line,
+                        });
+                        if self
+                            .runtime_class_names
+                            .contains(&name.to_ascii_lowercase())
+                        {
                             instructions.push(Instruction::DeclareClass {
                                 class_index,
                                 line: span.line,

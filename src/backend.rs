@@ -10129,6 +10129,154 @@ fn class_method_lookup_chain<'a>(
     methods
 }
 
+struct RuntimeAbstractMethodRequirement {
+    declaring_class: String,
+    method_name: String,
+}
+
+fn class_runtime_unsatisfied_abstract_methods(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Vec<RuntimeAbstractMethodRequirement> {
+    if class.is_abstract || class.is_interface {
+        return Vec::new();
+    }
+    let mut requirements = Vec::new();
+    collect_parent_runtime_abstract_methods(class, classes, &mut requirements);
+    collect_interface_runtime_abstract_methods(class, classes, &mut requirements);
+    let mut seen = HashSet::new();
+    requirements
+        .into_iter()
+        .filter(|required| {
+            let key = format!(
+                "{}::{}",
+                required.declaring_class.to_ascii_lowercase(),
+                required.method_name.to_ascii_lowercase()
+            );
+            seen.insert(key) && !class_has_concrete_method(class, &required.method_name, classes)
+        })
+        .collect()
+}
+
+fn collect_parent_runtime_abstract_methods(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    requirements: &mut Vec<RuntimeAbstractMethodRequirement>,
+) {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = class_by_name(classes, name) else {
+            break;
+        };
+        for method in &parent.methods {
+            if method.is_abstract {
+                requirements.push(RuntimeAbstractMethodRequirement {
+                    declaring_class: parent.name.clone(),
+                    method_name: method.name.clone(),
+                });
+            }
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+}
+
+fn collect_interface_runtime_abstract_methods(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+    requirements: &mut Vec<RuntimeAbstractMethodRequirement>,
+) {
+    let mut current = Some(class);
+    let mut seen_classes = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        let mut seen_interfaces = HashSet::new();
+        for interface_name in &candidate.interfaces {
+            collect_interface_runtime_methods(
+                interface_name,
+                classes,
+                &mut seen_interfaces,
+                requirements,
+            );
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| class_by_name(classes, name));
+    }
+}
+
+fn collect_interface_runtime_methods(
+    interface_name: &str,
+    classes: &[ClassDecl],
+    seen: &mut HashSet<String>,
+    requirements: &mut Vec<RuntimeAbstractMethodRequirement>,
+) {
+    let lookup_name = interface_name.trim_start_matches('\\').to_ascii_lowercase();
+    if !seen.insert(lookup_name) {
+        return;
+    }
+    let Some(interface) = class_by_name(classes, interface_name) else {
+        return;
+    };
+    if !interface.is_interface {
+        return;
+    }
+    for method in &interface.methods {
+        requirements.push(RuntimeAbstractMethodRequirement {
+            declaring_class: interface.name.clone(),
+            method_name: method.name.clone(),
+        });
+    }
+    for parent_interface in &interface.interfaces {
+        collect_interface_runtime_methods(parent_interface, classes, seen, requirements);
+    }
+}
+
+fn class_has_concrete_method(class: &ClassDecl, method_name: &str, classes: &[ClassDecl]) -> bool {
+    let mut current = Some(class);
+    let mut seen = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        if candidate.methods.iter().any(|method| {
+            method.visibility != PropertyVisibility::Private
+                && method.name.eq_ignore_ascii_case(method_name)
+                && !method.is_abstract
+        }) {
+            return true;
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| class_by_name(classes, name));
+    }
+    false
+}
+
+fn abstract_methods_runtime_message(
+    class_name: &str,
+    methods: &[RuntimeAbstractMethodRequirement],
+) -> String {
+    let remaining = methods
+        .iter()
+        .map(|method| format!("{}::{}", method.declaring_class, method.method_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "Class {class_name} contains {} abstract method{} and must therefore be declared abstract or implement the remaining method{} ({remaining})",
+        methods.len(),
+        if methods.len() == 1 { "" } else { "s" },
+        if methods.len() == 1 { "" } else { "s" },
+    )
+}
+
 fn builtin_parent_interfaces(interface_name: &str) -> &'static [&'static str] {
     match interface_name
         .trim_start_matches('\\')
@@ -11520,13 +11668,16 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("            }\n");
     out.push_str("            *separator = ':';\n");
     out.push_str("        }\n");
-    out.push_str("        if (ptn_internal_class_exists_name(scope.as.object->class_name)) {\n");
-    out.push_str("            valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name);\n");
-    out.push_str("        }\n");
-    out.push_str("        valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
-    out.push_str("        free(method_name);\n");
-    out.push_str("        return valid;\n");
-    out.push_str("    }\n");
+        out.push_str("        if (ptn_internal_class_exists_name(scope.as.object->class_name)) {\n");
+        out.push_str("            valid = ptn_internal_class_method_exists(scope.as.object->class_name, method_name);\n");
+        out.push_str("        }\n");
+        out.push_str("        valid = valid || ptn_declared_class_method_is_callable(scope.as.object->class_name, method_name, access_scope) || ptn_declared_class_has_call_magic(scope.as.object->class_name);\n");
+        out.push_str("        if (!valid && separator != NULL && separator != method_name && separator[2] != '\\0') {\n");
+        out.push_str("            ptn_emit_scoped_callable_deprecation(runtime, scope.as.object->class_name, method_name, runtime == NULL ? 0 : runtime->call_site_line);\n");
+        out.push_str("        }\n");
+        out.push_str("        free(method_name);\n");
+        out.push_str("        return valid;\n");
+        out.push_str("    }\n");
     out.push_str("    if (scope.type == PTN_EXCEPTION) {\n");
     out.push_str("        if (syntax_only) {\n");
     out.push_str("            return 1;\n");
@@ -12971,6 +13122,88 @@ fn emit_declare_class_dependency_check(
     out.push_str("        }\n");
 }
 
+fn emit_class_declaration_validation(
+    out: &mut String,
+    classes: &[ClassDecl],
+    class_index: usize,
+    line: usize,
+    source_path: &str,
+) {
+    let class = &classes[class_index];
+    if !class.is_interface
+        && class
+            .interfaces
+            .iter()
+            .any(|interface| interface.eq_ignore_ascii_case("DateTimeInterface"))
+    {
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"DateTimeInterface can't be implemented by user classes\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
+    if let Some(parent_name) = &class.parent_name {
+        let parent_temp = format!("ptn_declared_parent_{}", class_index);
+        out.push_str("        const char *");
+        out.push_str(&parent_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+        out.push_str(&c_string(parent_name));
+        out.push_str("\");\n");
+        emit_declare_class_dependency_check(
+            out,
+            &parent_temp,
+            "Class",
+            "ptn_declared_runtime_class_exists",
+            "ptn_internal_class_exists_name",
+            source_path,
+            line,
+        );
+        out.push_str("        if (ptn_declared_class_is_final(");
+        out.push_str(&parent_temp);
+        out.push_str(")) {\n");
+        out.push_str("            char final_parent_message[1024];\n");
+        out.push_str("            snprintf(final_parent_message, sizeof(final_parent_message), \"Class ");
+        out.push_str(&c_string(&class.name));
+        out.push_str(" cannot extend final class %s\", ");
+        out.push_str(&parent_temp);
+        out.push_str(");\n");
+        out.push_str("            ptn_emit_fatal_error_at(&runtime, final_parent_message, \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        }\n");
+    }
+    for (interface_index, interface_name) in class.interfaces.iter().enumerate() {
+        let interface_temp = format!("ptn_declared_interface_{}_{}", class_index, interface_index);
+        out.push_str("        const char *");
+        out.push_str(&interface_temp);
+        out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
+        out.push_str(&c_string(interface_name));
+        out.push_str("\");\n");
+        emit_declare_class_dependency_check(
+            out,
+            &interface_temp,
+            "Interface",
+            "ptn_declared_runtime_interface_exists",
+            "ptn_internal_interface_exists_name",
+            source_path,
+            line,
+        );
+    }
+    let abstract_methods = class_runtime_unsatisfied_abstract_methods(class, classes);
+    if !abstract_methods.is_empty() {
+        let message = abstract_methods_runtime_message(&class.name, &abstract_methods);
+        out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
+        out.push_str(&c_string(&message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+    }
+}
+
 fn emit_instruction(
     out: &mut String,
     values: &mut ValueEmitter,
@@ -13208,6 +13441,15 @@ fn emit_instruction(
             out.push_str("] = 1;\n");
             out.push_str("    }\n");
         }
+        Instruction::ValidateClass { class_index, line } => {
+            emit_class_declaration_validation(
+                out,
+                values.classes,
+                *class_index,
+                *line,
+                source_path,
+            );
+        }
         Instruction::DeclareClass { class_index, line } => {
             let class = &values.classes[*class_index];
             out.push_str("    if (runtime.declared_user_classes != NULL) {\n");
@@ -13230,70 +13472,13 @@ fn emit_instruction(
             out.push_str(&line.to_string());
             out.push_str(");\n");
             out.push_str("        }\n");
-            if !class.is_interface
-                && class
-                    .interfaces
-                    .iter()
-                    .any(|interface| interface.eq_ignore_ascii_case("DateTimeInterface"))
-            {
-                out.push_str("        ptn_emit_fatal_error_at(&runtime, \"DateTimeInterface can't be implemented by user classes\", \"");
-                out.push_str(&c_string(source_path));
-                out.push_str("\", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-            }
-            if let Some(parent_name) = &class.parent_name {
-                let parent_temp = format!("ptn_declared_parent_{}", class_index);
-                out.push_str("        const char *");
-                out.push_str(&parent_temp);
-                out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
-                out.push_str(&c_string(parent_name));
-                out.push_str("\");\n");
-                emit_declare_class_dependency_check(
-                    out,
-                    &parent_temp,
-                    "Class",
-                    "ptn_declared_runtime_class_exists",
-                    "ptn_internal_class_exists_name",
-                    source_path,
-                    *line,
-                );
-                out.push_str("        if (ptn_declared_class_is_final(");
-                out.push_str(&parent_temp);
-                out.push_str(")) {\n");
-                out.push_str("            char final_parent_message[1024];\n");
-                out.push_str("            snprintf(final_parent_message, sizeof(final_parent_message), \"Class ");
-                out.push_str(&c_string(&class.name));
-                out.push_str(" cannot extend final class %s\", ");
-                out.push_str(&parent_temp);
-                out.push_str(");\n");
-                out.push_str(
-                    "            ptn_emit_fatal_error_at(&runtime, final_parent_message, \"",
-                );
-                out.push_str(&c_string(source_path));
-                out.push_str("\", ");
-                out.push_str(&line.to_string());
-                out.push_str(");\n");
-                out.push_str("        }\n");
-            }
-            for (interface_index, interface_name) in class.interfaces.iter().enumerate() {
-                let interface_temp =
-                    format!("ptn_declared_interface_{}_{}", class_index, interface_index);
-                out.push_str("        const char *");
-                out.push_str(&interface_temp);
-                out.push_str(" = ptn_runtime_resolve_class_alias(&runtime, \"");
-                out.push_str(&c_string(interface_name));
-                out.push_str("\");\n");
-                emit_declare_class_dependency_check(
-                    out,
-                    &interface_temp,
-                    "Interface",
-                    "ptn_declared_runtime_interface_exists",
-                    "ptn_internal_interface_exists_name",
-                    source_path,
-                    *line,
-                );
-            }
+            emit_class_declaration_validation(
+                out,
+                values.classes,
+                *class_index,
+                *line,
+                source_path,
+            );
             out.push_str("        runtime.declared_user_classes[");
             out.push_str(&class_index.to_string());
             out.push_str("] = 1;\n");

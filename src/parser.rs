@@ -14403,14 +14403,6 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
                 class.span,
             ));
         }
-        let abstract_methods = inherited_unsatisfied_abstract_methods(class, classes);
-        if !abstract_methods.is_empty() {
-            return Err(abstract_methods_diagnostic(
-                &class.name,
-                &abstract_methods,
-                class.span,
-            ));
-        }
     }
     Ok(())
 }
@@ -14686,7 +14678,7 @@ fn collect_interface_abstract_methods(
         }
         let mut seen_interfaces = HashSet::new();
         for interface_name in &candidate.interfaces {
-            collect_interface_methods(
+            collect_interface_abstract_method_requirements(
                 interface_name,
                 classes,
                 &mut seen_interfaces,
@@ -14700,7 +14692,7 @@ fn collect_interface_abstract_methods(
     }
 }
 
-fn collect_interface_methods(
+fn collect_interface_abstract_method_requirements(
     interface_name: &str,
     classes: &[ClassDecl],
     seen: &mut HashSet<String>,
@@ -14725,7 +14717,12 @@ fn collect_interface_methods(
         }
     }
     for parent_interface in &interface.interfaces {
-        collect_interface_methods(parent_interface, classes, seen, requirements);
+        collect_interface_abstract_method_requirements(
+            parent_interface,
+            classes,
+            seen,
+            requirements,
+        );
     }
 }
 
