@@ -14,7 +14,7 @@ and match explicit PTN stdout/stderr expectations. Unsupported reference cases
 must fail with explicit compiler diagnostics.
 
 Options:
-  --case NAME    Run one oracle or diagnostic case.
+  --case NAME    Run one oracle, notice, or diagnostic case.
   --emit-c       Keep generated C beside native binaries while temp files are
                  retained.
   --keep-temp    Keep generated PHP, stdout/stderr files, and native binaries.
@@ -44,6 +44,8 @@ oracle_cases=(
     typed_by_reference_return_separation
     by_reference_return_boundaries
     nested_recursive_array_literal_value_write
+    unsupported_by_reference_return
+    unsupported_recursive_array_append_self
 )
 
 notice_cases=(
@@ -54,8 +56,6 @@ notice_cases=(
 
 diagnostic_cases=(
     unsupported_foreach_reference_key
-    unsupported_by_reference_return
-    unsupported_recursive_array_append_self
     unsupported_recursive_array_element_literal_self
     unsupported_same_array_literal_element_reference
     unsupported_same_array_element_literal_element_reference
@@ -114,6 +114,12 @@ coverage() {
         nested_recursive_array_literal_value_write)
             printf 'nested recursive array literal slots update the referenced variable\n'
             ;;
+        unsupported_by_reference_return)
+            printf 'non-lvalue by-reference returns fall back to value notices\n'
+            ;;
+        unsupported_recursive_array_append_self)
+            printf 'direct array append by reference to itself preserves recursion\n'
+            ;;
         reference_assignment_from_call_result_value_fallback)
             printf 'notice: non-reference call results assigned by reference fall back to value writes\n'
             ;;
@@ -125,12 +131,6 @@ coverage() {
             ;;
         unsupported_foreach_reference_key)
             printf 'diagnostic: foreach key binding cannot be by reference\n'
-            ;;
-        unsupported_by_reference_return)
-            printf 'diagnostic: non-lvalue by-reference returns remain explicit unsupported behavior\n'
-            ;;
-        unsupported_recursive_array_append_self)
-            printf 'diagnostic: array append by reference to itself remains explicit unsupported behavior\n'
             ;;
         unsupported_recursive_array_element_literal_self)
             printf 'diagnostic: array-element literal reference to containing array remains explicit unsupported behavior\n'
@@ -391,6 +391,24 @@ $array[0][0] = 7;
 var_dump($array);
 PHP
             ;;
+        unsupported_by_reference_return)
+            cat >"$path" <<'PHP'
+<?php
+function &make_ref() {
+    return 1;
+}
+$value =& make_ref();
+var_dump($value);
+PHP
+            ;;
+        unsupported_recursive_array_append_self)
+            cat >"$path" <<'PHP'
+<?php
+$array = [];
+$array[] =& $array;
+var_dump($array);
+PHP
+            ;;
         *)
             echo "unknown oracle case: $name" >&2
             return 1
@@ -410,21 +428,6 @@ $items = [1];
 foreach ($items as &$key => $value) {
     echo $value;
 }
-PHP
-            ;;
-        unsupported_by_reference_return)
-            cat >"$path" <<'PHP'
-<?php
-function &make_ref() {
-    return 1;
-}
-PHP
-            ;;
-        unsupported_recursive_array_append_self)
-            cat >"$path" <<'PHP'
-<?php
-$array = [];
-$array[] =& $array;
 PHP
             ;;
         unsupported_recursive_array_element_literal_self)
@@ -498,25 +501,29 @@ PHP
 }
 
 expected_notice_stdout() {
+    local source_file="$2"
+
     case "$1" in
         reference_assignment_from_call_result_value_fallback)
+            printf '\nNotice: Only variables should be assigned by reference in %s on line 5\n' "$source_file"
             cat <<'OUT'
-Notice: Only variables should be assigned by reference in ptn on line 5
 1
-Notice: Only variables should be assigned by reference in ptn on line 8
+OUT
+            printf '\nNotice: Only variables should be assigned by reference in %s on line 8\n' "$source_file"
+            cat <<'OUT'
 1
 OUT
             ;;
         recursive_array_literal_slot_replaced_by_call_result)
+            printf '\nNotice: Only variables should be assigned by reference in %s on line 4\n' "$source_file"
             cat <<'OUT'
-Notice: Only variables should be assigned by reference in ptn on line 4
 NULL
 NULL
 OUT
             ;;
         keyed_recursive_array_literal_slot_replaced_by_call_result)
+            printf '\nNotice: Only variables should be assigned by reference in %s on line 4\n' "$source_file"
             cat <<'OUT'
-Notice: Only variables should be assigned by reference in ptn on line 4
 NULL
 NULL
 OUT
@@ -531,12 +538,6 @@ expected_diagnostic() {
     case "$1" in
         unsupported_foreach_reference_key)
             printf 'Key element cannot be a reference\n'
-            ;;
-        unsupported_by_reference_return)
-            printf 'by-reference return requires a variable or array element\n'
-            ;;
-        unsupported_recursive_array_append_self)
-            printf 'recursive array references are unsupported\n'
             ;;
         unsupported_recursive_array_element_literal_self)
             printf 'recursive array references are unsupported\n'
@@ -637,7 +638,7 @@ run_notice_case() {
     local expected_stderr="$tmp/$name.expected.stderr"
 
     write_notice_case "$name" "$source_file"
-    expected_notice_stdout "$name" >"$expected_stdout"
+    expected_notice_stdout "$name" "$source_file" >"$expected_stdout"
     : >"$expected_stderr"
 
     set +e
