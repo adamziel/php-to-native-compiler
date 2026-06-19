@@ -2629,6 +2629,7 @@ static size_t ptn_closure_dump_field_count(PtnClosure *closure) {
 /* PTN_INTERNAL_FUNCTIONS_START */
 static PTN_UNUSED PtnValue ptn_call_function(PtnRuntime *runtime, const char *name, size_t argc, const PtnValue *args, size_t line);
 static PTN_UNUSED PtnValue ptn_call_callable(PtnRuntime *runtime, PtnValue callable, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_declared_class_new_instance(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_pdo_drivers_value(void);
 static PtnValue ptn_internal_pdo_drivers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_callable_array_parts(PtnValue callable, PtnValue *scope_out, PtnValue *method_out);
