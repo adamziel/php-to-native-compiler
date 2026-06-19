@@ -52446,7 +52446,7 @@ var_dump($url->toAsciiString());
 var_dump($url->getPort());
 var_dump($url->getHostType());
 var_dump($url->withPath("foo#bar")->toAsciiString());
-var_dump($url->withPath("/p^th#")->toAsciiString());
+var_dump(Uri\WhatWg\Url::parse("https://example.com/")->withPath("/p^th#")->toAsciiString());
 var_dump(Uri\WhatWg\Url::parse("https://example.com/foo\"/<bar>/^{baz}")->getPath());
 var_dump($url->withUsername("u:s/r")->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
