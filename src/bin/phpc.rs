@@ -674,7 +674,7 @@ fn error_reporting_constant(name: &str) -> Option<i64> {
         "E_RECOVERABLE_ERROR" => Some(4096),
         "E_DEPRECATED" => Some(8192),
         "E_USER_DEPRECATED" => Some(16384),
-        "E_ALL" => Some(32767),
+        "E_ALL" => Some(30719),
         _ => None,
     }
 }

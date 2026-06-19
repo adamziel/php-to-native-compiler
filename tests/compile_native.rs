@@ -32549,7 +32549,7 @@ var_dump(defined(\"E_WARNING\"), defined(\"E_ALL\"));",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(32767)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 3\narray(1) {\n  [\"shown\"]=>\n  int(1)\n}\nint(32767)\nint(1)\narray(1) {\n  [\"hidden\"]=>\n  int(1)\n}\nbool(true)\nint(1)\nint(1)\nint(32767)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 10\narray(1) {\n  [\"shown-again\"]=>\n  int(1)\n}\nWarning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 11\nbool(true)\nint(2)\nbool(true)\nbool(true)\n"
+        "int(30719)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 3\narray(1) {\n  [\"shown\"]=>\n  int(1)\n}\nint(30719)\nint(1)\narray(1) {\n  [\"hidden\"]=>\n  int(1)\n}\nbool(true)\nint(1)\nint(1)\nint(30719)\n\nWarning: array_count_values(): Can only count string and integer values, entry skipped in ptn on line 10\narray(1) {\n  [\"shown-again\"]=>\n  int(1)\n}\nWarning: define(): Argument #3 ($case_insensitive) is ignored since declaration of case-insensitive constants is no longer supported in ptn on line 11\nbool(true)\nint(2)\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -32565,12 +32565,15 @@ fn compile_error_reporting_reflects_nested_error_suppression_to_native_binary() 
         "<?php\n\
 function foo($a, $b, $c) { echo \"foo: \", error_reporting(), \"\\n\"; }\n\
 function bar() { echo \"bar: \", error_reporting(), \"\\n\"; }\n\
+function lift() { error_reporting(E_ALL); echo $undef_after_lift; throw new Exception(\"lift\"); }\n\
 error_reporting(E_WARNING);\n\
 echo \"before: \", error_reporting(), \"\\n\";\n\
 @foo(1, @bar(), 3);\n\
 echo \"after: \", error_reporting(), \"\\n\";\n\
 echo \"set: \", @error_reporting(E_ALL), \"\\n\";\n\
-echo \"final: \", error_reporting(), \"\\n\";\n",
+echo \"final: \", error_reporting(), \"\\n\";\n\
+try { @lift(); } catch (Exception $e) { echo \"caught: \", $e->getMessage(), \"\\n\"; }\n\
+echo \"lift final: \", error_reporting(), \"\\n\";\n",
     )
     .unwrap();
 
@@ -32580,7 +32583,10 @@ echo \"final: \", error_reporting(), \"\\n\";\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "before: 2\nbar: 0\nfoo: 0\nafter: 2\nset: 0\nfinal: 32767\n"
+        format!(
+            "before: 2\nbar: 0\nfoo: 0\nafter: 2\nset: 0\nfinal: 30719\n{}caught: lift\nlift final: 30719\n",
+            undefined_variable_warning(&input, "undef_after_lift", 4)
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -40199,7 +40205,7 @@ fn phpc_error_reporting_ini_sets_initial_level() {
     assert!(expression_execution.status.success());
     assert_eq!(
         String::from_utf8(expression_execution.stdout).unwrap(),
-        "int(32765)\n"
+        "int(30717)\n"
     );
     assert_eq!(String::from_utf8(expression_execution.stderr).unwrap(), "");
 }
@@ -41259,6 +41265,103 @@ fn compile_exit_construct_forms_to_native_binary() {
         stderr.contains("exit(): Argument #1 ($status) must be of type string|int, array given"),
         "{stderr}"
     );
+}
+
+#[test]
+fn compile_exit_construct_expression_contexts_to_native_binary() {
+    let root = temp_dir("ptn-native-exit-expression-contexts");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        (
+            "exit-as-object-argument.php",
+            "<?php echo \"before\\n\"; new stdClass(exit); echo \"after\\n\";",
+            Some(0),
+            "before\n",
+        ),
+        (
+            "die-as-array-element.php",
+            "<?php echo \"before\\n\"; var_dump([die(\"done\\n\")]); echo \"after\\n\";",
+            Some(0),
+            "before\ndone\n",
+        ),
+        (
+            "exit-named-status-expression.php",
+            "<?php echo \"before\\n\"; var_dump(exit(status: \"named\\n\")); echo \"after\\n\";",
+            Some(0),
+            "before\nnamed\n",
+        ),
+    ];
+
+    for (name, source, expected_status, expected_stdout) in cases {
+        let input = root.join(name);
+        let output = root.join(format!("{name}-bin"));
+        fs::write(&input, source).unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert_eq!(execution.status.code(), expected_status, "{name}");
+        assert_eq!(
+            String::from_utf8(execution.stdout).unwrap(),
+            expected_stdout,
+            "{name}"
+        );
+        assert_eq!(String::from_utf8(execution.stderr).unwrap(), "", "{name}");
+    }
+}
+
+#[test]
+fn compile_error_suppressed_throw_restores_error_reporting_to_native_binary() {
+    let root = temp_dir("ptn-native-error-suppressed-throw");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("error-suppressed-throw.php");
+    let output = root.join("error-suppressed-throw-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    @throw new Exception('boom');\n\
+} catch (Exception $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(error_reporting());\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "boom\nint(30719)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_question_mark_sequences_preserve_generated_c_strings_to_native_binary() {
+    let root = temp_dir("ptn-native-question-mark-c-strings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("question-mark-c-strings.php");
+    let output = root.join("question-mark-c-strings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo 'throw $exception ??= new Exception();', \"\\n\";\n\
+echo '??= ??/ ??\\' ??( ??) ??! ??< ??-', \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "throw $exception ??= new Exception();\n??= ??/ ??' ??( ??) ??! ??< ??-\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

@@ -6372,6 +6372,13 @@ impl Parser<'_> {
     }
 
     fn parse_unary_expr(&mut self) -> Result<Expr> {
+        if (token_is_identifier_named(self.peek(), "exit")
+            || token_is_identifier_named(self.peek(), "die"))
+            && !self.peek_exit_first_class_callable()
+        {
+            return self.parse_exit_expr();
+        }
+
         match self.peek().kind {
             TokenKind::Plus => {
                 let token = self.advance().clone();
@@ -6470,6 +6477,72 @@ impl Parser<'_> {
             value: Box::new(value),
             span,
         })
+    }
+
+    fn parse_exit_expr(&mut self) -> Result<Expr> {
+        let start_span = self.expect_exit()?;
+        let mut span = start_span;
+        let value = if self.peek_ends_exit_expr_without_value() {
+            None
+        } else if matches!(self.peek().kind, TokenKind::LeftParen) {
+            self.expect_left_paren()?;
+            if matches!(self.peek().kind, TokenKind::RightParen) {
+                let right_span = self.expect_right_paren()?;
+                span = combine_spans(start_span, right_span);
+                None
+            } else {
+                if token_is_identifier_named(self.peek(), "status")
+                    && matches!(self.peek_next().kind, TokenKind::Colon)
+                {
+                    self.advance();
+                    self.expect_colon()?;
+                }
+                let value = self.parse_expr()?;
+                if matches!(self.peek().kind, TokenKind::Comma) {
+                    return Err(Diagnostic::new(
+                        "exit() expects at most 1 argument",
+                        Some(self.peek().span),
+                    ));
+                }
+                let right_span = self.expect_right_paren()?;
+                span = combine_spans(start_span, right_span);
+                Some(Box::new(value))
+            }
+        } else {
+            let value = self.parse_assignment_expr()?;
+            span = combine_spans(start_span, value.span());
+            Some(Box::new(value))
+        };
+        Ok(Expr::Exit { value, span })
+    }
+
+    fn peek_ends_exit_expr_without_value(&self) -> bool {
+        matches!(
+            self.peek().kind,
+            TokenKind::Colon
+                | TokenKind::Comma
+                | TokenKind::RightParen
+                | TokenKind::RightBracket
+                | TokenKind::RightBrace
+                | TokenKind::Semicolon
+                | TokenKind::CloseTag
+                | TokenKind::Eof
+        )
+    }
+
+    fn peek_exit_first_class_callable(&self) -> bool {
+        matches!(
+            (
+                self.tokens.get(self.index + 1).map(|token| &token.kind),
+                self.tokens.get(self.index + 2).map(|token| &token.kind),
+                self.tokens.get(self.index + 3).map(|token| &token.kind),
+            ),
+            (
+                Some(TokenKind::LeftParen),
+                Some(TokenKind::Ellipsis),
+                Some(TokenKind::RightParen)
+            )
+        )
     }
 
     fn parse_include_expr(&mut self, kind: IncludeKind) -> Result<Expr> {
@@ -9933,6 +10006,11 @@ fn collect_arrow_captures_from_expr(
         | Expr::Grouped { expr: target, .. }
         | Expr::PipeValue { expr: target, .. } => {
             collect_arrow_captures_from_expr(target, exclusions, seen, captures);
+        }
+        Expr::Exit { value, .. } => {
+            if let Some(value) = value {
+                collect_arrow_captures_from_expr(value, exclusions, seen, captures);
+            }
         }
         Expr::YieldFrom { expr, .. } => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
@@ -15927,6 +16005,11 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. }
         | Expr::PipeValue { expr, .. } => validate_control_transfers_in_expr(expr)?,
+        Expr::Exit { value, .. } => {
+            if let Some(value) = value {
+                validate_control_transfers_in_expr(value)?;
+            }
+        }
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             if let Some(receiver) = receiver {
                 validate_control_transfers_in_expr(receiver)?;
@@ -16321,6 +16404,9 @@ fn expr_array_literal_reference_to_variable(
         | Expr::PipeValue { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
+        Expr::Exit { value, .. } => value
+            .as_deref()
+            .and_then(|value| expr_array_literal_reference_to_variable(value, variable)),
         Expr::YieldFrom { expr, .. } => expr_array_literal_reference_to_variable(expr, variable),
         Expr::Yield { key, value, .. } => key
             .as_deref()
@@ -16923,6 +17009,9 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::Cast { expr: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_contains_yield(name),
+        Expr::Exit { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| expr_contains_yield(value)),
         Expr::IncDec { target, .. } => inc_dec_target_contains_yield(target),
         Expr::Assign { target, value, .. } => {
             assignment_target_contains_yield(target) || expr_contains_yield(value)
@@ -17464,6 +17553,11 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::Cast { expr, .. }
         | Expr::Grouped { expr, .. }
         | Expr::PipeValue { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
+        Expr::Exit { value, .. } => {
+            if let Some(value) = value {
+                validate_anonymous_functions_in_expr(value, functions)?;
+            }
+        }
         Expr::YieldFrom { expr, .. } => validate_anonymous_functions_in_expr(expr, functions)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
@@ -20203,6 +20297,11 @@ fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
         | Expr::Include { path: target, .. }
         | Expr::Throw { value: target, .. }
         | Expr::PipeValue { expr: target, .. } => reject_standalone_list_expr(target)?,
+        Expr::Exit { value, .. } => {
+            if let Some(value) = value {
+                reject_standalone_list_expr(value)?;
+            }
+        }
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
                 reject_standalone_list_expr(key)?;
@@ -20393,6 +20492,11 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         | Expr::Cast { expr: target, .. }
         | Expr::Grouped { expr: target, .. }
         | Expr::PipeValue { expr: target, .. } => reject_append_array_read(target)?,
+        Expr::Exit { value, .. } => {
+            if let Some(value) = value {
+                reject_append_array_read(value)?;
+            }
+        }
         Expr::YieldFrom { expr, .. } => reject_append_array_read(expr)?,
         Expr::Yield { key, value, .. } => {
             if let Some(key) = key {
@@ -20927,6 +21031,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::List(_)
         | Expr::Print { .. }
         | Expr::Include { .. }
+        | Expr::Exit { .. }
         | Expr::Throw { .. }
         | Expr::Yield { .. }
         | Expr::YieldFrom { .. }
@@ -21431,6 +21536,9 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::Cast { expr: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_uses_this_property(name, property_name),
+        Expr::Exit { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| expr_uses_this_property(value, property_name)),
         Expr::Assign { target, value, .. } => {
             assignment_target_uses_this_property(target, property_name)
                 || expr_uses_this_property(value, property_name)
@@ -21831,6 +21939,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::List(_)
         | Expr::Print { .. }
         | Expr::Include { .. }
+        | Expr::Exit { .. }
         | Expr::Throw { .. }
         | Expr::Yield { .. }
         | Expr::YieldFrom { .. }
@@ -21997,6 +22106,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::Empty { .. }
         | Expr::Print { .. }
         | Expr::Include { .. }
+        | Expr::Exit { .. }
         | Expr::Throw { .. }
         | Expr::Yield { .. }
         | Expr::YieldFrom { .. } => Ok(()),

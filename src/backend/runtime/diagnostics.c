@@ -527,6 +527,10 @@ static int ptn_parse_bool_env(const char *name, int *out) {
     return 1;
 }
 
+static int64_t ptn_normalize_error_reporting(int64_t level) {
+    return level & ~((int64_t)PTN_E_STRICT);
+}
+
 static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->runtime = NULL;
     diagnostics->stream = stream;
@@ -544,7 +548,7 @@ static void ptn_diagnostics_init(PtnDiagnosticSink *diagnostics, FILE *stream) {
     diagnostics->error_handler_stack_capacity = 0;
     int64_t configured_error_reporting = 0;
     if (ptn_parse_int64_env("PTN_PHP_ERROR_REPORTING", &configured_error_reporting)) {
-        diagnostics->error_reporting = configured_error_reporting;
+        diagnostics->error_reporting = ptn_normalize_error_reporting(configured_error_reporting);
     }
     int configured_display_errors = 1;
     if (ptn_parse_bool_env("PTN_PHP_DISPLAY_ERRORS", &configured_display_errors)) {

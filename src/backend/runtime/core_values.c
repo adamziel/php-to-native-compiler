@@ -144,7 +144,7 @@ typedef struct {
 #define PTN_E_RECOVERABLE_ERROR 4096
 #define PTN_E_DEPRECATED 8192
 #define PTN_E_USER_DEPRECATED 16384
-#define PTN_E_ALL 32767
+#define PTN_E_ALL 30719
 #define PTN_EXTR_OVERWRITE 0
 #define PTN_EXTR_SKIP 1
 #define PTN_EXTR_PREFIX_SAME 2
@@ -1280,6 +1280,7 @@ static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, s
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
 static PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name);
 static PTN_UNUSED int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
+static PTN_UNUSED int ptn_declared_user_class_or_interface_exists(const char *name);
 static PTN_UNUSED const char *ptn_declared_class_canonical_name(const char *name);
 static PTN_UNUSED int ptn_declared_class_is_final(const char *name);
 static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class_name);

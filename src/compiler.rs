@@ -839,6 +839,12 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            Expr::Exit { value, .. } => {
+                if let Some(value) = value {
+                    self.collect_expr(value, source_file, source_dir)?;
+                }
+                Ok(())
+            }
             Expr::Binary { left, right, .. } => {
                 self.collect_expr(left, source_file, source_dir)?;
                 self.collect_expr(right, source_file, source_dir)

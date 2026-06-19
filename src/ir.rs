@@ -540,6 +540,10 @@ pub enum ValueExpr {
         candidates: Vec<usize>,
         line: usize,
     },
+    Exit {
+        value: Option<Box<ValueExpr>>,
+        line: usize,
+    },
     Throw {
         value: Box<ValueExpr>,
         line: usize,
@@ -2940,6 +2944,9 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::FirstClassCallable { callable: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_contains_yield(name),
+        Expr::Exit { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| expr_contains_yield(value)),
         Expr::String(_, _)
         | Expr::InterpolatedString(_, _)
         | Expr::ShellExec { .. }
@@ -3739,6 +3746,10 @@ impl<'a> LoweringContext<'a> {
                 candidates: self.include_candidates(*span),
                 line: span.line,
             },
+            Expr::Exit { value, span } => ValueExpr::Exit {
+                value: value.as_ref().map(|value| Box::new(self.lower_expr(value))),
+                line: span.line,
+            },
             Expr::Throw { value, span } => ValueExpr::Throw {
                 value: Box::new(self.lower_expr(value)),
                 line: span.line,
@@ -4247,6 +4258,10 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::Constant(name, _) if assertion_is_exit_construct_name(name) => {
             assertion_exit_construct_text(&[])
         }
+        Expr::Exit { value, .. } => match value.as_deref() {
+            Some(value) => format!("\\exit({})", assertion_expr_text(value)),
+            None => assertion_exit_construct_text(&[]),
+        },
         Expr::Constant(name, _) => name.clone(),
         Expr::MagicConstant(kind, _) => assertion_magic_constant_text(*kind).to_string(),
         Expr::IncDec {

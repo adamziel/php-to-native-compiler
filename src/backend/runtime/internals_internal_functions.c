@@ -55085,12 +55085,27 @@ static PtnValue ptn_internal_iterator_to_array(PtnRuntime *runtime, size_t argc,
 }
 
 static PtnValue ptn_internal_error_reporting(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
-    int64_t previous_level = runtime->diagnostics.suppressed > 0
-        ? 0
-        : runtime->diagnostics.error_reporting;
+    int64_t previous_level = runtime->diagnostics.error_reporting;
     if (argc >= 1) {
-        runtime->diagnostics.error_reporting = ptn_value_to_integer(args[0]);
+        PtnValue error_level = ptn_value_deref(args[0]);
+        if (error_level.type == PTN_NULL) {
+            return ptn_int(previous_level);
+        }
+        if (error_level.type != PTN_INT) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "error_reporting(): Argument #1 ($error_level) must be of type ?int, %s given",
+                ptn_numeric_arg_type_name(error_level)
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception_at(runtime, "TypeError", message, runtime->source_path, line);
+            return ptn_null();
+        }
+        runtime->diagnostics.error_reporting = ptn_normalize_error_reporting(error_level.as.integer);
     }
     return ptn_int(previous_level);
 }
@@ -55133,7 +55148,7 @@ static PtnValue ptn_internal_set_error_handler(PtnRuntime *runtime, size_t argc,
         return ptn_null();
     }
 
-    int64_t levels = argc >= 2 ? ptn_value_to_integer(args[1]) : PTN_E_ALL;
+    int64_t levels = argc >= 2 ? ptn_normalize_error_reporting(ptn_value_to_integer(args[1])) : PTN_E_ALL;
     ptn_diagnostics_push_error_handler(diagnostics, 1, checked, levels);
     ptn_value_destroy(&checked);
     return previous;

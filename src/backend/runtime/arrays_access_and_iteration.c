@@ -858,7 +858,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
             return ptn_null();
         }
     }
-    if (ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
+    if (ptn_declared_user_class_or_interface_exists(lookup_class_name) &&
+        (ptn_declared_runtime_class_exists(runtime, lookup_class_name) ||
+            ptn_declared_runtime_interface_exists(runtime, lookup_class_name))) {
         return ptn_declared_class_new_instance(runtime, lookup_class_name, argc, args, line);
     }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH

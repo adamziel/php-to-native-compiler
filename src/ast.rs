@@ -980,6 +980,10 @@ pub enum Expr {
         path: Box<Expr>,
         span: SourceSpan,
     },
+    Exit {
+        value: Option<Box<Expr>>,
+        span: SourceSpan,
+    },
     Throw {
         value: Box<Expr>,
         span: SourceSpan,
@@ -1194,6 +1198,7 @@ impl Expr {
             Expr::Empty { span, .. } => *span,
             Expr::Print { span, .. } => *span,
             Expr::Include { span, .. } => *span,
+            Expr::Exit { span, .. } => *span,
             Expr::Throw { span, .. } => *span,
             Expr::Yield { span, .. } | Expr::YieldFrom { span, .. } => *span,
             Expr::Unary { span, .. } | Expr::Cast { span, .. } => *span,

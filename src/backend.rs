@@ -1971,6 +1971,9 @@ fn emit_user_functions(
         let mut break_targets = Vec::new();
         let mut finally_stack = Vec::new();
         let return_label = values.next_label("ptn_function_return");
+        out.push_str("    PtnTryFrame ptn_function_try_frame;\n");
+        out.push_str("    ptn_try_frame_push(&runtime, &ptn_function_try_frame);\n");
+        out.push_str("    if (setjmp(ptn_function_try_frame.jump) == 0) {\n");
         for instruction in &function.body {
             emit_instruction(
                 out,
@@ -1983,10 +1986,23 @@ fn emit_user_functions(
                 None,
             );
         }
+        out.push_str("        goto ");
+        out.push_str(&return_label);
+        out.push_str(";\n");
+        out.push_str("    }\n");
+        out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
+        out.push_str("    caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+        out.push_str("    ptn_runtime_free(&runtime);\n");
+        if function.is_anonymous {
+            out.push_str("    free(ptn_closure_trace_name);\n");
+        }
+        out.push_str("    ptn_rethrow_exception(caller_runtime);\n");
+        out.push_str("    return ptn_null();\n");
         emit_label_reference(out, &return_label);
         out.push_str("    ");
         out.push_str(&return_label);
         out.push_str(":\n");
+        out.push_str("    ptn_try_frame_pop(&runtime, &ptn_function_try_frame);\n");
         if function.is_generator {
             out.push_str("    ptn_generator_set_return_value(runtime.current_generator, ptn_return_value);\n");
             out.push_str("    runtime.current_generator = NULL;\n");
@@ -16126,6 +16142,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::Empty { .. }
         | ValueExpr::Print { .. }
         | ValueExpr::Include { .. }
+        | ValueExpr::Exit { .. }
         | ValueExpr::Throw { .. }
         | ValueExpr::Yield { .. }
         | ValueExpr::YieldFrom { .. }
@@ -16856,6 +16873,11 @@ fn collect_value_legacy_dollar_brace_deprecations(
         }
         ValueExpr::Include { path, .. } => {
             collect_value_legacy_dollar_brace_deprecations(path, deprecations);
+        }
+        ValueExpr::Exit { value, .. } => {
+            if let Some(value) = value {
+                collect_value_legacy_dollar_brace_deprecations(value, deprecations);
+            }
         }
         ValueExpr::Throw { value, .. } => {
             collect_value_legacy_dollar_brace_deprecations(value, deprecations);
@@ -17634,6 +17656,11 @@ fn collect_value_runtime_requirements(
         }
         ValueExpr::Include { path, .. } => {
             collect_value_runtime_requirements(path, functions, requirements);
+        }
+        ValueExpr::Exit { value, .. } => {
+            if let Some(value) = value {
+                collect_value_runtime_requirements(value, functions, requirements);
+            }
         }
         ValueExpr::Throw { value, .. } => {
             collect_value_runtime_requirements(value, functions, requirements);
@@ -20637,6 +20664,9 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
         ValueExpr::Empty { target } => value_mentions_variable(target, name),
         ValueExpr::Print { expression } => value_mentions_variable(expression, name),
         ValueExpr::Include { path, .. } => value_mentions_variable(path, name),
+        ValueExpr::Exit { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| value_mentions_variable(value, name)),
         ValueExpr::Throw { value, .. } => value_mentions_variable(value, name),
         ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
             arguments
@@ -20865,6 +20895,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::ArrayAccess { line, .. }
         | ValueExpr::ArrayAppendAccess { line, .. }
         | ValueExpr::Include { line, .. }
+        | ValueExpr::Exit { line, .. }
         | ValueExpr::Throw { line, .. }
         | ValueExpr::Yield { line, .. }
         | ValueExpr::YieldFrom { line, .. }
@@ -21231,10 +21262,13 @@ fn emit_deprecated_function_warning_parts(
 }
 
 fn builtin_constant_deprecated_warning(name: &str) -> Option<String> {
-    if name
-        .trim_start_matches('\\')
-        .eq_ignore_ascii_case("DATE_RFC7231")
-    {
+    let name = name.trim_start_matches('\\');
+    if name.eq_ignore_ascii_case("E_STRICT") {
+        return Some(
+            "Constant E_STRICT is deprecated since 8.4, the error level was removed".to_string(),
+        );
+    }
+    if name.eq_ignore_ascii_case("DATE_RFC7231") {
         return Some(
             "Constant DATE_RFC7231 is deprecated since 8.5, as this format ignores the associated timezone and always uses GMT"
                 .to_string(),
@@ -21520,6 +21554,9 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         | ValueExpr::PipeValue { expr: name, .. }
         | ValueExpr::DynamicStaticPropertyFetch { receiver: name, .. }
         | ValueExpr::DynamicClassNameFetch { receiver: name, .. } => value_expr_uses_this(name),
+        ValueExpr::Exit { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| value_expr_uses_this(value)),
         ValueExpr::DynamicClassConstantFetch { receiver, name, .. } => {
             receiver
                 .as_ref()
@@ -25429,16 +25466,7 @@ impl ValueEmitter {
             ValueExpr::InstanceOf { expr, target, .. } => self.emit_instanceof(out, expr, target),
             ValueExpr::Unary { op, expr, line } => {
                 if matches!(op, UnaryOp::ErrorSuppress) {
-                    let saved_temp = self.next_temp();
-                    out.push_str("    int ");
-                    out.push_str(&saved_temp);
-                    out.push_str(" = runtime.diagnostics.suppressed;\n");
-                    out.push_str("    runtime.diagnostics.suppressed++;\n");
-                    let expr_temp = self.emit_materialized_value(out, expr);
-                    out.push_str("    runtime.diagnostics.suppressed = ");
-                    out.push_str(&saved_temp);
-                    out.push_str(";\n");
-                    return expr_temp;
+                    return self.emit_error_suppressed_value(out, expr);
                 }
                 let expr_temp = self.emit_materialized_value(out, expr);
                 let result_temp = self.next_temp();
@@ -25729,6 +25757,7 @@ impl ValueEmitter {
                 candidates,
                 line,
             } => self.emit_include(out, *kind, path, candidates, *line),
+            ValueExpr::Exit { value, line } => self.emit_exit_value(out, value.as_deref(), *line),
             ValueExpr::Throw { value, line } => self.emit_throw_value(out, value, *line),
             ValueExpr::Load { name, line } => format!(
                 "ptn_runtime_read_variable(&runtime, \"{}\", \"{}\", {})",
@@ -26150,6 +26179,145 @@ impl ValueEmitter {
         out.push_str("\", ");
         out.push_str(&line.to_string());
         out.push_str(");\n");
+        result_temp
+    }
+
+    fn emit_error_suppressed_value(&mut self, out: &mut String, expr: &ValueExpr) -> String {
+        let result_temp = self.next_temp();
+        let saved_temp = self.next_temp();
+        let frame_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    int64_t ");
+        out.push_str(&saved_temp);
+        out.push_str(" = runtime.diagnostics.error_reporting;\n");
+        out.push_str("    PtnTryFrame ");
+        out.push_str(&frame_temp);
+        out.push_str(";\n");
+        out.push_str("    ptn_try_frame_push(&runtime, &");
+        out.push_str(&frame_temp);
+        out.push_str(");\n");
+        out.push_str("    if (setjmp(");
+        out.push_str(&frame_temp);
+        out.push_str(".jump) == 0) {\n");
+        out.push_str("        runtime.diagnostics.error_reporting = 0;\n");
+        let expr_temp = self.emit_materialized_value(out, expr);
+        out.push_str("        if (runtime.diagnostics.error_reporting == 0) {\n");
+        out.push_str("            runtime.diagnostics.error_reporting = ");
+        out.push_str(&saved_temp);
+        out.push_str(";\n");
+        out.push_str("        }\n");
+        out.push_str("        ptn_try_frame_pop(&runtime, &");
+        out.push_str(&frame_temp);
+        out.push_str(");\n");
+        out.push_str("        ");
+        out.push_str(&result_temp);
+        out.push_str(" = ");
+        out.push_str(&expr_temp);
+        out.push_str(";\n");
+        out.push_str("    } else {\n");
+        out.push_str("        if (runtime.diagnostics.error_reporting == 0) {\n");
+        out.push_str("            runtime.diagnostics.error_reporting = ");
+        out.push_str(&saved_temp);
+        out.push_str(";\n");
+        out.push_str("        }\n");
+        out.push_str("        ptn_try_frame_pop(&runtime, &");
+        out.push_str(&frame_temp);
+        out.push_str(");\n");
+        out.push_str("        ptn_rethrow_exception(&runtime);\n");
+        out.push_str("    }\n");
+        result_temp
+    }
+
+    fn emit_exit_value(
+        &mut self,
+        out: &mut String,
+        value: Option<&ValueExpr>,
+        line: usize,
+    ) -> String {
+        let result_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        let Some(value) = value else {
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    exit(0);\n");
+            return result_temp;
+        };
+
+        let value_temp = self.emit_materialized_value(out, value);
+        let resolved_temp = self.next_temp();
+        let status_temp = self.next_temp();
+        let should_exit_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&resolved_temp);
+        out.push_str(" = ptn_value_deref(");
+        out.push_str(&value_temp);
+        out.push_str(");\n");
+        out.push_str("    int ");
+        out.push_str(&status_temp);
+        out.push_str(" = 0;\n");
+        out.push_str("    int ");
+        out.push_str(&should_exit_temp);
+        out.push_str(" = 1;\n");
+        out.push_str("    switch (");
+        out.push_str(&resolved_temp);
+        out.push_str(".type) {\n");
+        out.push_str("        case PTN_NULL:\n");
+        out.push_str("            ");
+        out.push_str(&status_temp);
+        out.push_str(" = 0;\n");
+        out.push_str("            break;\n");
+        out.push_str("        case PTN_BOOL:\n");
+        out.push_str("            ");
+        out.push_str(&status_temp);
+        out.push_str(" = ");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.boolean ? 1 : 0;\n");
+        out.push_str("            break;\n");
+        out.push_str("        case PTN_INT:\n");
+        out.push_str("            ");
+        out.push_str(&status_temp);
+        out.push_str(" = (int)");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.integer;\n");
+        out.push_str("            break;\n");
+        out.push_str("        case PTN_FLOAT:\n");
+        out.push_str("            ");
+        out.push_str(&status_temp);
+        out.push_str(" = (int)");
+        out.push_str(&resolved_temp);
+        out.push_str(".as.floating;\n");
+        out.push_str("            break;\n");
+        out.push_str("        case PTN_STRING:\n");
+        out.push_str("            ptn_echo(&runtime, ");
+        out.push_str(&value_temp);
+        out.push_str(", 0);\n");
+        out.push_str("            ");
+        out.push_str(&status_temp);
+        out.push_str(" = 0;\n");
+        out.push_str("            break;\n");
+        out.push_str("        default:\n");
+        out.push_str("            ");
+        out.push_str(&should_exit_temp);
+        out.push_str(" = 0;\n");
+        out.push_str("            ptn_throw_user_parameter_class_type_error(&runtime, \"exit\", 1, \"status\", \"string|int\", ");
+        out.push_str(&resolved_temp);
+        out.push_str(", 0, runtime.source_path, ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("            break;\n");
+        out.push_str("    }\n");
+        emit_value_cleanup(out, "    ", &value_temp);
+        out.push_str("    if (");
+        out.push_str(&should_exit_temp);
+        out.push_str(") {\n");
+        out.push_str("        ptn_runtime_free(&runtime);\n");
+        out.push_str("        exit(");
+        out.push_str(&status_temp);
+        out.push_str(");\n");
+        out.push_str("    }\n");
         result_temp
     }
 
@@ -33865,6 +34033,7 @@ fn push_c_string_byte(out: &mut String, byte: u8) {
     match byte {
         b'\\' => out.push_str("\\\\"),
         b'"' => out.push_str("\\\""),
+        b'?' => out.push_str("\\?"),
         b'\n' => out.push_str("\\n"),
         b'\r' => out.push_str("\\r"),
         b'\t' => out.push_str("\\t"),
