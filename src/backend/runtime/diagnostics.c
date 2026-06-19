@@ -1849,6 +1849,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_opcache_opt_debug_level = getenv("PTN_OPCACHE_OPT_DEBUG_LEVEL");
     const char *configured_opcache_preload = getenv("PTN_OPCACHE_PRELOAD");
     const char *configured_opcache_preload_user = getenv("PTN_OPCACHE_PRELOAD_USER");
+    const char *configured_opcache_protect_memory =
+        getenv("PTN_OPCACHE_PROTECT_MEMORY");
     const char *configured_opcache_save_comments = getenv("PTN_OPCACHE_SAVE_COMMENTS");
     const char *configured_opcache_validate_timestamps =
         getenv("PTN_OPCACHE_VALIDATE_TIMESTAMPS");
@@ -1861,6 +1863,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_variables_order = getenv("PTN_VARIABLES_ORDER");
     const char *configured_register_argc_argv = getenv("PTN_REGISTER_ARGC_ARGV");
     const char *configured_enable_post_data_reading = getenv("PTN_ENABLE_POST_DATA_READING");
+    const char *configured_zend_enable_gc = getenv("PTN_ZEND_ENABLE_GC");
     const char *configured_file_uploads = getenv("PTN_FILE_UPLOADS");
     const char *configured_max_input_vars = getenv("PTN_MAX_INPUT_VARS");
     const char *configured_max_input_nesting_level = getenv("PTN_MAX_INPUT_NESTING_LEVEL");
@@ -1944,6 +1947,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->opcache_preload_user = ptn_duplicate_string(
         configured_opcache_preload_user == NULL ? "" : configured_opcache_preload_user
     );
+    runtime->opcache_protect_memory = ptn_duplicate_string(
+        configured_opcache_protect_memory == NULL ? "0" : configured_opcache_protect_memory
+    );
     runtime->opcache_save_comments = ptn_duplicate_string(
         configured_opcache_save_comments == NULL ? "1" : configured_opcache_save_comments
     );
@@ -1976,6 +1982,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->enable_post_data_reading = ptn_duplicate_string(
         configured_enable_post_data_reading == NULL ? "1" : configured_enable_post_data_reading
+    );
+    runtime->zend_enable_gc = ptn_duplicate_string(
+        configured_zend_enable_gc == NULL ? "1" : configured_zend_enable_gc
     );
     runtime->native_argc = 0;
     runtime->native_argv = NULL;

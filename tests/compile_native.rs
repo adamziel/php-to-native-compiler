@@ -41587,6 +41587,45 @@ fn phpc_ini_get_reports_bounded_runner_ini_values_and_suppresses_display_errors(
 }
 
 #[test]
+fn phpc_zend_enable_gc_ini_is_runtime_visible() {
+    let root = temp_dir("ptn-phpc-zend-enable-gc-ini");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("zend-enable-gc-ini.php");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(ini_get('zend.enable_gc'));\n\
+var_dump(ini_set('zend.enable_gc', '1'), ini_get('zend.enable_gc'));\n\
+ini_restore('zend.enable_gc');\n\
+var_dump(ini_get('zend.enable_gc'));\n\
+$ext = new ReflectionExtension('Core');\n\
+$inis = $ext->getINIEntries();\n\
+var_dump($inis['zend.enable_gc']);",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("zend.enable_gc=0")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"0\"\n",
+            "string(1) \"0\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+            "string(1) \"1\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_html_errors_ini_formats_internal_warnings_as_html() {
     let root = temp_dir("ptn-phpc-html-errors-ini");
     fs::create_dir_all(&root).unwrap();
@@ -41681,7 +41720,7 @@ var_dump(extension_loaded('Zend OPcache'), extension_loaded('opcache'), phpversi
 $funcs = get_extension_funcs('Zend OPcache');\n\
 var_dump(in_array('opcache_get_status', $funcs, true), get_extension_funcs('opcache'));\n\
 $config = opcache_get_configuration();\n\
-var_dump($config['directives']['opcache.enable'], $config['directives']['opcache.enable_cli'], $config['directives']['opcache.file_cache_only'], $config['directives']['opcache.optimization_level']);\n\
+var_dump($config['directives']['opcache.enable'], $config['directives']['opcache.enable_cli'], $config['directives']['opcache.file_cache_only'], $config['directives']['opcache.protect_memory'], $config['directives']['opcache.optimization_level']);\n\
 $status = opcache_get_status();\n\
 var_dump($status['opcache_enabled'], count($status['scripts']));\n\
 $tmp = __DIR__ . '/opcache-runtime.inc.php';\n\
@@ -41691,7 +41730,7 @@ var_dump($value, count(opcache_get_status()['scripts']));\n\
 $ext = new ReflectionExtension('Zend OPcache');\n\
 $inis = $ext->getINIEntries();\n\
 $functions = $ext->getFunctions();\n\
-var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcache.enable_cli'], $inis['opcache.optimization_level']);",
+var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcache.enable_cli'], $inis['opcache.protect_memory'], $inis['opcache.optimization_level']);",
     )
     .unwrap();
 
@@ -41702,6 +41741,8 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
         .arg("opcache.enable_cli=1")
         .arg("-d")
         .arg("opcache.file_cache_only=0")
+        .arg("-d")
+        .arg("opcache.protect_memory=1")
         .arg("-d")
         .arg("opcache.optimization_level=-1")
         .arg("-f")
@@ -41721,6 +41762,7 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
+            "bool(true)\n",
             "int(-1)\n",
             "bool(true)\n",
             "int(0)\n",
@@ -41731,6 +41773,7 @@ var_dump($ext->getName(), isset($functions['opcache_get_status']), $inis['opcach
             "int(1)\n",
             "string(12) \"Zend OPcache\"\n",
             "bool(true)\n",
+            "string(1) \"1\"\n",
             "string(1) \"1\"\n",
             "string(2) \"-1\"\n",
         )

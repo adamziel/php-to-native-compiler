@@ -1226,6 +1226,7 @@ struct PtnRuntime {
     char *opcache_opt_debug_level;
     char *opcache_preload;
     char *opcache_preload_user;
+    char *opcache_protect_memory;
     char *opcache_save_comments;
     char *opcache_validate_timestamps;
     char *phar_readonly;
@@ -1237,6 +1238,7 @@ struct PtnRuntime {
     char *variables_order;
     char *register_argc_argv;
     char *enable_post_data_reading;
+    char *zend_enable_gc;
     int native_argc;
     char **native_argv;
     char *file_uploads;

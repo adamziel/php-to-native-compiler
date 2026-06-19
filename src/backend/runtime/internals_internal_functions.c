@@ -52531,6 +52531,14 @@ static const char *ptn_runtime_pcre_jit(PtnRuntime *runtime) {
     return root->pcre_jit;
 }
 
+static const char *ptn_runtime_zend_enable_gc(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->zend_enable_gc == NULL) {
+        return "1";
+    }
+    return root->zend_enable_gc;
+}
+
 static void ptn_runtime_set_ini_string(char **slot, const char *value);
 
 static const char *ptn_opcache_ini_default(const char *name) {
@@ -52569,6 +52577,9 @@ static const char *ptn_opcache_ini_default(const char *name) {
     }
     if (ptn_ascii_case_equal(name, "opcache.preload_user")) {
         return "";
+    }
+    if (ptn_ascii_case_equal(name, "opcache.protect_memory")) {
+        return "0";
     }
     if (ptn_ascii_case_equal(name, "opcache.save_comments")) {
         return "1";
@@ -52620,6 +52631,9 @@ static char **ptn_runtime_opcache_ini_slot(PtnRuntime *runtime, const char *name
     if (ptn_ascii_case_equal(name, "opcache.preload_user")) {
         return &root->opcache_preload_user;
     }
+    if (ptn_ascii_case_equal(name, "opcache.protect_memory")) {
+        return &root->opcache_protect_memory;
+    }
     if (ptn_ascii_case_equal(name, "opcache.save_comments")) {
         return &root->opcache_save_comments;
     }
@@ -52652,6 +52666,7 @@ static int ptn_runtime_opcache_ini_name_from_operand(PtnStringOperand option, co
         "opcache.opt_debug_level",
         "opcache.preload",
         "opcache.preload_user",
+        "opcache.protect_memory",
         "opcache.save_comments",
         "opcache.validate_timestamps",
     };
@@ -53585,6 +53600,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_jit(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.enable_gc")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_zend_enable_gc(runtime)));
+        return 1;
+    }
     if (ptn_runtime_opcache_ini_value_operand(runtime, option, out)) {
         return 1;
     }
@@ -53960,6 +53979,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.enable_gc")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        ptn_runtime_set_ini_string(&root->zend_enable_gc, "1");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     const PtnSessionIniDefinition *session_ini = ptn_session_ini_definition_from_operand(option);
     if (session_ini != NULL) {
         ptn_runtime_set_session_ini(runtime, session_ini->name, session_ini->default_value);
@@ -54262,6 +54287,17 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_pcre_jit(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "zend.enable_gc")) {
+        PtnRuntime *root = ptn_runtime_config_root(runtime);
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_zend_enable_gc(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_ini_string(&root->zend_enable_gc, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -55891,6 +55927,7 @@ static void ptn_opcache_configuration_set_directive(PtnRuntime *runtime, PtnValu
         ptn_ascii_case_equal(name, "opcache.enable_cli") ||
         ptn_ascii_case_equal(name, "opcache.fast_shutdown") ||
         ptn_ascii_case_equal(name, "opcache.file_cache_only") ||
+        ptn_ascii_case_equal(name, "opcache.protect_memory") ||
         ptn_ascii_case_equal(name, "opcache.save_comments") ||
         ptn_ascii_case_equal(name, "opcache.validate_timestamps")) {
         value = ptn_bool(ptn_runtime_ini_bool(ptn_runtime_opcache_ini_value(runtime, name), 1));
@@ -55920,6 +55957,7 @@ static PtnValue ptn_opcache_configuration_directives(PtnRuntime *runtime) {
         "opcache.opt_debug_level",
         "opcache.preload",
         "opcache.preload_user",
+        "opcache.protect_memory",
         "opcache.save_comments",
         "opcache.validate_timestamps",
     };
@@ -84201,6 +84239,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "precision");
         ptn_extension_ini_set_entry(runtime, result, "serialize_precision");
         ptn_extension_ini_set_entry(runtime, result, "zend.assertions");
+        ptn_extension_ini_set_entry(runtime, result, "zend.enable_gc");
         ptn_extension_ini_set_entry(runtime, result, "zend.exception_ignore_args");
         ptn_extension_ini_set_entry(runtime, result, "zend.exception_string_param_max_len");
         return result;
@@ -84237,6 +84276,7 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "opcache.opt_debug_level");
         ptn_extension_ini_set_entry(runtime, result, "opcache.preload");
         ptn_extension_ini_set_entry(runtime, result, "opcache.preload_user");
+        ptn_extension_ini_set_entry(runtime, result, "opcache.protect_memory");
         ptn_extension_ini_set_entry(runtime, result, "opcache.save_comments");
         ptn_extension_ini_set_entry(runtime, result, "opcache.validate_timestamps");
         return result;

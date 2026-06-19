@@ -2028,6 +2028,14 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
         "runnable\tselected for PTN semantic measurement"
     );
 
+    let zend_enable_gc = classify(
+        "--TEST--\nzend gc ini\n--INI--\nzend.enable_gc=0\n--FILE--\n<?php\necho ini_get('zend.enable_gc'), \"\\n\";\n--EXPECT--\n0\n",
+    );
+    assert_eq!(
+        zend_enable_gc.trim_end(),
+        "runnable\tselected for PTN semantic measurement"
+    );
+
     let residual_extension_ini = classify(
         "--TEST--\nresidual extension ini\n--INI--\npcre.jit=0\nopcache.save_comments=1\nuser_agent=php\n--FILE--\n<?php\nvar_dump(ini_get('pcre.jit'), ini_get('opcache.save_comments'), ini_get('user_agent'));\n--EXPECT--\n",
     );
@@ -2046,7 +2054,7 @@ fn phpt_classifier_splits_unsupported_ini_blockers_by_runtime_surface() {
     );
 
     let opcache_metadata_ini = classify_at_relative_path(
-        "--TEST--\nopcache metadata ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.file_cache_only=0\n--FILE--\n<?php\nvar_dump(opcache_get_configuration()['directives']['opcache.enable_cli']);\n--EXPECT--\nbool(true)\n",
+        "--TEST--\nopcache metadata ini\n--EXTENSIONS--\nopcache\n--INI--\nopcache.enable=1\nopcache.enable_cli=1\nopcache.optimization_level=-1\nopcache.file_cache_only=0\nopcache.protect_memory=1\n--FILE--\n<?php\nvar_dump(opcache_get_configuration()['directives']['opcache.enable_cli']);\n--EXPECT--\nbool(true)\n",
         "ext/opcache/tests/opcache_metadata_ini.phpt",
     );
     assert_eq!(

@@ -515,6 +515,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->opcache_preload = NULL;
         free(runtime->opcache_preload_user);
         runtime->opcache_preload_user = NULL;
+        free(runtime->opcache_protect_memory);
+        runtime->opcache_protect_memory = NULL;
         free(runtime->opcache_save_comments);
         runtime->opcache_save_comments = NULL;
         free(runtime->opcache_validate_timestamps);
@@ -537,6 +539,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->register_argc_argv = NULL;
         free(runtime->enable_post_data_reading);
         runtime->enable_post_data_reading = NULL;
+        free(runtime->zend_enable_gc);
+        runtime->zend_enable_gc = NULL;
         free(runtime->file_uploads);
         runtime->file_uploads = NULL;
         free(runtime->max_input_vars);
