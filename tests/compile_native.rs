@@ -40511,6 +40511,34 @@ echo $argv === $_SERVER['argv'] ? \"same\\n\" : \"different\\n\";\n",
 }
 
 #[test]
+fn phpc_cli_preserves_file_magic_directory_for_sibling_files() {
+    let root = temp_dir("ptn-phpc-cli-file-magic-sibling");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("file-magic-sibling.php");
+    fs::write(root.join("sibling.txt"), "sibling\n").unwrap();
+    fs::write(
+        &input,
+        "<?php\n\
+echo file_get_contents(__DIR__ . '/sibling.txt');\n\
+echo basename(__FILE__), \"\\n\";\n\
+echo __DIR__ === dirname(__FILE__) ? \"same\\n\" : \"different\\n\";\n",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "sibling\nfile-magic-sibling.php\nsame\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn phpc_cli_getopt_reads_forwarded_script_arguments() {
     let root = temp_dir("ptn-phpc-cli-getopt");
     fs::create_dir_all(&root).unwrap();
