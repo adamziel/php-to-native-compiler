@@ -47651,6 +47651,66 @@ try {
 }
 
 #[test]
+fn compile_array_walk_callback_type_error_suppresses_user_call_site_to_native_binary() {
+    let root = temp_dir("ptn-native-array-walk-callback-type-error-location");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-walk-callback-type-error-location.php");
+    let output = root.join("array-walk-callback-type-error-location-bin");
+    fs::write(
+        &input,
+        "<?php
+class ArrayWalkBox {}
+function expect_box(ArrayWalkBox $value) {}
+
+try {
+    array_walk([1], \"expect_box\");
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    array_walk_recursive([[1]], \"expect_box\");
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    expect_box(1);
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "{stdout}");
+    assert_eq!(
+        lines[0],
+        "expect_box(): Argument #1 ($value) must be of type ArrayWalkBox, int given"
+    );
+    assert_eq!(
+        lines[1],
+        "expect_box(): Argument #1 ($value) must be of type ArrayWalkBox, int given"
+    );
+    assert!(
+        lines[2].contains(
+            "expect_box(): Argument #1 ($value) must be of type ArrayWalkBox, int given, called in "
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("suppress_user_argument_count_location"));
+}
+
+#[test]
 fn compile_array_walk_userdata_by_ref_separation_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-userdata-ref-separation");
     fs::create_dir_all(&root).unwrap();

@@ -1065,6 +1065,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str(
         "    int has_parameter_name = parameter_name != NULL && parameter_name[0] != '\\0';\n",
     );
+    out.push_str("    int suppress_user_location_context = runtime->suppress_user_call_frame_location || runtime->suppress_user_argument_count_location;\n");
+    out.push_str("    if (suppress_user_location_context) {\n");
+    out.push_str("        line = 0;\n");
+    out.push_str("    }\n");
     out.push_str(
         "    const char *path = runtime->source_path != NULL ? runtime->source_path : \"ptn\";\n",
     );
@@ -1101,7 +1105,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"%s(): Argument #%zu must be of type %s, %s given\", function_name, position, expected_class_name, given);\n");
     out.push_str("    }\n");
-    out.push_str("    if (include_definition) {\n");
+    out.push_str("    if (include_definition && !suppress_user_location_context) {\n");
     out.push_str("        ptn_throw_exception_owned_message_at_defined_location(runtime, \"TypeError\", message, throw_path, throw_line);\n");
     out.push_str("    } else {\n");
     out.push_str("        ptn_throw_exception_owned_message_at(runtime, \"TypeError\", message, throw_path, throw_line);\n");
