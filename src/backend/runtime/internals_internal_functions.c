@@ -224,6 +224,14 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         if (ptn_ascii_case_equal(name, "settype")) {
             return "var";
         }
+        if (ptn_ascii_case_equal(name, "round") ||
+            ptn_ascii_case_equal(name, "deg2rad") ||
+            ptn_ascii_case_equal(name, "rad2deg")) {
+            return "num";
+        }
+        if (ptn_ascii_case_equal(name, "clamp")) {
+            return "value";
+        }
         if (ptn_ascii_case_equal(name, "sprintf") ||
             ptn_ascii_case_equal(name, "printf") ||
             ptn_ascii_case_equal(name, "vprintf") ||
@@ -248,6 +256,20 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         }
         if (ptn_ascii_case_equal(name, "settype")) {
             return "type";
+        }
+        if (ptn_ascii_case_equal(name, "round")) {
+            return "precision";
+        }
+        if (ptn_ascii_case_equal(name, "clamp")) {
+            return "min";
+        }
+    }
+    if (index == 2) {
+        if (ptn_ascii_case_equal(name, "round")) {
+            return "mode";
+        }
+        if (ptn_ascii_case_equal(name, "clamp")) {
+            return "max";
         }
     }
     if (ptn_ascii_case_equal(name, "mb_convert_encoding")) {
@@ -29805,13 +29827,18 @@ static PtnValue ptn_number_format_high_precision(
     return ptn_owned_string_len(output.data, output.len);
 }
 
+static double ptn_math_round(double value, int places, int mode);
+
 static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     double number = ptn_internal_expect_numeric_arg(runtime, "number_format", 1, "num", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
     int64_t decimals_arg = argc >= 2
         ? ptn_internal_expect_integer_arg(runtime, "number_format", 2, "decimals", args[1], line)
         : 0;
-    if (decimals_arg < 0) {
-        decimals_arg = 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
     }
     if (decimals_arg > INT_MAX) {
         ptn_throw_exception(
@@ -29821,66 +29848,38 @@ static PtnValue ptn_internal_number_format(PtnRuntime *runtime, size_t argc, con
         );
         return ptn_null();
     }
-    int decimals = (int)decimals_arg;
-    PtnStringOperand decimal_separator = argc >= 3
+    int round_decimals = decimals_arg < (int64_t)INT_MIN + 1 ? INT_MIN + 1 : (int)decimals_arg;
+    int decimals = round_decimals < 0 ? 0 : round_decimals;
+    PtnStringOperand decimal_separator = argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL
         ? ptn_internal_expect_string_arg(runtime, "number_format", 3, "decimal_separator", args[2], line)
         : ptn_string_operand_borrowed(".");
-    PtnStringOperand thousands_separator = argc >= 4
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(decimal_separator);
+        return ptn_null();
+    }
+    PtnStringOperand thousands_separator = argc >= 4 && ptn_value_deref(args[3]).type != PTN_NULL
         ? ptn_internal_expect_string_arg(runtime, "number_format", 4, "thousands_separator", args[3], line)
         : ptn_string_operand_borrowed(",");
-
-    if (decimals > 18) {
-        PtnValue result = ptn_number_format_high_precision(
-            number,
-            decimals,
-            decimal_separator,
-            thousands_separator
-        );
+    if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(decimal_separator);
         ptn_string_operand_free(thousands_separator);
-        return result;
+        return ptn_null();
     }
 
-    uint64_t scale = 1;
-    for (int i = 0; i < decimals; i++) {
-        scale *= 10;
+    int is_negative = number < 0.0;
+    double rounded_abs = ptn_math_round(fabs(number), round_decimals, PTN_PHP_ROUND_HALF_UP);
+    if (is_negative && rounded_abs != 0.0) {
+        rounded_abs = -rounded_abs;
     }
-    double rounded_scaled = floor(fabs(number) * (double)scale + 0.5);
-    uint64_t scaled = rounded_scaled > (double)UINT64_MAX ? UINT64_MAX : (uint64_t)rounded_scaled;
-    uint64_t integer_part = scaled / scale;
-    uint64_t fractional_part = scaled % scale;
-
-    char integer_digits[64];
-    int integer_len = snprintf(integer_digits, sizeof(integer_digits), "%llu", (unsigned long long)integer_part);
-    if (integer_len < 0 || (size_t)integer_len >= sizeof(integer_digits)) {
-        ptn_abort_out_of_memory();
-    }
-
-    PtnStringBuffer output;
-    ptn_string_buffer_init(&output);
-    if (number < 0.0 && (integer_part != 0 || fractional_part != 0)) {
-        ptn_string_buffer_append_char(&output, '-');
-    }
-    ptn_number_format_append_grouped_integer(&output, integer_digits, thousands_separator);
-    if (decimals > 0) {
-        char fractional_digits[32];
-        int fractional_len = snprintf(
-            fractional_digits,
-            sizeof(fractional_digits),
-            "%0*llu",
-            decimals,
-            (unsigned long long)fractional_part
-        );
-        if (fractional_len < 0 || (size_t)fractional_len >= sizeof(fractional_digits)) {
-            ptn_abort_out_of_memory();
-        }
-        ptn_string_buffer_append_len(&output, decimal_separator.data, decimal_separator.len);
-        ptn_string_buffer_append_len(&output, fractional_digits, (size_t)fractional_len);
-    }
-
+    PtnValue result = ptn_number_format_high_precision(
+        rounded_abs,
+        decimals,
+        decimal_separator,
+        thousands_separator
+    );
     ptn_string_operand_free(decimal_separator);
     ptn_string_operand_free(thousands_separator);
-    return ptn_owned_string_len(output.data, output.len);
+    return result;
 }
 
 static PtnValue ptn_internal_strcmp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -50108,6 +50107,232 @@ static PtnValue ptn_internal_rad2deg(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_float(value * (180.0 / 3.14159265358979323846264338327950288));
 }
 
+static double ptn_round_intpow10(int power) {
+    if (power < 0 || power > 22) {
+        return pow(10.0, (double)power);
+    }
+    static const double powers[] = {
+        1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
+        1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22
+    };
+    return powers[power];
+}
+
+static double ptn_round_basic_edge_case(double integral, double exponent, int places) {
+    return places > 0
+        ? fabs((integral + copysign(0.5, integral)) / exponent)
+        : fabs((integral + copysign(0.5, integral)) * exponent);
+}
+
+static double ptn_round_zero_edge_case(double integral, double exponent, int places) {
+    return places > 0 ? fabs(integral / exponent) : fabs(integral * exponent);
+}
+
+static double ptn_round_helper(double integral, double value, double exponent, int places, int mode) {
+    double value_abs = fabs(value);
+    double edge_case = 0.0;
+    switch (mode) {
+        case PTN_PHP_ROUND_HALF_UP:
+            edge_case = ptn_round_basic_edge_case(integral, exponent, places);
+            return value_abs >= edge_case ? integral + copysign(1.0, integral) : integral;
+        case PTN_PHP_ROUND_HALF_DOWN:
+            edge_case = ptn_round_basic_edge_case(integral, exponent, places);
+            return value_abs > edge_case ? integral + copysign(1.0, integral) : integral;
+        case PTN_PHP_ROUND_CEILING:
+            edge_case = ptn_round_zero_edge_case(integral, exponent, places);
+            return value > 0.0 && value_abs > edge_case ? integral + 1.0 : integral;
+        case PTN_PHP_ROUND_FLOOR:
+            edge_case = ptn_round_zero_edge_case(integral, exponent, places);
+            return value < 0.0 && value_abs > edge_case ? integral - 1.0 : integral;
+        case PTN_PHP_ROUND_TOWARD_ZERO:
+            return integral;
+        case PTN_PHP_ROUND_AWAY_FROM_ZERO:
+            edge_case = ptn_round_zero_edge_case(integral, exponent, places);
+            return value_abs > edge_case ? integral + copysign(1.0, integral) : integral;
+        case PTN_PHP_ROUND_HALF_EVEN:
+            edge_case = ptn_round_basic_edge_case(integral, exponent, places);
+            if (value_abs > edge_case) {
+                return integral + copysign(1.0, integral);
+            }
+            if (value_abs == edge_case && fmod(integral, 2.0) != 0.0) {
+                return integral + copysign(1.0, integral);
+            }
+            return integral;
+        case PTN_PHP_ROUND_HALF_ODD:
+            edge_case = ptn_round_basic_edge_case(integral, exponent, places);
+            if (value_abs > edge_case) {
+                return integral + copysign(1.0, integral);
+            }
+            if (value_abs == edge_case && fmod(integral, 2.0) == 0.0) {
+                return integral + copysign(1.0, integral);
+            }
+            return integral;
+        default:
+            return integral;
+    }
+}
+
+static double ptn_math_round(double value, int places, int mode) {
+    if (!isfinite(value) || value == 0.0) {
+        return value;
+    }
+    if (places < INT_MIN + 1) {
+        places = INT_MIN + 1;
+    }
+
+    int places_abs = places < 0 ? -places : places;
+    double exponent = ptn_round_intpow10(places_abs);
+    double tmp_value = 0.0;
+    double tmp_value2 = 0.0;
+    if (value >= 0.0) {
+        tmp_value = floor(places > 0 ? value * exponent : value / exponent);
+        tmp_value2 = tmp_value + 1.0;
+    } else {
+        tmp_value = ceil(places > 0 ? value * exponent : value / exponent);
+        tmp_value2 = tmp_value - 1.0;
+    }
+
+    if ((places > 0 ? tmp_value2 / exponent : tmp_value2 * exponent) == value) {
+        tmp_value = tmp_value2;
+    }
+
+    if (fabs(tmp_value) >= 1e16) {
+        return value;
+    }
+
+    tmp_value = ptn_round_helper(tmp_value, value, exponent, places, mode);
+    if (places_abs < 23) {
+        return places > 0 ? tmp_value / exponent : tmp_value * exponent;
+    }
+
+    char buffer[40];
+    int written = snprintf(buffer, sizeof(buffer), "%15fe%d", tmp_value, -places);
+    if (written < 0) {
+        ptn_abort_out_of_memory();
+    }
+    buffer[sizeof(buffer) - 1] = '\0';
+    char *end = NULL;
+    errno = 0;
+    double reparsed = strtod(buffer, &end);
+    if (errno != 0 || end == buffer || !isfinite(reparsed) || isnan(reparsed)) {
+        return value;
+    }
+    return reparsed;
+}
+
+static int ptn_round_mode_from_enum_case(const char *case_name, int *mode_out) {
+    if (strcmp(case_name, "HalfAwayFromZero") == 0) {
+        *mode_out = PTN_PHP_ROUND_HALF_UP;
+    } else if (strcmp(case_name, "HalfTowardsZero") == 0) {
+        *mode_out = PTN_PHP_ROUND_HALF_DOWN;
+    } else if (strcmp(case_name, "HalfEven") == 0) {
+        *mode_out = PTN_PHP_ROUND_HALF_EVEN;
+    } else if (strcmp(case_name, "HalfOdd") == 0) {
+        *mode_out = PTN_PHP_ROUND_HALF_ODD;
+    } else if (strcmp(case_name, "TowardsZero") == 0) {
+        *mode_out = PTN_PHP_ROUND_TOWARD_ZERO;
+    } else if (strcmp(case_name, "AwayFromZero") == 0) {
+        *mode_out = PTN_PHP_ROUND_AWAY_FROM_ZERO;
+    } else if (strcmp(case_name, "NegativeInfinity") == 0) {
+        *mode_out = PTN_PHP_ROUND_FLOOR;
+    } else if (strcmp(case_name, "PositiveInfinity") == 0) {
+        *mode_out = PTN_PHP_ROUND_CEILING;
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+static void ptn_round_throw_invalid_mode(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ValueError",
+        "round(): Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)"
+    );
+}
+
+static int ptn_round_mode_arg(PtnRuntime *runtime, PtnValue value, int *mode_out) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_INT) {
+        int64_t mode = value.as.integer;
+        switch (mode) {
+            case PTN_PHP_ROUND_HALF_UP:
+            case PTN_PHP_ROUND_HALF_DOWN:
+            case PTN_PHP_ROUND_HALF_EVEN:
+            case PTN_PHP_ROUND_HALF_ODD:
+            case PTN_PHP_ROUND_TOWARD_ZERO:
+            case PTN_PHP_ROUND_AWAY_FROM_ZERO:
+            case PTN_PHP_ROUND_FLOOR:
+            case PTN_PHP_ROUND_CEILING:
+                *mode_out = (int)mode;
+                return 1;
+            default:
+                ptn_round_throw_invalid_mode(runtime);
+                return 0;
+        }
+    }
+    if (value.type == PTN_OBJECT &&
+        ptn_internal_class_name_is_rounding_mode(value.as.object->class_name) &&
+        value.as.object->enum_case_name != NULL) {
+        if (ptn_round_mode_from_enum_case(value.as.object->enum_case_name, mode_out)) {
+            return 1;
+        }
+        ptn_round_throw_invalid_mode(runtime);
+        return 0;
+    }
+
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "round(): Argument #3 ($mode) must be of type RoundingMode|int, %s given",
+        ptn_numeric_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
+static PtnValue ptn_internal_round(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnNumber number = ptn_internal_expect_number_arg(
+        runtime,
+        "round",
+        1,
+        "num",
+        "int|float",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+
+    int places = 0;
+    if (argc >= 2) {
+        int64_t precision = ptn_internal_expect_integer_arg(runtime, "round", 2, "precision", args[1], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (precision >= 0) {
+            places = precision > INT_MAX ? INT_MAX : (int)precision;
+        } else {
+            places = precision < (int64_t)INT_MIN ? INT_MIN : (int)precision;
+        }
+    }
+
+    int mode = PTN_PHP_ROUND_HALF_UP;
+    if (argc >= 3 && !ptn_round_mode_arg(runtime, args[2], &mode)) {
+        return ptn_null();
+    }
+
+    if (number.type == PTN_NUMBER_INT && places >= 0) {
+        return ptn_float(number.floating);
+    }
+    return ptn_float(ptn_math_round(number.floating, places, mode));
+}
+
 static PtnValue ptn_internal_sin(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     return ptn_internal_unary_math(runtime, "sin", sin, args, line);
@@ -50184,6 +50409,56 @@ static PtnValue ptn_internal_max(PtnRuntime *runtime, size_t argc, const PtnValu
 
 static PtnValue ptn_internal_min(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     return ptn_internal_minmax(runtime, "min", argc, args, 0, line);
+}
+
+static int ptn_clamp_value_is_nan(PtnValue value) {
+    value = ptn_value_deref(value);
+    return value.type == PTN_FLOAT && isnan(value.as.floating);
+}
+
+static PtnValue ptn_internal_clamp(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    PtnValue value = ptn_value_deref(args[0]);
+    PtnValue min = ptn_value_deref(args[1]);
+    PtnValue max = ptn_value_deref(args[2]);
+    if (ptn_clamp_value_is_nan(min)) {
+        ptn_throw_exception(runtime, "ValueError", "clamp(): Argument #2 ($min) must not be NAN");
+        return ptn_null();
+    }
+    if (ptn_clamp_value_is_nan(max)) {
+        ptn_throw_exception(runtime, "ValueError", "clamp(): Argument #3 ($max) must not be NAN");
+        return ptn_null();
+    }
+
+    int max_vs_min = ptn_compare_order(runtime, max, min, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (max_vs_min == PTN_COMPARE_LESS) {
+        ptn_throw_exception(
+            runtime,
+            "ValueError",
+            "clamp(): Argument #2 ($min) must be smaller than or equal to argument #3 ($max)"
+        );
+        return ptn_null();
+    }
+
+    int max_vs_value = ptn_compare_order(runtime, max, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (max_vs_value == PTN_COMPARE_LESS) {
+        return ptn_value_clone_deref(max);
+    }
+
+    int value_vs_min = ptn_compare_order(runtime, value, min, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (value_vs_min == PTN_COMPARE_LESS) {
+        return ptn_value_clone_deref(min);
+    }
+    return ptn_value_clone_deref(value);
 }
 
 static PtnValue ptn_internal_fdiv(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -53017,6 +53292,10 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "SORT_LOCALE_STRING", PTN_SORT_LOCALE_STRING);
     ptn_get_defined_constants_add_int(table, "SORT_NATURAL", PTN_SORT_NATURAL);
     ptn_get_defined_constants_add_int(table, "SORT_FLAG_CASE", PTN_SORT_FLAG_CASE);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_UP", PTN_PHP_ROUND_HALF_UP);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_DOWN", PTN_PHP_ROUND_HALF_DOWN);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_EVEN", PTN_PHP_ROUND_HALF_EVEN);
+    ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_ODD", PTN_PHP_ROUND_HALF_ODD);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_BOTH", PTN_ARRAY_FILTER_USE_BOTH);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_KEY", PTN_ARRAY_FILTER_USE_KEY);
     ptn_get_defined_constants_add_int(table, "FNM_NOESCAPE", PTN_FNM_NOESCAPE);
@@ -54415,7 +54694,7 @@ static PtnValue ptn_internal_base_convert(PtnRuntime *runtime, size_t argc, cons
 
 static PtnValue ptn_internal_bindec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "bindec", 1, "binary_string", args[0], line);
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 2, 'b', line);
     ptn_string_operand_free(string);
     return value;
@@ -54454,7 +54733,7 @@ static PtnValue ptn_internal_decoct(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "hexdec", 1, "hex_string", args[0], line);
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 16, 'x', line);
     ptn_string_operand_free(string);
     return value;
@@ -54462,7 +54741,7 @@ static PtnValue ptn_internal_hexdec(PtnRuntime *runtime, size_t argc, const PtnV
 
 static PtnValue ptn_internal_octdec(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    PtnStringOperand string = ptn_value_to_string_operand(args[0]);
+    PtnStringOperand string = ptn_internal_expect_string_arg(runtime, "octdec", 1, "octal_string", args[0], line);
     PtnValue value = ptn_base_string_to_number(runtime, string.data, string.len, 8, 'o', line);
     ptn_string_operand_free(string);
     return value;
@@ -65754,6 +66033,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "class_implements", 1, 2, ptn_internal_class_implements },
         { "class_parents", 1, 2, ptn_internal_class_parents },
         { "class_uses", 1, 2, ptn_internal_class_uses },
+        { "clamp", 3, 3, ptn_internal_clamp },
         { "clearstatcache", 0, 2, ptn_internal_clearstatcache },
         { "closedir", 1, 1, ptn_internal_closedir },
         { "Closure::bind", 2, 3, ptn_internal_closure_bind },
@@ -66174,6 +66454,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
+        { "round", 1, 3, ptn_internal_round },
         { "RoundingMode::cases", 0, 0, ptn_internal_rounding_mode_cases },
         { "WeakReference::create", 1, 1, ptn_weak_reference_create },
         { "SplFileObject::fgetcsv", 0, 3, ptn_internal_method_metadata_stub },

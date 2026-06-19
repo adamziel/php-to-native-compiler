@@ -12352,6 +12352,46 @@ wordwrap(): Argument #3 ($break) must not be empty\n"
 }
 
 #[test]
+fn compile_round_clamp_and_number_format_math_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-round-clamp-number-format-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("round-clamp-number-format.php");
+    let output = root.join("round-clamp-number-format-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(PHP_ROUND_HALF_UP, PHP_ROUND_HALF_DOWN, PHP_ROUND_HALF_EVEN, PHP_ROUND_HALF_ODD, defined(\"PHP_ROUND_HALF_UP\"));\n\
+var_dump(round(0.285, 2), round(2.5, 0, PHP_ROUND_HALF_DOWN), round(2.5, 0, RoundingMode::HalfEven));\n\
+var_dump(round(-1.2, 0, RoundingMode::PositiveInfinity), round(-1.2, 0, RoundingMode::NegativeInfinity));\n\
+try { var_dump(round(1.5, mode: 1234)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(clamp(0, 1, 3), clamp(\"d\", \"c\", \"g\"), is_nan(clamp(NAN, 4, 6)));\n\
+try { var_dump(clamp(4, NAN, 6)); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+echo number_format(1515.1, -3), \"\\n\";\n\
+echo number_format(2020.1415, 2, null, \"T\"), \"\\n\";\n\
+echo number_format(2020.1415, 2, \"F\", null), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "int(1)\nint(2)\nint(3)\nint(4)\nbool(true)\n\
+float(0.29)\nfloat(2)\nfloat(2)\n\
+float(-1)\nfloat(-2)\n\
+round(): Argument #3 ($mode) must be a valid rounding mode (RoundingMode::*)\n\
+int(1)\nstring(1) \"d\"\nbool(true)\n\
+clamp(): Argument #2 ($min) must not be NAN\n\
+2,000\n\
+2T020.14\n\
+2,020F14\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_substr_replace_snapshots_subject_before_replacement_tostring_to_native_binary() {
     let root = temp_dir("ptn-native-substr-replace-tostring-side-effect");
     fs::create_dir_all(&root).unwrap();
@@ -24207,6 +24247,36 @@ fn compile_base_conversion_invalid_character_diagnostic_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "\nDeprecated: Invalid characters passed for attempted conversion, these have been ignored in ptn on line 3\nint(255)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_base_conversion_rejects_arrays_and_resources_to_native_binary() {
+    let root = temp_dir("ptn-native-base-conversion-type-diagnostics");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("base-conversion-type-diagnostics.php");
+    let output = root.join("base-conversion-type-diagnostics-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try { var_dump(bindec([])); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(octdec([])); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$fp = fopen(__FILE__, \"r\");\n\
+try { var_dump(hexdec($fp)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+fclose($fp);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bindec(): Argument #1 ($binary_string) must be of type string, array given\n\
+octdec(): Argument #1 ($octal_string) must be of type string, array given\n\
+hexdec(): Argument #1 ($hex_string) must be of type string, resource given\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
