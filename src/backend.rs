@@ -60,6 +60,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("PDOException", "Exception"),
     ("IntlException", "Exception"),
     ("DOMException", "Exception"),
+    ("RequestParseBodyException", "Exception"),
     ("RuntimeException", "Exception"),
     ("InvalidArgumentException", "RuntimeException"),
     ("UnexpectedValueException", "RuntimeException"),
@@ -19627,6 +19628,10 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: None,
         },
     ];
+    static REQUEST_PARSE_BODY_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "options",
+        default: Some(InternalParameterDefault::Null),
+    }];
     static SUBSTR_PARAMETERS: [InternalParameterSpec; 3] = [
         InternalParameterSpec {
             name: "string",
@@ -19924,6 +19929,8 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&TWO_ORDERED_STRING_PARAMETERS)
     } else if name.eq_ignore_ascii_case("parse_str") {
         Some(&PARSE_STR_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("request_parse_body") {
+        Some(&REQUEST_PARSE_BODY_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr") {
         Some(&SUBSTR_PARAMETERS)
     } else if name.eq_ignore_ascii_case("substr_count") {

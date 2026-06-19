@@ -1441,6 +1441,100 @@ static PTN_UNUSED int ptn_direct_var_dump_weak_map_object(
     return 1;
 }
 
+static PTN_UNUSED size_t ptn_direct_object_initialized_property_dump_count(PtnObject *object) {
+    if (object == NULL || object->properties == NULL) {
+        return 0;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (object->lazy_uninitialized && !object->lazy_initializing &&
+            (metadata == NULL || !metadata->lazy_skip)) {
+            continue;
+        }
+        count++;
+    }
+    return count;
+}
+
+static PTN_UNUSED size_t ptn_direct_var_dump_object_visible_property_count(PtnObject *object) {
+    if (object == NULL) {
+        return 0;
+    }
+    if (object->lazy_is_proxy &&
+        ptn_value_deref(object->lazy_proxy_instance).type == PTN_OBJECT) {
+        return 1;
+    }
+    return ptn_direct_object_initialized_property_dump_count(object);
+}
+
+static PTN_UNUSED void ptn_direct_value_var_dump_object_header(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t property_count
+) {
+    size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
+    int display_lazy = object->lazy_uninitialized && !object->lazy_initializing;
+    const char *prefix = display_lazy
+        ? (object->lazy_is_proxy ? "lazy proxy object" : "lazy ghost object")
+        : (object->lazy_is_proxy ? "lazy proxy object" : "object");
+    ptn_direct_dump_printf(
+        runtime,
+        "%s(%.*s)#%zu (%zu) {\n",
+        prefix,
+        (int)class_len,
+        object->class_name,
+        object->object_id,
+        property_count
+    );
+}
+
+static PTN_UNUSED int ptn_direct_value_var_dump_object_proxy_instance(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+) {
+    if (object == NULL || !object->lazy_is_proxy || object->lazy_uninitialized) {
+        return 0;
+    }
+    PtnValue instance = ptn_value_deref(object->lazy_proxy_instance);
+    if (instance.type != PTN_OBJECT) {
+        return 0;
+    }
+    ptn_direct_value_var_dump_indent(runtime, indent + 1);
+    ptn_direct_dump_write_cstr(runtime, "[\"instance\"]=>\n");
+    ptn_direct_value_var_dump_value_indented(runtime, instance, indent + 1, seen);
+    return 1;
+}
+
+static PTN_UNUSED void ptn_direct_value_var_dump_object_initialized_properties(
+    PtnRuntime *runtime,
+    PtnObject *object,
+    size_t indent,
+    PtnDirectValueDumpSeen *seen
+) {
+    if (object == NULL || object->properties == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+            ? ptn_object_property_metadata(object, entry->key.as.string)
+            : NULL;
+        if (object->lazy_uninitialized && !object->lazy_initializing &&
+            (metadata == NULL || !metadata->lazy_skip)) {
+            continue;
+        }
+        ptn_direct_value_var_dump_indent(runtime, indent + 1);
+        ptn_direct_value_var_dump_object_key(runtime, object, entry->key);
+        ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
+    }
+}
+
 static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
     PtnRuntime *runtime,
     PtnValue value,
@@ -1515,24 +1609,14 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             if (ptn_direct_var_dump_weak_map_object(runtime, object, indent, seen)) {
                 break;
             }
-            size_t class_len = ptn_direct_class_name_dump_len(object->class_name);
-            size_t property_count = object->properties == NULL ? 0 : object->properties->len;
-            ptn_direct_dump_printf(
+            ptn_direct_value_var_dump_object_header(
                 runtime,
-                "object(%.*s)#%zu (%zu) {\n",
-                (int)class_len,
-                object->class_name,
-                object->object_id,
-                property_count
+                object,
+                ptn_direct_var_dump_object_visible_property_count(object)
             );
             ptn_direct_value_dump_seen_object_push(seen, object);
-            if (object->properties != NULL) {
-                for (size_t i = 0; i < object->properties->len; i++) {
-                    PtnArrayEntry *entry = &object->properties->entries[i];
-                    ptn_direct_value_var_dump_indent(runtime, indent + 1);
-                    ptn_direct_value_var_dump_object_key(runtime, object, entry->key);
-                    ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
-                }
+            if (!ptn_direct_value_var_dump_object_proxy_instance(runtime, object, indent, seen)) {
+                ptn_direct_value_var_dump_object_initialized_properties(runtime, object, indent, seen);
             }
             ptn_direct_value_var_dump_object_uninitialized_properties(runtime, object, indent);
             ptn_direct_value_dump_seen_object_pop(seen);
@@ -22705,6 +22789,7 @@ static char *ptn_request_read_stdin(size_t *len_out);
 static const char *ptn_runtime_variables_order(PtnRuntime *runtime);
 static const char *ptn_runtime_register_argc_argv(PtnRuntime *runtime);
 static const char *ptn_runtime_enable_post_data_reading(PtnRuntime *runtime);
+static const char *ptn_runtime_max_input_vars(PtnRuntime *runtime);
 static const char *ptn_runtime_post_max_size(PtnRuntime *runtime);
 static const char *ptn_runtime_upload_tmp_dir(PtnRuntime *runtime);
 static int ptn_runtime_ini_bool(const char *value, int default_value);
@@ -23128,8 +23213,10 @@ static void ptn_request_set_file_upload(
     size_t filename_len,
     const char *content_type,
     size_t content_type_len,
-    size_t size,
-    size_t index
+    const char *content,
+    size_t content_len,
+    size_t index,
+    int error
 ) {
     PtnValue file = ptn_array_from_literal_entries(0, NULL);
     char *filename_copy = ptn_duplicate_string_len(filename, filename_len);
@@ -23149,14 +23236,25 @@ static void ptn_request_set_file_upload(
         upload_dir = "/tmp";
     }
     char tmp_name[256];
-    snprintf(tmp_name, sizeof(tmp_name), "%s/ptn-upload-%zu", upload_dir, index);
+    if (error == 0) {
+        snprintf(tmp_name, sizeof(tmp_name), "%s/ptn-upload-%zu", upload_dir, index);
+        FILE *upload = fopen(tmp_name, "wb");
+        if (upload != NULL) {
+            if (content != NULL && content_len != 0) {
+                (void)fwrite(content, 1, content_len, upload);
+            }
+            fclose(upload);
+        }
+    } else {
+        tmp_name[0] = '\0';
+    }
     ptn_array_set_entry(
         file.as.array,
         ptn_array_string_key("tmp_name"),
         ptn_owned_string(ptn_duplicate_string(tmp_name))
     );
-    ptn_array_set_entry(file.as.array, ptn_array_string_key("error"), ptn_int(0));
-    ptn_array_set_entry(file.as.array, ptn_array_string_key("size"), ptn_int((int64_t)size));
+    ptn_array_set_entry(file.as.array, ptn_array_string_key("error"), ptn_int(error));
+    ptn_array_set_entry(file.as.array, ptn_array_string_key("size"), ptn_int(error == 0 ? (int64_t)content_len : 0));
     ptn_array_set_entry(
         files,
         ptn_array_string_key(ptn_duplicate_string_len(field_name, field_name_len)),
@@ -23271,8 +23369,10 @@ static void ptn_request_parse_multipart(
                         filename_len,
                         part_type,
                         part_type_len,
+                        content_start,
                         (size_t)(content_end - content_start),
-                        upload_index++
+                        upload_index++,
+                        0
                     );
                     free(part_type);
                 } else {
@@ -23293,6 +23393,602 @@ static void ptn_request_parse_multipart(
     }
     free(marker);
     free(boundary);
+}
+
+typedef struct {
+    int64_t max_file_uploads;
+    int64_t max_input_vars;
+    int64_t max_multipart_body_parts;
+    int64_t post_max_size;
+    int64_t upload_max_filesize;
+} PtnRequestParseBodyOptions;
+
+static void ptn_request_parse_body_throw(PtnRuntime *runtime, const char *message) {
+    ptn_throw_exception(runtime, "RequestParseBodyException", message);
+}
+
+static int ptn_request_content_type_starts_with(const char *content_type, const char *prefix) {
+    size_t prefix_len = strlen(prefix);
+    return content_type != NULL &&
+        strlen(content_type) >= prefix_len &&
+        ptn_ascii_case_equal_n(content_type, prefix, prefix_len);
+}
+
+static int ptn_request_option_key_equals(PtnArrayKey key, const char *name) {
+    return key.type == PTN_ARRAY_KEY_STRING &&
+        key.string_len == strlen(name) &&
+        ptn_ascii_case_equal_n(key.as.string, name, key.string_len);
+}
+
+static int ptn_request_invalid_option_key(PtnRuntime *runtime, PtnArrayKey key) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        ptn_throw_exception(runtime, "ValueError", "Invalid integer key in $options argument");
+        return 0;
+    }
+    size_t message_len = key.string_len + 40;
+    char *message = malloc(message_len + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        message_len + 1,
+        "Invalid key \"%.*s\" in $options argument",
+        (int)key.string_len,
+        key.as.string
+    );
+    if (written < 0 || (size_t)written > message_len) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_owned_message(runtime, "ValueError", message);
+    return 0;
+}
+
+static int ptn_request_option_value_string(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    PtnStringOperand *out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_ARRAY) {
+        ptn_throw_exception(runtime, "ValueError", "Invalid array value in $options argument");
+        return 0;
+    }
+    if (value.type == PTN_OBJECT) {
+        ptn_throw_exception(runtime, "ValueError", "Invalid object value in $options argument");
+        return 0;
+    }
+    *out = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    return runtime == NULL || runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL;
+}
+
+static int64_t ptn_request_parse_quantity_bytes_with_warning(
+    PtnRuntime *runtime,
+    const char *raw,
+    size_t line
+) {
+    if (raw == NULL) {
+        return -1;
+    }
+    const char *start = raw;
+    while (isspace((unsigned char)*start)) {
+        start++;
+    }
+    char *end = NULL;
+    errno = 0;
+    long long value = strtoll(start, &end, 0);
+    if (end == start || errno == ERANGE) {
+        return -1;
+    }
+    while (end != NULL && isspace((unsigned char)*end)) {
+        end++;
+    }
+    int64_t multiplier = 1;
+    const char *unknown = NULL;
+    if (end != NULL && *end != '\0') {
+        switch (tolower((unsigned char)*end)) {
+            case 'g':
+                multiplier = 1024LL * 1024LL * 1024LL;
+                end++;
+                break;
+            case 'm':
+                multiplier = 1024LL * 1024LL;
+                end++;
+                break;
+            case 'k':
+                multiplier = 1024LL;
+                end++;
+                break;
+            default:
+                unknown = end;
+                break;
+        }
+        while (end != NULL && isspace((unsigned char)*end)) {
+            end++;
+        }
+        if (unknown == NULL && end != NULL && *end != '\0') {
+            unknown = end;
+        }
+    }
+    if (unknown != NULL && *unknown != '\0') {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Invalid quantity \"%s\": unknown multiplier \"%c\", interpreting as \"%lld\" for backwards compatibility",
+            raw,
+            *unknown,
+            value
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        multiplier = 1;
+    }
+    if (value < 0) {
+        return -1;
+    }
+    if (value > INT64_MAX / multiplier) {
+        return INT64_MAX;
+    }
+    return (int64_t)value * multiplier;
+}
+
+static int64_t ptn_request_parse_quantity_option(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    int *ok
+) {
+    PtnStringOperand operand;
+    if (!ptn_request_option_value_string(runtime, value, line, &operand)) {
+        *ok = 0;
+        return -1;
+    }
+    char *raw = ptn_duplicate_string_len(operand.data, operand.len);
+    int64_t result = ptn_request_parse_quantity_bytes_with_warning(runtime, raw, line);
+    free(raw);
+    ptn_string_operand_free(operand);
+    *ok = runtime == NULL || runtime->exceptions == NULL || runtime->exceptions->active_exception == NULL;
+    return result;
+}
+
+static int64_t ptn_request_parse_integer_option(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line,
+    int *ok
+) {
+    PtnStringOperand operand;
+    if (!ptn_request_option_value_string(runtime, value, line, &operand)) {
+        *ok = 0;
+        return -1;
+    }
+    char *raw = ptn_duplicate_string_len(operand.data, operand.len);
+    char *end = NULL;
+    errno = 0;
+    long long parsed = strtoll(raw, &end, 10);
+    if (end == raw || errno == ERANGE) {
+        parsed = -1;
+    }
+    free(raw);
+    ptn_string_operand_free(operand);
+    *ok = 1;
+    return parsed < 0 ? -1 : (int64_t)parsed;
+}
+
+static void ptn_request_parse_body_options_init(
+    PtnRuntime *runtime,
+    PtnRequestParseBodyOptions *options
+) {
+    options->max_file_uploads = 20;
+    options->max_input_vars = ptn_request_parse_quantity_bytes(ptn_runtime_max_input_vars(runtime));
+    if (options->max_input_vars < 0) {
+        options->max_input_vars = 1000;
+    }
+    options->max_multipart_body_parts = options->max_input_vars + options->max_file_uploads;
+    options->post_max_size = ptn_request_parse_quantity_bytes(ptn_runtime_post_max_size(runtime));
+    options->upload_max_filesize = 2LL * 1024LL * 1024LL;
+}
+
+static int ptn_request_parse_body_apply_options(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line,
+    PtnRequestParseBodyOptions *options
+) {
+    if (argc == 0 || ptn_value_deref(args[0]).type == PTN_NULL) {
+        return 1;
+    }
+    PtnArray *array = ptn_internal_expect_array_arg_at(
+        runtime,
+        "request_parse_body",
+        1,
+        "options",
+        args[0],
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+    if (array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        int ok = 1;
+        if (ptn_request_option_key_equals(entry->key, "post_max_size")) {
+            options->post_max_size =
+                ptn_request_parse_quantity_option(runtime, entry->value, line, &ok);
+        } else if (ptn_request_option_key_equals(entry->key, "upload_max_filesize")) {
+            options->upload_max_filesize =
+                ptn_request_parse_quantity_option(runtime, entry->value, line, &ok);
+        } else if (ptn_request_option_key_equals(entry->key, "max_file_uploads")) {
+            options->max_file_uploads =
+                ptn_request_parse_integer_option(runtime, entry->value, line, &ok);
+        } else if (ptn_request_option_key_equals(entry->key, "max_input_vars")) {
+            options->max_input_vars =
+                ptn_request_parse_integer_option(runtime, entry->value, line, &ok);
+        } else if (ptn_request_option_key_equals(entry->key, "max_multipart_body_parts")) {
+            options->max_multipart_body_parts =
+                ptn_request_parse_integer_option(runtime, entry->value, line, &ok);
+        } else {
+            return ptn_request_invalid_option_key(runtime, entry->key);
+        }
+        if (!ok || (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static PtnValue ptn_request_parse_body_result(PtnValue post, PtnValue files) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(0), post);
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(1), files);
+    return result;
+}
+
+static int ptn_request_parse_multipart_body_strict(
+    PtnRuntime *runtime,
+    PtnValue post,
+    PtnValue files,
+    const char *body,
+    size_t body_len,
+    const char *content_type,
+    const PtnRequestParseBodyOptions *options
+) {
+    size_t boundary_len = 0;
+    char *boundary = ptn_multipart_boundary_from_content_type(content_type, &boundary_len);
+    if (boundary == NULL || boundary_len == 0) {
+        free(boundary);
+        ptn_request_parse_body_throw(runtime, "Missing boundary in multipart/form-data POST data");
+        return 0;
+    }
+    size_t marker_len = boundary_len + 2;
+    char *marker = malloc(marker_len + 1);
+    if (marker == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    marker[0] = '-';
+    marker[1] = '-';
+    memcpy(marker + 2, boundary, boundary_len);
+    marker[marker_len] = '\0';
+
+    const char *body_end = body + body_len;
+    const char *cursor = ptn_memmem_simple(body, body_len, marker, marker_len);
+    if (cursor == NULL) {
+        free(marker);
+        free(boundary);
+        ptn_request_parse_body_throw(runtime, "Invalid boundary in multipart/form-data POST data");
+        return 0;
+    }
+
+    size_t upload_index = 0;
+    int64_t file_count = 0;
+    int64_t input_count = 0;
+    int64_t part_count = 0;
+    int64_t multipart_limit = options->max_multipart_body_parts;
+    if (multipart_limit < 0) {
+        multipart_limit = options->max_input_vars + options->max_file_uploads;
+    }
+    while (cursor != NULL) {
+        cursor += marker_len;
+        if (cursor + 1 < body_end && cursor[0] == '-' && cursor[1] == '-') {
+            break;
+        }
+        if (cursor < body_end && *cursor == '\r') {
+            cursor++;
+        }
+        if (cursor < body_end && *cursor == '\n') {
+            cursor++;
+        }
+        part_count++;
+        if (multipart_limit >= 0 && part_count > multipart_limit) {
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Multipart body parts limit exceeded %lld. To increase the limit change max_multipart_body_parts in php.ini.",
+                (long long)multipart_limit
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            free(marker);
+            free(boundary);
+            ptn_request_parse_body_throw(runtime, message);
+            return 0;
+        }
+
+        const char *headers_start = cursor;
+        const char *headers_end = NULL;
+        const char *content_start = NULL;
+        for (const char *scan = cursor; scan < body_end; scan++) {
+            if (scan + 3 < body_end &&
+                scan[0] == '\r' && scan[1] == '\n' && scan[2] == '\r' && scan[3] == '\n') {
+                headers_end = scan;
+                content_start = scan + 4;
+                break;
+            }
+            if (scan + 1 < body_end && scan[0] == '\n' && scan[1] == '\n') {
+                headers_end = scan;
+                content_start = scan + 2;
+                break;
+            }
+        }
+        if (headers_end == NULL || content_start == NULL) {
+            free(marker);
+            free(boundary);
+            ptn_request_parse_body_throw(runtime, "File Upload Mime headers garbled");
+            return 0;
+        }
+
+        const char *next = ptn_memmem_simple(
+            content_start,
+            (size_t)(body_end - content_start),
+            marker,
+            marker_len
+        );
+        if (next == NULL) {
+            free(marker);
+            free(boundary);
+            ptn_request_parse_body_throw(runtime, "Invalid boundary in multipart/form-data POST data");
+            return 0;
+        }
+        const char *content_end = next;
+        if (content_end > content_start && content_end[-1] == '\n') {
+            content_end--;
+            if (content_end > content_start && content_end[-1] == '\r') {
+                content_end--;
+            }
+        }
+
+        size_t disposition_len = 0;
+        char *disposition = ptn_multipart_header_value(
+            headers_start,
+            (size_t)(headers_end - headers_start),
+            "Content-Disposition",
+            &disposition_len
+        );
+        size_t name_len = 0;
+        char *name = disposition == NULL
+            ? NULL
+            : ptn_multipart_param_value(disposition, disposition_len, "name", &name_len);
+        if (disposition == NULL || name == NULL || name_len == 0) {
+            free(name);
+            free(disposition);
+            free(marker);
+            free(boundary);
+            ptn_request_parse_body_throw(runtime, "File Upload Mime headers garbled");
+            return 0;
+        }
+
+        size_t filename_len = 0;
+        char *filename = ptn_multipart_param_value(disposition, disposition_len, "filename", &filename_len);
+        if (filename != NULL) {
+            file_count++;
+            if (options->max_file_uploads >= 0 && file_count > options->max_file_uploads) {
+                free(filename);
+                free(name);
+                free(disposition);
+                free(marker);
+                free(boundary);
+                ptn_request_parse_body_throw(runtime, "Maximum number of allowable file uploads has been exceeded");
+                return 0;
+            }
+            size_t part_type_len = 0;
+            char *part_type = ptn_multipart_header_value(
+                headers_start,
+                (size_t)(headers_end - headers_start),
+                "Content-Type",
+                &part_type_len
+            );
+            if (part_type == NULL) {
+                part_type = ptn_duplicate_string_len("", 0);
+                part_type_len = 0;
+            }
+            size_t content_len = (size_t)(content_end - content_start);
+            int upload_error = options->upload_max_filesize >= 0 &&
+                content_len > (size_t)options->upload_max_filesize
+                    ? 1
+                    : 0;
+            ptn_request_set_file_upload(
+                runtime,
+                files.as.array,
+                name,
+                name_len,
+                filename,
+                filename_len,
+                part_type,
+                part_type_len,
+                content_start,
+                content_len,
+                upload_index++,
+                upload_error
+            );
+            free(part_type);
+        } else {
+            input_count++;
+            if (options->max_input_vars >= 0 && input_count > options->max_input_vars) {
+                char message[192];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Input variables exceeded %lld. To increase the limit change max_input_vars in php.ini.",
+                    (long long)options->max_input_vars
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                free(name);
+                free(disposition);
+                free(marker);
+                free(boundary);
+                ptn_request_parse_body_throw(runtime, message);
+                return 0;
+            }
+            ptn_request_assign_field(
+                post.as.array,
+                name,
+                name_len,
+                ptn_duplicate_string_len(content_start, (size_t)(content_end - content_start)),
+                (size_t)(content_end - content_start)
+            );
+        }
+        free(filename);
+        free(name);
+        free(disposition);
+        cursor = next;
+    }
+
+    free(marker);
+    free(boundary);
+    return 1;
+}
+
+static PtnValue ptn_internal_request_parse_body(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    PtnRequestParseBodyOptions options;
+    ptn_request_parse_body_options_init(runtime, &options);
+    if (!ptn_request_parse_body_apply_options(runtime, argc, args, line, &options)) {
+        return ptn_null();
+    }
+
+    size_t body_len = 0;
+    const char *body = ptn_runtime_request_body(runtime, &body_len);
+    const char *content_type = getenv("CONTENT_TYPE");
+    if (content_type == NULL || content_type[0] == '\0') {
+        ptn_request_parse_body_throw(runtime, "Request does not provide a content type");
+        return ptn_null();
+    }
+    if (options.post_max_size > 0 && body_len > (size_t)options.post_max_size) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "POST Content-Length of %zu bytes exceeds the limit of %lld bytes",
+            body_len,
+            (long long)options.post_max_size
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_request_parse_body_throw(runtime, message);
+        return ptn_null();
+    }
+
+    PtnValue post = ptn_array_from_literal_entries(0, NULL);
+    PtnValue files = ptn_array_from_literal_entries(0, NULL);
+    if (ptn_request_content_type_starts_with(content_type, "application/x-www-form-urlencoded")) {
+        ptn_value_destroy(&post);
+        post = ptn_parse_str_to_array_with_separators(runtime, body, body_len, "&");
+        return ptn_request_parse_body_result(post, files);
+    }
+    if (ptn_request_content_type_starts_with(content_type, "multipart/form-data")) {
+        if (!ptn_request_parse_multipart_body_strict(runtime, post, files, body, body_len, content_type, &options)) {
+            ptn_value_destroy(&post);
+            ptn_value_destroy(&files);
+            return ptn_null();
+        }
+        return ptn_request_parse_body_result(post, files);
+    }
+
+    size_t message_len = strlen(content_type) + 48;
+    char *message = malloc(message_len + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(
+        message,
+        message_len + 1,
+        "Content-Type \"%s\" is not supported",
+        content_type
+    );
+    if (written < 0 || (size_t)written > message_len) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_value_destroy(&post);
+    ptn_value_destroy(&files);
+    ptn_throw_exception_owned_message(runtime, "RequestParseBodyException", message);
+    return ptn_null();
+}
+
+static PtnValue ptn_internal_move_uploaded_file(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    (void)argc;
+    PtnStringOperand from = ptn_internal_expect_string_arg(runtime, "move_uploaded_file", 1, "from", args[0], line);
+    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        return ptn_bool(0);
+    }
+    PtnStringOperand to = ptn_internal_expect_string_arg(runtime, "move_uploaded_file", 2, "to", args[1], line);
+    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(from);
+        return ptn_bool(0);
+    }
+    char *from_path = ptn_duplicate_string_len(from.data, from.len);
+    char *to_path = ptn_duplicate_string_len(to.data, to.len);
+    int moved = rename(from_path, to_path) == 0;
+    if (!moved) {
+        FILE *src = fopen(from_path, "rb");
+        FILE *dst = src == NULL ? NULL : fopen(to_path, "wb");
+        if (src != NULL && dst != NULL) {
+            char buffer[8192];
+            size_t n = 0;
+            moved = 1;
+            while ((n = fread(buffer, 1, sizeof(buffer), src)) != 0) {
+                if (fwrite(buffer, 1, n, dst) != n) {
+                    moved = 0;
+                    break;
+                }
+            }
+        }
+        if (dst != NULL) {
+            fclose(dst);
+        }
+        if (src != NULL) {
+            fclose(src);
+        }
+        if (moved) {
+            (void)unlink(from_path);
+        }
+    }
+    free(from_path);
+    free(to_path);
+    ptn_string_operand_free(from);
+    ptn_string_operand_free(to);
+    return ptn_bool(moved);
 }
 
 static PtnValue ptn_request_argv_from_query(const char *query) {
@@ -67409,6 +68105,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
         { "mktime", 0, 6, ptn_internal_mktime },
+        { "move_uploaded_file", 2, 2, ptn_internal_move_uploaded_file },
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
         { "natsort", 1, 1, ptn_internal_natsort },
         { "next", 1, 1, ptn_internal_next },
@@ -67491,6 +68188,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "ReflectionClass::isIterateable", 0, 0, ptn_internal_reflection_class_is_iterateable_static },
         { "ReflectionMethod::createFromMethodName", 1, 1, ptn_internal_reflection_method_create_from_method_name },
         { "ReflectionReference::fromArrayElement", 2, 2, ptn_internal_reflection_reference_from_array_element },
+        { "request_parse_body", 0, 1, ptn_internal_request_parse_body },
         { "round", 1, 3, ptn_internal_round },
         { "RoundingMode::cases", 0, 0, ptn_internal_rounding_mode_cases },
         { "WeakReference::create", 1, 1, ptn_weak_reference_create },
@@ -67933,6 +68631,9 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
     static const PtnParameterMetadata PTN_INTERNAL_EXIT_PARAMETERS[] = {
         { "status", NULL, NULL, 0, 0, 0, 0, 1 },
     };
+    static const PtnParameterMetadata PTN_INTERNAL_REQUEST_PARSE_BODY_PARAMETERS[] = {
+        { "options", "array", "array", 1, 0, 0, 0, 1 },
+    };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS[] = {
         { "separator", "string", "string", 0, 1, 1, 0, 1 },
         { "enclosure", "string", "string", 0, 1, 1, 0, 1 },
@@ -67961,6 +68662,22 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
             0,
             NULL,
             NULL,
+            0,
+            0
+        );
+    }
+    if (ptn_ascii_case_equal(function->name, "request_parse_body")) {
+        return ptn_function_metadata_found(
+            function->name,
+            1,
+            sizeof(PTN_INTERNAL_REQUEST_PARSE_BODY_PARAMETERS) /
+                sizeof(PTN_INTERNAL_REQUEST_PARSE_BODY_PARAMETERS[0]),
+            0,
+            0,
+            PTN_INTERNAL_REQUEST_PARSE_BODY_PARAMETERS,
+            0,
+            "array",
+            "array",
             0,
             0
         );
@@ -76722,6 +77439,7 @@ static PtnValue ptn_reflection_class_reset_lazy_object(
     if ((options & PTN_LAZY_OBJECT_SKIP_DESTRUCTOR) == 0) {
         ptn_object_run_destructor(object.as.object);
     }
+    ptn_lazy_object_reset_property_storage(object.as.object, class_name);
     ptn_lazy_object_mark(object, initializer, is_proxy, options);
     return ptn_null();
 }

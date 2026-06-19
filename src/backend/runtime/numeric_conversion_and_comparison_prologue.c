@@ -1733,6 +1733,9 @@ static PTN_UNUSED const char *ptn_builtin_exception_class_name(const char *class
     if (ptn_exception_name_equal(class_name, "IntlException")) {
         return "IntlException";
     }
+    if (ptn_exception_name_equal(class_name, "RequestParseBodyException")) {
+        return "RequestParseBodyException";
+    }
     if (ptn_exception_name_equal(class_name, "RuntimeException")) {
         return "RuntimeException";
     }
@@ -1845,6 +1848,7 @@ static PTN_UNUSED int ptn_exception_type_matches_name(const char *class_name, co
             ptn_exception_name_equal(class_name, "ReflectionException") ||
             ptn_exception_name_equal(class_name, "SoapFault") ||
             ptn_exception_name_equal(class_name, "JsonException") ||
+            ptn_exception_name_equal(class_name, "RequestParseBodyException") ||
             ptn_exception_name_equal(class_name, "RuntimeException") ||
             ptn_exception_name_equal(class_name, "InvalidArgumentException") ||
             ptn_exception_name_equal(class_name, "UnexpectedValueException") ||
