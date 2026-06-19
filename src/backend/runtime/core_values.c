@@ -597,6 +597,7 @@ typedef struct {
     int by_ref;
     int is_variadic;
     int can_be_passed_by_value;
+    const char *default_value_display;
 } PtnParameterMetadata;
 
 typedef struct {
@@ -608,6 +609,8 @@ typedef struct {
     int is_variadic;
     const PtnParameterMetadata *parameters;
     int return_by_ref;
+    int is_generator;
+    int is_deprecated;
     const char *return_type_name;
     const char *return_type_display_name;
     int return_type_allows_null;
@@ -1399,6 +1402,8 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_not_found(void) {
     metadata.is_variadic = 0;
     metadata.parameters = NULL;
     metadata.return_by_ref = 0;
+    metadata.is_generator = 0;
+    metadata.is_deprecated = 0;
     metadata.return_type_name = NULL;
     metadata.return_type_display_name = NULL;
     metadata.return_type_allows_null = 0;
@@ -1433,6 +1438,8 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.is_variadic = is_variadic;
     metadata.parameters = parameters;
     metadata.return_by_ref = return_by_ref;
+    metadata.is_generator = 0;
+    metadata.is_deprecated = 0;
     metadata.return_type_name = return_type_name;
     metadata.return_type_display_name = return_type_display_name;
     metadata.return_type_allows_null = return_type_allows_null;
@@ -1442,6 +1449,16 @@ static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_found(
     metadata.end_line = 0;
     metadata.doc_comment = NULL;
     metadata.static_variables_provider = NULL;
+    return metadata;
+}
+
+static PTN_UNUSED PtnFunctionMetadata ptn_function_metadata_with_flags(
+    PtnFunctionMetadata metadata,
+    int is_generator,
+    int is_deprecated
+) {
+    metadata.is_generator = is_generator;
+    metadata.is_deprecated = is_deprecated;
     return metadata;
 }
 

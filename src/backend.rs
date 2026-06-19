@@ -2500,6 +2500,12 @@ fn emit_function_metadata_parameters(
         out.push_str(if parameter.is_variadic { "1" } else { "0" });
         out.push_str(", ");
         out.push_str(if parameter.by_ref { "0" } else { "1" });
+        out.push_str(", ");
+        let default_display = parameter
+            .default_value
+            .as_ref()
+            .map(|value| reflection_default_repr(Some(value)));
+        out.push_str(&c_optional_string(default_display.as_deref()));
         out.push_str(" }");
     }
     out.push_str(" };\n");
@@ -4558,6 +4564,14 @@ fn emit_function_metadata_source_suffix(
     function: &FunctionDecl,
     function_index: usize,
 ) {
+    out.push_str("), ");
+    out.push_str(if function.is_generator { "1" } else { "0" });
+    out.push_str(", ");
+    out.push_str(if function.attributes.deprecated_count > 0 {
+        "1"
+    } else {
+        "0"
+    });
     out.push_str("), \"");
     out.push_str(&c_string(&function.source_file));
     out.push_str("\", ");
@@ -4660,7 +4674,7 @@ fn emit_user_function_dispatch(
             &function.parameters,
         );
         out.push_str(
-            "        return ptn_function_metadata_with_source(ptn_function_metadata_found(\"",
+            "        return ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
         );
         out.push_str(&c_string(&function.name));
         out.push_str("\", 0, ");
@@ -4699,7 +4713,7 @@ fn emit_user_function_dispatch(
                 &function.parameters,
             );
             out.push_str(
-                "        return ptn_function_metadata_with_source(ptn_function_metadata_found(\"",
+                "        return ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"",
             );
             out.push_str(&c_string(&class.name));
             out.push_str("::");
@@ -6786,7 +6800,7 @@ fn emit_class_metadata_helpers(
                 &format!("ptn_declared_method_{}_parameters", method.function_index),
                 &function.parameters,
             );
-            out.push_str("            return ptn_function_metadata_found(\"");
+            out.push_str("            return ptn_function_metadata_with_flags(ptn_function_metadata_found(\"");
             out.push_str(&c_string(&class.name));
             out.push_str("::");
             out.push_str(&c_string(&method.name));
@@ -6801,6 +6815,14 @@ fn emit_class_metadata_helpers(
             out.push_str(", ");
             out.push_str(if function.return_by_ref { "1" } else { "0" });
             emit_reflection_type_metadata_arguments(out, function.return_type.as_ref());
+            out.push_str("), ");
+            out.push_str(if function.is_generator { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(if function.attributes.deprecated_count > 0 {
+                "1"
+            } else {
+                "0"
+            });
             out.push_str(");\n");
             out.push_str("        }\n");
         }
@@ -30045,7 +30067,7 @@ impl ValueEmitter {
         out.push_str(", \"");
         out.push_str(&c_string(&function.display_name));
         out.push_str(
-            "\", ptn_function_metadata_with_source(ptn_function_metadata_found(\"{closure}\", 0, ",
+            "\", ptn_function_metadata_with_source(ptn_function_metadata_with_flags(ptn_function_metadata_found(\"{closure}\", 0, ",
         );
         out.push_str(&function.parameters.len().to_string());
         out.push_str(", ");
@@ -30722,7 +30744,7 @@ impl ValueEmitter {
                 out.push_str(&args_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(", 0);\n");
+                out.push_str(");\n");
                 for temp in &unwrap_array_dim_reference_temps {
                     emit_unwrap_array_dim_reference_call_argument(out, "    ", temp);
                 }
@@ -30901,7 +30923,7 @@ impl ValueEmitter {
                 out.push_str(&args_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(", 0);\n");
+                out.push_str(");\n");
                 for index in 0..argument_temps.len() {
                     emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
                 }

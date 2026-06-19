@@ -4648,16 +4648,16 @@ static int ptn_internal_function_parameter_can_be_passed_by_value(const char *na
 }
 
 static const PtnParameterMetadata PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS[] = {
-    { "string", "string", "string", 0, 1, 0, 0, 1 },
-    { "flags", "int", "int", 0, 1, 0, 0, 1 },
-    { "encoding", "string", "?string", 1, 1, 0, 0, 1 },
-    { "double_encode", "bool", "bool", 0, 1, 0, 0, 1 },
+    { "string", "string", "string", 0, 1, 0, 0, 1, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL },
+    { "encoding", "string", "?string", 1, 1, 0, 0, 1, NULL },
+    { "double_encode", "bool", "bool", 0, 1, 0, 0, 1, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS[] = {
-    { "table", "int", "int", 0, 1, 0, 0, 1 },
-    { "flags", "int", "int", 0, 1, 0, 0, 1 },
-    { "encoding", "string", "string", 0, 1, 0, 0, 1 },
+    { "table", "int", "int", 0, 1, 0, 0, 1, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL },
+    { "encoding", "string", "string", 0, 1, 0, 0, 1, NULL },
 };
 
 static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
@@ -4689,6 +4689,20 @@ static const char *ptn_internal_function_parameter_default_display(PtnFunctionMe
         }
     }
     return NULL;
+}
+
+static const char *ptn_function_metadata_parameter_default_display(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    if (
+        metadata.parameters != NULL &&
+        index < metadata.parameter_count &&
+        metadata.parameters[index].default_value_display != NULL
+    ) {
+        return metadata.parameters[index].default_value_display;
+    }
+    return ptn_internal_function_parameter_default_display(metadata, index);
 }
 
 static int ptn_function_metadata_parameter_by_ref(PtnFunctionMetadata metadata, size_t index) {
@@ -70701,27 +70715,27 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         return ptn_function_metadata_not_found();
     }
     static const PtnParameterMetadata PTN_INTERNAL_EXIT_PARAMETERS[] = {
-        { "status", NULL, NULL, 0, 0, 0, 0, 1 },
+        { "status", NULL, NULL, 0, 0, 0, 0, 1, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_REQUEST_PARSE_BODY_PARAMETERS[] = {
-        { "options", "array", "array", 1, 0, 0, 0, 1 },
+        { "options", "array", "array", 1, 0, 0, 0, 1, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS[] = {
-        { "separator", "string", "string", 0, 1, 1, 0, 1 },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1 },
-        { "escape", "string", "string", 0, 1, 1, 0, 1 },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FPUTCSV_PARAMETERS[] = {
-        { "fields", "array", "array", 0, 0, 1, 0, 1 },
-        { "separator", "string", "string", 0, 1, 1, 0, 1 },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1 },
-        { "escape", "string", "string", 0, 1, 1, 0, 1 },
-        { "eol", "string", "string", 0, 1, 1, 0, 1 },
+        { "fields", "array", "array", 0, 0, 1, 0, 1, NULL },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "eol", "string", "string", 0, 1, 1, 0, 1, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS[] = {
-        { "separator", "string", "string", 0, 1, 1, 0, 1 },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1 },
-        { "escape", "string", "string", 0, 1, 1, 0, 1 },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL },
     };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
@@ -72295,6 +72309,8 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getClosureScopeClass")
         || ptn_ascii_case_equal(method_name, "getClosureThis")
+        || ptn_ascii_case_equal(method_name, "getClosureCalledClass")
+        || ptn_ascii_case_equal(method_name, "getClosureUsedVariables")
         || ptn_ascii_case_equal(method_name, "getClosure")
         || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getEndLine")
@@ -72315,13 +72331,20 @@ static int ptn_reflection_function_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "inNamespace")
         || ptn_ascii_case_equal(method_name, "isInternal")
         || ptn_ascii_case_equal(method_name, "isUserDefined")
-        || ptn_ascii_case_equal(method_name, "isVariadic");
+        || ptn_ascii_case_equal(method_name, "isVariadic")
+        || ptn_ascii_case_equal(method_name, "returnsReference")
+        || ptn_ascii_case_equal(method_name, "isAnonymous")
+        || ptn_ascii_case_equal(method_name, "isClosure")
+        || ptn_ascii_case_equal(method_name, "isDeprecated")
+        || ptn_ascii_case_equal(method_name, "isGenerator");
 }
 
 static int ptn_reflection_function_abstract_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getClosureScopeClass")
         || ptn_ascii_case_equal(method_name, "getClosureThis")
+        || ptn_ascii_case_equal(method_name, "getClosureCalledClass")
+        || ptn_ascii_case_equal(method_name, "getClosureUsedVariables")
         || ptn_ascii_case_equal(method_name, "getClosure")
         || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getEndLine")
@@ -72340,7 +72363,10 @@ static int ptn_reflection_function_abstract_method_exists(const char *method_nam
         || ptn_ascii_case_equal(method_name, "inNamespace")
         || ptn_ascii_case_equal(method_name, "isInternal")
         || ptn_ascii_case_equal(method_name, "isUserDefined")
-        || ptn_ascii_case_equal(method_name, "isVariadic");
+        || ptn_ascii_case_equal(method_name, "isVariadic")
+        || ptn_ascii_case_equal(method_name, "returnsReference")
+        || ptn_ascii_case_equal(method_name, "isDeprecated")
+        || ptn_ascii_case_equal(method_name, "isGenerator");
 }
 
 static int ptn_reflection_extension_method_exists(const char *method_name) {
@@ -72404,7 +72430,9 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isPublic")
         || ptn_ascii_case_equal(method_name, "setAccessible")
         || ptn_ascii_case_equal(method_name, "isStatic")
-        || ptn_ascii_case_equal(method_name, "isUserDefined");
+        || ptn_ascii_case_equal(method_name, "isUserDefined")
+        || ptn_ascii_case_equal(method_name, "isDeprecated")
+        || ptn_ascii_case_equal(method_name, "isGenerator");
 }
 
 static int ptn_reflection_parameter_method_exists(const char *method_name) {
@@ -73480,6 +73508,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "__toString",
             "getAttributes",
             "getClosureScopeClass",
+            "getClosureThis",
+            "getClosureCalledClass",
+            "getClosureUsedVariables",
             "getClosure",
             "getDocComment",
             "getEndLine",
@@ -73501,6 +73532,11 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "isInternal",
             "isUserDefined",
             "isVariadic",
+            "returnsReference",
+            "isAnonymous",
+            "isClosure",
+            "isDeprecated",
+            "isGenerator",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -73592,6 +73628,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "setAccessible",
             "isStatic",
             "isUserDefined",
+            "returnsReference",
+            "isDeprecated",
+            "isGenerator",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -76883,6 +76922,14 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
     if (ptn_ascii_case_equal(name, "returnsReference")) {
         PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
         return ptn_bool(metadata.found && metadata.return_by_ref);
+    }
+    if (ptn_ascii_case_equal(name, "isDeprecated")) {
+        PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
+        return ptn_bool(metadata.found && metadata.is_deprecated);
+    }
+    if (ptn_ascii_case_equal(name, "isGenerator")) {
+        PtnFunctionMetadata metadata = ptn_reflection_method_function_metadata(data);
+        return ptn_bool(metadata.found && metadata.is_generator);
     }
     if (ptn_ascii_case_equal(name, "getModifiers")) {
         int modifiers = 0;
@@ -83849,6 +83896,47 @@ static PtnValue ptn_reflection_function_static_variables(
         : metadata.static_variables_provider(runtime);
 }
 
+static PtnValue ptn_reflection_function_closure_called_class(
+    PtnRuntime *runtime,
+    PtnReflectionFunctionData *data
+) {
+    if (data == NULL || !data->has_closure) {
+        return ptn_null();
+    }
+    PtnValue closure = ptn_value_deref(data->closure);
+    if (
+        closure.type != PTN_CLOSURE ||
+        closure.as.closure->called_class_name == NULL
+    ) {
+        return ptn_null();
+    }
+    return ptn_reflection_class_object_from_name(runtime, closure.as.closure->called_class_name);
+}
+
+static PtnValue ptn_reflection_function_closure_used_variables(PtnReflectionFunctionData *data) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (data == NULL || !data->has_closure) {
+        return result;
+    }
+    PtnValue closure = ptn_value_deref(data->closure);
+    if (closure.type != PTN_CLOSURE) {
+        return result;
+    }
+    PtnSymbolTable *captures = &closure.as.closure->captures;
+    for (size_t i = 0; i < captures->len; i++) {
+        PtnSymbol *capture = &captures->items[i];
+        if (strcmp(capture->name, "this") == 0) {
+            continue;
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key(capture->name),
+            ptn_value_clone(capture->value)
+        );
+    }
+    return result;
+}
+
 static const char *ptn_reflection_function_extension_name(PtnFunctionMetadata metadata) {
     if (!metadata.is_internal) {
         return NULL;
@@ -83869,6 +83957,10 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
             metadata.name
         );
     } else {
+        if (metadata.doc_comment != NULL) {
+            ptn_string_buffer_append(&buffer, metadata.doc_comment);
+            ptn_string_buffer_append(&buffer, "\n");
+        }
         ptn_string_buffer_append_format(
             &buffer,
             "Function [ <user> function %s ] {\n",
@@ -83897,7 +83989,7 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
                 sizeof(fallback)
             );
             const char *type_display = ptn_function_metadata_parameter_type_display_name(metadata, i);
-            const char *default_display = ptn_internal_function_parameter_default_display(metadata, i);
+            const char *default_display = ptn_function_metadata_parameter_default_display(metadata, i);
             ptn_string_buffer_append_format(
                 &buffer,
                 "    Parameter #%zu [ <%s> ",
@@ -83914,7 +84006,7 @@ static PtnValue ptn_reflection_function_to_string(PtnFunctionMetadata metadata) 
                 ptn_string_buffer_append(&buffer, "&");
             }
             ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
-            if (default_display != NULL) {
+            if (default_display != NULL && i >= metadata.required_parameter_count) {
                 ptn_string_buffer_append_format(&buffer, " = %s", default_display);
             }
             ptn_string_buffer_append(&buffer, " ]\n");
@@ -84195,7 +84287,7 @@ static PtnValue ptn_reflection_parameter_to_string(
     const char *parameter_name =
         ptn_function_metadata_parameter_name(metadata, index, fallback, sizeof(fallback));
     const char *type_display = ptn_function_metadata_parameter_type_display_name(metadata, index);
-    const char *default_display = ptn_internal_function_parameter_default_display(metadata, index);
+    const char *default_display = ptn_function_metadata_parameter_default_display(metadata, index);
     ptn_string_buffer_append_format(
         &buffer,
         "Parameter #%zu [ <%s> ",
@@ -84212,7 +84304,7 @@ static PtnValue ptn_reflection_parameter_to_string(
         ptn_string_buffer_append(&buffer, "&");
     }
     ptn_string_buffer_append_format(&buffer, "$%s", parameter_name);
-    if (default_display != NULL) {
+    if (default_display != NULL && index >= metadata.required_parameter_count) {
         ptn_string_buffer_append_format(&buffer, " = %s", default_display);
     }
     ptn_string_buffer_append(&buffer, " ]");
@@ -84908,6 +85000,20 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     }
 
     PtnValue target = ptn_value_deref(args[0]);
+    if (target.type != PTN_CLOSURE && target.type != PTN_STRING) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionFunction::__construct(): Argument #1 ($function) must be of type Closure|string, %s given",
+            ptn_count_operand_type_name(target)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
     char *name = NULL;
     PtnFunctionMetadata metadata = ptn_function_metadata_not_found();
     if (target.type == PTN_CLOSURE) {
@@ -85255,6 +85361,26 @@ static PtnValue ptn_reflection_extension_classes(
         ptn_reflection_extension_add_class(runtime, result, &index, "XMLWriter", objects);
         return result;
     }
+    if (ptn_ascii_case_equal(extension_name, "standard")) {
+        static const char *const names[] = {
+            "AssertionError",
+            "Directory",
+            "RoundingMode",
+            "SortDirection",
+            "StreamBucket",
+            "StreamError",
+            "StreamErrorCode",
+            "StreamErrorMode",
+            "StreamErrorStore",
+            "StreamException",
+            "__PHP_Incomplete_Class",
+            "php_user_filter",
+        };
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            ptn_reflection_extension_add_class(runtime, result, &index, names[i], objects);
+        }
+        return result;
+    }
     if (ptn_ascii_case_equal(extension_name, "Reflection")) {
         static const char *const names[] = {
             "ReflectionException",
@@ -85291,8 +85417,19 @@ static PtnValue ptn_reflection_extension_classes(
     return result;
 }
 
-static PtnValue ptn_reflection_extension_dependencies(void) {
-    return ptn_array_from_literal_entries(0, NULL);
+static PtnValue ptn_reflection_extension_dependencies(const char *extension_name) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    if (ptn_ascii_case_equal(extension_name, "dom")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("libxml"), ptn_string("Required"));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("lexbor"), ptn_string("Required"));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("domxml"), ptn_string("Conflicts"));
+    }
+    if (ptn_ascii_case_equal(extension_name, "standard")) {
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("random"), ptn_string("Required"));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("uri"), ptn_string("Required"));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("session"), ptn_string("Optional"));
+    }
+    return result;
 }
 
 static PtnValue ptn_reflection_extension_info(PtnRuntime *runtime, const char *extension_name) {
@@ -85359,6 +85496,21 @@ static PTN_UNUSED PtnValue ptn_reflection_extension_new(
         return ptn_null();
     }
 
+    PtnValue extension_arg = ptn_value_deref(args[0]);
+    if (extension_arg.type != PTN_STRING) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionExtension::__construct(): Argument #1 ($name) must be of type string, %s given",
+            ptn_count_operand_type_name(extension_arg)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
     PtnStringOperand extension = ptn_value_to_string_operand(args[0]);
     const char *canonical = ptn_modeled_extension_canonical_name(extension);
     if (canonical == NULL) {
@@ -85454,7 +85606,7 @@ static PTN_UNUSED PtnValue ptn_reflection_extension_call_method(
         return ptn_reflection_extension_classes(runtime, data->name, 0);
     }
     if (ptn_ascii_case_equal(name, "getDependencies")) {
-        return ptn_reflection_extension_dependencies();
+        return ptn_reflection_extension_dependencies(data->name);
     }
     if (ptn_ascii_case_equal(name, "isPersistent")) {
         return ptn_bool(1);
@@ -90948,6 +91100,12 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
             ? ptn_null()
             : ptn_reflection_class_object_from_name(runtime, data->closure_scope_class_name);
     }
+    if (ptn_ascii_case_equal(name, "getClosureCalledClass")) {
+        return ptn_reflection_function_closure_called_class(runtime, data);
+    }
+    if (ptn_ascii_case_equal(name, "getClosureUsedVariables")) {
+        return ptn_reflection_function_closure_used_variables(data);
+    }
     if (ptn_ascii_case_equal(name, "getClosureThis")) {
         return data->has_closure_this
             ? ptn_value_clone_deref(data->closure_this)
@@ -91031,6 +91189,25 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
     }
     if (ptn_ascii_case_equal(name, "isVariadic")) {
         return ptn_bool(metadata.is_variadic);
+    }
+    if (ptn_ascii_case_equal(name, "returnsReference")) {
+        return ptn_bool(metadata.return_by_ref);
+    }
+    if (ptn_ascii_case_equal(name, "isAnonymous")) {
+        PtnValue closure = data->has_closure ? ptn_value_deref(data->closure) : ptn_null();
+        return ptn_bool(
+            closure.type == PTN_CLOSURE &&
+            !closure.as.closure->has_wrapped_callable
+        );
+    }
+    if (ptn_ascii_case_equal(name, "isClosure")) {
+        return ptn_bool(data->has_closure);
+    }
+    if (ptn_ascii_case_equal(name, "isDeprecated")) {
+        return ptn_bool(metadata.is_deprecated);
+    }
+    if (ptn_ascii_case_equal(name, "isGenerator")) {
+        return ptn_bool(metadata.is_generator);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();

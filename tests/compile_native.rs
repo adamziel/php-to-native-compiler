@@ -21612,11 +21612,22 @@ function &ret_ref($value) {
     return $value;
 }
 
+function plain($a, $b = 1, $c = '') {
+}
+
+/** hoho */
+function documented($x = \"ok\") {
+}
+
 $function = new \\ReflectionFunction(\"ReflectInvoke\\\\ret_ref\");
 var_dump($function->invoke(42));
 var_dump($function->invokeArgs(array(43)));
+var_dump($function->returnsReference());
 var_dump(\\method_exists(\"ReflectionFunction\", \"invoke\"));
 var_dump(\\method_exists(\"ReflectionFunction\", \"invokeArgs\"));
+var_dump(\\method_exists(\"ReflectionFunction\", \"returnsReference\"));
+echo new \\ReflectionFunction(\"ReflectInvoke\\\\plain\");
+echo new \\ReflectionFunction(\"ReflectInvoke\\\\documented\");
 ",
     )
     .unwrap();
@@ -21625,10 +21636,18 @@ var_dump(\\method_exists(\"ReflectionFunction\", \"invokeArgs\"));
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
-    assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        concat!("int(42)\n", "int(43)\n", "bool(true)\n", "bool(true)\n",)
-    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with(concat!(
+        "int(42)\n",
+        "int(43)\n",
+        "bool(true)\n",
+        "bool(true)\n",
+        "bool(true)\n",
+        "bool(true)\n",
+    )));
+    assert!(stdout.contains("Parameter #1 [ <optional> $b = 1 ]"));
+    assert!(stdout.contains("Parameter #2 [ <optional> $c = '' ]"));
+    assert!(stdout.contains("/** hoho */\nFunction [ <user> function ReflectInvoke\\documented ]"));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
@@ -21688,6 +21707,101 @@ var_dump(method_exists('ReflectionFunction', '__toString'));
 }
 
 #[test]
+fn compile_reflection_function_predicates_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-function-predicates");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-function-predicates.php");
+    let output = root.join("reflection-function-predicates-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace ReflectPredicates;
+
+function plain() {}
+function gen() { yield 1; }
+#[\\Deprecated]
+function old() {}
+
+$anon = function() {};
+$wrapped = strlen(...);
+
+foreach ([
+    new \\ReflectionFunction($anon),
+    new \\ReflectionFunction($wrapped),
+    new \\ReflectionFunction(__NAMESPACE__ . \"\\\\plain\"),
+    new \\ReflectionFunction(__NAMESPACE__ . \"\\\\gen\"),
+    new \\ReflectionFunction(__NAMESPACE__ . \"\\\\old\"),
+] as $reflection) {
+    var_dump(
+        $reflection->isClosure(),
+        $reflection->isAnonymous(),
+        $reflection->isGenerator(),
+        $reflection->isDeprecated()
+    );
+}
+
+class Box {
+    public function plain() {}
+    public function gen() { yield 1; }
+    #[\\Deprecated]
+    public function old() {}
+}
+
+foreach ([\"plain\", \"gen\", \"old\"] as $name) {
+    $method = new \\ReflectionMethod(Box::class, $name);
+    echo $name, \":\";
+    var_dump($method->isGenerator(), $method->isDeprecated(), method_exists($method, \"isGenerator\"));
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "plain:bool(false)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "gen:bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "old:bool(false)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_function_metadata_with_flags"));
+    assert!(c_source.contains("ptn_function_metadata_with_source"));
+}
+
+#[test]
 fn compile_reflection_extension_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-extension-metadata");
     fs::create_dir_all(&root).unwrap();
@@ -21722,6 +21836,9 @@ var_dump(
     in_array(\"ReflectionClass\", $classNames, true)
 );
 var_dump($reflection->getFunctions(), $reflection->getConstants(), $reflection->getDependencies());
+
+$dom = new ReflectionExtension(\"dom\");
+var_dump($dom->getDependencies());
 
 $rc = new ReflectionClass(\"ReflectionClass\");
 var_dump($rc->getExtensionName(), $rc->getExtension()->getName());
@@ -21768,6 +21885,14 @@ var_dump($userConstant->getExtensionName(), $userConstant->getExtension());
             "array(0) {\n",
             "}\n",
             "array(0) {\n",
+            "}\n",
+            "array(3) {\n",
+            "  [\"libxml\"]=>\n",
+            "  string(8) \"Required\"\n",
+            "  [\"lexbor\"]=>\n",
+            "  string(8) \"Required\"\n",
+            "  [\"domxml\"]=>\n",
+            "  string(9) \"Conflicts\"\n",
             "}\n",
             "string(10) \"Reflection\"\n",
             "string(10) \"Reflection\"\n",
