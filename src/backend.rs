@@ -345,6 +345,13 @@ pub fn emit_c(module: &Module) -> String {
             "    runtime.new_instance_without_constructor = ptn_declared_class_new_instance_without_constructor;\n",
         );
     }
+    out.push_str("    static const unsigned char ptn_root_source_bytes[] = \"");
+    out.push_str(&c_string(&module.source_contents));
+    out.push_str("\";\n");
+    out.push_str("    runtime.source_bytes = ptn_root_source_bytes;\n");
+    out.push_str("    runtime.source_len = ");
+    out.push_str(&module.source_contents.len().to_string());
+    out.push_str(";\n");
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
@@ -2812,7 +2819,18 @@ fn emit_include_helpers(
         out.push_str("    (void)include_runtime;\n");
         out.push_str("#define runtime (*include_runtime)\n");
         out.push_str("    const char *ptn_previous_source_path = runtime.source_path;\n");
+        out.push_str(
+            "    const unsigned char *ptn_previous_source_bytes = runtime.source_bytes;\n",
+        );
+        out.push_str("    size_t ptn_previous_source_len = runtime.source_len;\n");
         out.push_str("    int ptn_previous_strict_types = runtime.strict_types;\n");
+        out.push_str("    static const unsigned char ptn_include_source_bytes[] = \"");
+        out.push_str(&c_string(&include.source_contents));
+        out.push_str("\";\n");
+        out.push_str("    runtime.source_bytes = ptn_include_source_bytes;\n");
+        out.push_str("    runtime.source_len = ");
+        out.push_str(&include.source_contents.len().to_string());
+        out.push_str(";\n");
         out.push_str("    runtime.source_path = \"");
         out.push_str(&c_string(&include.source_file));
         out.push_str("\";\n");
@@ -2855,6 +2873,8 @@ fn emit_include_helpers(
         out.push_str(":\n");
         out.push_str("    runtime.compiled_include_depth--;\n");
         out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
+        out.push_str("    runtime.source_bytes = ptn_previous_source_bytes;\n");
+        out.push_str("    runtime.source_len = ptn_previous_source_len;\n");
         out.push_str("    runtime.strict_types = ptn_previous_strict_types;\n");
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");

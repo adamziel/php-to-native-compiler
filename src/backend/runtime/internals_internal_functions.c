@@ -36330,6 +36330,52 @@ static int ptn_try_open_php_standard_stream(const char *path, PtnValue *out) {
     return 0;
 }
 
+static int ptn_runtime_source_path_matches(PtnRuntime *runtime, const char *path) {
+    return runtime != NULL &&
+        runtime->source_path != NULL &&
+        path != NULL &&
+        strcmp(path, runtime->source_path) == 0;
+}
+
+static int ptn_fopen_mode_is_read_only(const char *mode) {
+    return mode != NULL &&
+        (mode[0] == 'r' || mode[0] == 'R') &&
+        strchr(mode, '+') == NULL;
+}
+
+static int ptn_try_open_runtime_source_stream(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *mode,
+    PtnValue *out
+) {
+    if (!ptn_runtime_source_path_matches(runtime, path) ||
+        runtime->source_bytes == NULL ||
+        !ptn_fopen_mode_is_read_only(mode)) {
+        return 0;
+    }
+
+    PtnResource *resource = ptn_resource_new_memory_stream(
+        path,
+        mode,
+        PTN_STREAM_BACKEND_MEMORY,
+        SIZE_MAX,
+        1,
+        0
+    );
+    if (runtime->source_len != 0) {
+        size_t written = ptn_stream_write_bytes(resource, runtime->source_bytes, runtime->source_len);
+        if (written != runtime->source_len) {
+            ptn_abort_out_of_memory();
+        }
+    }
+    (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    resource->memory_stream->writable = 0;
+    resource->memory_stream->append = 0;
+    *out = ptn_resource(resource);
+    return 1;
+}
+
 static char *ptn_fopen_c_mode(const char *mode) {
     if (mode[0] != 'x') {
         return ptn_duplicate_string(mode);
@@ -36413,8 +36459,16 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
 
     char *c_mode = ptn_fopen_c_mode(mode);
     FILE *stream = fopen(path, c_mode);
+    int open_errno = errno;
     free(c_mode);
     if (stream == NULL) {
+        if ((open_errno == ENOENT || open_errno == ENOTDIR) &&
+            ptn_try_open_runtime_source_stream(runtime, path, mode, &php_stream)) {
+            free(mode);
+            free(path);
+            return php_stream;
+        }
+        errno = open_errno;
         char detail[192];
         int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
         if (needed < 0 || (size_t)needed >= sizeof(detail)) {
@@ -38068,6 +38122,28 @@ static char *ptn_runtime_source_dir_alloc(PtnRuntime *runtime) {
     return ptn_duplicate_string_len(path, len);
 }
 
+static int ptn_try_read_runtime_source_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    if (!ptn_runtime_source_path_matches(runtime, path) || runtime->source_bytes == NULL) {
+        return 0;
+    }
+    size_t len = runtime->source_len;
+    unsigned char *copy = malloc(len == 0 ? 1 : len);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (len != 0) {
+        memcpy(copy, runtime->source_bytes, len);
+    }
+    *data_out = copy;
+    *len_out = len;
+    return 1;
+}
+
 static int ptn_read_file_bytes_with_search(
     PtnRuntime *runtime,
     const char *path,
@@ -38077,6 +38153,9 @@ static int ptn_read_file_bytes_with_search(
     char **opened_path_out
 ) {
     int result = ptn_read_file_bytes(path, data_out, len_out);
+    if (result == 0) {
+        result = ptn_try_read_runtime_source_bytes(runtime, path, data_out, len_out);
+    }
     if (result != 0 || !use_include_path || ptn_path_string_is_absolute(path)) {
         *opened_path_out = ptn_duplicate_string(path);
         return result;

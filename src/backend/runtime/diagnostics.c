@@ -1760,6 +1760,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->magic_property_frame_len = 0;
     runtime->magic_property_frame_capacity = 0;
     runtime->source_path = NULL;
+    runtime->source_bytes = NULL;
+    runtime->source_len = 0;
     runtime->compiled_include_depth = 0;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;

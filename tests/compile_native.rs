@@ -13623,6 +13623,44 @@ echo \"done\\n\";\n",
 }
 
 #[test]
+fn compile_runtime_source_reads_fall_back_to_embedded_source_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-source-fallback");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("runtime-source-fallback.php");
+    let output = root.join("runtime-source-fallback-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$marker = \"transient source fallback marker\";\n\
+$contents = file_get_contents(__FILE__);\n\
+echo strpos($contents, $marker) !== false ? \"fgc\\n\" : \"fgc-missing\\n\";\n\
+$stream = fopen(__FILE__, \"r\");\n\
+echo get_resource_type($stream), \"\\n\";\n\
+echo strpos(stream_get_contents($stream), $marker) !== false ? \"stream\\n\" : \"stream-missing\\n\";\n\
+fclose($stream);\n\
+$lines = file(__FILE__, FILE_IGNORE_NEW_LINES);\n\
+echo $lines[1], \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    fs::remove_file(&input).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "fgc\n",
+            "stream\n",
+            "stream\n",
+            "$marker = \"transient source fallback marker\";\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_file_path_validation_and_flock_to_native_binary() {
     let root = temp_dir("ptn-native-file-path-validation-flock");
     fs::create_dir_all(&root).unwrap();
