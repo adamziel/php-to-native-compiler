@@ -8704,7 +8704,7 @@ fn phpc_renders_missing_class_and_interface_declarations_as_uncaught_errors() {
         assert_eq!(
             String::from_utf8(execution.stderr).unwrap(),
             format!(
-                "Fatal error: Uncaught Error: {message} in {}:{line}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {line}\n",
+                "\nFatal error: Uncaught Error: {message} in {}:{line}\nStack trace:\n#0 {{main}}\n  thrown in {} on line {line}\n",
                 input.display(),
                 input.display()
             ),

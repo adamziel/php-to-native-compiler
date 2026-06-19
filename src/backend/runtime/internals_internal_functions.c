@@ -70692,8 +70692,39 @@ static int ptn_reflection_class_name_should_autoload(const char *name) {
     return 1;
 }
 
+static int ptn_reflection_class_runtime_symbol_exists_after_autoload(
+    PtnRuntime *runtime,
+    const char *lookup_name,
+    size_t line,
+    const char **resolved_name_out
+) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    if (
+        !ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name) &&
+        ptn_reflection_class_name_should_autoload(lookup_name)
+    ) {
+        runtime->call_site_line = line;
+        ptn_runtime_autoload_class(runtime, lookup_name, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            if (resolved_name_out != NULL) {
+                *resolved_name_out = resolved_name;
+            }
+            return 0;
+        }
+        resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+    }
+    if (resolved_name_out != NULL) {
+        *resolved_name_out = resolved_name;
+    }
+    return ptn_reflection_class_runtime_symbol_exists(runtime, resolved_name);
+}
+
 static int ptn_reflection_class_is_interface_name(const char *name) {
     return ptn_declared_interface_exists(name) || ptn_internal_interface_exists_name(name);
+}
+
+static int ptn_reflection_class_runtime_is_interface_name(PtnRuntime *runtime, const char *name) {
+    return ptn_declared_runtime_interface_exists(runtime, name) || ptn_internal_interface_exists_name(name);
 }
 
 static int ptn_reflection_class_is_user_defined_name(const char *name) {
@@ -72031,7 +72062,18 @@ static char *ptn_reflection_class_required_class_arg_name(
         free(name);
         return NULL;
     }
-    int exists = ptn_reflection_class_symbol_exists(name);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    const char *resolved_name = NULL;
+    int exists = ptn_reflection_class_runtime_symbol_exists_after_autoload(
+        runtime,
+        lookup_name,
+        line,
+        &resolved_name
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        free(name);
+        return NULL;
+    }
     if (!exists) {
         int needed = snprintf(
             NULL,
@@ -72083,7 +72125,9 @@ static char *ptn_reflection_class_required_class_arg_name(
         free(name);
         return NULL;
     }
-    return name;
+    char *resolved_copy = ptn_duplicate_string(resolved_name);
+    free(name);
+    return resolved_copy;
 }
 
 typedef struct {
@@ -72341,8 +72385,18 @@ static PTN_UNUSED PtnValue ptn_reflection_method_new_ex(
     }
 
     const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
-    const char *resolved_class_name = ptn_runtime_resolve_class_alias(runtime, lookup_class_name);
-    if (!ptn_runtime_class_or_interface_exists(runtime, resolved_class_name)) {
+    const char *resolved_class_name = NULL;
+    if (!ptn_reflection_class_runtime_symbol_exists_after_autoload(
+            runtime,
+            lookup_class_name,
+            line,
+            &resolved_class_name
+        )) {
+        if (runtime->exceptions->active_exception != NULL) {
+            free(method_name);
+            free(class_name);
+            return ptn_null();
+        }
         ptn_reflection_class_throw_missing_class(runtime, lookup_class_name);
         free(method_name);
         free(class_name);
@@ -73215,6 +73269,7 @@ static int ptn_reflection_property_lookup_init(
     PtnRuntime *runtime,
     const char *reflected_class_name,
     char *property_name,
+    size_t line,
     PtnReflectionPropertyLookup *lookup
 ) {
     lookup->lookup_class_name = reflected_class_name;
@@ -73233,11 +73288,26 @@ static int ptn_reflection_property_lookup_init(
         qualified_class_name++;
     }
 
-    if (!ptn_reflection_class_symbol_exists(qualified_class_name)) {
+    if (!ptn_reflection_class_runtime_symbol_exists(runtime, qualified_class_name)) {
         char *missing_name = ptn_ascii_lowercase_duplicate_string(qualified_class_name);
-        ptn_reflection_class_throw_missing_class(runtime, missing_name);
+        const char *resolved_missing_name = NULL;
+        int exists = ptn_reflection_class_runtime_symbol_exists_after_autoload(
+            runtime,
+            missing_name,
+            line,
+            &resolved_missing_name
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            free(missing_name);
+            return 0;
+        }
+        if (!exists) {
+            ptn_reflection_class_throw_missing_class(runtime, missing_name);
+            free(missing_name);
+            return 0;
+        }
+        (void)resolved_missing_name;
         free(missing_name);
-        return 0;
     }
 
     if (
@@ -74118,11 +74188,25 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
     if (class_name == NULL) {
         return ptn_null();
     }
-    if (!ptn_reflection_class_symbol_exists(class_name)) {
+    const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
+    const char *resolved_class_name = NULL;
+    if (!ptn_reflection_class_runtime_symbol_exists_after_autoload(
+            runtime,
+            lookup_class_name,
+            line,
+            &resolved_class_name
+        )) {
+        if (runtime->exceptions->active_exception != NULL) {
+            free(class_name);
+            return ptn_null();
+        }
         ptn_reflection_class_throw_missing_class(runtime, class_name);
         free(class_name);
         return ptn_null();
     }
+    char *resolved_class_name_owned = ptn_duplicate_string(resolved_class_name);
+    free(class_name);
+    class_name = resolved_class_name_owned;
     char *property_name = ptn_value_to_string(args[1]);
     if (property_name == NULL || runtime->exceptions->active_exception != NULL) {
         free(class_name);
@@ -74130,7 +74214,7 @@ static PTN_UNUSED PtnValue ptn_reflection_property_new(
         return ptn_null();
     }
     PtnReflectionPropertyLookup lookup;
-    if (!ptn_reflection_property_lookup_init(runtime, class_name, property_name, &lookup)) {
+    if (!ptn_reflection_property_lookup_init(runtime, class_name, property_name, line, &lookup)) {
         free(class_name);
         free(property_name);
         return ptn_null();
@@ -76188,7 +76272,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         );
         ptn_string_operand_free(property_name_arg);
         PtnReflectionPropertyLookup lookup;
-        if (!ptn_reflection_property_lookup_init(runtime, class_name, property_name, &lookup)) {
+        if (!ptn_reflection_property_lookup_init(runtime, class_name, property_name, line, &lookup)) {
             free(property_name);
             return ptn_null();
         }
@@ -76670,7 +76754,7 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         if (interface_name == NULL) {
             return ptn_null();
         }
-        if (!ptn_reflection_class_is_interface_name(interface_name)) {
+        if (!ptn_reflection_class_runtime_is_interface_name(runtime, interface_name)) {
             int needed = snprintf(NULL, 0, "%s is not an interface", interface_name);
             if (needed < 0) {
                 free(interface_name);
