@@ -297,7 +297,7 @@ static PTN_UNUSED void ptn_array_update_next_auto_key(PtnArray *array, PtnArrayK
         return;
     }
 
-    if (array->next_auto_key == 0) {
+    if (key.as.integer < 0 && array->next_auto_key == 0) {
         int64_t highest = 0;
         if (!ptn_array_highest_integer_key(array, &highest) || key.as.integer > highest) {
             array->next_auto_key = next;
