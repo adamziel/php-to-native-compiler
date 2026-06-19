@@ -406,7 +406,13 @@ static void ptn_runtime_run_shutdown_functions(PtnRuntime *runtime) {
 #endif
 }
 
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static void ptn_runtime_session_shutdown(PtnRuntime *runtime);
+#else
+static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
+    (void)runtime;
+}
+#endif
 
 static void ptn_runtime_free(PtnRuntime *runtime) {
     if (runtime->lifecycle_root == runtime) {

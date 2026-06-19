@@ -410,10 +410,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     } else if name.eq_ignore_ascii_case("pcre.jit") {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
     } else if let Some(canonical_name) = canonical_session_ini_name(name) {
-        ini.session.push((
-            canonical_name.to_string(),
-            normalize_ini_scalar(raw_value),
-        ));
+        ini.session
+            .push((canonical_name.to_string(), normalize_ini_scalar(raw_value)));
     } else if let Some(canonical_name) = canonical_opcache_ini_name(name) {
         let value = normalize_ini_scalar(raw_value);
         ini.opcache
@@ -582,6 +580,14 @@ fn opcache_ini_env_name(name: &str) -> Option<String> {
 
 fn normalize_ini_scalar(raw_value: &str) -> String {
     let trimmed = raw_value.trim();
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        if (bytes[0] == b'"' && bytes[trimmed.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[trimmed.len() - 1] == b'\'')
+        {
+            return trimmed[1..trimmed.len() - 1].to_string();
+        }
+    }
     if trimmed.eq_ignore_ascii_case("false")
         || trimmed.eq_ignore_ascii_case("off")
         || trimmed.eq_ignore_ascii_case("no")
