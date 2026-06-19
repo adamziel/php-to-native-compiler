@@ -1284,6 +1284,7 @@ static PTN_UNUSED PtnValue ptn_generator_rewind(PtnRuntime *runtime, PtnValue re
 static PTN_UNUSED void ptn_generator_set_return_value(PtnGenerator *generator, PtnValue value);
 static PTN_UNUSED PtnValue ptn_generator_valid(PtnRuntime *runtime, PtnValue receiver, size_t line);
 static PTN_UNUSED char *ptn_duplicate_string(const char *string);
+static PTN_UNUSED char *ptn_duplicate_string_len(const char *string, size_t len);
 static PTN_UNUSED char *ptn_value_to_string(PtnValue value);
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len);
 static PTN_UNUSED int ptn_declared_class_exists(const char *name);
@@ -1455,6 +1456,78 @@ static PTN_UNUSED void ptn_runtime_note_included_file(PtnRuntime *runtime, const
         root->included_files_capacity = new_capacity;
     }
     root->included_files[root->included_files_len++] = ptn_duplicate_string(path);
+}
+
+static PTN_UNUSED int ptn_is_path_separator(char byte) {
+#ifdef _WIN32
+    return byte == '/' || byte == '\\';
+#else
+    return byte == '/';
+#endif
+}
+
+static PTN_UNUSED char *ptn_dirname_string(const char *path, size_t len, size_t *dirname_len) {
+    if (len == 0) {
+        *dirname_len = 0;
+        return ptn_duplicate_string("");
+    }
+    while (len > 1 && ptn_is_path_separator(path[len - 1])) {
+        len--;
+    }
+
+    size_t end = len;
+    while (end > 0 && !ptn_is_path_separator(path[end - 1])) {
+        end--;
+    }
+    if (end == 0) {
+        *dirname_len = 1;
+        return ptn_duplicate_string(".");
+    }
+    while (end > 1 && ptn_is_path_separator(path[end - 1])) {
+        end--;
+    }
+
+    char *dirname = malloc(end + 1);
+    if (dirname == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(dirname, path, end);
+    dirname[end] = '\0';
+    *dirname_len = end;
+    return dirname;
+}
+
+static PTN_UNUSED char *ptn_dirname_string_levels(
+    const char *path,
+    size_t len,
+    int64_t levels,
+    size_t *dirname_len
+) {
+    char *current = ptn_duplicate_string_len(path, len);
+    size_t current_len = len;
+
+    for (int64_t level = 0; level < levels; level++) {
+        size_t next_len = 0;
+        char *next = ptn_dirname_string(current, current_len, &next_len);
+        if (next_len == current_len && memcmp(next, current, current_len) == 0) {
+            free(current);
+            *dirname_len = next_len;
+            return next;
+        }
+        free(current);
+        current = next;
+        current_len = next_len;
+    }
+
+    *dirname_len = current_len;
+    return current;
+}
+
+static PTN_UNUSED char *ptn_runtime_source_dir(PtnRuntime *runtime, size_t *dir_len) {
+    const char *source_path = runtime != NULL && runtime->source_path != NULL
+        ? runtime->source_path
+        : "";
+    return ptn_dirname_string_levels(source_path, strlen(source_path), 1, dir_len);
 }
 
 static PTN_UNUSED size_t ptn_runtime_alloc_object_id(PtnRuntime *runtime) {

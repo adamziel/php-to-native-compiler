@@ -39959,66 +39959,6 @@ static PtnValue ptn_internal_substr(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_owned_string_len(substring, substring_len);
 }
 
-static int ptn_is_path_separator(char byte) {
-#ifdef _WIN32
-    return byte == '/' || byte == '\\';
-#else
-    return byte == '/';
-#endif
-}
-
-static char *ptn_dirname_string(const char *path, size_t len, size_t *dirname_len) {
-    if (len == 0) {
-        *dirname_len = 0;
-        return ptn_duplicate_string("");
-    }
-    while (len > 1 && ptn_is_path_separator(path[len - 1])) {
-        len--;
-    }
-
-    size_t end = len;
-    while (end > 0 && !ptn_is_path_separator(path[end - 1])) {
-        end--;
-    }
-    if (end == 0) {
-        *dirname_len = 1;
-        return ptn_duplicate_string(".");
-    }
-    while (end > 1 && ptn_is_path_separator(path[end - 1])) {
-        end--;
-    }
-
-    char *dirname = malloc(end + 1);
-    if (dirname == NULL) {
-        ptn_abort_out_of_memory();
-    }
-    memcpy(dirname, path, end);
-    dirname[end] = '\0';
-    *dirname_len = end;
-    return dirname;
-}
-
-static char *ptn_dirname_string_levels(const char *path, size_t len, int64_t levels, size_t *dirname_len) {
-    char *current = ptn_duplicate_string_len(path, len);
-    size_t current_len = len;
-
-    for (int64_t level = 0; level < levels; level++) {
-        size_t next_len = 0;
-        char *next = ptn_dirname_string(current, current_len, &next_len);
-        if (next_len == current_len && memcmp(next, current, current_len) == 0) {
-            free(current);
-            *dirname_len = next_len;
-            return next;
-        }
-        free(current);
-        current = next;
-        current_len = next_len;
-    }
-
-    *dirname_len = current_len;
-    return current;
-}
-
 typedef struct {
     char *dirname;
     size_t dirname_len;
@@ -41419,11 +41359,6 @@ static PtnValue ptn_internal_dirname(PtnRuntime *runtime, size_t argc, const Ptn
     char *dirname = ptn_dirname_string_levels(path.data, path.len, levels, &dirname_len);
     ptn_string_operand_free(path);
     return ptn_owned_string_len(dirname, dirname_len);
-}
-
-static char *ptn_runtime_source_dir(PtnRuntime *runtime, size_t *dir_len) {
-    const char *source_path = runtime != NULL && runtime->source_path != NULL ? runtime->source_path : "";
-    return ptn_dirname_string_levels(source_path, strlen(source_path), 1, dir_len);
 }
 
 static PtnValue ptn_internal_realpath_cache_size(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

@@ -2041,6 +2041,25 @@ fn compile_interpolated_include_path_alias_to_native_binary() {
 }
 
 #[test]
+fn compile_top_level_dir_magic_without_internal_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-top-level-dir-no-internals");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("top-level-dir-no-internals-bin");
+    fs::write(&input, "<?php echo __DIR__, \"\\n\";").unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("{}\n", root.display())
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_direct_variable_increment_and_decrement_expression_contexts() {
     let program =
         parser::parse("<?php echo ++$value, $value--; $after = --$value + $value++;").unwrap();
@@ -42811,6 +42830,46 @@ foreach ([new Exception1, new Exception4] as $exception) {\n\
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_include_file_0(&runtime)"));
     assert!(c_source.contains("ptn_exception_matches(&runtime, \"Exception1\") || ptn_exception_matches(&runtime, \"Exception2\")"));
+}
+
+#[test]
+fn compile_runtime_source_dir_alias_matches_compiled_include_to_native_binary() {
+    let root = temp_dir("ptn-native-runtime-source-dir-include-alias");
+    let runtime_root = root.join("runtime");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&runtime_root).unwrap();
+    let input = root.join("main.php");
+    let runtime_source = runtime_root.join("main.php");
+    let included = root.join("exceptions.inc");
+    let output = root.join("runtime-source-dir-include-alias-bin");
+    let source = "<?php\n\
+require_once __DIR__ . '/exceptions.inc';\n\
+try {\n\
+    throw new Exception2;\n\
+} catch (Exception1 | Exception2 $e) {\n\
+    echo basename(__DIR__), ':', get_class($e), \"\\n\";\n\
+}\n";
+    fs::write(
+        &included,
+        "<?php class Exception1 extends Exception {} class Exception2 extends Exception {}",
+    )
+    .unwrap();
+    fs::write(&input, source).unwrap();
+    fs::write(&runtime_source, source).unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    fs::remove_file(&input).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_RUNTIME_SOURCE_PATH", &runtime_source)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "runtime:Exception2\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]
