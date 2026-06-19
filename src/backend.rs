@@ -84,6 +84,7 @@ const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
     "Uri\\Rfc3986\\UriType",
     "Uri\\UriComparisonMode",
+    "Uri\\Rfc3986\\UriHostType",
     "Uri\\WhatWg\\UrlHostType",
 ];
 
@@ -5513,6 +5514,8 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
         "Uri\\UriComparisonMode",
+        "Uri\\Rfc3986\\UriHostType",
+        "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
@@ -5979,6 +5982,8 @@ fn emit_class_metadata_helpers(
         "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
         "Uri\\UriComparisonMode",
+        "Uri\\Rfc3986\\UriHostType",
+        "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\UrlHostType",
     ] {
         out.push_str("        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"");
@@ -14985,6 +14990,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "uri\\rfc3986\\uritype" => Some("Uri\\Rfc3986\\UriType"),
                 "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
                 "uri\\uricomparisonmode" => Some("Uri\\UriComparisonMode"),
+                "uri\\rfc3986\\urihosttype" => Some("Uri\\Rfc3986\\UriHostType"),
                 "uri\\whatwg\\urlhosttype" => Some("Uri\\WhatWg\\UrlHostType"),
                 "ziparchive" => Some("ZipArchive"),
                 _ => None,
@@ -22508,6 +22514,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
                 || is_uri_whatwg_url_class_name(class_name)
                 || class_name.eq_ignore_ascii_case("Uri\\UriComparisonMode")
+                || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriHostType")
+                || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
                 || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType")
             {
                 requirements.internal_function_dispatch = true;

@@ -58766,17 +58766,22 @@ fn compile_uri_rfc3986_core_surface_to_native_binary() {
         &input,
         r#"<?php
 var_dump(class_exists("Uri\\Rfc3986\\Uri"));
+var_dump(class_exists("Uri\\Rfc3986\\UriHostType"));
 var_dump(class_exists("Uri\\Rfc3986\\UriType"));
 var_dump(Uri\Rfc3986\UriType::Uri);
 $uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61");
 var_dump($uri->getUriType());
 var_dump($uri->toRawString());
 var_dump($uri->toString());
+var_dump($uri->getRawUsername());
+var_dump($uri->getRawPassword());
 var_dump($uri->getRawPath());
 var_dump($uri->getPath());
 var_dump(Uri\Rfc3986\Uri::parse("//example.com/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("foo")->getUriType());
+$uriClone = clone $uri;
+var_dump($uriClone->toString());
 $changed = $uri
     ->withHost("%65xample.net")
     ->withScheme("HTTP")
@@ -58788,6 +58793,23 @@ var_dump($changed->toString());
 var_dump($changed->getHost());
 var_dump($changed->getFragment());
 var_dump($uri->resolve("../baz?y=1")->toString());
+$ipv6A = new Uri\Rfc3986\Uri("https://[2001:0db8:0001:0000:0000:0ab9:C0A8:0102]");
+$ipv6B = new Uri\Rfc3986\Uri("https://[2001:DB8:1::AB9:C0A8:102]");
+var_dump($ipv6A->getHost());
+var_dump($ipv6A->equals($ipv6B));
+var_dump($ipv6B->equals($ipv6A));
+var_dump(Uri\Rfc3986\Uri::parse("https://example.com")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://192.168.0.1")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://[2001:0db8:3333:4444:5555:6666:7777:8888]")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://[vF.addr]")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("/foo/bar")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://example.com")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("https:")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("//example.com/foo/bar")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("/foo/bar")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("foo/bar")->getUriType());
+$urlClone = clone Uri\WhatWg\Url::parse("https://example.com/foo");
+var_dump($urlClone->toAsciiString());
 var_dump(Uri\Rfc3986\Uri::parse("\xF0\x9F\x90\x98"));
 try {
     $uri->resolve("/f\0o");
@@ -58817,20 +58839,38 @@ try {
         concat!(
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
             "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
+            "string(4) \"user\"\n",
+            "string(4) \"info\"\n",
             "string(12) \"/foo%2Fb%61r\"\n",
             "string(10) \"/foo%2Fbar\"\n",
             "enum(Uri\\Rfc3986\\UriType::NetworkPathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::RelativePathReference)\n",
+            "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
             "string(43) \"HTTP://user:info@%65xample.net/foo%2Fb%61r#\"\n",
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
             "string(0) \"\"\n",
             "string(41) \"https://user:info@example.com:443/baz?y=1\"\n",
+            "string(41) \"[2001:0db8:0001:0000:0000:0ab9:c0a8:0102]\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::RegisteredName)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPv4)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPv6)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPvFuture)\n",
+            "NULL\n",
+            "enum(Uri\\Rfc3986\\UriType::Uri)\n",
+            "enum(Uri\\Rfc3986\\UriType::Uri)\n",
+            "enum(Uri\\Rfc3986\\UriType::NetworkPathReference)\n",
+            "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
+            "enum(Uri\\Rfc3986\\UriType::RelativePathReference)\n",
+            "string(23) \"https://example.com/foo\"\n",
             "NULL\n",
             "Uri\\InvalidUriException: The specified URI is malformed\n",
             "Uri\\InvalidUriException: The specified URI is malformed\n",

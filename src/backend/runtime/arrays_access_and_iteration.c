@@ -1332,6 +1332,10 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "SplFileInfo")) {
         return ptn_spl_file_info_clone(runtime, resolved, line);
     }
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(source->class_name) ||
+        ptn_internal_class_name_is_uri_whatwg_url(source->class_name)) {
+        return ptn_uri_clone(runtime, resolved, line);
+    }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "DateTime") ||
         ptn_declared_class_is_same_or_descendant(source->class_name, "DateTimeImmutable")) {
         return ptn_datetime_clone(runtime, resolved, line);

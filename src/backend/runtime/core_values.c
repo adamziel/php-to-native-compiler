@@ -2498,6 +2498,7 @@ static PTN_UNUSED PtnValue ptn_uri_whatwg_url_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_uri_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_zone_clone(PtnRuntime *runtime, PtnValue source, size_t line);
 static PTN_UNUSED PtnValue ptn_datetime_call_method(
