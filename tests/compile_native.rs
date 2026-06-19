@@ -525,6 +525,7 @@ $rcB = new ReflectionClass(\"B\");\n\
 $rcC = new ReflectionClass(\"C\");\n\
 $rcD = new ReflectionClass(\"D\");\n\
 $rcE = new ReflectionClass(\"E\");\n\
+$rcStd = new ReflectionClass(\"stdClass\");\n\
 \n\
 try { $rcB->newInstance(); } catch (Throwable $e) { echo \"B0:\" . $e->getMessage() . \"\\n\"; }\n\
 try { $rcB->newInstanceArgs(); } catch (Throwable $e) { echo \"Bargs0:\" . $e->getMessage() . \"\\n\"; }\n\
@@ -533,7 +534,10 @@ var_dump($rcB->newInstanceArgs([\"y\", 456]) instanceof B);\n\
 try { $rcC->newInstance(); } catch (Exception $e) { echo \"C:\" . $e->getMessage() . \"\\n\"; }\n\
 try { $rcD->newInstanceArgs(); } catch (Exception $e) { echo \"D:\" . $e->getMessage() . \"\\n\"; }\n\
 var_dump($rcE->newInstance() instanceof E);\n\
-try { $rcE->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"Eargs:\" . $e->getMessage() . \"\\n\"; }\n",
+try { $rcE->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"Eargs:\" . $e->getMessage() . \"\\n\"; }\n\
+var_dump($rcStd->newInstance() instanceof stdClass);\n\
+var_dump($rcStd->newInstanceWithoutConstructor() instanceof stdClass);\n\
+try { $rcStd->newInstanceArgs([\"x\"]); } catch (Exception $e) { echo \"StdArgs:\" . $e->getMessage() . \"\\n\"; }\n",
     )
     .unwrap();
 
@@ -551,7 +555,10 @@ bool(true)\n\
 C:Access to non-public constructor of class C\n\
 D:Access to non-public constructor of class D\n\
 bool(true)\n\
-Eargs:Class E does not have a constructor, so you cannot pass any constructor arguments\n";
+Eargs:Class E does not have a constructor, so you cannot pass any constructor arguments\n\
+bool(true)\n\
+bool(true)\n\
+StdArgs:Class stdClass does not have a constructor, so you cannot pass any constructor arguments\n";
     assert_eq!(String::from_utf8(execution.stdout).unwrap(), expected);
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -46339,6 +46346,9 @@ $alias->value = $object->value + 5;
 var_dump($object->value);
 var_dump($alias->value = 21);
 var_dump($object->value);
+$ignored = new stdClass(print 'a', print 'b');
+echo PHP_EOL;
+var_dump($ignored instanceof stdClass);
 ",
     )
     .unwrap();
@@ -46349,7 +46359,7 @@ var_dump($object->value);
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "int(12)\nint(21)\nint(21)\n"
+        "int(12)\nint(21)\nint(21)\nab\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 

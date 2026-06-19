@@ -829,10 +829,8 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_symbol_name_without_leading_slash(class_name)
     );
     if (ptn_class_name_is_stdclass(lookup_class_name)) {
-        if (argc != 0) {
-            ptn_throw_exception(runtime, "ArgumentCountError", "stdClass constructor expects 0 arguments");
-            return ptn_null();
-        }
+        (void)argc;
+        (void)args;
         return ptn_object_new_shell(runtime, "stdClass");
     }
     if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name)) {
