@@ -53267,6 +53267,9 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
     if (ptn_string_operand_ascii_case_equal(extension, "Reflection")) {
         return "Reflection";
     }
+    if (ptn_string_operand_ascii_case_equal(extension, "session")) {
+        return "session";
+    }
     if (ptn_string_operand_ascii_case_equal(extension, "sockets")) {
         return "sockets";
     }
@@ -53305,6 +53308,104 @@ static const char *ptn_modeled_extension_canonical_name(PtnStringOperand extensi
 
 static int ptn_is_modeled_extension_operand(PtnStringOperand extension) {
     return ptn_modeled_extension_canonical_name(extension) != NULL;
+}
+
+typedef struct {
+    const char *name;
+    const char *env_name;
+    const char *default_value;
+} PtnSessionIniDefinition;
+
+static const PtnSessionIniDefinition PTN_SESSION_INI_DEFINITIONS[] = {
+    { "session.auto_start", "PTN_SESSION_AUTO_START", "0" },
+    { "session.cache_expire", "PTN_SESSION_CACHE_EXPIRE", "180" },
+    { "session.cache_limiter", "PTN_SESSION_CACHE_LIMITER", "nocache" },
+    { "session.cookie_domain", "PTN_SESSION_COOKIE_DOMAIN", "" },
+    { "session.cookie_httponly", "PTN_SESSION_COOKIE_HTTPONLY", "0" },
+    { "session.cookie_lifetime", "PTN_SESSION_COOKIE_LIFETIME", "0" },
+    { "session.cookie_partitioned", "PTN_SESSION_COOKIE_PARTITIONED", "0" },
+    { "session.cookie_path", "PTN_SESSION_COOKIE_PATH", "/" },
+    { "session.cookie_samesite", "PTN_SESSION_COOKIE_SAMESITE", "" },
+    { "session.cookie_secure", "PTN_SESSION_COOKIE_SECURE", "0" },
+    { "session.gc_divisor", "PTN_SESSION_GC_DIVISOR", "100" },
+    { "session.gc_maxlifetime", "PTN_SESSION_GC_MAXLIFETIME", "1440" },
+    { "session.gc_probability", "PTN_SESSION_GC_PROBABILITY", "1" },
+    { "session.name", "PTN_SESSION_NAME", "PHPSESSID" },
+    { "session.save_handler", "PTN_SESSION_SAVE_HANDLER", "files" },
+    { "session.save_path", "PTN_SESSION_SAVE_PATH", "" },
+    { "session.serialize_handler", "PTN_SESSION_SERIALIZE_HANDLER", "php" },
+    { "session.sid_bits_per_character", "PTN_SESSION_SID_BITS_PER_CHARACTER", "5" },
+    { "session.sid_length", "PTN_SESSION_SID_LENGTH", "32" },
+    { "session.upload_progress.cleanup", "PTN_SESSION_UPLOAD_PROGRESS_CLEANUP", "1" },
+    { "session.upload_progress.enabled", "PTN_SESSION_UPLOAD_PROGRESS_ENABLED", "1" },
+    { "session.upload_progress.freq", "PTN_SESSION_UPLOAD_PROGRESS_FREQ", "1%" },
+    { "session.upload_progress.min_freq", "PTN_SESSION_UPLOAD_PROGRESS_MIN_FREQ", "1" },
+    { "session.upload_progress.name", "PTN_SESSION_UPLOAD_PROGRESS_NAME", "PHP_SESSION_UPLOAD_PROGRESS" },
+    { "session.upload_progress.prefix", "PTN_SESSION_UPLOAD_PROGRESS_PREFIX", "upload_progress_" },
+    { "session.use_cookies", "PTN_SESSION_USE_COOKIES", "1" },
+    { "session.use_only_cookies", "PTN_SESSION_USE_ONLY_COOKIES", "1" },
+    { "session.use_strict_mode", "PTN_SESSION_USE_STRICT_MODE", "0" },
+    { "session.use_trans_sid", "PTN_SESSION_USE_TRANS_SID", "0" },
+};
+
+static const PtnSessionIniDefinition *ptn_session_ini_definition_from_name(const char *name) {
+    for (size_t i = 0; i < sizeof(PTN_SESSION_INI_DEFINITIONS) / sizeof(PTN_SESSION_INI_DEFINITIONS[0]); i++) {
+        if (ptn_ascii_case_equal(name, PTN_SESSION_INI_DEFINITIONS[i].name)) {
+            return &PTN_SESSION_INI_DEFINITIONS[i];
+        }
+    }
+    return NULL;
+}
+
+static const PtnSessionIniDefinition *ptn_session_ini_definition_from_operand(PtnStringOperand option) {
+    for (size_t i = 0; i < sizeof(PTN_SESSION_INI_DEFINITIONS) / sizeof(PTN_SESSION_INI_DEFINITIONS[0]); i++) {
+        if (ptn_string_operand_ascii_case_equal(option, PTN_SESSION_INI_DEFINITIONS[i].name)) {
+            return &PTN_SESSION_INI_DEFINITIONS[i];
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_runtime_session_ini(PtnRuntime *runtime, const char *name) {
+    const PtnSessionIniDefinition *definition = ptn_session_ini_definition_from_name(name);
+    if (definition == NULL) {
+        return "";
+    }
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root != NULL) {
+        PtnValue stored;
+        if (ptn_symbols_get(&root->session_ini, definition->name, &stored)) {
+            stored = ptn_value_deref(stored);
+            if (stored.type == PTN_STRING) {
+                return (const char *)stored.as.string.data;
+            }
+        }
+    }
+    const char *configured = getenv(definition->env_name);
+    return configured == NULL ? definition->default_value : configured;
+}
+
+static int ptn_runtime_session_ini_value_operand(PtnRuntime *runtime, PtnStringOperand option, PtnValue *out) {
+    const PtnSessionIniDefinition *definition = ptn_session_ini_definition_from_operand(option);
+    if (definition == NULL) {
+        return 0;
+    }
+    *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, definition->name)));
+    return 1;
+}
+
+static void ptn_runtime_set_session_ini(PtnRuntime *runtime, const char *name, const char *value) {
+    const PtnSessionIniDefinition *definition = ptn_session_ini_definition_from_name(name);
+    if (definition == NULL) {
+        return;
+    }
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    PtnValue stored = ptn_owned_string(ptn_duplicate_string(value == NULL ? "" : value));
+    ptn_symbols_set(&root->session_ini, definition->name, stored);
+    ptn_value_destroy(&stored);
 }
 
 static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue *out) {
@@ -53456,6 +53557,9 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         return 1;
     }
     if (ptn_runtime_opcache_ini_value_operand(runtime, option, out)) {
+        return 1;
+    }
+    if (ptn_runtime_session_ini_value_operand(runtime, option, out)) {
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "phar.readonly")) {
@@ -53827,6 +53931,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
+    const PtnSessionIniDefinition *session_ini = ptn_session_ini_definition_from_operand(option);
+    if (session_ini != NULL) {
+        ptn_runtime_set_session_ini(runtime, session_ini->name, session_ini->default_value);
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
     const char *opcache_name = NULL;
     if (ptn_runtime_opcache_ini_name_from_operand(option, &opcache_name)) {
         ptn_runtime_set_opcache_ini(runtime, opcache_name, ptn_opcache_ini_default(opcache_name));
@@ -54123,6 +54233,17 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_pcre_jit(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    const PtnSessionIniDefinition *session_ini = ptn_session_ini_definition_from_operand(option);
+    if (session_ini != NULL) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, session_ini->name)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_session_ini(runtime, session_ini->name, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -54671,6 +54792,974 @@ static PtnValue ptn_internal_get_cfg_var(PtnRuntime *runtime, size_t argc, const
     return found ? value : ptn_bool(0);
 }
 
+static PtnRuntime *ptn_session_root(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    return root == NULL ? runtime : root;
+}
+
+static const char *ptn_session_id_current(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    return root == NULL || root->session_id == NULL ? "" : root->session_id;
+}
+
+static void ptn_session_id_set(PtnRuntime *runtime, const char *id) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root == NULL) {
+        return;
+    }
+    ptn_runtime_set_ini_string(&root->session_id, id == NULL ? "" : id);
+}
+
+static int ptn_session_is_active(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    return root != NULL && root->session_active;
+}
+
+static int ptn_session_reject_active_change(PtnRuntime *runtime, const char *message, size_t line) {
+    if (!ptn_session_is_active(runtime)) {
+        return 0;
+    }
+    ptn_emit_runtime_warning(runtime, message, line);
+    return 1;
+}
+
+static void ptn_session_set_active(PtnRuntime *runtime, int active) {
+    PtnRuntime *root = ptn_session_root(runtime);
+    if (root != NULL) {
+        root->session_active = active ? 1 : 0;
+    }
+}
+
+static int64_t ptn_session_ini_integer(PtnRuntime *runtime, const char *name, int64_t fallback) {
+    const char *value = ptn_runtime_session_ini(runtime, name);
+    if (value == NULL || value[0] == '\0') {
+        return fallback;
+    }
+    errno = 0;
+    char *end = NULL;
+    long long parsed = strtoll(value, &end, 10);
+    return end == value || errno == ERANGE ? fallback : (int64_t)parsed;
+}
+
+static void ptn_session_seed_rng_once(void) {
+    static int seeded = 0;
+    if (!seeded) {
+#if defined(_WIN32)
+        unsigned int process_part = (unsigned int)_getpid();
+#else
+        unsigned int process_part = (unsigned int)getpid();
+#endif
+        srand((unsigned int)time(NULL) ^ (process_part << 16) ^ process_part);
+        seeded = 1;
+    }
+}
+
+static int ptn_session_prefix_is_valid(PtnStringOperand prefix) {
+    if (prefix.len > 256) {
+        return 0;
+    }
+    for (size_t i = 0; i < prefix.len; i++) {
+        unsigned char c = (unsigned char)prefix.data[i];
+        if (c == '\0') {
+            return 0;
+        }
+        if (!(isalnum(c) || c == '-' || c == ',')) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static char *ptn_session_create_id_string(PtnRuntime *runtime, const char *prefix) {
+    static const char alphabet[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ,-";
+    ptn_session_seed_rng_once();
+    int64_t configured_len = ptn_session_ini_integer(runtime, "session.sid_length", 32);
+    size_t id_len = configured_len <= 0 ? 32 : (configured_len > 256 ? 256 : (size_t)configured_len);
+    size_t prefix_len = prefix == NULL ? 0 : strlen(prefix);
+    if (prefix_len > SIZE_MAX - id_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *id = malloc(prefix_len + id_len + 1);
+    if (id == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (prefix_len != 0) {
+        memcpy(id, prefix, prefix_len);
+    }
+    for (size_t i = 0; i < id_len; i++) {
+        id[prefix_len + i] = alphabet[(size_t)(rand() % (int)(sizeof(alphabet) - 1))];
+    }
+    id[prefix_len + id_len] = '\0';
+    return id;
+}
+
+static char *ptn_session_storage_dir(PtnRuntime *runtime) {
+    const char *configured = ptn_runtime_session_ini(runtime, "session.save_path");
+    const char *path = configured == NULL ? "" : configured;
+    const char *last_semicolon = strrchr(path, ';');
+    if (last_semicolon != NULL && last_semicolon[1] != '\0') {
+        path = last_semicolon + 1;
+    }
+    if (path[0] == '\0') {
+        const char *tmp = getenv("TMPDIR");
+        path = tmp == NULL || tmp[0] == '\0' ? "/tmp" : tmp;
+    }
+    return ptn_duplicate_string(path);
+}
+
+static char *ptn_session_file_path(PtnRuntime *runtime, const char *id) {
+    if (id == NULL || id[0] == '\0') {
+        return NULL;
+    }
+    char *dir = ptn_session_storage_dir(runtime);
+    size_t dir_len = strlen(dir);
+    size_t id_len = strlen(id);
+    int needs_slash = dir_len != 0 && dir[dir_len - 1] != '/';
+    if (dir_len > SIZE_MAX - (size_t)needs_slash - 6 - id_len - 1) {
+        free(dir);
+        ptn_abort_out_of_memory();
+    }
+    char *path = malloc(dir_len + (size_t)needs_slash + 5 + id_len + 1);
+    if (path == NULL) {
+        free(dir);
+        ptn_abort_out_of_memory();
+    }
+    memcpy(path, dir, dir_len);
+    size_t offset = dir_len;
+    if (needs_slash) {
+        path[offset++] = '/';
+    }
+    memcpy(path + offset, "sess_", 5);
+    offset += 5;
+    memcpy(path + offset, id, id_len);
+    path[offset + id_len] = '\0';
+    free(dir);
+    return path;
+}
+
+static int ptn_session_file_exists(PtnRuntime *runtime, const char *id) {
+    char *path = ptn_session_file_path(runtime, id);
+    if (path == NULL) {
+        return 0;
+    }
+    struct stat st;
+    int exists = stat(path, &st) == 0;
+    free(path);
+    return exists;
+}
+
+static char *ptn_session_read_file(PtnRuntime *runtime, const char *id, size_t *len_out) {
+    *len_out = 0;
+    char *path = ptn_session_file_path(runtime, id);
+    if (path == NULL) {
+        return NULL;
+    }
+    FILE *file = fopen(path, "rb");
+    free(path);
+    if (file == NULL) {
+        return NULL;
+    }
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+    long size = ftell(file);
+    if (size < 0) {
+        fclose(file);
+        return NULL;
+    }
+    rewind(file);
+    char *data = malloc((size_t)size + 1);
+    if (data == NULL) {
+        fclose(file);
+        ptn_abort_out_of_memory();
+    }
+    size_t read_len = fread(data, 1, (size_t)size, file);
+    fclose(file);
+    data[read_len] = '\0';
+    *len_out = read_len;
+    return data;
+}
+
+static int ptn_session_write_file(PtnRuntime *runtime, const char *id, const char *data, size_t len) {
+    char *path = ptn_session_file_path(runtime, id);
+    if (path == NULL) {
+        return 0;
+    }
+    FILE *file = fopen(path, "wb");
+    free(path);
+    if (file == NULL) {
+        return 0;
+    }
+    size_t written = len == 0 ? 0 : fwrite(data, 1, len, file);
+    int ok = written == len && fclose(file) == 0;
+    return ok;
+}
+
+static void ptn_session_delete_file(PtnRuntime *runtime, const char *id) {
+    char *path = ptn_session_file_path(runtime, id);
+    if (path != NULL) {
+        (void)remove(path);
+        free(path);
+    }
+}
+
+static int ptn_session_save_path_dirdepth(PtnRuntime *runtime) {
+    const char *configured = ptn_runtime_session_ini(runtime, "session.save_path");
+    if (configured == NULL || configured[0] == '\0') {
+        return 0;
+    }
+    char *end = NULL;
+    long parsed = strtol(configured, &end, 10);
+    if (end == configured || *end != ';' || parsed <= 0 || parsed > 8) {
+        return 0;
+    }
+    return (int)parsed;
+}
+
+static int64_t ptn_session_gc_directory(const char *dir, int remaining_depth, time_t cutoff) {
+    DIR *handle = opendir(dir);
+    if (handle == NULL) {
+        return 0;
+    }
+    int64_t removed = 0;
+    struct dirent *entry;
+    while ((entry = readdir(handle)) != NULL) {
+        const char *name = entry->d_name;
+        if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) {
+            continue;
+        }
+        size_t dir_len = strlen(dir);
+        size_t name_len = strlen(name);
+        int needs_slash = dir_len != 0 && dir[dir_len - 1] != '/';
+        if (dir_len > SIZE_MAX - (size_t)needs_slash - name_len - 1) {
+            closedir(handle);
+            ptn_abort_out_of_memory();
+        }
+        char *path = malloc(dir_len + (size_t)needs_slash + name_len + 1);
+        if (path == NULL) {
+            closedir(handle);
+            ptn_abort_out_of_memory();
+        }
+        memcpy(path, dir, dir_len);
+        size_t offset = dir_len;
+        if (needs_slash) {
+            path[offset++] = '/';
+        }
+        memcpy(path + offset, name, name_len + 1);
+
+        struct stat st;
+        if (stat(path, &st) == 0) {
+            if (remaining_depth > 0 && S_ISDIR(st.st_mode)) {
+                removed += ptn_session_gc_directory(path, remaining_depth - 1, cutoff);
+            } else if (remaining_depth == 0 &&
+                       S_ISREG(st.st_mode) &&
+                       strncmp(name, "sess_", 5) == 0 &&
+                       st.st_mtime < cutoff) {
+                if (remove(path) == 0) {
+                    removed++;
+                }
+            }
+        }
+        free(path);
+    }
+    closedir(handle);
+    return removed;
+}
+
+static PtnArrayEntry *ptn_session_array_string_entry(PtnArray *array, const char *key_name) {
+    if (array == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(key_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static int ptn_session_array_bool_option(PtnValue options, const char *key_name) {
+    options = ptn_value_deref(options);
+    if (options.type != PTN_ARRAY) {
+        return 0;
+    }
+    PtnArrayEntry *entry = ptn_session_array_string_entry(options.as.array, key_name);
+    return entry != NULL && ptn_is_truthy(ptn_value_deref(entry->value));
+}
+
+static PtnArray *ptn_session_ensure_global_array(PtnRuntime *runtime) {
+    PtnValue *slot = ptn_runtime_global_variable_slot_for_write(runtime, "_SESSION");
+    PtnValue resolved = ptn_value_deref(*slot);
+    if (resolved.type != PTN_ARRAY) {
+        PtnValue empty = ptn_array_from_literal_entries(0, NULL);
+        ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
+        ptn_value_destroy(&empty);
+        slot = ptn_runtime_global_variable_slot_for_write(runtime, "_SESSION");
+        resolved = ptn_value_deref(*slot);
+    }
+    return resolved.type == PTN_ARRAY ? resolved.as.array : NULL;
+}
+
+static PtnValue ptn_session_current_array_value(PtnRuntime *runtime) {
+    PtnValue *slot = ptn_runtime_global_variable_slot(runtime, "_SESSION");
+    if (slot == NULL) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    PtnValue resolved = ptn_value_deref(*slot);
+    return resolved.type == PTN_ARRAY ? ptn_value_clone_deref(resolved) : ptn_array_from_literal_entries(0, NULL);
+}
+
+static int ptn_session_parse_unsigned_digits(const char *data, size_t len, size_t *pos, size_t *out) {
+    if (*pos >= len || !isdigit((unsigned char)data[*pos])) {
+        return 0;
+    }
+    size_t value = 0;
+    while (*pos < len && isdigit((unsigned char)data[*pos])) {
+        size_t digit = (size_t)(data[*pos] - '0');
+        if (value > (SIZE_MAX - digit) / 10) {
+            return 0;
+        }
+        value = value * 10 + digit;
+        (*pos)++;
+    }
+    *out = value;
+    return 1;
+}
+
+static int ptn_session_serialized_value_len(const char *data, size_t len, size_t pos, size_t *value_len) {
+    if (pos >= len) {
+        return 0;
+    }
+    size_t cursor = pos;
+    char type = data[cursor++];
+    if (type == 'N') {
+        if (cursor < len && data[cursor] == ';') {
+            *value_len = cursor + 1 - pos;
+            return 1;
+        }
+        return 0;
+    }
+    if (cursor >= len || data[cursor++] != ':') {
+        return 0;
+    }
+    if (type == 'b' || type == 'i' || type == 'd' || type == 'R' || type == 'r') {
+        while (cursor < len && data[cursor] != ';') {
+            cursor++;
+        }
+        if (cursor < len) {
+            *value_len = cursor + 1 - pos;
+            return 1;
+        }
+        return 0;
+    }
+    if (type == 's') {
+        size_t string_len = 0;
+        if (!ptn_session_parse_unsigned_digits(data, len, &cursor, &string_len) ||
+            cursor >= len || data[cursor++] != ':' ||
+            cursor >= len || data[cursor++] != '"' ||
+            string_len > len - cursor ||
+            cursor + string_len + 2 > len ||
+            data[cursor + string_len] != '"' ||
+            data[cursor + string_len + 1] != ';') {
+            return 0;
+        }
+        *value_len = cursor + string_len + 2 - pos;
+        return 1;
+    }
+    if (type == 'a') {
+        size_t count = 0;
+        if (!ptn_session_parse_unsigned_digits(data, len, &cursor, &count) ||
+            cursor >= len || data[cursor++] != ':' ||
+            cursor >= len || data[cursor++] != '{') {
+            return 0;
+        }
+        for (size_t i = 0; i < count; i++) {
+            size_t key_len = 0;
+            if (!ptn_session_serialized_value_len(data, len, cursor, &key_len)) {
+                return 0;
+            }
+            cursor += key_len;
+            size_t element_len = 0;
+            if (!ptn_session_serialized_value_len(data, len, cursor, &element_len)) {
+                return 0;
+            }
+            cursor += element_len;
+        }
+        if (cursor < len && data[cursor] == '}') {
+            *value_len = cursor + 1 - pos;
+            return 1;
+        }
+    }
+    if (type == 'O') {
+        size_t class_len = 0;
+        size_t property_count = 0;
+        if (!ptn_session_parse_unsigned_digits(data, len, &cursor, &class_len) ||
+            cursor >= len || data[cursor++] != ':' ||
+            cursor >= len || data[cursor++] != '"' ||
+            class_len > len - cursor ||
+            cursor + class_len + 2 > len ||
+            data[cursor + class_len] != '"' ||
+            data[cursor + class_len + 1] != ':') {
+            return 0;
+        }
+        cursor += class_len + 2;
+        if (!ptn_session_parse_unsigned_digits(data, len, &cursor, &property_count) ||
+            cursor >= len || data[cursor++] != ':' ||
+            cursor >= len || data[cursor++] != '{') {
+            return 0;
+        }
+        for (size_t i = 0; i < property_count; i++) {
+            size_t key_len = 0;
+            if (!ptn_session_serialized_value_len(data, len, cursor, &key_len)) {
+                return 0;
+            }
+            cursor += key_len;
+            size_t property_len = 0;
+            if (!ptn_session_serialized_value_len(data, len, cursor, &property_len)) {
+                return 0;
+            }
+            cursor += property_len;
+        }
+        if (cursor < len && data[cursor] == '}') {
+            *value_len = cursor + 1 - pos;
+            return 1;
+        }
+    }
+    if (type == 'C') {
+        size_t class_len = 0;
+        size_t payload_len = 0;
+        if (!ptn_session_parse_unsigned_digits(data, len, &cursor, &class_len) ||
+            cursor >= len || data[cursor++] != ':' ||
+            cursor >= len || data[cursor++] != '"' ||
+            class_len > len - cursor ||
+            cursor + class_len + 2 > len ||
+            data[cursor + class_len] != '"' ||
+            data[cursor + class_len + 1] != ':') {
+            return 0;
+        }
+        cursor += class_len + 2;
+        if (!ptn_session_parse_unsigned_digits(data, len, &cursor, &payload_len) ||
+            cursor >= len || data[cursor++] != ':' ||
+            cursor >= len || data[cursor++] != '{' ||
+            payload_len > len - cursor ||
+            cursor + payload_len >= len ||
+            data[cursor + payload_len] != '}') {
+            return 0;
+        }
+        *value_len = cursor + payload_len + 1 - pos;
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_session_decode_payload(PtnRuntime *runtime, const char *data, size_t len, PtnValue *out, size_t line) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    size_t pos = 0;
+    while (pos < len) {
+        size_t key_start = pos;
+        while (pos < len && data[pos] != '|') {
+            pos++;
+        }
+        if (pos == len || pos == key_start) {
+            ptn_value_destroy(&result);
+            return 0;
+        }
+        char *key_name = ptn_duplicate_string_len(data + key_start, pos - key_start);
+        pos++;
+        size_t value_len = 0;
+        if (!ptn_session_serialized_value_len(data, len, pos, &value_len)) {
+            free(key_name);
+            ptn_value_destroy(&result);
+            return 0;
+        }
+        char *payload = ptn_duplicate_string_len(data + pos, value_len);
+        PtnValue arg = ptn_owned_string(payload);
+        PtnValue value = ptn_internal_unserialize(runtime, 1, &arg, line);
+        ptn_value_destroy(&arg);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(key_name);
+            ptn_value_destroy(&result);
+            return 0;
+        }
+        ptn_array_set_entry(result.as.array, ptn_array_string_key(key_name), value);
+        free(key_name);
+        pos += value_len;
+    }
+    *out = result;
+    return 1;
+}
+
+static PtnValue ptn_session_encode_array(PtnRuntime *runtime, PtnValue session_array, size_t line) {
+    session_array = ptn_value_deref(session_array);
+    if (session_array.type != PTN_ARRAY) {
+        return ptn_string("");
+    }
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 0; i < session_array.as.array->len; i++) {
+        PtnArrayEntry *entry = &session_array.as.array->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING ||
+            memchr(entry->key.as.string, '|', entry->key.string_len) != NULL) {
+            continue;
+        }
+        PtnValue value_arg = ptn_value_clone_deref(entry->value);
+        PtnValue serialized_result = ptn_internal_serialize(runtime, 1, &value_arg, line);
+        ptn_value_destroy(&value_arg);
+        if (runtime->exceptions->active_exception != NULL) {
+            free(buffer.data);
+            return ptn_null();
+        }
+        PtnValue serialized = ptn_value_deref(serialized_result);
+        if (serialized.type == PTN_STRING) {
+            ptn_string_buffer_append_len(&buffer, entry->key.as.string, entry->key.string_len);
+            ptn_string_buffer_append_char(&buffer, '|');
+            ptn_string_buffer_append_len(&buffer, (const char *)serialized.as.string.data, serialized.as.string.len);
+        }
+        ptn_value_destroy(&serialized_result);
+    }
+    return ptn_owned_string_len(buffer.data == NULL ? ptn_duplicate_string("") : buffer.data, buffer.len);
+}
+
+static PtnValue ptn_internal_session_create_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *prefix = NULL;
+    if (argc >= 1) {
+        PtnStringOperand prefix_operand = ptn_value_to_string_operand(args[0]);
+        if (memchr(prefix_operand.data, '\0', prefix_operand.len) != NULL) {
+            ptn_string_operand_free(prefix_operand);
+            ptn_throw_exception(runtime, "ValueError", "session_create_id(): Argument #1 ($prefix) must not contain any null bytes");
+            return ptn_null();
+        }
+        if (prefix_operand.len > 256) {
+            ptn_string_operand_free(prefix_operand);
+            ptn_throw_exception(runtime, "ValueError", "session_create_id(): Argument #1 ($prefix) cannot be longer than 256 characters");
+            return ptn_null();
+        }
+        if (!ptn_session_prefix_is_valid(prefix_operand)) {
+            ptn_string_operand_free(prefix_operand);
+            ptn_emit_runtime_warning(runtime, "session_create_id(): Prefix cannot contain special characters. Only the A-Z, a-z, 0-9, \"-\", and \",\" characters are allowed", line);
+            return ptn_bool(0);
+        }
+        prefix = ptn_duplicate_string_len(prefix_operand.data, prefix_operand.len);
+        ptn_string_operand_free(prefix_operand);
+    }
+    char *id = ptn_session_create_id_string(runtime, prefix == NULL ? "" : prefix);
+    free(prefix);
+    return ptn_owned_string(id);
+}
+
+static PtnValue ptn_internal_session_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *previous = ptn_duplicate_string(ptn_session_id_current(runtime));
+    if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_id(): Session ID cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            return ptn_owned_string(previous);
+        }
+        PtnStringOperand id = ptn_value_to_string_operand(args[0]);
+        char *next = ptn_duplicate_string_len(id.data, id.len);
+        ptn_session_id_set(runtime, next);
+        free(next);
+        ptn_string_operand_free(id);
+    }
+    return ptn_owned_string(previous);
+}
+
+static PtnValue ptn_internal_session_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    const char *name = ptn_runtime_session_ini(runtime, "session.name");
+    PtnValue previous = ptn_owned_string(ptn_duplicate_string(name));
+    if (argc >= 1) {
+        PtnStringOperand value = ptn_value_to_string_operand(args[0]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_session_ini(runtime, "session.name", next);
+        free(next);
+        ptn_string_operand_free(value);
+    }
+    return previous;
+}
+
+static PtnValue ptn_internal_session_save_path(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.save_path")));
+    if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_save_path(): Session save path cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
+        PtnStringOperand value = ptn_value_to_string_operand(args[0]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_session_ini(runtime, "session.save_path", next);
+        free(next);
+        ptn_string_operand_free(value);
+    }
+    return previous;
+}
+
+static PtnValue ptn_internal_session_module_name(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.save_handler")));
+    if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_module_name(): Session module name cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
+        PtnStringOperand value = ptn_value_to_string_operand(args[0]);
+        if (value.len == 0 ||
+            (!ptn_string_operand_ascii_case_equal(value, "files") &&
+             !ptn_string_operand_ascii_case_equal(value, "user"))) {
+            char *module = ptn_duplicate_string_len(value.data, value.len);
+            char message[256];
+            snprintf(message, sizeof(message), "session_module_name(): Session handler module \"%s\" cannot be found", module);
+            ptn_emit_runtime_warning(runtime, message, line);
+            free(module);
+            ptn_string_operand_free(value);
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_session_ini(runtime, "session.save_handler", next);
+        free(next);
+        ptn_string_operand_free(value);
+    }
+    return previous;
+}
+
+static PtnValue ptn_internal_session_cache_limiter(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.cache_limiter")));
+    if (argc >= 1) {
+        if (ptn_session_reject_active_change(runtime, "session_cache_limiter(): Session cache limiter cannot be changed when a session is active (started from ptn on line 0)", line)) {
+            ptn_value_destroy(&previous);
+            return ptn_bool(0);
+        }
+        PtnStringOperand value = ptn_value_to_string_operand(args[0]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_session_ini(runtime, "session.cache_limiter", next);
+        free(next);
+        ptn_string_operand_free(value);
+    }
+    return previous;
+}
+
+static PtnValue ptn_internal_session_cache_expire(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    PtnValue previous = ptn_int(ptn_session_ini_integer(runtime, "session.cache_expire", 180));
+    if (argc >= 1) {
+        int64_t requested = ptn_value_to_integer(args[0]);
+        char buffer[64];
+        snprintf(buffer, sizeof(buffer), "%lld", (long long)requested);
+        ptn_runtime_set_session_ini(runtime, "session.cache_expire", buffer);
+    }
+    return previous;
+}
+
+static PtnValue ptn_internal_session_status(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    return ptn_int(ptn_session_is_active(runtime) ? PTN_PHP_SESSION_ACTIVE : PTN_PHP_SESSION_NONE);
+}
+
+static void ptn_session_choose_start_id(PtnRuntime *runtime) {
+    const char *current = ptn_session_id_current(runtime);
+    if (current[0] == '\0' && ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_cookies"), 1)) {
+        PtnValue *cookie_slot = ptn_runtime_global_variable_slot(runtime, "_COOKIE");
+        PtnValue cookie = cookie_slot == NULL ? ptn_null() : ptn_value_deref(*cookie_slot);
+        if (cookie.type == PTN_ARRAY) {
+            const char *name = ptn_runtime_session_ini(runtime, "session.name");
+            PtnArrayEntry *entry = ptn_session_array_string_entry(cookie.as.array, name);
+            if (entry != NULL) {
+                PtnStringOperand id = ptn_value_to_string_operand(entry->value);
+                char *owned_id = ptn_duplicate_string_len(id.data, id.len);
+                ptn_session_id_set(runtime, owned_id);
+                free(owned_id);
+                ptn_string_operand_free(id);
+            }
+        }
+        current = ptn_session_id_current(runtime);
+    }
+    if (current[0] != '\0' &&
+        ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.use_strict_mode"), 0) &&
+        !ptn_session_file_exists(runtime, current)) {
+        char *generated = ptn_session_create_id_string(runtime, "");
+        ptn_session_id_set(runtime, generated);
+        free(generated);
+        return;
+    }
+    if (current[0] == '\0') {
+        char *generated = ptn_session_create_id_string(runtime, "");
+        ptn_session_id_set(runtime, generated);
+        free(generated);
+    }
+}
+
+static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+
+static PtnValue ptn_internal_session_start(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int read_and_close = argc >= 1 && ptn_session_array_bool_option(args[0], "read_and_close");
+    if (ptn_session_is_active(runtime)) {
+        return ptn_bool(1);
+    }
+    ptn_session_choose_start_id(runtime);
+    PtnValue session_data = ptn_array_from_literal_entries(0, NULL);
+    size_t file_len = 0;
+    char *file_data = ptn_session_read_file(runtime, ptn_session_id_current(runtime), &file_len);
+    if (file_data != NULL) {
+        PtnValue decoded;
+        if (ptn_session_decode_payload(runtime, file_data, file_len, &decoded, line)) {
+            ptn_value_destroy(&session_data);
+            session_data = decoded;
+        }
+        free(file_data);
+    }
+    ptn_runtime_write_global_variable(runtime, "_SESSION", session_data);
+    ptn_value_destroy(&session_data);
+    ptn_session_set_active(runtime, 1);
+    PtnValue create_file_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
+    ptn_value_destroy(&create_file_result);
+    ptn_session_set_active(runtime, 1);
+    if (read_and_close) {
+        PtnValue close_result = ptn_internal_session_write_close(runtime, 0, NULL, line);
+        ptn_value_destroy(&close_result);
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_encode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    if (!ptn_session_is_active(runtime)) {
+        return ptn_bool(0);
+    }
+    PtnValue session_array = ptn_session_current_array_value(runtime);
+    PtnValue encoded = ptn_session_encode_array(runtime, session_array, line);
+    ptn_value_destroy(&session_array);
+    return encoded;
+}
+
+static PtnValue ptn_internal_session_decode(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    if (!ptn_session_is_active(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_decode(): Session data cannot be decoded when there is no active session", line);
+        return ptn_bool(0);
+    }
+    PtnStringOperand data = ptn_internal_expect_string_arg(runtime, "session_decode", 1, "data", args[0], line);
+    PtnValue decoded;
+    int ok = ptn_session_decode_payload(runtime, data.data, data.len, &decoded, line);
+    ptn_string_operand_free(data);
+    if (!ok) {
+        ptn_emit_runtime_warning(runtime, "session_decode(): Failed to decode session object. Session has been destroyed", line);
+        ptn_session_set_active(runtime, 0);
+        return ptn_bool(0);
+    }
+    ptn_runtime_write_global_variable(runtime, "_SESSION", decoded);
+    ptn_value_destroy(&decoded);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_write_close(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    if (!ptn_session_is_active(runtime)) {
+        return ptn_bool(1);
+    }
+    PtnValue session_array = ptn_session_current_array_value(runtime);
+    PtnValue encoded_result = ptn_session_encode_array(runtime, session_array, line);
+    ptn_value_destroy(&session_array);
+    int ok = 1;
+    PtnValue encoded = ptn_value_deref(encoded_result);
+    if (encoded.type == PTN_STRING) {
+        ok = ptn_session_write_file(
+            runtime,
+            ptn_session_id_current(runtime),
+            (const char *)encoded.as.string.data,
+            encoded.as.string.len
+        );
+    }
+    ptn_value_destroy(&encoded_result);
+    ptn_session_set_active(runtime, 0);
+    return ptn_bool(ok);
+}
+
+static PtnValue ptn_internal_session_destroy(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_session_delete_file(runtime, ptn_session_id_current(runtime));
+    ptn_session_set_active(runtime, 0);
+    ptn_session_id_set(runtime, "");
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_abort(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_session_set_active(runtime, 0);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    if (!ptn_session_is_active(runtime)) {
+        return ptn_bool(0);
+    }
+    PtnValue session_data = ptn_array_from_literal_entries(0, NULL);
+    size_t file_len = 0;
+    char *file_data = ptn_session_read_file(runtime, ptn_session_id_current(runtime), &file_len);
+    if (file_data != NULL) {
+        PtnValue decoded;
+        if (ptn_session_decode_payload(runtime, file_data, file_len, &decoded, line)) {
+            ptn_value_destroy(&session_data);
+            session_data = decoded;
+        }
+        free(file_data);
+    }
+    ptn_runtime_write_global_variable(runtime, "_SESSION", session_data);
+    ptn_value_destroy(&session_data);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_unset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue empty = ptn_array_from_literal_entries(0, NULL);
+    ptn_runtime_write_global_variable(runtime, "_SESSION", empty);
+    ptn_value_destroy(&empty);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_regenerate_id(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)line;
+    int delete_old = argc >= 1 && ptn_is_truthy(args[0]);
+    char *old_id = ptn_duplicate_string(ptn_session_id_current(runtime));
+    if (delete_old) {
+        ptn_session_delete_file(runtime, old_id);
+    }
+    char *new_id = ptn_session_create_id_string(runtime, "");
+    ptn_session_id_set(runtime, new_id);
+    if (ptn_session_is_active(runtime)) {
+        PtnValue session_array = ptn_session_current_array_value(runtime);
+        PtnValue encoded_result = ptn_session_encode_array(runtime, session_array, line);
+        ptn_value_destroy(&session_array);
+        PtnValue encoded = ptn_value_deref(encoded_result);
+        if (encoded.type == PTN_STRING) {
+            (void)ptn_session_write_file(runtime, new_id, (const char *)encoded.as.string.data, encoded.as.string.len);
+        }
+        ptn_value_destroy(&encoded_result);
+    }
+    free(new_id);
+    free(old_id);
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_commit(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    return ptn_internal_session_write_close(runtime, argc, args, line);
+}
+
+static PtnValue ptn_internal_session_gc(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    if (!ptn_session_is_active(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_gc(): Session cannot be garbage collected when there is no active session", line);
+        return ptn_bool(0);
+    }
+    char *dir = ptn_session_storage_dir(runtime);
+    int depth = ptn_session_save_path_dirdepth(runtime);
+    int64_t max_lifetime = ptn_session_ini_integer(runtime, "session.gc_maxlifetime", 1440);
+    time_t now = time(NULL);
+    time_t cutoff = now - (time_t)(max_lifetime < 0 ? 0 : max_lifetime);
+    int64_t removed = ptn_session_gc_directory(dir, depth, cutoff);
+    free(dir);
+    return ptn_int(removed);
+}
+
+static PtnValue ptn_internal_session_get_cookie_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("lifetime"), ptn_int(ptn_session_ini_integer(runtime, "session.cookie_lifetime", 0)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("path"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.cookie_path"))));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("domain"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.cookie_domain"))));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("secure"), ptn_bool(ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.cookie_secure"), 0)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("partitioned"), ptn_bool(ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.cookie_partitioned"), 0)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("httponly"), ptn_bool(ptn_runtime_ini_bool(ptn_runtime_session_ini(runtime, "session.cookie_httponly"), 0)));
+    ptn_array_set_entry(result.as.array, ptn_array_string_key("samesite"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_session_ini(runtime, "session.cookie_samesite"))));
+    return result;
+}
+
+static void ptn_session_set_cookie_param_from_value(PtnRuntime *runtime, const char *ini_name, PtnValue value) {
+    PtnStringOperand operand = ptn_value_to_string_operand(value);
+    char *next = ptn_duplicate_string_len(operand.data, operand.len);
+    ptn_runtime_set_session_ini(runtime, ini_name, next);
+    free(next);
+    ptn_string_operand_free(operand);
+}
+
+static PtnValue ptn_internal_session_set_cookie_params(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (ptn_session_is_active(runtime)) {
+        ptn_emit_runtime_warning(runtime, "session_set_cookie_params(): Session cookie parameters cannot be changed when a session is active (started from ptn on line 0)", line);
+        return ptn_bool(0);
+    }
+    if (argc >= 1 && ptn_value_deref(args[0]).type == PTN_ARRAY) {
+        PtnArray *options = ptn_value_deref(args[0]).as.array;
+        PtnArrayEntry *entry;
+        if ((entry = ptn_session_array_string_entry(options, "lifetime")) != NULL) {
+            ptn_session_set_cookie_param_from_value(runtime, "session.cookie_lifetime", entry->value);
+        }
+        if ((entry = ptn_session_array_string_entry(options, "path")) != NULL) {
+            ptn_session_set_cookie_param_from_value(runtime, "session.cookie_path", entry->value);
+        }
+        if ((entry = ptn_session_array_string_entry(options, "domain")) != NULL) {
+            ptn_session_set_cookie_param_from_value(runtime, "session.cookie_domain", entry->value);
+        }
+        if ((entry = ptn_session_array_string_entry(options, "secure")) != NULL) {
+            ptn_runtime_set_session_ini(runtime, "session.cookie_secure", ptn_is_truthy(entry->value) ? "1" : "0");
+        }
+        if ((entry = ptn_session_array_string_entry(options, "httponly")) != NULL) {
+            ptn_runtime_set_session_ini(runtime, "session.cookie_httponly", ptn_is_truthy(entry->value) ? "1" : "0");
+        }
+        if ((entry = ptn_session_array_string_entry(options, "samesite")) != NULL) {
+            ptn_session_set_cookie_param_from_value(runtime, "session.cookie_samesite", entry->value);
+        }
+        if ((entry = ptn_session_array_string_entry(options, "partitioned")) != NULL) {
+            ptn_runtime_set_session_ini(runtime, "session.cookie_partitioned", ptn_is_truthy(entry->value) ? "1" : "0");
+        }
+        return ptn_bool(1);
+    }
+    if (argc >= 1) {
+        ptn_session_set_cookie_param_from_value(runtime, "session.cookie_lifetime", args[0]);
+    }
+    if (argc >= 2) {
+        ptn_session_set_cookie_param_from_value(runtime, "session.cookie_path", args[1]);
+    }
+    if (argc >= 3) {
+        ptn_session_set_cookie_param_from_value(runtime, "session.cookie_domain", args[2]);
+    }
+    if (argc >= 4) {
+        ptn_runtime_set_session_ini(runtime, "session.cookie_secure", ptn_is_truthy(args[3]) ? "1" : "0");
+    }
+    if (argc >= 5) {
+        ptn_runtime_set_session_ini(runtime, "session.cookie_httponly", ptn_is_truthy(args[4]) ? "1" : "0");
+    }
+    if (argc >= 6) {
+        ptn_runtime_set_session_ini(runtime, "session.cookie_partitioned", ptn_is_truthy(args[5]) ? "1" : "0");
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_internal_session_set_save_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)args;
+    (void)line;
+    ptn_runtime_set_session_ini(runtime, "session.save_handler", "user");
+    return ptn_bool(1);
+}
+
+static void ptn_runtime_session_shutdown(PtnRuntime *runtime) {
+    if (ptn_session_is_active(runtime)) {
+        PtnValue result = ptn_internal_session_write_close(runtime, 0, NULL, 0);
+        ptn_value_destroy(&result);
+    }
+}
+
 static PtnValue ptn_internal_php_ini_scanned_files(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)runtime;
     (void)argc;
@@ -55011,6 +56100,7 @@ static PtnValue ptn_internal_get_loaded_extensions(PtnRuntime *runtime, size_t a
     ptn_array_set_entry(result.as.array, ptn_array_int_key(36), ptn_string("pdo_dblib"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(37), ptn_string("odbc"));
     ptn_array_set_entry(result.as.array, ptn_array_int_key(38), ptn_string("Zend OPcache"));
+    ptn_array_set_entry(result.as.array, ptn_array_int_key(39), ptn_string("session"));
     return result;
 }
 
@@ -55323,6 +56413,19 @@ static PtnValue ptn_defined_constants_soap_table(void) {
     return table;
 }
 
+static void ptn_defined_constants_add_session(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "PHP_SESSION_DISABLED", PTN_PHP_SESSION_DISABLED);
+    ptn_get_defined_constants_add_int(table, "PHP_SESSION_NONE", PTN_PHP_SESSION_NONE);
+    ptn_get_defined_constants_add_int(table, "PHP_SESSION_ACTIVE", PTN_PHP_SESSION_ACTIVE);
+    ptn_array_set_entry(table.as.array, ptn_array_string_key("SID"), ptn_string(""));
+}
+
+static PtnValue ptn_defined_constants_session_table(void) {
+    PtnValue table = ptn_array_from_literal_entries(0, NULL);
+    ptn_defined_constants_add_session(table);
+    return table;
+}
+
 static void ptn_defined_constants_add_user(PtnRuntime *runtime, PtnValue table) {
     if (runtime == NULL || runtime->constants == NULL) {
         return;
@@ -55545,6 +56648,16 @@ static int ptn_reflection_constant_is_soap(const char *name) {
     return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
 
+static int ptn_reflection_constant_is_session(const char *name) {
+    static const char *const names[] = {
+        "PHP_SESSION_DISABLED",
+        "PHP_SESSION_NONE",
+        "PHP_SESSION_ACTIVE",
+        "SID",
+    };
+    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
+}
+
 static const char *ptn_reflection_constant_extension_name(const char *name) {
     if (ptn_reflection_constant_is_bcmath(name)) {
         return "bcmath";
@@ -55576,6 +56689,9 @@ static const char *ptn_reflection_constant_extension_name(const char *name) {
     if (ptn_reflection_constant_is_soap(name)) {
         return "soap";
     }
+    if (ptn_reflection_constant_is_session(name)) {
+        return "session";
+    }
     PtnValue value;
     if (ptn_builtin_constant_value(name, &value)) {
         ptn_value_destroy(&value);
@@ -55597,6 +56713,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("json"), ptn_defined_constants_json_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("mbstring"), ptn_defined_constants_mbstring_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("pcre"), ptn_defined_constants_pcre_table());
+        ptn_array_set_entry(categorized.as.array, ptn_array_string_key("session"), ptn_defined_constants_session_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("sockets"), ptn_defined_constants_sockets_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("soap"), ptn_defined_constants_soap_table());
         ptn_array_set_entry(categorized.as.array, ptn_array_string_key("standard"), ptn_defined_constants_standard_table());
@@ -55610,6 +56727,7 @@ static PtnValue ptn_internal_get_defined_constants(PtnRuntime *runtime, size_t a
     ptn_defined_constants_add_json(core);
     ptn_defined_constants_add_mbstring(core);
     ptn_defined_constants_add_pcre(core);
+    ptn_defined_constants_add_session(core);
     ptn_defined_constants_add_sockets(core);
     ptn_defined_constants_add_soap(core);
     ptn_defined_constants_add_standard(core);
@@ -68982,6 +70100,28 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "set_time_limit", 1, 1, ptn_internal_set_time_limit },
         { "settype", 2, 2, ptn_internal_settype },
         { "setlocale", 2, PTN_VARIADIC_ARGS, ptn_internal_setlocale },
+        { "session_abort", 0, 0, ptn_internal_session_abort },
+        { "session_cache_expire", 0, 1, ptn_internal_session_cache_expire },
+        { "session_cache_limiter", 0, 1, ptn_internal_session_cache_limiter },
+        { "session_commit", 0, 0, ptn_internal_session_commit },
+        { "session_create_id", 0, 1, ptn_internal_session_create_id },
+        { "session_decode", 1, 1, ptn_internal_session_decode },
+        { "session_destroy", 0, 0, ptn_internal_session_destroy },
+        { "session_encode", 0, 0, ptn_internal_session_encode },
+        { "session_gc", 0, 0, ptn_internal_session_gc },
+        { "session_get_cookie_params", 0, 0, ptn_internal_session_get_cookie_params },
+        { "session_id", 0, 1, ptn_internal_session_id },
+        { "session_module_name", 0, 1, ptn_internal_session_module_name },
+        { "session_name", 0, 1, ptn_internal_session_name },
+        { "session_regenerate_id", 0, 1, ptn_internal_session_regenerate_id },
+        { "session_reset", 0, 0, ptn_internal_session_reset },
+        { "session_save_path", 0, 1, ptn_internal_session_save_path },
+        { "session_set_cookie_params", 1, 6, ptn_internal_session_set_cookie_params },
+        { "session_set_save_handler", 1, PTN_VARIADIC_ARGS, ptn_internal_session_set_save_handler },
+        { "session_start", 0, 1, ptn_internal_session_start },
+        { "session_status", 0, 0, ptn_internal_session_status },
+        { "session_unset", 0, 0, ptn_internal_session_unset },
+        { "session_write_close", 0, 0, ptn_internal_session_write_close },
         { "sha1", 1, 2, ptn_internal_sha1 },
         { "sha1_file", 1, 2, ptn_internal_sha1_file },
         { "shell_exec", 1, 1, ptn_internal_shell_exec },
@@ -69286,6 +70426,9 @@ static const char *ptn_internal_function_extension_name(const char *name) {
     }
     if (ptn_internal_function_name_has_prefix(name, "preg_")) {
         return "pcre";
+    }
+    if (ptn_internal_function_name_has_prefix(name, "session_")) {
+        return "session";
     }
     if (ptn_internal_function_name_has_prefix(name, "xmlwriter_")) {
         return "xmlwriter";
@@ -82965,6 +84108,12 @@ static PtnValue ptn_reflection_extension_ini_entries(PtnRuntime *runtime, const 
         ptn_extension_ini_set_entry(runtime, result, "mbstring.regex_stack_limit");
         return result;
     }
+    if (ptn_ascii_case_equal(extension_name, "session")) {
+        for (size_t i = 0; i < sizeof(PTN_SESSION_INI_DEFINITIONS) / sizeof(PTN_SESSION_INI_DEFINITIONS[0]); i++) {
+            ptn_extension_ini_set_entry(runtime, result, PTN_SESSION_INI_DEFINITIONS[i].name);
+        }
+        return result;
+    }
     if (ptn_ascii_case_equal(extension_name, "standard")) {
         ptn_extension_ini_set_entry(runtime, result, "arg_separator.input");
         ptn_extension_ini_set_entry(runtime, result, "arg_separator.output");
@@ -82994,6 +84143,9 @@ static PtnValue ptn_reflection_extension_constants(const char *extension_name) {
     }
     if (ptn_ascii_case_equal(extension_name, "mbstring")) {
         return ptn_defined_constants_mbstring_table();
+    }
+    if (ptn_ascii_case_equal(extension_name, "session")) {
+        return ptn_defined_constants_session_table();
     }
     if (ptn_ascii_case_equal(extension_name, "standard")) {
         return ptn_defined_constants_standard_table();

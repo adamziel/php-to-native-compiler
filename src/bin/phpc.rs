@@ -65,6 +65,7 @@ fn print_modules() {
         "pcre",
         "Phar",
         "Reflection",
+        "session",
         "sockets",
         "soap",
         "SPL",
@@ -214,6 +215,7 @@ struct RuntimeIni {
     filter_default: Option<String>,
     pcre_backtrack_limit: Option<String>,
     pcre_jit: Option<String>,
+    session: Vec<(String, String)>,
     opcache: Vec<(String, String)>,
     opcache_save_comments: Option<String>,
     phar_readonly: Option<String>,
@@ -407,6 +409,9 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.pcre_backtrack_limit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.jit") {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
+    } else if let Some(canonical_name) = canonical_session_ini_name(name) {
+        ini.session
+            .push((canonical_name.to_string(), normalize_ini_scalar(raw_value)));
     } else if let Some(canonical_name) = canonical_opcache_ini_name(name) {
         let value = normalize_ini_scalar(raw_value);
         ini.opcache
@@ -497,6 +502,57 @@ fn ini_scalar_truthy(raw_value: &str) -> bool {
     )
 }
 
+fn canonical_session_ini_name(name: &str) -> Option<&'static str> {
+    match name.to_ascii_lowercase().as_str() {
+        "session.auto_start" => Some("session.auto_start"),
+        "session.cache_expire" => Some("session.cache_expire"),
+        "session.cache_limiter" => Some("session.cache_limiter"),
+        "session.cookie_domain" => Some("session.cookie_domain"),
+        "session.cookie_httponly" => Some("session.cookie_httponly"),
+        "session.cookie_lifetime" => Some("session.cookie_lifetime"),
+        "session.cookie_partitioned" => Some("session.cookie_partitioned"),
+        "session.cookie_path" => Some("session.cookie_path"),
+        "session.cookie_samesite" => Some("session.cookie_samesite"),
+        "session.cookie_secure" => Some("session.cookie_secure"),
+        "session.gc_divisor" => Some("session.gc_divisor"),
+        "session.gc_maxlifetime" => Some("session.gc_maxlifetime"),
+        "session.gc_probability" => Some("session.gc_probability"),
+        "session.name" => Some("session.name"),
+        "session.save_handler" => Some("session.save_handler"),
+        "session.save_path" => Some("session.save_path"),
+        "session.serialize_handler" => Some("session.serialize_handler"),
+        "session.sid_bits_per_character" => Some("session.sid_bits_per_character"),
+        "session.sid_length" => Some("session.sid_length"),
+        "session.upload_progress.cleanup" => Some("session.upload_progress.cleanup"),
+        "session.upload_progress.enabled" => Some("session.upload_progress.enabled"),
+        "session.upload_progress.freq" => Some("session.upload_progress.freq"),
+        "session.upload_progress.min_freq" => Some("session.upload_progress.min_freq"),
+        "session.upload_progress.name" => Some("session.upload_progress.name"),
+        "session.upload_progress.prefix" => Some("session.upload_progress.prefix"),
+        "session.use_cookies" => Some("session.use_cookies"),
+        "session.use_only_cookies" => Some("session.use_only_cookies"),
+        "session.use_strict_mode" => Some("session.use_strict_mode"),
+        "session.use_trans_sid" => Some("session.use_trans_sid"),
+        _ => None,
+    }
+}
+
+fn session_ini_env_name(name: &str) -> Option<String> {
+    canonical_session_ini_name(name).map(|canonical| {
+        let suffix = canonical
+            .strip_prefix("session.")
+            .unwrap_or(canonical)
+            .chars()
+            .map(|ch| match ch {
+                'a'..='z' => ch.to_ascii_uppercase(),
+                '0'..='9' => ch,
+                _ => '_',
+            })
+            .collect::<String>();
+        format!("PTN_SESSION_{suffix}")
+    })
+}
+
 fn canonical_opcache_ini_name(name: &str) -> Option<&'static str> {
     match name.to_ascii_lowercase().as_str() {
         "opcache.blacklist_filename" => Some("opcache.blacklist_filename"),
@@ -524,6 +580,14 @@ fn opcache_ini_env_name(name: &str) -> Option<String> {
 
 fn normalize_ini_scalar(raw_value: &str) -> String {
     let trimmed = raw_value.trim();
+    if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        if (bytes[0] == b'"' && bytes[trimmed.len() - 1] == b'"')
+            || (bytes[0] == b'\'' && bytes[trimmed.len() - 1] == b'\'')
+        {
+            return trimmed[1..trimmed.len() - 1].to_string();
+        }
+    }
     if trimmed.eq_ignore_ascii_case("false")
         || trimmed.eq_ignore_ascii_case("off")
         || trimmed.eq_ignore_ascii_case("no")
@@ -809,6 +873,7 @@ fn compile_and_run(
         filter_default: ini.filter_default.clone(),
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
+        session: ini.session.clone(),
         opcache: ini.opcache.clone(),
         opcache_save_comments: ini.opcache_save_comments.clone(),
         phar_readonly: ini.phar_readonly.clone(),
@@ -930,6 +995,11 @@ fn compile_and_run(
     }
     if let Some(pcre_jit) = &ini.pcre_jit {
         command.env("PTN_PCRE_JIT", pcre_jit);
+    }
+    for (name, value) in &ini.session {
+        if let Some(env_name) = session_ini_env_name(name) {
+            command.env(env_name, value);
+        }
     }
     for (name, value) in &ini.opcache {
         if let Some(env_name) = opcache_ini_env_name(name) {

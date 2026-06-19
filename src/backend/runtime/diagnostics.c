@@ -1980,6 +1980,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->request_body = NULL;
     runtime->request_body_len = 0;
+    ptn_symbols_init(&runtime->session_ini);
+    runtime->session_id = ptn_duplicate_string("");
+    runtime->session_active = 0;
     runtime->precision = ptn_ini_precision_value(
         getenv("PTN_PHP_PRECISION"),
         PTN_DEFAULT_PRECISION,

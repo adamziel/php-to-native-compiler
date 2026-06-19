@@ -198,6 +198,9 @@ typedef struct {
 #define PTN_STR_PAD_BOTH 2
 #define PTN_COUNT_NORMAL 0
 #define PTN_COUNT_RECURSIVE 1
+#define PTN_PHP_SESSION_DISABLED 0
+#define PTN_PHP_SESSION_NONE 1
+#define PTN_PHP_SESSION_ACTIVE 2
 #define PTN_PATHINFO_DIRNAME 1
 #define PTN_PATHINFO_BASENAME 2
 #define PTN_PATHINFO_EXTENSION 4
@@ -1226,6 +1229,9 @@ struct PtnRuntime {
     char *unserialize_callback_func;
     char *request_body;
     size_t request_body_len;
+    PtnSymbolTable session_ini;
+    char *session_id;
+    int session_active;
     int precision;
     int serialize_precision;
     int initial_precision;
