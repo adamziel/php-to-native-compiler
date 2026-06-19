@@ -43270,6 +43270,50 @@ echo \"value=$value\\n\";\n";
 }
 
 #[test]
+fn compile_included_function_body_uses_declaration_strict_types_to_native_binary() {
+    let root = temp_dir("ptn-native-included-function-strict-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let weak_include = root.join("weak.inc");
+    let strict_include = root.join("strict.inc");
+    let output = root.join("included-function-strict-types-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+declare(strict_types=1);\n\
+function test(int $i) { var_dump($i); }\n\
+require __DIR__ . '/weak.inc';\n\
+require __DIR__ . '/strict.inc';\n\
+$fn = test(...);\n\
+do_weak_call($fn);\n\
+try { do_strict_call($fn); } catch (Error $e) { echo $e->getMessage(), \"\\n\"; }\n",
+    )
+    .unwrap();
+    fs::write(
+        &weak_include,
+        "<?php\nfunction do_weak_call($fn) { $fn('42'); }\n",
+    )
+    .unwrap();
+    fs::write(
+        &strict_include,
+        "<?php\ndeclare(strict_types=1);\nfunction do_strict_call($fn) { $fn('42'); }\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("int(42)\n"), "{stdout}");
+    assert!(
+        stdout.contains("test(): Argument #1 ($i) must be of type int, string given, called in "),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_file_get_contents_uses_include_path_to_native_binary() {
     let root = temp_dir("ptn-native-file-get-contents-include-path");
     let cwd = root.join("cwd");

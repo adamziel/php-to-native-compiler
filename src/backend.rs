@@ -2143,6 +2143,9 @@ fn emit_user_functions(
                 );
             }
         }
+        out.push_str("    runtime.strict_types = ");
+        out.push_str(if function.strict_types { "1" } else { "0" });
+        out.push_str(";\n");
         let mut break_targets = Vec::new();
         let mut finally_stack = Vec::new();
         let return_label = values.next_label("ptn_function_return");
