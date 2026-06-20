@@ -18456,6 +18456,10 @@ fn emit_instruction(
                     values.emit_store_assignment_target_from_temp(out, key, &key_temp);
                 emit_value_cleanup(out, "        ", &key_result_temp);
                 emit_value_cleanup(out, "        ", &key_temp);
+            } else {
+                out.push_str("        ptn_array_iterator_observe_current_key(&");
+                out.push_str(&iterator_temp);
+                out.push_str(");\n");
             }
             if *value_by_ref {
                 values.emit_bind_assignment_target_reference(out, value, &value_temp);

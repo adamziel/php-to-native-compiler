@@ -8009,6 +8009,14 @@ static PTN_UNUSED PtnValue ptn_array_iterator_current_key(PtnArrayIterator *iter
     return ptn_owned_string_len(ptn_duplicate_string_len(key.as.string, key.string_len), key.string_len);
 }
 
+static PTN_UNUSED void ptn_array_iterator_observe_current_key(PtnArrayIterator *iterator) {
+    if (iterator == NULL || !iterator->protocol_iterator) {
+        return;
+    }
+    PtnValue key = ptn_array_iterator_current_key(iterator);
+    ptn_value_destroy(&key);
+}
+
 static PTN_UNUSED PtnValue ptn_array_iterator_current_value(PtnArrayIterator *iterator) {
     if (iterator->protocol_iterator) {
         return ptn_protocol_iterator_call(iterator, "current");

@@ -636,6 +636,62 @@ StdArgs:Class stdClass does not have a constructor, so you cannot pass any const
 }
 
 #[test]
+fn compile_foreach_protocol_iterator_observes_key_without_key_target_to_native_binary() {
+    let root = temp_dir("ptn-native-foreach-protocol-key-side-effects");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("foreach-protocol-key-side-effects.php");
+    let output = root.join("foreach-protocol-key-side-effects-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class VerboseArrayIterator extends ArrayIterator {
+    function rewind(): void { echo "rewind\n"; parent::rewind(); }
+    function valid(): bool { echo "valid\n"; return parent::valid(); }
+    function current(): mixed { echo "current\n"; return parent::current(); }
+    function key(): string|int|null { echo "key\n"; return parent::key(); }
+    function next(): void { echo "next\n"; parent::next(); }
+}
+
+$it = new InfiniteIterator(new VerboseArrayIterator([0, 1]));
+$seen = 0;
+foreach ($it as $value) {
+    var_dump($value);
+    if (++$seen >= 3) {
+        break;
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "rewind\n\
+valid\n\
+current\n\
+key\n\
+int(0)\n\
+next\n\
+valid\n\
+current\n\
+key\n\
+int(1)\n\
+next\n\
+valid\n\
+rewind\n\
+valid\n\
+current\n\
+key\n\
+int(0)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_broader_spl_iterator_wrappers_to_native_binary() {
     let root = temp_dir("ptn-native-spl-iterator-wrappers");
     fs::create_dir_all(&root).unwrap();
