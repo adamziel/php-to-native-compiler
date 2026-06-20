@@ -73410,7 +73410,7 @@ static PtnValue ptn_declared_interface_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_trait_names(PtnRuntime *runtime);
 static PtnValue ptn_declared_class_reflection_method(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PtnValue ptn_declared_class_reflection_property_hook_method(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type);
-static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name);
+static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name, int include_enum_cases);
 static int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static const char *ptn_declared_class_reflection_doc_comment(const char *class_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
@@ -83690,7 +83690,7 @@ static PtnValue ptn_reflection_class_get_attributes(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    if (ptn_declared_user_class_or_interface_exists(class_name)) {
+    if (ptn_declared_user_class_or_interface_exists(class_name) || ptn_declared_trait_exists(class_name)) {
         return ptn_declared_class_reflection_attributes(runtime, class_name, argc, args, line);
     }
     if (!ptn_internal_class_name_is_attribute(class_name)) {
@@ -84291,7 +84291,7 @@ static void ptn_reflection_object_append_class_text(
 }
 
 static PtnValue ptn_reflection_object_to_string(PtnRuntime *runtime, PtnReflectionClassData *data) {
-    PtnValue class_string = ptn_declared_class_reflection_to_string(runtime, data->name);
+    PtnValue class_string = ptn_declared_class_reflection_to_string(runtime, data->name, 0);
     PtnValue resolved = ptn_value_deref(class_string);
     if (resolved.type != PTN_STRING) {
         return class_string;
@@ -84509,7 +84509,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             ptn_internal_class_name_is_reflection_object(resolved_receiver.as.object->class_name)) {
             return ptn_reflection_object_to_string(runtime, data);
         }
-        return ptn_declared_class_reflection_to_string(runtime, class_name);
+        int include_enum_cases = resolved_receiver.type == PTN_OBJECT &&
+            ptn_internal_class_name_is_reflection_enum(resolved_receiver.as.object->class_name);
+        return ptn_declared_class_reflection_to_string(runtime, class_name, include_enum_cases);
     }
     if (ptn_ascii_case_equal(name, "getDocComment")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
