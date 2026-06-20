@@ -56869,6 +56869,85 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_uri_serialization_surface_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-serialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-serialization.php");
+    let output = root.join("uri-serialization-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$rfc = new Uri\Rfc3986\Uri("https://user:pass@example.com:8080/path?q#f");
+$rfcSerialized = serialize($rfc);
+echo $rfcSerialized, "\n";
+echo unserialize($rfcSerialized)->toRawString(), "\n";
+$rfcPayload = $rfc->__serialize();
+var_dump($rfcPayload[0]["uri"]);
+var_dump($rfcPayload[1]);
+try {
+    $rfc->__construct("ftp://example.org");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $rfc->__unserialize([["uri" => "ftp://example.org"], []]);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+
+$url = new Uri\WhatWg\Url("https://user:pass@example.com:8080/path?q#f");
+$urlSerialized = serialize($url);
+echo $urlSerialized, "\n";
+echo unserialize($urlSerialized)->toAsciiString(), "\n";
+$urlPayload = $url->__serialize();
+var_dump($urlPayload[0]["uri"]);
+var_dump($urlPayload[1]);
+try {
+    $url->__construct("ftp://example.org");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $url->__unserialize([["uri" => "ftp://example.org"], []]);
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "O:15:\"Uri\\Rfc3986\\Uri\":2:{i:0;a:1:{s:3:\"uri\";s:43:\"https://user:pass@example.com:8080/path?q#f\";}i:1;a:0:{}}\n",
+            "https://user:pass@example.com:8080/path?q#f\n",
+            "string(43) \"https://user:pass@example.com:8080/path?q#f\"\n",
+            "array(0) {\n",
+            "}\n",
+            "Error: Cannot modify readonly object of class Uri\\Rfc3986\\Uri\n",
+            "Exception: Invalid serialization data for Uri\\Rfc3986\\Uri object\n",
+            "O:14:\"Uri\\WhatWg\\Url\":2:{i:0;a:1:{s:3:\"uri\";s:43:\"https://user:pass@example.com:8080/path?q#f\";}i:1;a:0:{}}\n",
+            "https://user:pass@example.com:8080/path?q#f\n",
+            "string(43) \"https://user:pass@example.com:8080/path?q#f\"\n",
+            "array(0) {\n",
+            "}\n",
+            "Error: Cannot modify readonly object of class Uri\\WhatWg\\Url\n",
+            "Exception: Invalid serialization data for Uri\\WhatWg\\Url object\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
