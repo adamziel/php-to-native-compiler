@@ -19729,6 +19729,8 @@ static void ptn_uri_whatwg_throw_malformed(PtnRuntime *runtime, const char *comp
     ptn_throw_exception(runtime, "Uri\\WhatWg\\InvalidUrlException", message);
 }
 
+static const char *ptn_uri_whatwg_parse_failure_reason(PtnStringOperand input);
+
 #ifdef PTN_USE_ADA_URL
 static char *ptn_uri_ada_null_terminated_copy(const char *data, size_t len) {
     return ptn_uri_duplicate_len(data == NULL ? "" : data, len);
@@ -19959,6 +19961,7 @@ static int ptn_uri_ada_parse_whatwg(
         if (url != NULL) {
             ada_free(url);
         }
+        *reason_out = ptn_uri_whatwg_parse_failure_reason(input);
         return 0;
     }
     PtnUriData *data = ptn_uri_ada_data_from_url(url);
@@ -20878,6 +20881,177 @@ static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t
     }
     free(result->path);
     result->path = encoded;
+}
+
+static int ptn_uri_whatwg_span_is_special_scheme(const char *scheme, size_t scheme_len) {
+    return ptn_ascii_case_equal_span_to_string(scheme, scheme_len, "http") ||
+        ptn_ascii_case_equal_span_to_string(scheme, scheme_len, "https") ||
+        ptn_ascii_case_equal_span_to_string(scheme, scheme_len, "ws") ||
+        ptn_ascii_case_equal_span_to_string(scheme, scheme_len, "wss") ||
+        ptn_ascii_case_equal_span_to_string(scheme, scheme_len, "ftp") ||
+        ptn_ascii_case_equal_span_to_string(scheme, scheme_len, "file");
+}
+
+static int ptn_uri_whatwg_span_is_file_scheme(const char *scheme, size_t scheme_len) {
+    return ptn_ascii_case_equal_span_to_string(scheme, scheme_len, "file");
+}
+
+static const char *ptn_uri_whatwg_port_failure_reason(const char *port, size_t port_len) {
+    if (port_len == 0) {
+        return NULL;
+    }
+    int64_t value = 0;
+    for (size_t i = 0; i < port_len; i++) {
+        unsigned char byte = (unsigned char)port[i];
+        if (!isdigit(byte)) {
+            return "PortInvalid";
+        }
+        value = value * 10 + (int64_t)(byte - '0');
+        if (value > 65535) {
+            return "PortOutOfRange";
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_uri_whatwg_host_failure_reason(const char *host, size_t host_len, int special) {
+    if (host_len == 0) {
+        return special ? "HostMissing" : NULL;
+    }
+    if (host[0] == '[') {
+        if (host_len < 2 || host[host_len - 1] != ']') {
+            return "Ipv6InvalidCodePoint";
+        }
+        if (host_len >= 3 && (host[1] == 'v' || host[1] == 'V')) {
+            return "Ipv6InvalidCodePoint";
+        }
+        return NULL;
+    }
+    for (size_t i = 0; i < host_len; i++) {
+        unsigned char byte = (unsigned char)host[i];
+        if (byte == '%' && i + 2 < host_len) {
+            int high = ptn_uri_hex_value(host[i + 1]);
+            int low = ptn_uri_hex_value(host[i + 2]);
+            if (high >= 0 && low >= 0) {
+                byte = (unsigned char)((high << 4) | low);
+                i += 2;
+            }
+        }
+        if (byte == 0 || byte == '[' || byte == ']' || byte == '@' ||
+            byte == '/' || byte == '?' || byte == '#') {
+            return special ? "DomainInvalidCodePoint" : "HostInvalidCodePoint";
+        }
+        if (byte == ':' && special) {
+            return "";
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_uri_whatwg_authority_failure_reason(
+    const char *authority,
+    size_t authority_len,
+    int special,
+    int allow_empty_host
+) {
+    size_t host_start = 0;
+    for (size_t i = authority_len; i > 0; i--) {
+        if (authority[i - 1] == '@') {
+            host_start = i;
+            break;
+        }
+    }
+
+    const char *hostport = authority + host_start;
+    size_t hostport_len = authority_len - host_start;
+    if (hostport_len == 0) {
+        if (host_start > 0) {
+            return NULL;
+        }
+        return allow_empty_host ? NULL : "HostMissing";
+    }
+
+    size_t host_len = hostport_len;
+    size_t port_start = hostport_len;
+    if (hostport[0] == '[') {
+        size_t close = ptn_uri_find_byte(hostport, hostport_len, 1, ']');
+        if (close >= hostport_len) {
+            return "Ipv6InvalidCodePoint";
+        }
+        host_len = close + 1;
+        if (host_len < hostport_len) {
+            if (hostport[host_len] != ':') {
+                return "Ipv6InvalidCodePoint";
+            }
+            port_start = host_len + 1;
+        }
+    } else {
+        for (size_t i = hostport_len; i > 0; i--) {
+            if (hostport[i - 1] == ':') {
+                host_len = i - 1;
+                port_start = i;
+                break;
+            }
+        }
+    }
+
+    const char *host_reason = ptn_uri_whatwg_host_failure_reason(hostport, host_len, special);
+    if (host_reason != NULL) {
+        return allow_empty_host && host_len == 0 ? NULL : host_reason;
+    }
+    if (port_start < hostport_len) {
+        return ptn_uri_whatwg_port_failure_reason(
+            hostport + port_start,
+            hostport_len - port_start
+        );
+    }
+    return NULL;
+}
+
+static const char *ptn_uri_whatwg_parse_failure_reason(PtnStringOperand input) {
+    const char *trimmed = input.data;
+    size_t trimmed_len = input.len;
+    ptn_uri_whatwg_trim(input.data, input.len, 1, &trimmed, &trimmed_len);
+
+    size_t first_delimiter = ptn_uri_find_remainder_delimiter(trimmed, trimmed_len, 0);
+    size_t colon = ptn_uri_find_byte(trimmed, first_delimiter, 0, ':');
+    if (colon == 0 || colon >= first_delimiter ||
+        !ptn_uri_validate_scheme_component(trimmed, colon)) {
+        return "MissingSchemeNonRelativeUrl";
+    }
+
+    const char *scheme = trimmed;
+    size_t scheme_len = colon;
+    int special = ptn_uri_whatwg_span_is_special_scheme(scheme, scheme_len);
+    int file_scheme = ptn_uri_whatwg_span_is_file_scheme(scheme, scheme_len);
+    const char *rest = trimmed + colon + 1;
+    size_t rest_len = trimmed_len - colon - 1;
+
+    if (rest_len >= 2 && rest[0] == '/' && rest[1] == '/') {
+        size_t authority_start = 2;
+        size_t authority_end = ptn_uri_find_remainder_delimiter(rest, rest_len, authority_start);
+        return ptn_uri_whatwg_authority_failure_reason(
+            rest + authority_start,
+            authority_end - authority_start,
+            special,
+            file_scheme || !special
+        );
+    }
+
+    if (special && !file_scheme) {
+        size_t authority_end = ptn_uri_find_remainder_delimiter(rest, rest_len, 0);
+        if (authority_end == 0) {
+            return "HostMissing";
+        }
+        return ptn_uri_whatwg_authority_failure_reason(
+            rest,
+            authority_end,
+            special,
+            0
+        );
+    }
+
+    return NULL;
 }
 
 static int ptn_uri_parse_whatwg(PtnStringOperand input, PtnUriData **result_out, const char **reason_out) {
@@ -38065,6 +38239,25 @@ static PtnValue ptn_internal_preg_grep(PtnRuntime *runtime, size_t argc, const P
     return result;
 }
 
+static int ptn_preg_replace_callback_array_validate_callback(PtnRuntime *runtime, PtnValue callback, size_t line) {
+    PtnValue checked = ptn_value_clone_deref(callback);
+    int valid = ptn_callable_is_valid(runtime, checked, 0);
+    ptn_value_destroy(&checked);
+    if (valid) {
+        return 1;
+    }
+    if (runtime->exceptions->active_exception == NULL) {
+        ptn_throw_exception_at(
+            runtime,
+            "TypeError",
+            "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks",
+            runtime->source_path,
+            line
+        );
+    }
+    return 0;
+}
+
 static PtnValue ptn_preg_replace_callback_array_apply_subject(
     PtnRuntime *runtime,
     PtnStringOperand pattern,
@@ -38079,6 +38272,9 @@ static PtnValue ptn_preg_replace_callback_array_apply_subject(
     PtnStringOperand empty_replacement = ptn_string_operand_borrowed("");
     PtnValue subject_value = ptn_value_deref(subject_arg);
     if (subject_value.type == PTN_ARRAY) {
+        if (!ptn_preg_replace_callback_array_validate_callback(runtime, callback, line)) {
+            return ptn_null();
+        }
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
         for (size_t i = 0; i < subject_value.as.array->len; i++) {
             PtnArrayEntry *entry = &subject_value.as.array->entries[i];
@@ -38086,6 +38282,11 @@ static PtnValue ptn_preg_replace_callback_array_apply_subject(
                 ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
             }
             PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(subject);
+                ptn_value_destroy(&result);
+                return ptn_null();
+            }
             PtnValue replaced = ptn_preg_replace_apply_to_string(
                 runtime,
                 "preg_replace_callback_array",
@@ -38112,6 +38313,14 @@ static PtnValue ptn_preg_replace_callback_array_apply_subject(
 
     PtnStringOperand subject =
         ptn_internal_expect_str_replace_arg(runtime, "preg_replace_callback_array", 2, "subject", subject_arg, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(subject);
+        return ptn_null();
+    }
+    if (!ptn_preg_replace_callback_array_validate_callback(runtime, callback, line)) {
+        ptn_string_operand_free(subject);
+        return ptn_null();
+    }
     PtnValue result = ptn_preg_replace_apply_to_string(
         runtime,
         "preg_replace_callback_array",
@@ -38150,19 +38359,6 @@ static PtnValue ptn_internal_preg_replace_callback_array(PtnRuntime *runtime, si
             );
             return ptn_null();
         }
-        PtnValue callback = ptn_value_clone_deref(entry->value);
-        if (!ptn_callable_is_valid(runtime, callback, 0)) {
-            ptn_value_destroy(&callback);
-            ptn_throw_exception_at(
-                runtime,
-                "TypeError",
-                "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks",
-                runtime->source_path,
-                line
-            );
-            return ptn_null();
-        }
-        ptn_value_destroy(&callback);
     }
 
     PtnValue current = ptn_value_clone_deref(args[1]);
