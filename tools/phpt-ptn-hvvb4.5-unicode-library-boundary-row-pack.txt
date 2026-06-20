@@ -1,0 +1,80 @@
+# Focused Unicode/library-boundary PHPT evidence for ptn-hvvb4.5.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Run:
+#   tools/run-phpt-manifest.sh tools/phpt-ptn-hvvb4.5-unicode-library-boundary-row-pack.txt
+#
+# This pack covers the first policy split: Ada-owned WHATWG URI IDNA,
+# ICU-owned intl IDNA and BreakIterator behavior, libmbfl-owned mbstring
+# encoding state/conversion/search primitives, Oniguruma-compatible mbregex
+# rows, system-iconv conversion/default-charset rows, and shared
+# default_charset handling. Rows are evidence targets, not support claims.
+
+# bucket: ext/uri WHATWG IDNA via Ada rows=3
+ext/uri/tests/whatwg/modification/host_success_idna.phpt
+ext/uri/tests/whatwg/parsing/host_success_multibyte.phpt
+ext/uri/tests/whatwg/modification/host_success_encoded.phpt
+
+# bucket: ext/intl ICU IDNA rows=4
+ext/intl/tests/idn.phpt
+ext/intl/tests/idn_uts46_basic.phpt
+ext/intl/tests/idn_uts46_errors.phpt
+ext/intl/tests/idn_bug76829.phpt
+
+# bucket: ext/intl ICU BreakIterator rows=10
+ext/intl/tests/breakiter___construct.phpt
+ext/intl/tests/breakiter_factories_basic.phpt
+ext/intl/tests/breakiter_createCodePointInstance_basic.phpt
+ext/intl/tests/breakiter_setText_basic.phpt
+ext/intl/tests/breakiter_current_basic.phpt
+ext/intl/tests/breakiter_first_basic.phpt
+ext/intl/tests/breakiter_next_basic.phpt
+ext/intl/tests/breakiter_following_basic.phpt
+ext/intl/tests/breakiter_isBoundary_basic.phpt
+ext/intl/tests/breakiter_getPartsIterator_basic.phpt
+
+# bucket: ext/intl ICU Calendar seed rows=4
+ext/intl/tests/calendar_createInstance_basic.phpt
+ext/intl/tests/calendar_getType_basic.phpt
+ext/intl/tests/calendar_getTime_basic.phpt
+ext/intl/tests/calendar_setTime_basic.phpt
+
+# bucket: ext/mbstring libmbfl encoding/default rows=10
+ext/mbstring/tests/mb_internal_encoding.phpt
+ext/mbstring/tests/mb_internal_encoding_basic.phpt
+ext/mbstring/tests/mb_internal_encoding_ini_basic2.phpt
+ext/mbstring/tests/ini_encoding.phpt
+ext/mbstring/tests/mb_strlen_basic.phpt
+ext/mbstring/tests/mb_substr_basic.phpt
+ext/mbstring/tests/mb_convert_encoding_basic.phpt
+ext/mbstring/tests/mb_check_encoding.phpt
+ext/mbstring/tests/mb_detect_encoding.phpt
+ext/mbstring/tests/mb_detect_order_with_ini_set.phpt
+
+# bucket: ext/mbstring Oniguruma-compatible mbregex rows=8
+ext/mbstring/tests/mb_regex_encoding_basic.phpt
+ext/mbstring/tests/mb_ereg.phpt
+ext/mbstring/tests/mb_ereg_basic.phpt
+ext/mbstring/tests/mb_ereg_match_basic.phpt
+ext/mbstring/tests/mb_ereg_replace_basic.phpt
+ext/mbstring/tests/mb_split.phpt
+ext/mbstring/tests/mb_split-compat-01.phpt
+ext/mbstring/tests/mb_split_empty_match.phpt
+
+# bucket: ext/iconv system iconv/default rows=8
+ext/iconv/tests/iconv_basic.phpt
+ext/iconv/tests/iconv_encoding_basic.phpt
+ext/iconv/tests/iconv_get_encoding_basic.phpt
+ext/iconv/tests/iconv_default_charset.phpt
+ext/iconv/tests/iconv_strlen_basic.phpt
+ext/iconv/tests/iconv_strpos_basic.phpt
+ext/iconv/tests/iconv_substr_basic.phpt
+ext/iconv/tests/translit-utf8.phpt
+
+# bucket: default_charset and standard charset users rows=6
+tests/basic/encoding.phpt
+ext/standard/tests/strings/default_charset.phpt
+ext/standard/tests/strings/htmlentities.phpt
+ext/standard/tests/strings/htmlentities-utf.phpt
+ext/standard/tests/strings/html_entity_decode_iso8859-15.phpt
+ext/standard/tests/strings/html_entity_decode_win1252.phpt

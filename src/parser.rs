@@ -18333,6 +18333,9 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "urldecode"
             | "rawurlencode"
             | "rawurldecode"
+            // Unicode-sensitive internals are name-recognition boundaries.
+            // Implement behavior through ICU/libmbfl/Oniguruma/iconv adapters;
+            // do not add local Unicode, encoding, or mbregex parsers here.
             | "iconv"
             | "iconv_strpos"
             | "iconv_substr"
@@ -18599,6 +18602,8 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "link"
             | "linkinfo"
             | "levenshtein"
+            // Intl names below are dispatch/PHPT-classification anchors only
+            // until ICU-backed runtime objects/functions own the semantics.
             | "collator_create"
             | "collator_sort"
             | "collator_sort_with_sort_keys"

@@ -5220,6 +5220,8 @@ fn emit_class_metadata_helpers(
         "ZipArchive",
         "SoapClient",
         "SoapServer",
+        // Metadata-only intl shells. Runtime behavior must be backed by ICU
+        // adapters rather than local Unicode, locale, or calendar algorithms.
         "IntlBreakIterator",
         "IntlRuleBasedBreakIterator",
         "IntlCodePointBreakIterator",
