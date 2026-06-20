@@ -82786,6 +82786,14 @@ static PTN_UNUSED int ptn_internal_class_name_is_intl_timezone(const char *class
     return ptn_ascii_case_equal(class_name, "IntlTimeZone");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_intl_list_formatter(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlListFormatter");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_intl_number_range_formatter(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "IntlNumberRangeFormatter");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Locale");
 }
@@ -82945,6 +82953,8 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_intl_calendar(class_name)
         || ptn_internal_class_name_is_intl_date_formatter(class_name)
         || ptn_internal_class_name_is_intl_timezone(class_name)
+        || ptn_internal_class_name_is_intl_list_formatter(class_name)
+        || ptn_internal_class_name_is_intl_number_range_formatter(class_name)
         || ptn_internal_class_name_is_locale(class_name)
         || ptn_internal_class_name_is_number_formatter(class_name)
         || ptn_internal_class_name_is_collator(class_name)
@@ -84459,6 +84469,15 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_intl_timezone(class_name)) {
         return ptn_ascii_case_equal(method_name, "createTimeZone");
     }
+    if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "format")
+            || ptn_ascii_case_equal(method_name, "getErrorCode")
+            || ptn_ascii_case_equal(method_name, "getErrorMessage");
+    }
+    if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
+        return ptn_ascii_case_equal(method_name, "format");
+    }
     if (ptn_internal_class_name_is_number_formatter(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct")
             || ptn_ascii_case_equal(method_name, "parseCurrency");
@@ -85330,6 +85349,20 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     }
     if (ptn_internal_class_name_is_intl_timezone(class_name)) {
         ptn_append_method_name(result, &index, "createTimeZone");
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_list_formatter(class_name)) {
+        static const char *const names[] = {
+            "__construct",
+            "format",
+            "getErrorCode",
+            "getErrorMessage",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_intl_number_range_formatter(class_name)) {
+        ptn_append_method_name(result, &index, "format");
         return result;
     }
     if (ptn_internal_class_name_is_number_formatter(class_name)) {
@@ -91384,6 +91417,8 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_internal_class_name_is_intl_calendar(class_name) ||
         ptn_internal_class_name_is_intl_date_formatter(class_name) ||
         ptn_internal_class_name_is_intl_timezone(class_name) ||
+        ptn_internal_class_name_is_intl_list_formatter(class_name) ||
+        ptn_internal_class_name_is_intl_number_range_formatter(class_name) ||
         ptn_internal_class_name_is_locale(class_name) ||
         ptn_internal_class_name_is_number_formatter(class_name) ||
         ptn_internal_class_name_is_collator(class_name) ||

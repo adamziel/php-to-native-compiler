@@ -504,6 +504,12 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->pcre_recursion_limit = NULL;
         free(runtime->pcre_jit);
         runtime->pcre_jit = NULL;
+        free(runtime->iconv_internal_encoding);
+        runtime->iconv_internal_encoding = NULL;
+        free(runtime->iconv_input_encoding);
+        runtime->iconv_input_encoding = NULL;
+        free(runtime->iconv_output_encoding);
+        runtime->iconv_output_encoding = NULL;
         free(runtime->opcache_blacklist_filename);
         runtime->opcache_blacklist_filename = NULL;
         free(runtime->opcache_enable);
@@ -3654,6 +3660,24 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             *out = ptn_int(1);
             return 1;
         }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlListFormatter")) {
+        if (strcmp(constant, "TYPE_AND") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "TYPE_OR") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "TYPE_UNITS") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "WIDTH_WIDE") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "WIDTH_SHORT") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "WIDTH_NARROW") == 0) { *out = ptn_int(2); return 1; }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlNumberRangeFormatter")) {
+        if (strcmp(constant, "COLLAPSE_AUTO") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "COLLAPSE_NONE") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "COLLAPSE_UNIT") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "COLLAPSE_ALL") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_SINGLE_VALUE") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_APPROXIMATELY_OR_SINGLE_VALUE") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_APPROXIMATELY") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "IDENTITY_FALLBACK_RANGE") == 0) { *out = ptn_int(3); return 1; }
     }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Locale")) {
         if (strcmp(constant, "LANG_TAG") == 0) {

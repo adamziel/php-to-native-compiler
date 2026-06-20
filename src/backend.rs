@@ -5489,6 +5489,8 @@ fn emit_class_metadata_helpers(
         "IntlCalendar",
         "IntlDateFormatter",
         "IntlTimeZone",
+        "IntlListFormatter",
+        "IntlNumberRangeFormatter",
         "Locale",
         "NumberFormatter",
         "Collator",
@@ -5982,6 +5984,8 @@ fn emit_class_metadata_helpers(
         "IntlCalendar",
         "IntlDateFormatter",
         "IntlTimeZone",
+        "IntlListFormatter",
+        "IntlNumberRangeFormatter",
         "Locale",
         "NumberFormatter",
         "Collator",
@@ -15046,6 +15050,8 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intlcalendar" => Some("IntlCalendar"),
         "intldateformatter" => Some("IntlDateFormatter"),
         "intltimezone" => Some("IntlTimeZone"),
+        "intllistformatter" => Some("IntlListFormatter"),
+        "intlnumberrangeformatter" => Some("IntlNumberRangeFormatter"),
         "locale" => Some("Locale"),
         "numberformatter" => Some("NumberFormatter"),
         "collator" => Some("Collator"),
@@ -22629,6 +22635,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlCalendar")
                 || class_name.eq_ignore_ascii_case("IntlDateFormatter")
                 || class_name.eq_ignore_ascii_case("IntlTimeZone")
+                || class_name.eq_ignore_ascii_case("IntlListFormatter")
+                || class_name.eq_ignore_ascii_case("IntlNumberRangeFormatter")
                 || class_name.eq_ignore_ascii_case("Locale")
                 || class_name.eq_ignore_ascii_case("NumberFormatter")
                 || class_name.eq_ignore_ascii_case("Collator")
