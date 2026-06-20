@@ -4708,6 +4708,14 @@ fn parser_rejects_unsupported_reference_forms_with_explicit_diagnostics() {
         "unsupported by-reference assignment target"
     );
 
+    let class_constant_assignment =
+        parser::parse("<?php class A { const C = 1; } $alias =& A::C;").unwrap_err();
+    assert_eq!(
+        class_constant_assignment.message,
+        "Cannot use temporary expression in write context"
+    );
+    assert_eq!(class_constant_assignment.kind, DiagnosticKind::ParseError);
+
     let builtin_result_assignment = parser::parse("<?php $alias =& strlen('x');").unwrap_err();
     assert_eq!(
         builtin_result_assignment.message,
@@ -6337,6 +6345,14 @@ class Book {
         program.classes[0].static_properties[0].set_visibility,
         PropertyVisibility::Protected
     );
+
+    let spaced_set_visibility =
+        parser::parse("<?php class Demo { private (set) mixed $v1; }").unwrap_err();
+    assert_eq!(
+        spaced_set_visibility.message,
+        "syntax error, unexpected token \")\", expecting token \"&\""
+    );
+    assert_eq!(spaced_set_visibility.kind, DiagnosticKind::ParseError);
 }
 
 #[test]
@@ -15705,6 +15721,39 @@ bool(true)\n\
 bool(true)\n\
 bool(false)\n\
 bool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_stream_context_options_snapshot_to_native_binary() {
+    let root = temp_dir("ptn-native-stream-context-options-snapshot");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("stream-context-options-snapshot.php");
+    let output = root.join("stream-context-options-snapshot-bin");
+    fs::write(
+        &input,
+        "<?php
+$headers = ['Host: okey.com'];
+$context = stream_context_create([
+    'http' => [
+        'header' => &$headers,
+        'ignore_errors' => true,
+    ],
+]);
+$headers = ['Host: bad.com'];
+print_r(stream_context_get_options($context));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Array\n(\n    [http] => Array\n        (\n            [header] => Array\n                (\n                    [0] => Host: okey.com\n                )\n\n            [ignore_errors] => 1\n        )\n\n)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -25095,6 +25144,47 @@ var_dump(function_exists(\"settype\"));",
 }
 
 #[test]
+fn compile_settype_typed_property_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-settype-typed-property-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("settype-typed-property-reference.php");
+    let output = root.join("settype-typed-property-reference-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public int $x;
+}
+
+$test = new Test;
+$test->x = 42;
+var_dump(settype($test->x, \"string\"));
+var_dump($test->x);
+try {
+    var_dump(settype($test->x, \"array\"));
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($test->x);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(42)\nCannot assign array to reference held by property Test::$x of type int\nint(42)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reference_assign(runtime, args[0].as.reference, converted)"));
+}
+
+#[test]
 fn compile_array_object_type_predicates_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-type-predicates");
     fs::create_dir_all(&root).unwrap();
@@ -32499,6 +32589,44 @@ string:9\n",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_return_reference_source_or_value(&runtime, "));
+}
+
+#[test]
+fn compile_by_reference_array_return_type_error_precedes_notice_to_native_binary() {
+    let root = temp_dir("ptn-native-by-reference-array-return-type-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("by-reference-array-return-type-error.php");
+    let output = root.join("by-reference-array-return-type-error-bin");
+    fs::write(
+        &input,
+        "<?php
+function &foo(): array {
+    return null;
+}
+
+try {
+    foo();
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "foo(): Return value must be of type array, null returned\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains(
+        "if (ptn_return_value_was_set && (ptn_value_deref(ptn_return_value).type == PTN_ARRAY))"
+    ));
 }
 
 #[test]
