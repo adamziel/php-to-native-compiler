@@ -463,6 +463,26 @@ static PtnClosureSourceLocation ptn_closure_source_location(PtnClosure *closure)
 static int ptn_closure_has_static_variables(PtnRuntime *runtime, PtnClosure *closure);
 static size_t ptn_closure_dump_field_count(PtnRuntime *runtime, PtnClosure *closure);
 
+static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata) {
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") &&
+        strcmp(metadata->display_name, "storage") == 0;
+}
+
+static PtnArrayEntry *ptn_object_property_entry_for_metadata(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (object == NULL || object->properties == NULL || metadata == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
 /* PTN_DIRECT_INTERNAL_HELPERS_START */
 static PTN_UNUSED const char *ptn_count_operand_type_name(PtnValue value) {
     value = ptn_value_deref(value);
@@ -1153,12 +1173,6 @@ static PTN_UNUSED char *ptn_magic_debug_info_null_deprecation_message(const char
     return message;
 }
 
-static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata);
-static PtnArrayEntry *ptn_object_property_entry_for_metadata(
-    PtnObject *object,
-    const PtnObjectPropertyMetadata *metadata
-);
-
 static PTN_UNUSED void ptn_direct_value_var_dump_object_key(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -1810,26 +1824,6 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
     return ptn_null();
 }
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
-
-static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata) {
-    return metadata != NULL &&
-        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
-        ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") &&
-        strcmp(metadata->display_name, "storage") == 0;
-}
-
-static PtnArrayEntry *ptn_object_property_entry_for_metadata(
-    PtnObject *object,
-    const PtnObjectPropertyMetadata *metadata
-) {
-    if (object == NULL || object->properties == NULL || metadata == NULL) {
-        return NULL;
-    }
-    PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
-    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
-    ptn_array_key_free(key);
-    return entry;
-}
 
 /* PTN_COMPACT_INTERNAL_HELPERS_START */
 
@@ -4319,7 +4313,6 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
-
 static void ptn_var_dump_array_key(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
         printf("[%lld]=>\n", (long long)key.as.integer);
@@ -21147,6 +21140,9 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     }
     if (ptn_ascii_case_equal(name, "toString") || ptn_ascii_case_equal(name, "__toString")) {
         return ptn_uri_to_string_value(data, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getUriType")) {
+        return ptn_uri_rfc3986_uri_type_value(runtime, data);
     }
     if (ptn_ascii_case_equal(name, "getRawScheme")) {
         return ptn_uri_component_property_value(data->scheme);
@@ -75437,6 +75433,7 @@ static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "toRawString")
         || ptn_ascii_case_equal(method_name, "toString")
         || ptn_ascii_case_equal(method_name, "equals")
+        || ptn_ascii_case_equal(method_name, "getUriType")
         || ptn_ascii_case_equal(method_name, "getRawScheme")
         || ptn_ascii_case_equal(method_name, "getScheme")
         || ptn_ascii_case_equal(method_name, "getRawUserInfo")
@@ -76974,6 +76971,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "toRawString",
             "toString",
             "equals",
+            "getUriType",
             "getRawScheme",
             "getScheme",
             "getRawUserInfo",

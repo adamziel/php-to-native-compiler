@@ -56559,11 +56559,17 @@ fn compile_uri_rfc3986_core_surface_to_native_binary() {
         &input,
         r#"<?php
 var_dump(class_exists("Uri\\Rfc3986\\Uri"));
+var_dump(class_exists("Uri\\Rfc3986\\UriType"));
+var_dump(Uri\Rfc3986\UriType::Uri);
 $uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61");
+var_dump($uri->getUriType());
 var_dump($uri->toRawString());
 var_dump($uri->toString());
 var_dump($uri->getRawPath());
 var_dump($uri->getPath());
+var_dump(Uri\Rfc3986\Uri::parse("//example.com/foo")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("/foo")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("foo")->getUriType());
 $changed = $uri
     ->withHost("%65xample.net")
     ->withScheme("HTTP")
@@ -56597,10 +56603,16 @@ try {
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "bool(true)\n",
+            "bool(true)\n",
+            "enum(Uri\\Rfc3986\\UriType::Uri)\n",
+            "enum(Uri\\Rfc3986\\UriType::Uri)\n",
             "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
             "string(12) \"/foo%2Fb%61r\"\n",
             "string(10) \"/foo%2Fbar\"\n",
+            "enum(Uri\\Rfc3986\\UriType::NetworkPathReference)\n",
+            "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
+            "enum(Uri\\Rfc3986\\UriType::RelativePathReference)\n",
             "string(43) \"HTTP://user:info@%65xample.net/foo%2Fb%61r#\"\n",
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
