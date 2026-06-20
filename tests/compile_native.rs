@@ -15025,6 +15025,51 @@ p=02-00-04 06:08:00 (unknown)\n"
 }
 
 #[test]
+fn compile_date_period_by_ref_iterator_rejects_to_native_binary() {
+    let root = temp_dir("ptn-native-date-period-by-ref-iterator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-period-by-ref-iterator.php");
+    let output = root.join("date-period-by-ref-iterator-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$properties = [\n\
+    'start' => new DateTimeImmutable('2023-01-13 12:29:30'),\n\
+    'end' => new DateTimeImmutable('2023-01-16 16:49:29'),\n\
+    'current' => new DateTimeImmutable('2023-01-15 00:00:00'),\n\
+    'interval' => DateInterval::createFromDateString('tomorrow'),\n\
+    'recurrences' => 1,\n\
+    'include_start_date' => true,\n\
+    'include_end_date' => true,\n\
+];\n\
+$d = DatePeriod::__set_state($properties);\n\
+try {\n\
+    foreach ($d as &$item) {\n\
+        echo $item->format(DateTime::ISO8601), \"\\n\";\n\
+    }\n\
+    echo \"OK\\n\";\n\
+} catch (Error $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error: An iterator cannot be used with foreach by reference\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_interval_create_from_date_string"));
+    assert!(c_source.contains("ptn_date_period_set_state"));
+}
+
+#[test]
 fn compile_date_diff_function_to_native_binary() {
     let root = temp_dir("ptn-native-date-diff-function");
     fs::create_dir_all(&root).unwrap();
