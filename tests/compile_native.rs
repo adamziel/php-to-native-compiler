@@ -27758,7 +27758,7 @@ try {{
             "<?xml version=\"1.0\"?>\n",
             "<para flag=\"\"><?pi data?><extra>ok</extra></para>&nbsp;\n",
             "string(3) \"amp\"\n",
-            "string(0) \"\"\n",
+            "string(1) \"&\"\n",
             "string(4) \"copy\"\n",
             "string(0) \"\"\n",
             "bool(true)\n",
