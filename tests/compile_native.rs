@@ -8506,6 +8506,36 @@ class NotAbstract {
 }
 
 #[test]
+fn parser_allows_private_abstract_methods_in_traits_only() {
+    parser::parse(
+        "<?php
+trait T {
+    abstract private function method(self $x): self;
+}
+class C {
+    use T;
+
+    private function method(self $x): self {
+        return $this;
+    }
+}",
+    )
+    .unwrap();
+
+    let error = parser::parse(
+        "<?php
+class C {
+    abstract private function method();
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Abstract function C::method() cannot be declared private"
+    );
+}
+
+#[test]
 fn parser_accepts_interface_declarations_and_implements_metadata() {
     let program = parser::parse(
         "<?php

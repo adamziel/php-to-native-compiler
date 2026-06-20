@@ -1682,7 +1682,7 @@ impl Parser<'_> {
         let mut methods = Vec::new();
         let mut trait_uses = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            match self.parse_class_member(is_readonly, is_interface, &class_name)? {
+            match self.parse_class_member(is_readonly, is_interface, false, &class_name)? {
                 ParsedClassMember::Method(method) => {
                     if method.name.eq_ignore_ascii_case("__construct") {
                         properties
@@ -1890,7 +1890,13 @@ impl Parser<'_> {
                 continue;
             }
 
-            match self.parse_class_member_with_attributes(false, false, &class_name, attributes)? {
+            match self.parse_class_member_with_attributes(
+                false,
+                false,
+                false,
+                &class_name,
+                attributes,
+            )? {
                 ParsedClassMember::Method(method) => methods.push(method),
                 ParsedClassMember::Constants(parsed_constants) => {
                     constants.extend(parsed_constants);
@@ -1952,7 +1958,7 @@ impl Parser<'_> {
         let mut methods = Vec::new();
         let mut trait_uses = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            match self.parse_class_member(false, false, &trait_name)? {
+            match self.parse_class_member(false, false, true, &trait_name)? {
                 ParsedClassMember::Method(mut method) => {
                     method.trait_name = Some(trait_name.clone());
                     method.trait_method_name = Some(method.name.clone());
@@ -2205,12 +2211,14 @@ impl Parser<'_> {
         &mut self,
         class_is_readonly: bool,
         class_is_interface: bool,
+        class_is_trait: bool,
         class_name: &str,
     ) -> Result<ParsedClassMember> {
         let attributes = self.parse_attribute_groups()?;
         self.parse_class_member_with_attributes(
             class_is_readonly,
             class_is_interface,
+            class_is_trait,
             class_name,
             attributes,
         )
@@ -2220,6 +2228,7 @@ impl Parser<'_> {
         &mut self,
         class_is_readonly: bool,
         class_is_interface: bool,
+        class_is_trait: bool,
         class_name: &str,
         attributes: ParsedAttributes,
     ) -> Result<ParsedClassMember> {
@@ -2399,6 +2408,7 @@ impl Parser<'_> {
             modifiers,
             class_is_readonly,
             class_is_interface,
+            class_is_trait,
             class_name,
         )?;
         if class_is_interface && method_is_final {
@@ -3683,6 +3693,7 @@ impl Parser<'_> {
         modifiers: ClassModifiers,
         class_is_readonly: bool,
         class_is_interface: bool,
+        class_is_trait: bool,
         class_name: &str,
     ) -> Result<MethodDecl> {
         let start_span = self.expect_function()?;
@@ -3697,6 +3708,7 @@ impl Parser<'_> {
             .ok_or_else(|| Diagnostic::new("expected method name", Some(name_token.span)))?;
         let allow_promoted_properties = name.eq_ignore_ascii_case("__construct");
         if !class_is_interface
+            && !class_is_trait
             && modifiers.is_abstract
             && matches!(modifiers.visibility, PropertyVisibility::Private)
         {
@@ -8099,7 +8111,7 @@ impl Parser<'_> {
         let mut methods = Vec::new();
         let mut trait_uses = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            match self.parse_class_member(false, false, &class_name)? {
+            match self.parse_class_member(false, false, false, &class_name)? {
                 ParsedClassMember::Method(method) => {
                     if method.is_abstract {
                         return Err(Diagnostic::new(
