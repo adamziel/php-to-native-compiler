@@ -2020,6 +2020,202 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PREG_JIT_STACKLIMIT_ERROR);
         return 1;
     }
+    if (strcmp(name, "FILTER_VALIDATE_INT") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_INT);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_BOOLEAN") == 0 || strcmp(name, "FILTER_VALIDATE_BOOL") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_BOOLEAN);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_FLOAT") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_FLOAT);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_REGEXP") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_REGEXP);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_DOMAIN") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_DOMAIN);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_URL") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_URL);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_EMAIL") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_EMAIL);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_IP") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_IP);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_VALIDATE_MAC") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_MAC);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_STRING") == 0 || strcmp(name, "FILTER_SANITIZE_STRIPPED") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_STRING);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_ENCODED") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_ENCODED);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_SPECIAL_CHARS") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_SPECIAL_CHARS);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_FULL_SPECIAL_CHARS") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_UNSAFE_RAW") == 0 || strcmp(name, "FILTER_DEFAULT") == 0) {
+        *out = ptn_int(PTN_FILTER_UNSAFE_RAW);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_EMAIL") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_EMAIL);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_URL") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_URL);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_NUMBER_INT") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_NUMBER_INT);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_NUMBER_FLOAT") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_NUMBER_FLOAT);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_SANITIZE_ADD_SLASHES") == 0) {
+        *out = ptn_int(PTN_FILTER_SANITIZE_ADD_SLASHES);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_CALLBACK") == 0) {
+        *out = ptn_int(PTN_FILTER_CALLBACK);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_REQUIRE_ARRAY") == 0) {
+        *out = ptn_int(PTN_FILTER_REQUIRE_ARRAY);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_REQUIRE_SCALAR") == 0) {
+        *out = ptn_int(PTN_FILTER_REQUIRE_SCALAR);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FORCE_ARRAY") == 0) {
+        *out = ptn_int(PTN_FILTER_FORCE_ARRAY);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_NULL_ON_FAILURE") == 0) {
+        *out = ptn_int(PTN_FILTER_NULL_ON_FAILURE);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ALLOW_OCTAL") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ALLOW_OCTAL);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ALLOW_HEX") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ALLOW_HEX);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_STRIP_LOW") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_STRIP_LOW);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_STRIP_HIGH") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_STRIP_HIGH);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ENCODE_LOW") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ENCODE_LOW);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ENCODE_HIGH") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ENCODE_HIGH);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ENCODE_AMP") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ENCODE_AMP);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_NO_ENCODE_QUOTES") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_NO_ENCODE_QUOTES);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_EMPTY_STRING_NULL") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_EMPTY_STRING_NULL);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_STRIP_BACKTICK") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_STRIP_BACKTICK);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ALLOW_FRACTION") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ALLOW_FRACTION);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ALLOW_THOUSAND") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ALLOW_THOUSAND);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_ALLOW_SCIENTIFIC") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_ALLOW_SCIENTIFIC);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_PATH_REQUIRED") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_PATH_REQUIRED);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_QUERY_REQUIRED") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_QUERY_REQUIRED);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_IPV4") == 0 || strcmp(name, "FILTER_FLAG_HOSTNAME") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_IPV4);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_IPV6") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_IPV6);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_NO_RES_RANGE") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_NO_RES_RANGE);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_NO_PRIV_RANGE") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_NO_PRIV_RANGE);
+        return 1;
+    }
+    if (strcmp(name, "FILTER_FLAG_GLOBAL_RANGE") == 0) {
+        *out = ptn_int(PTN_FILTER_FLAG_GLOBAL_RANGE);
+        return 1;
+    }
+    if (strcmp(name, "INPUT_GET") == 0) {
+        *out = ptn_int(PTN_INPUT_GET);
+        return 1;
+    }
+    if (strcmp(name, "INPUT_POST") == 0) {
+        *out = ptn_int(PTN_INPUT_POST);
+        return 1;
+    }
+    if (strcmp(name, "INPUT_COOKIE") == 0) {
+        *out = ptn_int(PTN_INPUT_COOKIE);
+        return 1;
+    }
+    if (strcmp(name, "INPUT_ENV") == 0) {
+        *out = ptn_int(PTN_INPUT_ENV);
+        return 1;
+    }
+    if (strcmp(name, "INPUT_SERVER") == 0) {
+        *out = ptn_int(PTN_INPUT_SERVER);
+        return 1;
+    }
     if (strcmp(name, "MB_CASE_UPPER") == 0) {
         *out = ptn_int(PTN_MB_CASE_UPPER);
         return 1;
