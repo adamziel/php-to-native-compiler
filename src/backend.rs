@@ -24930,8 +24930,20 @@ fn value_is_temporary_write_context(value: &ValueExpr) -> bool {
     }
 }
 
+fn value_is_reference_list_assignment(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::Assign {
+            target: AssignmentTarget::List(target),
+            op: AssignmentOp::Assign,
+            ..
+        } if list_assignment_has_reference(target)
+    )
+}
+
 fn value_needs_runtime_by_ref_argument_check(value: &ValueExpr) -> bool {
     value_is_temporary_write_context(value)
+        || value_is_reference_list_assignment(value)
         || matches!(
             value,
             ValueExpr::NullsafePropertyFetch { .. } | ValueExpr::PipeValue { .. }
@@ -29800,6 +29812,45 @@ impl ValueEmitter {
         out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &source_temp);
         result_temp
+    }
+
+    fn emit_reference_list_assignment_argument_reference(
+        &mut self,
+        out: &mut String,
+        target: &ListAssignmentTarget,
+        source: &ValueExpr,
+    ) -> Option<String> {
+        if let ValueExpr::Load { name, line } = source {
+            let assigned_temp =
+                self.emit_reference_list_assignment_from_variable(out, target, name);
+            emit_value_cleanup(out, "    ", &assigned_temp);
+            return Some(self.emit_reference_target(
+                out,
+                &ReferenceTarget::Variable {
+                    name: name.clone(),
+                    line: *line,
+                },
+            ));
+        }
+
+        if let ValueExpr::StaticPropertyFetch {
+            class_name,
+            name,
+            line,
+        } = source
+        {
+            let source_temp = self.emit_static_property_reference(out, class_name, name, *line);
+            let assigned_temp =
+                self.emit_list_assignment_from_temp(out, target, &source_temp, false);
+            emit_value_cleanup(out, "    ", &assigned_temp);
+            return Some(source_temp);
+        }
+
+        let source_target = reference_target_from_value(source)?;
+        let source_temp = self.emit_reference_target(out, &source_target);
+        let assigned_temp = self.emit_list_assignment_from_temp(out, target, &source_temp, false);
+        emit_value_cleanup(out, "    ", &assigned_temp);
+        Some(source_temp)
     }
 
     fn emit_store_reference_assignment_target_from_temp(
@@ -39708,6 +39759,20 @@ impl ValueEmitter {
                 if let ValueExpr::AssignRef { target, source } = argument {
                     return self
                         .emit_reference_assignment_argument_reference(out, target, source, line);
+                }
+                if let ValueExpr::Assign {
+                    target: AssignmentTarget::List(target),
+                    op: AssignmentOp::Assign,
+                    value,
+                } = argument
+                {
+                    if value_is_reference_list_assignment(argument) {
+                        if let Some(temp) = self
+                            .emit_reference_list_assignment_argument_reference(out, target, value)
+                        {
+                            return temp;
+                        }
+                    }
                 }
                 if self.source_is_declared_by_ref_call(argument) {
                     return self.emit_reference_source(out, argument, line);

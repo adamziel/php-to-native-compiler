@@ -33361,6 +33361,39 @@ echo $a, \":\", $b, \":\", $ary[0][1], \"\\n\";",
 }
 
 #[test]
+fn compile_reference_list_assignment_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-list-assignment-argument");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-list-assignment-argument.php");
+    let output = root.join("reference-list-assignment-argument-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function change(&$ref) { $ref = range(1, 3); }\n\
+$func = function (&$ref) { change($ref); };\n\
+$array = [1];\n\
+change(list(&$value) = $array);\n\
+var_dump($array);\n\
+var_dump($value);\n\
+$array = [1];\n\
+$func(list(&$value) = $array);\n\
+var_dump($array);\n\
+var_dump($value);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n}\nint(1)\narray(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  int(2)\n  [2]=>\n  int(3)\n}\nint(1)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_list_assignment_append_array_dim_targets_to_native_binary() {
     let root = temp_dir("ptn-native-list-assignment-append-array-dim-targets");
     fs::create_dir_all(&root).unwrap();
