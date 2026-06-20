@@ -2761,6 +2761,7 @@ fn ast_known_internal_class(class_name: &str) -> bool {
         "CallbackFilterIterator",
         "Closure",
         "DateInterval",
+        "DatePeriod",
         "DateTime",
         "DateTimeImmutable",
         "DateTimeZone",

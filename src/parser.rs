@@ -11221,7 +11221,7 @@ fn is_modeled_spl_iterator_class_name(name: &str) -> bool {
 fn is_modeled_builtin_date_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
-        "datetime" | "datetimeimmutable" | "datetimezone" | "dateinterval"
+        "datetime" | "datetimeimmutable" | "datetimezone" | "dateinterval" | "dateperiod"
     )
 }
 
