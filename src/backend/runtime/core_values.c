@@ -601,6 +601,7 @@ typedef struct {
     int is_variadic;
     int can_be_passed_by_value;
     const char *default_value_display;
+    const char *default_value_constant_name;
 } PtnParameterMetadata;
 
 typedef struct {

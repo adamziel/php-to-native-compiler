@@ -233,6 +233,9 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
             ptn_ascii_case_equal(name, "strtoupper")) {
             return "string";
         }
+        if (ptn_ascii_case_equal(name, "ord")) {
+            return "character";
+        }
         if (ptn_ascii_case_equal(name, "settype")) {
             return "var";
         }
@@ -4996,16 +4999,16 @@ static int ptn_internal_function_parameter_can_be_passed_by_value(const char *na
 }
 
 static const PtnParameterMetadata PTN_INTERNAL_HTMLSPECIALCHARS_PARAMETERS[] = {
-    { "string", "string", "string", 0, 1, 0, 0, 1, NULL },
-    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL },
-    { "encoding", "string", "?string", 1, 1, 0, 0, 1, NULL },
-    { "double_encode", "bool", "bool", 0, 1, 0, 0, 1, NULL },
+    { "string", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
+    { "encoding", "string", "?string", 1, 1, 0, 0, 1, NULL, NULL },
+    { "double_encode", "bool", "bool", 0, 1, 0, 0, 1, NULL, NULL },
 };
 
 static const PtnParameterMetadata PTN_INTERNAL_GET_HTML_TRANSLATION_TABLE_PARAMETERS[] = {
-    { "table", "int", "int", 0, 1, 0, 0, 1, NULL },
-    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL },
-    { "encoding", "string", "string", 0, 1, 0, 0, 1, NULL },
+    { "table", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
+    { "flags", "int", "int", 0, 1, 0, 0, 1, NULL, NULL },
+    { "encoding", "string", "string", 0, 1, 0, 0, 1, NULL, NULL },
 };
 
 static const char *ptn_internal_function_parameter_default_display(PtnFunctionMetadata metadata, size_t index) {
@@ -5051,6 +5054,20 @@ static const char *ptn_function_metadata_parameter_default_display(
         return metadata.parameters[index].default_value_display;
     }
     return ptn_internal_function_parameter_default_display(metadata, index);
+}
+
+static const char *ptn_function_metadata_parameter_default_constant_name(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    if (
+        metadata.parameters != NULL &&
+        index < metadata.parameter_count &&
+        metadata.parameters[index].default_value_constant_name != NULL
+    ) {
+        return metadata.parameters[index].default_value_constant_name;
+    }
+    return NULL;
 }
 
 static int ptn_function_metadata_parameter_by_ref(PtnFunctionMetadata metadata, size_t index) {
@@ -79653,27 +79670,27 @@ static PtnFunctionMetadata ptn_internal_function_metadata(const PtnInternalFunct
         return ptn_function_metadata_not_found();
     }
     static const PtnParameterMetadata PTN_INTERNAL_EXIT_PARAMETERS[] = {
-        { "status", NULL, NULL, 0, 0, 0, 0, 1, NULL },
+        { "status", NULL, NULL, 0, 0, 0, 0, 1, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_REQUEST_PARSE_BODY_PARAMETERS[] = {
-        { "options", "array", "array", 1, 0, 0, 0, 1, NULL },
+        { "options", "array", "array", 1, 0, 0, 0, 1, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FGETCSV_PARAMETERS[] = {
-        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL },
-        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_FPUTCSV_PARAMETERS[] = {
-        { "fields", "array", "array", 0, 0, 1, 0, 1, NULL },
-        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL },
-        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL },
-        { "eol", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "fields", "array", "array", 0, 0, 1, 0, 1, NULL, NULL },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "eol", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
     };
     static const PtnParameterMetadata PTN_INTERNAL_SPL_FILE_OBJECT_SET_CSV_CONTROL_PARAMETERS[] = {
-        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL },
-        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL },
-        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL },
+        { "separator", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "enclosure", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
+        { "escape", "string", "string", 0, 1, 1, 0, 1, NULL, NULL },
     };
     if (ptn_ascii_case_equal(function->name, "exit") || ptn_ascii_case_equal(function->name, "die")) {
         return ptn_function_metadata_found(
@@ -81422,15 +81439,25 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
 }
 
 static int ptn_reflection_parameter_method_exists(const char *method_name) {
-    return ptn_ascii_case_equal(method_name, "__toString")
+    return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__toString")
+        || ptn_ascii_case_equal(method_name, "allowsNull")
         || ptn_ascii_case_equal(method_name, "canBePassedByValue")
         || ptn_ascii_case_equal(method_name, "getAttributes")
+        || ptn_ascii_case_equal(method_name, "getClass")
+        || ptn_ascii_case_equal(method_name, "getDeclaringClass")
+        || ptn_ascii_case_equal(method_name, "getDeclaringFunction")
+        || ptn_ascii_case_equal(method_name, "getDefaultValue")
+        || ptn_ascii_case_equal(method_name, "getDefaultValueConstantName")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getPosition")
         || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "hasType")
         || ptn_ascii_case_equal(method_name, "isArray")
         || ptn_ascii_case_equal(method_name, "isCallable")
+        || ptn_ascii_case_equal(method_name, "isDefaultValueAvailable")
+        || ptn_ascii_case_equal(method_name, "isDefaultValueConstant")
+        || ptn_ascii_case_equal(method_name, "isOptional")
         || ptn_ascii_case_equal(method_name, "isPassedByReference")
         || ptn_ascii_case_equal(method_name, "isVariadic");
 }
@@ -85762,7 +85789,7 @@ static PtnFunctionMetadata ptn_reflection_method_function_metadata(PtnReflection
     if (ptn_ascii_case_equal(data->class_name, "XMLReader") &&
         ptn_ascii_case_equal(data->name, "expand")) {
         static const PtnParameterMetadata PTN_INTERNAL_XMLREADER_EXPAND_PARAMETERS[] = {
-            { "baseNode", "DOMNode", "?DOMNode", 1, 0, 0, 0, 1, "null" },
+            { "baseNode", "DOMNode", "?DOMNode", 1, 0, 0, 0, 1, "null", NULL },
         };
         return ptn_function_metadata_found(
             "XMLReader::expand",
@@ -89260,6 +89287,41 @@ static size_t ptn_reflection_object_dynamic_property_count(PtnObject *object) {
     return count;
 }
 
+static void ptn_reflection_object_append_dynamic_property_objects(
+    PtnRuntime *runtime,
+    PtnValue result,
+    PtnObject *object,
+    int filter_present,
+    int filter
+) {
+    if (object == NULL || object->properties == NULL) {
+        return;
+    }
+    if (filter_present && (filter & 1) == 0) {
+        return;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (!ptn_reflection_object_dynamic_property_entry(object, entry)) {
+            continue;
+        }
+        if (result.as.array->len > (size_t)INT64_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_int_key((int64_t)result.as.array->len),
+            ptn_reflection_property_object_from_name_ex(
+                runtime,
+                object->class_name,
+                entry->key.as.string,
+                entry->key.string_len,
+                1
+            )
+        );
+    }
+}
+
 static void ptn_reflection_object_append_dynamic_properties(PtnStringBuffer *buffer, PtnObject *object) {
     size_t count = ptn_reflection_object_dynamic_property_count(object);
     ptn_string_buffer_append_format(buffer, "\n\n  - Dynamic properties [%zu] {\n", count);
@@ -89660,6 +89722,25 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         (void)visibility;
         (void)has_default;
         if (!exists) {
+            if (data->has_reflected_object &&
+                ptn_ascii_case_equal(lookup.lookup_class_name, class_name)) {
+                PtnValue reflected = ptn_value_deref(data->reflected_object);
+                if (ptn_reflection_dynamic_object_property_exists(
+                        reflected,
+                        lookup.property_name,
+                        strlen(lookup.property_name)
+                    )) {
+                    PtnValue property = ptn_reflection_property_object_from_name_ex(
+                        runtime,
+                        lookup.lookup_class_name,
+                        lookup.property_name,
+                        strlen(lookup.property_name),
+                        1
+                    );
+                    free(property_name);
+                    return property;
+                }
+            }
             if (ptn_internal_class_property_exists(lookup.lookup_class_name, lookup.property_name)) {
                 PtnValue property = ptn_reflection_property_object_from_name_ex(
                     runtime,
@@ -89712,7 +89793,21 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
             }
             return result;
         }
-        return ptn_declared_class_reflection_properties(runtime, class_name, filter_present, filter_value);
+        PtnValue result =
+            ptn_declared_class_reflection_properties(runtime, class_name, filter_present, filter_value);
+        if (data->has_reflected_object) {
+            PtnValue reflected = ptn_value_deref(data->reflected_object);
+            if (reflected.type == PTN_OBJECT) {
+                ptn_reflection_object_append_dynamic_property_objects(
+                    runtime,
+                    result,
+                    reflected.as.object,
+                    filter_present,
+                    filter_value
+                );
+            }
+        }
+        return result;
     }
     if (ptn_ascii_case_equal(name, "getDefaultProperties")) {
         ptn_reflection_class_check_exact_arguments(runtime, name, argc, 0);
@@ -93422,6 +93517,26 @@ static PtnValue ptn_reflection_named_type_object_from_metadata(
     return object;
 }
 
+static void ptn_reflection_function_attach_name_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *name
+) {
+    PtnValue name_value = ptn_owned_string(ptn_duplicate_string(name == NULL ? "" : name));
+    ptn_declare_internal_readonly_property(
+        runtime,
+        object,
+        "name",
+        "ReflectionFunction",
+        PTN_PROPERTY_TYPE_STRING,
+        "string",
+        0,
+        name_value,
+        0
+    );
+    ptn_value_destroy(&name_value);
+}
+
 static PtnValue ptn_reflection_function_object_from_metadata(
     PtnRuntime *runtime,
     PtnFunctionMetadata metadata
@@ -93442,6 +93557,7 @@ static PtnValue ptn_reflection_function_object_from_metadata(
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionFunction");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_function_data_free;
+    ptn_reflection_function_attach_name_property(runtime, object, metadata.name);
     return object;
 }
 
@@ -93524,7 +93640,16 @@ static PtnFunctionMetadata ptn_reflection_parameter_resolve_function_metadata(
         } else {
             class_name = ptn_value_to_string(class_arg);
         }
-        char *method_name = ptn_value_to_string(method_arg);
+        PtnStringOperand method_operand =
+            ptn_value_to_string_operand_with_runtime(runtime, method_arg, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(method_operand);
+            free(class_name);
+            return ptn_function_metadata_not_found();
+        }
+        char *method_name =
+            ptn_duplicate_string_len(method_operand.data, method_operand.len);
+        ptn_string_operand_free(method_operand);
         const char *lookup_class_name = ptn_symbol_name_without_leading_slash(class_name);
         const char *resolved_class_name = NULL;
         if (!ptn_reflection_class_runtime_symbol_exists_after_autoload(
@@ -93564,6 +93689,21 @@ static PtnFunctionMetadata ptn_reflection_parameter_resolve_function_metadata(
         return metadata;
     }
 
+    if (target.type != PTN_STRING) {
+        char message[256];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "ReflectionParameter::__construct(): Argument #1 ($function) must be a string, an array(class, method), or a callable object, %s given",
+            ptn_offset_container_type_name(target)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ReflectionException", message);
+        return ptn_function_metadata_not_found();
+    }
+
     char *name = ptn_value_to_string(target);
     PtnFunctionMetadata metadata = ptn_find_function_metadata(name);
     if (!metadata.found) {
@@ -93594,6 +93734,14 @@ static int ptn_reflection_parameter_resolve_index(
     (void)line;
     parameter = ptn_value_deref(parameter);
     if (parameter.type == PTN_INT) {
+        if (parameter.as.integer < 0) {
+            ptn_throw_exception(
+                runtime,
+                "ValueError",
+                "ReflectionParameter::__construct(): Argument #2 ($param) must be greater than or equal to 0"
+            );
+            return 0;
+        }
         if (parameter.as.integer >= 0 && (uint64_t)parameter.as.integer < metadata.parameter_count) {
             *index_out = (size_t)parameter.as.integer;
             return 1;
@@ -93710,6 +93858,235 @@ static PtnValue ptn_reflection_parameter_to_string(
     }
     ptn_string_buffer_append(&buffer, " ]");
     return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static int ptn_reflection_parameter_is_default_available(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    return index < metadata.parameter_count &&
+        index >= metadata.required_parameter_count &&
+        !ptn_function_metadata_parameter_is_variadic(metadata, index);
+}
+
+static int ptn_reflection_parameter_is_optional(
+    PtnFunctionMetadata metadata,
+    size_t index
+) {
+    return index < metadata.parameter_count && index >= metadata.required_parameter_count;
+}
+
+static PtnValue ptn_reflection_parameter_throw_default_unavailable(PtnRuntime *runtime) {
+    ptn_throw_exception(
+        runtime,
+        "ReflectionException",
+        "Internal error: Failed to retrieve the default value"
+    );
+    return ptn_null();
+}
+
+static PtnValue ptn_reflection_parameter_default_string_value(const char *display) {
+    size_t len = strlen(display);
+    if (len < 2) {
+        return ptn_owned_string(ptn_duplicate_string(display));
+    }
+    char quote = display[0];
+    if ((quote != '\'' && quote != '"') || display[len - 1] != quote) {
+        return ptn_owned_string(ptn_duplicate_string(display));
+    }
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 1; i + 1 < len; i++) {
+        if (display[i] == '\\' && i + 1 < len - 1) {
+            i++;
+            switch (display[i]) {
+                case 'n':
+                    ptn_string_buffer_append_len(&buffer, "\n", 1);
+                    break;
+                case 'r':
+                    ptn_string_buffer_append_len(&buffer, "\r", 1);
+                    break;
+                case 't':
+                    ptn_string_buffer_append_len(&buffer, "\t", 1);
+                    break;
+                case '\\':
+                    ptn_string_buffer_append_len(&buffer, "\\", 1);
+                    break;
+                case '\'':
+                    ptn_string_buffer_append_len(&buffer, "'", 1);
+                    break;
+                case '"':
+                    ptn_string_buffer_append_len(&buffer, "\"", 1);
+                    break;
+                default:
+                    ptn_string_buffer_append_len(&buffer, &display[i], 1);
+                    break;
+            }
+            continue;
+        }
+        ptn_string_buffer_append_len(&buffer, &display[i], 1);
+    }
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static PtnValue ptn_reflection_parameter_default_value_from_display(
+    PtnRuntime *runtime,
+    const char *display,
+    size_t line
+) {
+    if (display == NULL) {
+        return ptn_null();
+    }
+    if (strcmp(display, "NULL") == 0 || strcmp(display, "null") == 0) {
+        return ptn_null();
+    }
+    if (strcmp(display, "true") == 0 || strcmp(display, "TRUE") == 0) {
+        return ptn_bool(1);
+    }
+    if (strcmp(display, "false") == 0 || strcmp(display, "FALSE") == 0) {
+        return ptn_bool(0);
+    }
+    if (strcmp(display, "Array") == 0) {
+        return ptn_array_from_literal_entries(0, NULL);
+    }
+    if (display[0] == '\'' || display[0] == '"') {
+        return ptn_reflection_parameter_default_string_value(display);
+    }
+    char *end = NULL;
+    errno = 0;
+    int64_t integer = strtoll(display, &end, 10);
+    if (errno == 0 && end != display && *end == '\0') {
+        return ptn_int(integer);
+    }
+    errno = 0;
+    double floating = strtod(display, &end);
+    if (errno == 0 && end != display && *end == '\0') {
+        return ptn_float(floating);
+    }
+    if (strncmp(display, "new \\", 5) == 0) {
+        const char *class_start = display + 5;
+        const char *paren = strchr(class_start, '(');
+        if (paren != NULL) {
+            char *class_name = ptn_duplicate_string_len(class_start, (size_t)(paren - class_start));
+            PtnValue object = ptn_object_new_shell(runtime, class_name);
+            free(class_name);
+            return object;
+        }
+    }
+    return ptn_read_constant(runtime, display, runtime->source_path, line);
+}
+
+static char *ptn_reflection_parameter_declaring_class_name(PtnReflectionParameterData *data) {
+    if (data == NULL) {
+        return NULL;
+    }
+    if (data->closure_scope_class_name != NULL) {
+        return ptn_duplicate_string(data->closure_scope_class_name);
+    }
+    if (data->metadata.name == NULL) {
+        return NULL;
+    }
+    const char *separator = strstr(data->metadata.name, "::");
+    if (separator == NULL || separator == data->metadata.name) {
+        return NULL;
+    }
+    return ptn_duplicate_string_len(data->metadata.name, (size_t)(separator - data->metadata.name));
+}
+
+static PtnValue ptn_reflection_parameter_declaring_function(
+    PtnRuntime *runtime,
+    PtnReflectionParameterData *data
+) {
+    if (data == NULL) {
+        return ptn_null();
+    }
+    const char *separator = data->metadata.name == NULL ? NULL : strstr(data->metadata.name, "::");
+    if (separator != NULL && separator != data->metadata.name) {
+        char *class_name = ptn_duplicate_string_len(
+            data->metadata.name,
+            (size_t)(separator - data->metadata.name)
+        );
+        PtnValue method = ptn_reflection_method_object_from_name(runtime, class_name, separator + 2);
+        free(class_name);
+        return method;
+    }
+    PtnValue function = ptn_reflection_function_object_from_metadata(runtime, data->metadata);
+    if (data->has_closure_function_index) {
+        PtnReflectionFunctionData *function_data =
+            (PtnReflectionFunctionData *)function.as.object->native_data;
+        function_data->has_closure_function_index = 1;
+        function_data->closure_function_index = data->closure_function_index;
+        free(function_data->closure_scope_class_name);
+        function_data->closure_scope_class_name = data->closure_scope_class_name == NULL
+            ? NULL
+            : ptn_duplicate_string(data->closure_scope_class_name);
+    }
+    return function;
+}
+
+static PtnValue ptn_reflection_parameter_class_from_type(
+    PtnRuntime *runtime,
+    PtnReflectionParameterData *data
+) {
+    const char *type_name = ptn_function_metadata_parameter_type_name(data->metadata, data->index);
+    if (
+        type_name == NULL ||
+        ptn_function_metadata_parameter_type_is_builtin(data->metadata, data->index)
+    ) {
+        return ptn_null();
+    }
+    char *scope_class_name = ptn_reflection_parameter_declaring_class_name(data);
+    if (ptn_ascii_case_equal(type_name, "self")) {
+        if (scope_class_name == NULL) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Parameter uses \"self\" as type but function is not a class member"
+            );
+            return ptn_null();
+        }
+        PtnValue result = ptn_reflection_class_object_from_name(runtime, scope_class_name);
+        free(scope_class_name);
+        return result;
+    }
+    if (ptn_ascii_case_equal(type_name, "parent")) {
+        if (scope_class_name == NULL) {
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Parameter uses \"parent\" as type but function is not a class member"
+            );
+            return ptn_null();
+        }
+        const char *parent_name = ptn_declared_class_parent_name(scope_class_name);
+        if (parent_name == NULL) {
+            free(scope_class_name);
+            ptn_throw_exception(
+                runtime,
+                "ReflectionException",
+                "Parameter uses \"parent\" as type although class does not have a parent"
+            );
+            return ptn_null();
+        }
+        PtnValue result = ptn_reflection_class_object_from_name(runtime, parent_name);
+        free(scope_class_name);
+        return result;
+    }
+    free(scope_class_name);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(type_name);
+    const char *resolved_name = NULL;
+    if (!ptn_reflection_class_runtime_symbol_exists_after_autoload(
+            runtime,
+            lookup_name,
+            0,
+            &resolved_name
+        )) {
+        if (runtime->exceptions->active_exception == NULL) {
+            ptn_reflection_class_throw_missing_class(runtime, lookup_name);
+        }
+        return ptn_null();
+    }
+    return ptn_reflection_class_object_from_name(runtime, resolved_name);
 }
 
 static void ptn_reflection_check_no_arguments(
@@ -94484,6 +94861,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_new(
     PtnValue object = ptn_object_new_shell(runtime, "ReflectionFunction");
     object.as.object->native_data = data;
     object.as.object->native_data_free = ptn_reflection_function_data_free;
+    ptn_reflection_function_attach_name_property(runtime, object, metadata.name);
     return object;
 }
 
@@ -100883,6 +101261,44 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
     if (data == NULL) {
         return ptn_null();
     }
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        PtnValue replacement = ptn_reflection_parameter_new(runtime, argc, args, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue resolved_receiver = ptn_value_deref(receiver);
+        if (
+            resolved_receiver.type != PTN_OBJECT ||
+            replacement.type != PTN_OBJECT ||
+            replacement.as.object->native_data == NULL
+        ) {
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (resolved_receiver.as.object->native_data_free != NULL) {
+            resolved_receiver.as.object->native_data_free(resolved_receiver.as.object->native_data);
+        }
+        resolved_receiver.as.object->native_data = replacement.as.object->native_data;
+        resolved_receiver.as.object->native_data_free = replacement.as.object->native_data_free;
+        replacement.as.object->native_data = NULL;
+        replacement.as.object->native_data_free = NULL;
+        PtnReflectionParameterData *new_data =
+            (PtnReflectionParameterData *)resolved_receiver.as.object->native_data;
+        char fallback[32];
+        const char *parameter_name = ptn_function_metadata_parameter_name(
+            new_data->metadata,
+            new_data->index,
+            fallback,
+            sizeof(fallback)
+        );
+        ptn_array_set_entry(
+            resolved_receiver.as.object->properties,
+            ptn_array_string_key("name"),
+            ptn_owned_string(ptn_duplicate_string(parameter_name))
+        );
+        ptn_value_destroy(&replacement);
+        return ptn_null();
+    }
     PtnFunctionMetadata metadata = data->metadata;
     size_t index = data->index;
     if (ptn_ascii_case_equal(name, "getAttributes")) {
@@ -100923,6 +101339,18 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
     if (ptn_ascii_case_equal(name, "getPosition")) {
         return ptn_reflection_function_size_result(index);
     }
+    if (ptn_ascii_case_equal(name, "getDeclaringFunction")) {
+        return ptn_reflection_parameter_declaring_function(runtime, data);
+    }
+    if (ptn_ascii_case_equal(name, "getDeclaringClass")) {
+        char *class_name = ptn_reflection_parameter_declaring_class_name(data);
+        if (class_name == NULL) {
+            return ptn_null();
+        }
+        PtnValue result = ptn_reflection_class_object_from_name(runtime, class_name);
+        free(class_name);
+        return result;
+    }
     if (ptn_ascii_case_equal(name, "hasType")) {
         return ptn_bool(ptn_function_metadata_parameter_type_name(metadata, index) != NULL);
     }
@@ -100937,6 +101365,59 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
             ptn_function_metadata_parameter_type_display_name(metadata, index),
             ptn_function_metadata_parameter_type_allows_null(metadata, index),
             ptn_function_metadata_parameter_type_is_builtin(metadata, index)
+        );
+    }
+    if (ptn_ascii_case_equal(name, "allowsNull")) {
+        const char *type_name = ptn_function_metadata_parameter_type_name(metadata, index);
+        return ptn_bool(
+            type_name == NULL ||
+            ptn_function_metadata_parameter_type_allows_null(metadata, index)
+        );
+    }
+    if (ptn_ascii_case_equal(name, "getClass")) {
+        ptn_emit_deprecation(
+            &runtime->diagnostics,
+            "Method ReflectionParameter::getClass() is deprecated since 8.0, use ReflectionParameter::getType() instead",
+            line
+        );
+        return ptn_reflection_parameter_class_from_type(runtime, data);
+    }
+    if (ptn_ascii_case_equal(name, "isOptional")) {
+        return ptn_bool(ptn_reflection_parameter_is_optional(metadata, index));
+    }
+    if (ptn_ascii_case_equal(name, "isDefaultValueAvailable")) {
+        return ptn_bool(ptn_reflection_parameter_is_default_available(metadata, index));
+    }
+    if (ptn_ascii_case_equal(name, "isDefaultValueConstant")) {
+        return ptn_bool(
+            ptn_reflection_parameter_is_default_available(metadata, index) &&
+            ptn_function_metadata_parameter_default_constant_name(metadata, index) != NULL
+        );
+    }
+    if (ptn_ascii_case_equal(name, "getDefaultValueConstantName")) {
+        const char *constant_name =
+            ptn_function_metadata_parameter_default_constant_name(metadata, index);
+        if (
+            !ptn_reflection_parameter_is_default_available(metadata, index) ||
+            constant_name == NULL
+        ) {
+            return ptn_reflection_parameter_throw_default_unavailable(runtime);
+        }
+        return ptn_owned_string(ptn_duplicate_string(constant_name));
+    }
+    if (ptn_ascii_case_equal(name, "getDefaultValue")) {
+        if (!ptn_reflection_parameter_is_default_available(metadata, index)) {
+            return ptn_reflection_parameter_throw_default_unavailable(runtime);
+        }
+        const char *constant_name =
+            ptn_function_metadata_parameter_default_constant_name(metadata, index);
+        if (constant_name != NULL) {
+            return ptn_read_constant(runtime, constant_name, runtime->source_path, line);
+        }
+        return ptn_reflection_parameter_default_value_from_display(
+            runtime,
+            ptn_function_metadata_parameter_default_display(metadata, index),
+            line
         );
     }
     if (ptn_ascii_case_equal(name, "isCallable")) {

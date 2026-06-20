@@ -2512,7 +2512,9 @@ fn emit_function_metadata_parameters(
             out.push_str("\", \"");
             out.push_str(&c_string(&type_metadata.display_name));
             out.push_str("\", ");
-            out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+            let allows_null =
+                type_metadata.allows_null || parameter_default_value_is_null(parameter);
+            out.push_str(if allows_null { "1" } else { "0" });
             out.push_str(", ");
             out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
         } else {
@@ -2530,6 +2532,12 @@ fn emit_function_metadata_parameters(
             .as_ref()
             .map(|value| reflection_default_repr(Some(value)));
         out.push_str(&c_optional_string(default_display.as_deref()));
+        out.push_str(", ");
+        let default_constant_name = parameter
+            .default_value
+            .as_ref()
+            .and_then(reflection_default_constant_name);
+        out.push_str(&c_optional_string(default_constant_name.as_deref()));
         out.push_str(" }");
     }
     out.push_str(" };\n");
@@ -13232,8 +13240,50 @@ fn reflection_default_repr(value: Option<&ValueExpr>) -> String {
         Some(ValueExpr::Null) | None => "NULL".to_string(),
         Some(ValueExpr::Array(_)) => "Array".to_string(),
         Some(ValueExpr::Constant { name, .. }) => name.clone(),
+        Some(ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        }) => format!("{class_name}::{name}"),
+        Some(ValueExpr::NewObject {
+            class_name,
+            arguments,
+            argument_names,
+            ..
+        }) => reflection_new_object_default_repr(class_name, arguments, argument_names),
         _ => "NULL".to_string(),
     }
+}
+
+fn reflection_default_constant_name(value: &ValueExpr) -> Option<String> {
+    match value {
+        ValueExpr::Constant { name, .. } => Some(name.clone()),
+        ValueExpr::ClassConstantFetch {
+            class_name, name, ..
+        } => Some(format!("{class_name}::{name}")),
+        _ => None,
+    }
+}
+
+fn reflection_new_object_default_repr(
+    class_name: &str,
+    arguments: &[ValueExpr],
+    argument_names: &[Option<String>],
+) -> String {
+    let mut display = String::new();
+    display.push_str("new \\");
+    display.push_str(class_name.trim_start_matches('\\'));
+    display.push('(');
+    for (index, argument) in arguments.iter().enumerate() {
+        if index > 0 {
+            display.push_str(", ");
+        }
+        if let Some(Some(name)) = argument_names.get(index) {
+            display.push_str(name);
+            display.push_str(": ");
+        }
+        display.push_str(&reflection_default_repr(Some(argument)));
+    }
+    display.push(')');
+    display
 }
 
 fn reflection_class_visible_property_entries<'a>(

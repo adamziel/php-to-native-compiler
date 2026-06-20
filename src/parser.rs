@@ -23214,6 +23214,16 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
             name,
             ..
         } => is_supported_parameter_default_expr(name),
+        Expr::NewObject {
+            arguments,
+            argument_unpacks,
+            anonymous_class_source,
+            ..
+        } => {
+            anonymous_class_source.is_none()
+                && argument_unpacks.iter().all(|unpack| !*unpack)
+                && arguments.iter().all(is_supported_parameter_default_expr)
+        }
         Expr::Cast { .. } => false,
         Expr::Binary { left, right, .. } => {
             is_supported_parameter_default_expr(left) && is_supported_parameter_default_expr(right)
@@ -23238,7 +23248,6 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
-        | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::PropertyFetch { .. }
