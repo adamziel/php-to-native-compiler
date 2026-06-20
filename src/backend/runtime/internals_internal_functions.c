@@ -5469,7 +5469,7 @@ static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, Pt
         case PTN_STRING:
             printf("string(%zu) \"", value.as.string.len);
             fwrite(value.as.string.data, 1, value.as.string.len, stdout);
-            if (value.as.string.payload == NULL) {
+            if (value.as.string.payload == NULL || value.as.string.payload->interned) {
                 fputs("\" interned\n", stdout);
             } else {
                 printf("\" refcount(%zu)\n", value.as.string.payload->refcount);
@@ -6994,6 +6994,20 @@ static int ptn_unserialize_parse_key(PtnUnserializeState *state, PtnArrayKey *ke
     return 0;
 }
 
+static PtnReference *ptn_unserialize_reference_new_owned(PtnValue value) {
+    ptn_value_debug_note_reference_wrapped(value);
+    return ptn_reference_new_owned(value);
+}
+
+static int ptn_unserialize_reference_assign_publish_first(
+    PtnRuntime *runtime,
+    PtnReference *reference,
+    PtnValue value
+) {
+    ptn_value_debug_note_reference_wrapped(value);
+    return ptn_reference_assign_publish_first(runtime, reference, value);
+}
+
 static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, size_t id) {
     if (id == 0 || id > state->id_len) {
         ptn_unserialize_fail(state);
@@ -7008,12 +7022,12 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
     if (entry->slot != NULL) {
         PtnValue value = ptn_value_deref(*entry->slot);
         if (value.type == PTN_OBJECT && !entry->slot_is_container_entry) {
-            PtnReference *reference = ptn_reference_new_owned(ptn_value_clone(value));
+            PtnReference *reference = ptn_unserialize_reference_new_owned(ptn_value_clone(value));
             entry->reference = reference;
             return ptn_reference_value(reference);
         }
     } else if (entry->retained_object != NULL) {
-        PtnReference *reference = ptn_reference_new_owned(
+        PtnReference *reference = ptn_unserialize_reference_new_owned(
             ptn_value_clone(ptn_object(entry->retained_object))
         );
         entry->reference = reference;
@@ -7028,7 +7042,7 @@ static PtnValue ptn_unserialize_reference_for_id(PtnUnserializeState *state, siz
         return ptn_value_clone(*entry->slot);
     }
     PtnValue current = ptn_value_clone(*entry->slot);
-    PtnReference *reference = ptn_reference_new_owned(current);
+    PtnReference *reference = ptn_unserialize_reference_new_owned(current);
     ptn_reference_adopt_property_type(reference, entry->property_metadata);
     ptn_value_destroy(entry->slot);
     *entry->slot = ptn_reference_value(reference);
@@ -7727,7 +7741,7 @@ static int ptn_unserialize_store_entry(
     if (existing_index < array->len) {
         if (array->entries[existing_index].value.type == PTN_REFERENCE) {
             ptn_array_update_next_auto_key(array, key);
-            if (!ptn_reference_assign_publish_first(
+            if (!ptn_unserialize_reference_assign_publish_first(
                     runtime,
                     array->entries[existing_index].value.as.reference,
                     parsed.value
@@ -7852,7 +7866,7 @@ static int ptn_unserialize_store_object_property_entry(
     if (existing_index < properties->len &&
         properties->entries[existing_index].value.type == PTN_REFERENCE) {
         ptn_array_update_next_auto_key(properties, property_key);
-        if (!ptn_reference_assign_publish_first(
+        if (!ptn_unserialize_reference_assign_publish_first(
                 runtime,
                 properties->entries[existing_index].value.as.reference,
                 parsed.value

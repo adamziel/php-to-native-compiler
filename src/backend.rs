@@ -177,6 +177,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.classes,
         runtime_requirements.internal_function_dispatch,
     );
+    emit_declared_property_default_array_helpers(&mut out, &module.classes);
     emit_user_functions(
         &mut out,
         &module.classes,
@@ -4605,6 +4606,92 @@ fn function_static_local_bindings(function: &FunctionDecl) -> Vec<(&str, Option<
 
 fn function_static_variables_provider_name(function_index: usize) -> String {
     format!("ptn_function_{function_index}_static_variables")
+}
+
+fn c_identifier_fragment(value: &str) -> String {
+    let mut fragment = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            fragment.push(byte as char);
+        } else {
+            fragment.push('_');
+            fragment.push_str(&format!("{byte:02x}"));
+        }
+    }
+    if fragment.is_empty() {
+        fragment.push_str("anon");
+    }
+    fragment
+}
+
+fn property_default_array_helper_name(
+    declaring_class: &str,
+    property_name: &str,
+    line: usize,
+) -> String {
+    format!(
+        "ptn_declared_property_default_array_{}_{}_{}",
+        c_identifier_fragment(declaring_class),
+        c_identifier_fragment(property_name),
+        line
+    )
+}
+
+fn value_expr_is_shareable_property_default(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null => true,
+        ValueExpr::Binary {
+            op, left, right, ..
+        } => c_property_default_binary_value(*op, left, right).is_some(),
+        ValueExpr::Array(elements) => elements.iter().all(|element| {
+            match element.key.as_ref() {
+                Some(ValueExpr::String(_)) | Some(ValueExpr::Int(_)) | None => {}
+                _ => return false,
+            }
+            match &element.value {
+                IrArrayElementValue::Value(value) => {
+                    value_expr_is_shareable_property_default(value)
+                }
+                IrArrayElementValue::Reference(_) | IrArrayElementValue::Unpack { .. } => false,
+            }
+        }),
+        _ => false,
+    }
+}
+
+fn emit_declared_property_default_array_helpers(out: &mut String, classes: &[ClassDecl]) {
+    for class in classes {
+        for property in &class.properties {
+            let Some(value @ ValueExpr::Array(_)) = property.value.as_ref() else {
+                continue;
+            };
+            if !value_expr_is_shareable_property_default(value) {
+                continue;
+            }
+            out.push_str("\nstatic PTN_UNUSED PtnValue ");
+            out.push_str(&property_default_array_helper_name(
+                &class.name,
+                &property.name,
+                property.line,
+            ));
+            out.push_str("(PtnRuntime *runtime) {\n");
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    static int initialized = 0;\n");
+            out.push_str("    static PtnValue value;\n");
+            out.push_str("    if (!initialized) {\n");
+            out.push_str("        value = ");
+            out.push_str(&c_property_default_value(Some(value)));
+            out.push_str(";\n");
+            out.push_str("        initialized = 1;\n");
+            out.push_str("    }\n");
+            out.push_str("    return ptn_value_clone(value);\n");
+            out.push_str("}\n");
+        }
+    }
 }
 
 fn emit_function_static_variable_providers(out: &mut String, functions: &[FunctionDecl]) {
@@ -31302,6 +31389,22 @@ impl ValueEmitter {
                 .current_class_name
                 .replace(declaring_class_name.clone());
             let effective_value = hook_get_value.as_ref().or(property.value.as_ref());
+            let shared_array_default_helper = if hook_get_value.is_none() {
+                match property.value.as_ref() {
+                    Some(value @ ValueExpr::Array(_))
+                        if value_expr_is_shareable_property_default(value) =>
+                    {
+                        Some(property_default_array_helper_name(
+                            &declaring_class_name,
+                            &property.name,
+                            property.line,
+                        ))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let value_temp = match effective_value {
                 Some(value) => {
                     let previous_scope_temp = self.next_temp();
@@ -31322,7 +31425,18 @@ impl ValueEmitter {
                     out.push_str("runtime.current_called_class_name = \"");
                     out.push_str(&c_string(&declaring_class_name));
                     out.push_str("\";\n");
-                    let value_temp = self.emit_const_materialized_value(out, value);
+                    let value_temp = if let Some(helper_name) = shared_array_default_helper {
+                        let temp = self.next_temp();
+                        out.push_str(indent);
+                        out.push_str("PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(" = ");
+                        out.push_str(&helper_name);
+                        out.push_str("(&runtime);\n");
+                        temp
+                    } else {
+                        self.emit_const_materialized_value(out, value)
+                    };
                     out.push_str(indent);
                     out.push_str("runtime.current_called_class_name = ");
                     out.push_str(&previous_called_scope_temp);

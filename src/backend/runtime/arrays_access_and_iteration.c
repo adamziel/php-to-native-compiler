@@ -8345,6 +8345,7 @@ static PTN_UNUSED PtnValue ptn_runtime_string_offset_set_result(
         ptn_string_value_resize(target, new_len);
     }
     target->as.string.payload->data[index] = byte;
+    target->as.string.payload->interned = 0;
     ptn_string_value_refresh(target);
 
     char *result = malloc(2);

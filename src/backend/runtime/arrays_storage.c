@@ -551,7 +551,17 @@ static PTN_UNUSED PtnValue ptn_array_from_literal_entries_impl(
             }
             key = ptn_array_int_key(array->next_auto_key);
         }
-        ptn_array_set_entry(array, key, ptn_value_clone(entries[i].value));
+        PtnValue stored = ptn_value_clone(entries[i].value);
+        if (
+            entries[i].value.type == PTN_STRING &&
+            entries[i].value.as.string.payload == NULL &&
+            entries[i].value.as.string.len > 1 &&
+            stored.type == PTN_STRING &&
+            stored.as.string.payload != NULL
+        ) {
+            stored.as.string.payload->interned = 0;
+        }
+        ptn_array_set_entry(array, key, stored);
     }
     return ptn_array(array);
 }
@@ -1777,10 +1787,12 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value) {
 
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value) {
     if (value.type == PTN_STRING && value.as.string.payload == NULL) {
-        return ptn_owned_string_len(
+        PtnValue clone = ptn_owned_string_len(
             ptn_duplicate_string_len((const char *)value.as.string.data, value.as.string.len),
             value.as.string.len
         );
+        clone.as.string.payload->interned = 1;
+        return clone;
     }
     return ptn_value_share(value);
 }

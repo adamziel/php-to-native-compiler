@@ -526,6 +526,7 @@ typedef struct {
     size_t refcount;
     size_t len;
     unsigned char *data;
+    int interned;
 } PtnStringPayload;
 
 typedef struct {
@@ -2873,6 +2874,7 @@ static PTN_UNUSED PtnStringPayload *ptn_string_payload_from_owned(char *string, 
     payload->len = len;
     payload->data = (unsigned char *)string;
     payload->data[len] = '\0';
+    payload->interned = 0;
     ptn_cow_debug_note_string_alloc();
     return payload;
 }
@@ -2940,6 +2942,7 @@ static PTN_UNUSED void ptn_string_value_resize(PtnValue *value, size_t new_len) 
     data[new_len] = '\0';
     payload->data = data;
     payload->len = new_len;
+    payload->interned = 0;
     ptn_string_value_refresh(value);
 }
 
