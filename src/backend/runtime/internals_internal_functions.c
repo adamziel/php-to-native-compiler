@@ -67694,6 +67694,334 @@ static void ptn_xml_resolve_namespace_recursive(PtnXmlNode *node) {
     }
 }
 
+typedef struct {
+    char **items;
+    size_t len;
+    size_t capacity;
+} PtnXmlC14NStringList;
+
+typedef struct {
+    int exclusive;
+    int with_comments;
+    int has_filter;
+    PtnXmlC14NStringList namespace_uris;
+    PtnXmlC14NStringList local_names;
+    PtnXmlC14NStringList inclusive_prefixes;
+} PtnXmlC14NOptions;
+
+static void ptn_xml_c14n_string_list_init(PtnXmlC14NStringList *list) {
+    list->items = NULL;
+    list->len = 0;
+    list->capacity = 0;
+}
+
+static void ptn_xml_c14n_string_list_free(PtnXmlC14NStringList *list) {
+    for (size_t i = 0; i < list->len; i++) {
+        free(list->items[i]);
+    }
+    free(list->items);
+    list->items = NULL;
+    list->len = 0;
+    list->capacity = 0;
+}
+
+static int ptn_xml_c14n_string_list_contains_len(PtnXmlC14NStringList *list, const char *data, size_t len) {
+    for (size_t i = 0; i < list->len; i++) {
+        if (strlen(list->items[i]) == len && memcmp(list->items[i], data, len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int ptn_xml_c14n_string_list_contains(PtnXmlC14NStringList *list, const char *value) {
+    return ptn_xml_c14n_string_list_contains_len(list, value == NULL ? "" : value, strlen(value == NULL ? "" : value));
+}
+
+static void ptn_xml_c14n_string_list_add_len(PtnXmlC14NStringList *list, const char *data, size_t len) {
+    if (ptn_xml_c14n_string_list_contains_len(list, data, len)) {
+        return;
+    }
+    if (list->len == list->capacity) {
+        size_t new_capacity = list->capacity == 0 ? 4 : list->capacity * 2;
+        if (new_capacity < list->capacity) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_items = realloc(list->items, new_capacity * sizeof(char *));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        list->items = new_items;
+        list->capacity = new_capacity;
+    }
+    list->items[list->len++] = ptn_duplicate_string_len(data, len);
+}
+
+static int ptn_xml_c14n_name_byte(unsigned char byte) {
+    return isalnum(byte) || byte == '_' || byte == '-' || byte == '.';
+}
+
+static void ptn_xml_c14n_collect_query_local_names(PtnXmlC14NStringList *local_names, const char *query, size_t query_len) {
+    for (size_t i = 0; i < query_len; i++) {
+        if (query[i] != ':' || i + 1 >= query_len || !ptn_xml_c14n_name_byte((unsigned char)query[i + 1])) {
+            continue;
+        }
+        size_t start = i + 1;
+        size_t end = start;
+        while (end < query_len && ptn_xml_c14n_name_byte((unsigned char)query[end])) {
+            end++;
+        }
+        if (end > start && !(end == start + 1 && query[start] == '*')) {
+            ptn_xml_c14n_string_list_add_len(local_names, query + start, end - start);
+        }
+        i = end;
+    }
+}
+
+static PtnArrayEntry *ptn_xml_c14n_array_entry(PtnValue value, const char *name) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(value.as.array, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static int ptn_xml_c14n_string_list_add_value(
+    PtnRuntime *runtime,
+    PtnXmlC14NStringList *list,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL || value.type == PTN_ARRAY || value.type == PTN_OBJECT) {
+        return 1;
+    }
+    PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(string);
+        return 0;
+    }
+    ptn_xml_c14n_string_list_add_len(list, string.data, string.len);
+    ptn_string_operand_free(string);
+    return 1;
+}
+
+static int ptn_xml_c14n_read_string_values(
+    PtnRuntime *runtime,
+    PtnXmlC14NStringList *list,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY) {
+        return ptn_xml_c14n_string_list_add_value(runtime, list, value, line);
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        if (!ptn_xml_c14n_string_list_add_value(runtime, list, value.as.array->entries[i].value, line)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_xml_c14n_options_init(PtnXmlC14NOptions *options) {
+    options->exclusive = 0;
+    options->with_comments = 0;
+    options->has_filter = 0;
+    ptn_xml_c14n_string_list_init(&options->namespace_uris);
+    ptn_xml_c14n_string_list_init(&options->local_names);
+    ptn_xml_c14n_string_list_init(&options->inclusive_prefixes);
+}
+
+static void ptn_xml_c14n_options_free(PtnXmlC14NOptions *options) {
+    ptn_xml_c14n_string_list_free(&options->namespace_uris);
+    ptn_xml_c14n_string_list_free(&options->local_names);
+    ptn_xml_c14n_string_list_free(&options->inclusive_prefixes);
+}
+
+static int ptn_xml_c14n_options_read_xpath(
+    PtnRuntime *runtime,
+    PtnXmlC14NOptions *options,
+    PtnValue value,
+    size_t line
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type != PTN_ARRAY) {
+        return 1;
+    }
+    options->has_filter = 1;
+    PtnArrayEntry *query_entry = ptn_xml_c14n_array_entry(value, "query");
+    if (query_entry != NULL) {
+        PtnValue query_value = ptn_value_deref(query_entry->value);
+        if (query_value.type != PTN_NULL && query_value.type != PTN_ARRAY && query_value.type != PTN_OBJECT) {
+            PtnStringOperand query = ptn_value_to_string_operand_with_runtime(runtime, query_value, line);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_string_operand_free(query);
+                return 0;
+            }
+            ptn_xml_c14n_collect_query_local_names(&options->local_names, query.data, query.len);
+            ptn_string_operand_free(query);
+        }
+    }
+    PtnArrayEntry *namespaces_entry = ptn_xml_c14n_array_entry(value, "namespaces");
+    if (namespaces_entry != NULL &&
+        !ptn_xml_c14n_read_string_values(runtime, &options->namespace_uris, namespaces_entry->value, line)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_xml_c14n_node_selected(PtnXmlC14NOptions *options, PtnXmlNode *node) {
+    if (node == NULL) {
+        return 0;
+    }
+    if (!options->has_filter) {
+        return 1;
+    }
+    if (node->type != PTN_XML_NODE_ELEMENT) {
+        return 0;
+    }
+    if (options->namespace_uris.len > 0 &&
+        !ptn_xml_c14n_string_list_contains(&options->namespace_uris, node->namespace_uri == NULL ? "" : node->namespace_uri)) {
+        return 0;
+    }
+    if (options->local_names.len > 0 &&
+        !ptn_xml_c14n_string_list_contains(&options->local_names, ptn_xml_local_name(node->name))) {
+        return 0;
+    }
+    return 1;
+}
+
+static void ptn_xml_c14n_append_namespace_decl(
+    PtnStringBuffer *buffer,
+    PtnXmlNode *node,
+    const char *prefix,
+    PtnXmlC14NStringList *emitted
+) {
+    prefix = prefix == NULL ? "" : prefix;
+    if (ptn_xml_c14n_string_list_contains(emitted, prefix)) {
+        return;
+    }
+    const char *uri = ptn_xml_lookup_namespace_uri(node, prefix);
+    if (uri == NULL) {
+        return;
+    }
+    ptn_xml_c14n_string_list_add_len(emitted, prefix, strlen(prefix));
+    ptn_string_buffer_append(buffer, " xmlns");
+    if (prefix[0] != '\0') {
+        ptn_string_buffer_append_char(buffer, ':');
+        ptn_string_buffer_append(buffer, prefix);
+    }
+    ptn_string_buffer_append(buffer, "=\"");
+    ptn_xml_append_escaped(buffer, uri, 1);
+    ptn_string_buffer_append_char(buffer, '"');
+}
+
+static void ptn_xml_c14n_serialize_node(
+    PtnStringBuffer *buffer,
+    PtnXmlNode *node,
+    PtnXmlC14NOptions *options,
+    int selected_ancestor
+) {
+    if (node == NULL) {
+        return;
+    }
+    switch (node->type) {
+        case PTN_XML_NODE_DOCUMENT:
+        case PTN_XML_NODE_DOCUMENT_FRAGMENT:
+            for (size_t i = 0; i < node->child_count; i++) {
+                ptn_xml_c14n_serialize_node(buffer, node->children[i], options, 0);
+            }
+            return;
+        case PTN_XML_NODE_TEXT:
+        case PTN_XML_NODE_CDATA:
+            if (!options->has_filter) {
+                ptn_xml_append_escaped(buffer, node->value == NULL ? "" : node->value, 0);
+            }
+            return;
+        case PTN_XML_NODE_COMMENT:
+            if (options->with_comments && !options->has_filter) {
+                ptn_string_buffer_append(buffer, "<!--");
+                ptn_string_buffer_append(buffer, node->value == NULL ? "" : node->value);
+                ptn_string_buffer_append(buffer, "-->");
+            }
+            return;
+        case PTN_XML_NODE_ENTITY_REFERENCE:
+            if (!options->has_filter) {
+                ptn_string_buffer_append_char(buffer, '&');
+                ptn_string_buffer_append(buffer, node->name == NULL ? "" : node->name);
+                ptn_string_buffer_append_char(buffer, ';');
+            }
+            return;
+        default:
+            break;
+    }
+
+    if (node->type != PTN_XML_NODE_ELEMENT) {
+        return;
+    }
+    int selected = ptn_xml_c14n_node_selected(options, node);
+    if (!selected) {
+        for (size_t i = 0; i < node->child_count; i++) {
+            ptn_xml_c14n_serialize_node(buffer, node->children[i], options, selected_ancestor);
+        }
+        return;
+    }
+
+    ptn_string_buffer_append_char(buffer, '<');
+    ptn_string_buffer_append(buffer, node->name == NULL ? "" : node->name);
+
+    PtnXmlC14NStringList emitted_namespaces;
+    ptn_xml_c14n_string_list_init(&emitted_namespaces);
+    char *node_prefix = ptn_xml_prefix_dup(node->name);
+    int top_level_selected = !selected_ancestor || !options->exclusive;
+    if ((top_level_selected || node_prefix[0] != '\0') && node->namespace_uri != NULL && node->namespace_uri[0] != '\0') {
+        ptn_xml_c14n_append_namespace_decl(buffer, node, node_prefix, &emitted_namespaces);
+    }
+    if (top_level_selected) {
+        for (size_t i = 0; i < options->inclusive_prefixes.len; i++) {
+            ptn_xml_c14n_append_namespace_decl(buffer, node, options->inclusive_prefixes.items[i], &emitted_namespaces);
+        }
+    }
+    free(node_prefix);
+    ptn_xml_c14n_string_list_free(&emitted_namespaces);
+
+    if (!options->has_filter) {
+        for (size_t i = 0; i < node->attribute_count; i++) {
+            PtnXmlNode *attr = node->attributes[i];
+            if (ptn_xml_attribute_is_namespace_declaration(attr)) {
+                continue;
+            }
+            ptn_string_buffer_append_char(buffer, ' ');
+            ptn_string_buffer_append(buffer, attr->name == NULL ? "" : attr->name);
+            ptn_string_buffer_append(buffer, "=\"");
+            ptn_xml_append_escaped(buffer, attr->value == NULL ? "" : attr->value, 1);
+            ptn_string_buffer_append_char(buffer, '"');
+        }
+    }
+
+    ptn_string_buffer_append_char(buffer, '>');
+    for (size_t i = 0; i < node->child_count; i++) {
+        ptn_xml_c14n_serialize_node(buffer, node->children[i], options, 1);
+    }
+    ptn_string_buffer_append(buffer, "</");
+    ptn_string_buffer_append(buffer, node->name == NULL ? "" : node->name);
+    ptn_string_buffer_append_char(buffer, '>');
+}
+
+static PtnValue ptn_xml_c14n_value(PtnXmlNode *node, PtnXmlC14NOptions *options) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    ptn_xml_c14n_serialize_node(&buffer, node, options, 0);
+    return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
 static void ptn_xml_parse_attributes(PtnRuntime *runtime, PtnXmlNode *element, const char *data, size_t len, size_t *pos) {
     while (*pos < len) {
         ptn_xml_skip_ws(data, len, pos);
@@ -68711,6 +69039,31 @@ static PtnValue ptn_dom_save_xml_method(PtnRuntime *runtime, PtnValue receiver, 
     return ptn_xml_serialized_value(runtime, target, include_document_decl, line);
 }
 
+static PtnValue ptn_dom_c14n_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
+    if (argc > 4) {
+        return ptn_dom_throw_count(runtime, "DOMNode::C14N", "at most 4 arguments", argc);
+    }
+    PtnXmlNode *node = ptn_xml_node_data(receiver);
+    if (node == NULL) {
+        return ptn_bool(0);
+    }
+    PtnXmlC14NOptions options;
+    ptn_xml_c14n_options_init(&options);
+    options.exclusive = argc >= 1 && ptn_is_truthy(args[0]);
+    options.with_comments = argc >= 2 && ptn_is_truthy(args[1]);
+    if (argc >= 3 && !ptn_xml_c14n_options_read_xpath(runtime, &options, args[2], line)) {
+        ptn_xml_c14n_options_free(&options);
+        return ptn_null();
+    }
+    if (argc >= 4 && !ptn_xml_c14n_read_string_values(runtime, &options.inclusive_prefixes, args[3], line)) {
+        ptn_xml_c14n_options_free(&options);
+        return ptn_null();
+    }
+    PtnValue result = ptn_xml_c14n_value(node, &options);
+    ptn_xml_c14n_options_free(&options);
+    return result;
+}
+
 static PtnValue ptn_dom_save_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1 || argc > 2) {
         return ptn_dom_throw_count(runtime, "DOMDocument::save", "1 or 2 arguments", argc);
@@ -68924,6 +69277,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     }
     if (ptn_ascii_case_equal(name, "saveHTMLFile")) {
         return ptn_dom_save_html_file_method(runtime, receiver, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(name, "C14N")) {
+        return ptn_dom_c14n_method(runtime, receiver, argc, args, line);
     }
     if (ptn_ascii_case_equal(name, "createElement")) {
         return ptn_dom_create_element_method(runtime, receiver, "DOMDocument::createElement", argc, args, line, 0);
@@ -69887,6 +70243,9 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
             || ptn_ascii_case_equal(method_name, "current")
             || ptn_ascii_case_equal(method_name, "key")
             || ptn_ascii_case_equal(method_name, "next");
+    }
+    if (ptn_ascii_case_equal(method_name, "C14N") && ptn_internal_class_name_is_dom(class_name)) {
+        return 1;
     }
     if (ptn_ascii_case_equal(class_name, "DOMDocument")) {
         return ptn_ascii_case_equal(method_name, "__construct")
