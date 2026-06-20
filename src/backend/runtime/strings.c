@@ -1780,6 +1780,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_ARRAY_FILTER_USE_KEY);
         return 1;
     }
+    if (strcmp(name, "FILTER_VALIDATE_REGEXP") == 0) {
+        *out = ptn_int(PTN_FILTER_VALIDATE_REGEXP);
+        return 1;
+    }
     if (strcmp(name, "FNM_NOESCAPE") == 0) {
         *out = ptn_int(PTN_FNM_NOESCAPE);
         return 1;

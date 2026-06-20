@@ -17078,7 +17078,7 @@ fn reference_target_reference_to_variable(
 }
 
 fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
-    let mut names = HashSet::new();
+    let mut names: HashMap<String, SourceSpan> = HashMap::new();
     for function in functions {
         let lookup_name = function.name.to_ascii_lowercase();
         if is_modeled_internal_function_name(&lookup_name) {
@@ -17087,12 +17087,16 @@ fn validate_function_names(functions: &[FunctionDecl]) -> Result<()> {
                 Some(function.span),
             ));
         }
-        if !names.insert(lookup_name.clone()) {
+        if let Some(previous_span) = names.get(&lookup_name) {
             return Err(Diagnostic::new(
-                format!("Cannot redeclare function {lookup_name}()"),
+                format!(
+                    "Cannot redeclare function {lookup_name}() (previously declared in Unknown:{})",
+                    previous_span.line
+                ),
                 Some(function.span),
             ));
         }
+        names.insert(lookup_name, function.span);
     }
     Ok(())
 }

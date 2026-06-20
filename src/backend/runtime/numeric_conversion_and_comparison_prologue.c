@@ -494,6 +494,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->filter_default = NULL;
         free(runtime->pcre_backtrack_limit);
         runtime->pcre_backtrack_limit = NULL;
+        free(runtime->pcre_recursion_limit);
+        runtime->pcre_recursion_limit = NULL;
         free(runtime->pcre_jit);
         runtime->pcre_jit = NULL;
         free(runtime->opcache_blacklist_filename);

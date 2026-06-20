@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::ast::{
@@ -24378,6 +24378,7 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
     }
     let mut command = Command::new("cc");
     command.arg("-std=c11");
+    add_pcre2_default_library_define(&mut command);
     for arg in warning_args {
         command.arg(arg);
     }
@@ -24423,6 +24424,7 @@ fn compile_c_with_ada_url(
 
     let mut c_command = Command::new("cc");
     c_command.arg("-std=c11");
+    add_pcre2_default_library_define(&mut c_command);
     for arg in warning_args {
         c_command.arg(arg);
     }
@@ -24504,6 +24506,46 @@ fn compile_c_with_ada_url(
             None,
         ))
     }
+}
+
+fn add_pcre2_default_library_define(command: &mut Command) {
+    let Some(path) = discover_pcre2_library() else {
+        return;
+    };
+    let path = path.to_string_lossy();
+    command.arg(format!(
+        "-DPTN_PCRE2_DEFAULT_LIBRARY=\"{}\"",
+        c_string(&path)
+    ));
+}
+
+fn discover_pcre2_library() -> Option<PathBuf> {
+    if let Some(path) = env::var_os("PTN_PCRE2_LIBRARY").map(PathBuf::from) {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    let mut candidates = vec![
+        PathBuf::from("/lib/x86_64-linux-gnu/libpcre2-8.so.0"),
+        PathBuf::from("/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0"),
+        PathBuf::from("/usr/lib64/libpcre2-8.so.0"),
+        PathBuf::from("/usr/local/lib/libpcre2-8.so.0"),
+    ];
+    if let Ok(entries) = fs::read_dir("/nix/store") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.contains("pcre2-") {
+                continue;
+            }
+            let path = entry.path().join("lib/libpcre2-8.so.0");
+            if path.exists() {
+                candidates.push(path);
+            }
+        }
+    }
+    candidates.into_iter().find(|path| path.exists())
 }
 
 fn c_source_uses_ada_url(c_source: &str) -> bool {

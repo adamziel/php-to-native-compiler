@@ -3399,10 +3399,16 @@ fn parser_accepts_variadic_function_parameters() {
 #[test]
 fn parser_rejects_duplicate_user_function_declarations() {
     let error = parser::parse("<?php function same() {} function same() {}").unwrap_err();
-    assert_eq!(error.message, "Cannot redeclare function same()");
+    assert_eq!(
+        error.message,
+        "Cannot redeclare function same() (previously declared in Unknown:1)"
+    );
 
     let error = parser::parse("<?php function Same() {} function same() {}").unwrap_err();
-    assert_eq!(error.message, "Cannot redeclare function same()");
+    assert_eq!(
+        error.message,
+        "Cannot redeclare function same() (previously declared in Unknown:1)"
+    );
 }
 
 #[test]
@@ -14671,6 +14677,12 @@ fn compile_scalar_date_time_internals_to_native_binary() {
 date_default_timezone_set(\"UTC\");\n\
 echo date(\"jS w z t L a B g G Z U\", mktime(0, 0, 0, 6, 27, 2006)), \"\\n\";\n\
 echo gmdate(DATE_ISO8601, mktime(8, 8, 8, 8, 8, 2008)), \"\\n\";\n\
+echo gmdate(\"u\", 0), \"\\n\";\n\
+echo date(\"Y\", mktime(1, 1, 1, 1, 1, 69)), \"\\n\";\n\
+echo date(\"Y\", mktime(1, 1, 1, 1, 1, 100)), \"\\n\";\n\
+var_dump(date_default_timezone_set(\"America/Toronto\"));\n\
+date_default_timezone_set(\"UTC\");\n\
+try { mktime(); } catch (ArgumentCountError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 var_dump(checkdate(2, 29, 2008), checkdate(2, 29, 2009));\n\
 $parts = getdate(10);\n\
 echo $parts[\"year\"], \"-\", $parts[\"mon\"], \"-\", $parts[\"mday\"], \"\\n\";\n\
@@ -14686,6 +14698,11 @@ var_dump(function_exists(\"date_default_timezone_set\"), function_exists(\"gmdat
         String::from_utf8(execution.stdout).unwrap(),
         "27th 2 177 30 0 am 041 12 0 0 1151366400\n\
 2008-08-08T08:08:08+0000\n\
+000000\n\
+2069\n\
+2000\n\
+bool(true)\n\
+mktime() expects at least 1 argument, 0 given\n\
 bool(true)\n\
 bool(false)\n\
 1970-1-1\n\
@@ -17043,9 +17060,30 @@ var_dump($m['word'][0], $m['word'][1]);\n\
 var_dump(preg_match('/(?<=foo)\\\\d+/', 'foo123', $look));\n\
 var_dump($look[0]);\n\
 var_dump(preg_match('/(*UCP)^\\\\w+$/u', 'é'));\n\
+var_dump(preg_match('/^\\\\w+$/u', 'é'));\n\
+var_dump(preg_match('/k/iu', \"\\u{212A}\"));\n\
+var_dump(preg_match('/k/iur', \"\\u{212A}\"));\n\
+var_dump(preg_match('/./u', \"\\xFC\"));\n\
+var_dump(preg_last_error());\n\
+var_dump(preg_replace('/./u', 'x', \"\\xFC\"));\n\
+var_dump(preg_last_error());\n\
+var_dump(preg_match('/./u', 'é', $bad_offset, 0, 1));\n\
+var_dump(preg_last_error());\n\
 $count = 0;\n\
 var_dump(preg_replace(['/([\\\\p{L}]+)/u', '/(?<=#)\\\\d+/'], ['[$0]', 'num:$0'], 'café #123', -1, $count));\n\
 var_dump($count);\n\
+preg_match('/.(.)./n', 'abc', $non_capture);\n\
+var_dump($non_capture);\n\
+preg_match('/.(?P<test>.)./n', 'abc', $named_capture);\n\
+var_dump($named_capture);\n\
+var_dump(preg_match('/(?U)<.*>/', '<aa> <bb> <cc>', $ungreedy));\n\
+var_dump($ungreedy[0]);\n\
+preg_match('/(?J)(?<chr>[ac])(?<num>\\\\d)|(?<chr>[b])/', 'b', $duplicate_names);\n\
+var_dump($duplicate_names['chr'], $duplicate_names[1], $duplicate_names[3]);\n\
+preg_match('/(?J)(?:(?<g>foo)|(?<g>bar))/', 'foo', $duplicate_tail);\n\
+var_dump($duplicate_tail);\n\
+preg_match('/(?J)(?:(?<g>foo)|(?<g>bar))/', 'foo', $duplicate_tail_null, PREG_UNMATCHED_AS_NULL);\n\
+var_dump($duplicate_tail_null);\n\
 var_dump(preg_split('/(?<=\\\\p{L})(?=\\\\d)/u', 'é2 a3'));\n",
     )
     .unwrap();
@@ -17072,8 +17110,52 @@ var_dump(preg_split('/(?<=\\\\p{L})(?=\\\\d)/u', 'é2 a3'));\n",
             "int(1)\n",
             "string(3) \"123\"\n",
             "int(1)\n",
+            "int(1)\n",
+            "int(1)\n",
+            "int(0)\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "NULL\n",
+            "int(4)\n",
+            "bool(false)\n",
+            "int(5)\n",
             "string(16) \"[café] #num:123\"\n",
             "int(2)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(3) \"abc\"\n",
+            "}\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"abc\"\n",
+            "  [\"test\"]=>\n",
+            "  string(1) \"b\"\n",
+            "  [1]=>\n",
+            "  string(1) \"b\"\n",
+            "}\n",
+            "int(1)\n",
+            "string(4) \"<aa>\"\n",
+            "string(1) \"b\"\n",
+            "string(0) \"\"\n",
+            "string(1) \"b\"\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [\"g\"]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [1]=>\n",
+            "  string(3) \"foo\"\n",
+            "}\n",
+            "array(4) {\n",
+            "  [0]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [\"g\"]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [1]=>\n",
+            "  string(3) \"foo\"\n",
+            "  [2]=>\n",
+            "  NULL\n",
+            "}\n",
             "array(3) {\n",
             "  [0]=>\n",
             "  string(2) \"é\"\n",

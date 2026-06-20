@@ -156,6 +156,7 @@ typedef struct {
 #define PTN_EXTR_REFS 256
 #define PTN_ARRAY_FILTER_USE_BOTH 1
 #define PTN_ARRAY_FILTER_USE_KEY 2
+#define PTN_FILTER_VALIDATE_REGEXP 272
 #define PTN_SORT_REGULAR 0
 #define PTN_SORT_NUMERIC 1
 #define PTN_SORT_STRING 2
@@ -1227,6 +1228,7 @@ struct PtnRuntime {
     char *output_handler;
     char *filter_default;
     char *pcre_backtrack_limit;
+    char *pcre_recursion_limit;
     char *pcre_jit;
     char *opcache_blacklist_filename;
     char *opcache_enable;
@@ -1248,6 +1250,7 @@ struct PtnRuntime {
     char *internal_encoding;
     char *input_encoding;
     char *output_encoding;
+    int date_timezone_startup_warning_emitted;
     char *variables_order;
     char *register_argc_argv;
     char *enable_post_data_reading;

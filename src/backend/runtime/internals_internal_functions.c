@@ -24991,7 +24991,7 @@ static PtnValue ptn_internal_explode(PtnRuntime *runtime, size_t argc, const Ptn
 
     int64_t limit = argc >= 3 ? ptn_value_to_integer(args[2]) : INT64_MAX;
     if (limit == 0) {
-        limit = 1;
+        limit = -1;
     }
 
     size_t piece_count = ptn_explode_piece_count(string, separator);
@@ -33765,6 +33765,8 @@ typedef struct {
     int matched;
     size_t start;
     size_t end;
+    char *mark;
+    size_t mark_len;
 } PtnPregMatch;
 
 #define PTN_PCRE2_ANCHORED 0x80000000u
@@ -33774,9 +33776,13 @@ typedef struct {
 #define PTN_PCRE2_DUPNAMES 0x00000040u
 #define PTN_PCRE2_EXTENDED 0x00000080u
 #define PTN_PCRE2_MULTILINE 0x00000400u
+#define PTN_PCRE2_NO_JIT_MATCH 0x00002000u
+#define PTN_PCRE2_NOTEMPTY_ATSTART 0x00000008u
+#define PTN_PCRE2_NO_AUTO_CAPTURE 0x00002000u
 #define PTN_PCRE2_UCP 0x00020000u
 #define PTN_PCRE2_UNGREEDY 0x00040000u
 #define PTN_PCRE2_UTF 0x00080000u
+#define PTN_PCRE2_EXTRA_CASELESS_RESTRICT 0x00000080u
 #define PTN_PCRE2_JIT_COMPLETE 0x00000001u
 #define PTN_PCRE2_ERROR_NOMATCH (-1)
 #define PTN_PCRE2_ERROR_UTF8_FIRST (-23)
@@ -33790,6 +33796,9 @@ typedef struct {
 #define PTN_PCRE2_INFO_NAMEENTRYSIZE 18
 #define PTN_PCRE2_INFO_NAMETABLE 19
 #define PTN_PCRE2_UNSET ((size_t)-1)
+#define PTN_PCRE2_EMPTY_RETRY_OPTIONS (PTN_PCRE2_NOTEMPTY_ATSTART | PTN_PCRE2_ANCHORED)
+#define PTN_PCRE2_JIT_STACK_MIN_SIZE (32u * 1024u)
+#define PTN_PCRE2_JIT_STACK_MAX_SIZE (192u * 1024u)
 
 typedef struct {
     void *handle;
@@ -33802,14 +33811,21 @@ typedef struct {
     int (*match)(const void *, const unsigned char *, size_t, size_t, uint32_t, void *, void *);
     size_t *(*get_ovector_pointer)(void *);
     uint32_t (*get_ovector_count)(void *);
+    unsigned char *(*get_mark)(void *);
     int (*pattern_info)(const void *, uint32_t, void *);
     int (*get_error_message)(int, unsigned char *, size_t);
+    void *(*compile_context_create)(void *);
+    void (*compile_context_free)(void *);
+    int (*set_compile_extra_options)(void *, uint32_t);
     void *(*match_context_create)(void *);
     void (*match_context_free)(void *);
     int (*set_match_limit)(void *, unsigned long);
     int (*set_depth_limit)(void *, unsigned long);
     int (*jit_compile)(void *, uint32_t);
     int (*jit_match)(const void *, const unsigned char *, size_t, size_t, uint32_t, void *, void *);
+    void *(*jit_stack_create)(size_t, size_t, void *);
+    void (*jit_stack_assign)(void *, void *, void *);
+    void (*jit_stack_free)(void *);
 } PtnPcre2Api;
 
 typedef enum {
@@ -33823,6 +33839,7 @@ typedef struct {
     regex_t posix_regex;
     void *pcre2_code;
     void *pcre2_match_context;
+    void *pcre2_jit_stack;
     int pcre2_jit_enabled;
     int utf_mode;
     PtnPregCapture *captures;
@@ -34027,6 +34044,10 @@ static char *ptn_pcre_pattern_to_posix(
             case 'X':
                 break;
             default:
+                if (pattern.data[i] == '\0') {
+                    *error_out = ptn_duplicate_string("NUL byte is not a valid modifier");
+                    return NULL;
+                }
                 if (!isspace((unsigned char)pattern.data[i])) {
                     *error_out = ptn_preg_format_error("Unknown modifier '%c'", pattern.data[i]);
                     return NULL;
@@ -34385,6 +34406,54 @@ static void ptn_preg_array_set_capture_entry(
     ptn_array_set_entry(array, ptn_array_int_key((int64_t)capture_index), value);
 }
 
+static int ptn_preg_match_is_set(const PtnPregMatch *matches, size_t match_index) {
+    return matches[match_index].matched && matches[match_index].end >= matches[match_index].start;
+}
+
+static int ptn_preg_named_capture_should_publish(
+    const PtnPregMatch *matches,
+    PtnPregCapture *captures,
+    size_t capture_index
+) {
+    if (capture_index == 0 || captures[capture_index - 1].name == NULL) {
+        return 0;
+    }
+    const char *name = captures[capture_index - 1].name;
+    int current_matched = ptn_preg_match_is_set(matches, captures[capture_index - 1].match_index);
+    for (size_t i = 0; i + 1 < capture_index; i++) {
+        if (captures[i].name == NULL || strcmp(captures[i].name, name) != 0) {
+            continue;
+        }
+        if (ptn_preg_match_is_set(matches, captures[i].match_index)) {
+            return 0;
+        }
+        if (!current_matched) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_preg_match_array_set_capture_entry(
+    PtnArray *array,
+    const PtnPregMatch *matches,
+    size_t capture_index,
+    PtnPregCapture *captures,
+    PtnValue value
+) {
+    if (capture_index > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    if (ptn_preg_named_capture_should_publish(matches, captures, capture_index)) {
+        ptn_array_set_entry(
+            array,
+            ptn_array_string_key(captures[capture_index - 1].name),
+            ptn_value_clone(value)
+        );
+    }
+    ptn_array_set_entry(array, ptn_array_int_key((int64_t)capture_index), value);
+}
+
 static PtnValue ptn_preg_match_array_value(
     const char *subject,
     const PtnPregMatch *matches,
@@ -34394,7 +34463,16 @@ static PtnValue ptn_preg_match_array_value(
     int unmatched_as_null
 ) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    for (size_t i = 0; i <= capture_count; i++) {
+    size_t last_capture = capture_count;
+    if (!unmatched_as_null) {
+        while (
+            last_capture > 0 &&
+            !ptn_preg_match_is_set(matches, captures[last_capture - 1].match_index)
+        ) {
+            last_capture--;
+        }
+    }
+    for (size_t i = 0; i <= last_capture; i++) {
         size_t match_index = i == 0 ? 0 : captures[i - 1].match_index;
         PtnValue value = ptn_preg_capture_value(
             subject,
@@ -34403,7 +34481,17 @@ static PtnValue ptn_preg_match_array_value(
             offset_capture,
             unmatched_as_null
         );
-        ptn_preg_array_set_capture_entry(result.as.array, i, captures, value);
+        ptn_preg_match_array_set_capture_entry(result.as.array, matches, i, captures, value);
+    }
+    if (matches[0].mark != NULL) {
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_string_key("MARK"),
+            ptn_owned_string_len(
+                ptn_duplicate_string_len(matches[0].mark, matches[0].mark_len),
+                matches[0].mark_len
+            )
+        );
     }
     return result;
 }
@@ -34491,10 +34579,12 @@ static int ptn_preg_pcre2_options(
     PtnStringOperand pattern,
     size_t delimiter_end,
     uint32_t *options_out,
+    uint32_t *extra_options_out,
     int *utf_mode_out,
     char **error_out
 ) {
     uint32_t options = 0;
+    uint32_t extra_options = 0;
     int utf_mode = 0;
     *error_out = NULL;
     for (size_t i = delimiter_end + 1; i < pattern.len; i++) {
@@ -34520,17 +34610,27 @@ static int ptn_preg_pcre2_options(
             case 'J':
                 options |= PTN_PCRE2_DUPNAMES;
                 break;
+            case 'n':
+                options |= PTN_PCRE2_NO_AUTO_CAPTURE;
+                break;
             case 'U':
                 options |= PTN_PCRE2_UNGREEDY;
                 break;
             case 'u':
-                options |= PTN_PCRE2_UTF;
+                options |= PTN_PCRE2_UTF | PTN_PCRE2_UCP;
                 utf_mode = 1;
+                break;
+            case 'r':
+                extra_options |= PTN_PCRE2_EXTRA_CASELESS_RESTRICT;
                 break;
             case 'S':
             case 'X':
                 break;
             default:
+                if (pattern.data[i] == '\0') {
+                    *error_out = ptn_duplicate_string("NUL byte is not a valid modifier");
+                    return 0;
+                }
                 if (!isspace((unsigned char)pattern.data[i])) {
                     *error_out = ptn_preg_format_error("Unknown modifier '%c'", pattern.data[i]);
                     return 0;
@@ -34539,7 +34639,48 @@ static int ptn_preg_pcre2_options(
         }
     }
     *options_out = options;
+    *extra_options_out = extra_options;
     *utf_mode_out = utf_mode;
+    return 1;
+}
+
+static int ptn_preg_pcre2_apply_leading_php_options(
+    const char **pattern_data,
+    size_t *pattern_len,
+    uint32_t *options
+) {
+    while (*pattern_len >= 4 && (*pattern_data)[0] == '(' && (*pattern_data)[1] == '?') {
+        size_t close = 2;
+        while (close < *pattern_len && (*pattern_data)[close] != ')') {
+            if ((*pattern_data)[close] == ':' || (*pattern_data)[close] == '-' || (*pattern_data)[close] == '(') {
+                return 1;
+            }
+            close++;
+        }
+        if (close >= *pattern_len || close == 2) {
+            return 1;
+        }
+
+        uint32_t extra_options = 0;
+        for (size_t i = 2; i < close; i++) {
+            switch ((*pattern_data)[i]) {
+                case 'J':
+                    extra_options |= PTN_PCRE2_DUPNAMES;
+                    break;
+                case 'n':
+                    extra_options |= PTN_PCRE2_NO_AUTO_CAPTURE;
+                    break;
+                case 'U':
+                    extra_options |= PTN_PCRE2_UNGREEDY;
+                    break;
+                default:
+                    return 1;
+            }
+        }
+        *options |= extra_options;
+        *pattern_data += close + 1;
+        *pattern_len -= close + 1;
+    }
     return 1;
 }
 
@@ -34553,6 +34694,20 @@ static unsigned long ptn_preg_runtime_backtrack_limit(PtnRuntime *runtime) {
     unsigned long parsed = strtoul(raw, &end, 10);
     if (raw[0] == '\0' || end == raw || *end != '\0' || errno == ERANGE) {
         return 1000000;
+    }
+    return parsed;
+}
+
+static unsigned long ptn_preg_runtime_recursion_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    const char *raw = root == NULL || root->pcre_recursion_limit == NULL
+        ? "100000"
+        : root->pcre_recursion_limit;
+    char *end = NULL;
+    errno = 0;
+    unsigned long parsed = strtoul(raw, &end, 10);
+    if (raw[0] == '\0' || end == raw || *end != '\0' || errno == ERANGE) {
+        return 100000;
     }
     return parsed;
 }
@@ -34590,8 +34745,9 @@ static PtnPcre2Api *ptn_pcre2_api_get(void) {
 #if defined(_WIN32)
     return NULL;
 #else
+    const char *env_library = getenv("PTN_PCRE2_LIBRARY");
     const char *candidates[] = {
-        getenv("PTN_PCRE2_LIBRARY"),
+        env_library == NULL ? "" : env_library,
 #ifdef PTN_PCRE2_DEFAULT_LIBRARY
         PTN_PCRE2_DEFAULT_LIBRARY,
 #endif
@@ -34625,6 +34781,14 @@ static PtnPcre2Api *ptn_pcre2_api_get(void) {
         memcpy(&ptn_pcre2_api.field, &ptn_pcre2_symbol, sizeof(ptn_pcre2_api.field)); \
     } while (0)
 
+#define PTN_PCRE2_LOAD_OPTIONAL(field, symbol) \
+    do { \
+        void *ptn_pcre2_symbol = dlsym(handle, symbol); \
+        if (ptn_pcre2_symbol != NULL) { \
+            memcpy(&ptn_pcre2_api.field, &ptn_pcre2_symbol, sizeof(ptn_pcre2_api.field)); \
+        } \
+    } while (0)
+
     PTN_PCRE2_LOAD(compile, "pcre2_compile_8");
     PTN_PCRE2_LOAD(code_free, "pcre2_code_free_8");
     PTN_PCRE2_LOAD(match_data_create_from_pattern, "pcre2_match_data_create_from_pattern_8");
@@ -34632,14 +34796,22 @@ static PtnPcre2Api *ptn_pcre2_api_get(void) {
     PTN_PCRE2_LOAD(match, "pcre2_match_8");
     PTN_PCRE2_LOAD(get_ovector_pointer, "pcre2_get_ovector_pointer_8");
     PTN_PCRE2_LOAD(get_ovector_count, "pcre2_get_ovector_count_8");
+    PTN_PCRE2_LOAD_OPTIONAL(get_mark, "pcre2_get_mark_8");
     PTN_PCRE2_LOAD(pattern_info, "pcre2_pattern_info_8");
     PTN_PCRE2_LOAD(get_error_message, "pcre2_get_error_message_8");
+    PTN_PCRE2_LOAD_OPTIONAL(compile_context_create, "pcre2_compile_context_create_8");
+    PTN_PCRE2_LOAD_OPTIONAL(compile_context_free, "pcre2_compile_context_free_8");
+    PTN_PCRE2_LOAD_OPTIONAL(set_compile_extra_options, "pcre2_set_compile_extra_options_8");
     PTN_PCRE2_LOAD(match_context_create, "pcre2_match_context_create_8");
     PTN_PCRE2_LOAD(match_context_free, "pcre2_match_context_free_8");
     PTN_PCRE2_LOAD(set_match_limit, "pcre2_set_match_limit_8");
     PTN_PCRE2_LOAD(set_depth_limit, "pcre2_set_depth_limit_8");
     PTN_PCRE2_LOAD(jit_compile, "pcre2_jit_compile_8");
     PTN_PCRE2_LOAD(jit_match, "pcre2_jit_match_8");
+    PTN_PCRE2_LOAD_OPTIONAL(jit_stack_create, "pcre2_jit_stack_create_8");
+    PTN_PCRE2_LOAD_OPTIONAL(jit_stack_assign, "pcre2_jit_stack_assign_8");
+    PTN_PCRE2_LOAD_OPTIONAL(jit_stack_free, "pcre2_jit_stack_free_8");
+#undef PTN_PCRE2_LOAD_OPTIONAL
 #undef PTN_PCRE2_LOAD
 
     ptn_pcre2_api.handle = handle;
@@ -34713,21 +34885,58 @@ static int ptn_preg_compile_pcre2(
     }
 
     uint32_t options = 0;
+    uint32_t extra_options = 0;
     int utf_mode = 0;
-    if (!ptn_preg_pcre2_options(pattern, delimiter_end, &options, &utf_mode, &compile_error)) {
+    if (!ptn_preg_pcre2_options(pattern, delimiter_end, &options, &extra_options, &utf_mode, &compile_error)) {
         return ptn_preg_emit_compile_warning(runtime, function_name, compile_error, line);
     }
 
     int error_code = 0;
     size_t error_offset = 0;
+    const char *pattern_data = pattern.data + 1;
+    size_t pattern_len = delimiter_end - 1;
+    (void)ptn_preg_pcre2_apply_leading_php_options(&pattern_data, &pattern_len, &options);
+
+    void *compile_context = NULL;
+    if (extra_options != 0) {
+        if (
+            api->compile_context_create == NULL ||
+            api->compile_context_free == NULL ||
+            api->set_compile_extra_options == NULL
+        ) {
+            return ptn_preg_emit_compile_warning(
+                runtime,
+                function_name,
+                ptn_duplicate_string("Unknown modifier 'r'"),
+                line
+            );
+        }
+        compile_context = api->compile_context_create(NULL);
+        if (compile_context == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        if (api->set_compile_extra_options(compile_context, extra_options) < 0) {
+            api->compile_context_free(compile_context);
+            return ptn_preg_emit_compile_warning(
+                runtime,
+                function_name,
+                ptn_duplicate_string("Compilation failed"),
+                line
+            );
+        }
+    }
+
     void *code = api->compile(
-        (const unsigned char *)pattern.data + 1,
-        delimiter_end - 1,
+        (const unsigned char *)pattern_data,
+        pattern_len,
         options,
         &error_code,
         &error_offset,
-        NULL
+        compile_context
     );
+    if (compile_context != NULL) {
+        api->compile_context_free(compile_context);
+    }
     if (code == NULL) {
         compile_error = ptn_pcre2_compile_error(api, error_code, error_offset);
         return ptn_preg_emit_compile_warning(runtime, function_name, compile_error, line);
@@ -34757,18 +34966,25 @@ static int ptn_preg_compile_pcre2(
         ptn_preg_captures_free(captures, logical_capture_count);
         ptn_abort_out_of_memory();
     }
-    unsigned long limit = ptn_preg_runtime_backtrack_limit(runtime);
-    (void)api->set_match_limit(match_context, limit);
-    (void)api->set_depth_limit(match_context, limit);
+    (void)api->set_match_limit(match_context, ptn_preg_runtime_backtrack_limit(runtime));
+    (void)api->set_depth_limit(match_context, ptn_preg_runtime_recursion_limit(runtime));
 
     int jit_enabled = 0;
     if (ptn_preg_runtime_jit_enabled(runtime) && api->jit_compile != NULL) {
         jit_enabled = api->jit_compile(code, PTN_PCRE2_JIT_COMPLETE) == 0;
     }
+    void *jit_stack = NULL;
+    if (jit_enabled && api->jit_stack_create != NULL && api->jit_stack_assign != NULL) {
+        jit_stack = api->jit_stack_create(PTN_PCRE2_JIT_STACK_MIN_SIZE, PTN_PCRE2_JIT_STACK_MAX_SIZE, NULL);
+        if (jit_stack != NULL) {
+            api->jit_stack_assign(match_context, NULL, jit_stack);
+        }
+    }
 
     program->engine = PTN_PREG_ENGINE_PCRE2;
     program->pcre2_code = code;
     program->pcre2_match_context = match_context;
+    program->pcre2_jit_stack = jit_stack;
     program->pcre2_jit_enabled = jit_enabled;
     program->utf_mode = utf_mode;
     program->captures = captures;
@@ -34802,6 +35018,9 @@ static void ptn_preg_program_free(PtnPregProgram *program) {
         if (api != NULL) {
             if (program->pcre2_match_context != NULL) {
                 api->match_context_free(program->pcre2_match_context);
+            }
+            if (program->pcre2_jit_stack != NULL && api->jit_stack_free != NULL) {
+                api->jit_stack_free(program->pcre2_jit_stack);
             }
             if (program->pcre2_code != NULL) {
                 api->code_free(program->pcre2_code);
@@ -34925,10 +35144,127 @@ static int ptn_preg_compile_program(
 
 static void ptn_preg_matches_clear(PtnPregMatch *matches, size_t match_count) {
     for (size_t i = 0; i < match_count; i++) {
+        free(matches[i].mark);
         matches[i].matched = 0;
         matches[i].start = 0;
         matches[i].end = 0;
+        matches[i].mark = NULL;
+        matches[i].mark_len = 0;
     }
+}
+
+static void ptn_preg_matches_free(PtnPregMatch *matches, size_t match_count) {
+    if (matches == NULL) {
+        return;
+    }
+    ptn_preg_matches_clear(matches, match_count);
+    free(matches);
+}
+
+static int ptn_preg_utf8_is_continuation(unsigned char byte) {
+    return (byte & 0xc0u) == 0x80u;
+}
+
+static int ptn_preg_utf8_is_valid(const char *subject, size_t subject_len) {
+    size_t offset = 0;
+    while (offset < subject_len) {
+        unsigned char byte = (unsigned char)subject[offset];
+        if (byte < 0x80u) {
+            offset++;
+            continue;
+        }
+        if (byte >= 0xc2u && byte <= 0xdfu) {
+            if (
+                offset + 1 >= subject_len ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 1])
+            ) {
+                return 0;
+            }
+            offset += 2;
+            continue;
+        }
+        if (byte == 0xe0u) {
+            if (
+                offset + 2 >= subject_len ||
+                (unsigned char)subject[offset + 1] < 0xa0u ||
+                (unsigned char)subject[offset + 1] > 0xbfu ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 2])
+            ) {
+                return 0;
+            }
+            offset += 3;
+            continue;
+        }
+        if ((byte >= 0xe1u && byte <= 0xecu) || (byte >= 0xeeu && byte <= 0xefu)) {
+            if (
+                offset + 2 >= subject_len ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 1]) ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 2])
+            ) {
+                return 0;
+            }
+            offset += 3;
+            continue;
+        }
+        if (byte == 0xedu) {
+            if (
+                offset + 2 >= subject_len ||
+                (unsigned char)subject[offset + 1] < 0x80u ||
+                (unsigned char)subject[offset + 1] > 0x9fu ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 2])
+            ) {
+                return 0;
+            }
+            offset += 3;
+            continue;
+        }
+        if (byte == 0xf0u) {
+            if (
+                offset + 3 >= subject_len ||
+                (unsigned char)subject[offset + 1] < 0x90u ||
+                (unsigned char)subject[offset + 1] > 0xbfu ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 2]) ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 3])
+            ) {
+                return 0;
+            }
+            offset += 4;
+            continue;
+        }
+        if (byte >= 0xf1u && byte <= 0xf3u) {
+            if (
+                offset + 3 >= subject_len ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 1]) ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 2]) ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 3])
+            ) {
+                return 0;
+            }
+            offset += 4;
+            continue;
+        }
+        if (byte == 0xf4u) {
+            if (
+                offset + 3 >= subject_len ||
+                (unsigned char)subject[offset + 1] < 0x80u ||
+                (unsigned char)subject[offset + 1] > 0x8fu ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 2]) ||
+                !ptn_preg_utf8_is_continuation((unsigned char)subject[offset + 3])
+            ) {
+                return 0;
+            }
+            offset += 4;
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int ptn_preg_utf8_offset_is_boundary(const char *subject, size_t subject_len, size_t offset) {
+    return offset == 0 ||
+        offset >= subject_len ||
+        !ptn_preg_utf8_is_continuation((unsigned char)subject[offset]);
 }
 
 static int ptn_preg_program_match(
@@ -34937,11 +35273,22 @@ static int ptn_preg_program_match(
     const char *subject,
     size_t subject_len,
     size_t start_offset,
+    uint32_t match_options,
     PtnPregMatch *matches
 ) {
     ptn_preg_matches_clear(matches, program->match_count);
     if (start_offset > subject_len) {
         return 0;
+    }
+    if (program->utf_mode) {
+        if (!ptn_preg_utf8_offset_is_boundary(subject, subject_len, start_offset)) {
+            ptn_preg_set_last_error(runtime, PTN_PREG_BAD_UTF8_OFFSET_ERROR);
+            return -1;
+        }
+        if (start_offset == 0 && !ptn_preg_utf8_is_valid(subject, subject_len)) {
+            ptn_preg_set_last_error(runtime, PTN_PREG_BAD_UTF8_ERROR);
+            return -1;
+        }
     }
 
     if (program->engine == PTN_PREG_ENGINE_PCRE2) {
@@ -34954,25 +35301,15 @@ static int ptn_preg_program_match(
         if (match_data == NULL) {
             ptn_abort_out_of_memory();
         }
-        int rc = program->pcre2_jit_enabled
-            ? api->jit_match(
-                program->pcre2_code,
-                (const unsigned char *)subject,
-                subject_len,
-                start_offset,
-                0,
-                match_data,
-                program->pcre2_match_context
-            )
-            : api->match(
-                program->pcre2_code,
-                (const unsigned char *)subject,
-                subject_len,
-                start_offset,
-                0,
-                match_data,
-                program->pcre2_match_context
-            );
+        int rc = api->match(
+            program->pcre2_code,
+            (const unsigned char *)subject,
+            subject_len,
+            start_offset,
+            match_options,
+            match_data,
+            program->pcre2_match_context
+        );
         if (rc == PTN_PCRE2_ERROR_NOMATCH) {
             api->match_data_free(match_data);
             ptn_preg_set_last_error(runtime, PTN_PREG_NO_ERROR);
@@ -34999,6 +35336,14 @@ static int ptn_preg_program_match(
             matches[i].start = start;
             matches[i].end = end;
         }
+        if (api->get_mark != NULL) {
+            unsigned char *mark = api->get_mark(match_data);
+            if (mark != NULL) {
+                size_t mark_len = (size_t)mark[-1];
+                matches[0].mark = ptn_duplicate_string_len((const char *)mark, mark_len);
+                matches[0].mark_len = mark_len;
+            }
+        }
         api->match_data_free(match_data);
         ptn_preg_set_last_error(runtime, PTN_PREG_NO_ERROR);
         return matches[0].matched ? 1 : 0;
@@ -35020,7 +35365,7 @@ static int ptn_preg_program_match(
         subject + start_offset,
         program->match_count,
         posix_matches,
-        0
+        match_options == 0 ? 0 : REG_NOTBOL
     );
     if (exec_result != 0) {
         free(posix_matches);
@@ -35178,11 +35523,11 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
         ptn_abort_out_of_memory();
     }
     char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
-    int match_result = ptn_preg_program_match(runtime, &program, subject_c, subject.len, start_offset, matches);
+    int match_result = ptn_preg_program_match(runtime, &program, subject_c, subject.len, start_offset, 0, matches);
     int matched = match_result == 1;
     int offset_capture = (flags & PTN_PREG_OFFSET_CAPTURE) != 0;
     int unmatched_as_null = (flags & PTN_PREG_UNMATCHED_AS_NULL) != 0;
-    if (match_result >= 0 && argc >= 3) {
+    if (argc >= 3) {
         if (matched) {
             ptn_preg_match_assign_matches(
                 runtime,
@@ -35202,7 +35547,7 @@ static PtnValue ptn_internal_preg_match(PtnRuntime *runtime, size_t argc, const 
     }
 
     free(subject_c);
-    free(matches);
+    ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
@@ -35321,7 +35666,7 @@ static PtnValue ptn_internal_preg_match_all(PtnRuntime *runtime, size_t argc, co
     if (!use_set_order) {
         pattern_buckets = calloc(program.capture_count + 1, sizeof(PtnArray *));
         if (pattern_buckets == NULL) {
-            free(matches);
+            ptn_preg_matches_free(matches, program.match_count);
             ptn_preg_program_free(&program);
             ptn_string_operand_free(pattern);
             ptn_string_operand_free(subject);
@@ -35338,13 +35683,28 @@ static PtnValue ptn_internal_preg_match_all(PtnRuntime *runtime, size_t argc, co
     size_t offset = start_offset;
     size_t total_matches = 0;
     int match_failed = 0;
+    uint32_t match_options = 0;
+    PtnArray *mark_bucket = NULL;
     while (offset <= subject.len) {
-        int match_result = ptn_preg_program_match(runtime, &program, subject_c, subject.len, offset, matches);
+        int match_result = ptn_preg_program_match(
+            runtime,
+            &program,
+            subject_c,
+            subject.len,
+            offset,
+            match_options,
+            matches
+        );
         if (match_result < 0) {
             match_failed = 1;
             break;
         }
         if (match_result == 0 || !matches[0].matched || matches[0].end < matches[0].start) {
+            if (match_options != 0 && offset < subject.len) {
+                offset = ptn_preg_next_start_offset(subject_c, subject.len, offset, program.utf_mode);
+                match_options = 0;
+                continue;
+            }
             break;
         }
 
@@ -35382,16 +35742,30 @@ static PtnValue ptn_internal_preg_match_all(PtnRuntime *runtime, size_t argc, co
                 }
                 ptn_array_set_entry(pattern_buckets[i], ptn_array_int_key((int64_t)total_matches), value);
             }
+            if (matches[0].mark != NULL) {
+                if (mark_bucket == NULL) {
+                    PtnValue bucket = ptn_array_from_literal_entries(0, NULL);
+                    mark_bucket = bucket.as.array;
+                    ptn_array_set_entry(result.as.array, ptn_array_string_key("MARK"), bucket);
+                }
+                ptn_array_set_entry(
+                    mark_bucket,
+                    ptn_array_int_key((int64_t)total_matches),
+                    ptn_owned_string_len(
+                        ptn_duplicate_string_len(matches[0].mark, matches[0].mark_len),
+                        matches[0].mark_len
+                    )
+                );
+            }
         }
 
         total_matches++;
         if (absolute_end == absolute_start) {
-            if (absolute_end >= subject.len) {
-                break;
-            }
-            offset = ptn_preg_next_start_offset(subject_c, subject.len, absolute_end, program.utf_mode);
+            offset = absolute_end;
+            match_options = PTN_PCRE2_EMPTY_RETRY_OPTIONS;
         } else {
             offset = absolute_end;
+            match_options = 0;
         }
     }
 
@@ -35399,7 +35773,7 @@ static PtnValue ptn_internal_preg_match_all(PtnRuntime *runtime, size_t argc, co
         ptn_value_destroy(&result);
         free(pattern_buckets);
         free(subject_c);
-        free(matches);
+        ptn_preg_matches_free(matches, program.match_count);
         ptn_preg_program_free(&program);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
@@ -35412,7 +35786,7 @@ static PtnValue ptn_internal_preg_match_all(PtnRuntime *runtime, size_t argc, co
     ptn_value_destroy(&result);
     free(pattern_buckets);
     free(subject_c);
-    free(matches);
+    ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
@@ -35526,7 +35900,7 @@ static PtnValue ptn_internal_preg_split(PtnRuntime *runtime, size_t argc, const 
         return ptn_null();
     }
     if (limit == 0) {
-        limit = 1;
+        limit = -1;
     }
     if (ptn_preg_pattern_is_ascii_word_boundary(pattern)) {
         PtnValue result = ptn_preg_split_ascii_word_boundary(subject, limit, (int)flags);
@@ -35562,13 +35936,27 @@ static PtnValue ptn_internal_preg_split(PtnRuntime *runtime, size_t argc, const 
     size_t offset = 0;
     size_t search_offset = 0;
     int match_failed = 0;
+    uint32_t match_options = 0;
     while (search_offset <= subject.len && (limit < 0 || (int64_t)result.as.array->len < limit - 1)) {
-        int match_result = ptn_preg_program_match(runtime, &program, subject_c, subject.len, search_offset, matches);
+        int match_result = ptn_preg_program_match(
+            runtime,
+            &program,
+            subject_c,
+            subject.len,
+            search_offset,
+            match_options,
+            matches
+        );
         if (match_result < 0) {
             match_failed = 1;
             break;
         }
         if (match_result == 0 || !matches[0].matched || matches[0].end < matches[0].start) {
+            if (match_options != 0 && search_offset < subject.len) {
+                search_offset = ptn_preg_next_start_offset(subject_c, subject.len, search_offset, program.utf_mode);
+                match_options = 0;
+                continue;
+            }
             break;
         }
         size_t start = matches[0].start;
@@ -35600,21 +35988,19 @@ static PtnValue ptn_internal_preg_split(PtnRuntime *runtime, size_t argc, const 
         }
 
         if (end == start) {
-            if (end >= subject.len) {
-                offset = end;
-                break;
-            }
             offset = end;
-            search_offset = ptn_preg_next_start_offset(subject_c, subject.len, end, program.utf_mode);
+            search_offset = end;
+            match_options = PTN_PCRE2_EMPTY_RETRY_OPTIONS;
         } else {
             offset = end;
             search_offset = end;
+            match_options = 0;
         }
     }
     if (match_failed) {
         ptn_value_destroy(&result);
         free(subject_c);
-        free(matches);
+        ptn_preg_matches_free(matches, program.match_count);
         ptn_preg_program_free(&program);
         ptn_string_operand_free(pattern);
         ptn_string_operand_free(subject);
@@ -35623,7 +36009,7 @@ static PtnValue ptn_internal_preg_split(PtnRuntime *runtime, size_t argc, const 
     ptn_preg_split_append_piece(result.as.array, subject_c, offset, subject.len - offset, (int)flags);
 
     free(subject_c);
-    free(matches);
+    ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
     ptn_string_operand_free(pattern);
     ptn_string_operand_free(subject);
@@ -35933,16 +36319,34 @@ static PtnValue ptn_preg_replace_apply_to_string(
     PtnStringBuffer output;
     ptn_string_buffer_init(&output);
     size_t offset = 0;
+    size_t search_offset = 0;
     int64_t local_count = 0;
     int match_failed = 0;
+    uint32_t match_options = 0;
 
-    while (offset <= subject.len && (limit < 0 || local_count < limit)) {
-        int match_result = ptn_preg_program_match(runtime, &program, subject_c, subject.len, offset, matches);
+    while (search_offset <= subject.len && (limit < 0 || local_count < limit)) {
+        int match_result = ptn_preg_program_match(
+            runtime,
+            &program,
+            subject_c,
+            subject.len,
+            search_offset,
+            match_options,
+            matches
+        );
         if (match_result < 0) {
             match_failed = 1;
             break;
         }
         if (match_result == 0 || !matches[0].matched || matches[0].end < matches[0].start) {
+            if (match_options != 0 && search_offset < subject.len) {
+                size_t next = ptn_preg_next_start_offset(subject_c, subject.len, search_offset, program.utf_mode);
+                ptn_string_buffer_append_len(&output, subject.data + offset, next - offset);
+                offset = next;
+                search_offset = next;
+                match_options = 0;
+                continue;
+            }
             break;
         }
 
@@ -35971,7 +36375,7 @@ static PtnValue ptn_preg_replace_apply_to_string(
             if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(callback_replacement);
                 free(subject_c);
-                free(matches);
+                ptn_preg_matches_free(matches, program.match_count);
                 ptn_preg_program_free(&program);
                 free(output.data);
                 return ptn_null();
@@ -35996,21 +36400,19 @@ static PtnValue ptn_preg_replace_apply_to_string(
 
         local_count++;
         if (end == start) {
-            if (end >= subject.len) {
-                offset = end;
-                break;
-            }
-            size_t next = ptn_preg_next_start_offset(subject_c, subject.len, end, program.utf_mode);
-            ptn_string_buffer_append_len(&output, subject.data + end, next - end);
-            offset = next;
+            offset = end;
+            search_offset = end;
+            match_options = PTN_PCRE2_EMPTY_RETRY_OPTIONS;
         } else {
             offset = end;
+            search_offset = end;
+            match_options = 0;
         }
     }
 
     if (match_failed) {
         free(subject_c);
-        free(matches);
+        ptn_preg_matches_free(matches, program.match_count);
         ptn_preg_program_free(&program);
         free(output.data);
         return ptn_null();
@@ -36019,7 +36421,7 @@ static PtnValue ptn_preg_replace_apply_to_string(
     ptn_string_buffer_append_len(&output, subject.data + offset, subject.len - offset);
     *replacement_count += local_count;
     free(subject_c);
-    free(matches);
+    ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
     return ptn_owned_string_len(output.data, output.len);
 }
@@ -36359,8 +36761,65 @@ static PtnValue ptn_internal_preg_filter(PtnRuntime *runtime, size_t argc, const
     return result;
 }
 
+static PtnValue ptn_preg_replace_callback_apply_array_patterns_to_string(
+    PtnRuntime *runtime,
+    PtnArray *patterns,
+    PtnValue callback,
+    int offset_capture,
+    int unmatched_as_null,
+    PtnStringOperand subject,
+    int64_t limit,
+    int64_t *replacement_count,
+    size_t line
+) {
+    PtnStringOperand empty_replacement = ptn_string_operand_borrowed("");
+    PtnValue current = ptn_owned_string_len(ptn_duplicate_string_len(subject.data, subject.len), subject.len);
+    for (size_t i = 0; i < patterns->len; i++) {
+        PtnStringOperand pattern = ptn_internal_expect_string_arg(
+            runtime,
+            "preg_replace_callback",
+            1,
+            "pattern",
+            patterns->entries[i].value,
+            line
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&current);
+            ptn_string_operand_free(pattern);
+            return ptn_null();
+        }
+        PtnStringOperand current_subject = ptn_value_to_string_operand(current);
+        PtnValue next = ptn_preg_replace_apply_to_string(
+            runtime,
+            "preg_replace_callback",
+            pattern,
+            empty_replacement,
+            callback,
+            1,
+            offset_capture,
+            unmatched_as_null,
+            current_subject,
+            limit,
+            replacement_count,
+            line
+        );
+        ptn_string_operand_free(current_subject);
+        ptn_string_operand_free(pattern);
+        ptn_value_destroy(&current);
+        if (runtime->exceptions->active_exception != NULL || next.type == PTN_NULL) {
+            return next;
+        }
+        current = next;
+    }
+    return current;
+}
+
 static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    PtnStringOperand pattern = ptn_internal_expect_string_arg(runtime, "preg_replace_callback", 1, "pattern", args[0], line);
+    PtnValue pattern_value = ptn_value_deref(args[0]);
+    PtnStringOperand pattern = ptn_string_operand_borrowed("");
+    if (pattern_value.type != PTN_ARRAY) {
+        pattern = ptn_internal_expect_string_arg(runtime, "preg_replace_callback", 1, "pattern", args[0], line);
+    }
     PtnValue callback = ptn_internal_expect_callback_arg(runtime, "preg_replace_callback", 2, "callback", args[1]);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(pattern);
@@ -36377,10 +36836,57 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
 
     PtnValue subject_value = ptn_value_deref(args[2]);
     PtnValue result;
-    if (subject_value.type == PTN_ARRAY) {
+    if (pattern_value.type == PTN_ARRAY) {
+        if (subject_value.type == PTN_ARRAY) {
+            result = ptn_array_from_literal_entries(0, NULL);
+            for (size_t i = 0; i < subject_value.as.array->len; i++) {
+                PtnArrayEntry *entry = &subject_value.as.array->entries[i];
+                if (ptn_value_deref(entry->value).type == PTN_ARRAY) {
+                    ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+                }
+                PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
+                PtnValue replaced = ptn_preg_replace_callback_apply_array_patterns_to_string(
+                    runtime,
+                    pattern_value.as.array,
+                    callback,
+                    offset_capture,
+                    unmatched_as_null,
+                    subject,
+                    limit,
+                    &replacement_count,
+                    line
+                );
+                ptn_string_operand_free(subject);
+                if (runtime->exceptions->active_exception != NULL) {
+                    ptn_value_destroy(&result);
+                    result = ptn_null();
+                    break;
+                }
+                ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), replaced);
+            }
+        } else {
+            PtnStringOperand subject =
+                ptn_internal_expect_str_replace_arg(runtime, "preg_replace_callback", 3, "subject", args[2], line);
+            result = ptn_preg_replace_callback_apply_array_patterns_to_string(
+                runtime,
+                pattern_value.as.array,
+                callback,
+                offset_capture,
+                unmatched_as_null,
+                subject,
+                limit,
+                &replacement_count,
+                line
+            );
+            ptn_string_operand_free(subject);
+        }
+    } else if (subject_value.type == PTN_ARRAY) {
         result = ptn_array_from_literal_entries(0, NULL);
         for (size_t i = 0; i < subject_value.as.array->len; i++) {
             PtnArrayEntry *entry = &subject_value.as.array->entries[i];
+            if (ptn_value_deref(entry->value).type == PTN_ARRAY) {
+                ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+            }
             PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
             PtnValue replaced = ptn_preg_replace_apply_to_string(
                 runtime,
@@ -36473,19 +36979,19 @@ static PtnValue ptn_internal_preg_grep(PtnRuntime *runtime, size_t argc, const P
         if (runtime->exceptions->active_exception != NULL) {
             ptn_string_operand_free(subject);
             ptn_value_destroy(&result);
-            free(matches);
+            ptn_preg_matches_free(matches, program.match_count);
             ptn_preg_program_free(&program);
             ptn_string_operand_free(pattern);
             return ptn_null();
         }
         char *subject_c = ptn_duplicate_string_len(subject.data, subject.len);
-        int match_result = ptn_preg_program_match(runtime, &program, subject_c, subject.len, 0, matches);
+        int match_result = ptn_preg_program_match(runtime, &program, subject_c, subject.len, 0, 0, matches);
         int matched = match_result == 1;
         free(subject_c);
         ptn_string_operand_free(subject);
         if (match_result < 0) {
             ptn_value_destroy(&result);
-            free(matches);
+            ptn_preg_matches_free(matches, program.match_count);
             ptn_preg_program_free(&program);
             ptn_string_operand_free(pattern);
             return ptn_bool(0);
@@ -36495,10 +37001,82 @@ static PtnValue ptn_internal_preg_grep(PtnRuntime *runtime, size_t argc, const P
         }
     }
 
-    free(matches);
+    ptn_preg_matches_free(matches, program.match_count);
     ptn_preg_program_free(&program);
     ptn_string_operand_free(pattern);
     return result;
+}
+
+static PtnArrayEntry *ptn_array_entry_for_cstr_key(PtnArray *array, const char *key) {
+    PtnArrayKey lookup = ptn_array_string_key(key);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, lookup);
+    ptn_array_key_free(lookup);
+    return entry;
+}
+
+static PtnValue ptn_internal_filter_var(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    int64_t filter = argc >= 2
+        ? ptn_internal_expect_integer_arg(runtime, "filter_var", 2, "filter", args[1], line)
+        : 0;
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (filter != PTN_FILTER_VALIDATE_REGEXP) {
+        return ptn_value_clone(args[0]);
+    }
+
+    PtnStringOperand regexp = ptn_string_operand_borrowed("");
+    if (argc >= 3) {
+        PtnValue options = ptn_value_deref(args[2]);
+        if (options.type == PTN_ARRAY) {
+            PtnArrayEntry *options_entry = ptn_array_entry_for_cstr_key(options.as.array, "options");
+            if (options_entry != NULL) {
+                PtnValue nested = ptn_value_deref(options_entry->value);
+                if (nested.type == PTN_ARRAY) {
+                    PtnArrayEntry *regexp_entry = ptn_array_entry_for_cstr_key(nested.as.array, "regexp");
+                    if (regexp_entry != NULL) {
+                        regexp = ptn_value_to_string_operand_with_runtime(runtime, regexp_entry->value, line);
+                    }
+                }
+            }
+        }
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(regexp);
+        return ptn_null();
+    }
+    if (regexp.len == 0) {
+        ptn_string_operand_free(regexp);
+        return ptn_bool(0);
+    }
+
+    PtnStringOperand value = ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(regexp);
+        return ptn_null();
+    }
+
+    PtnPregProgram program;
+    if (!ptn_preg_compile_program(runtime, "filter_var", regexp, &program, line)) {
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(regexp);
+        return ptn_bool(0);
+    }
+    PtnPregMatch *matches = calloc(program.match_count, sizeof(PtnPregMatch));
+    if (matches == NULL) {
+        ptn_preg_program_free(&program);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(regexp);
+        ptn_abort_out_of_memory();
+    }
+    char *value_c = ptn_duplicate_string_len(value.data, value.len);
+    int match_result = ptn_preg_program_match(runtime, &program, value_c, value.len, 0, 0, matches);
+    free(value_c);
+    ptn_preg_matches_free(matches, program.match_count);
+    ptn_preg_program_free(&program);
+    ptn_string_operand_free(value);
+    ptn_string_operand_free(regexp);
+    return match_result == 1 ? ptn_value_clone(args[0]) : ptn_bool(0);
 }
 
 static PtnValue ptn_preg_replace_callback_array_apply_subject(
@@ -36518,6 +37096,9 @@ static PtnValue ptn_preg_replace_callback_array_apply_subject(
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
         for (size_t i = 0; i < subject_value.as.array->len; i++) {
             PtnArrayEntry *entry = &subject_value.as.array->entries[i];
+            if (ptn_value_deref(entry->value).type == PTN_ARRAY) {
+                ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+            }
             PtnStringOperand subject = ptn_value_to_string_operand_with_runtime(runtime, entry->value, line);
             PtnValue replaced = ptn_preg_replace_apply_to_string(
                 runtime,
@@ -55098,6 +55679,14 @@ static const char *ptn_runtime_pcre_backtrack_limit(PtnRuntime *runtime) {
     return root->pcre_backtrack_limit;
 }
 
+static const char *ptn_runtime_pcre_recursion_limit(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    if (root == NULL || root->pcre_recursion_limit == NULL) {
+        return "100000";
+    }
+    return root->pcre_recursion_limit;
+}
+
 static const char *ptn_runtime_pcre_jit(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     if (root == NULL || root->pcre_jit == NULL) {
@@ -56156,6 +56745,10 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_backtrack_limit(runtime)));
         return 1;
     }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.recursion_limit")) {
+        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_recursion_limit(runtime)));
+        return 1;
+    }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.jit")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_jit(runtime)));
         return 1;
@@ -56348,6 +56941,11 @@ static void ptn_runtime_set_pcre_backtrack_limit(PtnRuntime *runtime, const char
     ptn_runtime_set_ini_string(&root->pcre_backtrack_limit, value);
 }
 
+static void ptn_runtime_set_pcre_recursion_limit(PtnRuntime *runtime, const char *value) {
+    PtnRuntime *root = ptn_runtime_config_root(runtime);
+    ptn_runtime_set_ini_string(&root->pcre_recursion_limit, value);
+}
+
 static void ptn_runtime_set_pcre_jit(PtnRuntime *runtime, const char *value) {
     PtnRuntime *root = ptn_runtime_config_root(runtime);
     ptn_runtime_set_ini_string(&root->pcre_jit, value);
@@ -56527,6 +57125,11 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
     }
     if (ptn_string_operand_ascii_case_equal(option, "pcre.backtrack_limit")) {
         ptn_runtime_set_pcre_backtrack_limit(runtime, "1000000");
+        ptn_string_operand_free(option);
+        return ptn_null();
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.recursion_limit")) {
+        ptn_runtime_set_pcre_recursion_limit(runtime, "100000");
         ptn_string_operand_free(option);
         return ptn_null();
     }
@@ -56827,6 +57430,16 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
         ptn_runtime_set_pcre_backtrack_limit(runtime, next);
+        free(next);
+        ptn_string_operand_free(value);
+        ptn_string_operand_free(option);
+        return previous;
+    }
+    if (ptn_string_operand_ascii_case_equal(option, "pcre.recursion_limit")) {
+        PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_pcre_recursion_limit(runtime)));
+        PtnStringOperand value = ptn_value_to_string_operand(args[1]);
+        char *next = ptn_duplicate_string_len(value.data, value.len);
+        ptn_runtime_set_pcre_recursion_limit(runtime, next);
         free(next);
         ptn_string_operand_free(value);
         ptn_string_operand_free(option);
@@ -57155,6 +57768,18 @@ static PtnValue ptn_internal_php_sapi_name(PtnRuntime *runtime, size_t argc, con
     (void)args;
     (void)line;
     return ptn_string(PTN_PHP_SAPI_NAME);
+}
+
+static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc >= 1) {
+        (void)ptn_internal_expect_integer_arg(runtime, "phpinfo", 1, "flags", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+    }
+    ptn_output_write_cstr(runtime, "PHP Version => " PTN_PHP_VERSION "\n");
+    ptn_output_write_cstr(runtime, "PCRE JIT Support => enabled\n");
+    return ptn_bool(1);
 }
 
 static PtnValue ptn_internal_zend_version(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -59037,6 +59662,7 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_ODD", PTN_PHP_ROUND_HALF_ODD);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_BOTH", PTN_ARRAY_FILTER_USE_BOTH);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_KEY", PTN_ARRAY_FILTER_USE_KEY);
+    ptn_get_defined_constants_add_int(table, "FILTER_VALIDATE_REGEXP", PTN_FILTER_VALIDATE_REGEXP);
     ptn_get_defined_constants_add_int(table, "FNM_NOESCAPE", PTN_FNM_NOESCAPE);
     ptn_get_defined_constants_add_int(table, "FNM_PATHNAME", PTN_FNM_PATHNAME);
     ptn_get_defined_constants_add_int(table, "FNM_PERIOD", PTN_FNM_PERIOD);
@@ -59316,6 +59942,7 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "SORT_FLAG_CASE",
         "ARRAY_FILTER_USE_BOTH",
         "ARRAY_FILTER_USE_KEY",
+        "FILTER_VALIDATE_REGEXP",
         "FNM_NOESCAPE",
         "FNM_PATHNAME",
         "FNM_PERIOD",
@@ -61795,16 +62422,27 @@ static void ptn_set_timezone_env(const char *timezone) {
     ptn_tzset();
 }
 
+static int ptn_timezone_identifier_is_known(const char *name);
+static int ptn_configured_date_timezone_is_invalid(const char **value_out) {
+    const char *timezone = getenv("PTN_DATE_TIMEZONE");
+    if (timezone == NULL) {
+        return 0;
+    }
+    if (value_out != NULL) {
+        *value_out = timezone;
+    }
+    return !ptn_timezone_identifier_is_known(timezone);
+}
+
 static const char *ptn_current_timezone_name(void) {
     const char *timezone = getenv("TZ");
     if (timezone != NULL && timezone[0] != '\0') {
         return timezone;
     }
     timezone = getenv("PTN_DATE_TIMEZONE");
-    return timezone != NULL && timezone[0] != '\0' ? timezone : "UTC";
+    return timezone != NULL && ptn_timezone_identifier_is_known(timezone) ? timezone : "UTC";
 }
 
-static int ptn_timezone_identifier_is_known(const char *name);
 static int ptn_timezone_uses_z_designator(const char *name);
 
 static int ptn_timezone_name_is_supported(PtnStringOperand timezone) {
@@ -62022,6 +62660,9 @@ static PtnValue ptn_format_date_value(PtnRuntime *runtime, const char *function_
                 break;
             case 's':
                 ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_sec);
+                break;
+            case 'u':
+                ptn_string_buffer_append(&buffer, "000000");
                 break;
             case 'v':
                 ptn_string_buffer_append(&buffer, "000");
@@ -62296,7 +62937,13 @@ static time_t ptn_date_mktime_from_args(size_t argc, const PtnValue *args, int u
         parts_storage.tm_mday = (int)ptn_value_to_integer(args[4]);
     }
     if (argc >= 6) {
-        parts_storage.tm_year = (int)ptn_value_to_integer(args[5]) - 1900;
+        int year = (int)ptn_value_to_integer(args[5]);
+        if (year >= 0 && year <= 69) {
+            year += 2000;
+        } else if (year >= 70 && year <= 100) {
+            year += 1900;
+        }
+        parts_storage.tm_year = year - 1900;
     }
     parts_storage.tm_isdst = -1;
     return use_gmt ? ptn_mktime_in_utc(&parts_storage) : mktime(&parts_storage);
@@ -62421,10 +63068,21 @@ static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const P
 }
 
 static PtnValue ptn_internal_date_default_timezone_get(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)args;
     (void)line;
+    const char *configured_timezone = NULL;
+    if (ptn_configured_date_timezone_is_invalid(&configured_timezone) && !runtime->date_timezone_startup_warning_emitted) {
+        size_t message_len = strlen(configured_timezone) + 72;
+        char *message = malloc(message_len);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(message, message_len, "PHP Startup: Invalid date.timezone value '%s', using 'UTC' instead", configured_timezone);
+        ptn_emit_compile_warning(runtime, message, "Unknown", 0);
+        runtime->date_timezone_startup_warning_emitted = 1;
+        free(message);
+    }
     return ptn_string(ptn_current_timezone_name());
 }
 
@@ -62440,8 +63098,7 @@ static PtnValue ptn_internal_date_default_timezone_set(PtnRuntime *runtime, size
             ptn_abort_out_of_memory();
         }
         snprintf(message, message_len, "date_default_timezone_set(): Timezone ID '%s' is invalid", name);
-        int leading_newline = runtime->diagnostics.emitted_warning;
-        ptn_emit_notice_with_path(&runtime->diagnostics, message, runtime->source_path, line, leading_newline);
+        ptn_emit_notice_with_path(&runtime->diagnostics, message, runtime->source_path, line, 1);
         runtime->diagnostics.emitted_warning = 1;
         free(message);
         free(name);
@@ -62641,20 +63298,31 @@ typedef struct {
 
 static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Africa/Abidjan", 1, 0 },
+    { "Africa/Casablanca", 1, 0 },
     { "America/Chicago", 2, 0 },
     { "America/Halifax", 2, 0 },
+    { "America/Indiana/Knox", 2, 0 },
     { "America/Los_Angeles", 2, 0 },
     { "America/New_York", 2, 0 },
     { "America/Sao_Paulo", 2, 0 },
+    { "America/Toronto", 2, 0 },
     { "Asia/Calcutta", 16, 1 },
+    { "Asia/Hong_Kong", 16, 0 },
     { "Asia/Jerusalem", 16, 0 },
     { "Asia/Kolkata", 16, 0 },
+    { "Australia/Brisbane", 8, 0 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
     { "Europe/Kyiv", 128, 0 },
     { "Europe/London", 128, 0 },
+    { "Europe/Moscow", 128, 0 },
     { "Europe/Oslo", 128, 0 },
     { "Europe/Paris", 128, 0 },
+    { "Europe/Rome", 128, 0 },
+    { "MET", 128, 0 },
+    { "Pacific/Samoa", 512, 0 },
+    { "Pacific/Wallis", 512, 0 },
+    { "US/Alaska", 2, 1 },
     { "UTC", 1024, 0 },
     { "US/Eastern", 2, 1 },
 };
@@ -62834,7 +63502,8 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
         ptn_ascii_case_equal(name, "Europe/Oslo") ||
-        ptn_ascii_case_equal(name, "Europe/Kyiv")) {
+        ptn_ascii_case_equal(name, "Europe/Kyiv") ||
+        ptn_ascii_case_equal(name, "Europe/Rome")) {
         return europe_dst ? 7200 : 3600;
     }
     if (ptn_ascii_case_equal(name, "America/New_York") ||
@@ -62843,6 +63512,9 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     }
     if (ptn_ascii_case_equal(name, "America/Chicago")) {
         return us_dst ? -18000 : -21600;
+    }
+    if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
+        return -18000;
     }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
         return us_dst ? -25200 : -28800;
@@ -62906,7 +63578,8 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     if (ptn_ascii_case_equal(name, "Europe/Paris") ||
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
-        ptn_ascii_case_equal(name, "Europe/Oslo")) {
+        ptn_ascii_case_equal(name, "Europe/Oslo") ||
+        ptn_ascii_case_equal(name, "Europe/Rome")) {
         return europe_dst ? "CEST" : "CET";
     }
     if (ptn_ascii_case_equal(name, "Europe/Kyiv")) {
@@ -62918,6 +63591,9 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     }
     if (ptn_ascii_case_equal(name, "America/Chicago")) {
         return us_dst ? "CDT" : "CST";
+    }
+    if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
+        return "EST";
     }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
         return us_dst ? "PDT" : "PST";
@@ -76578,6 +77254,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "fileperms", 1, 1, ptn_internal_fileperms },
         { "filesize", 1, 1, ptn_internal_filesize },
         { "filetype", 1, 1, ptn_internal_filetype },
+        { "filter_var", 1, 3, ptn_internal_filter_var },
         { "floatval", 1, 1, ptn_internal_floatval },
         { "floor", 1, 1, ptn_internal_floor },
         { "flush", 0, 0, ptn_internal_flush },
@@ -76647,7 +77324,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "glob", 1, 2, ptn_internal_glob },
         { "gmdate", 1, 2, ptn_internal_gmdate },
         { "gmstrftime", 1, 2, ptn_internal_gmstrftime },
-        { "gmmktime", 0, 6, ptn_internal_gmmktime },
+        { "gmmktime", 1, 6, ptn_internal_gmmktime },
         { "grapheme_extract", 2, 5, ptn_internal_grapheme_extract },
         { "gregoriantojd", 3, 3, ptn_internal_gregoriantojd },
         { "hebrev", 1, 2, ptn_internal_hebrev },
@@ -76833,7 +77510,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "microtime", 0, 1, ptn_internal_microtime },
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
-        { "mktime", 0, 6, ptn_internal_mktime },
+        { "mktime", 1, 6, ptn_internal_mktime },
         { "move_uploaded_file", 2, 2, ptn_internal_move_uploaded_file },
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
         { "natsort", 1, 1, ptn_internal_natsort },
@@ -76872,6 +77549,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "password_hash", 2, 3, ptn_internal_password_hash },
         { "password_needs_rehash", 2, 3, ptn_internal_password_needs_rehash },
         { "password_verify", 2, 2, ptn_internal_password_verify },
+        { "phpinfo", 0, 1, ptn_internal_phpinfo },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },

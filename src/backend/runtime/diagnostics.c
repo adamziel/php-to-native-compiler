@@ -1869,6 +1869,7 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     const char *configured_output_handler = getenv("PTN_OUTPUT_HANDLER");
     const char *configured_filter_default = getenv("PTN_FILTER_DEFAULT");
     const char *configured_pcre_backtrack_limit = getenv("PTN_PCRE_BACKTRACK_LIMIT");
+    const char *configured_pcre_recursion_limit = getenv("PTN_PCRE_RECURSION_LIMIT");
     const char *configured_pcre_jit = getenv("PTN_PCRE_JIT");
     const char *configured_opcache_blacklist_filename =
         getenv("PTN_OPCACHE_BLACKLIST_FILENAME");
@@ -1942,6 +1943,9 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     );
     runtime->pcre_backtrack_limit = ptn_duplicate_string(
         configured_pcre_backtrack_limit == NULL ? "1000000" : configured_pcre_backtrack_limit
+    );
+    runtime->pcre_recursion_limit = ptn_duplicate_string(
+        configured_pcre_recursion_limit == NULL ? "100000" : configured_pcre_recursion_limit
     );
     runtime->pcre_jit = ptn_duplicate_string(
         configured_pcre_jit == NULL ? "1" : configured_pcre_jit

@@ -215,6 +215,7 @@ struct RuntimeIni {
     output_handler: Option<String>,
     filter_default: Option<String>,
     pcre_backtrack_limit: Option<String>,
+    pcre_recursion_limit: Option<String>,
     pcre_jit: Option<String>,
     session: Vec<(String, String)>,
     opcache: Vec<(String, String)>,
@@ -410,6 +411,8 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.filter_default = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.backtrack_limit") {
         ini.pcre_backtrack_limit = Some(normalize_ini_scalar(raw_value));
+    } else if name.eq_ignore_ascii_case("pcre.recursion_limit") {
+        ini.pcre_recursion_limit = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("pcre.jit") {
         ini.pcre_jit = Some(normalize_ini_scalar(raw_value));
     } else if let Some(canonical_name) = canonical_session_ini_name(name) {
@@ -876,6 +879,7 @@ fn compile_and_run(
         output_handler: ini.output_handler.clone(),
         filter_default: ini.filter_default.clone(),
         pcre_backtrack_limit: ini.pcre_backtrack_limit.clone(),
+        pcre_recursion_limit: ini.pcre_recursion_limit.clone(),
         pcre_jit: ini.pcre_jit.clone(),
         session: ini.session.clone(),
         opcache: ini.opcache.clone(),
@@ -999,6 +1003,9 @@ fn compile_and_run(
     }
     if let Some(pcre_backtrack_limit) = &ini.pcre_backtrack_limit {
         command.env("PTN_PCRE_BACKTRACK_LIMIT", pcre_backtrack_limit);
+    }
+    if let Some(pcre_recursion_limit) = &ini.pcre_recursion_limit {
+        command.env("PTN_PCRE_RECURSION_LIMIT", pcre_recursion_limit);
     }
     if let Some(pcre_jit) = &ini.pcre_jit {
         command.env("PTN_PCRE_JIT", pcre_jit);
