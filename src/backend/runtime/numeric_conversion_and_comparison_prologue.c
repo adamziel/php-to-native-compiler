@@ -3423,6 +3423,46 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "IntlDateFormatter")) {
+        if (strcmp(constant, "FULL") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "GREGORIAN") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Locale")) {
+        if (strcmp(constant, "LANG_TAG") == 0) {
+            *out = ptn_string("language");
+            return 1;
+        }
+        if (strcmp(constant, "REGION_TAG") == 0) {
+            *out = ptn_string("region");
+            return 1;
+        }
+        if (strcmp(constant, "ACTUAL_LOCALE") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+        if (strcmp(constant, "VALID_LOCALE") == 0) {
+            *out = ptn_int(1);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "NumberFormatter")) {
+        if (strcmp(constant, "CURRENCY") == 0) {
+            *out = ptn_int(2);
+            return 1;
+        }
+    }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "Collator")) {
+        if (strcmp(constant, "SORT_REGULAR") == 0) {
+            *out = ptn_int(0);
+            return 1;
+        }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "ReflectionClass")) {
         if (strcmp(constant, "IS_IMPLICIT_ABSTRACT") == 0) {
             *out = ptn_int(16);
@@ -5362,6 +5402,34 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_intl_break_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "IntlDateFormatter")
+        && ptn_internal_class_method_exists("IntlDateFormatter", name)
+    ) {
+        return ptn_intl_date_formatter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "NumberFormatter")
+        && ptn_internal_class_method_exists("NumberFormatter", name)
+    ) {
+        return ptn_intl_number_formatter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "Collator")
+        && ptn_internal_class_method_exists("Collator", name)
+    ) {
+        return ptn_intl_collator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "Spoofchecker")
+        && ptn_internal_class_method_exists("Spoofchecker", name)
+    ) {
+        return ptn_intl_spoofchecker_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

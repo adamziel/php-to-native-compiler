@@ -2928,6 +2928,31 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     if name.eq_ignore_ascii_case("getopt") && argument_index == 2 {
         return Some("rest_index");
     }
+    if name.eq_ignore_ascii_case("grapheme_extract") && argument_index == 4 {
+        return Some("next");
+    }
+    if (name.eq_ignore_ascii_case("datefmt_localtime")
+        || name.eq_ignore_ascii_case("datefmt_parse")
+        || name.eq_ignore_ascii_case("datefmt_parse_to_calendar"))
+        && argument_index == 2
+    {
+        return Some("offset");
+    }
+    if name.eq_ignore_ascii_case("intltz_get_offset") && argument_index == 3 {
+        return Some("rawOffset");
+    }
+    if name.eq_ignore_ascii_case("intltz_get_offset") && argument_index == 4 {
+        return Some("dstOffset");
+    }
+    if name.eq_ignore_ascii_case("numfmt_parse_currency") && argument_index == 2 {
+        return Some("currency");
+    }
+    if (name.eq_ignore_ascii_case("collator_sort")
+        || name.eq_ignore_ascii_case("collator_sort_with_sort_keys"))
+        && argument_index == 1
+    {
+        return Some("array");
+    }
     if name.eq_ignore_ascii_case("settype") && argument_index == 0 {
         return Some("var");
     }
@@ -5181,6 +5206,13 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "IntlDateFormatter",
+        "IntlTimeZone",
+        "Locale",
+        "NumberFormatter",
+        "Collator",
+        "Spoofchecker",
+        "UConverter",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -5636,6 +5668,13 @@ fn emit_class_metadata_helpers(
         "IntlCodePointBreakIterator",
         "IntlPartsIterator",
         "IntlCalendar",
+        "IntlDateFormatter",
+        "IntlTimeZone",
+        "Locale",
+        "NumberFormatter",
+        "Collator",
+        "Spoofchecker",
+        "UConverter",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -13343,6 +13382,13 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "intlcodepointbreakiterator" => Some("IntlCodePointBreakIterator"),
         "intlpartsiterator" => Some("IntlPartsIterator"),
         "intlcalendar" => Some("IntlCalendar"),
+        "intldateformatter" => Some("IntlDateFormatter"),
+        "intltimezone" => Some("IntlTimeZone"),
+        "locale" => Some("Locale"),
+        "numberformatter" => Some("NumberFormatter"),
+        "collator" => Some("Collator"),
+        "spoofchecker" => Some("Spoofchecker"),
+        "uconverter" => Some("UConverter"),
         _ => None,
     }
 }
@@ -14547,6 +14593,26 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_php_token(class_name)) {\n");
     out.push_str(
         "        return ptn_php_token_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_intl_date_formatter(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_date_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_number_formatter(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_number_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_collator(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_collator_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_spoofchecker(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_spoofchecker_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
@@ -20736,6 +20802,13 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("IntlCodePointBreakIterator")
                 || class_name.eq_ignore_ascii_case("IntlPartsIterator")
                 || class_name.eq_ignore_ascii_case("IntlCalendar")
+                || class_name.eq_ignore_ascii_case("IntlDateFormatter")
+                || class_name.eq_ignore_ascii_case("IntlTimeZone")
+                || class_name.eq_ignore_ascii_case("Locale")
+                || class_name.eq_ignore_ascii_case("NumberFormatter")
+                || class_name.eq_ignore_ascii_case("Collator")
+                || class_name.eq_ignore_ascii_case("Spoofchecker")
+                || class_name.eq_ignore_ascii_case("UConverter")
                 || class_name.eq_ignore_ascii_case("DOMNode")
                 || class_name.eq_ignore_ascii_case("DOMDocument")
                 || class_name.eq_ignore_ascii_case("DOMDocumentFragment")
@@ -21979,9 +22052,33 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static GRAPHEME_EXTRACT_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "haystack",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "size",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "type",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "offset",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+        InternalParameterSpec {
+            name: "next",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("grapheme_extract") {
+        Some(&GRAPHEME_EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("extract") {
         Some(&EXTRACT_PARAMETERS)
     } else if name.eq_ignore_ascii_case("fgetcsv") {

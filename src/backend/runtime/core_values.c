@@ -1622,6 +1622,13 @@ static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_n
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_intl_date_formatter(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_intl_timezone(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_locale(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_collator(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_spoofchecker(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uconverter(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
@@ -2370,6 +2377,13 @@ static PTN_UNUSED PtnValue ptn_intl_break_iterator_new(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_intl_plain_object_new(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED PtnValue ptn_xmlwriter_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -2436,6 +2450,38 @@ static PTN_UNUSED PtnValue ptn_date_interval_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_intl_break_iterator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_date_formatter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

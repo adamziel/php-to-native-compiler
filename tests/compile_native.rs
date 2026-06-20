@@ -34669,6 +34669,46 @@ var_dump($obj->prop);
 }
 
 #[test]
+fn compile_typed_property_references_dump_in_declaration_order_to_native_binary() {
+    let root = temp_dir("ptn-native-typed-property-reference-dump-order");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("typed-property-reference-dump-order.php");
+    let output = root.join("typed-property-reference-dump-order-bin");
+    fs::write(
+        &input,
+        "<?php
+class Test {
+    public string $a, $b;
+}
+
+$test = new Test();
+$test->a = $test->b = \"hello\";
+$raw =& $test->a;
+$dst =& $test->b;
+$raw = \"raw\";
+$dst = \"dst\";
+var_dump($test);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(Test)#1 (2) {\n  [\"a\"]=>\n  &string(3) \"raw\"\n  [\"b\"]=>\n  &string(3) \"dst\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_typed_property_reference_foreach_sources_to_native_binary() {
     let root = temp_dir("ptn-native-typed-property-reference-foreach-sources");
     fs::create_dir_all(&root).unwrap();

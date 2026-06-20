@@ -1,0 +1,21 @@
+# ptn-w17z.287 focused intl reference/COW PHPT row pack.
+#
+# Source: php-src PHPT corpus 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+# Selection: ext/intl/tests rows whose filenames match reference/COW/refcount
+# residual keywords from the full-corpus reference/COW campaign.
+#
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=60 tools/run-bounded-phpt.sh tools/phpt-ptn-w17z287-intl-reference-cow-row-pack.txt
+
+ext/intl/tests/datefmt_parse_localtime_references.phpt
+ext/intl/tests/dateformat_format_references.phpt
+ext/intl/tests/grapheme_extract_references.phpt
+ext/intl/tests/intltz_get_offset_references.phpt
+ext/intl/tests/locale_compose_lookup_references.phpt
+ext/intl/tests/numfmt_parse_currency_references.phpt
+ext/intl/tests/parseToCalendar_references_type_system.phpt
+ext/intl/tests/regression_sort_and_cow.phpt
+ext/intl/tests/regression_sortwsk_and_cow.phpt
+ext/intl/tests/spoofchecker_self_references.phpt
+ext/intl/tests/spoofchecker_typed_references.phpt
+ext/intl/tests/uconverter_transcode_references.phpt
