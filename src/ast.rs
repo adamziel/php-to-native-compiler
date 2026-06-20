@@ -942,6 +942,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        constructor_parentheses: bool,
         anonymous_class_source: Option<String>,
         span: SourceSpan,
     },
@@ -950,6 +951,7 @@ pub enum Expr {
         arguments: Vec<Expr>,
         argument_names: Vec<Option<String>>,
         argument_unpacks: Vec<bool>,
+        constructor_parentheses: bool,
         span: SourceSpan,
     },
     Clone {

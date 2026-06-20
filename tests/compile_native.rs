@@ -8294,6 +8294,84 @@ call_user_func([$worker, \"run\"], 4);",
 }
 
 #[test]
+fn parser_distinguishes_constructed_new_from_bare_new_access() {
+    let program = parser::parse(
+        "<?php
+class A {
+    const C = 'constant';
+    public static $prop = B::class;
+}
+class B {}
+
+echo new (trim(' A '))()::C;
+var_dump(new A::$prop);
+",
+    )
+    .unwrap();
+
+    let echo_statement = program
+        .statements
+        .iter()
+        .find(|statement| matches!(*statement, Statement::Echo { .. }))
+        .expect("expected echo statement");
+    let Statement::Echo { expressions, .. } = echo_statement else {
+        panic!("expected echo statement");
+    };
+    assert!(matches!(
+        &expressions[0],
+        Expr::DynamicClassConstantFetch {
+            receiver: Some(receiver),
+            ..
+        } if matches!(
+            receiver.as_ref(),
+            Expr::DynamicNewObject {
+                constructor_parentheses: true,
+                ..
+            }
+        )
+    ));
+
+    let call_statement = program
+        .statements
+        .iter()
+        .find(|statement| matches!(*statement, Statement::Call { .. }))
+        .expect("expected var_dump call");
+    let Statement::Call { arguments, .. } = call_statement else {
+        panic!("expected var_dump call");
+    };
+    assert!(matches!(
+        &arguments[0],
+        Expr::DynamicNewObject {
+            class_name,
+            constructor_parentheses: false,
+            ..
+        } if matches!(
+            class_name.as_ref(),
+            Expr::StaticPropertyFetch {
+                class_name,
+                name,
+                ..
+            } if class_name == "A" && name == "prop"
+        )
+    ));
+
+    let method = parser::parse("<?php class A { function test() {} } new A->test();").unwrap_err();
+    assert_eq!(method.kind, DiagnosticKind::ParseError);
+    assert_eq!(method.message, "syntax error, unexpected token \"->\"");
+
+    let property = parser::parse("<?php class A { public $prop; } echo new A->prop;").unwrap_err();
+    assert_eq!(property.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        property.message,
+        "syntax error, unexpected token \"->\", expecting \",\" or \";\""
+    );
+
+    let assignment = parser::parse("<?php new ArrayObject() = 1;").unwrap_err();
+    assert_eq!(assignment.kind, DiagnosticKind::ParseError);
+    assert_eq!(assignment.message, "syntax error, unexpected token \"=\"");
+}
+
+#[test]
 fn parser_accepts_simple_class_inheritance_metadata() {
     let program = parser::parse(
         "<?php

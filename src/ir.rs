@@ -4054,6 +4054,7 @@ impl<'a> LoweringContext<'a> {
                 argument_unpacks,
                 anonymous_class_source: _,
                 span,
+                ..
             } => ValueExpr::NewObject {
                 class_name: class_name.clone(),
                 arguments: arguments
@@ -4070,6 +4071,7 @@ impl<'a> LoweringContext<'a> {
                 argument_names,
                 argument_unpacks,
                 span,
+                ..
             } => ValueExpr::DynamicNewObject {
                 class_name: Box::new(self.lower_expr(class_name)),
                 arguments: arguments

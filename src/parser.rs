@@ -6650,6 +6650,10 @@ impl Parser<'_> {
             return Ok(left);
         }
 
+        if matches!(left, Expr::NewObject { .. } | Expr::DynamicNewObject { .. }) {
+            return Err(syntax_error_unexpected(self.peek(), None));
+        }
+
         if let Expr::Unary {
             op: UnaryOp::ErrorSuppress,
             expr,
@@ -7163,6 +7167,30 @@ impl Parser<'_> {
 
     fn parse_postfix_expr_from(&mut self, mut expr: Expr, allow_calls: bool) -> Result<Expr> {
         loop {
+            if new_expr_without_constructor_parentheses(&expr) {
+                match self.peek().kind {
+                    TokenKind::LeftBracket => {
+                        return Err(syntax_error_unexpected(self.peek(), Some("\",\" or \";\"")));
+                    }
+                    TokenKind::ObjectOperator | TokenKind::NullsafeObjectOperator => {
+                        let expecting = if matches!(
+                            self.tokens.get(self.index + 2).map(|token| &token.kind),
+                            Some(TokenKind::LeftParen)
+                        ) {
+                            None
+                        } else {
+                            Some("\",\" or \";\"")
+                        };
+                        return Err(syntax_error_unexpected(self.peek(), expecting));
+                    }
+                    TokenKind::DoubleColon => {
+                        self.advance();
+                        let member = self.advance().clone();
+                        return Err(syntax_error_unexpected(&member, Some("variable or \"$\"")));
+                    }
+                    _ => {}
+                }
+            }
             match self.peek().kind {
                 TokenKind::LeftBracket => {
                     self.advance();
@@ -8213,8 +8241,10 @@ impl Parser<'_> {
             let class_name =
                 self.parse_postfix_expr_from(Expr::Variable(name, token.span), false)?;
             let mut span = combine_spans(start_span, class_name.span());
+            let mut constructor_parentheses = false;
             let (arguments, argument_names, argument_unpacks) =
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    constructor_parentheses = true;
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
                     span = combine_spans(start_span, right_span);
@@ -8227,14 +8257,18 @@ impl Parser<'_> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                constructor_parentheses,
                 span,
             });
         }
         if matches!(self.peek().kind, TokenKind::Dollar | TokenKind::LeftParen) {
-            let class_name = self.parse_postfix_expr()?;
+            let class_name = self.parse_primary_expr()?;
+            let class_name = self.parse_postfix_expr_from(class_name, false)?;
             let mut span = combine_spans(start_span, class_name.span());
+            let mut constructor_parentheses = false;
             let (arguments, argument_names, argument_unpacks) =
                 if matches!(self.peek().kind, TokenKind::LeftParen) {
+                    constructor_parentheses = true;
                     let (arguments, argument_names, argument_unpacks, right_span) =
                         self.parse_call_arguments()?;
                     span = combine_spans(start_span, right_span);
@@ -8247,18 +8281,51 @@ impl Parser<'_> {
                 arguments,
                 argument_names,
                 argument_unpacks,
+                constructor_parentheses,
                 span,
             });
         }
 
         let (class_name, class_span, source_name) = self.parse_new_object_class_name()?;
         let mut span = combine_spans(start_span, class_span);
+        let mut constructor_parentheses = false;
         let (arguments, argument_names, argument_unpacks) =
             if matches!(self.peek().kind, TokenKind::LeftParen) {
+                constructor_parentheses = true;
                 let (arguments, argument_names, argument_unpacks, right_span) =
                     self.parse_call_arguments()?;
                 span = combine_spans(start_span, right_span);
                 (arguments, argument_names, argument_unpacks)
+            } else if matches!(self.peek().kind, TokenKind::DoubleColon) {
+                self.advance();
+                let member = self.advance().clone();
+                let TokenKind::Variable(property_name) = member.kind else {
+                    return Err(syntax_error_unexpected(&member, Some("variable or \"$\"")));
+                };
+                let class_name = Expr::StaticPropertyFetch {
+                    class_name,
+                    name: property_name,
+                    span: combine_spans(class_span, member.span),
+                };
+                span = combine_spans(start_span, member.span);
+                let (arguments, argument_names, argument_unpacks) =
+                    if matches!(self.peek().kind, TokenKind::LeftParen) {
+                        constructor_parentheses = true;
+                        let (arguments, argument_names, argument_unpacks, right_span) =
+                            self.parse_call_arguments()?;
+                        span = combine_spans(start_span, right_span);
+                        (arguments, argument_names, argument_unpacks)
+                    } else {
+                        (Vec::new(), Vec::new(), Vec::new())
+                    };
+                return Ok(Expr::DynamicNewObject {
+                    class_name: Box::new(class_name),
+                    arguments,
+                    argument_names,
+                    argument_unpacks,
+                    constructor_parentheses,
+                    span,
+                });
             } else {
                 (Vec::new(), Vec::new(), Vec::new())
             };
@@ -8268,6 +8335,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            constructor_parentheses,
             anonymous_class_source: None,
             span,
         })
@@ -8388,6 +8456,7 @@ impl Parser<'_> {
             arguments,
             argument_names,
             argument_unpacks,
+            constructor_parentheses: true,
             anonymous_class_source: Some(source),
             span,
         })
@@ -9408,6 +9477,21 @@ fn syntax_error_unexpected(token: &Token, expecting: Option<&str>) -> Diagnostic
         None => format!("syntax error, unexpected {unexpected}"),
     };
     Diagnostic::parse_error(message, Some(token.span))
+}
+
+fn new_expr_without_constructor_parentheses(expr: &Expr) -> bool {
+    match expr {
+        Expr::NewObject {
+            constructor_parentheses,
+            anonymous_class_source,
+            ..
+        } => !*constructor_parentheses && anonymous_class_source.is_none(),
+        Expr::DynamicNewObject {
+            constructor_parentheses,
+            ..
+        } => !*constructor_parentheses,
+        _ => false,
+    }
 }
 
 fn validate_closure_use_name(name: &str, span: SourceSpan) -> Result<()> {
