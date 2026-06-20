@@ -66033,6 +66033,16 @@ typedef struct {
     char *uri;
 } PtnXmlNamespaceEntry;
 
+typedef struct PtnXmlParserFrame {
+    char *raw_name;
+    char *callback_name;
+    PtnValue attributes;
+    int has_attributes;
+    int level;
+    int emitted_open;
+    PtnStringBuffer text;
+} PtnXmlParserFrame;
+
 typedef struct {
     const PtnLibxmlBoundary *boundary;
     PtnValue start_handler;
@@ -66073,7 +66083,12 @@ typedef struct {
     PtnXmlNamespaceEntry *namespaces;
     size_t namespace_count;
     size_t namespace_capacity;
+    PtnXmlParserFrame *stream_frames;
+    size_t stream_frame_count;
+    size_t stream_frame_capacity;
 } PtnXmlParserData;
+
+static void ptn_xml_parser_frame_free(PtnXmlParserFrame *frame);
 
 static const char *ptn_dom_canonical_class_name(const char *class_name) {
     if (ptn_ascii_case_equal(class_name, "DOMCDataSection") ||
@@ -70478,6 +70493,10 @@ static void ptn_xml_parser_data_free(void *raw) {
         free(data->namespaces[i].uri);
     }
     free(data->namespaces);
+    for (size_t i = 0; i < data->stream_frame_count; i++) {
+        ptn_xml_parser_frame_free(&data->stream_frames[i]);
+    }
+    free(data->stream_frames);
     free(data);
 }
 
@@ -70962,16 +70981,6 @@ typedef struct {
     size_t count;
     size_t capacity;
 } PtnXmlParserAttributeList;
-
-typedef struct {
-    char *raw_name;
-    char *callback_name;
-    PtnValue attributes;
-    int has_attributes;
-    int level;
-    int emitted_open;
-    PtnStringBuffer text;
-} PtnXmlParserFrame;
 
 static void ptn_xml_parser_set_current_position(PtnXmlParserData *parser, const char *data, size_t pos) {
     parser->current_line = 1;
@@ -71463,7 +71472,7 @@ static int ptn_xml_parser_skip_until(const char *data, size_t len, size_t *pos, 
     return 0;
 }
 
-static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *data, size_t len, size_t line, int into_struct, PtnValue *values_out, PtnValue *index_out) {
+static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_value, PtnXmlParserData *parser, const char *data, size_t len, size_t line, int into_struct, int is_final, PtnValue *values_out, PtnValue *index_out) {
     (void)ptn_libxml_boundary_is_local_bounded(parser == NULL ? NULL : parser->boundary);
     parser->error_code = PTN_XML_ERROR_NONE;
     PtnValue values = ptn_array_from_literal_entries(0, NULL);
@@ -71472,6 +71481,14 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
     PtnXmlParserFrame *frames = NULL;
     size_t frame_count = 0;
     size_t frame_capacity = 0;
+    if (!into_struct) {
+        frames = parser->stream_frames;
+        frame_count = parser->stream_frame_count;
+        frame_capacity = parser->stream_frame_capacity;
+        parser->stream_frames = NULL;
+        parser->stream_frame_count = 0;
+        parser->stream_frame_capacity = 0;
+    }
     size_t pos = 0;
     while (pos < len) {
         ptn_xml_parser_set_current_position(parser, data, pos);
@@ -71691,8 +71708,17 @@ static int ptn_xml_parser_parse_markup(PtnRuntime *runtime, PtnValue parser_valu
         *values_out = values;
         *index_out = index;
     } else {
-        while (frame_count > 0) {
-            ptn_xml_parser_frame_free(&frames[--frame_count]);
+        if (is_final) {
+            while (frame_count > 0) {
+                ptn_xml_parser_frame_free(&frames[--frame_count]);
+            }
+            free(frames);
+            frames = NULL;
+        } else {
+            parser->stream_frames = frames;
+            parser->stream_frame_count = frame_count;
+            parser->stream_frame_capacity = frame_capacity;
+            frames = NULL;
         }
         ptn_value_destroy(&values);
         ptn_value_destroy(&index);
@@ -71727,9 +71753,10 @@ static PtnValue ptn_internal_xml_parse(PtnRuntime *runtime, size_t argc, const P
         return ptn_null();
     }
     parser->parsing = 1;
-    int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, data.data, data.len, line, 0, NULL, NULL);
+    int is_final = argc >= 3 && ptn_is_truthy(args[2]);
+    int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, data.data, data.len, line, 0, is_final, NULL, NULL);
     parser->parsing = 0;
-    if (ok && argc >= 3 && ptn_is_truthy(args[2])) {
+    if (ok && is_final) {
         parser->finished = 1;
     }
     ptn_string_operand_free(data);
@@ -71766,7 +71793,7 @@ static PtnValue ptn_internal_xml_parse_into_struct(PtnRuntime *runtime, size_t a
     PtnValue values = ptn_null();
     PtnValue index = ptn_null();
     parser->parsing = 1;
-    int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, data.data, data.len, line, 1, &values, &index);
+    int ok = ptn_xml_parser_parse_markup(runtime, ptn_value_deref(args[0]), parser, data.data, data.len, line, 1, 1, &values, &index);
     parser->parsing = 0;
     if (ok) {
         parser->finished = 1;
