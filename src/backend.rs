@@ -6899,6 +6899,60 @@ fn emit_class_metadata_helpers(
         out.push_str("}\n");
 
         out.push_str(
+            "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_type_metadata(const char *class_name, const char *constant_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin) {\n",
+        );
+        if classes.is_empty() {
+            out.push_str("    (void)class_name;\n");
+        }
+        if !has_class_constant_lookup_entries {
+            out.push_str("    (void)constant_name;\n");
+            out.push_str("    (void)type_name;\n");
+            out.push_str("    (void)type_display_name;\n");
+            out.push_str("    (void)allows_null;\n");
+            out.push_str("    (void)is_builtin;\n");
+        }
+        for class in classes {
+            out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\")) {\n");
+            for entry in class_constant_lookup_chain(class, classes) {
+                let constant = entry.constant;
+                out.push_str("        if (strcmp(constant_name, \"");
+                out.push_str(&c_string(&constant.name));
+                out.push_str("\") == 0) {\n");
+                if let Some(type_metadata) = constant
+                    .type_hint
+                    .as_ref()
+                    .and_then(reflection_named_type_metadata)
+                {
+                    out.push_str("            *type_name = \"");
+                    out.push_str(&c_string(&type_metadata.name));
+                    out.push_str("\";\n");
+                    out.push_str("            *type_display_name = \"");
+                    out.push_str(&c_string(&type_metadata.display_name));
+                    out.push_str("\";\n");
+                    out.push_str("            *allows_null = ");
+                    out.push_str(if type_metadata.allows_null { "1" } else { "0" });
+                    out.push_str(";\n");
+                    out.push_str("            *is_builtin = ");
+                    out.push_str(if type_metadata.is_builtin { "1" } else { "0" });
+                    out.push_str(";\n");
+                } else {
+                    out.push_str("            *type_name = NULL;\n");
+                    out.push_str("            *type_display_name = NULL;\n");
+                    out.push_str("            *allows_null = 0;\n");
+                    out.push_str("            *is_builtin = 0;\n");
+                }
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+            out.push_str("        return 0;\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("    return 0;\n");
+        out.push_str("}\n");
+
+        out.push_str(
             "\nstatic PTN_UNUSED int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name) {\n",
         );
         if classes.is_empty() {
@@ -13627,6 +13681,7 @@ fn class_property_exists_chain<'a>(
         class: &'a ClassDecl,
         classes: &'a [ClassDecl],
         seen_classes: &mut HashSet<String>,
+        seen_properties: &mut HashSet<&'a str>,
         properties: &mut Vec<ClassPropertyExistsEntry<'a>>,
     ) {
         let lookup_name = class.name.to_ascii_lowercase();
@@ -13687,19 +13742,32 @@ fn class_property_exists_chain<'a>(
             )
         }));
         class_properties.sort_by_key(|(source_order, _)| *source_order);
-        properties.extend(class_properties.into_iter().map(|(_, property)| property));
+        properties.extend(class_properties.into_iter().filter_map(|(_, property)| {
+            if seen_properties.insert(property.name) {
+                Some(property)
+            } else {
+                None
+            }
+        }));
 
         let Some(parent_name) = &class.parent_name else {
             return;
         };
         if let Some(parent) = class_by_name(classes, parent_name) {
-            collect(parent, classes, seen_classes, properties);
+            collect(parent, classes, seen_classes, seen_properties, properties);
         }
     }
 
     let mut properties = Vec::new();
     let mut seen_classes = HashSet::new();
-    collect(class, classes, &mut seen_classes, &mut properties);
+    let mut seen_properties = HashSet::new();
+    collect(
+        class,
+        classes,
+        &mut seen_classes,
+        &mut seen_properties,
+        &mut properties,
+    );
     properties
 }
 

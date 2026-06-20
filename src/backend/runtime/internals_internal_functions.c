@@ -1265,6 +1265,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_metadata_key(
 }
 
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_xml_reader_has_current(PtnObject *object);
 static PTN_UNUSED int ptn_internal_xml_property_read(
     PtnRuntime *runtime,
@@ -1273,6 +1274,7 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     size_t line,
     PtnValue *value_out
 );
+#endif
 
 static const char *const PTN_XML_READER_VAR_DUMP_PROPERTIES[] = {
     "attributeCount",
@@ -1298,17 +1300,28 @@ static int ptn_object_is_xml_reader_instance(PtnObject *object) {
 }
 
 static size_t ptn_xml_reader_var_dump_virtual_property_count(PtnObject *object) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    return 0;
+#else
     if (!ptn_object_is_xml_reader_instance(object)) {
         return 0;
     }
     return ptn_internal_xml_reader_has_current(object)
         ? sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0])
         : (sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0])) - 1;
+#endif
 }
 
 static int ptn_xml_reader_var_dump_should_skip_property(PtnObject *object, const char *property) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    (void)property;
+    return 0;
+#else
     return ptn_ascii_case_equal(property, "isEmptyElement") &&
         !ptn_internal_xml_reader_has_current(object);
+#endif
 }
 
 static PtnValue ptn_xml_reader_var_dump_receiver(PtnObject *object) {
@@ -1732,26 +1745,32 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_initialized_properties(
         ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
         ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
     }
-    if (!ptn_object_is_xml_reader_instance(object)) {
-        return;
-    }
-    PtnValue receiver = ptn_xml_reader_var_dump_receiver(object);
-    size_t property_count = sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0]);
-    for (size_t i = 0; i < property_count; i++) {
-        const char *property = PTN_XML_READER_VAR_DUMP_PROPERTIES[i];
-        if (ptn_xml_reader_var_dump_should_skip_property(object, property)) {
-            continue;
-        }
-        PtnValue value = ptn_null();
-        if (!ptn_internal_xml_property_read(runtime, receiver, property, 0, &value) ||
-            (runtime != NULL && runtime->exceptions->active_exception != NULL)) {
+    if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        PtnValue receiver = ptn_xml_reader_var_dump_receiver(object);
+        size_t property_count = sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0]);
+        for (size_t i = 0; i < property_count; i++) {
+            const char *property = PTN_XML_READER_VAR_DUMP_PROPERTIES[i];
+            if (ptn_xml_reader_var_dump_should_skip_property(object, property)) {
+                continue;
+            }
+            PtnValue value = ptn_null();
+            if (!ptn_internal_xml_property_read(runtime, receiver, property, 0, &value) ||
+                (runtime != NULL && runtime->exceptions->active_exception != NULL)) {
+                ptn_value_destroy(&value);
+                return;
+            }
+            ptn_direct_value_var_dump_indent(runtime, indent + 1);
+            ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", property);
+            ptn_direct_value_var_dump_value_indented(runtime, value, indent + 1, seen);
             ptn_value_destroy(&value);
-            return;
         }
-        ptn_direct_value_var_dump_indent(runtime, indent + 1);
-        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", property);
-        ptn_direct_value_var_dump_value_indented(runtime, value, indent + 1, seen);
-        ptn_value_destroy(&value);
+#else
+        (void)runtime;
+        (void)indent;
+        (void)seen;
+#endif
+        return;
     }
 }
 
@@ -1842,9 +1861,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             ptn_direct_value_dump_seen_object_pop(seen);
             ptn_direct_value_var_dump_indent(runtime, indent);
             ptn_direct_dump_write_cstr(runtime, "}\n");
-            if (ptn_object_is_xml_reader_instance(object) &&
-                !ptn_internal_xml_reader_has_current(object)) {
-                ptn_xml_reader_throw_no_data_property(runtime);
+            if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+                if (!ptn_internal_xml_reader_has_current(object)) {
+                    ptn_xml_reader_throw_no_data_property(runtime);
+                }
+#endif
             }
             break;
         }
@@ -2770,6 +2792,7 @@ static PTN_UNUSED void ptn_direct_var_dump_object_indented(
         }
     }
     if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         PtnValue receiver = ptn_xml_reader_var_dump_receiver(object);
         size_t virtual_count = sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0]);
         for (size_t i = 0; i < virtual_count; i++) {
@@ -2788,13 +2811,21 @@ static PTN_UNUSED void ptn_direct_var_dump_object_indented(
             ptn_direct_var_dump_value_indented(runtime, value, indent + 1, seen);
             ptn_value_destroy(&value);
         }
+#else
+        (void)runtime;
+        (void)indent;
+        (void)seen;
+#endif
     }
     ptn_direct_dump_seen_object_pop(seen);
     ptn_direct_var_dump_indent(runtime, indent);
     ptn_output_write_cstr(runtime, "}\n");
-    if (ptn_object_is_xml_reader_instance(object) &&
-        !ptn_internal_xml_reader_has_current(object)) {
-        ptn_xml_reader_throw_no_data_property(runtime);
+    if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (!ptn_internal_xml_reader_has_current(object)) {
+            ptn_xml_reader_throw_no_data_property(runtime);
+        }
+#endif
     }
 }
 
@@ -74536,6 +74567,7 @@ static int ptn_declared_attribute_class_flags(
 static PtnValue ptn_declared_class_reflection_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_reflection_constant_modifiers(const char *class_name, const char *constant_name);
 static const char *ptn_declared_class_reflection_constant_doc_comment(const char *class_name, const char *constant_name);
+static int ptn_declared_class_reflection_constant_type_metadata(const char *class_name, const char *constant_name, const char **type_name, const char **type_display_name, int *allows_null, int *is_builtin);
 static int ptn_declared_class_reflection_constant_is_deprecated(const char *class_name, const char *constant_name);
 static int ptn_declared_class_reflection_constant_is_enum_case(const char *class_name, const char *constant_name);
 static PtnValue ptn_declared_class_reflection_enum_cases(PtnRuntime *runtime, const char *class_name, size_t line);
@@ -77492,7 +77524,9 @@ static int ptn_reflection_class_constant_method_exists(const char *method_name) 
         || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "getValue")
+        || ptn_ascii_case_equal(method_name, "hasType")
         || ptn_ascii_case_equal(method_name, "isDeprecated")
         || ptn_ascii_case_equal(method_name, "isEnumCase")
         || ptn_ascii_case_equal(method_name, "isFinal")
@@ -78724,8 +78758,11 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getDocComment",
             "getModifiers",
             "getName",
+            "getType",
             "getValue",
+            "hasType",
             "isDeprecated",
+            "isEnumCase",
             "isFinal",
             "isPrivate",
             "isProtected",
@@ -80763,7 +80800,11 @@ static PtnValue ptn_reflection_enum_case_object_from_name(
 static PtnValue ptn_reflection_class_constant_throw_missing(
     PtnRuntime *runtime,
     const char *class_name,
-    const char *constant_name
+    const char *constant_name,
+    const char *trace_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
 ) {
     int needed = snprintf(NULL, 0, "Constant %s::%s does not exist", class_name, constant_name);
     if (needed < 0) {
@@ -80774,7 +80815,18 @@ static PtnValue ptn_reflection_class_constant_throw_missing(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Constant %s::%s does not exist", class_name, constant_name);
-    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        "ReflectionException",
+        message,
+        runtime->source_path,
+        line,
+        trace_name,
+        runtime->source_path,
+        line,
+        argc,
+        args
+    );
     return ptn_null();
 }
 
@@ -80851,7 +80903,11 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_new(
     PtnValue result = ptn_reflection_class_constant_throw_missing(
         runtime,
         resolved_class_name,
-        constant_name
+        constant_name,
+        "ReflectionClassConstant->__construct",
+        argc,
+        args,
+        line
     );
     free(class_name);
     free(constant_name);
@@ -86317,44 +86373,49 @@ static PtnValue ptn_reflection_class_constant_to_string(
     } else if ((modifiers & 2) != 0) {
         visibility_name = "protected";
     }
-    const char *type_name = ptn_reflection_class_constant_value_type_name(value);
-    char *value_repr = ptn_value_to_string(value);
-    int needed = snprintf(
-        NULL,
-        0,
-        (modifiers & 32) != 0
-            ? "Constant [ final %s %s %s ] { %s }\n"
-            : "Constant [ %s %s %s ] { %s }\n",
-        visibility_name,
-        type_name,
+    const char *type_name = NULL;
+    const char *type_display_name = NULL;
+    int allows_null = 0;
+    int is_builtin = 0;
+    ptn_declared_class_reflection_constant_type_metadata(
+        class_name,
         constant_name,
-        value_repr
+        &type_name,
+        &type_display_name,
+        &allows_null,
+        &is_builtin
     );
-    if (needed < 0) {
-        free(value_repr);
-        ptn_value_destroy(&value);
-        ptn_abort_out_of_memory();
+    (void)type_name;
+    (void)allows_null;
+    (void)is_builtin;
+    const char *display_type_name = type_display_name == NULL
+        ? ptn_reflection_class_constant_value_type_name(value)
+        : type_display_name;
+    const char *doc_comment = ptn_declared_class_reflection_constant_doc_comment(
+        class_name,
+        constant_name
+    );
+    char *value_repr = ptn_value_to_string(value);
+
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    if (doc_comment != NULL) {
+        ptn_string_buffer_append(&buffer, doc_comment);
+        ptn_string_buffer_append(&buffer, "\n");
     }
-    char *result = malloc((size_t)needed + 1);
-    if (result == NULL) {
-        free(value_repr);
-        ptn_value_destroy(&value);
-        ptn_abort_out_of_memory();
-    }
-    snprintf(
-        result,
-        (size_t)needed + 1,
+    ptn_string_buffer_append_format(
+        &buffer,
         (modifiers & 32) != 0
             ? "Constant [ final %s %s %s ] { %s }\n"
             : "Constant [ %s %s %s ] { %s }\n",
         visibility_name,
-        type_name,
+        display_type_name,
         constant_name,
         value_repr
     );
     free(value_repr);
     ptn_value_destroy(&value);
-    return ptn_owned_string(result);
+    return ptn_owned_string_len(buffer.data, buffer.len);
 }
 
 static char *ptn_reflection_class_constant_current_name(
@@ -86485,6 +86546,58 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_call_method(
         PtnValue result = ptn_runtime_read_class_constant(runtime, data->class_name, constant_name, line);
         free(constant_name);
         return result;
+    }
+    if (ptn_ascii_case_equal(name, "hasType")) {
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        const char *type_name = NULL;
+        const char *type_display_name = NULL;
+        int allows_null = 0;
+        int is_builtin = 0;
+        int found = ptn_declared_class_reflection_constant_type_metadata(
+            data->class_name,
+            constant_name,
+            &type_name,
+            &type_display_name,
+            &allows_null,
+            &is_builtin
+        );
+        (void)type_display_name;
+        (void)allows_null;
+        (void)is_builtin;
+        free(constant_name);
+        return ptn_bool(found && type_name != NULL);
+    }
+    if (ptn_ascii_case_equal(name, "getType")) {
+        char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
+        if (constant_name == NULL) {
+            return ptn_null();
+        }
+        const char *type_name = NULL;
+        const char *type_display_name = NULL;
+        int allows_null = 0;
+        int is_builtin = 0;
+        ptn_declared_class_reflection_constant_type_metadata(
+            data->class_name,
+            constant_name,
+            &type_name,
+            &type_display_name,
+            &allows_null,
+            &is_builtin
+        );
+        free(constant_name);
+        if (type_name == NULL) {
+            return ptn_null();
+        }
+        return ptn_reflection_named_type_object_from_metadata(
+            runtime,
+            type_name,
+            type_display_name,
+            allows_null,
+            is_builtin
+        );
     }
     if (ptn_ascii_case_equal(name, "isDeprecated")) {
         char *constant_name = ptn_reflection_class_constant_current_name(runtime, receiver, line);
@@ -90221,6 +90334,16 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
     if (context_written < 0 || (size_t)context_written >= sizeof(context)) {
         ptn_abort_out_of_memory();
     }
+    char trace_context[80];
+    int trace_context_written = snprintf(
+        trace_context,
+        sizeof(trace_context),
+        "%s->__construct",
+        reflection_class_name
+    );
+    if (trace_context_written < 0 || (size_t)trace_context_written >= sizeof(trace_context)) {
+        ptn_abort_out_of_memory();
+    }
     char *class_name = ptn_reflection_enum_resolved_class_name(
         runtime,
         context,
@@ -90247,7 +90370,11 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
         PtnValue result = ptn_reflection_class_constant_throw_missing(
             runtime,
             class_name,
-            case_name
+            case_name,
+            trace_context,
+            argc,
+            args,
+            line
         );
         free(class_name);
         free(case_name);
