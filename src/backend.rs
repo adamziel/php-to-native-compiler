@@ -15499,6 +15499,11 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("    return 1;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic int ptn_function_name_is_construct_only(const char *name) {\n");
+    out.push_str("    const char *lookup = ptn_symbol_name_without_leading_slash(name);\n");
+    out.push_str("    return ptn_ascii_case_equal(lookup, \"eval\") || ptn_ascii_case_equal(lookup, \"exit\") || ptn_ascii_case_equal(lookup, \"die\");\n");
+    out.push_str("}\n");
+
     out.push_str(
         "\nstatic int ptn_callable_is_valid(PtnRuntime *runtime, PtnValue callable, int syntax_only) {\n",
     );
@@ -15580,7 +15585,13 @@ fn emit_callable_validation_helpers(out: &mut String) {
     out.push_str("        }\n");
     out.push_str("        if (!valid) {\n");
     out.push_str("            const char *function_lookup_name = ptn_symbol_name_without_leading_slash(name);\n");
-    out.push_str("            valid = ptn_user_function_exists(runtime, function_lookup_name) || ptn_find_internal_function(function_lookup_name) != NULL;\n");
+    out.push_str(
+        "            valid = !ptn_function_name_is_construct_only(function_lookup_name) &&\n",
+    );
+    out.push_str("                (ptn_user_function_exists(runtime, function_lookup_name) ||\n");
+    out.push_str(
+        "                    ptn_find_internal_function(function_lookup_name) != NULL);\n",
+    );
     out.push_str("        }\n");
     out.push_str("        free(name);\n");
     out.push_str("        return valid;\n");

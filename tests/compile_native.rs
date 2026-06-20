@@ -20109,6 +20109,10 @@ $closure = function () { return 1; };
 var_dump(is_callable(\"strlen\"));
 var_dump(is_callable(\"missing_function\"));
 var_dump(is_callable(\"missing_function\", true));
+var_dump(is_callable(\"eval\"));
+var_dump(is_callable(\"eval\", true));
+var_dump(is_callable(\"exit\"));
+var_dump(is_callable(\"die\"));
 var_dump(is_callable($closure));
 var_dump(is_callable([$worker, \"inherited\"]));
 var_dump(is_callable([$worker, \"missing\"]));
@@ -20131,6 +20135,10 @@ var_dump(is_callable([1, \"x\"], true));
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
+            "bool(false)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "bool(false)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(false)\n",
@@ -20146,6 +20154,7 @@ var_dump(is_callable([1, \"x\"], true));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_is_callable"));
     assert!(c_source.contains("ptn_callable_is_valid"));
+    assert!(c_source.contains("ptn_function_name_is_construct_only"));
     assert!(c_source.contains("ptn_declared_class_static_method_exists"));
     assert!(c_source.contains("ptn_declared_class_has_call_magic"));
 }
@@ -36022,6 +36031,7 @@ foreach ([\"extract\", \"compact\", \"get_defined_vars\", \"func_get_args\", \"f
 
 report(\"array_map\", fn() => array_map(\"extract\", [[\"i\" => new stdClass]]));
 report(\"call_user_func\", fn() => call_user_func(\"extract\", [\"i\" => new stdClass]));
+report(\"call_user_func_eval\", fn() => call_user_func(\"eval\", \"echo 1;\"));
 ",
     )
     .unwrap();
@@ -36041,6 +36051,7 @@ report(\"call_user_func\", fn() => call_user_func(\"extract\", [\"i\" => new std
             "direct func_num_args: Cannot call func_num_args() dynamically\n",
             "array_map: Cannot call extract() dynamically\n",
             "call_user_func: Cannot call extract() dynamically\n",
+            "call_user_func_eval: call_user_func(): Argument #1 ($callback) must be a valid callback, function \"eval\" not found or invalid function name\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -36402,6 +36413,9 @@ class ProtectedCallbackTarget {
 }
 
 report(fn() => array_map(\"missing_map\", [1]));
+report(fn() => array_map(\"eval\", [\"echo 1;\"]));
+report(fn() => array_map(\"exit\", [1]));
+report(fn() => array_map(\"die\", [1]));
 report(fn() => array_map([\"MissingCallbackTarget\", \"ok\"], [1]));
 report(fn() => array_map([\"CallbackTarget\", \"missing\"], [1]));
 report(fn() => array_map([\"PrivateCallbackTarget\", \"hide\"], [1]));
@@ -36430,6 +36444,9 @@ echo \"done\\n\";
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
             "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"missing_map\" not found or invalid function name\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"eval\" not found or invalid function name\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"exit\" not found or invalid function name\n",
+            "array_map(): Argument #1 ($callback) must be a valid callback or null, function \"die\" not found or invalid function name\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, class \"MissingCallbackTarget\" not found\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, class CallbackTarget does not have a method \"missing\"\n",
             "array_map(): Argument #1 ($callback) must be a valid callback or null, cannot access private method PrivateCallbackTarget::hide()\n",
