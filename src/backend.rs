@@ -14841,6 +14841,9 @@ fn class_reflection_property_defaults_chain<'a>(
                 if seen_properties.contains(&property.name) {
                     continue;
                 }
+                if property.value.is_none() && property.type_hint.is_some() {
+                    continue;
+                }
                 if include_private || property.visibility != PropertyVisibility::Private {
                     seen_properties.insert(property.name.clone());
                     properties.push(ClassReflectionPropertyDefaultEntry {
@@ -14853,6 +14856,10 @@ fn class_reflection_property_defaults_chain<'a>(
         } else {
             for property in &class.properties {
                 if seen_properties.contains(&property.name) {
+                    continue;
+                }
+                if property.value.is_none() && (property.has_hooks || property.type_hint.is_some())
+                {
                     continue;
                 }
                 if include_private || property.visibility != PropertyVisibility::Private {

@@ -575,6 +575,40 @@ bool(false)\nbool(false)\nbool(false)\n"
 }
 
 #[test]
+fn compile_reflection_default_properties_skip_uninitialized_typed_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-default-typed-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-default-typed-properties.php");
+    let output = root.join("reflection-default-typed-properties-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class A {\n\
+    public B $c;\n\
+    public $u;\n\
+    public int $i = 4;\n\
+}\n\
+\n\
+$defaults = (new ReflectionClass(A::class))->getDefaultProperties();\n\
+var_dump($defaults);\n\
+var_dump(array_key_exists('c', $defaults));\n\
+var_dump(array_key_exists('u', $defaults));\n\
+var_dump(array_key_exists('i', $defaults));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(2) {\n  [\"u\"]=>\n  NULL\n  [\"i\"]=>\n  int(4)\n}\nbool(false)\nbool(true)\nbool(true)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reflection_class_new_instance_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-class-new-instance");
     fs::create_dir_all(&root).unwrap();
