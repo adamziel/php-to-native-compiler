@@ -18859,6 +18859,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "current"
             | "end"
             | "key"
+            | "key_exists"
             | "next"
             | "nl2br"
             | "prev"

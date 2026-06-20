@@ -33263,7 +33263,8 @@ var_dump(array_key_exists(1.99999999999999, $items));\n\
 var_dump(array_key_exists(\"\", $items));\n\
 var_dump(array_key_exists(\"0\", $items));\n\
 var_dump(array_key_exists(\"n\", $items));\n\
-var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXISTS\"));\n\
+var_dump(key_exists(\"foo\", $items));\n\
+var_dump(function_exists(\"array_key_exists\"), function_exists(\"ARRAY_KEY_EXISTS\"), function_exists(\"key_exists\"));\n\
 class KeyCheck { public $public_var = \"Public var\"; }\n\
 try { array_key_exists(array(), $items); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
 try { array_key_exists(\"public_var\", new KeyCheck); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }",
@@ -33275,12 +33276,52 @@ try { array_key_exists(\"public_var\", new KeyCheck); } catch (TypeError $e) { e
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
     let expected_stdout = format!(
-        "bool(true)\nbool(false)\n\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\n\nDeprecated: Implicit conversion from float 1.5 to int loses precision in {0} on line 6\nbool(true)\n\nDeprecated: Implicit conversion from float 1.23456789E-10 to int loses precision in {0} on line 7\nbool(true)\n\nDeprecated: Implicit conversion from float 1.00000000000001 to int loses precision in {0} on line 8\nbool(true)\n\nDeprecated: Implicit conversion from float 1.99999999999999 to int loses precision in {0} on line 9\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n",
+        "bool(true)\nbool(false)\n\nDeprecated: Using null as the key parameter for array_key_exists() is deprecated, use an empty string instead in ptn on line 5\nbool(true)\n\nDeprecated: Implicit conversion from float 1.5 to int loses precision in {0} on line 6\nbool(true)\n\nDeprecated: Implicit conversion from float 1.23456789E-10 to int loses precision in {0} on line 7\nbool(true)\n\nDeprecated: Implicit conversion from float 1.00000000000001 to int loses precision in {0} on line 8\nbool(true)\n\nDeprecated: Implicit conversion from float 1.99999999999999 to int loses precision in {0} on line 9\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nCannot access offset of type array on array\narray_key_exists(): Argument #2 ($array) must be of type array, KeyCheck given\n",
         input.display()
     );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         expected_stdout
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_min_max_single_argument_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-min-max-single-argument-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("min-max-single-argument-edges.php");
+    let output = root.join("min-max-single-argument-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach ([\"min\", \"max\"] as $name) {\n\
+    try { var_dump($name(1)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+    try { var_dump($name([])); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+    try { var_dump($name(new stdClass)); } catch (TypeError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+}\n\
+var_dump(min([2, 1, 3]), max([2, 1, 3]), min(2, 1, 3), max(2, 1, 3));",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "min(): Argument #1 ($value) must be of type array, int given\n",
+            "min(): Argument #1 ($value) must contain at least one element\n",
+            "min(): Argument #1 ($value) must be of type array, stdClass given\n",
+            "max(): Argument #1 ($value) must be of type array, int given\n",
+            "max(): Argument #1 ($value) must contain at least one element\n",
+            "max(): Argument #1 ($value) must be of type array, stdClass given\n",
+            "int(1)\n",
+            "int(3)\n",
+            "int(1)\n",
+            "int(3)\n"
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -35001,6 +35042,55 @@ var_dump(EXTR_REFS, EXTR_OVERWRITE, function_exists(\"extract\"), function_exist
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_extract"));
     assert!(c_source.contains("ptn_internal_extract_globals"));
+}
+
+#[test]
+fn compile_extract_flags_and_prefix_modes_to_native_binary() {
+    let root = temp_dir("ptn-native-extract-flags-prefix-modes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("extract-flags-prefix-modes.php");
+    let output = root.join("extract-flags-prefix-modes-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$numeric = [1, 2, 3];\n\
+var_dump(extract($numeric, EXTR_SKIP));\n\
+var_dump(extract($numeric, EXTR_PREFIX_INVALID, \"ssd\"));\n\
+var_dump($ssd_0, $ssd_1, $ssd_2);\n\
+var_dump(extract([\"x\" => 10, 1 => 20], EXTR_PREFIX_ALL, \"\"));\n\
+var_dump($_x, $_1);\n\
+$existing = \"keep\";\n\
+var_dump(extract([\"existing\" => \"new\"], EXTR_PREFIX_SAME, \"p\"));\n\
+var_dump($existing, $p_existing);\n\
+foreach ([[7, \"ok\"], [EXTR_PREFIX_ALL, \"1bad\"]] as [$flags, $prefix]) {\n\
+    try { extract([\"x\" => 1], $flags, $prefix); } catch (Throwable $e) { echo get_class($e), \": \", $e->getMessage(), \"\\n\"; }\n\
+}",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(0)\n",
+            "int(3)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "int(3)\n",
+            "int(2)\n",
+            "int(10)\n",
+            "int(20)\n",
+            "int(1)\n",
+            "string(4) \"keep\"\n",
+            "string(3) \"new\"\n",
+            "ValueError: extract(): Argument #2 ($flags) must be a valid extract type\n",
+            "ValueError: extract(): Argument #3 ($prefix) must be a valid identifier\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

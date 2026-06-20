@@ -21161,6 +21161,11 @@ fn collect_instruction_runtime_requirements(
                 requirements.request_context = true;
             }
             collect_value_runtime_requirements(value, functions, requirements);
+            if matches!(value, ValueExpr::Array(_)) {
+                requirements.known_array_variables.insert(name.clone());
+            } else {
+                requirements.known_array_variables.remove(name);
+            }
         }
         Instruction::DefineConstant { value, .. }
         | Instruction::Expression(value)
@@ -21194,6 +21199,7 @@ fn collect_instruction_runtime_requirements(
                 requirements.request_context = true;
             }
             collect_value_runtime_requirements(source, functions, requirements);
+            requirements.known_array_variables.remove(name);
         }
         Instruction::StoreArrayDimRef { target, source } => {
             for dimension in &target.dimensions {
@@ -21210,6 +21216,7 @@ fn collect_instruction_runtime_requirements(
             if variable_needs_request_context(name) {
                 requirements.request_context = true;
             }
+            requirements.known_array_variables.remove(name);
         }
         Instruction::BindDynamicGlobal { name, .. } => {
             requirements.request_context = true;
@@ -22075,7 +22082,9 @@ fn is_direct_internal_helper_call(
         return false;
     }
     (name.eq_ignore_ascii_case("count") && argument_count == 1)
-        || (name.eq_ignore_ascii_case("array_key_exists") && argument_count == 2)
+        || ((name.eq_ignore_ascii_case("array_key_exists")
+            || name.eq_ignore_ascii_case("key_exists"))
+            && argument_count == 2)
         || (name.eq_ignore_ascii_case("str_repeat") && argument_count == 2)
         || (name.eq_ignore_ascii_case("get_class") && argument_count == 1)
         || name.eq_ignore_ascii_case("var_dump")
@@ -36372,7 +36381,8 @@ impl ValueEmitter {
 
         if !has_named_arguments
             && !has_unpacked_arguments
-            && name.eq_ignore_ascii_case("array_key_exists")
+            && (name.eq_ignore_ascii_case("array_key_exists")
+                || name.eq_ignore_ascii_case("key_exists"))
             && arguments.len() == 2
         {
             let key_temp = self.emit_materialized_value(out, &arguments[0]);

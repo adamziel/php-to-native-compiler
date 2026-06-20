@@ -15572,8 +15572,7 @@ static int ptn_extract_parse_flags(
     int64_t mode = flags & ~PTN_EXTR_REFS;
     if (flags < 0 ||
         mode < PTN_EXTR_OVERWRITE ||
-        mode > PTN_EXTR_IF_EXISTS ||
-        (flags & ~(PTN_EXTR_REFS | PTN_EXTR_IF_EXISTS)) != 0) {
+        mode > PTN_EXTR_IF_EXISTS) {
         ptn_throw_exception(
             runtime,
             "ValueError",
@@ -15605,7 +15604,7 @@ static char *ptn_extract_prefix_arg(
     }
 
     char *prefix = ptn_value_to_string(args[2]);
-    if (!ptn_extract_is_valid_identifier(prefix)) {
+    if (prefix[0] != '\0' && !ptn_extract_is_valid_identifier(prefix)) {
         free(prefix);
         ptn_throw_exception(
             runtime,
@@ -54554,7 +54553,25 @@ static PtnValue ptn_internal_minmax(
     size_t line
 ) {
     PtnValue first = ptn_value_deref(args[0]);
-    if (argc == 1 && first.type == PTN_ARRAY) {
+    if (argc == 1) {
+        if (first.type != PTN_ARRAY) {
+            const char *type_name = first.type == PTN_OBJECT && first.as.object != NULL
+                ? first.as.object->class_name
+                : ptn_offset_container_type_name(first);
+            char message[192];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "%s(): Argument #1 ($value) must be of type array, %s given",
+                function_name,
+                type_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
         if (first.as.array->len == 0) {
             char message[128];
             int written = snprintf(
@@ -75132,6 +75149,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "json_last_error_msg", 0, 0, ptn_internal_json_last_error_msg },
         { "json_validate", 1, 3, ptn_internal_json_validate },
         { "key", 1, 1, ptn_internal_key },
+        { "key_exists", 2, 2, ptn_internal_array_key_exists },
         { "krsort", 1, 2, ptn_internal_krsort },
         { "ksort", 1, 2, ptn_internal_ksort },
         { "lcfirst", 1, 1, ptn_internal_lcfirst },
