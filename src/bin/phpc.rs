@@ -450,13 +450,9 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
         ini.output_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("iconv.internal_encoding") {
         ini.iconv_internal_encoding = Some(normalize_ini_scalar(raw_value));
-    } else if name.eq_ignore_ascii_case("iconv.input_encoding")
-        || name.eq_ignore_ascii_case("iconv.http_input")
-    {
+    } else if name.eq_ignore_ascii_case("iconv.input_encoding") {
         ini.iconv_input_encoding = Some(normalize_ini_scalar(raw_value));
-    } else if name.eq_ignore_ascii_case("iconv.output_encoding")
-        || name.eq_ignore_ascii_case("iconv.http_output")
-    {
+    } else if name.eq_ignore_ascii_case("iconv.output_encoding") {
         ini.iconv_output_encoding = Some(normalize_ini_scalar(raw_value));
     } else if name.eq_ignore_ascii_case("mbstring.internal_encoding") {
         ini.mbstring_internal_encoding = Some(normalize_ini_scalar(raw_value));

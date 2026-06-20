@@ -19837,6 +19837,8 @@ static void ptn_uri_whatwg_throw_malformed(PtnRuntime *runtime, const char *comp
 }
 
 #ifdef PTN_USE_ADA_URL
+static void ptn_uri_trim_input(const char *data, size_t len, size_t *start_out, size_t *end_out);
+
 static char *ptn_uri_ada_null_terminated_copy(const char *data, size_t len) {
     return ptn_uri_duplicate_len(data == NULL ? "" : data, len);
 }
@@ -20063,6 +20065,12 @@ static int ptn_uri_ada_parse_whatwg(
     *reason_out = NULL;
     ada_url url = ptn_uri_ada_parse_bytes(input.data, input.len);
     if (url == NULL || !ada_is_valid(url)) {
+        size_t trim_start = 0;
+        size_t trim_end = 0;
+        ptn_uri_trim_input(input.data, input.len, &trim_start, &trim_end);
+        if (trim_start == trim_end || input.data[trim_start] == ':') {
+            *reason_out = "MissingSchemeNonRelativeUrl";
+        }
         if (url != NULL) {
             ada_free(url);
         }
@@ -48790,11 +48798,40 @@ static char *ptn_mb_iconv_convert_alloc(
     size_t *output_len
 );
 
-static const char *ptn_iconv_default_internal_encoding(PtnRuntime *runtime) {
+static const char *ptn_iconv_effective_internal_encoding(PtnRuntime *runtime) {
     const char *encoding = ptn_runtime_iconv_internal_encoding(runtime);
-    return encoding != NULL && encoding[0] != '\0'
-        ? encoding
-        : ptn_runtime_default_charset(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    encoding = ptn_runtime_internal_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    return ptn_runtime_default_charset(runtime);
+}
+
+static const char *ptn_iconv_effective_input_encoding(PtnRuntime *runtime) {
+    const char *encoding = ptn_runtime_iconv_input_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    encoding = ptn_runtime_input_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    return ptn_runtime_default_charset(runtime);
+}
+
+static const char *ptn_iconv_effective_output_encoding(PtnRuntime *runtime) {
+    const char *encoding = ptn_runtime_iconv_output_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    encoding = ptn_runtime_output_encoding(runtime);
+    if (encoding != NULL && encoding[0] != '\0') {
+        return encoding;
+    }
+    return ptn_runtime_default_charset(runtime);
 }
 
 static PtnValue ptn_internal_iconv_strpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -48825,7 +48862,7 @@ static PtnValue ptn_internal_iconv_strpos(PtnRuntime *runtime, size_t argc, cons
 static PtnValue ptn_internal_iconv_strrpos(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand haystack = ptn_internal_expect_string_arg(runtime, "iconv_strrpos", 1, "haystack", args[0], line);
     PtnStringOperand needle = ptn_internal_expect_string_arg(runtime, "iconv_strrpos", 2, "needle", args[1], line);
-    const char *encoding = ptn_iconv_default_internal_encoding(runtime);
+    const char *encoding = ptn_iconv_effective_internal_encoding(runtime);
     char *owned_encoding = NULL;
     if (argc >= 3 && ptn_value_deref(args[2]).type != PTN_NULL) {
         owned_encoding = ptn_value_to_string(args[2]);
@@ -48912,7 +48949,7 @@ static PtnValue ptn_internal_iconv(PtnRuntime *runtime, size_t argc, const PtnVa
 
 static PtnValue ptn_internal_iconv_strlen(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnStringOperand input = ptn_internal_expect_string_arg(runtime, "iconv_strlen", 1, "string", args[0], line);
-    const char *encoding = ptn_iconv_default_internal_encoding(runtime);
+    const char *encoding = ptn_iconv_effective_internal_encoding(runtime);
     char *owned_encoding = NULL;
     if (argc >= 2 && ptn_value_deref(args[1]).type != PTN_NULL) {
         owned_encoding = ptn_value_to_string(args[1]);
@@ -48975,9 +49012,9 @@ static PtnValue ptn_internal_iconv_get_encoding(PtnRuntime *runtime, size_t argc
     }
     if (ptn_string_operand_ascii_case_equal(type, "all")) {
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("input_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_input_encoding(runtime))));
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("output_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_output_encoding(runtime))));
-        ptn_array_set_entry(result.as.array, ptn_array_string_key("internal_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_internal_encoding(runtime))));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("input_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_input_encoding(runtime))));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("output_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_output_encoding(runtime))));
+        ptn_array_set_entry(result.as.array, ptn_array_string_key("internal_encoding"), ptn_owned_string(ptn_duplicate_string(ptn_iconv_effective_internal_encoding(runtime))));
         if (argc != 0) {
             ptn_string_operand_free(type);
         }
@@ -48985,11 +49022,11 @@ static PtnValue ptn_internal_iconv_get_encoding(PtnRuntime *runtime, size_t argc
     }
     const char *value = NULL;
     if (ptn_iconv_encoding_type_is(type, "internal", "internal_encoding")) {
-        value = ptn_runtime_iconv_internal_encoding(runtime);
+        value = ptn_iconv_effective_internal_encoding(runtime);
     } else if (ptn_iconv_encoding_type_is(type, "input", "input_encoding")) {
-        value = ptn_runtime_iconv_input_encoding(runtime);
+        value = ptn_iconv_effective_input_encoding(runtime);
     } else if (ptn_iconv_encoding_type_is(type, "output", "output_encoding")) {
-        value = ptn_runtime_iconv_output_encoding(runtime);
+        value = ptn_iconv_effective_output_encoding(runtime);
     }
     if (argc != 0) {
         ptn_string_operand_free(type);
@@ -58159,13 +58196,11 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_internal_encoding(runtime)));
         return 1;
     }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_input")) {
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_input_encoding(runtime)));
         return 1;
     }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_output")) {
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_output_encoding(runtime)));
         return 1;
     }
@@ -58254,20 +58289,6 @@ static int ptn_ini_value(PtnRuntime *runtime, PtnStringOperand option, PtnValue 
     }
     if (ptn_string_operand_ascii_case_equal(option, "output_encoding")) {
         *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_output_encoding(runtime)));
-        return 1;
-    }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.internal_encoding")) {
-        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_internal_encoding(runtime)));
-        return 1;
-    }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_input")) {
-        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_input_encoding(runtime)));
-        return 1;
-    }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_output")) {
-        *out = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_output_encoding(runtime)));
         return 1;
     }
     if (ptn_string_operand_ascii_case_equal(option, "precision")) {
@@ -58696,14 +58717,12 @@ static PtnValue ptn_internal_ini_restore(PtnRuntime *runtime, size_t argc, const
         ptn_string_operand_free(option);
         return ptn_null();
     }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_input")) {
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding")) {
         ptn_runtime_set_iconv_input_encoding(runtime, "");
         ptn_string_operand_free(option);
         return ptn_null();
     }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_output")) {
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding")) {
         ptn_runtime_set_iconv_output_encoding(runtime, "");
         ptn_string_operand_free(option);
         return ptn_null();
@@ -59080,8 +59099,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return previous;
     }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_input")) {
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.input_encoding")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_input_encoding(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
@@ -59091,8 +59109,7 @@ static PtnValue ptn_internal_ini_set(PtnRuntime *runtime, size_t argc, const Ptn
         ptn_string_operand_free(option);
         return previous;
     }
-    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding") ||
-        ptn_string_operand_ascii_case_equal(option, "iconv.http_output")) {
+    if (ptn_string_operand_ascii_case_equal(option, "iconv.output_encoding")) {
         PtnValue previous = ptn_owned_string(ptn_duplicate_string(ptn_runtime_iconv_output_encoding(runtime)));
         PtnStringOperand value = ptn_value_to_string_operand(args[1]);
         char *next = ptn_duplicate_string_len(value.data, value.len);
