@@ -28013,6 +28013,80 @@ var_dump($reader->getAttribute('baz'));
 }
 
 #[test]
+fn compile_dom_element_node_value_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-element-node-value");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-element-node-value.php");
+    let output = root.join("dom-element-node-value-bin");
+    fs::write(
+        &input,
+        "<?php
+$dom = new DOMDocument();
+$dom->loadXML('<test>foo<bar>FirstElement</bar><bar>LastElement</bar>bar</test>');
+$element = $dom->documentElement;
+echo $element->firstElementChild->nextElementSibling->nodeValue, \"\\n\";
+echo $element->lastElementChild->previousElementSibling->nodeValue, \"\\n\";
+var_dump($element->childElementCount);
+var_dump($dom->nodeValue);
+
+$removeDoc = new DOMDocument();
+$removeDoc->loadXML('<test><one>first</one><two>second</two></test>');
+$removeRoot = $removeDoc->documentElement;
+echo $removeRoot->firstChild->nodeValue, \"\\n\";
+var_dump($removeRoot->firstChild->remove());
+echo $removeRoot->firstChild->nodeValue, \"\\n\";
+
+$fragment = $dom->createDocumentFragment();
+$fragment->appendChild($dom->createTextNode('prefix'));
+$fragment->appendChild($dom->createElement('item', 'value'));
+var_dump($fragment->nodeValue, $fragment->firstElementChild->nodeValue);
+
+$moveDoc = new DOMDocument();
+$moveDoc->loadXML('<r><a/><b/><c/></r>');
+$moveRoot = $moveDoc->documentElement;
+$moveRoot->insertBefore($moveRoot->lastChild, $moveRoot->firstChild);
+echo $moveDoc->saveXML($moveRoot), \"\\n\";
+$moveFragment = $moveDoc->createDocumentFragment();
+$x = $moveFragment->appendChild($moveDoc->createElement('x'));
+$moveFragment->appendChild($moveDoc->createElement('y'));
+$inserted = $moveRoot->insertBefore($moveFragment, $moveRoot->lastChild);
+echo $moveDoc->saveXML($moveRoot), \"\\n\";
+var_dump($inserted === $x, $moveFragment->childNodes->length);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "LastElement\n",
+            "FirstElement\n",
+            "int(2)\n",
+            "NULL\n",
+            "first\n",
+            "NULL\n",
+            "second\n",
+            "NULL\n",
+            "string(5) \"value\"\n",
+            "<r><c/><a/><b/></r>\n",
+            "<r><c/><a/><x/><y/><b/></r>\n",
+            "bool(true)\n",
+            "int(0)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_xml_text_content_value"));
+    assert!(c_source.contains("ptn_dom_insert_before_method"));
+    assert!(c_source.contains("ptn_dom_remove_method"));
+}
+
+#[test]
 fn compile_dom_document_load_save_html_surfaces_to_native_binary() {
     let root = temp_dir("ptn-native-dom-document-load-save-html-surfaces");
     fs::create_dir_all(&root).unwrap();
