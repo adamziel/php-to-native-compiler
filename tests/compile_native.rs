@@ -51725,6 +51725,145 @@ var_dump($mark->a);
 }
 
 #[test]
+fn compile_lazy_reference_source_unset_cleanup_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-reference-source-unset-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-reference-source-unset-cleanup.php");
+    let output = root.join("lazy-reference-source-unset-cleanup-bin");
+    fs::write(
+        &input,
+        "<?php
+class LazyRefBox {
+    public ?LazyRefBox $a;
+    public ?LazyRefBox $b;
+    public $c;
+
+    public function __construct() {
+        unset($this->b);
+        throw new Exception('boom');
+    }
+}
+
+class LazyRefBoxOk {
+    public ?LazyRefBoxOk $a;
+    public ?LazyRefBoxOk $b;
+    public $c;
+
+    public function __construct() {
+        $this->a = null;
+        unset($this->b);
+        $this->b = null;
+    }
+}
+
+function exercise_lazy_ref_source($label, object $obj) {
+    $reflector = new ReflectionClass(LazyRefBox::class);
+    $reflector->getProperty('a')->setRawValueWithoutLazyInitialization($obj, null);
+    $refA =& $obj->a;
+    $reflector->getProperty('b')->setRawValueWithoutLazyInitialization($obj, null);
+    $refB =& $obj->b;
+
+    try {
+        var_dump($obj->c);
+    } catch (Exception $e) {
+        echo $label, ':', $e->getMessage(), \"\\n\";
+    }
+
+    try {
+        $refA = 1;
+    } catch (TypeError $e) {
+        echo $label, ':a:', $e->getMessage(), \"\\n\";
+    }
+    unset($obj->a);
+    $refA = 1;
+    echo $label, ':a-after:', $refA, \"\\n\";
+
+    try {
+        $refB = 1;
+    } catch (TypeError $e) {
+        echo $label, ':b:', $e->getMessage(), \"\\n\";
+    }
+    unset($obj->b);
+    $refB = 1;
+    echo $label, ':b-after:', $refB, \"\\n\";
+}
+
+function exercise_lazy_proxy_success_ref_source(object $obj) {
+    $reflector = new ReflectionClass(LazyRefBoxOk::class);
+    $reflector->getProperty('a')->setRawValueWithoutLazyInitialization($obj, null);
+    $refA =& $obj->a;
+    $reflector->getProperty('b')->setRawValueWithoutLazyInitialization($obj, null);
+    $refB =& $obj->b;
+
+    var_dump($obj->c);
+    $refA = 1;
+    echo 'proxy-ok:a:', $refA, \"\\n\";
+    $refB = 1;
+    echo 'proxy-ok:b:', $refB, \"\\n\";
+}
+
+$reflector = new ReflectionClass(LazyRefBox::class);
+
+$ghost = $reflector->newLazyGhost(function ($obj) {
+    echo \"ghost:init\\n\";
+    $obj->__construct();
+});
+exercise_lazy_ref_source('ghost', $ghost);
+
+$proxy = $reflector->newLazyProxy(function () {
+    echo \"proxy:init\\n\";
+    return new LazyRefBox();
+});
+exercise_lazy_ref_source('proxy', $proxy);
+
+$okReflector = new ReflectionClass(LazyRefBoxOk::class);
+$okProxy = $okReflector->newLazyProxy(function () {
+    echo \"proxy-ok:init\\n\";
+    return new LazyRefBoxOk();
+});
+exercise_lazy_proxy_success_ref_source($okProxy);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ghost:init\n",
+            "ghost:boom\n",
+            "ghost:a:Cannot assign int to reference held by property LazyRefBox::$a of type ?LazyRefBox\n",
+            "ghost:a-after:1\n",
+            "ghost:b:Cannot assign int to reference held by property LazyRefBox::$b of type ?LazyRefBox\n",
+            "ghost:b-after:1\n",
+            "proxy:init\n",
+            "proxy:boom\n",
+            "proxy:a:Cannot assign int to reference held by property LazyRefBox::$a of type ?LazyRefBox\n",
+            "proxy:a-after:1\n",
+            "proxy:b:Cannot assign int to reference held by property LazyRefBox::$b of type ?LazyRefBox\n",
+            "proxy:b-after:1\n",
+            "proxy-ok:init\n",
+            "NULL\n",
+            "proxy-ok:a:1\n",
+            "proxy-ok:b:1\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reference_forget_property_type"));
+    assert!(c_source.contains("ptn_lazy_object_initializer_snapshot_restore"));
+}
+
+#[test]
 fn compile_property_and_static_property_inc_dec_to_native_binary() {
     let root = temp_dir("ptn-native-property-static-inc-dec");
     fs::create_dir_all(&root).unwrap();

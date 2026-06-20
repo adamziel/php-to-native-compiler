@@ -23,6 +23,7 @@ static PTN_UNUSED PtnValue ptn_value_share(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_deref(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone(PtnValue value);
 static PTN_UNUSED PtnValue ptn_value_clone_deref(PtnValue value);
+static PTN_UNUSED PtnReference *ptn_reference_new_owned(PtnValue value);
 static PTN_UNUSED int ptn_reference_assign(PtnRuntime *runtime, PtnReference *reference, PtnValue value);
 static PTN_UNUSED int ptn_reference_assign_result(PtnRuntime *runtime, PtnReference *reference, PtnValue value, PtnValue *result_out);
 static PTN_UNUSED void ptn_reference_release(PtnReference *reference);
@@ -974,6 +975,19 @@ static void ptn_reference_property_type_source_free(PtnReferencePropertyTypeSour
     free(source->property_name);
 }
 
+static void ptn_reference_property_type_source_free_list(
+    PtnReferencePropertyTypeSource *sources,
+    size_t len
+) {
+    if (sources == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        ptn_reference_property_type_source_free(&sources[i]);
+    }
+    free(sources);
+}
+
 static void ptn_reference_forget_property_type(
     PtnReference *reference,
     const PtnObjectPropertyMetadata *metadata
@@ -1038,6 +1052,316 @@ static void ptn_reference_forget_property_type(
     }
 }
 
+static void ptn_object_property_metadata_free_fields(PtnObjectPropertyMetadata *metadata) {
+    if (metadata == NULL) {
+        return;
+    }
+    free(metadata->storage_name);
+    free(metadata->display_name);
+    free(metadata->declaring_class);
+    free(metadata->last_type_name);
+    free(metadata->type_class_name);
+    free(metadata->type_text);
+}
+
+static void ptn_object_property_metadata_free_list(
+    PtnObjectPropertyMetadata *metadata,
+    size_t len
+) {
+    if (metadata == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        ptn_object_property_metadata_free_fields(&metadata[i]);
+    }
+    free(metadata);
+}
+
+static PtnObjectPropertyMetadata ptn_object_property_metadata_clone_entry(
+    const PtnObjectPropertyMetadata *source
+) {
+    PtnObjectPropertyMetadata clone = *source;
+    clone.storage_name = source->storage_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->storage_name);
+    clone.display_name = source->display_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->display_name);
+    clone.declaring_class = source->declaring_class == NULL
+        ? NULL
+        : ptn_duplicate_string(source->declaring_class);
+    clone.last_type_name = source->last_type_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->last_type_name);
+    clone.type_class_name = source->type_class_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->type_class_name);
+    clone.type_text = source->type_text == NULL
+        ? NULL
+        : ptn_duplicate_string(source->type_text);
+    return clone;
+}
+
+static PtnObjectPropertyMetadata *ptn_object_property_metadata_clone_list(
+    const PtnObjectPropertyMetadata *source,
+    size_t len
+) {
+    if (source == NULL || len == 0) {
+        return NULL;
+    }
+    PtnObjectPropertyMetadata *clone = calloc(len, sizeof(PtnObjectPropertyMetadata));
+    if (clone == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        clone[i] = ptn_object_property_metadata_clone_entry(&source[i]);
+    }
+    return clone;
+}
+
+static PtnReferencePropertyTypeSource ptn_reference_property_type_source_clone(
+    const PtnReferencePropertyTypeSource *source
+) {
+    PtnReferencePropertyTypeSource clone = *source;
+    clone.class_name = source->class_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->class_name);
+    clone.text = source->text == NULL
+        ? NULL
+        : ptn_duplicate_string(source->text);
+    clone.declaring_class = source->declaring_class == NULL
+        ? NULL
+        : ptn_duplicate_string(source->declaring_class);
+    clone.property_name = source->property_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->property_name);
+    return clone;
+}
+
+static PtnReferencePropertyTypeSource *ptn_reference_property_type_source_clone_list(
+    const PtnReferencePropertyTypeSource *sources,
+    size_t len
+) {
+    if (sources == NULL || len == 0) {
+        return NULL;
+    }
+    PtnReferencePropertyTypeSource *clone = calloc(
+        len,
+        sizeof(PtnReferencePropertyTypeSource)
+    );
+    if (clone == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    for (size_t i = 0; i < len; i++) {
+        clone[i] = ptn_reference_property_type_source_clone(&sources[i]);
+    }
+    return clone;
+}
+
+static PtnValue ptn_lazy_object_snapshot_value_clone(PtnValue value);
+
+static PtnReference *ptn_lazy_object_snapshot_reference_clone(PtnReference *source) {
+    if (source == NULL) {
+        return ptn_reference_new_owned(ptn_null());
+    }
+    PtnReference *clone =
+        ptn_reference_new_owned(ptn_lazy_object_snapshot_value_clone(source->value));
+    clone->property_type_kind = source->property_type_kind;
+    clone->property_type_class_name = source->property_type_class_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->property_type_class_name);
+    clone->property_type_text = source->property_type_text == NULL
+        ? NULL
+        : ptn_duplicate_string(source->property_type_text);
+    clone->property_type_allows_null = source->property_type_allows_null;
+    clone->property_declaring_class = source->property_declaring_class == NULL
+        ? NULL
+        : ptn_duplicate_string(source->property_declaring_class);
+    clone->property_name = source->property_name == NULL
+        ? NULL
+        : ptn_duplicate_string(source->property_name);
+    clone->property_type_sources = ptn_reference_property_type_source_clone_list(
+        source->property_type_sources,
+        source->property_type_source_len
+    );
+    clone->property_type_source_len = source->property_type_source_len;
+    clone->property_type_source_cap = source->property_type_source_len;
+    return clone;
+}
+
+static PtnArray *ptn_lazy_object_snapshot_array_clone(PtnArray *source) {
+    PtnArray *clone = ptn_array_clone(source);
+    if (clone == NULL || source == NULL) {
+        return clone;
+    }
+    for (size_t i = 0; i < clone->len && i < source->len; i++) {
+        PtnValue replacement = ptn_lazy_object_snapshot_value_clone(source->entries[i].value);
+        ptn_value_destroy(&clone->entries[i].value);
+        clone->entries[i].value = replacement;
+    }
+    return clone;
+}
+
+static PtnValue ptn_lazy_object_snapshot_value_clone(PtnValue value) {
+    value.by_ref_return_fallback = 0;
+    switch (value.type) {
+        case PTN_REFERENCE:
+            return ptn_reference_value(ptn_lazy_object_snapshot_reference_clone(value.as.reference));
+        case PTN_ARRAY:
+            return ptn_array(ptn_lazy_object_snapshot_array_clone(value.as.array));
+        case PTN_STRING:
+            return ptn_value_clone(value);
+        case PTN_OBJECT:
+            ptn_object_retain(value.as.object);
+            return ptn_object(value.as.object);
+        case PTN_CLOSURE:
+            value.as.closure->refcount++;
+            value.owned = 1;
+            return value;
+        case PTN_EXCEPTION:
+            ptn_exception_retain(value.as.exception);
+            return ptn_exception_value(value.as.exception);
+        case PTN_RESOURCE:
+            ptn_resource_retain(value.as.resource);
+            return ptn_resource(value.as.resource);
+        case PTN_NULL:
+        case PTN_BOOL:
+        case PTN_INT:
+        case PTN_FLOAT:
+            return value;
+    }
+    return value;
+}
+
+typedef struct {
+    PtnReference *reference;
+    PtnValue value;
+    PtnPropertyTypeKind property_type_kind;
+    char *property_type_class_name;
+    char *property_type_text;
+    int property_type_allows_null;
+    char *property_declaring_class;
+    char *property_name;
+    PtnReferencePropertyTypeSource *property_type_sources;
+    size_t property_type_source_len;
+} PtnLazyObjectReferenceSnapshot;
+
+static PtnLazyObjectReferenceSnapshot ptn_lazy_object_reference_snapshot_capture(
+    PtnReference *reference
+) {
+    PtnLazyObjectReferenceSnapshot snapshot;
+    snapshot.reference = reference;
+    snapshot.value = reference == NULL
+        ? ptn_null()
+        : ptn_lazy_object_snapshot_value_clone(reference->value);
+    snapshot.property_type_kind = reference == NULL
+        ? PTN_PROPERTY_TYPE_NONE
+        : reference->property_type_kind;
+    snapshot.property_type_class_name =
+        reference == NULL || reference->property_type_class_name == NULL
+            ? NULL
+            : ptn_duplicate_string(reference->property_type_class_name);
+    snapshot.property_type_text =
+        reference == NULL || reference->property_type_text == NULL
+            ? NULL
+            : ptn_duplicate_string(reference->property_type_text);
+    snapshot.property_type_allows_null = reference == NULL
+        ? 0
+        : reference->property_type_allows_null;
+    snapshot.property_declaring_class =
+        reference == NULL || reference->property_declaring_class == NULL
+            ? NULL
+            : ptn_duplicate_string(reference->property_declaring_class);
+    snapshot.property_name = reference == NULL || reference->property_name == NULL
+        ? NULL
+        : ptn_duplicate_string(reference->property_name);
+    snapshot.property_type_sources = reference == NULL
+        ? NULL
+        : ptn_reference_property_type_source_clone_list(
+            reference->property_type_sources,
+            reference->property_type_source_len
+        );
+    snapshot.property_type_source_len = reference == NULL
+        ? 0
+        : reference->property_type_source_len;
+    if (reference != NULL) {
+        if (reference->refcount == SIZE_MAX) {
+            ptn_abort_out_of_memory();
+        }
+        reference->refcount++;
+    }
+    return snapshot;
+}
+
+static void ptn_lazy_object_reference_snapshot_drop(
+    PtnLazyObjectReferenceSnapshot *snapshot
+) {
+    if (snapshot == NULL) {
+        return;
+    }
+    ptn_value_destroy(&snapshot->value);
+    free(snapshot->property_type_class_name);
+    free(snapshot->property_type_text);
+    free(snapshot->property_declaring_class);
+    free(snapshot->property_name);
+    ptn_reference_property_type_source_free_list(
+        snapshot->property_type_sources,
+        snapshot->property_type_source_len
+    );
+    if (snapshot->reference != NULL) {
+        ptn_reference_release(snapshot->reference);
+    }
+    snapshot->reference = NULL;
+    snapshot->value = ptn_null();
+    snapshot->property_type_kind = PTN_PROPERTY_TYPE_NONE;
+    snapshot->property_type_class_name = NULL;
+    snapshot->property_type_text = NULL;
+    snapshot->property_type_allows_null = 0;
+    snapshot->property_declaring_class = NULL;
+    snapshot->property_name = NULL;
+    snapshot->property_type_sources = NULL;
+    snapshot->property_type_source_len = 0;
+}
+
+static void ptn_lazy_object_reference_snapshot_restore(
+    PtnLazyObjectReferenceSnapshot *snapshot
+) {
+    if (snapshot == NULL || snapshot->reference == NULL) {
+        return;
+    }
+    PtnReference *reference = snapshot->reference;
+    ptn_value_destroy(&reference->value);
+    free(reference->property_type_class_name);
+    free(reference->property_type_text);
+    free(reference->property_declaring_class);
+    free(reference->property_name);
+    ptn_reference_property_type_source_free_list(
+        reference->property_type_sources,
+        reference->property_type_source_len
+    );
+    reference->value = snapshot->value;
+    reference->property_type_kind = snapshot->property_type_kind;
+    reference->property_type_class_name = snapshot->property_type_class_name;
+    reference->property_type_text = snapshot->property_type_text;
+    reference->property_type_allows_null = snapshot->property_type_allows_null;
+    reference->property_declaring_class = snapshot->property_declaring_class;
+    reference->property_name = snapshot->property_name;
+    reference->property_type_sources = snapshot->property_type_sources;
+    reference->property_type_source_len = snapshot->property_type_source_len;
+    reference->property_type_source_cap = snapshot->property_type_source_len;
+    snapshot->value = ptn_null();
+    snapshot->property_type_kind = PTN_PROPERTY_TYPE_NONE;
+    snapshot->property_type_class_name = NULL;
+    snapshot->property_type_text = NULL;
+    snapshot->property_type_allows_null = 0;
+    snapshot->property_declaring_class = NULL;
+    snapshot->property_name = NULL;
+    snapshot->property_type_sources = NULL;
+    snapshot->property_type_source_len = 0;
+    snapshot->reference = NULL;
+    ptn_reference_release(reference);
+}
+
 static int ptn_lazy_object_reset_should_remove_property(
     const PtnObjectPropertyMetadata *metadata,
     const char *class_name
@@ -1060,6 +1384,22 @@ static void ptn_lazy_object_mark_property_uninitialized(
     mutable_metadata->readonly_clone_reinitialized = 0;
     free(mutable_metadata->last_type_name);
     mutable_metadata->last_type_name = NULL;
+}
+
+static void ptn_object_forget_property_reference_sources(PtnObject *object) {
+    if (object == NULL || object->properties == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING ||
+            entry->value.type != PTN_REFERENCE) {
+            continue;
+        }
+        const PtnObjectPropertyMetadata *metadata =
+            ptn_object_property_metadata(object, entry->key.as.string);
+        ptn_reference_forget_property_type(entry->value.as.reference, metadata);
+    }
 }
 
 static PTN_UNUSED void ptn_lazy_object_reset_property_storage(
@@ -1102,6 +1442,7 @@ static PTN_UNUSED void ptn_lazy_object_copy_properties_from_instance(
         return;
     }
     PtnArray *copied = ptn_array_clone(source->properties);
+    ptn_object_forget_property_reference_sources(target);
     ptn_array_free(target->properties);
     target->properties = copied;
 }
@@ -1126,6 +1467,166 @@ static void ptn_lazy_object_sync_proxy_instance_properties_depth(PtnObject *prox
 
 static PTN_UNUSED void ptn_lazy_object_sync_proxy_instance_properties(PtnObject *proxy) {
     ptn_lazy_object_sync_proxy_instance_properties_depth(proxy, 0);
+}
+
+typedef struct {
+    PtnArray *properties;
+    PtnObjectPropertyMetadata *metadata;
+    size_t metadata_len;
+    size_t metadata_capacity;
+    PtnLazyObjectReferenceSnapshot *references;
+    size_t reference_len;
+    size_t reference_capacity;
+} PtnLazyObjectInitializerSnapshot;
+
+static int ptn_lazy_object_initializer_snapshot_has_reference(
+    const PtnLazyObjectInitializerSnapshot *snapshot,
+    PtnReference *reference
+) {
+    if (snapshot == NULL || reference == NULL) {
+        return 1;
+    }
+    for (size_t i = 0; i < snapshot->reference_len; i++) {
+        if (snapshot->references[i].reference == reference) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_lazy_object_initializer_snapshot_add_reference(
+    PtnLazyObjectInitializerSnapshot *snapshot,
+    PtnReference *reference
+) {
+    if (snapshot == NULL ||
+        reference == NULL ||
+        ptn_lazy_object_initializer_snapshot_has_reference(snapshot, reference)) {
+        return;
+    }
+    if (snapshot->reference_len == snapshot->reference_capacity) {
+        size_t new_capacity = snapshot->reference_capacity == 0
+            ? 4
+            : snapshot->reference_capacity * 2;
+        PtnLazyObjectReferenceSnapshot *new_references = realloc(
+            snapshot->references,
+            new_capacity * sizeof(PtnLazyObjectReferenceSnapshot)
+        );
+        if (new_references == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snapshot->references = new_references;
+        snapshot->reference_capacity = new_capacity;
+    }
+    snapshot->references[snapshot->reference_len++] =
+        ptn_lazy_object_reference_snapshot_capture(reference);
+}
+
+static void ptn_lazy_object_initializer_snapshot_collect_value_references(
+    PtnLazyObjectInitializerSnapshot *snapshot,
+    PtnValue value,
+    size_t depth
+) {
+    if (depth > 1024) {
+        return;
+    }
+    if (value.type == PTN_REFERENCE) {
+        ptn_lazy_object_initializer_snapshot_add_reference(snapshot, value.as.reference);
+        return;
+    }
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        ptn_lazy_object_initializer_snapshot_collect_value_references(
+            snapshot,
+            value.as.array->entries[i].value,
+            depth + 1
+        );
+    }
+}
+
+static void ptn_lazy_object_initializer_snapshot_collect_references(
+    PtnLazyObjectInitializerSnapshot *snapshot,
+    PtnObject *object
+) {
+    if (snapshot == NULL || object == NULL || object->properties == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < object->properties->len; i++) {
+        ptn_lazy_object_initializer_snapshot_collect_value_references(
+            snapshot,
+            object->properties->entries[i].value,
+            0
+        );
+    }
+}
+
+static PtnLazyObjectInitializerSnapshot ptn_lazy_object_initializer_snapshot(PtnObject *object) {
+    PtnLazyObjectInitializerSnapshot snapshot;
+    snapshot.references = NULL;
+    snapshot.reference_len = 0;
+    snapshot.reference_capacity = 0;
+    ptn_lazy_object_initializer_snapshot_collect_references(&snapshot, object);
+    snapshot.properties = object == NULL || object->properties == NULL
+        ? NULL
+        : ptn_array_clone(object->properties);
+    snapshot.metadata_len = object == NULL ? 0 : object->property_metadata_len;
+    snapshot.metadata_capacity = object == NULL ? 0 : object->property_metadata_len;
+    snapshot.metadata = object == NULL
+        ? NULL
+        : ptn_object_property_metadata_clone_list(
+            object->property_metadata,
+            object->property_metadata_len
+        );
+    return snapshot;
+}
+
+static void ptn_lazy_object_initializer_snapshot_discard(
+    PtnLazyObjectInitializerSnapshot *snapshot
+) {
+    if (snapshot == NULL) {
+        return;
+    }
+    ptn_array_free(snapshot->properties);
+    ptn_object_property_metadata_free_list(snapshot->metadata, snapshot->metadata_len);
+    for (size_t i = 0; i < snapshot->reference_len; i++) {
+        ptn_lazy_object_reference_snapshot_drop(&snapshot->references[i]);
+    }
+    free(snapshot->references);
+    snapshot->properties = NULL;
+    snapshot->metadata = NULL;
+    snapshot->metadata_len = 0;
+    snapshot->metadata_capacity = 0;
+    snapshot->references = NULL;
+    snapshot->reference_len = 0;
+    snapshot->reference_capacity = 0;
+}
+
+static void ptn_lazy_object_initializer_snapshot_restore(
+    PtnObject *object,
+    PtnLazyObjectInitializerSnapshot *snapshot
+) {
+    if (object == NULL || snapshot == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < snapshot->reference_len; i++) {
+        ptn_lazy_object_reference_snapshot_restore(&snapshot->references[i]);
+    }
+    free(snapshot->references);
+    ptn_array_free(object->properties);
+    ptn_object_property_metadata_free_list(object->property_metadata, object->property_metadata_len);
+    object->properties = snapshot->properties;
+    object->property_metadata = snapshot->metadata;
+    object->property_metadata_len = snapshot->metadata_len;
+    object->property_metadata_capacity = snapshot->metadata_capacity;
+    snapshot->properties = NULL;
+    snapshot->metadata = NULL;
+    snapshot->metadata_len = 0;
+    snapshot->metadata_capacity = 0;
+    snapshot->references = NULL;
+    snapshot->reference_len = 0;
+    snapshot->reference_capacity = 0;
 }
 
 static PTN_UNUSED int ptn_lazy_object_real_instance_compatible(
@@ -1198,6 +1699,8 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
         return 1;
     }
     object->lazy_initializing = 1;
+    PtnLazyObjectInitializerSnapshot snapshot =
+        ptn_lazy_object_initializer_snapshot(object);
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
     PtnValue initializer = ptn_value_clone_deref(object->lazy_initializer);
     PtnValue arg = ptn_value_borrow(ptn_object(object));
@@ -1209,6 +1712,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
         initializer_frame_active = 1;
         if (setjmp(initializer_frame.jump) != 0) {
             ptn_try_frame_pop(runtime, &initializer_frame);
+            ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&initializer);
             ptn_value_destroy(&result);
@@ -1224,6 +1728,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
     if (runtime != NULL &&
         runtime->exceptions != NULL &&
         runtime->exceptions->active_exception != NULL) {
+        ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
         object->lazy_initializing = 0;
         ptn_value_destroy(&result);
         return 0;
@@ -1243,12 +1748,14 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
+            ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
             ptn_throw_exception(runtime, "TypeError", message);
             return 0;
         }
         if (real.as.object == object) {
+            ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
             ptn_throw_exception(runtime, "Error", "Lazy proxy factory must return a non-lazy object");
@@ -1266,6 +1773,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
+            ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
             ptn_throw_exception(runtime, "TypeError", message);
@@ -1277,6 +1785,7 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
     } else {
         PtnValue returned = ptn_value_deref(result);
         if (returned.type != PTN_NULL) {
+            ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
             object->lazy_initializing = 0;
             ptn_value_destroy(&result);
             ptn_throw_exception(
@@ -1292,8 +1801,10 @@ static PTN_UNUSED int ptn_lazy_object_initialize(
     object->lazy_initializer = ptn_null();
     object->lazy_uninitialized = 0;
     object->lazy_initializing = 0;
+    ptn_lazy_object_initializer_snapshot_discard(&snapshot);
     return 1;
 #else
+    ptn_lazy_object_initializer_snapshot_restore(object, &snapshot);
     object->lazy_initializing = 0;
     ptn_throw_exception(runtime, "Error", "Lazy object initializer dispatch is unavailable");
     return 0;
@@ -1613,15 +2124,10 @@ static PTN_UNUSED void ptn_object_release(PtnObject *object) {
     ptn_value_destroy(&object->lazy_proxy_instance);
     free(object->class_name);
     free(object->enum_case_name);
-    for (size_t i = 0; i < object->property_metadata_len; i++) {
-        free(object->property_metadata[i].storage_name);
-        free(object->property_metadata[i].display_name);
-        free(object->property_metadata[i].declaring_class);
-        free(object->property_metadata[i].last_type_name);
-        free(object->property_metadata[i].type_class_name);
-        free(object->property_metadata[i].type_text);
-    }
-    free(object->property_metadata);
+    ptn_object_property_metadata_free_list(
+        object->property_metadata,
+        object->property_metadata_len
+    );
     ptn_array_free(object->properties);
     free(object);
 }

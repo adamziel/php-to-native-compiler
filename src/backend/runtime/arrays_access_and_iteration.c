@@ -5549,6 +5549,9 @@ static PTN_UNUSED void ptn_object_unset_property(
         );
         return;
     }
+    if (entry != NULL && entry->value.type == PTN_REFERENCE && mutable_metadata != NULL) {
+        ptn_reference_forget_property_type(entry->value.as.reference, mutable_metadata);
+    }
     ptn_array_unset_entry(receiver.as.object->properties, key);
     if (mutable_metadata != NULL) {
         mutable_metadata->is_unset = 1;
