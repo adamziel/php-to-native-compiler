@@ -6378,15 +6378,20 @@ impl Parser<'_> {
         }
 
         if let Expr::Unary {
-            op: UnaryOp::ErrorSuppress,
+            op:
+                op @ (UnaryOp::ErrorSuppress
+                | UnaryOp::Not
+                | UnaryOp::Positive
+                | UnaryOp::Negate
+                | UnaryOp::BitwiseNot),
             expr,
-            span: suppress_span,
+            span: unary_span,
         } = left
         {
             let assignment = self.parse_assignment_expr_from_left(*expr)?;
-            let span = combine_spans(suppress_span, assignment.span());
+            let span = combine_spans(unary_span, assignment.span());
             return Ok(Expr::Unary {
-                op: UnaryOp::ErrorSuppress,
+                op,
                 expr: Box::new(assignment),
                 span,
             });
