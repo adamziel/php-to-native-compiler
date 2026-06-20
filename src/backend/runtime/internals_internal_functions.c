@@ -20460,6 +20460,12 @@ static PtnValue ptn_uri_with_string_component(
         }
     } else if (strcmp(component_name, "host") == 0) {
         if (is_null) {
+            if (copy->userinfo_present) {
+                ptn_string_operand_free(value);
+                ptn_uri_data_free(copy);
+                ptn_throw_exception(runtime, "Uri\\InvalidUriException", "Cannot remove the host from a URI that has a userinfo");
+                return ptn_null();
+            }
             free(copy->host);
             copy->host = NULL;
             copy->authority_present = 0;
@@ -20575,6 +20581,11 @@ static PtnValue ptn_uri_whatwg_with_scheme(
         ptn_string_operand_free(value);
         return ptn_null();
     }
+    if (!ptn_uri_validate_scheme_component(value.data, value.len)) {
+        ptn_string_operand_free(value);
+        ptn_uri_whatwg_throw_malformed(runtime, "scheme", NULL);
+        return ptn_null();
+    }
 #ifndef PTN_USE_ADA_URL
     ptn_string_operand_free(value);
     ptn_uri_whatwg_throw_malformed(runtime, "scheme", "AdaParserUnavailable");
@@ -20596,6 +20607,41 @@ static PtnValue ptn_uri_whatwg_with_scheme(
     ptn_string_operand_free(value);
     return result;
 #endif
+}
+
+static int ptn_uri_whatwg_host_arg_has_forbidden_codepoint(PtnStringOperand host, const char **reason_out) {
+    int in_ipv6_literal = host.len > 0 && host.data[0] == '[';
+    *reason_out = NULL;
+    for (size_t i = 0; i < host.len; i++) {
+        unsigned char byte = (unsigned char)host.data[i];
+        if (in_ipv6_literal) {
+            if (byte == ']') {
+                in_ipv6_literal = 0;
+            }
+            continue;
+        }
+        if (byte == '%' && i + 2 < host.len) {
+            int high = ptn_uri_hex_value(host.data[i + 1]);
+            int low = ptn_uri_hex_value(host.data[i + 2]);
+            if (high >= 0 && low >= 0) {
+                unsigned char decoded = (unsigned char)((high << 4) | low);
+                if (decoded == ':' || decoded == '/' || decoded == '?' || decoded == '#' || decoded == '@' || decoded == '\\') {
+                    *reason_out = "DomainInvalidCodePoint";
+                    return 1;
+                }
+                i += 2;
+                continue;
+            }
+        }
+        if (byte == ':' || byte == '/' || byte == '?' || byte == '#' || byte == '@' || byte == '\\') {
+            return 1;
+        }
+        if (byte == 0) {
+            *reason_out = "DomainInvalidCodePoint";
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static PtnValue ptn_uri_whatwg_with_host(
@@ -20628,6 +20674,12 @@ static PtnValue ptn_uri_whatwg_with_host(
     if (special && host_arg.len == 0) {
         ptn_string_operand_free(host_arg);
         ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
+        return ptn_null();
+    }
+    const char *host_reason = NULL;
+    if (ptn_uri_whatwg_host_arg_has_forbidden_codepoint(host_arg, &host_reason)) {
+        ptn_string_operand_free(host_arg);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", host_reason);
         return ptn_null();
     }
 #ifndef PTN_USE_ADA_URL
@@ -20781,6 +20833,9 @@ static PtnValue ptn_uri_whatwg_with_userinfo_part(
     }
     PtnUriData *source = ptn_uri_data_from_value(receiver);
     PtnValue value = ptn_value_deref(args[0]);
+    if (source != NULL && source->scheme != NULL && ptn_ascii_case_equal(source->scheme, "file")) {
+        return ptn_uri_clone_with(runtime, receiver, ptn_uri_data_clone(source));
+    }
 #ifndef PTN_USE_ADA_URL
     (void)source;
     (void)value;
@@ -20864,6 +20919,11 @@ static PtnValue ptn_uri_with_port(
         ptn_uri_data_free(copy);
         return ptn_null();
     }
+    if (!copy->authority_present && copy->host == NULL) {
+        ptn_uri_data_free(copy);
+        ptn_throw_exception(runtime, "Uri\\InvalidUriException", "Cannot set a port without having a host");
+        return ptn_null();
+    }
     if (port < 0 || port > 65535) {
         ptn_uri_data_free(copy);
         ptn_uri_throw_malformed(runtime, "port");
@@ -20891,13 +20951,15 @@ static PtnValue ptn_uri_whatwg_with_port(
         return ptn_null();
     }
     PtnValue value = ptn_value_deref(args[0]);
+    PtnUriData *source = ptn_uri_data_from_value(receiver);
 #ifndef PTN_USE_ADA_URL
     (void)receiver;
     (void)value;
+    (void)source;
     ptn_uri_whatwg_throw_malformed(runtime, "port", "AdaParserUnavailable");
     return ptn_null();
 #else
-    ada_url url = ptn_uri_ada_url_from_data(ptn_uri_data_from_value(receiver));
+    ada_url url = ptn_uri_ada_url_from_data(source);
     if (url == NULL) {
         ptn_uri_whatwg_throw_malformed(runtime, "port", NULL);
         return ptn_null();
@@ -20912,6 +20974,10 @@ static PtnValue ptn_uri_whatwg_with_port(
     if (runtime->exceptions->active_exception != NULL) {
         ada_free(url);
         return ptn_null();
+    }
+    if (source != NULL && source->scheme != NULL && ptn_ascii_case_equal(source->scheme, "file")) {
+        ada_free(url);
+        return ptn_uri_clone_with(runtime, receiver, ptn_uri_data_clone(source));
     }
     if (port < 0) {
         ada_free(url);
