@@ -28265,6 +28265,13 @@ $other->loadXML('<other><m/></other>');
 $root->lastElementChild->insertAdjacentElement('afterbegin', $other->documentElement->firstChild);
 echo $doc->saveXML();
 echo $other->saveXML();
+
+$detachedDoc = new DOMDocument();
+$detachedRoot = $detachedDoc->createElement('root');
+$detachedDoc->appendChild($detachedRoot);
+$detachedAttr = $detachedRoot->setAttribute('category', 'books');
+$detachedDoc->removeChild($detachedRoot);
+var_dump($detachedAttr->ownerElement);
 ",
     )
     .unwrap();
@@ -28299,6 +28306,7 @@ echo $other->saveXML();
             "<root xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" b:flag=\"v\">reset<done><m/></done></root>\n",
             "<?xml version=\"1.0\"?>\n",
             "<other/>\n",
+            "NULL\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

@@ -68268,6 +68268,11 @@ static PtnXmlNode *ptn_xml_tree_root(PtnXmlNode *node) {
     return node;
 }
 
+static int ptn_xml_node_is_connected(PtnXmlNode *node) {
+    PtnXmlNode *root = ptn_xml_tree_root(node);
+    return root != NULL && root->type == PTN_XML_NODE_DOCUMENT;
+}
+
 static void ptn_xml_set_owner_document_recursive(PtnXmlNode *node, PtnXmlNode *document) {
     if (node == NULL) {
         return;
@@ -72602,8 +72607,7 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 1;
     }
     if (ptn_ascii_case_equal(property, "isConnected")) {
-        PtnXmlNode *root = ptn_xml_tree_root(node);
-        *value_out = ptn_bool(root != NULL && root->type == PTN_XML_NODE_DOCUMENT);
+        *value_out = ptn_bool(ptn_xml_node_is_connected(node));
         return 1;
     }
     if (ptn_ascii_case_equal(property, "baseURI")) {
@@ -72633,7 +72637,9 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
         return 1;
     }
     if (ptn_ascii_case_equal(property, "ownerElement")) {
-        *value_out = node->type == PTN_XML_NODE_ATTRIBUTE ? ptn_xml_node_value(node->parent) : ptn_null();
+        *value_out = node->type == PTN_XML_NODE_ATTRIBUTE && ptn_xml_node_is_connected(node->parent)
+            ? ptn_xml_node_value(node->parent)
+            : ptn_null();
         return 1;
     }
     *value_out = ptn_null();
