@@ -56671,7 +56671,7 @@ try {
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
         )
     );

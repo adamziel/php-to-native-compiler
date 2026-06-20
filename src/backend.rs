@@ -82,6 +82,8 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "Uri\\Rfc3986\\UriType",
+    "Uri\\Rfc3986\\UriHostType",
     "Uri\\UriComparisonMode",
     "Uri\\WhatWg\\UrlHostType",
 ];
@@ -13459,6 +13461,8 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "fiber" => Some("Fiber"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
+                "uri\\rfc3986\\uritype" => Some("Uri\\Rfc3986\\UriType"),
+                "uri\\rfc3986\\urihosttype" => Some("Uri\\Rfc3986\\UriHostType"),
                 "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
                 "uri\\uricomparisonmode" => Some("Uri\\UriComparisonMode"),
                 "uri\\whatwg\\urlhosttype" => Some("Uri\\WhatWg\\UrlHostType"),
@@ -14630,7 +14634,7 @@ fn emit_method_dispatch(
         "        return ptn_intl_spoofchecker_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
-    out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
+    out.push_str("    if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name) || ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
     out.push_str(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
@@ -20726,7 +20730,10 @@ fn collect_value_runtime_requirements(
             if name.eq_ignore_ascii_case("setTimestamp") {
                 requirements.internal_function_dispatch = true;
             }
-            if name.eq_ignore_ascii_case("parse") || is_uri_whatwg_url_method_name(name) {
+            if name.eq_ignore_ascii_case("parse")
+                || is_uri_rfc3986_uri_method_name(name)
+                || is_uri_whatwg_url_method_name(name)
+            {
                 requirements.internal_function_dispatch = true;
             }
             if is_uri_whatwg_url_method_name(name) {
@@ -20840,6 +20847,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("XMLWriter")
                 || class_name.eq_ignore_ascii_case("XMLParser")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
+                || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
+                || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriHostType")
                 || is_uri_whatwg_url_class_name(class_name)
                 || class_name.eq_ignore_ascii_case("Uri\\UriComparisonMode")
                 || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType")
@@ -21015,6 +21024,40 @@ fn is_uri_whatwg_url_static_call_name(name: &str) -> bool {
     }
 }
 
+fn is_uri_rfc3986_uri_method_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("__construct")
+        || name.eq_ignore_ascii_case("__toString")
+        || name.eq_ignore_ascii_case("equals")
+        || name.eq_ignore_ascii_case("getRawScheme")
+        || name.eq_ignore_ascii_case("getScheme")
+        || name.eq_ignore_ascii_case("getRawUserInfo")
+        || name.eq_ignore_ascii_case("getUserInfo")
+        || name.eq_ignore_ascii_case("getUsername")
+        || name.eq_ignore_ascii_case("getPassword")
+        || name.eq_ignore_ascii_case("getRawHost")
+        || name.eq_ignore_ascii_case("getHost")
+        || name.eq_ignore_ascii_case("getAsciiHost")
+        || name.eq_ignore_ascii_case("getHostType")
+        || name.eq_ignore_ascii_case("getUriType")
+        || name.eq_ignore_ascii_case("getPort")
+        || name.eq_ignore_ascii_case("getRawPath")
+        || name.eq_ignore_ascii_case("getPath")
+        || name.eq_ignore_ascii_case("getRawQuery")
+        || name.eq_ignore_ascii_case("getQuery")
+        || name.eq_ignore_ascii_case("getRawFragment")
+        || name.eq_ignore_ascii_case("getFragment")
+        || name.eq_ignore_ascii_case("toRawString")
+        || name.eq_ignore_ascii_case("toString")
+        || name.eq_ignore_ascii_case("resolve")
+        || name.eq_ignore_ascii_case("withScheme")
+        || name.eq_ignore_ascii_case("withUserInfo")
+        || name.eq_ignore_ascii_case("withHost")
+        || name.eq_ignore_ascii_case("withPort")
+        || name.eq_ignore_ascii_case("withPath")
+        || name.eq_ignore_ascii_case("withQuery")
+        || name.eq_ignore_ascii_case("withFragment")
+}
+
 fn is_uri_whatwg_url_method_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("__construct")
         || name.eq_ignore_ascii_case("__toString")
@@ -21034,6 +21077,7 @@ fn is_uri_whatwg_url_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("toAsciiString")
         || name.eq_ignore_ascii_case("toUnicodeString")
         || name.eq_ignore_ascii_case("toString")
+        || name.eq_ignore_ascii_case("resolve")
         || name.eq_ignore_ascii_case("withScheme")
         || name.eq_ignore_ascii_case("withUsername")
         || name.eq_ignore_ascii_case("withPassword")
