@@ -1,0 +1,57 @@
+# Full-corpus ext/uri residual rows adjacent to ptn-x8zin URI reference work.
+#
+# Source: ext/uri PHPT failure artifacts present after the COW/reference
+# keyword red-pack rerun on php-src corpus revision
+# 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+#
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=60 tools/run-bounded-phpt.sh \
+#     tools/phpt-ptn-x8zin-uri-residual-row-pack.txt
+
+# bucket: uri-core-surface rows=35
+ext/uri/tests/003.phpt
+ext/uri/tests/004.phpt
+ext/uri/tests/007.phpt
+ext/uri/tests/008.phpt
+ext/uri/tests/010.phpt
+ext/uri/tests/018.phpt
+ext/uri/tests/019.phpt
+ext/uri/tests/021.phpt
+ext/uri/tests/022.phpt
+ext/uri/tests/023.phpt
+ext/uri/tests/024.phpt
+ext/uri/tests/025.phpt
+ext/uri/tests/026.phpt
+ext/uri/tests/027.phpt
+ext/uri/tests/031.phpt
+ext/uri/tests/032.phpt
+ext/uri/tests/033.phpt
+ext/uri/tests/034.phpt
+ext/uri/tests/039.phpt
+ext/uri/tests/041.phpt
+ext/uri/tests/043.phpt
+ext/uri/tests/047.phpt
+ext/uri/tests/050.phpt
+ext/uri/tests/051.phpt
+ext/uri/tests/052.phpt
+ext/uri/tests/053.phpt
+ext/uri/tests/054.phpt
+ext/uri/tests/055.phpt
+ext/uri/tests/057.phpt
+ext/uri/tests/058.phpt
+ext/uri/tests/065.phpt
+ext/uri/tests/gh19780.phpt
+ext/uri/tests/gh19892.phpt
+ext/uri/tests/gh19979.phpt
+ext/uri/tests/gh22046.phpt
+
+# bucket: uri-rfc3986-getters rows=9
+ext/uri/tests/rfc3986/equivalence/equals_true_normalization2.phpt
+ext/uri/tests/rfc3986/getters/host_type_success_ip_future.phpt
+ext/uri/tests/rfc3986/getters/host_type_success_ipv4.phpt
+ext/uri/tests/rfc3986/getters/host_type_success_ipv6.phpt
+ext/uri/tests/rfc3986/getters/host_type_success_none.phpt
+ext/uri/tests/rfc3986/getters/host_type_success_registered_name.phpt
+ext/uri/tests/rfc3986/getters/uri_type_success_uri_basic.phpt
+ext/uri/tests/rfc3986/getters/uri_type_success_uri_empty_authority.phpt
+ext/uri/tests/rfc3986/getters/uri_type_success_uri_no_authority.phpt
