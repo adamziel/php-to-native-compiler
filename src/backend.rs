@@ -765,7 +765,10 @@ fn emit_runtime(out: &mut String, requirements: &RuntimeRequirements) {
     );
 
     out.push_str(&runtime_c[..direct_helpers.start]);
-    if requirements.direct_internal_helpers || requirements.internal_function_dispatch {
+    if requirements.direct_internal_helpers
+        || requirements.compact_internal_helpers
+        || requirements.internal_function_dispatch
+    {
         out.push_str(&runtime_c[direct_helpers.after_start..direct_helpers.end]);
     }
     out.push_str(&runtime_c[direct_helpers.after_end..compact_helpers.start]);
@@ -15413,6 +15416,12 @@ fn emit_callable_dispatch(
         );
         out.push_str("                }\n");
         out.push_str("                int ptn_scoped_callable_can_bind_current_receiver = ptn_ascii_case_equal(scope_name, \"self\") || ptn_ascii_case_equal(scope_name, \"static\") || ptn_ascii_case_equal(scope_name, \"parent\") || separator != NULL;\n");
+        out.push_str("                if (!ptn_scoped_callable_can_bind_current_receiver && from_call_user_func && runtime->has_current_receiver) {\n");
+        out.push_str("                    PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
+        out.push_str("                    if (current_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(current_receiver.as.object->class_name, target_class_name)) {\n");
+        out.push_str("                        ptn_scoped_callable_can_bind_current_receiver = ptn_declared_class_method_is_callable(target_class_name, target_method_name, current_receiver.as.object->class_name) || ptn_declared_class_has_call_magic(target_class_name);\n");
+        out.push_str("                    }\n");
+        out.push_str("                }\n");
         out.push_str("                if (ptn_scoped_callable_can_bind_current_receiver && runtime->has_current_receiver) {\n");
         out.push_str("                    PtnValue current_receiver = ptn_value_deref(runtime->current_receiver);\n");
         out.push_str("                    if (current_receiver.type == PTN_OBJECT && ptn_declared_class_is_same_or_descendant(current_receiver.as.object->class_name, target_class_name)) {\n");
@@ -34179,6 +34188,8 @@ impl ValueEmitter {
                 | ValueExpr::Throw { .. }
                 | ValueExpr::Yield { .. }
                 | ValueExpr::YieldFrom { .. }
+                | ValueExpr::NewObject { .. }
+                | ValueExpr::DynamicNewObject { .. }
         ) {
             return self.emit_value(out, value);
         }
@@ -35651,12 +35662,13 @@ impl ValueEmitter {
         }
 
         let mut temps = Vec::with_capacity(arguments.len());
+        let mut moved_argument_temps = Vec::with_capacity(arguments.len());
         let mut unwrap_array_dim_reference_temps = Vec::new();
         for (argument_index, argument) in arguments.iter().enumerate() {
             let by_ref_parameter = direct_user.as_ref().and_then(|direct_user| {
                 by_ref_parameter_for_argument(&direct_user.parameters, argument_index)
             });
-            if let Some(parameter) = by_ref_parameter {
+            let temp = if let Some(parameter) = by_ref_parameter {
                 let parameter_name = if parameter.is_variadic {
                     ""
                 } else {
@@ -35675,7 +35687,7 @@ impl ValueEmitter {
                 if value_is_array_dim_reference_target(argument) {
                     unwrap_array_dim_reference_temps.push(temp.clone());
                 }
-                temps.push(temp);
+                temp
             } else if let Some(parameter_name) =
                 internal_by_ref_parameter_name(name, argument_index)
             {
@@ -35694,10 +35706,20 @@ impl ValueEmitter {
                 if value_is_array_dim_reference_target(argument) {
                     unwrap_array_dim_reference_temps.push(temp.clone());
                 }
-                temps.push(temp);
+                temp
             } else {
-                temps.push(self.emit_call_argument(out, name, argument_index, argument));
-            }
+                self.emit_call_argument(out, name, argument_index, argument)
+            };
+            moved_argument_temps.push(
+                argument_index == 0
+                    && (name.eq_ignore_ascii_case("call_user_func")
+                        || name.eq_ignore_ascii_case("call_user_func_array"))
+                    && matches!(
+                        argument,
+                        ValueExpr::NewObject { .. } | ValueExpr::DynamicNewObject { .. }
+                    ),
+            );
+            temps.push(temp);
         }
 
         let args_temp = self.next_temp();
@@ -35708,9 +35730,13 @@ impl ValueEmitter {
             if index > 0 {
                 out.push_str(", ");
             }
-            out.push_str("ptn_value_share(");
-            out.push_str(temp);
-            out.push(')');
+            if moved_argument_temps[index] {
+                out.push_str(temp);
+            } else {
+                out.push_str("ptn_value_share(");
+                out.push_str(temp);
+                out.push(')');
+            }
         }
         out.push_str(" };\n");
         if discarded
@@ -35767,8 +35793,10 @@ impl ValueEmitter {
         for index in 0..temps.len() {
             emit_value_cleanup(out, "    ", &format!("{args_temp}[{index}]"));
         }
-        for temp in temps {
-            emit_value_cleanup(out, "    ", &temp);
+        for (index, temp) in temps.into_iter().enumerate() {
+            if !moved_argument_temps[index] {
+                emit_value_cleanup(out, "    ", &temp);
+            }
         }
         result_temp
     }

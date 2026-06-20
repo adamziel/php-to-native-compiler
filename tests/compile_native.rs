@@ -166,6 +166,49 @@ fn direct_var_dump_internal_first_class_callable_metadata() {
 }
 
 #[test]
+fn direct_var_dump_reflection_internal_closure_parameter_metadata() {
+    let root = temp_dir("ptn-native-direct-var-dump-reflection-internal-closure");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-var-dump-reflection-internal-closure.php");
+    let output = root.join("direct-var-dump-reflection-internal-closure-bin");
+    fs::write(
+        &input,
+        "<?php
+var_dump((new ReflectionFunction('sin'))->getClosure());
+var_dump(function ($someThing) {});
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(concat!(
+        "  [\"function\"]=>\n",
+        "  string(3) \"sin\"\n",
+        "  [\"parameter\"]=>\n",
+        "  array(1) {\n",
+        "    [\"$num\"]=>\n",
+        "    string(10) \"<required>\"\n",
+        "  }\n",
+    )));
+    assert!(stdout.contains("    [\"$someThing\"]=>\n"));
+    assert!(!stdout.contains("[\"$param1\"]=>"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_function_parameter_name"));
+    assert!(c_source.contains("ptn_reflection_function_call_method"));
+}
+
+#[test]
 fn direct_internal_helper_with_full_dispatch_compiles_to_native_binary() {
     let root = temp_dir("ptn-native-direct-helper-with-full-dispatch");
     fs::create_dir_all(&root).unwrap();
@@ -19941,6 +19984,48 @@ namespace UsingNS {
 }
 
 #[test]
+fn compile_compact_var_dump_anonymous_class_to_native_binary() {
+    let root = temp_dir("ptn-native-compact-var-dump-anonymous-class");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("compact-var-dump-anonymous-class.php");
+    let output = root.join("compact-var-dump-anonymous-class-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace {
+    var_dump(new class {});
+}
+
+namespace Lone {
+    $hello = new class {};
+}
+
+namespace {
+    var_dump($hello);
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout.matches("object(class@anonymous)#").count(),
+        2,
+        "{stdout}"
+    );
+    assert_eq!(stdout.matches("(0) {\n}\n").count(), 2, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
+    assert!(c_source.contains("ptn_object_property_entry_for_metadata"));
+}
+
+#[test]
 fn compile_anonymous_class_missing_abstract_method_fatals_to_native_binary() {
     let root = temp_dir("ptn-native-anonymous-class-missing-abstract-method");
     fs::create_dir_all(&root).unwrap();
@@ -33456,6 +33541,48 @@ var_dump(function_exists('array_flip'), function_exists('ARRAY_FLIP'));",
         "array(2) {\n  [1]=>\n  int(0)\n  [2]=>\n  int(1)\n}\narray(2) {\n  [\"value1\"]=>\n  int(0)\n  [\"value2\"]=>\n  int(1)\n}\narray(2) {\n  [1]=>\n  string(4) \"key1\"\n  [2]=>\n  string(4) \"key2\"\n}\narray(2) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n}\narray(5) {\n  [\"one\"]=>\n  int(1)\n  [\"two\"]=>\n  int(2)\n  [\"three\"]=>\n  int(3)\n  [4]=>\n  int(4)\n  [5]=>\n  string(4) \"five\"\n}\narray(2) {\n  [\"same\"]=>\n  string(6) \"second\"\n  [\"other\"]=>\n  string(4) \"kept\"\n}\n\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\n\nWarning: array_flip(): Can only flip string and integer values, entry skipped in ptn on line 8\narray(2) {\n  [\"ok\"]=>\n  int(0)\n  [\"done\"]=>\n  int(3)\n}\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_call_user_func_exception_cleanup_to_native_binary() {
+    let root = temp_dir("ptn-native-call-user-func-exception-cleanup");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("call-user-func-exception-cleanup.php");
+    let output = root.join("call-user-func-exception-cleanup-bin");
+    fs::write(
+        &input,
+        "<?php
+try { call_user_func(new class { function __destruct () { throw new Error; } }); } catch (Error $e) {}
+
+set_error_handler(function() { throw new Error; });
+
+try { var_dump(new stdClass, call_user_func(\"fail\")); } catch (Error $e) {}
+
+try { (function() { call_user_func(\"fail\"); })(); } catch (Error $e) {}
+
+try { [new class { static function foo() {} function __destruct () { throw new Error; } }, \"foo\"](); } catch (Error $e) {}
+
+echo \"===DONE===\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "===DONE===\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_value_destroy(&callback);"));
+    assert!(c_source.contains("ptn_call_function(&runtime, \"call_user_func\""));
 }
 
 #[test]
