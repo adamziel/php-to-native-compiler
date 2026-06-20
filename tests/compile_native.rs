@@ -17609,6 +17609,90 @@ echo mb_strimwidth('abcde', 0, 3, '...', 'UTF-8'), \"\\n\";\n",
 }
 
 #[test]
+fn compile_mbstring_decoding_and_reverse_offsets_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-decoding-reverse-offsets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-decoding-reverse-offsets.php");
+    let output = root.join("mb-decoding-reverse-offsets-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL & ~E_DEPRECATED);\n\
+echo mb_decode_mimeheader(\"Works: =?iso-8859-1?q?=3F=3F=3F?=\"), \"\\n\";\n\
+echo mb_decode_mimeheader(\"Fails: =?iso-8859-1?q?=3f=3f=3f?=\"), \"\\n\";\n\
+$map = [0, 0x10FFFF, 0, 0xFFFFFF];\n\
+var_dump(mb_decode_numericentity('&', $map, 'UTF-8'));\n\
+var_dump(mb_decode_numericentity('&#61', $map, 'UTF-8'));\n\
+var_dump(mb_decode_numericentity('&#x3d', $map, 'UTF-8'));\n\
+var_dump(mb_decode_numericentity('&#x3d;', $map, 'UTF-8'));\n\
+$japanese = hex2bin('e697a5e69cace8aa9ee38386e382ade382b9e38388e381a7e38199e380823031323334efbc95efbc96efbc97efbc98efbc99e38082');\n\
+$fullStop = hex2bin('e38082');\n\
+var_dump(mb_strrpos($japanese, $fullStop, -13, 'UTF-8'));\n\
+var_dump(mb_strrpos($japanese, $fullStop, -12, 'UTF-8'));\n\
+$symbols = hex2bin('e2978fe2978be2978620e2978fe2978be2978620e2978fe2978be29786');\n\
+$symbolNeedle = hex2bin('e2978fe2978be29786');\n\
+var_dump(mb_strrpos($symbols, $symbolNeedle, 9, 'UTF-8'));\n\
+var_dump(mb_strrpos($symbols, $symbolNeedle, -6, 'UTF-8'));\n\
+var_dump(mb_strripos($symbols, $symbolNeedle, 9, 'UTF-8'));\n\
+var_dump(mb_strripos($symbols, $symbolNeedle, -6, 'UTF-8'));\n\
+foreach (['mb_strtolower', 'mb_strtoupper'] as $caseFunc) {\n\
+    try {\n\
+        var_dump($caseFunc('Hello, World', ''));\n\
+    } catch (ValueError $e) {\n\
+        echo $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+echo mb_strimwidth('helloworld', 0, 5, '...', 'UTF-8'), \"\\n\";\n\
+echo mb_strimwidth('hello', 0, 5, '...', 'UTF-8'), \"\\n\";\n\
+$base64 = mb_convert_encoding(str_repeat('ABCDEFGHIJ', 20), 'Base64', '8bit');\n\
+$expectedBase64 = \"QUJDREVGR0hJSkFCQ0RFRkdISUpBQkNERUZHSElKQUJDREVGR0hJSkFCQ0RFRkdISUpBQkNERUZH\\r\\n\" .\n\
+    \"SElKQUJDREVGR0hJSkFCQ0RFRkdISUpBQkNERUZHSElKQUJDREVGR0hJSkFCQ0RFRkdISUpBQkNE\\r\\n\" .\n\
+    \"RUZHSElKQUJDREVGR0hJSkFCQ0RFRkdISUpBQkNERUZHSElKQUJDREVGR0hJSkFCQ0RFRkdISUpB\\r\\n\" .\n\
+    \"QkNERUZHSElKQUJDREVGR0hJSkFCQ0RFRkdISUo=\";\n\
+echo $base64 === $expectedBase64 ? \"base64-ok\\n\" : \"base64-bad\\n\";\n\
+try {\n\
+    var_dump(mb_ereg('', 'hello, world'));\n\
+} catch (ValueError $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+var_dump(mb_http_input());\n\
+var_dump(mb_check_encoding(\"&\\xc2\\xb7 TEST TEST TEST TEST TEST TEST\", \"HTML-ENTITIES\"));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Works: ???\n",
+            "Fails: ???\n",
+            "string(1) \"&\"\n",
+            "string(1) \"=\"\n",
+            "string(1) \"=\"\n",
+            "string(1) \"=\"\n",
+            "bool(false)\n",
+            "int(9)\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "bool(false)\n",
+            "int(4)\n",
+            "mb_strtolower(): Argument #2 ($encoding) must be a valid encoding, \"\" given\n",
+            "mb_strtoupper(): Argument #2 ($encoding) must be a valid encoding, \"\" given\n",
+            "he...\n",
+            "hello\n",
+            "base64-ok\n",
+            "mb_ereg(): Argument #1 ($pattern) must not be empty\n",
+            "string(5) \"UTF-8\"\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_preg_replace_callback_array_and_match_debug_refcounts_to_native_binary() {
     let root = temp_dir("ptn-native-preg-replace-callback-array-debug");
     fs::create_dir_all(&root).unwrap();
