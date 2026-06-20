@@ -52454,19 +52454,44 @@ static PtnValue ptn_internal_mb_strimwidth(PtnRuntime *runtime, size_t argc, con
         ptn_mb_utf8_decode_one(utf8, utf8_len, &offset, &cp);
         width += ptn_mb_codepoint_width(cp);
     }
+    int64_t remaining_width = 0;
+    size_t remaining_offset = offset;
+    while (remaining_offset < utf8_len) {
+        uint32_t cp = 0;
+        ptn_mb_utf8_decode_one(utf8, utf8_len, &remaining_offset, &cp);
+        remaining_width += ptn_mb_codepoint_width(cp);
+    }
+    int64_t marker_width = 0;
+    if (marker.len != 0) {
+        size_t marker_offset = 0;
+        while (marker_offset < marker.len) {
+            uint32_t cp = 0;
+            ptn_mb_utf8_decode_one(marker.data, marker.len, &marker_offset, &cp);
+            marker_width += ptn_mb_codepoint_width(cp);
+        }
+    }
+    int64_t content_limit = width_limit;
+    if (marker.len != 0 && remaining_width > width_limit) {
+        content_limit = marker_width >= width_limit ? 0 : width_limit - marker_width;
+    }
     int64_t emitted = 0;
-    while (offset < utf8_len && emitted < width_limit) {
+    int truncated = 0;
+    while (offset < utf8_len && emitted < content_limit) {
         size_t before = offset;
         uint32_t cp = 0;
         ptn_mb_utf8_decode_one(utf8, utf8_len, &offset, &cp);
         int cp_width = ptn_mb_codepoint_width(cp);
-        if (emitted + cp_width > width_limit) {
+        if (emitted + cp_width > content_limit) {
+            truncated = 1;
             break;
         }
         ptn_string_buffer_append_len(&output, utf8 + before, offset - before);
         emitted += cp_width;
     }
-    if (offset < utf8_len && marker.len != 0) {
+    if (offset < utf8_len) {
+        truncated = 1;
+    }
+    if (truncated && marker.len != 0) {
         ptn_string_buffer_append_len(&output, marker.data, marker.len);
     }
     free(utf8);

@@ -17583,6 +17583,32 @@ dump_exception(fn() => mb_detect_order($alias));\n",
 }
 
 #[test]
+fn compile_mb_strimwidth_reserves_marker_width_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-strimwidth-marker");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-strimwidth-marker.php");
+    let output = root.join("mb-strimwidth-marker-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+echo mb_strimwidth('helloworld', 0, 5, '...', 'UTF-8'), \"\\n\";\n\
+echo mb_strimwidth('hello', 0, 5, '...', 'UTF-8'), \"\\n\";\n\
+echo mb_strimwidth('abcde', 0, 3, '...', 'UTF-8'), \"\\n\";\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "he...\nhello\n...\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_preg_replace_callback_array_and_match_debug_refcounts_to_native_binary() {
     let root = temp_dir("ptn-native-preg-replace-callback-array-debug");
     fs::create_dir_all(&root).unwrap();
