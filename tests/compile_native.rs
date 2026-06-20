@@ -41995,7 +41995,9 @@ var_dump($str[2][-2]);\n\
 var_dump($str[true]);\n\
 var_dump($str[false]);\n\
 var_dump($str[null]);\n\
-var_dump($str[1.8]);",
+var_dump($str[1.8]);\n\
+var_dump($str[111111111111111111111]);\n\
+var_dump($str[-11111111111111111111111]);",
     )
     .unwrap();
 
@@ -42003,9 +42005,11 @@ var_dump($str[1.8]);",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
-        "string(1) \"a\"\nstring(1) \"c\"\nstring(1) \"d\"\n\nWarning: Uninitialized string offset 4 in ptn on line 6\nstring(0) \"\"\n\nWarning: Uninitialized string offset -5 in ptn on line 7\nstring(0) \"\"\nstring(1) \"b\"\n\nWarning: Uninitialized string offset -2 in ptn on line 9\nstring(0) \"\"\n\nWarning: String offset cast occurred in ptn on line 10\nstring(1) \"b\"\n\nWarning: String offset cast occurred in ptn on line 11\nstring(1) \"a\"\n\nWarning: String offset cast occurred in ptn on line 12\nstring(1) \"a\"\n\nWarning: String offset cast occurred in ptn on line 13\nstring(1) \"b\"\n"
+        normalized_stdout,
+        "string(1) \"a\"\nstring(1) \"c\"\nstring(1) \"d\"\n\nWarning: Uninitialized string offset 4 in ptn on line 6\nstring(0) \"\"\n\nWarning: Uninitialized string offset -5 in ptn on line 7\nstring(0) \"\"\nstring(1) \"b\"\n\nWarning: Uninitialized string offset -2 in ptn on line 9\nstring(0) \"\"\n\nWarning: String offset cast occurred in ptn on line 10\nstring(1) \"b\"\n\nWarning: String offset cast occurred in ptn on line 11\nstring(1) \"a\"\n\nWarning: String offset cast occurred in ptn on line 12\nstring(1) \"a\"\n\nWarning: String offset cast occurred in ptn on line 13\nstring(1) \"b\"\n\nWarning: String offset cast occurred in ptn on line 14\n\nWarning: Uninitialized string offset 430646668853805056 in ptn on line 14\nstring(0) \"\"\n\nWarning: String offset cast occurred in ptn on line 15\n\nWarning: Uninitialized string offset -6171178737961271296 in ptn on line 15\nstring(0) \"\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

@@ -8457,10 +8457,31 @@ static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, 
 }
 
 static PTN_UNUSED int64_t ptn_string_offset_float_to_int(double value) {
-    if (ptn_float_to_int_out_of_range(value)) {
+    if (!isfinite(value)) {
         return 0;
     }
-    return (int64_t)value;
+    if (!ptn_float_to_int_out_of_range(value)) {
+        return (int64_t)value;
+    }
+
+    double wrapped = fmod(value, 18446744073709551616.0);
+    if (wrapped < 0) {
+        wrapped += 18446744073709551616.0;
+    }
+    if (wrapped >= 18446744073709551616.0) {
+        wrapped = 0;
+    }
+
+    uint64_t unsigned_offset = (uint64_t)wrapped;
+    uint64_t signed_min_magnitude = UINT64_MAX / 2 + 1;
+    if (unsigned_offset >= signed_min_magnitude) {
+        uint64_t magnitude = UINT64_MAX - unsigned_offset + 1;
+        if (magnitude == signed_min_magnitude) {
+            return INT64_MIN;
+        }
+        return -(int64_t)magnitude;
+    }
+    return (int64_t)unsigned_offset;
 }
 
 static PTN_UNUSED int ptn_string_offset_from_value(
