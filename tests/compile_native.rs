@@ -3421,6 +3421,40 @@ fn parser_accepts_function_local_class_declarations() {
 }
 
 #[test]
+fn parser_accepts_function_local_enum_declarations() {
+    let program = parser::parse(
+        "<?php function outer() { enum FunctionLocalEnum { case A; } } \
+         $closure = function () { enum ClosureLocalEnum: string { case B = 'b'; } };",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes.len(), 2);
+    assert_eq!(program.classes[0].name, "FunctionLocalEnum");
+    assert!(program.classes[0].is_enum);
+    assert_eq!(program.classes[1].name, "ClosureLocalEnum");
+    assert!(program.classes[1].is_enum);
+    assert!(program
+        .classes
+        .iter()
+        .all(|class| class.is_conditionally_declared));
+    assert!(matches!(
+        &program.functions[0].body[0],
+        Statement::ClassDeclaration { name, .. } if name == "FunctionLocalEnum"
+    ));
+
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected closure assignment");
+    };
+    let Expr::AnonymousFunction(closure) = value else {
+        panic!("expected anonymous function expression");
+    };
+    assert!(matches!(
+        &closure.body[0],
+        Statement::ClassDeclaration { name, .. } if name == "ClosureLocalEnum"
+    ));
+}
+
+#[test]
 fn parser_accepts_void_return_type_but_not_void_parameters() {
     let program = parser::parse("<?php function test(): void { return; } test();").unwrap();
     assert_eq!(program.functions[0].return_type, Some(TypeHint::Void));
@@ -21615,6 +21649,68 @@ var_dump(in_array('ClosureLocalClass', get_declared_classes()));
     assert!(c_source.contains("ptn_declared_class_exists"));
     assert!(c_source.contains("ptn_declared_runtime_interface_exists"));
     assert!(c_source.contains("ptn_declared_user_classes"));
+}
+
+#[test]
+fn compile_autoload_declares_function_local_enum_to_native_binary() {
+    let root = temp_dir("ptn-native-autoload-function-local-enum");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoload-function-local-enum.php");
+    let output = root.join("autoload-function-local-enum-bin");
+    fs::write(
+        &input,
+        "<?php
+enum Foo {
+    case Bar;
+}
+
+class Baz {}
+
+spl_autoload_register(function ($className) {
+    echo \"Triggered autoloader with class $className\\n\";
+
+    if ($className === 'Quux') {
+        enum Quux {}
+    }
+});
+
+var_dump(enum_exists(Foo::class));
+var_dump(enum_exists(Foo::Bar::class));
+var_dump(enum_exists(Baz::class));
+var_dump(enum_exists(Qux::class));
+var_dump(enum_exists(Quux::class, false));
+var_dump(enum_exists(Quux::class, true));
+var_dump(enum_exists(Quuz::class, false));
+var_dump(enum_exists(Quuz::class, true));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "Triggered autoloader with class Qux\n",
+            "bool(false)\n",
+            "bool(false)\n",
+            "Triggered autoloader with class Quux\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "Triggered autoloader with class Quuz\n",
+            "bool(false)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_enum_exists"));
+    assert!(c_source.contains("ptn_declared_runtime_class_exists"));
 }
 
 #[test]

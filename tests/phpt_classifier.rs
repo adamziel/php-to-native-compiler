@@ -2322,6 +2322,7 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
         "Zend/tests/attributes/deprecated/error_on_enum.phpt",
         "Zend/tests/attributes/override/014.phpt",
         "Zend/tests/attributes/override/015.phpt",
+        "Zend/tests/enum/enum_exists.phpt",
         "ext/reflection/tests/ReflectionClassConstant_isEnumCase.phpt",
         "ext/reflection/tests/ReflectionClass_isEnum.phpt",
         "ext/spl/tests/ArrayObject/ArrayObject_enum.phpt",

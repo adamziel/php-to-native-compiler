@@ -3289,6 +3289,7 @@ static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *na
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
 static int ptn_declared_class_is_enum(const char *name);
+static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
@@ -80250,6 +80251,7 @@ static int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *na
 static int ptn_declared_runtime_interface_exists(PtnRuntime *runtime, const char *name);
 static int ptn_declared_user_class_or_interface_exists(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
+static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
 static const char *ptn_declared_class_enum_backing_type_name(const char *name);
 static int ptn_declared_class_is_abstract(const char *name);
 static int ptn_declared_class_is_final(const char *name);
@@ -80345,6 +80347,7 @@ static PtnValue ptn_internal_date_timezone_set(PtnRuntime *runtime, size_t argc,
 static PtnValue ptn_internal_datetimezone_list_abbreviations(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_datetimezone_list_identifiers(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_defined(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_enum_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_forward_static_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_function_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_called_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -80681,6 +80684,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "disk_total_space", 1, 1, ptn_internal_disk_total_space },
         { "diskfreespace", 1, 1, ptn_internal_diskfreespace },
         { "doubleval", 1, 1, ptn_internal_floatval },
+        { "enum_exists", 1, 2, ptn_internal_enum_exists },
         { "end", 1, 1, ptn_internal_end },
         { "error_log", 1, 4, ptn_internal_error_log },
         { "error_reporting", 0, 1, ptn_internal_error_reporting },
@@ -81483,6 +81487,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "constant") ||
         ptn_ascii_case_equal(name, "define") ||
         ptn_ascii_case_equal(name, "defined") ||
+        ptn_ascii_case_equal(name, "enum_exists") ||
         ptn_ascii_case_equal(name, "extension_loaded") ||
         ptn_ascii_case_equal(name, "function_exists") ||
         ptn_ascii_case_equal(name, "gc_collect_cycles") ||
@@ -105550,6 +105555,40 @@ static PtnValue ptn_internal_class_exists(PtnRuntime *runtime, size_t argc, cons
     } else {
         const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
         exists = ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_internal_class_exists_name(resolved_name);
+    }
+    free(name);
+    return ptn_bool(exists);
+}
+
+static int ptn_runtime_enum_exists(PtnRuntime *runtime, const char *class_name) {
+    const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    if (ptn_declared_runtime_class_is_enum(runtime, resolved_name)) {
+        return 1;
+    }
+    if (ptn_declared_runtime_class_exists(runtime, resolved_name) || ptn_internal_class_exists_name(resolved_name)) {
+        return 0;
+    }
+    ptn_runtime_autoload_class(runtime, resolved_name, runtime->call_site_line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    resolved_name = ptn_runtime_resolve_class_alias(runtime, class_name);
+    return ptn_declared_runtime_class_is_enum(runtime, resolved_name);
+}
+
+static PtnValue ptn_internal_enum_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    char *name = ptn_value_to_string(args[0]);
+    const char *lookup_name = ptn_symbol_name_without_leading_slash(name);
+    int autoload = argc < 2 || ptn_is_truthy(args[1]);
+    int exists;
+    if (autoload) {
+        size_t previous_call_site_line = runtime->call_site_line;
+        runtime->call_site_line = line;
+        exists = ptn_runtime_enum_exists(runtime, lookup_name);
+        runtime->call_site_line = previous_call_site_line;
+    } else {
+        const char *resolved_name = ptn_runtime_resolve_class_alias(runtime, lookup_name);
+        exists = ptn_declared_runtime_class_is_enum(runtime, resolved_name);
     }
     free(name);
     return ptn_bool(exists);

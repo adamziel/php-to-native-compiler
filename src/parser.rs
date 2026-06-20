@@ -3872,6 +3872,9 @@ impl Parser<'_> {
             }
             TokenKind::LeftBrace => self.parse_compound_block(),
             TokenKind::PlusPlus | TokenKind::MinusMinus => self.parse_prefix_increment_statement(),
+            TokenKind::Identifier(ref name) if name.eq_ignore_ascii_case("enum") => {
+                self.parse_local_enum_decl_statement(attributes)
+            }
             _ if self.peek_starts_class_decl() => self.parse_local_class_decl_statement(attributes),
             TokenKind::Identifier(ref name) if is_unsupported_class_like_declaration(name) => {
                 self.reject_unsupported_class_like_declaration()
@@ -3944,6 +3947,29 @@ impl Parser<'_> {
             ));
         }
         let mut class = self.parse_class_decl(attributes)?;
+        class.is_conditionally_declared = self.block_depth != 0 || self.function_depth != 0;
+        let name = class.name.clone();
+        let span = class.span;
+        let source = self
+            .source
+            .get(span.byte_start..span.byte_end)
+            .unwrap_or("")
+            .to_string();
+        self.anonymous_classes.push(class);
+        Ok(Statement::ClassDeclaration { name, source, span })
+    }
+
+    fn parse_local_enum_decl_statement(
+        &mut self,
+        attributes: ParsedAttributes,
+    ) -> Result<Statement> {
+        if self.method_depth != 0 {
+            return Err(Diagnostic::new(
+                "Class declarations may not be nested",
+                Some(self.peek().span),
+            ));
+        }
+        let mut class = self.parse_enum_decl(attributes)?;
         class.is_conditionally_declared = self.block_depth != 0 || self.function_depth != 0;
         let name = class.name.clone();
         let span = class.span;
@@ -19263,6 +19289,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "forward_static_call"
             | "class_alias"
             | "class_exists"
+            | "enum_exists"
             | "class_implements"
             | "class_parents"
             | "class_uses"

@@ -5703,6 +5703,30 @@ fn emit_class_metadata_helpers(
     out.push_str("    return 0;\n");
     out.push_str("}\n");
 
+    out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name) {\n");
+    for (index, class) in classes
+        .iter()
+        .enumerate()
+        .filter(|(_, class)| class.is_enum)
+    {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        out.push_str("        return ptn_declared_runtime_class_slot_available(runtime, ");
+        out.push_str(&index.to_string());
+        out.push_str(");\n");
+        out.push_str("    }\n");
+    }
+    for class_name in BUILTIN_ENUM_CLASS_NAMES {
+        out.push_str("    if (ptn_ascii_case_equal(name, \"");
+        out.push_str(&c_string(class_name));
+        out.push_str("\")) {\n");
+        out.push_str("        return 1;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
     out.push_str(
         "\nstatic PTN_UNUSED const char *ptn_declared_class_enum_backing_type_name(const char *name) {\n",
     );
