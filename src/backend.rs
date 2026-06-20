@@ -17,9 +17,9 @@ use crate::ir::{
     CompileWarning, CompileWarningKind, DeprecatedMessageDependency, EnumBackingType, FunctionDecl,
     FunctionParameter, IncDecOp, IncDecResult, IncDecTarget, IncludeFile, InstanceOfTarget,
     Instruction, ListAssignmentElement, ListAssignmentElementTarget, ListAssignmentTarget,
-    MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyTypeHint, PropertyTypeKind,
-    PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl, TraitMethodDecl,
-    TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
+    MagicConstantKind, MatchArm as IrMatchArm, Module, PropertyDecl, PropertyTypeHint,
+    PropertyTypeKind, PropertyVisibility, ReferenceTarget, StaticPropertyDecl, TraitDecl,
+    TraitMethodDecl, TraitUseDecl, TypeHint, UnaryOp, ValueExpr,
 };
 
 mod runtime;
@@ -7406,7 +7406,7 @@ fn emit_reflection_attribute_metadata_helpers(
     functions: &[FunctionDecl],
     instructions: &[Instruction],
 ) {
-    emit_declared_class_reflection_attributes(out, classes, functions);
+    emit_declared_class_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_method_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_property_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_constant_reflection_attributes(out, classes, functions);
@@ -7629,13 +7629,14 @@ fn emit_declared_enum_static_method(out: &mut String, classes: &[ClassDecl]) {
 fn emit_declared_class_reflection_attributes(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_attributes(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    (void)class_name;\n");
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     for class in classes {
@@ -7654,6 +7655,27 @@ fn emit_declared_class_reflection_attributes(
             classes,
             functions,
             false,
+            Some(AttributeClassLikeTarget::Class(class)),
+        );
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        if trait_decl.attributes.instances.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        emit_declared_attribute_result(
+            out,
+            "ReflectionClass",
+            "ReflectionClass::getAttributes",
+            &trait_decl.attributes,
+            1,
+            classes,
+            functions,
+            false,
+            Some(AttributeClassLikeTarget::Trait(trait_decl)),
         );
         out.push_str("    }\n");
     }
@@ -7714,6 +7736,7 @@ fn emit_declared_class_method_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -7733,6 +7756,7 @@ fn emit_declared_class_method_reflection_attributes(
                     classes,
                     functions,
                     true,
+                    None,
                 );
                 out.push_str("    }\n");
             }
@@ -7751,6 +7775,7 @@ fn emit_declared_class_method_reflection_attributes(
                     classes,
                     functions,
                     true,
+                    None,
                 );
                 out.push_str("    }\n");
             }
@@ -7775,6 +7800,7 @@ fn emit_declared_class_method_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -7794,6 +7820,7 @@ fn emit_declared_class_method_reflection_attributes(
                     classes,
                     functions,
                     true,
+                    None,
                 );
                 out.push_str("    }\n");
             }
@@ -7812,6 +7839,7 @@ fn emit_declared_class_method_reflection_attributes(
                     classes,
                     functions,
                     true,
+                    None,
                 );
                 out.push_str("    }\n");
             }
@@ -7874,6 +7902,7 @@ fn emit_declared_class_property_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -7895,6 +7924,7 @@ fn emit_declared_class_property_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -7918,6 +7948,7 @@ fn emit_declared_class_property_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -7939,6 +7970,7 @@ fn emit_declared_class_property_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -7986,6 +8018,7 @@ fn emit_declared_class_constant_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -8030,6 +8063,7 @@ fn emit_declared_function_reflection_attributes(
             classes,
             functions,
             false,
+            None,
         );
         out.push_str("    }\n");
     }
@@ -8061,6 +8095,7 @@ fn emit_declared_function_reflection_attributes(
             classes,
             functions,
             false,
+            None,
         );
         out.push_str("    }\n");
     }
@@ -8472,6 +8507,7 @@ fn emit_declared_function_parameter_reflection_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
             out.push_str("    }\n");
         }
@@ -8519,6 +8555,7 @@ fn emit_declared_constant_attributes(
                 classes,
                 functions,
                 false,
+                None,
             );
         }
         out.push_str("    }\n");
@@ -8531,6 +8568,12 @@ enum AttributeConstructorArgumentPlan {
     Default,
     Ordered(Vec<Option<usize>>),
     Error(String),
+}
+
+#[derive(Clone, Copy)]
+enum AttributeClassLikeTarget<'a> {
+    Class(&'a ClassDecl),
+    Trait(&'a TraitDecl),
 }
 
 fn internal_attribute_constructor_parameters(name: &str) -> Option<&'static [&'static str]> {
@@ -8650,6 +8693,7 @@ fn emit_declared_attribute_result(
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
     property_hook_context: bool,
+    class_like_target: Option<AttributeClassLikeTarget<'_>>,
 ) {
     out.push_str("        PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("        int64_t index = 0;\n");
@@ -8685,6 +8729,10 @@ fn emit_declared_attribute_result(
                 } else {
                     None
                 }
+            })
+            .or_else(|| {
+                class_like_target
+                    .and_then(|target| delayed_builtin_attribute_target_error(instance, target))
             });
         if property_hook_context && instance.name.eq_ignore_ascii_case("NoDiscard") {
             constructor_error =
@@ -8817,6 +8865,94 @@ fn c_attribute_source_file(instance: &crate::ast::AttributeInstance) -> String {
         "NULL".to_string()
     } else {
         format!("\"{}\"", c_string(&instance.source_file))
+    }
+}
+
+fn delayed_builtin_attribute_target_error(
+    instance: &crate::ast::AttributeInstance,
+    target: AttributeClassLikeTarget<'_>,
+) -> Option<String> {
+    if !instance.name.eq_ignore_ascii_case("Attribute")
+        && !instance.name.eq_ignore_ascii_case("AllowDynamicProperties")
+        && !instance.name.eq_ignore_ascii_case("Deprecated")
+    {
+        return None;
+    }
+
+    match target {
+        AttributeClassLikeTarget::Trait(trait_decl) => {
+            if instance.name.eq_ignore_ascii_case("Attribute")
+                || instance.name.eq_ignore_ascii_case("AllowDynamicProperties")
+            {
+                Some(format!(
+                    "Cannot apply #[\\{}] to trait {}",
+                    instance.name, trait_decl.name
+                ))
+            } else {
+                None
+            }
+        }
+        AttributeClassLikeTarget::Class(class) => {
+            if instance.name.eq_ignore_ascii_case("Attribute") {
+                if class.is_enum {
+                    return Some(format!(
+                        "Cannot apply #[\\Attribute] to enum {}",
+                        class.name
+                    ));
+                }
+                if class.is_interface {
+                    return Some(format!(
+                        "Cannot apply #[\\Attribute] to interface {}",
+                        class.name
+                    ));
+                }
+                if class.is_abstract {
+                    return Some(format!(
+                        "Cannot apply #[\\Attribute] to abstract class {}",
+                        class.name
+                    ));
+                }
+            }
+            if instance.name.eq_ignore_ascii_case("AllowDynamicProperties") {
+                if class.is_enum {
+                    return Some(format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to enum {}",
+                        class.name
+                    ));
+                }
+                if class.is_interface {
+                    return Some(format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to interface {}",
+                        class.name
+                    ));
+                }
+                if class.is_readonly {
+                    return Some(format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to readonly class {}",
+                        class.name
+                    ));
+                }
+            }
+            if instance.name.eq_ignore_ascii_case("Deprecated") {
+                if class.is_enum {
+                    return Some(format!(
+                        "Cannot apply #[\\Deprecated] to enum {}",
+                        class.name
+                    ));
+                }
+                if class.is_interface {
+                    return Some(format!(
+                        "Cannot apply #[\\Deprecated] to interface {}",
+                        class.name
+                    ));
+                }
+                return Some(format!(
+                    "Cannot apply #[\\Deprecated] to class {}",
+                    class.name
+                ));
+            }
+            None
+        }
     }
 }
 
@@ -9913,6 +10049,14 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
         emit_reflection_class_to_string_runtime(out, class, classes, functions);
+        out.push_str("        return ptn_owned_string(ptn_reflection_buffer.data);\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        emit_reflection_trait_to_string_runtime(out, trait_decl);
         out.push_str("        return ptn_owned_string(ptn_reflection_buffer.data);\n");
         out.push_str("    }\n");
     }
@@ -11179,6 +11323,15 @@ fn emit_reflection_class_to_string_runtime(
     out.push_str("\");\n");
 }
 
+fn emit_reflection_trait_to_string_runtime(out: &mut String, trait_decl: &TraitDecl) {
+    let text = reflection_trait_to_string(trait_decl);
+    out.push_str("        PtnStringBuffer ptn_reflection_buffer;\n");
+    out.push_str("        ptn_string_buffer_init(&ptn_reflection_buffer);\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&text));
+    out.push_str("\");\n");
+}
+
 fn emit_reflection_enum_to_string_runtime(
     out: &mut String,
     class: &ClassDecl,
@@ -11300,6 +11453,9 @@ fn reflection_enum_cases_to_string(class: &ClassDecl) -> String {
         .iter()
         .filter(|constant| constant.is_enum_case)
         .collect::<Vec<_>>();
+    if enum_cases.is_empty() {
+        return String::new();
+    }
     let mut out = String::new();
     out.push_str("  - Enum cases [");
     out.push_str(&enum_cases.len().to_string());
@@ -11326,6 +11482,49 @@ fn reflection_enum_case_backing_to_string(constant: &ClassConstantDecl) -> Optio
     }
 }
 
+fn reflection_trait_to_string(trait_decl: &TraitDecl) -> String {
+    let mut out = String::new();
+    out.push_str("Trait [ <user> trait ");
+    out.push_str(&trait_decl.name);
+    out.push_str(" ] {\n");
+    out.push_str("  @@ ");
+    out.push_str(&trait_decl.source_file);
+    out.push(' ');
+    out.push_str(&trait_decl.line.to_string());
+    out.push('-');
+    out.push_str(&trait_decl.end_line.to_string());
+    out.push_str("\n\n");
+    out.push_str("  - Constants [0] {\n");
+    out.push_str("  }\n\n");
+    reflection_class_properties_to_string(
+        &mut out,
+        "Static properties",
+        &trait_decl.static_properties,
+    );
+    reflection_trait_methods_to_string(
+        &mut out,
+        "Static methods",
+        &trait_decl
+            .methods
+            .iter()
+            .filter(|method| method.is_static)
+            .collect::<Vec<_>>(),
+    );
+    out.push('\n');
+    reflection_class_properties_to_string(&mut out, "Properties", &trait_decl.properties);
+    reflection_trait_methods_to_string(
+        &mut out,
+        "Methods",
+        &trait_decl
+            .methods
+            .iter()
+            .filter(|method| !method.is_static)
+            .collect::<Vec<_>>(),
+    );
+    out.push_str("}\n");
+    out
+}
+
 fn reflection_class_to_string_header(class: &ClassDecl) -> String {
     let mut out = String::new();
     out.push_str(if class.is_interface {
@@ -11341,6 +11540,9 @@ fn reflection_class_to_string_header(class: &ClassDecl) -> String {
     }
     if class.is_final {
         out.push_str("final ");
+    }
+    if class.is_readonly {
+        out.push_str("readonly ");
     }
     out.push_str(if class.is_interface {
         "interface "
@@ -11560,6 +11762,39 @@ fn reflection_user_method_entry_to_string(
     out.push_str("    }\n");
 }
 
+fn reflection_trait_methods_to_string(out: &mut String, label: &str, methods: &[&TraitMethodDecl]) {
+    out.push_str("  - ");
+    out.push_str(label);
+    out.push_str(" [");
+    out.push_str(&methods.len().to_string());
+    out.push_str("] {\n");
+    for (index, method) in methods.iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        out.push_str("    Method [ <user> ");
+        out.push_str(method_visibility_name(method.visibility));
+        if method.is_static {
+            out.push_str(" static");
+        }
+        if method.is_abstract {
+            out.push_str(" abstract");
+        }
+        out.push_str(" method ");
+        out.push_str(&method.name);
+        out.push_str(" ] {\n");
+        out.push_str("      @@ %s ");
+        out.push_str(&method.line.to_string());
+        out.push_str(" - ");
+        out.push_str(&method.line.to_string());
+        out.push_str("\n\n");
+        out.push_str("      - Parameters [0] {\n");
+        out.push_str("      }\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("  }\n");
+}
+
 trait ReflectionPropertySummary {
     fn reflection_name(&self) -> &str;
     fn reflection_visibility(&self) -> PropertyVisibility;
@@ -11637,6 +11872,68 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
 
     fn reflection_has_default(&self) -> bool {
         self.has_default
+    }
+}
+
+impl ReflectionPropertySummary for PropertyDecl {
+    fn reflection_name(&self) -> &str {
+        &self.name
+    }
+
+    fn reflection_visibility(&self) -> PropertyVisibility {
+        self.visibility
+    }
+
+    fn reflection_set_visibility(&self) -> PropertyVisibility {
+        self.set_visibility
+    }
+
+    fn reflection_is_static(&self) -> bool {
+        false
+    }
+
+    fn reflection_is_final(&self) -> bool {
+        self.is_final
+    }
+
+    fn reflection_is_abstract(&self) -> bool {
+        self.is_abstract
+    }
+
+    fn reflection_is_virtual(&self) -> bool {
+        self.is_virtual
+    }
+
+    fn reflection_has_hooks(&self) -> bool {
+        self.has_hooks
+    }
+
+    fn reflection_hook_has_get(&self) -> bool {
+        self.hook_has_get
+    }
+
+    fn reflection_hook_has_set(&self) -> bool {
+        self.hook_has_set
+    }
+
+    fn reflection_hook_get_is_abstract(&self) -> bool {
+        self.hook_get_is_abstract
+    }
+
+    fn reflection_hook_set_is_abstract(&self) -> bool {
+        self.hook_set_is_abstract
+    }
+
+    fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
+        self.type_hint.as_ref()
+    }
+
+    fn reflection_value(&self) -> Option<&ValueExpr> {
+        self.value.as_ref()
+    }
+
+    fn reflection_has_default(&self) -> bool {
+        self.value.is_some() || self.type_hint.is_none()
     }
 }
 

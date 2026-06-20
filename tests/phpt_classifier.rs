@@ -1047,6 +1047,18 @@ fn phpt_classifier_keeps_supported_attribute_metadata_rows_runnable_by_path() {
             "--TEST--\ndelayed target validation\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[AllowDynamicProperties]\nclass Bag {}\nvar_dump((new ReflectionClass(Bag::class))->getAttributes()[1]->newInstance());\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/attributes/delayed_target_validation/validator_AllowDynamicProperties.phpt",
+            "--TEST--\ndelayed target validation allow dynamic properties\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[AllowDynamicProperties]\nenum DemoEnum {}\nvar_dump((new ReflectionClass(DemoEnum::class))->getAttributes()[1]->newInstance());\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/validator_Attribute.phpt",
+            "--TEST--\ndelayed target validation attribute\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[Attribute]\nenum DemoEnum {}\nvar_dump((new ReflectionClass(DemoEnum::class))->getAttributes()[1]->newInstance());\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/attributes/delayed_target_validation/validator_Deprecated.phpt",
+            "--TEST--\ndelayed target validation deprecated\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[Deprecated]\nenum DemoEnum {}\nvar_dump((new ReflectionClass(DemoEnum::class))->getAttributes()[1]->newInstance());\n--EXPECTF--\n",
+        ),
+        (
             "Zend/tests/attributes/delayed_target_validation/no_compile_errors.phpt",
             "--TEST--\ndelayed target validation no compile errors\n--FILE--\n<?php\nclass Demo { public string $hooked { #[DelayedTargetValidation] #[Attribute] get => $this->hooked; #[DelayedTargetValidation] #[Attribute] set => $value; } }\necho \"ok\\n\";\n--EXPECT--\nok\n",
         ),
@@ -2240,6 +2252,9 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
     for path in [
         "Zend/tests/attributes/Attribute/Attribute_on_enum.phpt",
         "Zend/tests/attributes/allow_dynamic_properties_on_enum.phpt",
+        "Zend/tests/attributes/delayed_target_validation/validator_AllowDynamicProperties.phpt",
+        "Zend/tests/attributes/delayed_target_validation/validator_Attribute.phpt",
+        "Zend/tests/attributes/delayed_target_validation/validator_Deprecated.phpt",
         "Zend/tests/attributes/deprecated/class_constants/101.phpt",
         "Zend/tests/attributes/deprecated/error_on_enum.phpt",
         "Zend/tests/attributes/override/014.phpt",
@@ -2254,15 +2269,6 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
             "{path}: {classification:?}"
         );
     }
-
-    let delayed = classify_at_relative_path(
-        enum_row,
-        "Zend/tests/attributes/delayed_target_validation/validator_Attribute.phpt",
-    );
-    assert!(
-        delayed.starts_with("unsupported-enum-metadata\t"),
-        "{delayed:?}"
-    );
 }
 
 #[test]

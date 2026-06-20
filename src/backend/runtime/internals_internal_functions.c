@@ -79441,7 +79441,8 @@ static PtnValue ptn_reflection_class_get_attributes(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
-    if (ptn_declared_user_class_or_interface_exists(class_name)) {
+    if (ptn_declared_user_class_or_interface_exists(class_name) ||
+        ptn_declared_trait_exists(class_name)) {
         return ptn_declared_class_reflection_attributes(runtime, class_name, argc, args, line);
     }
     if (!ptn_internal_class_name_is_attribute(class_name)) {

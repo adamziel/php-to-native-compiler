@@ -23476,6 +23476,61 @@ var_dump(in_array(\"Attribute\", get_declared_classes()));
 }
 
 #[test]
+fn compile_trait_class_reflection_attributes_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-class-attributes");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-class-attributes.php");
+    let output = root.join("trait-class-attributes-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute(Attribute::TARGET_CLASS)]
+class Marker {
+    public function __construct(public string $label) {}
+}
+
+#[Marker('trait')]
+trait TMarker {}
+
+$attributes = (new ReflectionClass(TMarker::class))->getAttributes();
+echo count($attributes), \"\\n\";
+echo $attributes[0]->getName(), \"\\n\";
+var_dump($attributes[0]->getArguments());
+$instance = $attributes[0]->newInstance();
+echo get_class($instance), ':', $instance->label, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "1\n",
+            "Marker\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(5) \"trait\"\n",
+            "}\n",
+            "Marker:trait\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_reflection_attributes"));
+    assert!(c_source.contains("ptn_declared_trait_exists(class_name)"));
+}
+
+#[test]
 fn compile_trait_property_attributes_are_visible_to_reflection_to_native_binary() {
     let root = temp_dir("ptn-native-trait-property-attributes");
     fs::create_dir_all(&root).unwrap();
