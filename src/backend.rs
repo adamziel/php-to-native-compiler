@@ -82,6 +82,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "Uri\\Rfc3986\\UriType",
     "Uri\\UriComparisonMode",
     "Uri\\WhatWg\\UrlHostType",
 ];
@@ -5244,6 +5245,7 @@ fn emit_class_metadata_helpers(
         "XMLWriter",
         "XMLParser",
         "Uri\\Rfc3986\\Uri",
+        "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
         "Uri\\UriComparisonMode",
         "Uri\\WhatWg\\UrlHostType",
@@ -5706,6 +5708,7 @@ fn emit_class_metadata_helpers(
         "XMLWriter",
         "XMLParser",
         "Uri\\Rfc3986\\Uri",
+        "Uri\\Rfc3986\\UriType",
         "Uri\\WhatWg\\Url",
         "Uri\\UriComparisonMode",
         "Uri\\WhatWg\\UrlHostType",
@@ -13459,6 +13462,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
                 "fiber" => Some("Fiber"),
                 "xmlwriter" => Some("XMLWriter"),
                 "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
+                "uri\\rfc3986\\uritype" => Some("Uri\\Rfc3986\\UriType"),
                 "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
                 "uri\\uricomparisonmode" => Some("Uri\\UriComparisonMode"),
                 "uri\\whatwg\\urlhosttype" => Some("Uri\\WhatWg\\UrlHostType"),
@@ -20840,6 +20844,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("XMLWriter")
                 || class_name.eq_ignore_ascii_case("XMLParser")
                 || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\Uri")
+                || class_name.eq_ignore_ascii_case("Uri\\Rfc3986\\UriType")
                 || is_uri_whatwg_url_class_name(class_name)
                 || class_name.eq_ignore_ascii_case("Uri\\UriComparisonMode")
                 || class_name.eq_ignore_ascii_case("Uri\\WhatWg\\UrlHostType")

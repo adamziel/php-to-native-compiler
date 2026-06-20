@@ -19931,6 +19931,23 @@ static PtnValue ptn_uri_whatwg_host_type_value(PtnRuntime *runtime, const PtnUri
         : ptn_enum_case(runtime, "Uri\\WhatWg\\UrlHostType", case_name);
 }
 
+static const char *ptn_uri_rfc3986_uri_type_case_name(const PtnUriData *data) {
+    if (data->scheme != NULL) {
+        return "Uri";
+    }
+    if (data->authority_present) {
+        return "NetworkPathReference";
+    }
+    if (data->path != NULL && data->path[0] == '/') {
+        return "AbsolutePathReference";
+    }
+    return "RelativePathReference";
+}
+
+static PtnValue ptn_uri_rfc3986_uri_type_value(PtnRuntime *runtime, const PtnUriData *data) {
+    return ptn_enum_case(runtime, "Uri\\Rfc3986\\UriType", ptn_uri_rfc3986_uri_type_case_name(data));
+}
+
 static int ptn_uri_enum_case_is(PtnValue value, const char *class_name, const char *case_name) {
     value = ptn_value_deref(value);
     return value.type == PTN_OBJECT &&
@@ -20873,6 +20890,9 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     }
     if (ptn_ascii_case_equal(name, "toString") || ptn_ascii_case_equal(name, "__toString")) {
         return ptn_uri_to_string_value(data, 1);
+    }
+    if (ptn_ascii_case_equal(name, "getUriType")) {
+        return ptn_uri_rfc3986_uri_type_value(runtime, data);
     }
     if (ptn_ascii_case_equal(name, "getRawScheme")) {
         return ptn_uri_component_property_value(data->scheme);
@@ -73815,6 +73835,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *cla
     return ptn_ascii_case_equal(class_name, "Uri\\Rfc3986\\Uri");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri_type(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Uri\\Rfc3986\\UriType");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\Url");
 }
@@ -73920,6 +73944,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_xml_writer(class_name)
         || ptn_internal_class_name_is_xml_parser(class_name)
         || ptn_internal_class_name_is_uri_rfc3986_uri(class_name)
+        || ptn_internal_class_name_is_uri_rfc3986_uri_type(class_name)
         || ptn_internal_class_name_is_uri_whatwg_url(class_name)
         || ptn_internal_class_name_is_uri_comparison_mode(class_name)
         || ptn_internal_class_name_is_uri_whatwg_url_host_type(class_name)
@@ -75144,6 +75169,7 @@ static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "toRawString")
         || ptn_ascii_case_equal(method_name, "toString")
         || ptn_ascii_case_equal(method_name, "equals")
+        || ptn_ascii_case_equal(method_name, "getUriType")
         || ptn_ascii_case_equal(method_name, "getRawScheme")
         || ptn_ascii_case_equal(method_name, "getScheme")
         || ptn_ascii_case_equal(method_name, "getRawUserInfo")
@@ -76677,6 +76703,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "toRawString",
             "toString",
             "equals",
+            "getUriType",
             "getRawScheme",
             "getScheme",
             "getRawUserInfo",
