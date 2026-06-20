@@ -7923,6 +7923,15 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
     size_t depth
 );
 
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_traversable_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    const char *path,
+    size_t line,
+    size_t depth
+);
+
 static PTN_UNUSED void ptn_iteratoraggregate_invalid_result_throw(
     PtnRuntime *runtime,
     PtnObject *object,
@@ -8029,6 +8038,107 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_from_traversable_object(
         ptn_object_has_iterator_method(runtime, value.as.object, "next")
     ) {
         return ptn_array_iterator_from_protocol_iterator(runtime, value, access_scope, line);
+    }
+
+    return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope, line);
+}
+
+static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_traversable_object(
+    PtnRuntime *runtime,
+    PtnValue value,
+    const char *access_scope,
+    const char *path,
+    size_t line,
+    size_t depth
+) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_OBJECT) {
+        return ptn_array_iterator_empty();
+    }
+    if (ptn_object_is_generator(value.as.object)) {
+        return ptn_array_iterator_from_generator(runtime, value.as.object, 1, path, line);
+    }
+
+    if (
+        ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate") &&
+        ptn_object_has_iterator_method(runtime, value.as.object, "getIterator")
+    ) {
+        if (depth > 16) {
+            ptn_throw_exception(runtime, "Exception", "IteratorAggregate recursion limit exceeded");
+            return ptn_array_iterator_empty();
+        }
+        PtnValue result = runtime->method_dispatch(runtime, value, "getIterator", 0, NULL, line);
+        if (runtime != NULL && runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&result);
+            ptn_rethrow_exception(runtime);
+            return ptn_array_iterator_empty();
+        }
+        PtnValue resolved = ptn_value_deref(result);
+        PtnArrayIterator iterator = ptn_array_iterator_empty();
+        if (resolved.type == PTN_OBJECT && ptn_object_is_generator(resolved.as.object)) {
+            iterator = ptn_array_iterator_from_generator(runtime, resolved.as.object, 1, path, line);
+        } else if (
+            resolved.type == PTN_OBJECT &&
+            ptn_object_implements_builtin_interface(resolved.as.object, "IteratorAggregate")
+        ) {
+            iterator = ptn_array_iterator_by_ref_from_traversable_object(
+                runtime,
+                resolved,
+                access_scope,
+                path,
+                line,
+                depth + 1
+            );
+        } else if (
+            resolved.type == PTN_OBJECT &&
+            ptn_object_implements_builtin_interface(resolved.as.object, "Iterator") &&
+            ptn_object_supports_foreach_by_reference(resolved.as.object)
+        ) {
+            iterator = ptn_array_iterator_from_traversable_object(
+                runtime,
+                resolved,
+                access_scope,
+                path,
+                line,
+                depth + 1
+            );
+        } else if (
+            resolved.type == PTN_OBJECT &&
+            ptn_object_implements_builtin_interface(resolved.as.object, "Iterator")
+        ) {
+            ptn_throw_exception_at(
+                runtime,
+                "Error",
+                "An iterator cannot be used with foreach by reference",
+                path,
+                line
+            );
+        } else {
+            ptn_iteratoraggregate_invalid_result_throw(runtime, value.as.object, path, line);
+        }
+        ptn_value_destroy(&result);
+        return iterator;
+    }
+
+    if (
+        ptn_object_implements_builtin_interface(value.as.object, "Iterator") &&
+        ptn_object_supports_foreach_by_reference(value.as.object)
+    ) {
+        return ptn_array_iterator_from_traversable_object(runtime, value, access_scope, path, line, depth);
+    }
+
+    if (
+        ptn_object_implements_builtin_interface(value.as.object, "Iterator") ||
+        ptn_object_implements_builtin_interface(value.as.object, "IteratorAggregate")
+    ) {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "An iterator cannot be used with foreach by reference",
+            path,
+            line
+        );
+        return ptn_array_iterator_empty();
     }
 
     return ptn_array_iterator_from_object_properties(runtime, value.as.object, access_scope, line);
@@ -8146,10 +8256,20 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_slot(
             );
         }
         if (
-            (
-                ptn_object_implements_builtin_interface(value->as.object, "Iterator") ||
-                ptn_object_implements_builtin_interface(value->as.object, "IteratorAggregate")
-            ) &&
+            ptn_object_implements_builtin_interface(value->as.object, "IteratorAggregate") &&
+            ptn_object_has_iterator_method(runtime, value->as.object, "getIterator")
+        ) {
+            return ptn_array_iterator_by_ref_from_traversable_object(
+                runtime,
+                *value,
+                access_scope,
+                path,
+                line,
+                0
+            );
+        }
+        if (
+            ptn_object_implements_builtin_interface(value->as.object, "Iterator") &&
             !ptn_object_supports_foreach_by_reference(value->as.object)
         ) {
             ptn_throw_exception_at(

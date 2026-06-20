@@ -12760,6 +12760,53 @@ foreach (notice_gen() as $v) {
 }
 
 #[test]
+fn compile_iteratoraggregate_by_reference_generator_foreach_to_native_binary() {
+    let root = temp_dir("ptn-native-iteratoraggregate-generator-by-ref-foreach");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("iteratoraggregate-generator-by-ref-foreach.php");
+    let output = root.join("iteratoraggregate-generator-by-ref-foreach-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class RefAggregate implements IteratorAggregate {
+    private $data;
+
+    public function __construct(array $data) {
+        $this->data = $data;
+    }
+
+    public function &getIterator(): Traversable {
+        foreach ($this->data as $key => &$value) {
+            yield $key => $value;
+        }
+    }
+
+    public function values() {
+        return $this->data;
+    }
+}
+
+$aggregate = new RefAggregate([1, 2, 3]);
+foreach ($aggregate as &$value) {
+    $value *= -1;
+}
+var_dump($aggregate->values());
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(3) {\n  [0]=>\n  int(-1)\n  [1]=>\n  int(-2)\n  [2]=>\n  &int(-3)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_foreach_by_ref_declared_reference_return_to_native_binary() {
     let root = temp_dir("ptn-native-foreach-by-ref-reference-return");
     fs::create_dir_all(&root).unwrap();
