@@ -20160,20 +20160,6 @@ static void ptn_uri_assign_nullable_string(char **slot, const char *value) {
     *slot = value == NULL ? NULL : ptn_uri_duplicate_len(value, strlen(value));
 }
 
-static void ptn_uri_copy_authority(PtnUriData *target, const PtnUriData *source) {
-    target->authority_present = source->authority_present;
-    target->userinfo_present = source->userinfo_present;
-    target->userinfo_colon_present = source->userinfo_colon_present;
-    ptn_uri_assign_nullable_string(&target->username, source->username);
-    ptn_uri_assign_nullable_string(&target->password, source->password);
-    ptn_uri_assign_nullable_string(&target->host, source->host);
-    ptn_uri_assign_nullable_string(&target->unicode_host, source->unicode_host);
-    target->port = source->port;
-    target->port_present = source->port_present;
-    target->port_separator_present = source->port_separator_present;
-    target->host_type = source->host_type;
-}
-
 static char *ptn_uri_merged_relative_path_owned(
     const PtnUriData *base,
     const char *relative_path,
