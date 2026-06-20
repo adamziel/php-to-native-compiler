@@ -3606,6 +3606,9 @@ static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
     if (resource == NULL) {
         return;
     }
+    if (resource->persistent) {
+        return;
+    }
     if (resource->refcount == SIZE_MAX) {
         ptn_abort_out_of_memory();
     }
