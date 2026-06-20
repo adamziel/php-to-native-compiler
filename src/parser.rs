@@ -13005,7 +13005,9 @@ fn validate_method_signature_compatibility(
                     ));
                 }
                 if visibility_rank(method.visibility) > visibility_rank(parent_method.visibility) {
-                    let suffix = if parent_method.visibility == PropertyVisibility::Public {
+                    let (required_class, required_method) =
+                        method_visibility_requirement_source(parent_class, parent_method, classes);
+                    let suffix = if required_method.visibility == PropertyVisibility::Public {
                         ""
                     } else {
                         " or weaker"
@@ -13015,8 +13017,8 @@ fn validate_method_signature_compatibility(
                             "Access level to {}::{}() must be {} (as in class {}){}",
                             class.name,
                             method.name,
-                            property_visibility_name(parent_method.visibility),
-                            parent_class.name,
+                            property_visibility_name(required_method.visibility),
+                            required_class.name,
                             suffix
                         ),
                         Some(method.span),
@@ -13344,6 +13346,39 @@ fn method_requires_parent_signature_compatibility(
     parent_method: &MethodDecl,
 ) -> bool {
     !method.name.eq_ignore_ascii_case("__construct") || parent_method.is_abstract
+}
+
+fn method_visibility_requirement_source<'a>(
+    fallback_class: &'a ClassDecl,
+    fallback_method: &'a MethodDecl,
+    classes: &'a [ClassDecl],
+) -> (&'a ClassDecl, &'a MethodDecl) {
+    if !fallback_method.name.eq_ignore_ascii_case("__construct") {
+        return (fallback_class, fallback_method);
+    }
+
+    let mut result = (fallback_class, fallback_method);
+    let required_visibility = fallback_method.visibility;
+    let mut parent_name = fallback_class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        if let Some(method) = parent.methods.iter().find(|candidate| {
+            candidate.visibility != PropertyVisibility::Private
+                && candidate.name.eq_ignore_ascii_case("__construct")
+                && candidate.visibility == required_visibility
+                && candidate.is_abstract
+        }) {
+            result = (parent, method);
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    result
 }
 
 fn find_visible_parent_method<'a>(

@@ -6436,7 +6436,10 @@ fn emit_class_metadata_helpers(
         "    const char *access_scope = runtime != NULL ? runtime->current_class_name : NULL;\n",
     );
     out.push_str("    int needed;\n");
-    out.push_str("    if (access_scope == NULL) {\n");
+    out.push_str("    int is_constructor = ptn_ascii_case_equal(method_name, \"__construct\");\n");
+    out.push_str("    if (is_constructor) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Cannot call %s %s::%s()\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (access_scope == NULL) {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
     out.push_str("    } else {\n");
     out.push_str("        needed = snprintf(NULL, 0, \"Call to %s method %s::%s() from scope %s\", visibility_name, declaring_class, method_name, access_scope);\n");
@@ -6448,7 +6451,9 @@ fn emit_class_metadata_helpers(
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    if (access_scope == NULL) {\n");
+    out.push_str("    if (is_constructor) {\n");
+    out.push_str("        snprintf(message, (size_t)needed + 1, \"Cannot call %s %s::%s()\", visibility_name, declaring_class, method_name);\n");
+    out.push_str("    } else if (access_scope == NULL) {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from global scope\", visibility_name, declaring_class, method_name);\n");
     out.push_str("    } else {\n");
     out.push_str("        snprintf(message, (size_t)needed + 1, \"Call to %s method %s::%s() from scope %s\", visibility_name, declaring_class, method_name, access_scope);\n");
@@ -11991,10 +11996,13 @@ fn emit_class_reflection_metadata_helpers(
     );
     out.push_str("    PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("    int64_t index = 0;\n");
-    if classes
-        .iter()
-        .all(|class| class_interface_lookup_chain(class, classes).is_empty())
-    {
+    if classes.iter().all(|class| {
+        let has_to_string = class
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case("__toString"));
+        class_interface_lookup_chain(class, classes).is_empty() && !class.is_enum && !has_to_string
+    }) {
         out.push_str("    (void)runtime;\n");
         out.push_str("    (void)class_name;\n");
         out.push_str("    (void)objects;\n");
@@ -12002,12 +12010,47 @@ fn emit_class_reflection_metadata_helpers(
     }
     for class in classes {
         let interfaces = class_interface_lookup_chain(class, classes);
-        if interfaces.is_empty() {
+        let has_to_string = class
+            .methods
+            .iter()
+            .any(|method| method.name.eq_ignore_ascii_case("__toString"));
+        if interfaces.is_empty() && !class.is_enum && !has_to_string {
             continue;
         }
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if has_to_string
+            && !interfaces
+                .iter()
+                .any(|interface| interface.eq_ignore_ascii_case("Stringable"))
+        {
+            out.push_str("        if (objects) {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"Stringable\"), ptn_reflection_class_object_from_name(runtime, \"Stringable\"));\n");
+            out.push_str("        } else {\n");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"Stringable\"));\n",
+            );
+            out.push_str("        }\n");
+        }
+        if class.is_enum {
+            out.push_str("        if (objects) {\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"UnitEnum\"), ptn_reflection_class_object_from_name(runtime, \"UnitEnum\"));\n");
+            out.push_str("        } else {\n");
+            out.push_str(
+                "            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"UnitEnum\"));\n",
+            );
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (objects) {\n");
+                out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_string_key(\"BackedEnum\"), ptn_reflection_class_object_from_name(runtime, \"BackedEnum\"));\n");
+                out.push_str("        } else {\n");
+                out.push_str(
+                    "            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_string(\"BackedEnum\"));\n",
+                );
+                out.push_str("        }\n");
+            }
+        }
         for interface in interfaces {
             out.push_str("        if (objects) {\n");
             out.push_str(

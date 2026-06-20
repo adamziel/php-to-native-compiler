@@ -7975,6 +7975,30 @@ fn parser_accepts_declared_non_public_method_metadata() {
 }
 
 #[test]
+fn parser_reports_inherited_abstract_constructor_visibility_source() {
+    let error = parser::parse(
+        "<?php
+abstract class Foo {
+    abstract public function __construct();
+}
+class Bar extends Foo {
+    public function __construct() {}
+}
+class Baz extends Bar {
+    protected function __construct() {}
+}
+",
+    )
+    .unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "Access level to Baz::__construct() must be public (as in class Foo)"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+}
+
+#[test]
 fn parser_rejects_static_magic_invoke_methods() {
     let error = parser::parse("<?php class Invokable { public static function __invoke() {} }")
         .unwrap_err();
@@ -20193,7 +20217,7 @@ try {
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "ctor:inside\nCall to private method Hidden::__construct() from global scope\n"
+        "ctor:inside\nCall to private Hidden::__construct() from global scope\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
@@ -21080,6 +21104,7 @@ dump_assoc(class_uses(\"WorkerList\"));
 dump_assoc(class_uses(new WorkerList()));
 dump_assoc(class_uses(\"BaseList\"));
 dump_assoc(class_implements(new StringBox()));
+dump_assoc((new ReflectionClass(\"StringBox\"))->getInterfaceNames());
 dump_assoc((new ReflectionClass(\"IOrder7\"))->getInterfaceNames());
 dump_assoc((new ReflectionClass(\"InterfaceOrderSubject\"))->getInterfaceNames());
 var_dump(in_array(\"WorkerList\", get_declared_classes()));
@@ -21125,6 +21150,7 @@ try {
             "ListedTrait=ListedTrait|\n",
             "\n",
             "Stringable=Stringable|\n",
+            "0=Stringable|\n",
             "0=IOrder6|1=IOrder4|2=IOrder3|3=IOrder2|4=IOrder1|5=IOrder5|\n",
             "0=IOrder7|1=IOrder5|2=IOrder1|3=IOrder2|4=IOrder3|5=IOrder4|6=IOrder6|\n",
             "bool(true)\n",
