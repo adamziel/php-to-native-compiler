@@ -24423,6 +24423,70 @@ try {
 }
 
 #[test]
+fn compile_reflection_attribute_validation_errors_include_new_instance_frame_without_leak() {
+    let root = temp_dir("ptn-native-reflection-attribute-validation-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-attribute-validation-frame.php");
+    let output = root.join("reflection-attribute-validation-frame-bin");
+    fs::write(
+        &input,
+        r#"<?php
+#[Attribute(Attribute::TARGET_CLASS)]
+class RepeatMe {}
+
+#[RepeatMe]
+#[RepeatMe]
+class RepeatedSubject {}
+
+try {
+    (new ReflectionClass(RepeatedSubject::class))->getAttributes()[0]->newInstance();
+} catch (Error $e) {
+    echo $e->getMessage(), "\n";
+    echo strpos($e->getTraceAsString(), 'ReflectionAttribute->newInstance()') === false ? "trace-missing\n" : "trace-present\n";
+}
+
+echo "runtime-trace-count=", count(debug_backtrace()), "\n";
+
+#[Attribute(Attribute::TARGET_CONSTANT)]
+class ConstantOnly {}
+
+#[ConstantOnly]
+class WrongTarget {}
+
+(new ReflectionClass(WrongTarget::class))->getAttributes()[0]->newInstance();
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Attribute \"RepeatMe\" must not be repeated\n",
+            "trace-present\n",
+            "runtime-trace-count=0\n",
+        )
+    );
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "Fatal error: Uncaught Error: Attribute \"ConstantOnly\" cannot target class (allowed targets: constant)"
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("ReflectionAttribute->newInstance()"),
+        "{stderr}"
+    );
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_attribute_throw_new_instance_error"));
+}
+
+#[test]
 fn compile_internal_attribute_object_readonly_properties_to_native_binary() {
     let root = temp_dir("ptn-native-internal-attribute-readonly");
     fs::create_dir_all(&root).unwrap();

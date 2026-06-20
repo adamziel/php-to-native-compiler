@@ -85339,6 +85339,28 @@ static int ptn_internal_attribute_class_flags(const char *class_name, int *found
     return 0;
 }
 
+static void ptn_reflection_attribute_throw_new_instance_error(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *message,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    ptn_throw_exception_owned_message_at_with_trace_frame(
+        runtime,
+        class_name,
+        ptn_duplicate_string(message),
+        runtime->source_path,
+        line,
+        "ReflectionAttribute->newInstance",
+        runtime->source_path,
+        line,
+        argc,
+        args
+    );
+}
+
 static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -85398,26 +85420,15 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }
-        const char *frame_source_path = runtime->source_path;
-        PtnTraceFrame new_instance_trace_frame;
-        ptn_runtime_push_trace_frame(
-            runtime,
-            &new_instance_trace_frame,
-            "ReflectionAttribute->newInstance",
-            frame_source_path,
-            line,
-            argc,
-            args
-        );
-        new_instance_trace_frame.has_receiver = 1;
-        new_instance_trace_frame.receiver = receiver;
         if (data->arguments_error_message != NULL) {
-            ptn_throw_exception(
+            ptn_reflection_attribute_throw_new_instance_error(
                 runtime,
                 data->arguments_error_class == NULL ? "Error" : data->arguments_error_class,
-                data->arguments_error_message
+                data->arguments_error_message,
+                argc,
+                args,
+                line
             );
-            ptn_runtime_pop_trace_frame(runtime, &new_instance_trace_frame);
             return ptn_null();
         }
         int attribute_class_found = 0;
@@ -85447,17 +85458,25 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "Error", message);
-            ptn_runtime_pop_trace_frame(runtime, &new_instance_trace_frame);
+            ptn_reflection_attribute_throw_new_instance_error(
+                runtime,
+                "Error",
+                message,
+                argc,
+                args,
+                line
+            );
             return ptn_null();
         }
         if (attribute_flags_error_message != NULL) {
-            ptn_throw_exception(
+            ptn_reflection_attribute_throw_new_instance_error(
                 runtime,
                 attribute_flags_error_class == NULL ? "Error" : attribute_flags_error_class,
-                attribute_flags_error_message
+                attribute_flags_error_message,
+                argc,
+                args,
+                line
             );
-            ptn_runtime_pop_trace_frame(runtime, &new_instance_trace_frame);
             return ptn_null();
         }
         if (attribute_flags == 0) {
@@ -85466,8 +85485,14 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "Error", message);
-            ptn_runtime_pop_trace_frame(runtime, &new_instance_trace_frame);
+            ptn_reflection_attribute_throw_new_instance_error(
+                runtime,
+                "Error",
+                message,
+                argc,
+                args,
+                line
+            );
             return ptn_null();
         }
         if ((attribute_flags & data->target) == 0) {
@@ -85485,8 +85510,14 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "Error", message);
-            ptn_runtime_pop_trace_frame(runtime, &new_instance_trace_frame);
+            ptn_reflection_attribute_throw_new_instance_error(
+                runtime,
+                "Error",
+                message,
+                argc,
+                args,
+                line
+            );
             return ptn_null();
         }
         if (data->is_repeated && (attribute_flags & 128) == 0) {
@@ -85495,8 +85526,14 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
             if (written < 0 || (size_t)written >= sizeof(message)) {
                 ptn_abort_out_of_memory();
             }
-            ptn_throw_exception(runtime, "Error", message);
-            ptn_runtime_pop_trace_frame(runtime, &new_instance_trace_frame);
+            ptn_reflection_attribute_throw_new_instance_error(
+                runtime,
+                "Error",
+                message,
+                argc,
+                args,
+                line
+            );
             return ptn_null();
         }
         PtnValue arguments = ptn_value_deref(data->constructor_arguments);
@@ -85511,6 +85548,19 @@ static PTN_UNUSED PtnValue ptn_reflection_attribute_call_method(
                 ctor_args[i] = ptn_value_clone_deref(arguments.as.array->entries[i].value);
             }
         }
+        const char *frame_source_path = runtime->source_path;
+        PtnTraceFrame new_instance_trace_frame;
+        ptn_runtime_push_trace_frame(
+            runtime,
+            &new_instance_trace_frame,
+            "ReflectionAttribute->newInstance",
+            frame_source_path,
+            line,
+            argc,
+            args
+        );
+        new_instance_trace_frame.has_receiver = 1;
+        new_instance_trace_frame.receiver = receiver;
         const char *saved_source_path = runtime->source_path;
         int saved_strict_types = runtime->strict_types;
         int saved_throw_argument_count_errors = runtime->throw_argument_count_errors;
