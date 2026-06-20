@@ -4258,6 +4258,18 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
             return ptn_null();
         }
     }
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    PtnValue internal_xml_value = ptn_null();
+    if (ptn_internal_xml_property_read(
+        runtime,
+        receiver,
+        property,
+        line,
+        &internal_xml_value
+    )) {
+        return internal_xml_value;
+    }
+#endif
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
         receiver.as.object,
