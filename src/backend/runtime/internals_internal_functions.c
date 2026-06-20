@@ -18981,6 +18981,21 @@ static PtnUriData *ptn_uri_data_from_value(PtnValue value) {
     return (PtnUriData *)value.as.object->native_data;
 }
 
+static PTN_UNUSED PtnValue ptn_uri_clone(PtnRuntime *runtime, PtnValue source, size_t line) {
+    (void)line;
+    PtnValue resolved = ptn_value_deref(source);
+    PtnUriData *source_data = ptn_uri_data_from_value(resolved);
+    if (resolved.type != PTN_OBJECT || source_data == NULL) {
+        ptn_throw_exception(runtime, "Error", "Invalid URI object");
+        return ptn_null();
+    }
+    return ptn_uri_object_from_data(
+        runtime,
+        resolved.as.object->class_name,
+        ptn_uri_data_clone(source_data)
+    );
+}
+
 static void ptn_uri_replace_object_data(PtnValue object, PtnUriData *data) {
     if (object.as.object->native_data_free != NULL) {
         object.as.object->native_data_free(object.as.object->native_data);
