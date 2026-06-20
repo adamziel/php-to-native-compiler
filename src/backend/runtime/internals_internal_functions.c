@@ -104030,10 +104030,18 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     if (ptn_ascii_case_equal(name, "rewind")) {
         data->has_cached_valid = 0;
     }
+    if (ptn_ascii_case_equal(name, "current")) {
+        PtnValue current = ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+        if (runtime->exceptions->active_exception == NULL &&
+            !ptn_internal_class_name_is_no_rewind_iterator(receiver_class_name)) {
+            PtnValue key = ptn_iterator_inner_call_no_args(runtime, data->inner, "key", line);
+            ptn_value_destroy(&key);
+        }
+        return current;
+    }
     if (
         ptn_ascii_case_equal(name, "rewind") ||
         ptn_ascii_case_equal(name, "valid") ||
-        ptn_ascii_case_equal(name, "current") ||
         ptn_ascii_case_equal(name, "key") ||
         ptn_ascii_case_equal(name, "next") ||
         ptn_ascii_case_equal(name, "offsetGet")
