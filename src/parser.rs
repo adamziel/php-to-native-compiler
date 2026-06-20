@@ -4296,6 +4296,14 @@ impl Parser<'_> {
         if matches!(self.peek().kind, TokenKind::LeftParen) {
             let open_span = self.advance().span;
             let inner = self.parse_intersection_type_hint(context)?;
+            if !matches!(inner.type_hint, TypeHint::Intersection(_))
+                && matches!(self.peek().kind, TokenKind::RightParen)
+            {
+                return Err(Diagnostic::parse_error(
+                    "syntax error, unexpected token \")\", expecting token \"&\"",
+                    Some(self.peek().span),
+                ));
+            }
             let close_span = self.expect_right_paren()?;
             return Ok(ParsedTypeHint {
                 type_hint: inner.type_hint,
@@ -8649,7 +8657,8 @@ impl Parser<'_> {
     }
 
     fn peek_starts_set_visibility_modifier(&self) -> bool {
-        matches!(self.peek_next().kind, TokenKind::LeftParen)
+        self.peek().span.byte_end == self.peek_next().span.byte_start
+            && matches!(self.peek_next().kind, TokenKind::LeftParen)
             && matches!(
                 &self.peek_n(2).kind,
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set")
@@ -17010,6 +17019,12 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
             source,
             "temporary array offset references are unsupported",
         ),
+        Expr::ClassConstantFetch { span, .. } | Expr::DynamicClassConstantFetch { span, .. } => {
+            Err(Diagnostic::parse_error(
+                "Cannot use temporary expression in write context",
+                Some(*span),
+            ))
+        }
         _ => Err(Diagnostic::new(
             "unsupported by-reference assignment target",
             Some(source.span()),
@@ -18425,6 +18440,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "stream_get_meta_data"
             | "rewinddir"
             | "stream_context_create"
+            | "stream_context_get_options"
             | "stream_copy_to_stream"
             | "stream_filter_append"
             | "stream_filter_prepend"

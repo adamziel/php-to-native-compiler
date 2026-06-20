@@ -2360,9 +2360,25 @@ fn emit_user_functions(
         }
         if function.return_by_ref {
             out.push_str("    if (ptn_return_value.type != PTN_REFERENCE && !ptn_return_value.by_ref_return_fallback && !ptn_return_value_from_declared_reference_call) {\n");
-            out.push_str("        PtnValue ptn_return_reference = ptn_return_reference_source_or_value(&runtime, ptn_return_value, ptn_return_line);\n");
-            out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
-            out.push_str("        ptn_return_value = ptn_return_reference;\n");
+            if let Some(return_type) = function.return_type.as_ref().filter(|return_type| {
+                by_ref_return_fallback_notice_requires_satisfied_type(return_type)
+            }) {
+                out.push_str("        if (ptn_return_value_was_set && (");
+                out.push_str(&type_hint_condition(
+                    "ptn_return_value",
+                    "&runtime",
+                    return_type,
+                ));
+                out.push_str(")) {\n");
+                out.push_str("            PtnValue ptn_return_reference = ptn_return_reference_source_or_value(&runtime, ptn_return_value, ptn_return_line);\n");
+                out.push_str("            ptn_value_destroy(&ptn_return_value);\n");
+                out.push_str("            ptn_return_value = ptn_return_reference;\n");
+                out.push_str("        }\n");
+            } else {
+                out.push_str("        PtnValue ptn_return_reference = ptn_return_reference_source_or_value(&runtime, ptn_return_value, ptn_return_line);\n");
+                out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
+                out.push_str("        ptn_return_value = ptn_return_reference;\n");
+            }
             out.push_str("    }\n");
         }
         if let Some(return_type) = function.return_type.as_ref() {
@@ -3665,6 +3681,30 @@ fn return_type_needs_runtime_context(return_type: &TypeHint) -> bool {
 
 fn return_type_needs_return_value_was_set(return_type: &TypeHint) -> bool {
     !matches!(return_type, TypeHint::Void | TypeHint::Never)
+}
+
+fn by_ref_return_fallback_notice_requires_satisfied_type(return_type: &TypeHint) -> bool {
+    match return_type {
+        TypeHint::Null
+        | TypeHint::Array
+        | TypeHint::True
+        | TypeHint::False
+        | TypeHint::Object
+        | TypeHint::Iterable
+        | TypeHint::Callable
+        | TypeHint::Static
+        | TypeHint::Class(_) => true,
+        TypeHint::Nullable(inner) => by_ref_return_fallback_notice_requires_satisfied_type(inner),
+        TypeHint::Int
+        | TypeHint::Float
+        | TypeHint::String
+        | TypeHint::Bool
+        | TypeHint::Mixed
+        | TypeHint::Void
+        | TypeHint::Never
+        | TypeHint::Union(_)
+        | TypeHint::Intersection(_) => false,
+    }
 }
 
 fn emit_return_type_boundary(

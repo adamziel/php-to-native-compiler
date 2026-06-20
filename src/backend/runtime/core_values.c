@@ -922,6 +922,7 @@ struct PtnResource {
     PtnStreamFilter *read_filters;
     PtnStreamFilter *write_filters;
     int persistent;
+    PtnValue context_options;
 };
 
 struct PtnStreamFilter {
@@ -1316,6 +1317,7 @@ typedef struct {
 static PtnCowDebugCounters ptn_cow_debug_counters;
 
 static PTN_UNUSED int ptn_is_truthy(PtnValue value);
+static PTN_UNUSED void ptn_value_destroy(PtnValue *value);
 static void ptn_abort_out_of_memory(void);
 static PTN_UNUSED int ptn_ascii_case_equal(const char *left, const char *right);
 static PTN_UNUSED int ptn_object_is_generator(PtnObject *object);
@@ -3124,6 +3126,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->context_options = ptn_null();
     return resource;
 }
 
@@ -3155,6 +3158,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->context_options = ptn_null();
     return resource;
 }
 
@@ -3183,6 +3187,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->context_options = ptn_null();
     return resource;
 }
 
@@ -3206,6 +3211,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->context_options = ptn_null();
     return resource;
 }
 
@@ -3537,6 +3543,7 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     ptn_stream_filter_chain_free(resource->write_filters);
     free(resource->stream_uri);
     free(resource->stream_mode);
+    ptn_value_destroy(&resource->context_options);
     free(resource);
 }
 
@@ -3563,7 +3570,8 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
-        1
+        1,
+        { PTN_NULL, 0, 0, 0, { 0 } }
     };
     static PtnResource stdout_resource = {
         SIZE_MAX,
@@ -3577,7 +3585,8 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
-        1
+        1,
+        { PTN_NULL, 0, 0, 0, { 0 } }
     };
     static PtnResource stderr_resource = {
         SIZE_MAX,
@@ -3591,7 +3600,8 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         NULL,
-        1
+        1,
+        { PTN_NULL, 0, 0, 0, { 0 } }
     };
     PtnResource *resource = &stdin_resource;
     if (id == 2) {
