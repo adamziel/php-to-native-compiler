@@ -1185,13 +1185,9 @@ var_dump($url->isSpecialScheme(), $url->getHostType());
 var_dump(Uri\WhatWg\Url::parse("scheme://example.com")->isSpecialScheme());
 var_dump(Uri\WhatWg\Url::parse("scheme://example.com")->getHostType());
 var_dump(Uri\WhatWg\Url::parse("test://")->getUnicodeHost());
+var_dump($url->resolve("/next")->toAsciiString());
 
-try {
-    Uri\WhatWg\Url::parse("https://ex[a]mple.com");
-} catch (Uri\WhatWg\InvalidUrlException $e) {
-    echo $e::class, ": ", $e->getMessage(), "\n";
-    var_dump($e->errors);
-}
+var_dump(Uri\WhatWg\Url::parse("https://ex[a]mple.com"));
 "##,
     )
     .unwrap();
@@ -1230,9 +1226,8 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
-            "array(0) {\n",
-            "}\n",
+            "string(34) \"https://user:info@example.com/next\"\n",
+            "NULL\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -4703,6 +4698,16 @@ fn parser_models_final_class_and_modifier_diagnostics() {
     assert!(err
         .message
         .contains("Class Child cannot extend final class Base"));
+
+    let err = parser::parse("<?php class Child extends Uri\\Rfc3986\\Uri {}").unwrap_err();
+    assert!(err
+        .message
+        .contains("Class Child cannot extend final class Uri\\Rfc3986\\Uri"));
+
+    let err = parser::parse("<?php class Child extends Uri\\WhatWg\\Url {}").unwrap_err();
+    assert!(err
+        .message
+        .contains("Class Child cannot extend final class Uri\\WhatWg\\Url"));
 
     let err = parser::parse("<?php final final class Bad {}").unwrap_err();
     assert!(err
@@ -58196,11 +58201,15 @@ $uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%
 var_dump($uri->getUriType());
 var_dump($uri->toRawString());
 var_dump($uri->toString());
+var_dump($uri->getRawUsername());
+var_dump($uri->getRawPassword());
 var_dump($uri->getRawPath());
 var_dump($uri->getPath());
 var_dump(Uri\Rfc3986\Uri::parse("//example.com/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("foo")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("/next", new Uri\Rfc3986\Uri("https://base.example/root"))->toString());
+var_dump($uri->resolve("/resolved")->toString());
 $changed = $uri
     ->withHost("%65xample.net")
     ->withScheme("HTTP")
@@ -58239,11 +58248,15 @@ try {
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
             "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
+            "string(4) \"user\"\n",
+            "string(4) \"info\"\n",
             "string(12) \"/foo%2Fb%61r\"\n",
             "string(10) \"/foo%2Fbar\"\n",
             "enum(Uri\\Rfc3986\\UriType::NetworkPathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::RelativePathReference)\n",
+            "string(25) \"https://base.example/next\"\n",
+            "string(42) \"https://user:info@example.com:443/resolved\"\n",
             "string(43) \"HTTP://user:info@%65xample.net/foo%2Fb%61r#\"\n",
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
@@ -58274,14 +58287,11 @@ var_dump($url->withPath("foo#bar")->toAsciiString());
 var_dump(Uri\WhatWg\Url::parse("https://example.com/")->withPath("/p^th#")->toAsciiString());
 var_dump(Uri\WhatWg\Url::parse("https://example.com/foo\"/<bar>/^{baz}")->getPath());
 var_dump($url->withUsername("u:s/r")->toAsciiString());
+var_dump(Uri\WhatWg\Url::parse("/relative", new Uri\WhatWg\Url("https://base.example/root"))->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
 var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
-try {
-    Uri\WhatWg\Url::parse("foo");
-} catch (Throwable $e) {
-    echo $e::class, ": ", $e->getMessage(), "\n";
-}
+var_dump(Uri\WhatWg\Url::parse("foo"));
 try {
     new Uri\WhatWg\Url("https://");
 } catch (Throwable $e) {
@@ -58312,10 +58322,11 @@ try {
             "string(27) \"https://example.com/p^th%23\"\n",
             "string(28) \"/foo%22/%3Cbar%3E/^%7Bbaz%7D\"\n",
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
+            "string(29) \"https://base.example/relative\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "NULL\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

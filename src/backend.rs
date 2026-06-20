@@ -1,9 +1,12 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{hash_map::DefaultHasher, HashMap, HashSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::process;
 use std::process::Command;
+use std::time::UNIX_EPOCH;
 
 use crate::ast::{
     AssignmentOp, AttributeArgumentExpression, AttributeArgumentKind, AttributeArgumentValue,
@@ -2968,6 +2971,15 @@ fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&
     }
     if name.eq_ignore_ascii_case("numfmt_parse_currency") && argument_index == 2 {
         return Some("currency");
+    }
+    if name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::resolve") && argument_index == 1 {
+        return Some("errors");
+    }
+    if (name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::__construct")
+        || name.eq_ignore_ascii_case("Uri\\WhatWg\\Url::parse"))
+        && argument_index == 2
+    {
+        return Some("errors");
     }
     if (name.eq_ignore_ascii_case("collator_sort")
         || name.eq_ignore_ascii_case("collator_sort_with_sort_keys"))
@@ -6210,6 +6222,8 @@ fn emit_class_metadata_helpers(
         "BcMath\\Number",
         "WeakMap",
         "WeakReference",
+        "Uri\\Rfc3986\\Uri",
+        "Uri\\WhatWg\\Url",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -22198,6 +22212,7 @@ fn is_uri_whatwg_url_method_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("__construct")
         || name.eq_ignore_ascii_case("__toString")
         || name.eq_ignore_ascii_case("equals")
+        || name.eq_ignore_ascii_case("resolve")
         || name.eq_ignore_ascii_case("getScheme")
         || name.eq_ignore_ascii_case("isSpecialScheme")
         || name.eq_ignore_ascii_case("getUsername")
@@ -24535,7 +24550,7 @@ fn compile_c_with_ada_url(
     let ada_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("third_party/ada-url-3.4.5");
     let ada_cpp = ada_dir.join("ada.cpp");
     let c_object = output.with_extension("ptn-c.o");
-    let ada_object = output.with_extension("ptn-ada-url.o");
+    let ada_object = cached_ada_url_object(&ada_dir, &ada_cpp, optimization_args)?;
 
     let mut c_command = Command::new("cc");
     c_command.arg("-std=c11");
@@ -24566,34 +24581,6 @@ fn compile_c_with_ada_url(
         ));
     }
 
-    let mut ada_command = Command::new("c++");
-    ada_command
-        .arg("-std=c++20")
-        .arg("-DADA_INCLUDE_URL_PATTERN=0");
-    for arg in optimization_args {
-        ada_command.arg(arg);
-    }
-    let ada_status = ada_command
-        .arg("-I")
-        .arg(&ada_dir)
-        .arg("-c")
-        .arg(&ada_cpp)
-        .arg("-o")
-        .arg(&ada_object)
-        .status()
-        .map_err(|error| Diagnostic::new(format!("failed to launch c++: {error}"), None))?;
-    if !ada_status.success() {
-        let _ = fs::remove_file(&c_object);
-        let _ = fs::remove_file(&ada_object);
-        return Err(Diagnostic::new(
-            format!(
-                "c++ failed compiling vendored Ada URL parser {}",
-                display_os(ada_cpp.as_os_str())
-            ),
-            None,
-        ));
-    }
-
     let mut link_command = Command::new("c++");
     link_command
         .arg(&c_object)
@@ -24608,7 +24595,6 @@ fn compile_c_with_ada_url(
         .status()
         .map_err(|error| Diagnostic::new(format!("failed to launch c++ linker: {error}"), None))?;
     let _ = fs::remove_file(&c_object);
-    let _ = fs::remove_file(&ada_object);
     if link_status.success() {
         Ok(())
     } else {
@@ -24621,6 +24607,123 @@ fn compile_c_with_ada_url(
             None,
         ))
     }
+}
+
+fn cached_ada_url_object(
+    ada_dir: &Path,
+    ada_cpp: &Path,
+    optimization_args: &[&str],
+) -> Result<PathBuf> {
+    let cache_dir = ada_url_cache_dir();
+    fs::create_dir_all(&cache_dir).map_err(|error| {
+        Diagnostic::new(
+            format!(
+                "failed to create Ada URL object cache {}: {error}",
+                display_os(cache_dir.as_os_str())
+            ),
+            None,
+        )
+    })?;
+
+    let key = ada_url_object_cache_key(ada_dir, optimization_args)?;
+    let object = cache_dir.join(format!("ada-url-{key}.o"));
+    if object.is_file() {
+        return Ok(object);
+    }
+
+    let temp_object = cache_dir.join(format!("ada-url-{key}-{}.tmp.o", process::id()));
+    let mut ada_command = Command::new("c++");
+    ada_command
+        .arg("-std=c++20")
+        .arg("-DADA_INCLUDE_URL_PATTERN=0");
+    for arg in optimization_args {
+        ada_command.arg(arg);
+    }
+    let ada_status = ada_command
+        .arg("-I")
+        .arg(ada_dir)
+        .arg("-c")
+        .arg(ada_cpp)
+        .arg("-o")
+        .arg(&temp_object)
+        .status()
+        .map_err(|error| Diagnostic::new(format!("failed to launch c++: {error}"), None))?;
+    if !ada_status.success() {
+        let _ = fs::remove_file(&temp_object);
+        return Err(Diagnostic::new(
+            format!(
+                "c++ failed compiling vendored Ada URL parser {}",
+                display_os(ada_cpp.as_os_str())
+            ),
+            None,
+        ));
+    }
+
+    if object.is_file() {
+        let _ = fs::remove_file(&temp_object);
+        return Ok(object);
+    }
+
+    match fs::rename(&temp_object, &object) {
+        Ok(()) => Ok(object),
+        Err(_) if object.is_file() => {
+            let _ = fs::remove_file(&temp_object);
+            Ok(object)
+        }
+        Err(error) => {
+            let _ = fs::remove_file(&temp_object);
+            Err(Diagnostic::new(
+                format!(
+                    "failed to install Ada URL object cache {}: {error}",
+                    display_os(object.as_os_str())
+                ),
+                None,
+            ))
+        }
+    }
+}
+
+fn ada_url_cache_dir() -> PathBuf {
+    env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target"))
+        .join("ptn-cache")
+        .join("ada-url")
+}
+
+fn ada_url_object_cache_key(ada_dir: &Path, optimization_args: &[&str]) -> Result<String> {
+    let mut hasher = DefaultHasher::new();
+    env!("CARGO_PKG_VERSION").hash(&mut hasher);
+    "ada-url-3.4.5".hash(&mut hasher);
+    optimization_args.hash(&mut hasher);
+
+    for relative in ["ada.cpp", "ada.h", "ada_c.h"] {
+        let path = ada_dir.join(relative);
+        relative.hash(&mut hasher);
+        hash_file_metadata(&path, &mut hasher)?;
+    }
+
+    Ok(format!("{:016x}", hasher.finish()))
+}
+
+fn hash_file_metadata(path: &Path, hasher: &mut DefaultHasher) -> Result<()> {
+    let metadata = fs::metadata(path).map_err(|error| {
+        Diagnostic::new(
+            format!(
+                "failed to stat Ada URL source {}: {error}",
+                display_os(path.as_os_str())
+            ),
+            None,
+        )
+    })?;
+    metadata.len().hash(hasher);
+    if let Ok(modified) = metadata.modified() {
+        if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+            duration.as_secs().hash(hasher);
+            duration.subsec_nanos().hash(hasher);
+        }
+    }
+    Ok(())
 }
 
 fn add_pcre2_default_library_define(command: &mut Command) {

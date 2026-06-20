@@ -4963,6 +4963,14 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
             ptn_ascii_case_equal(name, "Spoofchecker::isSuspicious"))) {
         return 1;
     }
+    if (index == 1 && ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::resolve")) {
+        return 1;
+    }
+    if (index == 2 &&
+        (ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::__construct") ||
+            ptn_ascii_case_equal(name, "Uri\\WhatWg\\Url::parse"))) {
+        return 1;
+    }
     if (index == 2 && ptn_ascii_case_equal(name, "Spoofchecker::areConfusable")) {
         return 1;
     }
@@ -18602,6 +18610,9 @@ static int ptn_uri_validate_host_component(const char *data, size_t len) {
         if (byte == '[' || byte == ']' || byte == ':' || byte == '@' || byte == '/' || byte == '?' || byte == '#') {
             return 0;
         }
+        if (!ptn_uri_is_unreserved(byte) && !ptn_uri_is_sub_delim(byte)) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -18877,6 +18888,161 @@ static ada_url ptn_uri_ada_parse_bytes(const char *data, size_t len) {
     return url;
 }
 
+static ada_url ptn_uri_ada_parse_with_base_bytes(
+    const char *data,
+    size_t len,
+    const char *base_data,
+    size_t base_len
+) {
+    char *input = ptn_uri_ada_null_terminated_copy(data, len);
+    char *base = ptn_uri_ada_null_terminated_copy(base_data, base_len);
+    ada_url url = ada_parse_with_base(input, len, base, base_len);
+    free(input);
+    free(base);
+    return url;
+}
+
+static size_t ptn_uri_whatwg_infer_find_delimiter(const char *data, size_t len, size_t offset) {
+    while (offset < len && data[offset] != '/' && data[offset] != '?' && data[offset] != '#') {
+        offset++;
+    }
+    return offset;
+}
+
+static int ptn_uri_whatwg_infer_ascii_equal(const char *data, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)data[i]) != (unsigned char)literal[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_whatwg_infer_scheme_is_special(const char *data, size_t len) {
+    return ptn_uri_whatwg_infer_ascii_equal(data, len, "http") ||
+        ptn_uri_whatwg_infer_ascii_equal(data, len, "https") ||
+        ptn_uri_whatwg_infer_ascii_equal(data, len, "ws") ||
+        ptn_uri_whatwg_infer_ascii_equal(data, len, "wss") ||
+        ptn_uri_whatwg_infer_ascii_equal(data, len, "ftp") ||
+        ptn_uri_whatwg_infer_ascii_equal(data, len, "file");
+}
+
+static int ptn_uri_whatwg_infer_ipv4_too_many_parts(const char *host, size_t host_len) {
+    size_t parts = 1;
+    if (host_len == 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < host_len; i++) {
+        unsigned char byte = (unsigned char)host[i];
+        if (byte == '.') {
+            parts++;
+            continue;
+        }
+        if (!isdigit(byte)) {
+            return 0;
+        }
+    }
+    return parts > 4;
+}
+
+static const char *ptn_uri_whatwg_infer_failure_reason(const char *data, size_t len) {
+    size_t start = 0;
+    size_t end = len;
+    while (start < end) {
+        unsigned char byte = (unsigned char)data[start];
+        if (byte == '\t' || byte == '\n' || byte == '\r' || byte == ' ' || byte == 0) {
+            start++;
+            continue;
+        }
+        break;
+    }
+    while (end > start) {
+        unsigned char byte = (unsigned char)data[end - 1];
+        if (byte == '\t' || byte == '\n' || byte == '\r' || byte == ' ' || byte == 0) {
+            end--;
+            continue;
+        }
+        break;
+    }
+    data += start;
+    len = end - start;
+
+    size_t first_delimiter = ptn_uri_whatwg_infer_find_delimiter(data, len, 0);
+    size_t colon = 0;
+    while (colon < first_delimiter && data[colon] != ':') {
+        colon++;
+    }
+    if (colon == 0 || colon >= first_delimiter) {
+        return "MissingSchemeNonRelativeUrl";
+    }
+
+    int special = ptn_uri_whatwg_infer_scheme_is_special(data, colon);
+    int file_scheme = ptn_uri_whatwg_infer_ascii_equal(data, colon, "file");
+    const char *rest = data + colon + 1;
+    size_t rest_len = len - colon - 1;
+    const char *authority = NULL;
+    size_t authority_len = 0;
+    if (rest_len >= 2 && rest[0] == '/' && rest[1] == '/') {
+        size_t authority_end = ptn_uri_whatwg_infer_find_delimiter(rest, rest_len, 2);
+        authority = rest + 2;
+        authority_len = authority_end - 2;
+    } else if (special && !file_scheme) {
+        size_t authority_end = ptn_uri_whatwg_infer_find_delimiter(rest, rest_len, 0);
+        authority = rest;
+        authority_len = authority_end;
+    } else {
+        return NULL;
+    }
+
+    if (authority_len == 0) {
+        return special && !file_scheme ? "HostMissing" : NULL;
+    }
+    size_t host_start = 0;
+    for (size_t i = authority_len; i > 0; i--) {
+        if (authority[i - 1] == '@') {
+            host_start = i;
+            break;
+        }
+    }
+    const char *hostport = authority + host_start;
+    size_t hostport_len = authority_len - host_start;
+    size_t host_len = hostport_len;
+    if (hostport_len > 0 && hostport[0] == '[') {
+        size_t close = 1;
+        while (close < hostport_len && hostport[close] != ']') {
+            close++;
+        }
+        if (close >= hostport_len) {
+            return "Ipv6Unclosed";
+        }
+        host_len = close + 1;
+    } else {
+        for (size_t i = hostport_len; i > 0; i--) {
+            if (hostport[i - 1] == ':') {
+                host_len = i - 1;
+                break;
+            }
+        }
+    }
+    if (host_len == 0) {
+        return special && !file_scheme ? "HostMissing" : NULL;
+    }
+    for (size_t i = 0; i < host_len; i++) {
+        unsigned char byte = (unsigned char)hostport[i];
+        if (byte == 0 || byte == '[' || byte == ']' || byte == '/' || byte == '?' || byte == '#' || byte == '@') {
+            return special ? "DomainInvalidCodePoint" : "HostInvalidCodePoint";
+        }
+    }
+    if (special && ptn_uri_whatwg_infer_ipv4_too_many_parts(hostport, host_len)) {
+        return "Ipv4TooManyParts";
+    }
+    return NULL;
+}
+
 static int ptn_uri_ada_set_bool(
     ada_url url,
     const char *data,
@@ -19081,6 +19247,36 @@ static int ptn_uri_ada_parse_whatwg(
         if (url != NULL) {
             ada_free(url);
         }
+        *reason_out = ptn_uri_whatwg_infer_failure_reason(input.data, input.len);
+        return 0;
+    }
+    PtnUriData *data = ptn_uri_ada_data_from_url(url);
+    if (ptn_uri_ada_input_had_empty_password_marker(input) && data->password == NULL) {
+        if (data->username == NULL) {
+            data->username = ptn_uri_duplicate_len("", 0);
+        }
+        data->password = ptn_uri_duplicate_len("", 0);
+        data->userinfo_present = 1;
+    }
+    ada_free(url);
+    *result_out = data;
+    return 1;
+}
+
+static int ptn_uri_ada_parse_whatwg_with_base(
+    PtnStringOperand input,
+    const char *base_data,
+    size_t base_len,
+    PtnUriData **result_out,
+    const char **reason_out
+) {
+    *reason_out = NULL;
+    ada_url url = ptn_uri_ada_parse_with_base_bytes(input.data, input.len, base_data, base_len);
+    if (url == NULL || !ada_is_valid(url)) {
+        if (url != NULL) {
+            ada_free(url);
+        }
+        *reason_out = ptn_uri_whatwg_infer_failure_reason(input.data, input.len);
         return 0;
     }
     PtnUriData *data = ptn_uri_ada_data_from_url(url);
@@ -20144,6 +20340,92 @@ static PtnValue ptn_uri_whatwg_to_string_value(const PtnUriData *data, int unico
     return ptn_owned_string_len(buffer.data == NULL ? ptn_uri_duplicate_len("", 0) : buffer.data, buffer.len);
 }
 
+static int ptn_uri_parse_whatwg_with_base(
+    PtnStringOperand input,
+    const PtnUriData *base,
+    PtnUriData **result_out,
+    const char **reason_out
+) {
+    if (base == NULL) {
+        return ptn_uri_parse_whatwg(input, result_out, reason_out);
+    }
+#ifdef PTN_USE_ADA_URL
+    PtnValue base_href = ptn_uri_whatwg_to_string_value(base, 0, 1);
+    int valid = ptn_uri_ada_parse_whatwg_with_base(
+        input,
+        (const char *)base_href.as.string.data,
+        base_href.as.string.len,
+        result_out,
+        reason_out
+    );
+    ptn_value_destroy(&base_href);
+    return valid;
+#else
+    (void)input;
+    (void)base;
+    *result_out = NULL;
+    *reason_out = "AdaParserUnavailable";
+    return 0;
+#endif
+}
+
+static int ptn_uri_whatwg_input_has_invalid_url_unit(PtnStringOperand input) {
+    for (size_t i = 0; i < input.len; i++) {
+        unsigned char byte = (unsigned char)input.data[i];
+        if (byte == '\t' || byte == '\n' || byte == '\r') {
+            return 1;
+        }
+        if ((byte == ' ' || byte == 0) && (i == 0 || i + 1 == input.len)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static PtnValue ptn_uri_whatwg_validation_error_value(
+    PtnRuntime *runtime,
+    PtnStringOperand context,
+    const char *type,
+    int failure
+) {
+    PtnValue object = ptn_object_new_shell(runtime, "Uri\\WhatWg\\UrlValidationError");
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("context"),
+        ptn_owned_string_len(ptn_uri_duplicate_len(context.data, context.len), context.len)
+    );
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("type"),
+        ptn_enum_case(runtime, "Uri\\WhatWg\\UrlValidationErrorType", type)
+    );
+    ptn_array_set_entry(
+        object.as.object->properties,
+        ptn_array_string_key("failure"),
+        ptn_bool(failure)
+    );
+    return object;
+}
+
+static void ptn_uri_whatwg_assign_soft_errors(
+    PtnRuntime *runtime,
+    PtnValue errors_arg,
+    PtnStringOperand input
+) {
+    if (errors_arg.type != PTN_REFERENCE) {
+        return;
+    }
+    PtnValue errors = ptn_array_from_literal_entries(0, NULL);
+    if (ptn_uri_whatwg_input_has_invalid_url_unit(input)) {
+        ptn_array_set_entry(
+            errors.as.array,
+            ptn_array_int_key(0),
+            ptn_uri_whatwg_validation_error_value(runtime, input, "InvalidUrlUnit", 0)
+        );
+    }
+    ptn_reference_assign(runtime, errors_arg.as.reference, errors);
+}
+
 static const char *ptn_uri_whatwg_host_type_case_name(const PtnUriData *data) {
     switch ((PtnUriHostType)data->host_type) {
         case PTN_URI_HOST_TYPE_DOMAIN:
@@ -20267,6 +20549,91 @@ static PtnValue ptn_uri_userinfo_value(const PtnUriData *data, int normalized) {
         }
     }
     return ptn_owned_string_len(buffer.data, buffer.len);
+}
+
+static char *ptn_uri_rfc3986_merge_paths(const PtnUriData *base, const char *reference_path) {
+    const char *base_path = base->path == NULL ? "" : base->path;
+    size_t base_len = strlen(base_path);
+    size_t reference_len = strlen(reference_path);
+    size_t prefix_len = 0;
+    if (base->authority_present && base_len == 0) {
+        prefix_len = 1;
+    } else {
+        for (size_t i = base_len; i > 0; i--) {
+            if (base_path[i - 1] == '/') {
+                prefix_len = i;
+                break;
+            }
+        }
+    }
+    if (prefix_len > SIZE_MAX - reference_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *merged = malloc(prefix_len + reference_len + 1);
+    if (merged == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (base->authority_present && base_len == 0) {
+        merged[0] = '/';
+    } else if (prefix_len != 0) {
+        memcpy(merged, base_path, prefix_len);
+    }
+    memcpy(merged + prefix_len, reference_path, reference_len);
+    merged[prefix_len + reference_len] = '\0';
+    return merged;
+}
+
+static void ptn_uri_replace_path_owned(PtnUriData *data, char *path) {
+    free(data->path);
+    data->path = path == NULL ? ptn_uri_duplicate_len("", 0) : path;
+}
+
+static int ptn_uri_rfc3986_resolve(
+    const PtnUriData *base,
+    PtnStringOperand reference,
+    PtnUriData **result_out
+) {
+    PtnUriData *ref = NULL;
+    if (!ptn_uri_parse(reference, &ref)) {
+        return 0;
+    }
+    if (base == NULL || ref->scheme != NULL) {
+        size_t path_len = strlen(ref->path);
+        char *normalized = ptn_uri_duplicate_len(ref->path, path_len);
+        ptn_uri_replace_path_owned(ref, ptn_uri_remove_dot_segments_owned(normalized, &path_len));
+        *result_out = ref;
+        return 1;
+    }
+    if (ref->authority_present) {
+        free(ref->scheme);
+        ref->scheme = ptn_uri_duplicate_or_null(base->scheme);
+        size_t path_len = strlen(ref->path);
+        char *normalized = ptn_uri_duplicate_len(ref->path, path_len);
+        ptn_uri_replace_path_owned(ref, ptn_uri_remove_dot_segments_owned(normalized, &path_len));
+        *result_out = ref;
+        return 1;
+    }
+
+    PtnUriData *target = ptn_uri_data_clone(base);
+    if (ref->path == NULL || ref->path[0] == '\0') {
+        if (ref->query != NULL) {
+            free(target->query);
+            target->query = ptn_uri_duplicate_or_null(ref->query);
+        }
+    } else {
+        char *path = ref->path[0] == '/'
+            ? ptn_uri_duplicate_len(ref->path, strlen(ref->path))
+            : ptn_uri_rfc3986_merge_paths(base, ref->path);
+        size_t path_len = strlen(path);
+        ptn_uri_replace_path_owned(target, ptn_uri_remove_dot_segments_owned(path, &path_len));
+        free(target->query);
+        target->query = ptn_uri_duplicate_or_null(ref->query);
+    }
+    free(target->fragment);
+    target->fragment = ptn_uri_duplicate_or_null(ref->fragment);
+    ptn_uri_data_free(ref);
+    *result_out = target;
+    return 1;
 }
 
 static int ptn_uri_first_segment_contains_colon(const char *path) {
@@ -20875,6 +21242,41 @@ static PtnValue ptn_uri_whatwg_with_port(
 #endif
 }
 
+static int ptn_uri_expect_base_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    int whatwg,
+    PtnValue value,
+    PtnUriData **base_out
+) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        *base_out = NULL;
+        return 1;
+    }
+    const char *expected = whatwg ? "Uri\\WhatWg\\Url" : "Uri\\Rfc3986\\Uri";
+    if (value.type == PTN_OBJECT &&
+        ptn_ascii_case_equal(value.as.object->class_name, expected) &&
+        value.as.object->native_data != NULL) {
+        *base_out = (PtnUriData *)value.as.object->native_data;
+        return 1;
+    }
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #2 ($baseUri) must be of type ?%s, %s given",
+        function_name,
+        expected,
+        ptn_direct_internal_string_arg_type_name(value)
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "TypeError", message);
+    return 0;
+}
+
 static PtnValue ptn_uri_construct_data(
     PtnRuntime *runtime,
     const char *function_name,
@@ -20885,9 +21287,9 @@ static PtnValue ptn_uri_construct_data(
     int whatwg,
     PtnUriData **data_out
 ) {
-    if (argc != 1) {
+    if (argc < 1 || argc > 3) {
         char message[160];
-        int written = snprintf(message, sizeof(message), "%s() expects exactly 1 argument, %zu given", function_name, argc);
+        int written = snprintf(message, sizeof(message), "%s() expects between 1 and 3 arguments, %zu given", function_name, argc);
         if (written < 0 || (size_t)written >= sizeof(message)) {
             ptn_abort_out_of_memory();
         }
@@ -20898,11 +21300,19 @@ static PtnValue ptn_uri_construct_data(
     if (runtime->exceptions->active_exception != NULL) {
         return ptn_null();
     }
+    PtnUriData *base = NULL;
+    if (argc >= 2 && !ptn_uri_expect_base_arg(runtime, function_name, whatwg, args[1], &base)) {
+        ptn_string_operand_free(uri);
+        return ptn_null();
+    }
     PtnUriData *data = NULL;
     const char *reason = NULL;
     int valid = whatwg
-        ? ptn_uri_parse_whatwg(uri, &data, &reason)
-        : ptn_uri_parse(uri, &data);
+        ? ptn_uri_parse_whatwg_with_base(uri, base, &data, &reason)
+        : (base == NULL ? ptn_uri_parse(uri, &data) : ptn_uri_rfc3986_resolve(base, uri, &data));
+    if (valid && whatwg && argc >= 3) {
+        ptn_uri_whatwg_assign_soft_errors(runtime, args[2], uri);
+    }
     ptn_string_operand_free(uri);
     if (!valid) {
         if (throw_on_invalid) {
@@ -20959,7 +21369,7 @@ static PTN_UNUSED PtnValue ptn_uri_parse_static(
         argc,
         args,
         line,
-        whatwg ? 1 : 0,
+        0,
         whatwg,
         &data
     );
@@ -20968,6 +21378,70 @@ static PTN_UNUSED PtnValue ptn_uri_parse_static(
         return ptn_null();
     }
     return ptn_uri_object_from_data(runtime, class_name, data);
+}
+
+static PtnValue ptn_uri_resolve(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    int whatwg,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    size_t max_args = whatwg ? 2 : 1;
+    if (argc < 1 || argc > max_args) {
+        char message[160];
+        int written = max_args == 1
+            ? snprintf(
+                message,
+                sizeof(message),
+                "%s::resolve() expects exactly 1 argument, %zu given",
+                whatwg ? "Uri\\WhatWg\\Url" : "Uri\\Rfc3986\\Uri",
+                argc
+            )
+            : snprintf(
+                message,
+                sizeof(message),
+                "%s::resolve() expects between 1 and 2 arguments, %zu given",
+                whatwg ? "Uri\\WhatWg\\Url" : "Uri\\Rfc3986\\Uri",
+                argc
+            );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand uri = ptn_internal_expect_string_arg(
+        runtime,
+        whatwg ? "Uri\\WhatWg\\Url::resolve" : "Uri\\Rfc3986\\Uri::resolve",
+        1,
+        "uri",
+        args[0],
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    PtnUriData *base = ptn_uri_data_from_value(receiver);
+    PtnUriData *data = NULL;
+    const char *reason = NULL;
+    int valid = whatwg
+        ? ptn_uri_parse_whatwg_with_base(uri, base, &data, &reason)
+        : ptn_uri_rfc3986_resolve(base, uri, &data);
+    if (valid && whatwg && argc >= 2) {
+        ptn_uri_whatwg_assign_soft_errors(runtime, args[1], uri);
+    }
+    ptn_string_operand_free(uri);
+    if (!valid) {
+        if (whatwg) {
+            ptn_uri_whatwg_throw_malformed(runtime, "URI", reason);
+        } else {
+            ptn_uri_throw_malformed(runtime, "URI");
+        }
+        return ptn_null();
+    }
+    return ptn_uri_object_from_data(runtime, ptn_value_deref(receiver).as.object->class_name, data);
 }
 
 static PTN_UNUSED PtnValue ptn_uri_call_method(
@@ -21063,6 +21537,9 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
         if (ptn_ascii_case_equal(name, "equals")) {
             return ptn_uri_equals(runtime, receiver, argc, args, line, 1);
         }
+        if (ptn_ascii_case_equal(name, "resolve")) {
+            return ptn_uri_resolve(runtime, receiver, 1, argc, args, line);
+        }
         if (ptn_ascii_case_equal(name, "withScheme")) {
             return ptn_uri_whatwg_with_scheme(runtime, receiver, argc, args, line);
         }
@@ -21144,8 +21621,14 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     if (ptn_ascii_case_equal(name, "getUserInfo")) {
         return ptn_uri_userinfo_value(data, 1);
     }
+    if (ptn_ascii_case_equal(name, "getRawUsername")) {
+        return ptn_uri_component_property_value(data->username);
+    }
     if (ptn_ascii_case_equal(name, "getUsername")) {
         return ptn_uri_normalized_string_value(data->username, 0, 0);
+    }
+    if (ptn_ascii_case_equal(name, "getRawPassword")) {
+        return ptn_uri_component_property_value(data->password);
     }
     if (ptn_ascii_case_equal(name, "getPassword")) {
         return ptn_uri_normalized_string_value(data->password, 0, 0);
@@ -21200,6 +21683,9 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     }
     if (ptn_ascii_case_equal(name, "equals")) {
         return ptn_uri_equals(runtime, receiver, argc, args, line, 0);
+    }
+    if (ptn_ascii_case_equal(name, "resolve")) {
+        return ptn_uri_resolve(runtime, receiver, 0, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
@@ -81642,12 +82128,15 @@ static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "toRawString")
         || ptn_ascii_case_equal(method_name, "toString")
         || ptn_ascii_case_equal(method_name, "equals")
+        || ptn_ascii_case_equal(method_name, "resolve")
         || ptn_ascii_case_equal(method_name, "getUriType")
         || ptn_ascii_case_equal(method_name, "getRawScheme")
         || ptn_ascii_case_equal(method_name, "getScheme")
         || ptn_ascii_case_equal(method_name, "getRawUserInfo")
         || ptn_ascii_case_equal(method_name, "getUserInfo")
+        || ptn_ascii_case_equal(method_name, "getRawUsername")
         || ptn_ascii_case_equal(method_name, "getUsername")
+        || ptn_ascii_case_equal(method_name, "getRawPassword")
         || ptn_ascii_case_equal(method_name, "getPassword")
         || ptn_ascii_case_equal(method_name, "getRawHost")
         || ptn_ascii_case_equal(method_name, "getHost")
@@ -81676,6 +82165,7 @@ static int ptn_uri_whatwg_url_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "toUnicodeString")
         || ptn_ascii_case_equal(method_name, "toString")
         || ptn_ascii_case_equal(method_name, "equals")
+        || ptn_ascii_case_equal(method_name, "resolve")
         || ptn_ascii_case_equal(method_name, "getScheme")
         || ptn_ascii_case_equal(method_name, "getUsername")
         || ptn_ascii_case_equal(method_name, "getPassword")
@@ -83232,12 +83722,15 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "toRawString",
             "toString",
             "equals",
+            "resolve",
             "getUriType",
             "getRawScheme",
             "getScheme",
             "getRawUserInfo",
             "getUserInfo",
+            "getRawUsername",
             "getUsername",
+            "getRawPassword",
             "getPassword",
             "getRawHost",
             "getHost",
@@ -83269,6 +83762,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "toUnicodeString",
             "toString",
             "equals",
+            "resolve",
             "getScheme",
             "getUsername",
             "getPassword",

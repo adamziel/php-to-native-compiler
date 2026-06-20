@@ -15434,6 +15434,8 @@ fn modeled_builtin_final_class_name(name: &str) -> Option<&'static str> {
         "bcmath\\number" => Some("BcMath\\Number"),
         "weakmap" => Some("WeakMap"),
         "weakreference" => Some("WeakReference"),
+        "uri\\rfc3986\\uri" => Some("Uri\\Rfc3986\\Uri"),
+        "uri\\whatwg\\url" => Some("Uri\\WhatWg\\Url"),
         _ => None,
     }
 }
