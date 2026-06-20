@@ -6469,6 +6469,41 @@ var_dump($box->items);
 }
 
 #[test]
+fn compile_reference_call_arity_paths_to_native_binary() {
+    let root = temp_dir("ptn-native-reference-call-arity-paths");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reference-call-arity-paths.php");
+    let output = root.join("reference-call-arity-paths-bin");
+    fs::write(
+        &input,
+        "<?php
+function increment($value) { return $value + 1; }
+
+class PromotedReferenceBox {
+    public function __construct(public array &$items) {}
+}
+
+$items = [];
+$box = new PromotedReferenceBox($items);
+$items[] = 42;
+$arrayObject = new ArrayObject(['x' => 1], 0);
+$piped = 4 |> increment(...);
+var_dump($box->items, count($arrayObject), $piped);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  int(42)\n}\nint(1)\nint(5)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_override_attributes_with_matching_contracts() {
     let program = parser::parse(
         "<?php

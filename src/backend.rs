@@ -35969,7 +35969,7 @@ impl ValueEmitter {
                 out.push_str(&args_temp);
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(");\n");
+                out.push_str(", 0);\n");
                 out.push_str("    runtime.throw_argument_count_errors = ");
                 out.push_str(&saved_argument_count_errors_temp);
                 out.push_str(";\n");
