@@ -27904,6 +27904,98 @@ try {{
 }
 
 #[test]
+fn compile_dom_element_attribute_map_and_parent_mutators_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-element-attribute-map-parent-mutators");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dom-element-attribute-map-parent-mutators.php");
+    let output = root.join("dom-element-attribute-map-parent-mutators-bin");
+    fs::write(
+        &input,
+        "<?php
+$doc = new DOMDocument();
+$doc->loadXML('<root xmlns:a=\"urn:a\"><item id=\"one\">text</item></root>');
+$root = $doc->documentElement;
+$root->setAttributeNS('urn:b', 'b:flag', 'v');
+$attr = $root->getAttributeNodeNS('urn:b', 'flag');
+var_dump($attr->namespaceURI, $attr->prefix, $attr->localName, $attr->nodeValue);
+
+$attributes = $root->attributes;
+var_dump($attributes instanceof DOMNamedNodeMap, $attributes->length);
+foreach ($attributes as $attribute) {
+    echo $attribute->nodeName, '=', $attribute->nodeValue, '|', ($attribute->namespaceURI === NULL ? 'NULL' : $attribute->namespaceURI), \"\\n\";
+}
+var_dump(
+    $attributes->item(0)->nodeName,
+    $attributes->getNamedItem('b:flag')->nodeValue,
+    $attributes->getNamedItemNS('urn:b', 'flag')->nodeName
+);
+
+$copy = clone $doc;
+$copyItem = $copy->documentElement->firstElementChild;
+$copyItem->insertAdjacentText('afterbegin', 'C');
+var_dump($copyItem->nodeValue);
+echo $copy->saveXML();
+
+$item = $root->firstElementChild;
+var_dump($item->toggleAttribute('data-x'), $item->toggleAttribute('data-x', false));
+$item->insertAdjacentText('afterbegin', 'A');
+$item->insertAdjacentElement('beforeend', $doc->createElement('tail'));
+$item->insertAdjacentElement('afterend', $doc->createElement('sibling'));
+echo $doc->saveXML();
+
+$root->replaceChildren('reset', $doc->createElement('done'));
+echo $doc->saveXML();
+
+$other = new DOMDocument();
+$other->loadXML('<other><m/></other>');
+$root->lastElementChild->insertAdjacentElement('afterbegin', $other->documentElement->firstChild);
+echo $doc->saveXML();
+echo $other->saveXML();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(5) \"urn:b\"\n",
+            "string(1) \"b\"\n",
+            "string(4) \"flag\"\n",
+            "string(1) \"v\"\n",
+            "bool(true)\n",
+            "int(1)\n",
+            "b:flag=v|urn:b\n",
+            "string(6) \"b:flag\"\n",
+            "string(1) \"v\"\n",
+            "string(6) \"b:flag\"\n",
+            "string(5) \"Ctext\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" b:flag=\"v\"><item id=\"one\">Ctext</item></root>\n",
+            "bool(true)\n",
+            "bool(false)\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" b:flag=\"v\"><item id=\"one\">Atext<tail/></item><sibling/></root>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" b:flag=\"v\">reset<done/></root>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" b:flag=\"v\">reset<done><m/></done></root>\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<other/>\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("DOMNamedNodeMap"));
+    assert!(c_source.contains("ptn_dom_insert_adjacent_element_method"));
+    assert!(c_source.contains("ptn_dom_replace_children_method"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();

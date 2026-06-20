@@ -1288,6 +1288,8 @@ static PTN_UNUSED void ptn_lazy_object_copy_clone_state(
     }
 }
 
+static PTN_UNUSED PtnValue ptn_dom_clone(PtnRuntime *runtime, PtnValue value, size_t line);
+
 static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, size_t line) {
     PtnValue resolved = ptn_value_deref(value);
     if (resolved.type != PTN_OBJECT) {
@@ -1357,6 +1359,9 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
     }
     if (ptn_declared_class_is_same_or_descendant(source->class_name, "DateTimeZone")) {
         return ptn_datetime_zone_clone(runtime, resolved, line);
+    }
+    if (ptn_internal_class_name_is_dom(source->class_name)) {
+        return ptn_dom_clone(runtime, resolved, line);
     }
 #endif
     if (source->enum_case_name != NULL || source->native_data != NULL) {
