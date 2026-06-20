@@ -5359,6 +5359,8 @@ fn emit_class_metadata_helpers(
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
+        "DOMDocumentType",
+        "DOMImplementation",
         "DOMElement",
         "DOMAttr",
         "DOMEntityReference",
@@ -5822,6 +5824,8 @@ fn emit_class_metadata_helpers(
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
+        "DOMDocumentType",
+        "DOMImplementation",
         "DOMElement",
         "DOMAttr",
         "DOMEntityReference",
@@ -6235,6 +6239,7 @@ fn emit_class_metadata_helpers(
         ("IntlCodePointBreakIterator", "IntlBreakIterator"),
         ("DOMDocument", "DOMNode"),
         ("DOMDocumentFragment", "DOMNode"),
+        ("DOMDocumentType", "DOMNode"),
         ("DOMElement", "DOMNode"),
         ("DOMAttr", "DOMNode"),
         ("DOMEntityReference", "DOMNode"),
@@ -14461,6 +14466,8 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domnode" => Some("DOMNode"),
         "domdocument" => Some("DOMDocument"),
         "domdocumentfragment" => Some("DOMDocumentFragment"),
+        "domdocumenttype" => Some("DOMDocumentType"),
+        "domimplementation" => Some("DOMImplementation"),
         "domelement" => Some("DOMElement"),
         "domattr" => Some("DOMAttr"),
         "domentityreference" => Some("DOMEntityReference"),
@@ -21895,6 +21902,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DOMNode")
                 || class_name.eq_ignore_ascii_case("DOMDocument")
                 || class_name.eq_ignore_ascii_case("DOMDocumentFragment")
+                || class_name.eq_ignore_ascii_case("DOMDocumentType")
+                || class_name.eq_ignore_ascii_case("DOMImplementation")
                 || class_name.eq_ignore_ascii_case("DOMElement")
                 || class_name.eq_ignore_ascii_case("DOMAttr")
                 || class_name.eq_ignore_ascii_case("DOMEntityReference")
