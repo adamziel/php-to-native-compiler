@@ -1,5 +1,6 @@
 mod arrays;
 mod core_values;
+mod csv;
 mod diagnostics;
 mod internals;
 mod numeric_comparison;
@@ -17,6 +18,7 @@ static RUNTIME_C: OnceLock<String> = OnceLock::new();
 // - numeric_comparison: numeric conversion, scalar casts, truthiness, comparisons, arithmetic, bitwise, and shifts.
 // - strings: scalar string conversion, concatenation, type predicates, constants, float formatting, and echo output.
 // - query: query string encoding and parse_str parity helpers used by internals/request setup.
+// - csv: fgetcsv/fputcsv/str_getcsv parser and writer parity helpers.
 // - internals: runtime symbol tables plus optional internal-function handlers and dispatch.
 pub(super) fn runtime_c() -> &'static str {
     RUNTIME_C.get_or_init(|| {
