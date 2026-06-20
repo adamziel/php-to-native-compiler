@@ -3252,6 +3252,30 @@ static PTN_UNUSED int ptn_builtin_class_constant_value_span(
             return 1;
         }
     }
+    if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "XMLReader")) {
+        if (strcmp(constant, "NONE") == 0) { *out = ptn_int(0); return 1; }
+        if (strcmp(constant, "ELEMENT") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "ATTRIBUTE") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "TEXT") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "CDATA") == 0) { *out = ptn_int(4); return 1; }
+        if (strcmp(constant, "ENTITY_REF") == 0) { *out = ptn_int(5); return 1; }
+        if (strcmp(constant, "ENTITY") == 0) { *out = ptn_int(6); return 1; }
+        if (strcmp(constant, "PI") == 0) { *out = ptn_int(7); return 1; }
+        if (strcmp(constant, "COMMENT") == 0) { *out = ptn_int(8); return 1; }
+        if (strcmp(constant, "DOC") == 0) { *out = ptn_int(9); return 1; }
+        if (strcmp(constant, "DOC_TYPE") == 0) { *out = ptn_int(10); return 1; }
+        if (strcmp(constant, "DOC_FRAGMENT") == 0) { *out = ptn_int(11); return 1; }
+        if (strcmp(constant, "NOTATION") == 0) { *out = ptn_int(12); return 1; }
+        if (strcmp(constant, "WHITESPACE") == 0) { *out = ptn_int(13); return 1; }
+        if (strcmp(constant, "SIGNIFICANT_WHITESPACE") == 0) { *out = ptn_int(14); return 1; }
+        if (strcmp(constant, "END_ELEMENT") == 0) { *out = ptn_int(15); return 1; }
+        if (strcmp(constant, "END_ENTITY") == 0) { *out = ptn_int(16); return 1; }
+        if (strcmp(constant, "XML_DECLARATION") == 0) { *out = ptn_int(17); return 1; }
+        if (strcmp(constant, "LOADDTD") == 0) { *out = ptn_int(1); return 1; }
+        if (strcmp(constant, "DEFAULTATTRS") == 0) { *out = ptn_int(2); return 1; }
+        if (strcmp(constant, "VALIDATE") == 0) { *out = ptn_int(3); return 1; }
+        if (strcmp(constant, "SUBST_ENTITIES") == 0) { *out = ptn_int(4); return 1; }
+    }
     if (ptn_ascii_case_equal_span_to_string(class_name, class_len, "PDO") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Sqlite") ||
         ptn_ascii_case_equal_span_to_string(class_name, class_len, "Pdo\\Mysql") ||
@@ -5484,8 +5508,8 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
-        && ptn_internal_class_name_is_xml_reader(receiver.as.object->class_name)
-        && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
+        && ptn_object_is_internal_or_descendant(receiver, "XMLReader")
+        && ptn_internal_class_method_exists("XMLReader", name)
     ) {
         return ptn_xml_reader_call_method(runtime, receiver, name, argc, args, line);
     }
