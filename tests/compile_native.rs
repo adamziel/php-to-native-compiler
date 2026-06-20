@@ -27708,6 +27708,71 @@ echo $writer->flush();
 }
 
 #[test]
+fn compile_xmlreader_default_attributes_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlreader-default-attributes");
+    fs::create_dir_all(&root).unwrap();
+    let dtd = root.join("reader.dtd");
+    let xml = root.join("reader.xml");
+    let input = root.join("xmlreader-default-attributes.php");
+    let output = root.join("xmlreader-default-attributes-bin");
+    fs::write(
+        &dtd,
+        "<!ELEMENT foo EMPTY>\n<!ATTLIST foo bar CDATA '' baz CDATA ''>\n",
+    )
+    .unwrap();
+    fs::write(
+        &xml,
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo SYSTEM \"reader.dtd\">\n<foo bar=\"\"/>\n",
+    )
+    .unwrap();
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$dtd = {};
+$xmlFile = {};
+$source = '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
+    . '<!DOCTYPE foo SYSTEM "' . $dtd . '">' . "\n"
+    . '<foo bar=""/>' . "\n";
+
+$reader = new XMLReader();
+$reader->XML($source);
+$reader->setParserProperty(XMLReader::DEFAULTATTRS, true);
+$reader->read();
+var_dump($reader->getAttribute('bar'));
+var_dump($reader->getAttribute('baz'));
+$reader->close();
+
+$reader = new XMLReader();
+$reader->open($xmlFile);
+$reader->setParserProperty(XMLReader::DEFAULTATTRS, true);
+$reader->read();
+var_dump($reader->getAttribute('bar'));
+var_dump($reader->getAttribute('baz'));
+"#,
+            php_string_literal(&dtd),
+            php_string_literal(&xml)
+        ),
+    )
+    .unwrap();
+
+    let _compiled = compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+            "string(0) \"\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_dom_document_load_save_html_surfaces_to_native_binary() {
     let root = temp_dir("ptn-native-dom-document-load-save-html-surfaces");
     fs::create_dir_all(&root).unwrap();
