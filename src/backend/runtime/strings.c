@@ -1316,8 +1316,108 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(1);
         return 1;
     }
+    if (strcmp(name, "XML_OPTION_TARGET_ENCODING") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "XML_OPTION_SKIP_TAGSTART") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(name, "XML_OPTION_SKIP_WHITE") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
     if (strcmp(name, "XML_OPTION_PARSE_HUGE") == 0) {
         *out = ptn_int(5);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_NONE") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_NO_MEMORY") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_SYNTAX") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_NO_ELEMENTS") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_INVALID_TOKEN") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_UNCLOSED_TOKEN") == 0) {
+        *out = ptn_int(5);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_PARTIAL_CHAR") == 0) {
+        *out = ptn_int(6);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_TAG_MISMATCH") == 0) {
+        *out = ptn_int(7);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_DUPLICATE_ATTRIBUTE") == 0) {
+        *out = ptn_int(8);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_JUNK_AFTER_DOC_ELEMENT") == 0) {
+        *out = ptn_int(9);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_PARAM_ENTITY_REF") == 0) {
+        *out = ptn_int(10);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_UNDEFINED_ENTITY") == 0) {
+        *out = ptn_int(11);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_RECURSIVE_ENTITY_REF") == 0) {
+        *out = ptn_int(12);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_ASYNC_ENTITY") == 0) {
+        *out = ptn_int(13);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_BAD_CHAR_REF") == 0) {
+        *out = ptn_int(14);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_BINARY_ENTITY_REF") == 0) {
+        *out = ptn_int(15);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_ATTRIBUTE_EXTERNAL_ENTITY_REF") == 0) {
+        *out = ptn_int(16);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_MISPLACED_XML_PI") == 0) {
+        *out = ptn_int(17);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_UNKNOWN_ENCODING") == 0) {
+        *out = ptn_int(18);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_INCORRECT_ENCODING") == 0) {
+        *out = ptn_int(19);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_UNCLOSED_CDATA_SECTION") == 0) {
+        *out = ptn_int(20);
+        return 1;
+    }
+    if (strcmp(name, "XML_ERROR_EXTERNAL_ENTITY_HANDLING") == 0) {
+        *out = ptn_int(21);
         return 1;
     }
     if (strcmp(name, "XML_ELEMENT_NODE") == 0) {
