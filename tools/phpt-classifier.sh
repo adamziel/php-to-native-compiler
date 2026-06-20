@@ -1694,7 +1694,7 @@ ptn_phpt_first_unsupported_language_surface() {
                 exit
             }
             if (line ~ /(^|[^[:alnum:]_$])(date_create_from_format|date_parse_from_format)[[:space:]]*\(/) {
-                print "unsupported-internal\trequires date format parser diagnostics and fractional-second normalization outside PTN modeled date runtime"
+                print "unsupported-internal\trequires timelib-compatible date format parser diagnostics and fractional-second normalization outside PTN bounded date runtime"
                 found = 1
                 exit
             }

@@ -61405,6 +61405,14 @@ static PtnValue ptn_internal_assert(PtnRuntime *runtime, size_t argc, const PtnV
     return ptn_bool(0);
 }
 
+/*
+ * Bounded date/time scaffold.
+ *
+ * These helpers keep the existing ext/date smoke surface working, but PHP's
+ * production parser, timezone database, relative-date semantics, DateInterval
+ * parsing, and parse diagnostics belong behind the timelib-compatible runtime
+ * boundary documented in docs/TIMELIB_DATE_TIME_BACKEND.md.
+ */
 static const char *ptn_date_weekday_short(int wday) {
     static const char *names[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
     return names[wday >= 0 && wday < 7 ? wday : 0];

@@ -1,0 +1,50 @@
+# ptn-hvvb4.2 focused timelib date/time backend boundary rows.
+#
+# These ext/date rows exercise the semantic surfaces that must route through a
+# timelib-compatible backend instead of PTN's bounded local date helpers:
+# format parsers and diagnostics, textual/relative strtotime input, timezone
+# database transitions/abbreviations, DateTime round trips, and DateInterval
+# parsing/application.
+
+# date_parse_from_format() / createFromFormat() parser diagnostics.
+ext/date/tests/date-parse-by-format001.phpt
+ext/date/tests/test-parse-from-format.phpt
+ext/date/tests/date-lenient.phpt
+ext/date/tests/bug67251.phpt
+ext/date/tests/bug68078.phpt
+ext/date/tests/bug75232.phpt
+ext/date/tests/bug51393.phpt
+ext/date/tests/DateTime_fix_createFromFormat.phpt
+
+# strtotime() textual, timezone, and relative strings.
+ext/date/tests/bug14561.phpt
+ext/date/tests/bug26694.phpt
+ext/date/tests/bug34304.phpt
+ext/date/tests/bug33578.phpt
+ext/date/tests/bug35422.phpt
+ext/date/tests/bug37616.phpt
+ext/date/tests/strtotime-relative.phpt
+
+# Timezone identifiers, abbreviations, offsets, and transition database data.
+ext/date/tests/timezone_identifiers_list_basic1.phpt
+ext/date/tests/timezones-list.phpt
+ext/date/tests/timezone_abbreviations_list_basic1.phpt
+ext/date/tests/DateTimeZone_listAbbreviations_basic1.phpt
+ext/date/tests/timezone_transitions_get_basic1.phpt
+ext/date/tests/DateTimeZone_getTransitions_basic1.phpt
+ext/date/tests/DateTimeZone_getTransitions_bug1.phpt
+ext/date/tests/bug80963.phpt
+
+# DateTime object construction, mutation, serialization, and round trips.
+ext/date/tests/date_time_immutable.phpt
+ext/date/tests/bug77571.phpt
+ext/date/tests/bug68549-dst-transition-DateTime-setTimezone.phpt
+ext/date/tests/DateTime_uninitialised_exceptions.phpt
+
+# DateInterval parser, relative interval strings, and DST-sensitive arithmetic.
+ext/date/tests/DateInterval_construct_exceptions.phpt
+ext/date/tests/date_interval_create_from_date_string.phpt
+ext/date/tests/date_interval_create_from_date_string_broken.phpt
+ext/date/tests/date_interval_non_relative_warning.phpt
+ext/date/tests/rfc-datetime_and_daylight_saving_time-type3-bs.phpt
+ext/date/tests/rfc-datetime_and_daylight_saving_time-type3-fs.phpt

@@ -1990,7 +1990,7 @@ fn phpt_classifier_excludes_unsupported_date_format_parser_rows() {
     );
 
     assert!(classification.starts_with("unsupported-internal\t"));
-    assert!(classification.contains("date format parser diagnostics"));
+    assert!(classification.contains("timelib-compatible date format parser diagnostics"));
 }
 
 #[test]
