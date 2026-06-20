@@ -893,6 +893,11 @@ static PTN_UNUSED PtnValue ptn_new_object(
             return ptn_null();
         }
     }
+    if (ptn_runtime_dynamic_class_exists(runtime, lookup_class_name)) {
+        (void)argc;
+        (void)args;
+        return ptn_object_new_shell(runtime, lookup_class_name);
+    }
     if (ptn_declared_runtime_user_class_exists(runtime, lookup_class_name)) {
         return ptn_declared_class_new_instance(runtime, lookup_class_name, argc, args, line);
     }

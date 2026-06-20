@@ -76778,6 +76778,7 @@ static PtnValue ptn_internal_reflection_reference_from_array_element(PtnRuntime 
 static PtnValue ptn_internal_method_metadata_stub(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_define(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static int ptn_user_function_exists(PtnRuntime *runtime, const char *name);
 static PtnValue ptn_user_function_names(PtnRuntime *runtime);
 static PtnFunctionMetadata ptn_user_function_metadata(const char *name);
@@ -77226,6 +77227,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "escapeshellcmd", 1, 1, ptn_internal_escapeshellcmd },
         { "easter_date", 0, 2, ptn_internal_easter_date },
         { "easter_days", 0, 2, ptn_internal_easter_days },
+        { "eval", 1, 1, ptn_internal_eval },
         { "exit", 0, 1, ptn_internal_exit },
         { "exec", 1, 3, ptn_internal_exec },
         { "explode", 2, 3, ptn_internal_explode },
@@ -100912,6 +100914,283 @@ static PtnValue ptn_internal_constant(PtnRuntime *runtime, size_t argc, const Pt
     PtnValue value = ptn_read_constant(runtime, ptn_symbol_name_without_leading_slash(name), runtime->source_path, line);
     free(name);
     return value;
+}
+
+static int ptn_eval_identifier_start(unsigned char ch) {
+    return ch == '_' ||
+        ch == '\\' ||
+        (ch >= 'a' && ch <= 'z') ||
+        (ch >= 'A' && ch <= 'Z') ||
+        ch >= 0x80;
+}
+
+static int ptn_eval_identifier_part(unsigned char ch) {
+    return ptn_eval_identifier_start(ch) || (ch >= '0' && ch <= '9');
+}
+
+static int ptn_eval_keyword_at(const char *code, size_t len, size_t pos, const char *keyword) {
+    size_t keyword_len = strlen(keyword);
+    if (pos + keyword_len > len) {
+        return 0;
+    }
+    if (pos > 0 && ptn_eval_identifier_part((unsigned char)code[pos - 1])) {
+        return 0;
+    }
+    if (pos + keyword_len < len &&
+        ptn_eval_identifier_part((unsigned char)code[pos + keyword_len])) {
+        return 0;
+    }
+    for (size_t i = 0; i < keyword_len; i++) {
+        if (ptn_ascii_lower_char(code[pos + i]) != keyword[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static size_t ptn_eval_skip_ws(const char *code, size_t len, size_t pos) {
+    while (pos < len && isspace((unsigned char)code[pos])) {
+        pos++;
+    }
+    return pos;
+}
+
+static size_t ptn_eval_skip_quoted_string(const char *code, size_t len, size_t pos) {
+    char quote = code[pos];
+    pos++;
+    while (pos < len) {
+        if (code[pos] == '\\' && pos + 1 < len) {
+            pos += 2;
+            continue;
+        }
+        if (code[pos] == quote) {
+            return pos + 1;
+        }
+        pos++;
+    }
+    return pos;
+}
+
+static int ptn_eval_magic_method_name(const char *name, size_t len) {
+    static const char *const magic_methods[] = {
+        "__call",
+        "__callstatic",
+        "__clone",
+        "__debuginfo",
+        "__destruct",
+        "__get",
+        "__invoke",
+        "__isset",
+        "__serialize",
+        "__set",
+        "__set_state",
+        "__sleep",
+        "__tostring",
+        "__unserialize",
+        "__unset",
+        "__wakeup",
+    };
+    for (size_t i = 0; i < sizeof(magic_methods) / sizeof(magic_methods[0]); i++) {
+        const char *method = magic_methods[i];
+        size_t method_len = strlen(method);
+        if (len != method_len) {
+            continue;
+        }
+        int equal = 1;
+        for (size_t j = 0; j < len; j++) {
+            if (ptn_ascii_lower_char(name[j]) != method[j]) {
+                equal = 0;
+                break;
+            }
+        }
+        if (equal) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void ptn_eval_emit_magic_visibility_warning(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *method_name,
+    size_t method_name_len,
+    size_t line
+) {
+    char *method = ptn_duplicate_string_len(method_name, method_name_len);
+    int message_len = snprintf(
+        NULL,
+        0,
+        "The magic method %s::%s() must have public visibility",
+        class_name,
+        method
+    );
+    if (message_len < 0) {
+        free(method);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)message_len + 1);
+    if (message == NULL) {
+        free(method);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)message_len + 1,
+        "The magic method %s::%s() must have public visibility",
+        class_name,
+        method
+    );
+
+    const char *source_path = runtime->source_path != NULL ? runtime->source_path : "ptn";
+    int path_len = snprintf(NULL, 0, "%s(%zu) : eval()'d code", source_path, line);
+    if (path_len < 0) {
+        free(message);
+        free(method);
+        ptn_abort_out_of_memory();
+    }
+    char *path = malloc((size_t)path_len + 1);
+    if (path == NULL) {
+        free(message);
+        free(method);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(path, (size_t)path_len + 1, "%s(%zu) : eval()'d code", source_path, line);
+    ptn_emit_compile_warning(runtime, message, path, 1);
+    free(path);
+    free(message);
+    free(method);
+}
+
+static size_t ptn_eval_find_matching_brace(const char *code, size_t len, size_t open_pos) {
+    size_t depth = 1;
+    size_t pos = open_pos + 1;
+    while (pos < len) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, len, pos);
+            continue;
+        }
+        if (code[pos] == '{') {
+            depth++;
+        } else if (code[pos] == '}') {
+            depth--;
+            if (depth == 0) {
+                return pos;
+            }
+        }
+        pos++;
+    }
+    return len;
+}
+
+static void ptn_eval_scan_magic_visibility(
+    PtnRuntime *runtime,
+    const char *code,
+    size_t body_start,
+    size_t body_end,
+    const char *class_name,
+    size_t line
+) {
+    for (size_t pos = body_start; pos < body_end; pos++) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, body_end, pos);
+            continue;
+        }
+        int non_public = 0;
+        size_t cursor = pos;
+        if (ptn_eval_keyword_at(code, body_end, pos, "private")) {
+            non_public = 1;
+            cursor = pos + strlen("private");
+        } else if (ptn_eval_keyword_at(code, body_end, pos, "protected")) {
+            non_public = 1;
+            cursor = pos + strlen("protected");
+        }
+        if (!non_public) {
+            continue;
+        }
+        cursor = ptn_eval_skip_ws(code, body_end, cursor);
+        if (ptn_eval_keyword_at(code, body_end, cursor, "static")) {
+            cursor = ptn_eval_skip_ws(code, body_end, cursor + strlen("static"));
+        }
+        if (!ptn_eval_keyword_at(code, body_end, cursor, "function")) {
+            continue;
+        }
+        cursor = ptn_eval_skip_ws(code, body_end, cursor + strlen("function"));
+        if (cursor < body_end && code[cursor] == '&') {
+            cursor = ptn_eval_skip_ws(code, body_end, cursor + 1);
+        }
+        if (cursor >= body_end || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+            continue;
+        }
+        size_t method_start = cursor;
+        while (cursor < body_end && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+            cursor++;
+        }
+        size_t method_len = cursor - method_start;
+        if (ptn_eval_magic_method_name(code + method_start, method_len)) {
+            ptn_eval_emit_magic_visibility_warning(
+                runtime,
+                class_name,
+                code + method_start,
+                method_len,
+                line
+            );
+        }
+    }
+}
+
+static void ptn_eval_scan_class_declarations(PtnRuntime *runtime, const char *code, size_t line) {
+    size_t len = strlen(code);
+    for (size_t pos = 0; pos < len; pos++) {
+        if (code[pos] == '\'' || code[pos] == '"') {
+            pos = ptn_eval_skip_quoted_string(code, len, pos);
+            continue;
+        }
+        if (!ptn_eval_keyword_at(code, len, pos, "class")) {
+            continue;
+        }
+        size_t cursor = ptn_eval_skip_ws(code, len, pos + strlen("class"));
+        if (cursor >= len || !ptn_eval_identifier_start((unsigned char)code[cursor])) {
+            continue;
+        }
+        size_t name_start = cursor;
+        while (cursor < len && ptn_eval_identifier_part((unsigned char)code[cursor])) {
+            cursor++;
+        }
+        char *class_name = ptn_duplicate_string_len(code + name_start, cursor - name_start);
+        ptn_runtime_register_dynamic_class(runtime, class_name);
+        size_t body_open = cursor;
+        while (body_open < len && code[body_open] != '{' && code[body_open] != ';') {
+            if (code[body_open] == '\'' || code[body_open] == '"') {
+                body_open = ptn_eval_skip_quoted_string(code, len, body_open);
+                continue;
+            }
+            body_open++;
+        }
+        if (body_open < len && code[body_open] == '{') {
+            size_t body_close = ptn_eval_find_matching_brace(code, len, body_open);
+            ptn_eval_scan_magic_visibility(
+                runtime,
+                code,
+                body_open + 1,
+                body_close,
+                class_name,
+                line
+            );
+            pos = body_close;
+        } else {
+            pos = cursor;
+        }
+        free(class_name);
+    }
+}
+
+static PtnValue ptn_internal_eval(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    char *code = ptn_value_to_string(args[0]);
+    ptn_eval_scan_class_declarations(runtime, code, line);
+    free(code);
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_class_alias(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {

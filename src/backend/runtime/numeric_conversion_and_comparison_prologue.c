@@ -7,6 +7,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
     runtime->constants = caller_runtime->constants;
     ptn_symbols_init(&runtime->owned_class_aliases);
     runtime->class_aliases = caller_runtime->class_aliases;
+    ptn_symbols_init(&runtime->owned_dynamic_classes);
+    runtime->dynamic_classes = caller_runtime->dynamic_classes;
     ptn_symbols_init(&runtime->owned_class_constants);
     runtime->class_constants = caller_runtime->class_constants;
     ptn_symbols_init(&runtime->owned_class_constant_deprecations);
@@ -442,6 +444,7 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
     ptn_symbols_free(&runtime->owned_class_constant_initializing);
     ptn_symbols_free(&runtime->owned_class_constant_deprecations);
     ptn_symbols_free(&runtime->owned_class_constants);
+    ptn_symbols_free(&runtime->owned_dynamic_classes);
     ptn_symbols_free(&runtime->owned_class_aliases);
     ptn_symbols_free(&runtime->owned_constants);
     ptn_symbols_free(&runtime->symbols);
@@ -3125,6 +3128,42 @@ static PtnSymbolTable *ptn_runtime_class_alias_table(PtnRuntime *runtime) {
         return root->class_aliases;
     }
     return runtime == NULL ? NULL : runtime->class_aliases;
+}
+
+static PtnSymbolTable *ptn_runtime_dynamic_class_table(PtnRuntime *runtime) {
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    if (root != NULL && root->dynamic_classes != NULL) {
+        return root->dynamic_classes;
+    }
+    return runtime == NULL ? NULL : runtime->dynamic_classes;
+}
+
+static PTN_UNUSED int ptn_runtime_dynamic_class_exists(PtnRuntime *runtime, const char *class_name) {
+    if (class_name == NULL) {
+        return 0;
+    }
+    PtnSymbolTable *classes = ptn_runtime_dynamic_class_table(runtime);
+    if (classes == NULL) {
+        return 0;
+    }
+    char *key = ptn_class_alias_key(class_name);
+    PtnValue marker;
+    int found = ptn_symbols_get(classes, key, &marker);
+    free(key);
+    return found;
+}
+
+static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name) {
+    if (class_name == NULL || *class_name == '\0') {
+        return;
+    }
+    PtnSymbolTable *classes = ptn_runtime_dynamic_class_table(runtime);
+    if (classes == NULL) {
+        return;
+    }
+    char *key = ptn_class_alias_key(class_name);
+    ptn_symbols_set(classes, key, ptn_bool(1));
+    free(key);
 }
 
 static PTN_UNUSED const char *ptn_runtime_resolve_class_alias(

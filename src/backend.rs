@@ -5243,7 +5243,6 @@ fn emit_class_metadata_helpers(
     source_dir: &str,
     emit_reflection_helpers: bool,
 ) {
-    let has_user_classes = classes.iter().any(|class| !class.is_interface);
     let has_user_interfaces = classes.iter().any(|class| class.is_interface);
 
     out.push_str(
@@ -5476,9 +5475,9 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_user_class_exists(PtnRuntime *runtime, const char *name) {\n");
-    if !has_user_classes {
-        out.push_str("    (void)runtime;\n");
-    }
+    out.push_str("    if (ptn_runtime_dynamic_class_exists(runtime, name)) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     for (index, class) in classes.iter().enumerate() {
         if class.is_interface {
             continue;
@@ -5495,9 +5494,9 @@ fn emit_class_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str("\nstatic PTN_UNUSED int ptn_declared_runtime_class_exists(PtnRuntime *runtime, const char *name) {\n");
-    if !has_user_classes {
-        out.push_str("    (void)runtime;\n");
-    }
+    out.push_str("    if (ptn_runtime_dynamic_class_exists(runtime, name)) {\n");
+    out.push_str("        return 1;\n");
+    out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(name, \"stdClass\")) {\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");

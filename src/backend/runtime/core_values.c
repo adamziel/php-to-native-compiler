@@ -1113,6 +1113,8 @@ struct PtnRuntime {
     PtnSymbolTable *constants;
     PtnSymbolTable owned_class_aliases;
     PtnSymbolTable *class_aliases;
+    PtnSymbolTable owned_dynamic_classes;
+    PtnSymbolTable *dynamic_classes;
     PtnSymbolTable owned_class_constants;
     PtnSymbolTable *class_constants;
     PtnSymbolTable owned_class_constant_deprecations;
@@ -1395,6 +1397,8 @@ static PTN_UNUSED void ptn_runtime_autoload_class(
     size_t line
 );
 static PtnSymbolTable *ptn_runtime_class_alias_table(PtnRuntime *runtime);
+static PTN_UNUSED int ptn_runtime_dynamic_class_exists(PtnRuntime *runtime, const char *class_name);
+static PTN_UNUSED void ptn_runtime_register_dynamic_class(PtnRuntime *runtime, const char *class_name);
 
 typedef PtnValue (*PtnInternalFunctionHandler)(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 

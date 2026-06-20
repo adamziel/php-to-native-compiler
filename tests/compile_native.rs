@@ -11985,6 +11985,45 @@ fn compile_internal_call_arguments_evaluate_left_to_right_to_native_binary() {
 }
 
 #[test]
+fn compile_eval_class_declaration_autoload_to_native_binary() {
+    let root = temp_dir("ptn-native-eval-class-autoload");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("eval-class-autoload.php");
+    let output = root.join("eval-class-autoload-bin");
+    fs::write(
+        &input,
+        r#"<?php
+spl_autoload_register(function ($class) {
+    $GLOBALS['include'][] = $class;
+    eval("class DefClass{}");
+});
+$a = new DefClass;
+echo get_class($a), "\n";
+print_r($GLOBALS['include']);
+var_dump(class_exists('defclass', false));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "DefClass\n",
+            "Array\n",
+            "(\n",
+            "    [0] => DefClass\n",
+            ")\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_call_unpacking_to_native_binary() {
     let root = temp_dir("ptn-native-array-call-unpacking");
     fs::create_dir_all(&root).unwrap();

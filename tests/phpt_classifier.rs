@@ -742,6 +742,32 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
 }
 
 #[test]
+fn phpt_classifier_allows_literal_eval_class_declarations() {
+    let cases = [
+        (
+            "plain eval class",
+            "--TEST--\neval class\n--FILE--\n<?php\neval('class RuntimeClass {}');\nnew RuntimeClass;\n--EXPECT--\n",
+        ),
+        (
+            "autoload eval class",
+            "--TEST--\nautoload eval class\n--FILE--\n<?php\nspl_autoload_register(function ($class) {\n    eval(\"class DefClass{}\");\n});\n$a = new DefClass;\nprint_r($a);\n--EXPECT--\n",
+        ),
+        (
+            "magic warning in eval class",
+            "--TEST--\neval magic warning\n--FILE--\n<?php\nset_error_handler(function($_, $msg, $file) {});\neval('class A { private function __invoke() { } }');\n--EXPECT--\n",
+        ),
+    ];
+
+    for (name, phpt) in cases {
+        assert_eq!(
+            classify(phpt),
+            "runnable\tselected for PTN semantic measurement\n",
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn phpt_classifier_allows_dynamic_symbol_runtime_rows() {
     let cases = [
         (

@@ -1726,6 +1726,8 @@ static void ptn_runtime_init(PtnRuntime *runtime) {
     runtime->constants = &runtime->owned_constants;
     ptn_symbols_init(&runtime->owned_class_aliases);
     runtime->class_aliases = &runtime->owned_class_aliases;
+    ptn_symbols_init(&runtime->owned_dynamic_classes);
+    runtime->dynamic_classes = &runtime->owned_dynamic_classes;
     ptn_symbols_init(&runtime->owned_class_constants);
     runtime->class_constants = &runtime->owned_class_constants;
     ptn_symbols_init(&runtime->owned_class_constant_deprecations);
