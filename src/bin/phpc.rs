@@ -606,6 +606,80 @@ fn normalize_ini_scalar(raw_value: &str) -> String {
     }
 }
 
+fn date_timezone_is_modeled(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "utc"
+            | "gmt"
+            | "z"
+            | "zulu"
+            | "etc/universal"
+            | "etc/utc"
+            | "etc/zulu"
+            | "met"
+            | "bst"
+            | "cet"
+            | "cest"
+            | "edt"
+            | "est"
+            | "pst"
+            | "adt"
+            | "africa/abidjan"
+            | "africa/casablanca"
+            | "america/chicago"
+            | "america/halifax"
+            | "america/indiana/knox"
+            | "america/los_angeles"
+            | "america/new_york"
+            | "america/sao_paulo"
+            | "america/toronto"
+            | "asia/calcutta"
+            | "asia/hong_kong"
+            | "asia/jerusalem"
+            | "asia/kolkata"
+            | "australia/brisbane"
+            | "europe/amsterdam"
+            | "europe/berlin"
+            | "europe/kyiv"
+            | "europe/london"
+            | "europe/moscow"
+            | "europe/oslo"
+            | "europe/paris"
+            | "europe/rome"
+            | "pacific/samoa"
+            | "pacific/wallis"
+            | "us/alaska"
+            | "us/eastern"
+    ) || date_timezone_is_offset_literal(name)
+}
+
+fn date_timezone_is_offset_literal(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    if bytes.len() != 5 && bytes.len() != 6 {
+        return false;
+    }
+    if bytes[0] != b'+' && bytes[0] != b'-' {
+        return false;
+    }
+    let (hour_end, minute_start) = if bytes.len() == 6 {
+        if bytes[3] != b':' {
+            return false;
+        }
+        (3, 4)
+    } else {
+        (3, 3)
+    };
+    if !bytes[1..hour_end].iter().all(u8::is_ascii_digit)
+        || !bytes[minute_start..].iter().all(u8::is_ascii_digit)
+    {
+        return false;
+    }
+    let hours = (bytes[1] - b'0') * 10 + (bytes[2] - b'0');
+    let minutes = (bytes[minute_start] - b'0') * 10 + (bytes[minute_start + 1] - b'0');
+    hours < 14 || (hours == 14 && minutes == 0)
+}
+
 fn parse_error_reporting_level(raw_value: &str) -> Option<i64> {
     ErrorReportingParser::new(raw_value).parse()
 }
@@ -941,7 +1015,10 @@ fn compile_and_run(
         command.env("PTN_PHP_SERIALIZE_PRECISION", serialize_precision);
     }
     if let Some(date_timezone) = &ini.date_timezone {
-        command.env("PTN_DATE_TIMEZONE", date_timezone);
+        if !date_timezone.is_empty() && date_timezone_is_modeled(date_timezone) {
+            command.env("PTN_DATE_TIMEZONE", date_timezone);
+            command.env("TZ", date_timezone);
+        }
     }
     if let Some(default_charset) = &ini.default_charset {
         command.env("PTN_DEFAULT_CHARSET", default_charset);
@@ -1114,13 +1191,26 @@ fn compile_and_run(
     } else {
         command.env("PTN_REQUEST_MODE", "cli");
     }
+    let date_timezone_warning = ini
+        .date_timezone
+        .as_deref()
+        .filter(|timezone| !date_timezone_is_modeled(timezone))
+        .map(|timezone| {
+            format!(
+                "Warning: PHP Startup: Invalid date.timezone value '{timezone}', using 'UTC' instead in Unknown on line 0\n"
+            )
+        });
     let startup_warning_emitted = memory_limit_warning.is_some()
+        || date_timezone_warning.is_some()
         || ini.mbstring_internal_encoding.is_some()
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
         command.env("PTN_STARTUP_WARNING_EMITTED", "1");
     }
     if let Some(warning) = memory_limit_warning {
+        print!("{warning}");
+    }
+    if let Some(warning) = date_timezone_warning {
         print!("{warning}");
     }
     if ini.allow_url_include_deprecated {

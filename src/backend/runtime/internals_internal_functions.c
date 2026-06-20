@@ -19941,7 +19941,179 @@ static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t
     result->path = encoded;
 }
 
+static int ptn_uri_bytes_case_equal(const char *data, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)data[i]) != tolower((unsigned char)literal[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_whatwg_scheme_bytes_are_special(const char *scheme, size_t scheme_len) {
+    return ptn_uri_bytes_case_equal(scheme, scheme_len, "http") ||
+        ptn_uri_bytes_case_equal(scheme, scheme_len, "https") ||
+        ptn_uri_bytes_case_equal(scheme, scheme_len, "ws") ||
+        ptn_uri_bytes_case_equal(scheme, scheme_len, "wss") ||
+        ptn_uri_bytes_case_equal(scheme, scheme_len, "ftp") ||
+        ptn_uri_bytes_case_equal(scheme, scheme_len, "file");
+}
+
+static int ptn_uri_whatwg_host_byte_is_forbidden(unsigned char byte) {
+    return byte == 0 ||
+        byte == '[' ||
+        byte == ']' ||
+        byte == ':' ||
+        byte == '@';
+}
+
+static int ptn_uri_whatwg_prevalidate_host_bytes(
+    const char *host,
+    size_t host_len,
+    int special,
+    const char **reason_out
+) {
+    size_t effective_len = host_len;
+    for (size_t i = 0; i < effective_len; i++) {
+        if (host[i] == '/' || host[i] == '?' || host[i] == '#') {
+            effective_len = i;
+            break;
+        }
+    }
+    if (effective_len == 0) {
+        if (special) {
+            *reason_out = "HostMissing";
+            return 0;
+        }
+        return 1;
+    }
+    if (host[0] == '[') {
+        if (effective_len >= 2 && (host[1] == 'v' || host[1] == 'V')) {
+            *reason_out = "Ipv6InvalidCodePoint";
+            return 0;
+        }
+        return 1;
+    }
+    for (size_t i = 0; i < effective_len; i++) {
+        unsigned char byte = (unsigned char)host[i];
+        if (byte == '%' && i + 2 < effective_len &&
+            ptn_uri_hex_value(host[i + 1]) >= 0 &&
+            ptn_uri_hex_value(host[i + 2]) >= 0) {
+            byte = (unsigned char)((ptn_uri_hex_value(host[i + 1]) << 4) | ptn_uri_hex_value(host[i + 2]));
+            i += 2;
+        }
+        if (byte == ':') {
+            *reason_out = NULL;
+            return 0;
+        }
+        if (ptn_uri_whatwg_host_byte_is_forbidden(byte)) {
+            *reason_out = special ? "DomainInvalidCodePoint" : "HostInvalidCodePoint";
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_whatwg_prevalidate_authority(
+    const char *authority,
+    size_t authority_len,
+    int special,
+    int file_scheme,
+    const char **reason_out
+) {
+    size_t host_start = 0;
+    for (size_t i = authority_len; i > 0; i--) {
+        if (authority[i - 1] == '@') {
+            host_start = i;
+            break;
+        }
+    }
+    const char *hostport = authority + host_start;
+    size_t hostport_len = authority_len - host_start;
+    if (hostport_len == 0) {
+        if (special && !file_scheme) {
+            *reason_out = host_start == 0 ? "HostMissing" : NULL;
+            return 0;
+        }
+        return 1;
+    }
+
+    size_t host_len = hostport_len;
+    size_t port_start = hostport_len;
+    if (hostport[0] == '[') {
+        size_t close = ptn_uri_find_byte(hostport, hostport_len, 1, ']');
+        host_len = close < hostport_len ? close + 1 : hostport_len;
+        if (host_len < hostport_len && hostport[host_len] == ':') {
+            port_start = host_len + 1;
+        }
+    } else {
+        for (size_t i = hostport_len; i > 0; i--) {
+            if (hostport[i - 1] == ':') {
+                host_len = i - 1;
+                port_start = i;
+                break;
+            }
+        }
+    }
+    if (!ptn_uri_whatwg_prevalidate_host_bytes(hostport, host_len, special && !file_scheme, reason_out)) {
+        return 0;
+    }
+    if (port_start < hostport_len) {
+        for (size_t i = port_start; i < hostport_len; i++) {
+            if (!isdigit((unsigned char)hostport[i])) {
+                *reason_out = "PortInvalid";
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_whatwg_prevalidate_input(PtnStringOperand input, const char **reason_out) {
+    const char *data = NULL;
+    size_t len = 0;
+    ptn_uri_whatwg_trim(input.data, input.len, 0, &data, &len);
+    size_t first_delimiter = ptn_uri_find_remainder_delimiter(data, len, 0);
+    size_t colon = ptn_uri_find_byte(data, first_delimiter, 0, ':');
+    if (colon == 0 || colon >= first_delimiter || !ptn_uri_validate_scheme_component(data, colon)) {
+        *reason_out = "MissingSchemeNonRelativeUrl";
+        return 0;
+    }
+    int special = ptn_uri_whatwg_scheme_bytes_are_special(data, colon);
+    int file_scheme = ptn_uri_bytes_case_equal(data, colon, "file");
+    const char *rest = data + colon + 1;
+    size_t rest_len = len - colon - 1;
+    if (rest_len >= 2 && rest[0] == '/' && rest[1] == '/') {
+        size_t authority_start = 2;
+        size_t authority_end = ptn_uri_find_remainder_delimiter(rest, rest_len, authority_start);
+        return ptn_uri_whatwg_prevalidate_authority(
+            rest + authority_start,
+            authority_end - authority_start,
+            special,
+            file_scheme,
+            reason_out
+        );
+    }
+    if (special && !file_scheme) {
+        size_t authority_end = ptn_uri_find_remainder_delimiter(rest, rest_len, 0);
+        if (authority_end == 0) {
+            *reason_out = "HostMissing";
+            return 0;
+        }
+        return ptn_uri_whatwg_prevalidate_authority(rest, authority_end, special, file_scheme, reason_out);
+    }
+    return 1;
+}
+
 static int ptn_uri_parse_whatwg(PtnStringOperand input, PtnUriData **result_out, const char **reason_out) {
+    if (!ptn_uri_whatwg_prevalidate_input(input, reason_out)) {
+        *result_out = NULL;
+        return 0;
+    }
 #ifdef PTN_USE_ADA_URL
     return ptn_uri_ada_parse_whatwg(input, result_out, reason_out);
 #else
@@ -20466,6 +20638,11 @@ static PtnValue ptn_uri_whatwg_with_scheme(
         ptn_string_operand_free(value);
         return ptn_null();
     }
+    if (value.len == 0) {
+        ptn_string_operand_free(value);
+        ptn_uri_whatwg_throw_malformed(runtime, "scheme", NULL);
+        return ptn_null();
+    }
 #ifndef PTN_USE_ADA_URL
     ptn_string_operand_free(value);
     ptn_uri_whatwg_throw_malformed(runtime, "scheme", "AdaParserUnavailable");
@@ -20519,6 +20696,12 @@ static PtnValue ptn_uri_whatwg_with_host(
     if (special && host_arg.len == 0) {
         ptn_string_operand_free(host_arg);
         ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
+        return ptn_null();
+    }
+    const char *prevalidate_reason = NULL;
+    if (!ptn_uri_whatwg_prevalidate_host_bytes(host_arg.data, host_arg.len, special, &prevalidate_reason)) {
+        ptn_string_operand_free(host_arg);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", prevalidate_reason);
         return ptn_null();
     }
 #ifndef PTN_USE_ADA_URL
@@ -33827,6 +34010,7 @@ static char *ptn_pcre_pattern_to_posix(
 
     *flags_out = REG_EXTENDED;
     int extended_mode = 0;
+    int no_auto_capture = 0;
     for (size_t i = end + 1; i < pattern.len; i++) {
         switch (pattern.data[i]) {
             case 'i':
@@ -33837,6 +34021,9 @@ static char *ptn_pcre_pattern_to_posix(
                 break;
             case 'x':
                 extended_mode = 1;
+                break;
+            case 'n':
+                no_auto_capture = 1;
                 break;
             case 's':
             case 'S':
@@ -34084,7 +34271,14 @@ static char *ptn_pcre_pattern_to_posix(
                 i += 2;
                 continue;
             }
-            ptn_preg_capture_push(&captures, &capture_count, posix_group_index, NULL, 0);
+            if (i + 2 < end && pattern.data[i + 1] == '?' && pattern.data[i + 2] == '>') {
+                ptn_string_buffer_append_char(&output, '(');
+                i += 2;
+                continue;
+            }
+            if (!no_auto_capture) {
+                ptn_preg_capture_push(&captures, &capture_count, posix_group_index, NULL, 0);
+            }
         }
 
         if (
@@ -56329,6 +56523,37 @@ static PtnValue ptn_internal_phpversion(PtnRuntime *runtime, size_t argc, const 
     return ptn_bool(0);
 }
 
+static const char *ptn_runtime_pcre_backtrack_limit(PtnRuntime *runtime);
+static const char *ptn_runtime_pcre_jit(PtnRuntime *runtime);
+
+static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)args;
+    (void)line;
+    if (argc > 1) {
+        ptn_throw_exception(runtime, "ArgumentCountError", "phpinfo() expects at most 1 argument");
+        return ptn_null();
+    }
+    ptn_output_write_cstr(runtime, "phpinfo()\n");
+    ptn_output_write_cstr(runtime, "PHP Version => " PTN_PHP_VERSION "\n");
+    ptn_output_write_cstr(runtime, "System => " PTN_PHP_OS "\n");
+    ptn_output_write_cstr(runtime, "PHP API => " PTN_ZEND_VERSION "\n");
+    ptn_output_write_cstr(runtime, "Loaded Configuration File => (none)\n");
+    ptn_output_write_cstr(runtime, "\npcre\n");
+    ptn_output_write_cstr(runtime, "PCRE Support => enabled\n");
+    ptn_output_write_cstr(runtime, "PCRE JIT Support => enabled\n");
+    ptn_output_write_cstr(runtime, "pcre.backtrack_limit => ");
+    ptn_output_write_cstr(runtime, ptn_runtime_pcre_backtrack_limit(runtime));
+    ptn_output_write_cstr(runtime, " => ");
+    ptn_output_write_cstr(runtime, ptn_runtime_pcre_backtrack_limit(runtime));
+    ptn_output_write_cstr(runtime, "\n");
+    ptn_output_write_cstr(runtime, "pcre.jit => ");
+    ptn_output_write_cstr(runtime, ptn_runtime_pcre_jit(runtime));
+    ptn_output_write_cstr(runtime, " => ");
+    ptn_output_write_cstr(runtime, ptn_runtime_pcre_jit(runtime));
+    ptn_output_write_cstr(runtime, "\n");
+    return ptn_bool(1);
+}
+
 static int ptn_version_token_is_number(const char *data, size_t len) {
     if (len == 0) {
         return 1;
@@ -61119,6 +61344,9 @@ static PtnValue ptn_format_date_value(PtnRuntime *runtime, const char *function_
             case 's':
                 ptn_string_buffer_append_format(&buffer, "%02d", parts->tm_sec);
                 break;
+            case 'u':
+                ptn_string_buffer_append(&buffer, "000000");
+                break;
             case 'v':
                 ptn_string_buffer_append(&buffer, "000");
                 break;
@@ -61392,7 +61620,13 @@ static time_t ptn_date_mktime_from_args(size_t argc, const PtnValue *args, int u
         parts_storage.tm_mday = (int)ptn_value_to_integer(args[4]);
     }
     if (argc >= 6) {
-        parts_storage.tm_year = (int)ptn_value_to_integer(args[5]) - 1900;
+        int year = (int)ptn_value_to_integer(args[5]);
+        if (year >= 0 && year <= 69) {
+            year += 2000;
+        } else if (year >= 70 && year <= 100) {
+            year += 1900;
+        }
+        parts_storage.tm_year = year - 1900;
     }
     parts_storage.tm_isdst = -1;
     return use_gmt ? ptn_mktime_in_utc(&parts_storage) : mktime(&parts_storage);
@@ -61536,7 +61770,8 @@ static PtnValue ptn_internal_date_default_timezone_set(PtnRuntime *runtime, size
             ptn_abort_out_of_memory();
         }
         snprintf(message, message_len, "date_default_timezone_set(): Timezone ID '%s' is invalid", name);
-        int leading_newline = runtime->diagnostics.emitted_warning;
+        PtnRuntime *root = ptn_runtime_root(runtime);
+        int leading_newline = runtime->diagnostics.emitted_warning || (root != NULL && root->output_has_started);
         ptn_emit_notice_with_path(&runtime->diagnostics, message, runtime->source_path, line, leading_newline);
         runtime->diagnostics.emitted_warning = 1;
         free(message);
@@ -61737,21 +61972,32 @@ typedef struct {
 
 static const PtnTimezoneIdentifier ptn_timezone_identifiers[] = {
     { "Africa/Abidjan", 1, 0 },
+    { "Africa/Casablanca", 1, 0 },
     { "America/Chicago", 2, 0 },
     { "America/Halifax", 2, 0 },
+    { "America/Indiana/Knox", 2, 1 },
     { "America/Los_Angeles", 2, 0 },
     { "America/New_York", 2, 0 },
     { "America/Sao_Paulo", 2, 0 },
+    { "America/Toronto", 2, 0 },
     { "Asia/Calcutta", 16, 1 },
+    { "Asia/Hong_Kong", 16, 1 },
     { "Asia/Jerusalem", 16, 0 },
     { "Asia/Kolkata", 16, 0 },
+    { "Australia/Brisbane", 8, 0 },
     { "Europe/Amsterdam", 128, 0 },
     { "Europe/Berlin", 128, 0 },
     { "Europe/Kyiv", 128, 0 },
     { "Europe/London", 128, 0 },
+    { "Europe/Moscow", 128, 0 },
     { "Europe/Oslo", 128, 0 },
     { "Europe/Paris", 128, 0 },
+    { "Europe/Rome", 128, 0 },
+    { "MET", 2047, 1 },
+    { "Pacific/Samoa", 64, 1 },
+    { "Pacific/Wallis", 64, 0 },
     { "UTC", 1024, 0 },
+    { "US/Alaska", 2, 1 },
     { "US/Eastern", 2, 1 },
 };
 
@@ -61846,6 +62092,7 @@ static int ptn_timezone_identifier_is_known(const char *name) {
         ptn_ascii_case_equal(name, "Etc/Universal") ||
         ptn_ascii_case_equal(name, "Etc/UTC") ||
         ptn_ascii_case_equal(name, "Etc/Zulu") ||
+        ptn_ascii_case_equal(name, "MET") ||
         ptn_ascii_case_equal(name, "BST") ||
         ptn_ascii_case_equal(name, "CET") ||
         ptn_ascii_case_equal(name, "CEST") ||
@@ -61923,6 +62170,9 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
         ptn_ascii_case_equal(name, "Africa/Abidjan")) {
         return 0;
     }
+    if (ptn_ascii_case_equal(name, "Africa/Casablanca")) {
+        return 0;
+    }
     if (ptn_ascii_case_equal(name, "Europe/London")) {
         return europe_dst ? 3600 : 0;
     }
@@ -61930,15 +62180,27 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
         ptn_ascii_case_equal(name, "Europe/Oslo") ||
-        ptn_ascii_case_equal(name, "Europe/Kyiv")) {
+        ptn_ascii_case_equal(name, "Europe/Rome") ||
+        ptn_ascii_case_equal(name, "Europe/Kyiv") ||
+        ptn_ascii_case_equal(name, "MET")) {
         return europe_dst ? 7200 : 3600;
     }
+    if (ptn_ascii_case_equal(name, "Europe/Moscow")) {
+        return 10800;
+    }
     if (ptn_ascii_case_equal(name, "America/New_York") ||
+        ptn_ascii_case_equal(name, "America/Toronto") ||
         ptn_ascii_case_equal(name, "US/Eastern")) {
         return us_dst ? -14400 : -18000;
     }
+    if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
+        return -18000;
+    }
     if (ptn_ascii_case_equal(name, "America/Chicago")) {
         return us_dst ? -18000 : -21600;
+    }
+    if (ptn_ascii_case_equal(name, "US/Alaska")) {
+        return us_dst ? -28800 : -32400;
     }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
         return us_dst ? -25200 : -28800;
@@ -61955,6 +62217,18 @@ static int ptn_timezone_offset_for_name(const char *name, time_t timestamp) {
     }
     if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
         return ptn_datetime_timestamp_dst_month(timestamp) ? 10800 : 7200;
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Hong_Kong")) {
+        return 28800;
+    }
+    if (ptn_ascii_case_equal(name, "Australia/Brisbane")) {
+        return 36000;
+    }
+    if (ptn_ascii_case_equal(name, "Pacific/Samoa")) {
+        return -39600;
+    }
+    if (ptn_ascii_case_equal(name, "Pacific/Wallis")) {
+        return 43200;
     }
     if (ptn_ascii_case_equal(name, "CET")) {
         return 3600;
@@ -61996,24 +62270,39 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
         ptn_ascii_case_equal(name, "Africa/Abidjan")) {
         return "UTC";
     }
+    if (ptn_ascii_case_equal(name, "Africa/Casablanca")) {
+        return "GMT";
+    }
     if (ptn_ascii_case_equal(name, "Europe/London")) {
         return europe_dst ? "BST" : "GMT";
     }
     if (ptn_ascii_case_equal(name, "Europe/Paris") ||
         ptn_ascii_case_equal(name, "Europe/Berlin") ||
         ptn_ascii_case_equal(name, "Europe/Amsterdam") ||
-        ptn_ascii_case_equal(name, "Europe/Oslo")) {
+        ptn_ascii_case_equal(name, "Europe/Oslo") ||
+        ptn_ascii_case_equal(name, "Europe/Rome") ||
+        ptn_ascii_case_equal(name, "MET")) {
         return europe_dst ? "CEST" : "CET";
+    }
+    if (ptn_ascii_case_equal(name, "Europe/Moscow")) {
+        return "MSK";
     }
     if (ptn_ascii_case_equal(name, "Europe/Kyiv")) {
         return europe_dst ? "EEST" : "EET";
     }
     if (ptn_ascii_case_equal(name, "America/New_York") ||
+        ptn_ascii_case_equal(name, "America/Toronto") ||
         ptn_ascii_case_equal(name, "US/Eastern")) {
         return us_dst ? "EDT" : "EST";
     }
+    if (ptn_ascii_case_equal(name, "America/Indiana/Knox")) {
+        return "EST";
+    }
     if (ptn_ascii_case_equal(name, "America/Chicago")) {
         return us_dst ? "CDT" : "CST";
+    }
+    if (ptn_ascii_case_equal(name, "US/Alaska")) {
+        return us_dst ? "AKDT" : "AKST";
     }
     if (ptn_ascii_case_equal(name, "America/Los_Angeles")) {
         return us_dst ? "PDT" : "PST";
@@ -62027,6 +62316,18 @@ static const char *ptn_timezone_abbreviation_for_name(const char *name, time_t t
     }
     if (ptn_ascii_case_equal(name, "Asia/Jerusalem")) {
         return europe_dst ? "IDT" : "IST";
+    }
+    if (ptn_ascii_case_equal(name, "Asia/Hong_Kong")) {
+        return "HKT";
+    }
+    if (ptn_ascii_case_equal(name, "Australia/Brisbane")) {
+        return "AEST";
+    }
+    if (ptn_ascii_case_equal(name, "Pacific/Samoa")) {
+        return "SST";
+    }
+    if (ptn_ascii_case_equal(name, "Pacific/Wallis")) {
+        return "WFT";
     }
     if (ptn_ascii_case_equal(name, "CET") ||
         ptn_ascii_case_equal(name, "CEST") ||
@@ -73979,6 +74280,7 @@ static PtnValue ptn_internal_localtime(PtnRuntime *runtime, size_t argc, const P
 static PtnValue ptn_internal_method_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_mktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_microtime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_phpinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_property_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_trait_exists(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_spl_autoload_call(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -74388,7 +74690,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "glob", 1, 2, ptn_internal_glob },
         { "gmdate", 1, 2, ptn_internal_gmdate },
         { "gmstrftime", 1, 2, ptn_internal_gmstrftime },
-        { "gmmktime", 0, 6, ptn_internal_gmmktime },
+        { "gmmktime", 1, 6, ptn_internal_gmmktime },
         { "grapheme_extract", 2, 5, ptn_internal_grapheme_extract },
         { "gregoriantojd", 3, 3, ptn_internal_gregoriantojd },
         { "hebrev", 1, 2, ptn_internal_hebrev },
@@ -74573,7 +74875,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "microtime", 0, 1, ptn_internal_microtime },
         { "min", 1, PTN_VARIADIC_ARGS, ptn_internal_min },
         { "mkdir", 1, 4, ptn_internal_mkdir },
-        { "mktime", 0, 6, ptn_internal_mktime },
+        { "mktime", 1, 6, ptn_internal_mktime },
         { "move_uploaded_file", 2, 2, ptn_internal_move_uploaded_file },
         { "natcasesort", 1, 1, ptn_internal_natcasesort },
         { "natsort", 1, 1, ptn_internal_natsort },
@@ -74612,6 +74914,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "password_hash", 2, 3, ptn_internal_password_hash },
         { "password_needs_rehash", 2, 3, ptn_internal_password_needs_rehash },
         { "password_verify", 2, 2, ptn_internal_password_verify },
+        { "phpinfo", 0, 1, ptn_internal_phpinfo },
         { "php_ini_scanned_files", 0, 0, ptn_internal_php_ini_scanned_files },
         { "php_sapi_name", 0, 0, ptn_internal_php_sapi_name },
         { "php_strip_whitespace", 1, 1, ptn_internal_php_strip_whitespace },
@@ -75093,6 +75396,7 @@ static const char *ptn_internal_function_extension_name(const char *name) {
         ptn_ascii_case_equal(name, "is_a") ||
         ptn_ascii_case_equal(name, "is_subclass_of") ||
         ptn_ascii_case_equal(name, "method_exists") ||
+        ptn_ascii_case_equal(name, "phpinfo") ||
         ptn_ascii_case_equal(name, "php_ini_scanned_files") ||
         ptn_ascii_case_equal(name, "php_sapi_name") ||
         ptn_ascii_case_equal(name, "php_uname") ||
