@@ -45042,6 +45042,85 @@ fn compile_bounded_dynamic_include_paths_to_native_binary() {
 }
 
 #[test]
+fn compile_missing_include_deferred_to_runtime_warning_to_native_binary() {
+    let root = temp_dir("ptn-native-missing-include-runtime-warning");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("missing-include-runtime-warning-bin");
+    fs::write(
+        &input,
+        "<?php
+class Loader {
+    public static function load($path) {
+        return include $path;
+    }
+}
+
+var_dump(Loader::load('missing-file.php'));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains(
+            "Warning: include(missing-file.php): Failed to open stream: No such file or directory"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "Warning: include(): Failed opening 'missing-file.php' for inclusion (include_path='.')"
+        ),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("bool(false)\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_compiled_include_failure(&runtime, \"include\""));
+    assert!(!c_source.contains("ptn_include_file_0"));
+}
+
+#[test]
+fn compile_missing_require_once_warning_handler_can_throw_to_native_binary() {
+    let root = temp_dir("ptn-native-missing-require-once-warning-handler");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("main.php");
+    let output = root.join("missing-require-once-warning-handler-bin");
+    fs::write(
+        &input,
+        "<?php
+function exception_error_handler($severity, $message) {
+    throw new Exception($message);
+}
+
+set_error_handler('exception_error_handler');
+try {
+    require_once 'does-not-exist.php';
+} catch (Exception $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "require_once(does-not-exist.php): Failed to open stream: No such file or directory\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_include_function_callback_to_native_binary() {
     let root = temp_dir("ptn-native-include-function-callback");
     fs::create_dir_all(&root).unwrap();

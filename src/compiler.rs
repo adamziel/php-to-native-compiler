@@ -1053,22 +1053,20 @@ impl IncludeCollector {
     fn resolve_include(
         &mut self,
         path: &Expr,
-        span: crate::diagnostic::SourceSpan,
+        _span: crate::diagnostic::SourceSpan,
         source_file: &str,
         source_dir: &str,
     ) -> Result<Vec<usize>> {
-        let include_paths =
-            bounded_include_paths(path, source_file, source_dir, &self.path_env).ok_or_else(
-                || {
-            Diagnostic::new(
-                "dynamic include paths are unsupported; use a compile-time string path or bounded conditional of compile-time string paths",
-                Some(path.span()),
-            )
-                },
-            )?;
+        let Some(include_paths) =
+            bounded_include_paths(path, source_file, source_dir, &self.path_env)
+        else {
+            return Ok(Vec::new());
+        };
         let mut candidates = Vec::new();
         for include_path in include_paths {
-            let index = self.resolve_include_candidate(&include_path, span, source_dir)?;
+            let Some(index) = self.resolve_include_candidate(&include_path, source_dir)? else {
+                continue;
+            };
             if !candidates.contains(&index) {
                 candidates.push(index);
             }
@@ -1079,34 +1077,23 @@ impl IncludeCollector {
     fn resolve_include_candidate(
         &mut self,
         include_path: &str,
-        span: crate::diagnostic::SourceSpan,
         source_dir: &str,
-    ) -> Result<usize> {
+    ) -> Result<Option<usize>> {
         let resolved_path = resolve_include_path(include_path, source_dir);
-        let canonical_path = fs::canonicalize(&resolved_path).map_err(|error| {
-            Diagnostic::new(
-                format!(
-                    "failed to resolve included file {}: {error}",
-                    resolved_path.display()
-                ),
-                Some(span),
-            )
-        })?;
+        let canonical_path = match fs::canonicalize(&resolved_path) {
+            Ok(path) => path,
+            Err(_) => return Ok(None),
+        };
         let path_aliases = include_path_aliases(&resolved_path, &canonical_path);
         if let Some(index) = self.by_path.get(&canonical_path).copied() {
             self.add_path_aliases(index, path_aliases);
-            return Ok(index);
+            return Ok(Some(index));
         }
 
-        let source_bytes = fs::read(&canonical_path).map_err(|error| {
-            Diagnostic::new(
-                format!(
-                    "failed to read included file {}: {error}",
-                    canonical_path.display()
-                ),
-                Some(span),
-            )
-        })?;
+        let source_bytes = match fs::read(&canonical_path) {
+            Ok(bytes) => bytes,
+            Err(_) => return Ok(None),
+        };
         let source = decode_php_source_bytes(&source_bytes);
         let program = parse_for_include_collection(&source, &self.runtime_class_aliases)?;
 
@@ -1125,7 +1112,7 @@ impl IncludeCollector {
             program: program.clone(),
         });
         self.collect_program(&program, &source_file, &source_dir)?;
-        Ok(index)
+        Ok(Some(index))
     }
 
     fn finalize_sources(&mut self) -> Result<()> {

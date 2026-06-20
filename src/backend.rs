@@ -160,9 +160,7 @@ pub fn emit_c(module: &Module) -> String {
     emit_type_hint_runtime_helpers(&mut out);
     emit_include_prototypes(&mut out, &module.includes);
     emit_include_once_state(&mut out, &module.includes);
-    if !module.includes.is_empty() {
-        emit_include_runtime_helpers(&mut out);
-    }
+    emit_include_runtime_helpers(&mut out);
     emit_source_snapshot_arrays(&mut out, module);
     emit_user_function_prototypes(
         &mut out,
@@ -684,7 +682,9 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_compiled_include_failure(PtnRuntime *runtime, const char *kind, const char *path, size_t line, int required) {\n",
     );
-    out.push_str("    int needed = snprintf(NULL, 0, \"%s(%s): compiled include target is not available\", kind, path);\n");
+    out.push_str("    const char *display_path = path != NULL ? path : \"\";\n");
+    out.push_str("    const char *include_path = runtime != NULL && runtime->include_path != NULL ? runtime->include_path : \".\";\n");
+    out.push_str("    int needed = snprintf(NULL, 0, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
     out.push_str("    if (needed < 0) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
@@ -692,17 +692,48 @@ fn emit_include_runtime_helpers(out: &mut String) {
     out.push_str("    if (message == NULL) {\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    int written = snprintf(message, (size_t)needed + 1, \"%s(%s): compiled include target is not available\", kind, path);\n");
+    out.push_str("    int written = snprintf(message, (size_t)needed + 1, \"%s(%s): Failed to open stream: No such file or directory\", kind, display_path);\n");
     out.push_str("    if (written < 0 || written != needed) {\n");
     out.push_str("        free(message);\n");
     out.push_str("        ptn_abort_out_of_memory();\n");
     out.push_str("    }\n");
-    out.push_str("    ptn_emit_warning(&runtime->diagnostics, message, line);\n");
+    out.push_str("    ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);\n");
     out.push_str("    free(message);\n");
-    out.push_str("    if (required) {\n");
-    out.push_str("        ptn_emit_type_error(&runtime->diagnostics, \"Failed opening required compiled include\");\n");
-    out.push_str("        exit(255);\n");
+    out.push_str("    if (runtime != NULL && runtime->exceptions != NULL && runtime->exceptions->active_exception != NULL) {\n");
+    out.push_str("        return ptn_null();\n");
     out.push_str("    }\n");
+    out.push_str("    if (required) {\n");
+    out.push_str("        needed = snprintf(NULL, 0, \"Failed opening required '%s' (include_path='%s')\", display_path, include_path);\n");
+    out.push_str("        if (needed < 0) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        message = malloc((size_t)needed + 1);\n");
+    out.push_str("        if (message == NULL) {\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        written = snprintf(message, (size_t)needed + 1, \"Failed opening required '%s' (include_path='%s')\", display_path, include_path);\n");
+    out.push_str("        if (written < 0 || written != needed) {\n");
+    out.push_str("            free(message);\n");
+    out.push_str("            ptn_abort_out_of_memory();\n");
+    out.push_str("        }\n");
+    out.push_str("        ptn_throw_exception_owned_message_at(runtime, \"Error\", message, runtime != NULL ? runtime->source_path : NULL, line);\n");
+    out.push_str("        return ptn_null();\n");
+    out.push_str("    }\n");
+    out.push_str("    needed = snprintf(NULL, 0, \"%s(): Failed opening '%s' for inclusion (include_path='%s')\", kind, display_path, include_path);\n");
+    out.push_str("    if (needed < 0) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    message = malloc((size_t)needed + 1);\n");
+    out.push_str("    if (message == NULL) {\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    written = snprintf(message, (size_t)needed + 1, \"%s(): Failed opening '%s' for inclusion (include_path='%s')\", kind, display_path, include_path);\n");
+    out.push_str("    if (written < 0 || written != needed) {\n");
+    out.push_str("        free(message);\n");
+    out.push_str("        ptn_abort_out_of_memory();\n");
+    out.push_str("    }\n");
+    out.push_str("    ptn_emit_compile_warning(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);\n");
+    out.push_str("    free(message);\n");
     out.push_str("    return ptn_bool(0);\n");
     out.push_str("}\n");
 }
@@ -30777,6 +30808,14 @@ impl ValueEmitter {
         out.push_str("\", ");
         out.push_str(&operand_temp);
         out.push_str(");\n");
+        let display_path_temp = self.next_temp();
+        out.push_str("    char *");
+        out.push_str(&display_path_temp);
+        out.push_str(" = ptn_duplicate_string_len(");
+        out.push_str(&operand_temp);
+        out.push_str(".data, ");
+        out.push_str(&operand_temp);
+        out.push_str(".len);\n");
         out.push_str("    ptn_string_operand_free(");
         out.push_str(&operand_temp);
         out.push_str(");\n");
@@ -30906,7 +30945,7 @@ impl ValueEmitter {
         out.push_str(" = ptn_compiled_include_failure(&runtime, \"");
         out.push_str(include_kind_text(kind));
         out.push_str("\", ");
-        out.push_str(&resolved_temp);
+        out.push_str(&display_path_temp);
         out.push_str(", ");
         out.push_str(&line.to_string());
         out.push_str(", ");
@@ -30924,6 +30963,9 @@ impl ValueEmitter {
         out.push_str(&resolved_temp);
         out.push_str(");\n");
         out.push_str("    }\n");
+        out.push_str("    free(");
+        out.push_str(&display_path_temp);
+        out.push_str(");\n");
         result_temp
     }
 

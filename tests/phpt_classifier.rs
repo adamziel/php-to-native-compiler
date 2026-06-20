@@ -726,6 +726,18 @@ fn phpt_classifier_excludes_currently_unsupported_language_surfaces() {
             "unsupported-internal-call-binding\t",
             "requires named-argument binding for modeled array internal calls",
         ),
+        (
+            "user stream wrapper alias",
+            "--TEST--\nstream alias\n--FILE--\n<?php\nstream_register_wrapper('test', TestWrapper::class, STREAM_IS_URL);\n--EXPECT--\n",
+            "unsupported-internal\t",
+            "requires user stream wrapper registration and stream callback dispatch",
+        ),
+        (
+            "user stream filter",
+            "--TEST--\nstream filter\n--FILE--\n<?php\nstream_filter_register('sample.filter', SampleFilter::class);\n--EXPECT--\n",
+            "unsupported-internal\t",
+            "requires user stream wrapper registration and stream callback dispatch",
+        ),
     ];
 
     for (name, phpt, category, reason) in cases {
