@@ -163,6 +163,7 @@ pub fn emit_c(module: &Module) -> String {
     if !module.includes.is_empty() {
         emit_include_runtime_helpers(&mut out);
     }
+    emit_source_snapshot_arrays(&mut out, module);
     emit_user_function_prototypes(
         &mut out,
         &module.functions,
@@ -368,6 +369,8 @@ pub fn emit_c(module: &Module) -> String {
     out.push_str("    runtime.source_path = \"");
     out.push_str(&c_string(&module.source_file));
     out.push_str("\";\n");
+    out.push_str("    runtime.source_snapshot_data = ptn_source_snapshot_root;\n");
+    out.push_str("    runtime.source_snapshot_len = ptn_source_snapshot_root_len;\n");
     out.push_str(
         "    const char *ptn_runtime_source_path_override = getenv(\"PTN_RUNTIME_SOURCE_PATH\");\n",
     );
@@ -3007,10 +3010,20 @@ fn emit_include_helpers(
         out.push_str("    (void)include_runtime;\n");
         out.push_str("#define runtime (*include_runtime)\n");
         out.push_str("    const char *ptn_previous_source_path = runtime.source_path;\n");
+        out.push_str("    const unsigned char *ptn_previous_source_snapshot_data = runtime.source_snapshot_data;\n");
+        out.push_str(
+            "    size_t ptn_previous_source_snapshot_len = runtime.source_snapshot_len;\n",
+        );
         out.push_str("    int ptn_previous_strict_types = runtime.strict_types;\n");
         out.push_str("    runtime.source_path = \"");
         out.push_str(&c_string(&include.source_file));
         out.push_str("\";\n");
+        out.push_str("    runtime.source_snapshot_data = ");
+        out.push_str(&include_source_snapshot_name(index));
+        out.push_str(";\n");
+        out.push_str("    runtime.source_snapshot_len = ");
+        out.push_str(&include_source_snapshot_len_name(index));
+        out.push_str(";\n");
         out.push_str("    runtime.compiled_include_depth++;\n");
         out.push_str("    runtime.strict_types = ");
         out.push_str(if include.strict_types { "1" } else { "0" });
@@ -3050,11 +3063,60 @@ fn emit_include_helpers(
         out.push_str(":\n");
         out.push_str("    runtime.compiled_include_depth--;\n");
         out.push_str("    runtime.source_path = ptn_previous_source_path;\n");
+        out.push_str("    runtime.source_snapshot_data = ptn_previous_source_snapshot_data;\n");
+        out.push_str("    runtime.source_snapshot_len = ptn_previous_source_snapshot_len;\n");
         out.push_str("    runtime.strict_types = ptn_previous_strict_types;\n");
         out.push_str("#undef runtime\n");
         out.push_str("    return ptn_return_value;\n");
         out.push_str("}\n");
     }
+}
+
+fn emit_source_snapshot_arrays(out: &mut String, module: &Module) {
+    emit_source_snapshot_array(out, "ptn_source_snapshot_root", &module.source_bytes);
+    for (index, include) in module.includes.iter().enumerate() {
+        emit_source_snapshot_array(
+            out,
+            &include_source_snapshot_name(index),
+            &include.source_bytes,
+        );
+    }
+}
+
+fn include_source_snapshot_name(index: usize) -> String {
+    format!("ptn_source_snapshot_include_{index}")
+}
+
+fn include_source_snapshot_len_name(index: usize) -> String {
+    format!("ptn_source_snapshot_include_{index}_len")
+}
+
+fn emit_source_snapshot_array(out: &mut String, name: &str, bytes: &[u8]) {
+    out.push_str("\nstatic const unsigned char ");
+    out.push_str(name);
+    out.push_str("[] = {");
+    if bytes.is_empty() {
+        out.push_str("0");
+    } else {
+        for (index, byte) in bytes.iter().enumerate() {
+            if index > 0 {
+                out.push_str(",");
+            }
+            if index % 16 == 0 {
+                out.push_str("\n    ");
+            } else {
+                out.push_str(" ");
+            }
+            out.push_str(&format!("0x{byte:02x}"));
+        }
+        out.push('\n');
+    }
+    out.push_str("};\n");
+    out.push_str("static const size_t ");
+    out.push_str(name);
+    out.push_str("_len = ");
+    out.push_str(&bytes.len().to_string());
+    out.push_str(";\n");
 }
 
 fn emit_early_constant_declaration(

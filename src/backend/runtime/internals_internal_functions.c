@@ -38732,6 +38732,103 @@ static int ptn_try_open_php_input_stream(PtnRuntime *runtime, const char *path, 
     return 1;
 }
 
+static int ptn_current_source_snapshot_matches(PtnRuntime *runtime, const char *path) {
+    return runtime != NULL &&
+        runtime->source_path != NULL &&
+        path != NULL &&
+        runtime->source_snapshot_data != NULL &&
+        strcmp(path, runtime->source_path) == 0;
+}
+
+static int ptn_current_source_path_missing(const char *path) {
+    struct stat info;
+    if (stat(path, &info) == 0) {
+        return 0;
+    }
+    return errno == ENOENT || errno == ENOTDIR;
+}
+
+static int ptn_try_copy_current_source_snapshot_bytes(
+    PtnRuntime *runtime,
+    const char *path,
+    unsigned char **data_out,
+    size_t *len_out
+) {
+    if (!ptn_current_source_snapshot_matches(runtime, path) ||
+        !ptn_current_source_path_missing(path)) {
+        return 0;
+    }
+    unsigned char *copy = malloc(runtime->source_snapshot_len + 1);
+    if (copy == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    if (runtime->source_snapshot_len != 0) {
+        memcpy(copy, runtime->source_snapshot_data, runtime->source_snapshot_len);
+    }
+    copy[runtime->source_snapshot_len] = '\0';
+    *data_out = copy;
+    *len_out = runtime->source_snapshot_len;
+    return 1;
+}
+
+static int ptn_current_source_snapshot_stat(PtnRuntime *runtime, const char *path, struct stat *info) {
+    if (!ptn_current_source_snapshot_matches(runtime, path) ||
+        !ptn_current_source_path_missing(path)) {
+        return 0;
+    }
+    memset(info, 0, sizeof(*info));
+#if defined(S_IFREG)
+    info->st_mode = S_IFREG | 0444;
+#else
+    info->st_mode = 0100000 | 0444;
+#endif
+    info->st_nlink = 1;
+    info->st_size = runtime->source_snapshot_len > (size_t)PTRDIFF_MAX
+        ? (off_t)PTRDIFF_MAX
+        : (off_t)runtime->source_snapshot_len;
+    return 1;
+}
+
+static int ptn_fopen_mode_is_read_only(const char *mode) {
+    return mode != NULL && (mode[0] == 'r' || mode[0] == 'R') && strchr(mode, '+') == NULL;
+}
+
+static int ptn_try_open_current_source_snapshot_stream(
+    PtnRuntime *runtime,
+    const char *path,
+    const char *mode,
+    PtnValue *out
+) {
+    if (!ptn_fopen_mode_is_read_only(mode) ||
+        !ptn_current_source_snapshot_matches(runtime, path) ||
+        !ptn_current_source_path_missing(path)) {
+        return 0;
+    }
+    PtnResource *resource = ptn_resource_new_memory_stream(
+        path,
+        mode,
+        PTN_STREAM_BACKEND_MEMORY,
+        SIZE_MAX,
+        1,
+        0
+    );
+    if (runtime->source_snapshot_len != 0) {
+        size_t written = ptn_stream_write_bytes(
+            resource,
+            runtime->source_snapshot_data,
+            runtime->source_snapshot_len
+        );
+        if (written != runtime->source_snapshot_len) {
+            ptn_abort_out_of_memory();
+        }
+    }
+    (void)ptn_stream_seek(resource, 0, SEEK_SET);
+    resource->memory_stream->writable = 0;
+    resource->memory_stream->append = 0;
+    *out = ptn_resource(resource);
+    return 1;
+}
+
 static int ptn_try_open_php_standard_stream(const char *path, PtnValue *out) {
     if (ptn_ascii_case_equal(path, "php://output") ||
         ptn_ascii_case_equal(path, "php://stdout")) {
@@ -38834,6 +38931,11 @@ static PtnValue ptn_internal_fopen(PtnRuntime *runtime, size_t argc, const PtnVa
     FILE *stream = fopen(path, c_mode);
     free(c_mode);
     if (stream == NULL) {
+        if (ptn_try_open_current_source_snapshot_stream(runtime, path, mode, &php_stream)) {
+            free(mode);
+            free(path);
+            return php_stream;
+        }
         char detail[192];
         int needed = snprintf(detail, sizeof(detail), "Failed to open stream: %s", strerror(errno));
         if (needed < 0 || (size_t)needed >= sizeof(detail)) {
@@ -40503,6 +40605,9 @@ static int ptn_read_file_bytes_with_search(
     char **opened_path_out
 ) {
     int result = ptn_read_file_bytes(path, data_out, len_out);
+    if (result == 0 && ptn_try_copy_current_source_snapshot_bytes(runtime, path, data_out, len_out)) {
+        result = 1;
+    }
     if (result != 0 || !use_include_path || ptn_path_string_is_absolute(path)) {
         *opened_path_out = ptn_duplicate_string(path);
         return result;
@@ -42236,8 +42341,6 @@ static PtnValue ptn_path_predicate(
     size_t line,
     int (*predicate)(const char *)
 ) {
-    (void)runtime;
-    (void)function_name;
     (void)line;
     PtnStringOperand path_operand = ptn_value_to_string_operand(path_value);
     char *path = ptn_path_operand_to_c_string(path_operand);
@@ -42247,6 +42350,14 @@ static PtnValue ptn_path_predicate(
     }
 
     int result = predicate(path);
+    if (!result && ptn_current_source_snapshot_matches(runtime, path) &&
+        ptn_current_source_path_missing(path)) {
+        if (ptn_ascii_case_equal(function_name, "file_exists") ||
+            ptn_ascii_case_equal(function_name, "is_file") ||
+            ptn_ascii_case_equal(function_name, "is_readable")) {
+            result = 1;
+        }
+    }
     free(path);
     return ptn_bool(result);
 }
@@ -42504,6 +42615,9 @@ static int ptn_stat_path_from_value(
     }
 
     int ok = use_lstat ? ptn_lstat_path(path, info) == 0 : ptn_stat_path(path, info) == 0;
+    if (!ok && ptn_current_source_snapshot_stat(runtime, path, info)) {
+        ok = 1;
+    }
     if (!ok) {
         ptn_emit_stat_warning(runtime, function_name, failure_kind, path, line);
         free(path);

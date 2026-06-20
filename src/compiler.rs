@@ -65,6 +65,7 @@ pub fn compile_file(input: &Path, output: &Path, options: CompileOptions) -> Res
         &program,
         source_file,
         source_dir,
+        source_bytes,
         include_sources,
         &include_resolutions,
     );
@@ -1119,6 +1120,7 @@ impl IncludeCollector {
         self.sources.push(IncludeSource {
             source_file: source_file.clone(),
             source_dir: source_dir.clone(),
+            source_bytes,
             path_aliases,
             program: program.clone(),
         });
@@ -1134,6 +1136,7 @@ impl IncludeCollector {
             })?;
             let source = decode_php_source_bytes(&source_bytes);
             let (included_classes, included_traits) = self.include_validation_symbols(Some(index));
+            self.sources[index].source_bytes = source_bytes;
             self.sources[index].program = parse_with_runtime_class_aliases_and_symbols(
                 &source,
                 &self.runtime_class_aliases,

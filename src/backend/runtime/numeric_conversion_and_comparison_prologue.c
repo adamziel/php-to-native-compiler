@@ -131,6 +131,8 @@ static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnR
         }
     }
     runtime->source_path = caller_runtime->source_path;
+    runtime->source_snapshot_data = caller_runtime->source_snapshot_data;
+    runtime->source_snapshot_len = caller_runtime->source_snapshot_len;
     runtime->compiled_include_depth = caller_runtime->compiled_include_depth;
     runtime->current_function_name = NULL;
     runtime->current_class_name = NULL;

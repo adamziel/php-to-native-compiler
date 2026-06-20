@@ -56620,6 +56620,55 @@ stream_get_meta_data(): Argument #1 ($stream) must be an open stream resource\n"
 }
 
 #[test]
+fn compile_source_snapshot_file_reads_survive_deleted_source_to_native_binary() {
+    let root = temp_dir("ptn-native-source-snapshot-file-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("source-snapshot-file-reads.php");
+    let output = root.join("source-snapshot-file-reads-bin");
+    fs::write(
+        &input,
+        "<?php
+$path = __FILE__;
+var_dump(file_exists($path));
+var_dump(is_file($path));
+var_dump(is_readable($path));
+$contents = file_get_contents($path);
+echo substr($contents, 0, 5), \"\\n\";
+echo filesize($path) === strlen($contents) ? \"size-ok\\n\" : \"size-bad\\n\";
+$handle = fopen($path, \"r\");
+echo fread($handle, 5), \"\\n\";
+$stat = fstat($handle);
+echo $stat[\"size\"] === strlen($contents) ? \"fstat-ok\\n\" : \"fstat-bad\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    fs::remove_file(&input).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "<?php\n",
+            "size-ok\n",
+            "<?php\n",
+            "fstat-ok\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_stream_append_modes_track_php_logical_position_to_native_binary() {
     let root = temp_dir("ptn-native-stream-append-mode-position");
     fs::create_dir_all(&root).unwrap();
