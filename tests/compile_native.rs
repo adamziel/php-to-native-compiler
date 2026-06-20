@@ -56694,15 +56694,21 @@ fn compile_uri_rfc3986_core_surface_to_native_binary() {
 var_dump(class_exists("Uri\\Rfc3986\\Uri"));
 var_dump(class_exists("Uri\\Rfc3986\\UriType"));
 var_dump(Uri\Rfc3986\UriType::Uri);
-$uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61");
+$uri = Uri\Rfc3986\Uri::parse("https://us%65r:in%66o@example.com:443/foo%2Fb%61r?x=%3d#f%61");
 var_dump($uri->getUriType());
 var_dump($uri->toRawString());
 var_dump($uri->toString());
+var_dump($uri->getUsername());
+var_dump($uri->getRawUsername());
+var_dump($uri->getPassword());
+var_dump($uri->getRawPassword());
 var_dump($uri->getRawPath());
 var_dump($uri->getPath());
 var_dump(Uri\Rfc3986\Uri::parse("//example.com/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("foo")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("/with-base", new Uri\Rfc3986\Uri("https://example.com"))->toString());
+var_dump(Uri\Rfc3986\Uri::parse("child", Uri\Rfc3986\Uri::parse("https://example.com/base/"))->toString());
 $changed = $uri
     ->withHost("%65xample.net")
     ->withScheme("HTTP")
@@ -56739,14 +56745,20 @@ try {
             "bool(true)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
-            "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
+            "string(60) \"https://us%65r:in%66o@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
+            "string(4) \"user\"\n",
+            "string(6) \"us%65r\"\n",
+            "string(4) \"info\"\n",
+            "string(6) \"in%66o\"\n",
             "string(12) \"/foo%2Fb%61r\"\n",
             "string(10) \"/foo%2Fbar\"\n",
             "enum(Uri\\Rfc3986\\UriType::NetworkPathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::RelativePathReference)\n",
-            "string(43) \"HTTP://user:info@%65xample.net/foo%2Fb%61r#\"\n",
+            "string(29) \"https://example.com/with-base\"\n",
+            "string(30) \"https://example.com/base/child\"\n",
+            "string(47) \"HTTP://us%65r:in%66o@%65xample.net/foo%2Fb%61r#\"\n",
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
             "string(0) \"\"\n",
@@ -56779,11 +56791,10 @@ var_dump($url->withUsername("u:s/r")->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
 var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
-try {
-    Uri\WhatWg\Url::parse("foo");
-} catch (Throwable $e) {
-    echo $e::class, ": ", $e->getMessage(), "\n";
-}
+var_dump(Uri\WhatWg\Url::parse("foo"));
+var_dump(Uri\WhatWg\Url::parse("relative", Uri\WhatWg\Url::parse("https://example.com/path?query"))->toAsciiString());
+Uri\WhatWg\Url::parse("https://example.net", errors: $errors);
+var_dump($errors);
 try {
     new Uri\WhatWg\Url("https://");
 } catch (Throwable $e) {
@@ -56816,7 +56827,10 @@ try {
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "NULL\n",
+            "string(28) \"https://example.com/relative\"\n",
+            "array(0) {\n",
+            "}\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
         )
     );

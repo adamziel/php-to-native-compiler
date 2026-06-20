@@ -2851,6 +2851,9 @@ fn by_ref_unpack_parameter_modes(
 }
 
 fn internal_by_ref_parameter_name(name: &str, argument_index: usize) -> Option<&'static str> {
+    if is_uri_whatwg_url_static_call_name(name) && argument_index == 2 {
+        return Some("errors");
+    }
     if name.eq_ignore_ascii_case("array_pop") && argument_index == 0 {
         return Some("array");
     }
@@ -21046,7 +21049,9 @@ fn is_uri_rfc3986_uri_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("getRawUserInfo")
         || name.eq_ignore_ascii_case("getUserInfo")
         || name.eq_ignore_ascii_case("getUsername")
+        || name.eq_ignore_ascii_case("getRawUsername")
         || name.eq_ignore_ascii_case("getPassword")
+        || name.eq_ignore_ascii_case("getRawPassword")
         || name.eq_ignore_ascii_case("getRawHost")
         || name.eq_ignore_ascii_case("getHost")
         || name.eq_ignore_ascii_case("getAsciiHost")
