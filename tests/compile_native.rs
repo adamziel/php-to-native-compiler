@@ -17436,6 +17436,48 @@ var_dump(preg_replace_callback_array(['/(.)(.)(.)/' => static function ($matches
 }
 
 #[test]
+fn compile_preg_replace_callback_array_validates_callbacks_lazily_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-replace-callback-array-lazy");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-replace-callback-array-lazy.php");
+    let output = root.join("preg-replace-callback-array-lazy-bin");
+    fs::write(
+        &input,
+        "<?php
+class TrampolineTest {
+    public function __call(string $name, array $arguments): string {
+        echo 'Trampoline for ', $name, PHP_EOL;
+        return '<' . $arguments[0][0] . '>';
+    }
+}
+$o = new TrampolineTest();
+try {
+    var_dump(preg_replace_callback_array([
+        '/a/' => [$o, 'trampoline'],
+        '/b/' => new stdClass(),
+    ], 'abc'));
+} catch (Throwable $e) {
+    echo $e::class, ': ', $e->getMessage(), PHP_EOL;
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Trampoline for trampoline\n",
+            "TypeError: preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_chunk_split_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();

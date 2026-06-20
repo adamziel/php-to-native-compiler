@@ -37365,19 +37365,6 @@ static PtnValue ptn_internal_preg_replace_callback_array(PtnRuntime *runtime, si
             );
             return ptn_null();
         }
-        PtnValue callback = ptn_value_clone_deref(entry->value);
-        if (!ptn_callable_is_valid(runtime, callback, 0)) {
-            ptn_value_destroy(&callback);
-            ptn_throw_exception_at(
-                runtime,
-                "TypeError",
-                "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks",
-                runtime->source_path,
-                line
-            );
-            return ptn_null();
-        }
-        ptn_value_destroy(&callback);
     }
 
     PtnValue current = ptn_value_clone_deref(args[1]);
@@ -37387,6 +37374,20 @@ static PtnValue ptn_internal_preg_replace_callback_array(PtnRuntime *runtime, si
         PtnStringOperand pattern =
             ptn_value_to_string_operand_with_runtime(runtime, pattern_value, line);
         PtnValue callback = ptn_value_clone_deref(entry->value);
+        if (!ptn_callable_is_valid(runtime, callback, 0)) {
+            ptn_string_operand_free(pattern);
+            ptn_value_destroy(&pattern_value);
+            ptn_value_destroy(&callback);
+            ptn_value_destroy(&current);
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
 
         PtnValue next = ptn_preg_replace_callback_array_apply_subject(
             runtime,

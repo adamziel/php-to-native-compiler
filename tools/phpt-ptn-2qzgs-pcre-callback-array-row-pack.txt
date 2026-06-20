@@ -1,0 +1,11 @@
+# ptn-2qzgs focused PCRE callback-array validation-order row pack.
+#
+# Source: php-src PHPT corpus 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+# Selection: row from the ext/pcre full-corpus bucket that failed on
+# 20260620T135559Z because preg_replace_callback_array() validated all
+# callbacks before applying earlier valid pattern/callback pairs.
+#
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=60 tools/run-bounded-phpt.sh tools/phpt-ptn-2qzgs-pcre-callback-array-row-pack.txt
+
+ext/pcre/tests/preg_replace_callback_array_trampoline.phpt
