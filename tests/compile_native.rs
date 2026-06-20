@@ -23130,10 +23130,13 @@ fn compile_reflection_method_metadata_to_native_binary() {
         "<?php
 class ReflectBaseMethod {
     protected function inherited() {}
+    public function overridden() {}
 }
 
 class ReflectMethodSubject extends ReflectBaseMethod {
     public static function stat() {}
+    public function fresh() {}
+    public function overridden() {}
     private function hidden() {}
     public function __construct() {}
 }
@@ -23144,6 +23147,15 @@ var_dump($inherited->getDeclaringClass()->getName());
 var_dump($inherited->isProtected());
 var_dump($inherited->isStatic());
 var_dump($inherited->isUserDefined());
+
+$overridden = new ReflectionMethod(\"ReflectMethodSubject\", \"overridden\");
+$prototype = $overridden->getPrototype();
+var_dump($overridden->hasPrototype());
+var_dump($prototype->class);
+var_dump($prototype->name);
+
+$fresh = new ReflectionMethod(\"ReflectMethodSubject\", \"fresh\");
+var_dump($fresh->hasPrototype());
 
 $static = ReflectionMethod::createFromMethodName(\"ReflectMethodSubject::stat\");
 var_dump($static->getName());
@@ -23182,6 +23194,10 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
             "bool(true)\n",
             "bool(false)\n",
             "bool(true)\n",
+            "bool(true)\n",
+            "string(17) \"ReflectBaseMethod\"\n",
+            "string(10) \"overridden\"\n",
+            "bool(false)\n",
             "string(4) \"stat\"\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -23211,6 +23227,7 @@ var_dump(method_exists(\"ReflectionMethod\", \"isPublic\"));
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_reflection_method_new"));
     assert!(c_source.contains("ptn_declared_class_reflection_method_metadata"));
+    assert!(c_source.contains("ptn_declared_class_reflection_method_prototype"));
     assert!(c_source.contains("ptn_internal_reflection_method_create_from_method_name"));
 }
 

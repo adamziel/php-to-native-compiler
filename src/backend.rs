@@ -10988,6 +10988,79 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_method_prototype(PtnRuntime *runtime, const char *class_name, const char *method_name) {\n",
+    );
+    let method_prototypes = classes
+        .iter()
+        .map(|class| {
+            let mut entries = Vec::new();
+            let mut parent_name = class.parent_name.as_deref();
+            while let Some(name) = parent_name {
+                let Some(parent) = class_by_name(classes, name) else {
+                    break;
+                };
+                for method in parent
+                    .methods
+                    .iter()
+                    .filter(|method| method.visibility != PropertyVisibility::Private)
+                {
+                    entries.push((
+                        method.name.as_str(),
+                        parent.name.as_str(),
+                        method.name.as_str(),
+                    ));
+                }
+                parent_name = parent.parent_name.as_deref();
+            }
+            for interface_name in class_transitive_interfaces(class, classes) {
+                let Some(interface) = class_by_name(classes, interface_name) else {
+                    continue;
+                };
+                for method in interface
+                    .methods
+                    .iter()
+                    .filter(|method| method.visibility == PropertyVisibility::Public)
+                {
+                    entries.push((
+                        method.name.as_str(),
+                        interface.name.as_str(),
+                        method.name.as_str(),
+                    ));
+                }
+            }
+            entries
+        })
+        .collect::<Vec<_>>();
+    let has_method_prototypes = method_prototypes.iter().any(|entries| !entries.is_empty());
+    if !has_method_prototypes {
+        out.push_str("    (void)runtime;\n");
+        out.push_str("    (void)method_name;\n");
+    }
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    for (class, prototypes) in classes.iter().zip(method_prototypes.iter()) {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for (lookup_method, prototype_class, prototype_method) in prototypes {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
+            out.push_str(&c_string(lookup_method));
+            out.push_str("\")) {\n");
+            out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str(&c_string(prototype_class));
+            out.push_str("\", \"");
+            out.push_str(&c_string(prototype_method));
+            out.push_str("\");\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return ptn_null();\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return ptn_null();\n");
+    out.push_str("}\n");
+
+    out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_property_hook_method(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type) {\n",
     );
     let has_property_hooks = classes
@@ -13304,13 +13377,13 @@ fn reflection_method_to_string(
     let function = &functions[method.function_index];
     let mut out = String::new();
     out.push_str("Method [ <user");
-    if let Some(parent_class) =
-        reflection_method_parent_prototype(reflected_class, &method.name, classes)
+    if let Some((prototype_class, _prototype_method)) =
+        reflection_method_prototype(reflected_class, &method.name, classes)
     {
         out.push_str(", overwrites ");
-        out.push_str(parent_class);
+        out.push_str(prototype_class);
         out.push_str(", prototype ");
-        out.push_str(parent_class);
+        out.push_str(prototype_class);
     } else if !entry
         .declaring_class
         .eq_ignore_ascii_case(&reflected_class.name)
@@ -13458,21 +13531,32 @@ fn reflection_trait_method_to_string(
     out
 }
 
-fn reflection_method_parent_prototype<'a>(
+fn reflection_method_prototype<'a>(
     class: &'a ClassDecl,
     method_name: &str,
     classes: &'a [ClassDecl],
-) -> Option<&'a str> {
+) -> Option<(&'a str, &'a str)> {
     let mut parent_name = class.parent_name.as_deref();
     while let Some(name) = parent_name {
         let parent = class_by_name(classes, name)?;
-        if parent.methods.iter().any(|method| {
+        if let Some(method) = parent.methods.iter().find(|method| {
             method.visibility != PropertyVisibility::Private
                 && method.name.eq_ignore_ascii_case(method_name)
         }) {
-            return Some(parent.name.as_str());
+            return Some((parent.name.as_str(), method.name.as_str()));
         }
         parent_name = parent.parent_name.as_deref();
+    }
+    for interface_name in class_transitive_interfaces(class, classes) {
+        let Some(interface) = class_by_name(classes, interface_name) else {
+            continue;
+        };
+        if let Some(method) = interface.methods.iter().find(|method| {
+            method.visibility == PropertyVisibility::Public
+                && method.name.eq_ignore_ascii_case(method_name)
+        }) {
+            return Some((interface.name.as_str(), method.name.as_str()));
+        }
     }
     None
 }

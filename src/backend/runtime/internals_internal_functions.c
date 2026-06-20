@@ -3292,6 +3292,7 @@ static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
+static PtnValue ptn_declared_class_reflection_method_prototype(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_method_visibility_allows(const char *access_scope, const char *declaring_class, int visibility);
 static PTN_UNUSED void ptn_throw_declared_method_visibility_error(PtnRuntime *runtime, const char *visibility_name, const char *declaring_class, const char *method_name, size_t line);
@@ -79721,6 +79722,7 @@ static PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, con
 static int ptn_declared_class_reflection_source_location(const char *class_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static const char *ptn_declared_class_reflection_doc_comment(const char *class_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
+static PtnValue ptn_declared_class_reflection_method_prototype(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static PtnValue ptn_declared_class_reflection_method_to_string(PtnRuntime *runtime, const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_source_location(const char *class_name, const char *method_name, const char **file_out, size_t *start_line_out, size_t *end_line_out);
 static void ptn_declared_class_property_hook_deprecation(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type, size_t line);
@@ -82767,6 +82769,7 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
         || ptn_ascii_case_equal(method_name, "getParameters")
+        || ptn_ascii_case_equal(method_name, "getPrototype")
         || ptn_ascii_case_equal(method_name, "getReturnType")
         || ptn_ascii_case_equal(method_name, "getStartLine")
         || ptn_ascii_case_equal(method_name, "getStaticVariables")
@@ -82787,7 +82790,8 @@ static int ptn_reflection_method_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "isStatic")
         || ptn_ascii_case_equal(method_name, "isUserDefined")
         || ptn_ascii_case_equal(method_name, "isDeprecated")
-        || ptn_ascii_case_equal(method_name, "isGenerator");
+        || ptn_ascii_case_equal(method_name, "isGenerator")
+        || ptn_ascii_case_equal(method_name, "hasPrototype");
 }
 
 static int ptn_reflection_parameter_method_exists(const char *method_name) {
@@ -84046,10 +84050,12 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getModifiers",
             "getName",
             "getParameters",
+            "getPrototype",
             "getReturnType",
             "getStartLine",
             "invoke",
             "invokeArgs",
+            "hasPrototype",
             "isAbstract",
             "isConstructor",
             "isDestructor",
@@ -87472,6 +87478,55 @@ static PTN_UNUSED PtnValue ptn_reflection_method_call_method(
             ptn_abort_out_of_memory();
         }
         return ptn_string(message);
+    }
+    if (ptn_ascii_case_equal(name, "hasPrototype")) {
+        if (is_internal) {
+            return ptn_bool(0);
+        }
+        PtnValue prototype = ptn_declared_class_reflection_method_prototype(
+            runtime,
+            data->class_name,
+            data->name
+        );
+        int has_prototype = ptn_value_deref(prototype).type != PTN_NULL;
+        ptn_value_destroy(&prototype);
+        return ptn_bool(has_prototype);
+    }
+    if (ptn_ascii_case_equal(name, "getPrototype")) {
+        if (!is_internal) {
+            PtnValue prototype = ptn_declared_class_reflection_method_prototype(
+                runtime,
+                data->class_name,
+                data->name
+            );
+            if (ptn_value_deref(prototype).type != PTN_NULL) {
+                return prototype;
+            }
+            ptn_value_destroy(&prototype);
+        }
+        int needed = snprintf(
+            NULL,
+            0,
+            "Method %s::%s does not have a prototype",
+            data->class_name,
+            data->name
+        );
+        if (needed < 0) {
+            ptn_abort_out_of_memory();
+        }
+        char *message = malloc((size_t)needed + 1);
+        if (message == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        snprintf(
+            message,
+            (size_t)needed + 1,
+            "Method %s::%s does not have a prototype",
+            data->class_name,
+            data->name
+        );
+        ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+        return ptn_null();
     }
     if (ptn_ascii_case_equal(name, "getName")) {
         return ptn_owned_string(ptn_duplicate_string(data->name));
