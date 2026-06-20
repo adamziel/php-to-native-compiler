@@ -60,6 +60,7 @@ static PTN_UNUSED PtnValue ptn_read_constant(PtnRuntime *runtime, const char *na
 }
 
 static PTN_UNUSED int ptn_output_buffer_flush_top_chunk(PtnRuntime *runtime, size_t line);
+static int ptn_internal_class_name_is_uri_instance_name(const char *class_name);
 
 static PTN_UNUSED void ptn_output_write(PtnRuntime *runtime, const char *data, size_t len) {
     if (data == NULL || len == 0) {
@@ -6521,6 +6522,12 @@ static void ptn_serialize_append_spl_heap_object(PtnStringBuffer *buffer, PtnObj
     );
 }
 
+static int ptn_serialize_append_uri_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+);
+
 static void ptn_serialize_append_bcmath_number_object(
     PtnStringBuffer *buffer,
     PtnObject *object,
@@ -6633,6 +6640,9 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
     }
     if (object != NULL && ptn_internal_class_name_is_bcmath_number(object->class_name)) {
         ptn_serialize_append_bcmath_number_object(buffer, object, state);
+        return 1;
+    }
+    if (ptn_serialize_append_uri_object(buffer, object, state)) {
         return 1;
     }
     int handled_serializable = 0;
@@ -8266,6 +8276,7 @@ static int ptn_unserialize_store_object_property_entry(
     if (existing_index < properties->len) {
         ptn_unserialize_invalidate_slot(state, &properties->entries[existing_index].value);
     } else if (metadata == NULL &&
+               !ptn_internal_class_name_is_uri_instance_name(object->class_name) &&
                property_key.type == PTN_ARRAY_KEY_STRING &&
                memchr(property_key.as.string, '\0', property_key.string_len) == NULL) {
         ptn_emit_dynamic_property_deprecation(
@@ -8308,6 +8319,11 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     size_t payload_len,
     size_t line,
     PtnUnserializeValue *result
+);
+static void ptn_unserialize_hydrate_uri_object(
+    PtnRuntime *runtime,
+    PtnUnserializeState *state,
+    PtnValue object
 );
 
 static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *state, PtnRuntime *runtime) {
@@ -8504,6 +8520,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 return result;
             }
             ptn_unserialize_hydrate_spl_array_backed_object(runtime, result.value, state->line);
+            ptn_unserialize_hydrate_uri_object(runtime, state, result.value);
             ptn_bcmath_number_hydrate_unserialized(runtime, result.value, state->line);
             ptn_zip_archive_hydrate_unserialized(runtime, state, result.value);
             return result;
@@ -9142,6 +9159,11 @@ static void ptn_var_export_append_object_state_array(
 ) {
     PtnArray *properties = object->properties;
     ptn_string_buffer_append(buffer, "array(\n");
+    if (object != NULL && ptn_internal_class_name_is_uri_instance_name(object->class_name)) {
+        ptn_string_buffer_append_indent(buffer, indent);
+        ptn_string_buffer_append_char(buffer, ')');
+        return;
+    }
     for (size_t i = 0; i < properties->len; i++) {
         PtnArrayEntry *entry = &properties->entries[i];
         PtnValue entry_value = ptn_value_deref(entry->value);
@@ -9790,6 +9812,10 @@ static int ptn_json_encode_append_object(
             return 0;
         }
         return ptn_json_encode_append_value(buffer, value_entry->value, seen, depth - 1, flags, error);
+    }
+    if (object != NULL && ptn_internal_class_name_is_uri_instance_name(object->class_name)) {
+        ptn_string_buffer_append(buffer, "{}");
+        return 1;
     }
     ptn_dump_seen_objects_push(seen, object);
     ptn_string_buffer_append_char(buffer, '{');
@@ -19622,19 +19648,17 @@ static int ptn_uri_validate_port_component(const char *data, size_t len, int64_t
     if (len == 0) {
         return 1;
     }
-    if (len > 5) {
-        return 0;
-    }
     int64_t port = 0;
     for (size_t i = 0; i < len; i++) {
         unsigned char byte = (unsigned char)data[i];
         if (!isdigit(byte)) {
             return 0;
         }
-        port = port * 10 + (int64_t)(byte - '0');
-    }
-    if (port > 65535) {
-        return 0;
+        int64_t digit = (int64_t)(byte - '0');
+        if (port > (INT64_MAX - digit) / 10) {
+            return -1;
+        }
+        port = port * 10 + digit;
     }
     *port_out = port;
     return 1;
@@ -19723,8 +19747,9 @@ static int ptn_uri_parse_authority(PtnUriData *result, const char *authority, si
         int64_t port = 0;
         size_t port_len = host_len - port_colon - 1;
         result->port_separator_present = 1;
-        if (!ptn_uri_validate_port_component(host + port_colon + 1, port_len, &port)) {
-            return 0;
+        int port_status = ptn_uri_validate_port_component(host + port_colon + 1, port_len, &port);
+        if (port_status <= 0) {
+            return port_status;
         }
         if (port_len != 0) {
             result->port_present = 1;
@@ -19773,9 +19798,10 @@ static int ptn_uri_parse(PtnStringOperand input, PtnUriData **result_out) {
     if (len >= 2 && data[0] == '/' && data[1] == '/') {
         size_t authority_start = 2;
         size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
-        if (!ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start)) {
+        int authority_status = ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start);
+        if (authority_status <= 0) {
             ptn_uri_data_free(result);
-            return 0;
+            return authority_status;
         }
         offset = authority_end;
     } else {
@@ -19791,9 +19817,10 @@ static int ptn_uri_parse(PtnStringOperand input, PtnUriData **result_out) {
             if (offset + 1 < len && data[offset] == '/' && data[offset + 1] == '/') {
                 size_t authority_start = offset + 2;
                 size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
-                if (!ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start)) {
+                int authority_status = ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start);
+                if (authority_status <= 0) {
                     ptn_uri_data_free(result);
-                    return 0;
+                    return authority_status;
                 }
                 offset = authority_end;
             }
@@ -19816,6 +19843,10 @@ static void ptn_uri_throw_malformed(PtnRuntime *runtime, const char *component) 
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "Uri\\InvalidUriException", message);
+}
+
+static void ptn_uri_throw_port_out_of_range(PtnRuntime *runtime) {
+    ptn_throw_exception(runtime, "Uri\\InvalidUriException", "The port is out of range");
 }
 
 static void ptn_uri_whatwg_throw_malformed(PtnRuntime *runtime, const char *component, const char *reason) {
@@ -21217,6 +21248,37 @@ static PtnValue ptn_uri_whatwg_to_string_value(const PtnUriData *data, int unico
     return ptn_owned_string_len(buffer.data == NULL ? ptn_uri_duplicate_len("", 0) : buffer.data, buffer.len);
 }
 
+static int ptn_serialize_append_uri_object(
+    PtnStringBuffer *buffer,
+    PtnObject *object,
+    PtnSerializeState *state
+) {
+    if (object == NULL || !ptn_internal_class_name_is_uri_instance_name(object->class_name)) {
+        return 0;
+    }
+    PtnUriData *data = ptn_uri_data_from_value(ptn_object(object));
+    if (data == NULL) {
+        return 0;
+    }
+    PtnValue uri_value = ptn_internal_class_name_is_uri_whatwg_url(object->class_name)
+        ? ptn_uri_whatwg_to_string_value(data, 0, 1)
+        : ptn_uri_to_string_value(data, 1);
+    PtnStringOperand uri = ptn_value_to_string_operand(uri_value);
+    ptn_string_buffer_append_format(
+        buffer,
+        "O:%zu:\"%s\":2:{i:0;a:1:{",
+        strlen(object->class_name),
+        object->class_name
+    );
+    ptn_serialize_append_string(buffer, "uri", 3);
+    ptn_serialize_append_string(buffer, uri.data, uri.len);
+    ptn_string_buffer_append(buffer, "}i:1;a:0:{}}");
+    ptn_string_operand_free(uri);
+    ptn_value_destroy(&uri_value);
+    (void)state;
+    return 1;
+}
+
 static const char *ptn_uri_whatwg_host_type_case_name(const PtnUriData *data) {
     switch ((PtnUriHostType)data->host_type) {
         case PTN_URI_HOST_TYPE_DOMAIN:
@@ -22181,9 +22243,14 @@ static PtnValue ptn_uri_rfc3986_resolve(
     }
 
     PtnUriData *reference = NULL;
-    if (!ptn_uri_parse(reference_string, &reference)) {
+    int reference_status = ptn_uri_parse(reference_string, &reference);
+    if (reference_status <= 0) {
         ptn_string_operand_free(reference_string);
-        ptn_uri_throw_malformed(runtime, "URI");
+        if (reference_status < 0) {
+            ptn_uri_throw_port_out_of_range(runtime);
+        } else {
+            ptn_uri_throw_malformed(runtime, "URI");
+        }
         return ptn_null();
     }
     ptn_string_operand_free(reference_string);
@@ -22255,9 +22322,11 @@ static PtnValue ptn_uri_construct_data(
         ? ptn_uri_parse_whatwg(uri, &data, &reason)
         : ptn_uri_parse(uri, &data);
     ptn_string_operand_free(uri);
-    if (!valid) {
+    if (valid <= 0) {
         if (throw_on_invalid) {
-            if (whatwg) {
+            if (!whatwg && valid < 0) {
+                ptn_uri_throw_port_out_of_range(runtime);
+            } else if (whatwg) {
                 ptn_uri_whatwg_throw_malformed(runtime, "URI", reason);
             } else {
                 ptn_uri_throw_malformed(runtime, "URI");
@@ -22267,6 +22336,100 @@ static PtnValue ptn_uri_construct_data(
     }
     *data_out = data;
     return ptn_bool(1);
+}
+
+static void ptn_uri_throw_invalid_serialization_data(PtnRuntime *runtime, const char *class_name) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Invalid serialization data for %s object",
+        class_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "Exception", message);
+}
+
+static PtnArrayEntry *ptn_uri_unserialize_object_property(PtnObject *object, const char *name) {
+    if (object == NULL || object->properties == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
+static void ptn_unserialize_hydrate_uri_object(
+    PtnRuntime *runtime,
+    PtnUnserializeState *state,
+    PtnValue object_value
+) {
+    object_value = ptn_value_deref(object_value);
+    if (object_value.type != PTN_OBJECT ||
+        object_value.as.object == NULL ||
+        !ptn_internal_class_name_is_uri_instance_name(object_value.as.object->class_name)) {
+        return;
+    }
+
+    PtnObject *object = object_value.as.object;
+    const char *class_name = object->class_name;
+    PtnArray *properties = object->properties;
+    PtnArrayEntry *metadata_entry = ptn_uri_unserialize_object_property(object, "0");
+    PtnArrayEntry *properties_entry = ptn_uri_unserialize_object_property(object, "1");
+    if (properties == NULL ||
+        properties->len != 2 ||
+        metadata_entry == NULL ||
+        properties_entry == NULL) {
+        ptn_uri_throw_invalid_serialization_data(runtime, class_name);
+        return;
+    }
+
+    PtnValue metadata = ptn_value_deref(metadata_entry->value);
+    PtnValue serialized_properties = ptn_value_deref(properties_entry->value);
+    if (metadata.type != PTN_ARRAY ||
+        metadata.as.array == NULL ||
+        metadata.as.array->len != 1 ||
+        serialized_properties.type != PTN_ARRAY ||
+        serialized_properties.as.array == NULL ||
+        serialized_properties.as.array->len != 0) {
+        ptn_uri_throw_invalid_serialization_data(runtime, class_name);
+        return;
+    }
+
+    PtnArrayKey uri_key = ptn_array_string_key("uri");
+    PtnArrayEntry *uri_entry = ptn_array_entry_for_key(metadata.as.array, uri_key);
+    ptn_array_key_free(uri_key);
+    if (uri_entry == NULL || ptn_value_deref(uri_entry->value).type != PTN_STRING) {
+        ptn_uri_throw_invalid_serialization_data(runtime, class_name);
+        return;
+    }
+
+    int whatwg = ptn_internal_class_name_is_uri_whatwg_url(class_name);
+    PtnValue uri_arg = ptn_value_clone_deref(uri_entry->value);
+    PtnUriData *data = NULL;
+    PtnValue status = ptn_uri_construct_data(
+        runtime,
+        whatwg ? "Uri\\WhatWg\\Url::__unserialize" : "Uri\\Rfc3986\\Uri::__unserialize",
+        1,
+        &uri_arg,
+        state->line,
+        0,
+        whatwg,
+        &data
+    );
+    ptn_value_destroy(&status);
+    ptn_value_destroy(&uri_arg);
+    if (data == NULL) {
+        ptn_uri_throw_invalid_serialization_data(runtime, class_name);
+        return;
+    }
+
+    ptn_unserialize_retain_array_entry_values(state, properties);
+    ptn_unserialize_clear_array(properties);
+    ptn_uri_replace_object_data(object_value, data);
 }
 
 static PTN_UNUSED PtnValue ptn_uri_new(
@@ -22329,29 +22492,40 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     const PtnValue *args,
     size_t line
 ) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    const char *class_name = resolved.type == PTN_OBJECT ? resolved.as.object->class_name : "Uri object";
+    if (ptn_ascii_case_equal(name, "__unserialize")) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Invalid serialization data for %s object",
+            class_name
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "Exception", message);
+        return ptn_null();
+    }
     PtnUriData *data = ptn_uri_data_from_value(receiver);
     if (data == NULL) {
         ptn_throw_exception(runtime, "Error", "Invalid URI object");
         return ptn_null();
     }
-    int whatwg = ptn_ascii_case_equal(ptn_value_deref(receiver).as.object->class_name, "Uri\\WhatWg\\Url");
+    int whatwg = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\Url");
     if (ptn_ascii_case_equal(name, "__construct")) {
-        PtnUriData *new_data = NULL;
-        PtnValue status = ptn_uri_construct_data(
-            runtime,
-            whatwg ? "Uri\\WhatWg\\Url::__construct" : "Uri\\Rfc3986\\Uri::__construct",
-            argc,
-            args,
-            line,
-            1,
-            whatwg,
-            &new_data
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "Cannot modify readonly object of class %s",
+            class_name
         );
-        ptn_value_destroy(&status);
-        if (runtime->exceptions->active_exception != NULL || new_data == NULL) {
-            return ptn_null();
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
         }
-        ptn_uri_replace_object_data(ptn_value_deref(receiver), new_data);
+        ptn_throw_exception(runtime, "Error", message);
         return ptn_null();
     }
     if (whatwg) {
@@ -82855,6 +83029,15 @@ static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *clas
     return ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\Url");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_uri_instance_name(const char *class_name) {
+    return ptn_internal_class_name_is_uri_rfc3986_uri(class_name) ||
+        ptn_internal_class_name_is_uri_whatwg_url(class_name);
+}
+
+static PTN_UNUSED int ptn_internal_class_is_final(const char *class_name) {
+    return ptn_internal_class_name_is_uri_instance_name(class_name);
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_uri_comparison_mode(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Uri\\UriComparisonMode");
 }
@@ -84201,6 +84384,7 @@ static int ptn_directory_method_exists(const char *method_name) {
 
 static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__unserialize")
         || ptn_ascii_case_equal(method_name, "__toString")
         || ptn_ascii_case_equal(method_name, "toRawString")
         || ptn_ascii_case_equal(method_name, "toString")
@@ -84238,6 +84422,7 @@ static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
 
 static int ptn_uri_whatwg_url_method_exists(const char *method_name) {
     return ptn_ascii_case_equal(method_name, "__construct")
+        || ptn_ascii_case_equal(method_name, "__unserialize")
         || ptn_ascii_case_equal(method_name, "__toString")
         || ptn_ascii_case_equal(method_name, "parse")
         || ptn_ascii_case_equal(method_name, "toAsciiString")
@@ -85809,6 +85994,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name)) {
         static const char *const names[] = {
             "__construct",
+            "__unserialize",
             "__toString",
             "parse",
             "toRawString",
@@ -85850,6 +86036,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
     if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {
         static const char *const names[] = {
             "__construct",
+            "__unserialize",
             "__toString",
             "parse",
             "toAsciiString",
@@ -98686,6 +98873,11 @@ static PtnValue ptn_spl_object_public_properties_array_copy(PtnObject *object) {
 static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *array_out) {
     value = ptn_value_deref(value);
     if (ptn_bcmath_number_cast_array(value, array_out)) {
+        return 1;
+    }
+    if (value.type == PTN_OBJECT &&
+        ptn_internal_class_name_is_uri_instance_name(value.as.object->class_name)) {
+        *array_out = ptn_array_from_literal_entries(0, NULL);
         return 1;
     }
     if (value.type == PTN_OBJECT &&

@@ -5344,6 +5344,7 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
         "static const char *ptn_declared_class_enum_backing_type_name(const char *name);\n",
     );
     out.push_str("static int ptn_declared_class_is_final(const char *name);\n");
+    out.push_str("static int ptn_internal_class_is_final(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_call_magic(const char *class_name);\n");
     out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
     out.push_str(
@@ -17828,6 +17829,8 @@ fn emit_class_declaration_validation(
             line,
         );
         out.push_str("        if (ptn_declared_class_is_final(");
+        out.push_str(&parent_temp);
+        out.push_str(") || ptn_internal_class_is_final(");
         out.push_str(&parent_temp);
         out.push_str(")) {\n");
         if let Some(canonical_parent_name) = modeled_internal_class_name(parent_name) {
