@@ -504,6 +504,8 @@ static void ptn_runtime_free(PtnRuntime *runtime) {
         runtime->pcre_recursion_limit = NULL;
         free(runtime->pcre_jit);
         runtime->pcre_jit = NULL;
+        free(runtime->intl_error_message);
+        runtime->intl_error_message = NULL;
         free(runtime->iconv_internal_encoding);
         runtime->iconv_internal_encoding = NULL;
         free(runtime->iconv_input_encoding);
@@ -5682,6 +5684,20 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("NumberFormatter", name)
     ) {
         return ptn_intl_number_formatter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "IntlListFormatter")
+        && ptn_internal_class_method_exists("IntlListFormatter", name)
+    ) {
+        return ptn_intl_list_formatter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "IntlNumberRangeFormatter")
+        && ptn_internal_class_method_exists("IntlNumberRangeFormatter", name)
+    ) {
+        return ptn_intl_number_range_formatter_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

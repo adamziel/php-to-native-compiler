@@ -1370,6 +1370,8 @@ struct PtnRuntime {
     size_t json_last_error_line;
     size_t json_last_error_column;
     int pcre_last_error;
+    int intl_error_code;
+    char *intl_error_message;
 };
 
 typedef struct {
