@@ -27455,8 +27455,10 @@ try {{
             "bool(true)\n",
             "string(23) \"Invalid Character Error\"\n",
             "bool(true)\n",
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.0 Transitional//EN\" \"http://www.w3.org/TR/REC-html40/loose.dtd\">\n",
             "<html><head></head><body><p>a<br></p></body></html>\n",
             "bool(true)\n",
+            "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.0 Transitional//EN\" \"http://www.w3.org/TR/REC-html40/loose.dtd\">\n",
             "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><p>a<br></p></body></html>\n",
             "DOMDocument::load(): Argument #1 ($filename) must not be empty\n",
         )
