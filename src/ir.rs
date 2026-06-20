@@ -153,6 +153,7 @@ pub struct PropertyDecl {
     pub hook_has_get: bool,
     pub hook_has_set: bool,
     pub hook_get_is_abstract: bool,
+    pub hook_get_returns_by_ref: bool,
     pub hook_set_is_abstract: bool,
     pub hook_get_attributes: AttributeMetadata,
     pub hook_set_attributes: AttributeMetadata,
@@ -1744,6 +1745,7 @@ impl<'a> LoweringContext<'a> {
                 hook_has_get: property.hook_has_get,
                 hook_has_set: property.hook_has_set,
                 hook_get_is_abstract: property.hook_get_is_abstract,
+                hook_get_returns_by_ref: property.hook_get_returns_by_ref,
                 hook_set_is_abstract: property.hook_set_is_abstract,
                 hook_get_attributes: self.lower_class_scoped_attribute_metadata(
                     &property.hook_get_attributes,
@@ -2394,6 +2396,7 @@ impl<'a> LoweringContext<'a> {
                 hook_has_get: property.hook_has_get,
                 hook_has_set: property.hook_has_set,
                 hook_get_is_abstract: property.hook_get_is_abstract,
+                hook_get_returns_by_ref: property.hook_get_returns_by_ref,
                 hook_set_is_abstract: property.hook_set_is_abstract,
                 hook_get_attributes: self.lower_class_scoped_attribute_metadata(
                     &property.hook_get_attributes,

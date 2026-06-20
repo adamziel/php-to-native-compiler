@@ -1806,6 +1806,25 @@ static PTN_UNUSED void ptn_throw_set_only_virtual_property_read_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED void ptn_throw_hooked_property_indirect_modification_error(
+    PtnRuntime *runtime,
+    const PtnObjectPropertyMetadata *metadata,
+    size_t line
+) {
+    char message[192];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Indirect modification of %s::$%s is not allowed",
+        metadata->declaring_class,
+        metadata->display_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_throw_hooked_property_unset_error(
     PtnRuntime *runtime,
     const PtnObjectPropertyMetadata *metadata,
@@ -4334,6 +4353,11 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
                 1,
                 line
             );
+            if (hook_value.type == PTN_REFERENCE) {
+                PtnValue read_value = ptn_value_clone_deref(hook_value);
+                ptn_value_destroy(&hook_value);
+                return read_value;
+            }
             return hook_value;
         }
     }
@@ -5461,6 +5485,35 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    if (
+        metadata != NULL &&
+        metadata->hook_has_get &&
+        runtime != NULL &&
+        runtime->property_hook_get != NULL
+    ) {
+        PtnValue hook_value = ptn_null();
+        if (runtime->property_hook_get(
+            runtime,
+            receiver,
+            metadata->declaring_class,
+            metadata->display_name,
+            line,
+            &hook_value
+        )) {
+            ptn_declared_class_property_hook_deprecation(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                1,
+                line
+            );
+            ptn_value_destroy(&hook_value);
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_overloaded_property_reference_error(runtime, line);
+            return;
+        }
+    }
     if (ptn_property_is_get_only_virtual(metadata)) {
         ptn_array_key_free(key);
         free(storage_key);
@@ -5647,6 +5700,55 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
     PtnArrayEntry *entry = ptn_array_entry_for_key(receiver.as.object->properties, key);
     const PtnObjectPropertyMetadata *metadata =
         ptn_object_property_metadata(receiver.as.object, storage_key);
+    int active_same_property_hook =
+        runtime != NULL &&
+        metadata != NULL &&
+        runtime->active_property_hook_class != NULL &&
+        runtime->active_property_hook_property != NULL &&
+        (
+            (
+                access_scope != NULL &&
+                ptn_ascii_case_equal(runtime->active_property_hook_class, access_scope) &&
+                strcmp(runtime->active_property_hook_property, property) == 0
+            ) ||
+            (
+                ptn_ascii_case_equal(runtime->active_property_hook_class, metadata->declaring_class) &&
+                strcmp(runtime->active_property_hook_property, metadata->display_name) == 0
+            )
+        );
+    if (
+        metadata != NULL &&
+        metadata->hook_has_get &&
+        !active_same_property_hook &&
+        runtime != NULL &&
+        runtime->property_hook_get != NULL
+    ) {
+        PtnValue hook_value = ptn_null();
+        if (runtime->property_hook_get(
+            runtime,
+            receiver,
+            metadata->declaring_class,
+            metadata->display_name,
+            line,
+            &hook_value
+        )) {
+            ptn_declared_class_property_hook_deprecation(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                1,
+                line
+            );
+            ptn_array_key_free(key);
+            free(storage_key);
+            if (hook_value.type == PTN_REFERENCE) {
+                return hook_value;
+            }
+            ptn_value_destroy(&hook_value);
+            ptn_throw_hooked_property_indirect_modification_error(runtime, metadata, line);
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
+    }
     if (ptn_property_is_get_only_virtual(metadata)) {
         ptn_array_key_free(key);
         free(storage_key);

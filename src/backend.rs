@@ -10641,7 +10641,7 @@ fn emit_property_hook_get_helper(
                 Some(display_name.as_str()),
                 Some(class.name.as_str()),
                 None,
-                false,
+                property.hook_get_returns_by_ref,
                 false,
                 property.hook_get_body.is_some(),
                 property.hook_get_body.is_some(),
@@ -10653,6 +10653,11 @@ fn emit_property_hook_get_helper(
                 out.push_str("        PtnValue ptn_return_value = ptn_null();\n");
                 out.push_str("        int ptn_return_value_was_set = 0;\n");
                 out.push_str("        size_t ptn_return_line = line;\n");
+                if property.hook_get_returns_by_ref {
+                    out.push_str(
+                        "        int ptn_return_value_from_declared_reference_call = 0;\n",
+                    );
+                }
                 let mut break_targets = Vec::new();
                 let mut finally_stack = Vec::new();
                 let return_label = format!("ptn_property_hook_get_return_{branch_index}");
@@ -10694,6 +10699,28 @@ fn emit_property_hook_get_helper(
                     "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
                 );
                 "ptn_return_value".to_string()
+            } else if property.hook_get_returns_by_ref {
+                let value = property.hook_get_value.as_ref().unwrap();
+                if let ValueExpr::StaticPropertyFetch {
+                    class_name,
+                    name,
+                    line,
+                } = value
+                {
+                    values.emit_static_property_reference(out, class_name, name, *line)
+                } else if let Some(target) = reference_target_from_value(value) {
+                    values.emit_reference_target(out, &target)
+                } else {
+                    let result_value = values.emit_reference_candidate_value(out, value);
+                    let reference_temp = values.next_temp();
+                    out.push_str("        PtnValue ");
+                    out.push_str(&reference_temp);
+                    out.push_str(" = ptn_return_reference_source_or_value(&runtime, ");
+                    out.push_str(&result_value);
+                    out.push_str(", line);\n");
+                    emit_value_cleanup(out, "        ", &result_value);
+                    reference_temp
+                }
             } else {
                 values.emit_materialized_value(out, property.hook_get_value.as_ref().unwrap())
             };

@@ -114,6 +114,7 @@ pub struct PropertyDecl {
     pub hook_has_get: bool,
     pub hook_has_set: bool,
     pub hook_get_is_abstract: bool,
+    pub hook_get_returns_by_ref: bool,
     pub hook_set_is_abstract: bool,
     pub hook_get_override_span: Option<SourceSpan>,
     pub hook_set_override_span: Option<SourceSpan>,

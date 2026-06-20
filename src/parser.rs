@@ -381,6 +381,7 @@ struct ParsedPropertyHookBlock {
     has_get: bool,
     has_set: bool,
     get_is_abstract: bool,
+    get_returns_by_ref: bool,
     set_is_abstract: bool,
     get_override_span: Option<SourceSpan>,
     set_override_span: Option<SourceSpan>,
@@ -457,6 +458,7 @@ impl Parser<'_> {
                 &mut self.compile_warnings,
             )?;
             validate_property_interface_set_visibility(&validation_classes)?;
+            validate_property_hook_signature_compatibility(&validation_classes)?;
             validate_abstract_methods(&validation_classes)?;
             validate_final_class_inheritance(&validation_classes)?;
             validate_readonly_class_inheritance(&validation_classes)?;
@@ -3102,6 +3104,7 @@ impl Parser<'_> {
                     hook_has_get: hooks.has_get,
                     hook_has_set: hooks.has_set,
                     hook_get_is_abstract: hooks.get_is_abstract,
+                    hook_get_returns_by_ref: hooks.get_returns_by_ref,
                     hook_set_is_abstract: hooks.set_is_abstract,
                     hook_get_override_span: hooks.get_override_span,
                     hook_set_override_span: hooks.set_override_span,
@@ -3147,6 +3150,7 @@ impl Parser<'_> {
                 hook_has_get: false,
                 hook_has_set: false,
                 hook_get_is_abstract: false,
+                hook_get_returns_by_ref: false,
                 hook_set_is_abstract: false,
                 hook_get_override_span: None,
                 hook_set_override_span: None,
@@ -3307,9 +3311,12 @@ impl Parser<'_> {
                 }
             }
 
-            if matches!(self.peek().kind, TokenKind::Ampersand) {
+            let hook_returns_by_ref = if matches!(self.peek().kind, TokenKind::Ampersand) {
                 self.advance();
-            }
+                true
+            } else {
+                false
+            };
 
             let token = self.advance().clone();
             match token.kind {
@@ -3330,6 +3337,7 @@ impl Parser<'_> {
                     }
                     hooks.get_attributes = hook_attributes;
                     hooks.get_span = Some(token.span);
+                    hooks.get_returns_by_ref = hook_returns_by_ref;
                     if matches!(self.peek().kind, TokenKind::DoubleArrow) {
                         self.advance();
                         let value =
@@ -3428,6 +3436,12 @@ impl Parser<'_> {
                     }
                 }
                 TokenKind::Identifier(name) if name.eq_ignore_ascii_case("set") => {
+                    if hook_returns_by_ref {
+                        return Err(Diagnostic::new(
+                            "Property set hook must not return by reference",
+                            Some(token.span),
+                        ));
+                    }
                     if hooks.has_set {
                         return Err(Diagnostic::new(
                             "Cannot redeclare property hook \"set\"",
@@ -11631,6 +11645,7 @@ fn promoted_properties_from_constructor(
                 hook_has_get: false,
                 hook_has_set: false,
                 hook_get_is_abstract: false,
+                hook_get_returns_by_ref: false,
                 hook_set_is_abstract: false,
                 hook_get_override_span: None,
                 hook_set_override_span: None,
@@ -14786,7 +14801,7 @@ fn parent_property_hook_override_target_exists(
         if parent.properties.iter().any(|property| {
             property.visibility != PropertyVisibility::Private
                 && property.name == property_name
-                && property_satisfies_hook(property, hook_name)
+                && property_satisfies_hook(property, hook_name, false)
         }) {
             return true;
         }
@@ -14845,7 +14860,7 @@ fn interface_property_hook_exists(
         return false;
     }
     interface.properties.iter().any(|property| {
-        property.name == property_name && property_satisfies_hook(property, hook_name)
+        property.name == property_name && property_satisfies_hook(property, hook_name, false)
     }) || interface.interfaces.iter().any(|parent_name| {
         interface_property_hook_exists(parent_name, property_name, hook_name, classes, seen)
     })
@@ -15390,6 +15405,7 @@ struct RequiredAbstractPropertyHook {
     declaring_class: String,
     property_name: String,
     hook_name: &'static str,
+    returns_by_ref: bool,
 }
 
 fn abstract_property_hooks_diagnostic(
@@ -15436,6 +15452,7 @@ fn abstract_property_hooks_for(
             declaring_class: declaring_class.to_string(),
             property_name: property.name.clone(),
             hook_name: "get",
+            returns_by_ref: property.hook_get_returns_by_ref,
         });
     }
     if property.hook_set_is_abstract {
@@ -15443,6 +15460,7 @@ fn abstract_property_hooks_for(
             declaring_class: declaring_class.to_string(),
             property_name: property.name.clone(),
             hook_name: "set",
+            returns_by_ref: false,
         });
     }
     hooks
@@ -15533,6 +15551,126 @@ fn collect_interface_property_hooks(
     }
 }
 
+fn validate_property_hook_signature_compatibility(classes: &[ClassDecl]) -> Result<()> {
+    for class in classes {
+        for property in &class.properties {
+            if property.hook_get_returns_by_ref
+                && property.hook_has_set
+                && property_hook_is_backed(class, property, classes)
+            {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Get hook of backed property {}::{} with set hook may not return by reference",
+                        class.name, property.name
+                    ),
+                    property.hook_get_span.or(Some(property.span)),
+                ));
+            }
+        }
+
+        let mut requirements = Vec::new();
+        collect_parent_abstract_property_hooks(class, classes, &mut requirements);
+        collect_interface_abstract_property_hooks(class, classes, &mut requirements);
+        for required in requirements {
+            if required.hook_name != "get" || !required.returns_by_ref {
+                continue;
+            }
+            let Some((actual_class, actual_property)) =
+                visible_property_in_class_chain(class, &required.property_name, classes)
+            else {
+                continue;
+            };
+            if !actual_property.has_hooks
+                || (actual_property.hook_has_get
+                    && !actual_property.hook_get_is_abstract
+                    && actual_property.hook_get_returns_by_ref)
+            {
+                continue;
+            }
+            return Err(Diagnostic::new(
+                format!(
+                    "Declaration of {}::{}::get() must be compatible with &{}::{}::get()",
+                    actual_class.name,
+                    property_hook_display_name(&actual_property.name),
+                    required.declaring_class,
+                    property_hook_display_name(&required.property_name)
+                ),
+                actual_property.hook_get_span.or(Some(actual_property.span)),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn property_hook_is_backed(
+    class: &ClassDecl,
+    property: &PropertyDecl,
+    classes: &[ClassDecl],
+) -> bool {
+    !property.is_virtual
+        || property.value.is_some()
+        || visible_parent_property(class, &property.name, classes).is_some()
+}
+
+fn visible_parent_property<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a PropertyDecl)> {
+    let mut parent_name = class.parent_name.as_deref();
+    let mut seen = HashSet::new();
+    while let Some(name) = parent_name {
+        if !seen.insert(name.to_ascii_lowercase()) {
+            break;
+        }
+        let Some(parent) = find_class(classes, name) else {
+            break;
+        };
+        if let Some(property) = parent.properties.iter().find(|property| {
+            property.visibility != PropertyVisibility::Private && property.name == property_name
+        }) {
+            return Some((parent, property));
+        }
+        parent_name = parent.parent_name.as_deref();
+    }
+    None
+}
+
+fn visible_property_in_class_chain<'a>(
+    class: &'a ClassDecl,
+    property_name: &str,
+    classes: &'a [ClassDecl],
+) -> Option<(&'a ClassDecl, &'a PropertyDecl)> {
+    let mut current = Some(class);
+    let mut seen = HashSet::new();
+    while let Some(candidate) = current {
+        if !seen.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        if let Some(property) = candidate
+            .properties
+            .iter()
+            .find(|property| property.name == property_name)
+        {
+            if property.visibility != PropertyVisibility::Private
+                || candidate.name.eq_ignore_ascii_case(&class.name)
+            {
+                return Some((candidate, property));
+            }
+            return None;
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
+    }
+    None
+}
+
+fn property_hook_display_name(property_name: &str) -> String {
+    format!("${property_name}")
+}
+
 fn class_satisfies_property_hook(
     class: &ClassDecl,
     required: &RequiredAbstractPropertyHook,
@@ -15554,7 +15692,7 @@ fn class_satisfies_property_hook(
             {
                 return false;
             }
-            return property_satisfies_hook(property, required.hook_name);
+            return property_satisfies_hook(property, required.hook_name, required.returns_by_ref);
         }
         current = candidate
             .parent_name
@@ -15564,12 +15702,20 @@ fn class_satisfies_property_hook(
     false
 }
 
-fn property_satisfies_hook(property: &PropertyDecl, hook_name: &str) -> bool {
+fn property_satisfies_hook(
+    property: &PropertyDecl,
+    hook_name: &str,
+    requires_by_ref: bool,
+) -> bool {
     if !property.has_hooks {
         return hook_name == "get" || (hook_name == "set" && !property.is_readonly);
     }
     match hook_name {
-        "get" => property.hook_has_get && !property.hook_get_is_abstract,
+        "get" => {
+            property.hook_has_get
+                && !property.hook_get_is_abstract
+                && (!requires_by_ref || property.hook_get_returns_by_ref)
+        }
         "set" => property.hook_has_set && !property.hook_set_is_abstract,
         _ => false,
     }

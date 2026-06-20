@@ -52287,6 +52287,68 @@ var_dump($bag->backed);
 }
 
 #[test]
+fn compile_property_hook_get_by_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-get-by-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-get-by-reference.php");
+    let output = root.join("property-hook-get-by-reference-bin");
+    fs::write(
+        &input,
+        "<?php
+interface HasProp {
+    public $prop { &get; }
+}
+
+class RefBag implements HasProp {
+    private $_prop;
+    public $prop {
+        &get => $this->_prop;
+        set { $this->_prop = $value; }
+    }
+}
+
+function write_ref(HasProp $bag) {
+    $ref = &$bag->prop;
+    $ref = 42;
+}
+
+$bag = new RefBag();
+$bag->prop = 41;
+$alias = &$bag->prop;
+$alias++;
+var_dump($bag->prop);
+write_ref($bag);
+var_dump($bag);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(42)\n",
+            "object(RefBag)#1 (1) {\n",
+            "  [\"_prop\":\"RefBag\":private]=>\n",
+            "  &int(42)\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_hook_get"));
+}
+
+#[test]
 fn compile_simple_property_hook_setters_to_native_binary() {
     let root = temp_dir("ptn-native-simple-property-hook-setters");
     fs::create_dir_all(&root).unwrap();

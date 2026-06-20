@@ -1549,6 +1549,18 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\nget hook return type check\n--FILE--\n<?php\nclass Test { public int $prop { get { return '42'; } } }\nvar_dump((new Test())->prop);\n--EXPECT--\nint(42)\n",
         ),
         (
+            "Zend/tests/property_hooks/get_by_ref_virtual.phpt",
+            "--TEST--\nby-ref get hook\n--FILE--\n<?php\nclass Test { private $_prop; public $prop { &get => $this->_prop; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/get_by_ref_implemented_by_val.phpt",
+            "--TEST--\nby-ref get contract\n--FILE--\n<?php\ninterface I { public $prop { &get; } } class A implements I { public $prop { get => $this->prop; } }\n--EXPECTF--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/interface_get_value_as_ref.phpt",
+            "--TEST--\nby-value contract by-ref implementation\n--FILE--\n<?php\ninterface I { public $prop { get; } } class A implements I { private $_prop; public $prop { &get => $this->_prop; } }\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/property_hooks/set.phpt",
             "--TEST--\nplain set hook\n--FILE--\n<?php\nclass Test { public $_prop; public $prop { set { $this->_prop = $value; } } }\n$test = new Test(); $test->prop = 42; var_dump($test->_prop);\n--EXPECT--\nint(42)\n",
         ),
