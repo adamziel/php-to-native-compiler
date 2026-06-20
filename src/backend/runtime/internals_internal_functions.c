@@ -18865,6 +18865,8 @@ static void ptn_uri_whatwg_throw_malformed(PtnRuntime *runtime, const char *comp
     ptn_throw_exception(runtime, "Uri\\WhatWg\\InvalidUrlException", message);
 }
 
+static const char *ptn_uri_whatwg_infer_parse_error_reason(PtnStringOperand input);
+
 #ifdef PTN_USE_ADA_URL
 static char *ptn_uri_ada_null_terminated_copy(const char *data, size_t len) {
     return ptn_uri_duplicate_len(data == NULL ? "" : data, len);
@@ -19081,6 +19083,7 @@ static int ptn_uri_ada_parse_whatwg(
         if (url != NULL) {
             ada_free(url);
         }
+        *reason_out = ptn_uri_whatwg_infer_parse_error_reason(input);
         return 0;
     }
     PtnUriData *data = ptn_uri_ada_data_from_url(url);
@@ -19964,6 +19967,185 @@ static int ptn_uri_whatwg_parse_authority(
     return 1;
 }
 
+static int ptn_uri_ascii_span_case_equal(const char *data, size_t len, const char *literal) {
+    size_t literal_len = strlen(literal);
+    if (len != literal_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (tolower((unsigned char)data[i]) != (unsigned char)literal[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ptn_uri_whatwg_is_special_scheme_span(const char *scheme, size_t scheme_len) {
+    return ptn_uri_ascii_span_case_equal(scheme, scheme_len, "http") ||
+        ptn_uri_ascii_span_case_equal(scheme, scheme_len, "https") ||
+        ptn_uri_ascii_span_case_equal(scheme, scheme_len, "ws") ||
+        ptn_uri_ascii_span_case_equal(scheme, scheme_len, "wss") ||
+        ptn_uri_ascii_span_case_equal(scheme, scheme_len, "ftp") ||
+        ptn_uri_ascii_span_case_equal(scheme, scheme_len, "file");
+}
+
+static int ptn_uri_whatwg_host_input_error_reason(
+    const char *host,
+    size_t host_len,
+    int special,
+    const char **reason_out
+) {
+    *reason_out = NULL;
+    if (host_len == 0) {
+        if (special) {
+            *reason_out = "HostMissing";
+            return 1;
+        }
+        return 0;
+    }
+    if (host[0] == '[') {
+        char *ipv6 = NULL;
+        if (!ptn_uri_whatwg_parse_ipv6(host, host_len, &ipv6)) {
+            *reason_out = "Ipv6InvalidCodePoint";
+            return 1;
+        }
+        free(ipv6);
+        return 0;
+    }
+    for (size_t i = 0; i < host_len; i++) {
+        unsigned char byte = (unsigned char)host[i];
+        if (byte == '%' && i + 2 < host_len &&
+            ptn_uri_hex_value(host[i + 1]) >= 0 &&
+            ptn_uri_hex_value(host[i + 2]) >= 0) {
+            byte = (unsigned char)((ptn_uri_hex_value(host[i + 1]) << 4) | ptn_uri_hex_value(host[i + 2]));
+            i += 2;
+        }
+        if (byte == 0 || byte == '[' || byte == ']' || byte == '@' ||
+            byte == '/' || byte == '?' || byte == '#') {
+            *reason_out = special ? "DomainInvalidCodePoint" : "HostInvalidCodePoint";
+            return 1;
+        }
+        if (byte == ':') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char *ptn_uri_whatwg_infer_authority_error_reason(
+    const char *scheme,
+    size_t scheme_len,
+    const char *authority,
+    size_t authority_len
+) {
+    int special = ptn_uri_whatwg_is_special_scheme_span(scheme, scheme_len);
+    size_t host_start = 0;
+    for (size_t i = authority_len; i > 0; i--) {
+        if (authority[i - 1] == '@') {
+            host_start = i;
+            break;
+        }
+    }
+    const char *hostport = authority + host_start;
+    size_t hostport_len = authority_len - host_start;
+    size_t host_len = hostport_len;
+    size_t port_start = hostport_len;
+    if (hostport_len > 0 && hostport[0] == '[') {
+        size_t close = ptn_uri_find_byte(hostport, hostport_len, 1, ']');
+        if (close >= hostport_len) {
+            return "Ipv6InvalidCodePoint";
+        }
+        host_len = close + 1;
+        if (host_len < hostport_len) {
+            if (hostport[host_len] != ':') {
+                return "Ipv6InvalidCodePoint";
+            }
+            port_start = host_len + 1;
+        }
+    } else {
+        for (size_t i = hostport_len; i > 0; i--) {
+            if (hostport[i - 1] == ':') {
+                host_len = i - 1;
+                port_start = i;
+                break;
+            }
+        }
+    }
+
+    const char *host_reason = NULL;
+    if (ptn_uri_whatwg_host_input_error_reason(hostport, host_len, special, &host_reason)) {
+        return host_reason;
+    }
+    if (port_start < hostport_len) {
+        int64_t port = 0;
+        int port_present = 0;
+        const char *port_reason = NULL;
+        if (!ptn_uri_whatwg_parse_port(
+                hostport + port_start,
+                hostport_len - port_start,
+                &port,
+                &port_present,
+                &port_reason
+        )) {
+            return port_reason;
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_uri_whatwg_infer_parse_error_reason(PtnStringOperand input) {
+    const char *data = input.data;
+    size_t len = input.len;
+    ptn_uri_whatwg_trim(input.data, input.len, 0, &data, &len);
+    if (len == 0) {
+        return "MissingSchemeNonRelativeUrl";
+    }
+
+    size_t first_delimiter = ptn_uri_find_remainder_delimiter(data, len, 0);
+    size_t colon = ptn_uri_find_byte(data, len, 0, ':');
+    if (colon >= first_delimiter ||
+        colon == 0 ||
+        !ptn_uri_validate_scheme_component(data, colon)) {
+        return "MissingSchemeNonRelativeUrl";
+    }
+
+    int special = ptn_uri_whatwg_is_special_scheme_span(data, colon);
+    size_t offset = colon + 1;
+    if (special &&
+        (offset >= len ||
+         (data[offset] == '/' && (offset + 1 >= len || data[offset + 1] != '/')))) {
+        return "HostMissing";
+    }
+    if (offset + 1 < len && data[offset] == '/' && data[offset + 1] == '/') {
+        size_t authority_start = offset + 2;
+        size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
+        const char *reason = ptn_uri_whatwg_infer_authority_error_reason(
+            data,
+            colon,
+            data + authority_start,
+            authority_end - authority_start
+        );
+        if (reason != NULL) {
+            return reason;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_uri_whatwg_scheme_input_is_valid(const char *data, size_t len) {
+    ptn_uri_whatwg_trim(data, len, 0, &data, &len);
+    if (len == 0) {
+        return 0;
+    }
+    size_t scheme_len = len;
+    if (len >= 3 && data[len - 3] == ':' && data[len - 2] == '/' && data[len - 1] == '/') {
+        scheme_len = len - 3;
+    } else if (data[len - 1] == ':') {
+        scheme_len = len - 1;
+    }
+    return ptn_uri_validate_scheme_component(data, scheme_len);
+}
+
 static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t path_len, int default_slash) {
     size_t encoded_len = 0;
     char *encoded = ptn_uri_whatwg_percent_encode_owned(
@@ -20006,6 +20188,38 @@ static PtnValue ptn_uri_normalized_string_value(const char *value, int lowercase
         normalized = ptn_uri_remove_dot_segments_owned(normalized, &len);
     }
     return ptn_owned_string_len(normalized, len);
+}
+
+static char *ptn_uri_rfc3986_normalized_host_owned(const char *value, size_t *len_out) {
+    size_t value_len = strlen(value);
+    if (value_len >= 2 && value[0] == '[' && value[value_len - 1] == ']' &&
+        value_len >= 3 && value[1] != 'v' && value[1] != 'V') {
+        char *ipv6 = NULL;
+        if (ptn_uri_whatwg_parse_ipv6(value, value_len, &ipv6)) {
+            *len_out = strlen(ipv6);
+            return ipv6;
+        }
+    }
+    return ptn_uri_normalize_component_owned(value, value_len, 1, len_out);
+}
+
+static PtnValue ptn_uri_rfc3986_host_value(const char *value) {
+    if (value == NULL) {
+        return ptn_null();
+    }
+    size_t len = 0;
+    char *normalized = ptn_uri_rfc3986_normalized_host_owned(value, &len);
+    return ptn_owned_string_len(normalized, len);
+}
+
+static void ptn_uri_append_rfc3986_host_normalized(PtnStringBuffer *buffer, const char *value) {
+    if (value == NULL) {
+        return;
+    }
+    size_t len = 0;
+    char *normalized = ptn_uri_rfc3986_normalized_host_owned(value, &len);
+    ptn_string_buffer_append_len(buffer, normalized, len);
+    free(normalized);
 }
 
 static void ptn_uri_append_normalized(PtnStringBuffer *buffer, const char *value, int lowercase_ascii, int normalize_path) {
@@ -20062,7 +20276,7 @@ static PtnValue ptn_uri_to_string_value(const PtnUriData *data, int normalized) 
         }
         if (data->host != NULL) {
             if (normalized) {
-                ptn_uri_append_normalized(&buffer, data->host, 1, 0);
+                ptn_uri_append_rfc3986_host_normalized(&buffer, data->host);
             } else {
                 ptn_string_buffer_append(&buffer, data->host);
             }
@@ -20184,6 +20398,65 @@ static const char *ptn_uri_rfc3986_uri_type_case_name(const PtnUriData *data) {
 
 static PtnValue ptn_uri_rfc3986_uri_type_value(PtnRuntime *runtime, const PtnUriData *data) {
     return ptn_enum_case(runtime, "Uri\\Rfc3986\\UriType", ptn_uri_rfc3986_uri_type_case_name(data));
+}
+
+static int ptn_uri_rfc3986_host_is_ipv4_address(const char *host, size_t host_len) {
+    size_t part_count = 0;
+    size_t offset = 0;
+    while (offset < host_len) {
+        if (part_count >= 4 || !isdigit((unsigned char)host[offset])) {
+            return 0;
+        }
+        int64_t part = 0;
+        size_t digits = 0;
+        while (offset < host_len && isdigit((unsigned char)host[offset])) {
+            part = part * 10 + (int64_t)(host[offset] - '0');
+            if (part > 255) {
+                return 0;
+            }
+            offset++;
+            digits++;
+        }
+        if (digits == 0) {
+            return 0;
+        }
+        part_count++;
+        if (offset == host_len) {
+            break;
+        }
+        if (host[offset] != '.') {
+            return 0;
+        }
+        offset++;
+        if (offset == host_len) {
+            return 0;
+        }
+    }
+    return part_count == 4;
+}
+
+static const char *ptn_uri_rfc3986_host_type_case_name(const PtnUriData *data) {
+    if (data->host == NULL) {
+        return NULL;
+    }
+    size_t host_len = strlen(data->host);
+    if (host_len >= 2 && data->host[0] == '[' && data->host[host_len - 1] == ']') {
+        if (host_len >= 4 && (data->host[1] == 'v' || data->host[1] == 'V')) {
+            return "IPvFuture";
+        }
+        return "IPv6";
+    }
+    if (ptn_uri_rfc3986_host_is_ipv4_address(data->host, host_len)) {
+        return "IPv4";
+    }
+    return "RegisteredName";
+}
+
+static PtnValue ptn_uri_rfc3986_host_type_value(PtnRuntime *runtime, const PtnUriData *data) {
+    const char *case_name = ptn_uri_rfc3986_host_type_case_name(data);
+    return case_name == NULL
+        ? ptn_null()
+        : ptn_enum_case(runtime, "Uri\\Rfc3986\\UriHostType", case_name);
 }
 
 static int ptn_uri_enum_case_is(PtnValue value, const char *class_name, const char *case_name) {
@@ -20510,6 +20783,11 @@ static PtnValue ptn_uri_whatwg_with_scheme(
         ptn_string_operand_free(value);
         return ptn_null();
     }
+    if (!ptn_uri_whatwg_scheme_input_is_valid(value.data, value.len)) {
+        ptn_string_operand_free(value);
+        ptn_uri_whatwg_throw_malformed(runtime, "scheme", NULL);
+        return ptn_null();
+    }
 #ifndef PTN_USE_ADA_URL
     ptn_string_operand_free(value);
     ptn_uri_whatwg_throw_malformed(runtime, "scheme", "AdaParserUnavailable");
@@ -20565,6 +20843,12 @@ static PtnValue ptn_uri_whatwg_with_host(
         ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
         return ptn_null();
     }
+    const char *host_error_reason = NULL;
+    if (ptn_uri_whatwg_host_input_error_reason(host_arg.data, host_arg.len, special, &host_error_reason)) {
+        ptn_string_operand_free(host_arg);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", host_error_reason);
+        return ptn_null();
+    }
 #ifndef PTN_USE_ADA_URL
     ptn_string_operand_free(host_arg);
     ptn_uri_whatwg_throw_malformed(runtime, "host", "AdaParserUnavailable");
@@ -20578,7 +20862,7 @@ static PtnValue ptn_uri_whatwg_with_host(
             ada_free(url);
         }
         ptn_string_operand_free(host_arg);
-        ptn_uri_whatwg_throw_malformed(runtime, "host", special && host_arg.len == 0 ? "HostMissing" : NULL);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", host_error_reason);
         return ptn_null();
     }
     PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
@@ -21132,6 +21416,9 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
     if (ptn_ascii_case_equal(name, "getUriType")) {
         return ptn_uri_rfc3986_uri_type_value(runtime, data);
     }
+    if (ptn_ascii_case_equal(name, "getHostType")) {
+        return ptn_uri_rfc3986_host_type_value(runtime, data);
+    }
     if (ptn_ascii_case_equal(name, "getRawScheme")) {
         return ptn_uri_component_property_value(data->scheme);
     }
@@ -21154,7 +21441,7 @@ static PTN_UNUSED PtnValue ptn_uri_call_method(
         return ptn_uri_component_property_value(data->host);
     }
     if (ptn_ascii_case_equal(name, "getHost") || ptn_ascii_case_equal(name, "getAsciiHost")) {
-        return ptn_uri_normalized_string_value(data->host, 1, 0);
+        return ptn_uri_rfc3986_host_value(data->host);
     }
     if (ptn_ascii_case_equal(name, "getPort")) {
         return data->port_present ? ptn_int(data->port) : ptn_null();
@@ -78210,6 +78497,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri_type(const char
     return ptn_ascii_case_equal(class_name, "Uri\\Rfc3986\\UriType");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri_host_type(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Uri\\Rfc3986\\UriHostType");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\Url");
 }
@@ -78316,6 +78607,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_xml_parser(class_name)
         || ptn_internal_class_name_is_uri_rfc3986_uri(class_name)
         || ptn_internal_class_name_is_uri_rfc3986_uri_type(class_name)
+        || ptn_internal_class_name_is_uri_rfc3986_uri_host_type(class_name)
         || ptn_internal_class_name_is_uri_whatwg_url(class_name)
         || ptn_internal_class_name_is_uri_comparison_mode(class_name)
         || ptn_internal_class_name_is_uri_whatwg_url_host_type(class_name)
@@ -79547,6 +79839,7 @@ static int ptn_uri_rfc3986_uri_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "toString")
         || ptn_ascii_case_equal(method_name, "equals")
         || ptn_ascii_case_equal(method_name, "getUriType")
+        || ptn_ascii_case_equal(method_name, "getHostType")
         || ptn_ascii_case_equal(method_name, "getRawScheme")
         || ptn_ascii_case_equal(method_name, "getScheme")
         || ptn_ascii_case_equal(method_name, "getRawUserInfo")
@@ -81135,6 +81428,7 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "toString",
             "equals",
             "getUriType",
+            "getHostType",
             "getRawScheme",
             "getScheme",
             "getRawUserInfo",
@@ -86581,7 +86875,12 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
         ptn_ascii_case_equal(class_name, "IntlException")) {
         return "intl";
     }
-    if (ptn_internal_class_name_is_uri_whatwg_url(class_name) ||
+    if (ptn_internal_class_name_is_uri_rfc3986_uri(class_name) ||
+        ptn_internal_class_name_is_uri_rfc3986_uri_type(class_name) ||
+        ptn_internal_class_name_is_uri_rfc3986_uri_host_type(class_name) ||
+        ptn_internal_class_name_is_uri_whatwg_url(class_name) ||
+        ptn_internal_class_name_is_uri_comparison_mode(class_name) ||
+        ptn_internal_class_name_is_uri_whatwg_url_host_type(class_name) ||
         ptn_exception_name_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")) {
         return "uri";
     }
@@ -92545,6 +92844,15 @@ static PtnValue ptn_reflection_extension_classes(
     }
     if (ptn_ascii_case_equal(extension_name, "xmlwriter")) {
         ptn_reflection_extension_add_class(runtime, result, &index, "XMLWriter", objects);
+        return result;
+    }
+    if (ptn_ascii_case_equal(extension_name, "uri")) {
+        ptn_reflection_extension_add_class(runtime, result, &index, "Uri\\Rfc3986\\Uri", objects);
+        ptn_reflection_extension_add_class(runtime, result, &index, "Uri\\WhatWg\\Url", objects);
+        ptn_reflection_extension_add_enum(runtime, result, &index, "Uri\\Rfc3986\\UriType", objects);
+        ptn_reflection_extension_add_enum(runtime, result, &index, "Uri\\Rfc3986\\UriHostType", objects);
+        ptn_reflection_extension_add_enum(runtime, result, &index, "Uri\\UriComparisonMode", objects);
+        ptn_reflection_extension_add_enum(runtime, result, &index, "Uri\\WhatWg\\UrlHostType", objects);
         return result;
     }
     if (ptn_ascii_case_equal(extension_name, "standard")) {
