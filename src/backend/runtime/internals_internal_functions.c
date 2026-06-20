@@ -236,10 +236,43 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         if (ptn_ascii_case_equal(name, "settype")) {
             return "var";
         }
-        if (ptn_ascii_case_equal(name, "round") ||
+        if (ptn_ascii_case_equal(name, "abs") ||
+            ptn_ascii_case_equal(name, "acos") ||
+            ptn_ascii_case_equal(name, "acosh") ||
+            ptn_ascii_case_equal(name, "asin") ||
+            ptn_ascii_case_equal(name, "asinh") ||
+            ptn_ascii_case_equal(name, "atan") ||
+            ptn_ascii_case_equal(name, "atanh") ||
+            ptn_ascii_case_equal(name, "ceil") ||
+            ptn_ascii_case_equal(name, "cos") ||
+            ptn_ascii_case_equal(name, "cosh") ||
             ptn_ascii_case_equal(name, "deg2rad") ||
-            ptn_ascii_case_equal(name, "rad2deg")) {
+            ptn_ascii_case_equal(name, "exp") ||
+            ptn_ascii_case_equal(name, "expm1") ||
+            ptn_ascii_case_equal(name, "floor") ||
+            ptn_ascii_case_equal(name, "is_finite") ||
+            ptn_ascii_case_equal(name, "is_infinite") ||
+            ptn_ascii_case_equal(name, "is_nan") ||
+            ptn_ascii_case_equal(name, "log") ||
+            ptn_ascii_case_equal(name, "log10") ||
+            ptn_ascii_case_equal(name, "log1p") ||
+            ptn_ascii_case_equal(name, "rad2deg") ||
+            ptn_ascii_case_equal(name, "round") ||
+            ptn_ascii_case_equal(name, "sin") ||
+            ptn_ascii_case_equal(name, "sinh") ||
+            ptn_ascii_case_equal(name, "sqrt") ||
+            ptn_ascii_case_equal(name, "tan") ||
+            ptn_ascii_case_equal(name, "tanh")) {
             return "num";
+        }
+        if (ptn_ascii_case_equal(name, "fmod")) {
+            return "num1";
+        }
+        if (ptn_ascii_case_equal(name, "atan2")) {
+            return "y";
+        }
+        if (ptn_ascii_case_equal(name, "hypot")) {
+            return "x";
         }
         if (ptn_ascii_case_equal(name, "clamp")) {
             return "value";
@@ -271,6 +304,18 @@ static const char *ptn_internal_function_parameter_name(const char *name, size_t
         }
         if (ptn_ascii_case_equal(name, "round")) {
             return "precision";
+        }
+        if (ptn_ascii_case_equal(name, "log")) {
+            return "base";
+        }
+        if (ptn_ascii_case_equal(name, "fmod")) {
+            return "num2";
+        }
+        if (ptn_ascii_case_equal(name, "atan2")) {
+            return "x";
+        }
+        if (ptn_ascii_case_equal(name, "hypot")) {
+            return "y";
         }
         if (ptn_ascii_case_equal(name, "clamp")) {
             return "min";
@@ -3476,6 +3521,7 @@ static PtnValue ptn_internal_expect_callback_arg_impl(
         accepts_null
     );
     ptn_value_destroy(&checked);
+    ptn_value_destroy(&callback);
     ptn_throw_exception_owned_message(runtime, "TypeError", message);
     return ptn_null();
 }
