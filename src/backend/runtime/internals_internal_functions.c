@@ -70787,6 +70787,28 @@ static int ptn_xml_parser_supported_target_encoding(PtnStringOperand encoding) {
         ptn_xml_ascii_case_equal_len(encoding.data, encoding.len, "US-ASCII");
 }
 
+static int ptn_xml_parser_known_option(int64_t option) {
+    return option == PTN_XML_OPTION_CASE_FOLDING ||
+        option == PTN_XML_OPTION_TARGET_ENCODING ||
+        option == PTN_XML_OPTION_SKIP_TAGSTART ||
+        option == PTN_XML_OPTION_SKIP_WHITE ||
+        option == PTN_XML_OPTION_PARSE_HUGE;
+}
+
+static void ptn_xml_parser_throw_unknown_option(PtnRuntime *runtime, const char *function_name) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Argument #2 ($option) must be a XML_OPTION_* constant",
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+}
+
 static void ptn_xml_parser_warn_object_to_int(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT || value.as.object == NULL) {
@@ -70812,6 +70834,10 @@ static PtnValue ptn_internal_xml_parser_set_option(PtnRuntime *runtime, size_t a
         return ptn_bool(0);
     }
     int64_t option = ptn_value_to_integer(args[1]);
+    if (!ptn_xml_parser_known_option(option)) {
+        ptn_xml_parser_throw_unknown_option(runtime, "xml_parser_set_option");
+        return ptn_null();
+    }
     if (data->parsing && option == PTN_XML_OPTION_PARSE_HUGE) {
         ptn_throw_exception(runtime, "Error", "Cannot change option XML_OPTION_PARSE_HUGE while parsing");
         return ptn_null();
@@ -70880,11 +70906,11 @@ static PtnValue ptn_internal_xml_parser_set_option(PtnRuntime *runtime, size_t a
         data->parse_huge = ptn_is_truthy(args[2]);
         return ptn_bool(1);
     }
-    return ptn_bool(0);
+    ptn_xml_parser_throw_unknown_option(runtime, "xml_parser_set_option");
+    return ptn_null();
 }
 
 static PtnValue ptn_internal_xml_parser_get_option(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
     (void)line;
     PtnXmlParserData *data = ptn_xml_parser_data(args[0]);
@@ -70892,6 +70918,10 @@ static PtnValue ptn_internal_xml_parser_get_option(PtnRuntime *runtime, size_t a
         return ptn_bool(0);
     }
     int64_t option = ptn_value_to_integer(args[1]);
+    if (!ptn_xml_parser_known_option(option)) {
+        ptn_xml_parser_throw_unknown_option(runtime, "xml_parser_get_option");
+        return ptn_null();
+    }
     if (option == PTN_XML_OPTION_CASE_FOLDING) {
         return ptn_bool(data->case_folding);
     }
@@ -70907,7 +70937,8 @@ static PtnValue ptn_internal_xml_parser_get_option(PtnRuntime *runtime, size_t a
     if (option == PTN_XML_OPTION_PARSE_HUGE) {
         return ptn_bool(data->parse_huge);
     }
-    return ptn_bool(0);
+    ptn_xml_parser_throw_unknown_option(runtime, "xml_parser_get_option");
+    return ptn_null();
 }
 
 static void ptn_xml_parser_add_namespace(PtnXmlParserData *data, const char *prefix, const char *uri) {
