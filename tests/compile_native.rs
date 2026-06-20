@@ -58769,6 +58769,30 @@ var_dump($url->withUsername("u:s/r")->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
 var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
+$ipv6Host = Uri\WhatWg\Url::parse("https://example.com")->withHost("[2001:0db8:3333:4444:5555:6666:7777:8888]");
+var_dump($ipv6Host->getAsciiHost());
+var_dump($ipv6Host->toAsciiString());
+var_dump(Uri\WhatWg\Url::parse("https://example.com")->resolve("/f\0o")->toAsciiString());
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->withScheme("");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    Uri\WhatWg\Url::parse("foo://example.com")->withHost("ex@mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->withHost("ex@mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->withHost("ex:mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
 try {
     Uri\WhatWg\Url::parse("foo");
 } catch (Throwable $e) {
@@ -58806,6 +58830,13 @@ try {
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
+            "string(40) \"[2001:db8:3333:4444:5555:6666:7777:8888]\"\n",
+            "string(49) \"https://[2001:db8:3333:4444:5555:6666:7777:8888]/\"\n",
+            "string(25) \"https://example.com/f%00o\"\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified scheme is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (HostInvalidCodePoint)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (DomainInvalidCodePoint)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
         )
