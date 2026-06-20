@@ -925,6 +925,7 @@ struct PtnResource {
     PtnStreamFilter *read_filters;
     PtnStreamFilter *write_filters;
     int persistent;
+    int closed;
     PtnValue context_options;
     PtnResource *registry_prev;
     PtnResource *registry_next;
@@ -3148,6 +3149,9 @@ static PTN_UNUSED int ptn_resource_is_open(PtnResource *resource) {
     if (resource == NULL) {
         return 0;
     }
+    if (resource->closed) {
+        return 0;
+    }
     return resource->stream != NULL ||
         resource->directory != NULL ||
         resource->memory_stream != NULL ||
@@ -3155,7 +3159,13 @@ static PTN_UNUSED int ptn_resource_is_open(PtnResource *resource) {
 }
 
 static PTN_UNUSED int ptn_stream_resource_is_open(PtnResource *resource) {
-    return resource != NULL && (resource->stream != NULL || resource->memory_stream != NULL);
+    if (resource == NULL || resource->closed) {
+        return 0;
+    }
+    if (resource->persistent && resource->id >= 1 && resource->id <= 3) {
+        return 1;
+    }
+    return resource->stream != NULL || resource->memory_stream != NULL;
 }
 
 static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char *uri, const char *mode) {
@@ -3181,6 +3191,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->closed = 0;
     resource->context_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
@@ -3214,6 +3225,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->closed = 0;
     resource->context_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
@@ -3244,6 +3256,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->closed = 0;
     resource->context_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
@@ -3269,6 +3282,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->read_filters = NULL;
     resource->write_filters = NULL;
     resource->persistent = 0;
+    resource->closed = 0;
     resource->context_options = ptn_null();
     ptn_resource_register(resource);
     return resource;
@@ -3592,7 +3606,13 @@ static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
     if (resource == NULL) {
         return;
     }
+    resource->closed = 1;
     if (resource->persistent) {
+        resource->stream = NULL;
+        resource->memory_stream = NULL;
+#if !defined(_WIN32)
+        resource->directory = NULL;
+#endif
         return;
     }
     if (resource->refcount == SIZE_MAX) {
@@ -3674,6 +3694,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         1,
+        0,
         { PTN_NULL, 0, 0, 0, { 0 } }
     };
     static PtnResource stdout_resource = {
@@ -3689,6 +3710,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         1,
+        0,
         { PTN_NULL, 0, 0, 0, { 0 } }
     };
     static PtnResource stderr_resource = {
@@ -3704,6 +3726,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
         NULL,
         NULL,
         1,
+        0,
         { PTN_NULL, 0, 0, 0, { 0 } }
     };
     PtnResource *resource = &stdin_resource;
@@ -3712,6 +3735,7 @@ static PTN_UNUSED PtnValue ptn_standard_stream_resource_value(int64_t id) {
     } else if (id == 3) {
         resource = &stderr_resource;
     }
+    resource->closed = 0;
     resource->stream = id == 1 ? stdin : (id == 2 ? stdout : stderr);
     resource->stream_uri = id == 1 ? "php://stdin" : (id == 2 ? "php://stdout" : "php://stderr");
     resource->stream_mode = id == 1 ? "r" : "w";
