@@ -3,6 +3,7 @@ mod core_values;
 mod diagnostics;
 mod internals;
 mod numeric_comparison;
+mod query;
 mod strings;
 
 use std::sync::OnceLock;
@@ -15,6 +16,7 @@ static RUNTIME_C: OnceLock<String> = OnceLock::new();
 // - diagnostics: diagnostic sink setup and generic warning/fatal emission helpers.
 // - numeric_comparison: numeric conversion, scalar casts, truthiness, comparisons, arithmetic, bitwise, and shifts.
 // - strings: scalar string conversion, concatenation, type predicates, constants, float formatting, and echo output.
+// - query: query string encoding and parse_str parity helpers used by internals/request setup.
 // - internals: runtime symbol tables plus optional internal-function handlers and dispatch.
 pub(super) fn runtime_c() -> &'static str {
     RUNTIME_C.get_or_init(|| {
@@ -42,6 +44,7 @@ pub(super) fn runtime_c() -> &'static str {
 
 pub(super) const INTERNAL_FUNCTIONS_START: &str = "/* PTN_INTERNAL_FUNCTIONS_START */";
 pub(super) const INTERNAL_FUNCTIONS_END: &str = "/* PTN_INTERNAL_FUNCTIONS_END */";
+pub(super) const QUERY_RUNTIME_MODULE: &str = "/* PTN_QUERY_RUNTIME_MODULE */";
 pub(super) const DIRECT_INTERNAL_HELPERS_START: &str = "/* PTN_DIRECT_INTERNAL_HELPERS_START */";
 pub(super) const DIRECT_INTERNAL_HELPERS_END: &str = "/* PTN_DIRECT_INTERNAL_HELPERS_END */";
 pub(super) const COMPACT_INTERNAL_HELPERS_START: &str = "/* PTN_COMPACT_INTERNAL_HELPERS_START */";

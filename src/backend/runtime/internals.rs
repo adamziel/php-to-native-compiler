@@ -12,8 +12,13 @@ pub(super) fn internal_functions_c() -> String {
         .find(marker)
         .expect("internal-functions start marker should exist");
     let marker_end = marker_start + marker.len();
+    let query_marker = super::QUERY_RUNTIME_MODULE;
     let mut source = String::with_capacity(
-        INTERNAL_FUNCTIONS_C.len() + CRYPT_PORT_C.len() + BCMATH_CALENDAR_C.len() + 3,
+        INTERNAL_FUNCTIONS_C.len()
+            + CRYPT_PORT_C.len()
+            + BCMATH_CALENDAR_C.len()
+            + super::query::C.len()
+            + 3,
     );
     source.push_str(&INTERNAL_FUNCTIONS_C[..marker_end]);
     source.push('\n');
@@ -22,5 +27,12 @@ pub(super) fn internal_functions_c() -> String {
     source.push_str(BCMATH_CALENDAR_C);
     source.push('\n');
     source.push_str(&INTERNAL_FUNCTIONS_C[marker_end..]);
+    let query_marker_start = source
+        .find(query_marker)
+        .expect("query runtime module marker should exist");
+    source.replace_range(
+        query_marker_start..query_marker_start + query_marker.len(),
+        super::query::C,
+    );
     source
 }
