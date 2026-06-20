@@ -732,6 +732,12 @@ typedef struct {
     PtnValue value;
 } PtnArrayEntry;
 
+static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata);
+static PtnArrayEntry *ptn_object_property_entry_for_metadata(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+);
+
 typedef struct {
     int occupied;
     uint64_t hash;

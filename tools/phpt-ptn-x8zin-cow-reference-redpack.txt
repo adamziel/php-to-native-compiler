@@ -1,0 +1,81 @@
+# Full-corpus COW/reference keyword baseline reds for ptn-x8zin.
+#
+# Source: .runtime/ptn-x8zin/full-corpus-cow-reference-keyword-manifest.txt
+# generated from php-src PHPT corpus revision
+# 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+#
+# Baseline:
+#   PTN_PHPT_TEST_TIMEOUT=60 tools/run-bounded-phpt.sh \
+#     .runtime/phpt-progress/runnable-20260620T030336Z-2067870.txt
+#   run 20260620T030518Z-2165253: selected=180 runnable=180
+#   passed=118 failed=62.
+
+# bucket: core-call-list-return-reference rows=35
+Zend/tests/arg_unpack/by_ref_separation.phpt
+Zend/tests/arg_unpack/traversable_with_by_ref_parameters.phpt
+Zend/tests/array_append_COW.phpt
+Zend/tests/assign_by_val_function_by_ref_return_value.phpt
+Zend/tests/div_by_zero_compound_refcounted.phpt
+Zend/tests/foreach/foreach_by_ref_repacking_insert.phpt
+Zend/tests/foreach/foreach_by_ref_to_property.phpt
+Zend/tests/generators/yield_array_offset_by_ref.phpt
+Zend/tests/generators/yield_by_reference.phpt
+Zend/tests/generators/yield_by_reference_optimization.phpt
+Zend/tests/generators/yield_ref_function_call_by_reference.phpt
+Zend/tests/list/list_reference_001.phpt
+Zend/tests/list/list_reference_002.phpt
+Zend/tests/list/list_reference_003.phpt
+Zend/tests/list/list_reference_004.phpt
+Zend/tests/list/list_reference_008.phpt
+Zend/tests/list/list_reference_009.phpt
+Zend/tests/named_params/cannot_pass_by_ref.phpt
+Zend/tests/return_by_ref_from_void_function.phpt
+Zend/tests/return_types/return_reference_separation.phpt
+Zend/tests/type_declarations/scalar_weak_reference.phpt
+Zend/tests/unpack_iterator_by_ref_type_check.phpt
+Zend/tests/variadic/by_ref.phpt
+tests/lang/passByReference_001.phpt
+tests/lang/passByReference_002.phpt
+tests/lang/passByReference_003.phpt
+tests/lang/passByReference_004.phpt
+tests/lang/passByReference_008.phpt
+tests/lang/passByReference_010.phpt
+tests/lang/returnByReference.001.phpt
+tests/lang/returnByReference.002.phpt
+tests/lang/returnByReference.009.phpt
+ext/curl/tests/curl_multi_close_reference.phpt
+ext/date/tests/DatePeriod_by_ref_iterator.phpt
+ext/mysqli/tests/mysqli_poll_reference.phpt
+
+# bucket: dom-entity-reference rows=17
+ext/dom/tests/DOMDocument_adoptNode_attribute_references.phpt
+ext/dom/tests/DOMDocument_createEntityReference_error1.phpt
+ext/dom/tests/DOMEntityReference_basic.phpt
+ext/dom/tests/DOMEntityReference_error1.phpt
+ext/dom/tests/DOMEntityReference_predefined_free.phpt
+ext/dom/tests/DOMNamedNodeMap_string_references.phpt
+ext/dom/tests/DOMNode_C14N_references.phpt
+ext/dom/tests/delayed_freeing/entity_reference.phpt
+ext/dom/tests/entity_reference_stale_01.phpt
+ext/dom/tests/entity_reference_stale_02.phpt
+ext/dom/tests/entity_reference_stale_03.phpt
+ext/dom/tests/manually_call_constructor/entityreference.phpt
+ext/dom/tests/modern/common/serialize_entity_reference_in_attribute.phpt
+ext/dom/tests/modern/html/serializer/HTMLDocument_entity_reference.phpt
+ext/dom/tests/modern/spec/clone_entity_reference.phpt
+ext/dom/tests/modern/spec/import_entity_reference.phpt
+ext/dom/tests/modern/token_list/foreach_by_ref.phpt
+
+# bucket: spl-serialize-reference rows=1
+ext/spl/tests/SplObjectStorage/SplObjectStorage_unserialize_reference.phpt
+
+# bucket: uri-reference rows=9
+ext/uri/tests/rfc3986/getters/uri_type_success_absolute_path_reference.phpt
+ext/uri/tests/rfc3986/getters/uri_type_success_network_path_reference.phpt
+ext/uri/tests/rfc3986/getters/uri_type_success_relative_path_reference.phpt
+ext/uri/tests/rfc3986/reference_resolution/resolve_error_null_byte.phpt
+ext/uri/tests/whatwg/parsing/path_error_relative_reference.phpt
+ext/uri/tests/whatwg/parsing/path_error_relative_reference_absolute.phpt
+ext/uri/tests/whatwg/parsing/path_error_relative_reference_only_query_fragment.phpt
+ext/uri/tests/whatwg/reference_resolution/resolve_error_host_null_byte.phpt
+ext/uri/tests/whatwg/reference_resolution/resolve_success_path_null_byte.phpt
