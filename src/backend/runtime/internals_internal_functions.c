@@ -18252,6 +18252,11 @@ typedef enum {
     PTN_URI_HOST_TYPE_EMPTY
 } PtnUriHostType;
 
+typedef enum {
+    PTN_URI_PARSE_ERROR_NONE = 0,
+    PTN_URI_PARSE_ERROR_PORT_OUT_OF_RANGE
+} PtnUriParseError;
+
 static void ptn_uri_data_free(void *payload) {
     PtnUriData *data = (PtnUriData *)payload;
     if (data == NULL) {
@@ -18485,25 +18490,32 @@ static int ptn_uri_validate_query_or_fragment_component(const char *data, size_t
     return 1;
 }
 
-static int ptn_uri_validate_port_component(const char *data, size_t len, int64_t *port_out) {
+static int ptn_uri_validate_port_component(
+    const char *data,
+    size_t len,
+    int64_t *port_out,
+    PtnUriParseError *error_out
+) {
     if (len == 0) {
         return 1;
     }
-    if (len > 5) {
-        return 0;
-    }
-    int64_t port = 0;
+    uint64_t port = 0;
+    uint64_t max_port = (uint64_t)INT64_MAX;
     for (size_t i = 0; i < len; i++) {
         unsigned char byte = (unsigned char)data[i];
         if (!isdigit(byte)) {
             return 0;
         }
-        port = port * 10 + (int64_t)(byte - '0');
+        uint64_t digit = (uint64_t)(byte - '0');
+        if (port > (max_port - digit) / 10) {
+            if (error_out != NULL) {
+                *error_out = PTN_URI_PARSE_ERROR_PORT_OUT_OF_RANGE;
+            }
+            return 0;
+        }
+        port = port * 10 + digit;
     }
-    if (port > 65535) {
-        return 0;
-    }
-    *port_out = port;
+    *port_out = (int64_t)port;
     return 1;
 }
 
@@ -18539,7 +18551,12 @@ static void ptn_uri_parse_remainder(PtnUriData *result, const char *data, size_t
     }
 }
 
-static int ptn_uri_parse_authority(PtnUriData *result, const char *authority, size_t authority_len) {
+static int ptn_uri_parse_authority(
+    PtnUriData *result,
+    const char *authority,
+    size_t authority_len,
+    PtnUriParseError *error_out
+) {
     result->authority_present = 1;
     size_t host_start = 0;
     for (size_t i = authority_len; i > 0; i--) {
@@ -18590,7 +18607,7 @@ static int ptn_uri_parse_authority(PtnUriData *result, const char *authority, si
         int64_t port = 0;
         size_t port_len = host_len - port_colon - 1;
         result->port_separator_present = 1;
-        if (!ptn_uri_validate_port_component(host + port_colon + 1, port_len, &port)) {
+        if (!ptn_uri_validate_port_component(host + port_colon + 1, port_len, &port, error_out)) {
             return 0;
         }
         if (port_len != 0) {
@@ -18628,7 +18645,14 @@ static int ptn_uri_validate_parsed_data(const PtnUriData *data) {
     return 1;
 }
 
-static int ptn_uri_parse(PtnStringOperand input, PtnUriData **result_out) {
+static int ptn_uri_parse(
+    PtnStringOperand input,
+    PtnUriData **result_out,
+    PtnUriParseError *error_out
+) {
+    if (error_out != NULL) {
+        *error_out = PTN_URI_PARSE_ERROR_NONE;
+    }
     if (!ptn_uri_ascii_clean(input.data, input.len)) {
         return 0;
     }
@@ -18640,7 +18664,12 @@ static int ptn_uri_parse(PtnStringOperand input, PtnUriData **result_out) {
     if (len >= 2 && data[0] == '/' && data[1] == '/') {
         size_t authority_start = 2;
         size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
-        if (!ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start)) {
+        if (!ptn_uri_parse_authority(
+                result,
+                data + authority_start,
+                authority_end - authority_start,
+                error_out
+            )) {
             ptn_uri_data_free(result);
             return 0;
         }
@@ -18658,7 +18687,12 @@ static int ptn_uri_parse(PtnStringOperand input, PtnUriData **result_out) {
             if (offset + 1 < len && data[offset] == '/' && data[offset + 1] == '/') {
                 size_t authority_start = offset + 2;
                 size_t authority_end = ptn_uri_find_remainder_delimiter(data, len, authority_start);
-                if (!ptn_uri_parse_authority(result, data + authority_start, authority_end - authority_start)) {
+                if (!ptn_uri_parse_authority(
+                        result,
+                        data + authority_start,
+                        authority_end - authority_start,
+                        error_out
+                    )) {
                     ptn_uri_data_free(result);
                     return 0;
                 }
@@ -20334,7 +20368,7 @@ static PtnValue ptn_uri_rfc3986_resolve(
         return ptn_null();
     }
     PtnUriData *reference = NULL;
-    if (!ptn_uri_parse(reference_arg, &reference)) {
+    if (!ptn_uri_parse(reference_arg, &reference, NULL)) {
         ptn_string_operand_free(reference_arg);
         ptn_uri_throw_malformed(runtime, "URI");
         return ptn_null();
@@ -20941,7 +20975,7 @@ static PtnValue ptn_uri_with_port(
         ptn_throw_exception(runtime, "Uri\\InvalidUriException", "Cannot set a port without having a host");
         return ptn_null();
     }
-    if (port < 0 || port > 65535) {
+    if (port < 0) {
         ptn_uri_data_free(copy);
         ptn_uri_throw_malformed(runtime, "port");
         return ptn_null();
@@ -21048,14 +21082,17 @@ static PtnValue ptn_uri_construct_data(
     }
     PtnUriData *data = NULL;
     const char *reason = NULL;
+    PtnUriParseError parse_error = PTN_URI_PARSE_ERROR_NONE;
     int valid = whatwg
         ? ptn_uri_parse_whatwg(uri, &data, &reason)
-        : ptn_uri_parse(uri, &data);
+        : ptn_uri_parse(uri, &data, &parse_error);
     ptn_string_operand_free(uri);
     if (!valid) {
         if (throw_on_invalid) {
             if (whatwg) {
                 ptn_uri_whatwg_throw_malformed(runtime, "URI", reason);
+            } else if (parse_error == PTN_URI_PARSE_ERROR_PORT_OUT_OF_RANGE) {
+                ptn_throw_exception(runtime, "Uri\\InvalidUriException", "The port is out of range");
             } else {
                 ptn_uri_throw_malformed(runtime, "URI");
             }
@@ -21203,7 +21240,7 @@ static PTN_UNUSED PtnValue ptn_uri_parse_static(
         }
     } else {
         PtnUriData *reference = NULL;
-        if (ptn_uri_parse(uri, &reference)) {
+        if (ptn_uri_parse(uri, &reference, NULL)) {
             data = base == NULL ? reference : ptn_uri_rfc3986_resolve_data(base, reference);
         }
     }

@@ -56724,6 +56724,12 @@ var_dump($changed->toRawString());
 var_dump($changed->toString());
 var_dump($changed->getHost());
 var_dump($changed->getFragment());
+var_dump((new Uri\Rfc3986\Uri("https://example.com:9223372036854775807"))->getPort());
+try {
+    new Uri\Rfc3986\Uri("https://example.com:9223372036854775808");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
 var_dump(Uri\Rfc3986\Uri::parse("\xF0\x9F\x90\x98"));
 var_dump(Uri\Rfc3986\Uri::parse("http://bad host"));
 try {
@@ -56774,6 +56780,8 @@ try {
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
             "string(0) \"\"\n",
+            "int(9223372036854775807)\n",
+            "Uri\\InvalidUriException: The port is out of range\n",
             "NULL\n",
             "NULL\n",
             "Uri\\InvalidUriException: The specified URI is malformed\n",
