@@ -41727,6 +41727,79 @@ var_dump(empty($str[$f]));",
 }
 
 #[test]
+fn compile_string_offset_reference_and_quiet_lookup_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-string-offset-reference-quiet-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("string-offset-reference-quiet-edges.php");
+    let output = root.join("string-offset-reference-quiet-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$s = \"\";\n\
+$dim = 5.5;\n\
+try { $s[$dim] = \"A\"; } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $r =& $s[$dim]; } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { $s[$dim][$dim] = 5; } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { unset($s[$dim][$dim]); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$s = \"\";\n\
+$s[\"20a\"] = \"X\";\n\
+var_dump($s[\"20a\"] ?? \"default\");\n\
+var_dump(isset($s[\"20a\"][\"20a\"]));\n\
+try { var_dump($s[new stdClass] ?? \"default\"); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+try { var_dump(isset($s[new stdClass][0])); } catch (Throwable $e) { echo $e->getMessage(), \"\\n\"; }\n\
+$t = \"\";\n\
+var_dump($t[5.5] ?? \"default\");\n\
+$big = PHP_INT_MAX * 2;\n\
+$t[$big] = 5;\n\
+var_dump($t);\n\
+var_dump($t[$big]);\n\
+var_dump(isset($t[$big]));",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
+    assert_eq!(
+        normalized_stdout,
+        concat!(
+            "\nWarning: String offset cast occurred in ptn on line 4\n",
+            "\nWarning: String offset cast occurred in ptn on line 5\n",
+            "Cannot create references to/from string offsets\n",
+            "\nWarning: String offset cast occurred in ptn on line 6\n",
+            "Cannot use string offset as an array\n",
+            "\nWarning: String offset cast occurred in ptn on line 7\n",
+            "Cannot use string offset as an array\n",
+            "\nWarning: Illegal string offset \"20a\" in ptn on line 9\n",
+            "\nWarning: Illegal string offset \"20a\" in ptn on line 10\n",
+            "string(1) \"X\"\n",
+            "\nWarning: Illegal string offset \"20a\" in ptn on line 11\n",
+            "bool(false)\n",
+            "Cannot access offset of type stdClass on string\n",
+            "Cannot access offset of type stdClass on string\n",
+            "string(7) \"default\"\n",
+            "\nWarning: String offset cast occurred in ptn on line 17\n",
+            "string(1) \"5\"\n",
+            "\nWarning: String offset cast occurred in ptn on line 19\n",
+            "string(1) \"5\"\n",
+            "\nWarning: The float 1.8446744073709552E+19 is not representable as an int, cast occurred in ptn on line 20\n",
+            "\nDeprecated: Implicit conversion from float 1.8446744073709552E+19 to int loses precision in ptn on line 20\n",
+            "bool(true)\n"
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_reference_for_array_dim"));
+    assert!(c_source.contains("ptn_runtime_array_path_set"));
+    assert!(c_source.contains("ptn_runtime_array_path_unset"));
+    assert!(c_source.contains("ptn_offset_lookup"));
+}
+
+#[test]
 fn compile_offset_key_conversion_diagnostics_to_native_binary() {
     let root = temp_dir("ptn-native-offset-key-conversion-diagnostics");
     fs::create_dir_all(&root).unwrap();
@@ -41802,8 +41875,10 @@ var_dump($str);",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
     assert_eq!(
-        String::from_utf8(execution.stdout).unwrap(),
+        normalized_stdout,
         "\nWarning: Only the first byte will be assigned to the string offset in ptn on line 3\nstring(4) \"aXcd\"\nstring(4) \"aXcQ\"\nstring(7) \"aXcQ  Z\"\n\nWarning: String offset cast occurred in ptn on line 9\nstring(7) \"aTcQ  Z\"\n\nWarning: String offset cast occurred in ptn on line 11\nstring(7) \"NTcQ  Z\"\n\nWarning: Illegal string offset \"2str\" in ptn on line 13\nstring(7) \"NTRQ  Z\"\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

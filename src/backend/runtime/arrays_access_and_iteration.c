@@ -7121,8 +7121,15 @@ static PTN_UNUSED void ptn_emit_illegal_string_offset_warning(
     size_t line
 );
 static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, int *warn_illegal);
+static PTN_UNUSED int ptn_string_offset_from_value(
+    PtnRuntime *runtime,
+    PtnValue key_value,
+    size_t line,
+    int quiet,
+    int64_t *offset
+);
 
-static PTN_UNUSED void ptn_warn_illegal_string_reference_key(
+static PTN_UNUSED int ptn_warn_illegal_string_reference_key(
     PtnRuntime *runtime,
     PtnValue container,
     const PtnValue *key_value,
@@ -7130,21 +7137,11 @@ static PTN_UNUSED void ptn_warn_illegal_string_reference_key(
 ) {
     PtnValue value = ptn_value_deref(container);
     if (value.type != PTN_STRING || key_value == NULL) {
-        return;
-    }
-
-    PtnValue key = ptn_value_deref(*key_value);
-    if (key.type != PTN_STRING) {
-        return;
+        return 1;
     }
 
     int64_t offset = 0;
-    int warn_illegal = 0;
-    char *key_string = ptn_duplicate_string_len((const char *)key.as.string.data, key.as.string.len);
-    if (ptn_string_to_offset(key_string, &offset, &warn_illegal) && warn_illegal) {
-        ptn_emit_illegal_string_offset_warning(runtime, key_string, line);
-    }
-    free(key_string);
+    return ptn_string_offset_from_value(runtime, *key_value, line, 0, &offset);
 }
 
 static PTN_UNUSED PtnFunctionMetadata ptn_arrayaccess_declared_method_metadata(
@@ -7328,7 +7325,9 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
             ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
             return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
         }
-        ptn_warn_illegal_string_reference_key(runtime, slot_value, key_value, line);
+        if (!ptn_warn_illegal_string_reference_key(runtime, slot_value, key_value, line)) {
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
     }
 
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
@@ -7411,8 +7410,9 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_value_dim(
         if (key_value == NULL) {
             ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
         } else {
-            ptn_warn_illegal_string_reference_key(runtime, *value, key_value, line);
-            ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+            if (ptn_warn_illegal_string_reference_key(runtime, *value, key_value, line)) {
+                ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+            }
         }
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else if ((array = ptn_array_convertible_scalar_for_write(runtime, value, line)) != NULL) {
@@ -8452,11 +8452,8 @@ static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, 
 }
 
 static PTN_UNUSED int64_t ptn_string_offset_float_to_int(double value) {
-    if (value >= 9223372036854775808.0) {
-        return INT64_MAX;
-    }
-    if (value <= -9223372036854775808.0) {
-        return INT64_MIN;
+    if (ptn_float_to_int_out_of_range(value)) {
+        return 0;
     }
     return (int64_t)value;
 }
@@ -8487,6 +8484,13 @@ static PTN_UNUSED int ptn_string_offset_from_value(
             return 1;
         case PTN_FLOAT:
             if (quiet) {
+                if (ptn_float_to_int_out_of_range(key_value.as.floating)) {
+                    ptn_emit_bitwise_float_out_of_range_warning(
+                        &runtime->diagnostics,
+                        key_value.as.floating,
+                        line
+                    );
+                }
                 if (ptn_float_to_int_loses_precision(key_value.as.floating)) {
                     ptn_emit_float_to_int_precision_deprecation_at(
                         &runtime->diagnostics,
@@ -8575,6 +8579,66 @@ static PTN_UNUSED int ptn_string_offset_from_value(
     return 0;
 }
 
+static PTN_UNUSED int ptn_string_offset_from_value_for_quiet_lookup(
+    PtnRuntime *runtime,
+    PtnValue key_value,
+    size_t line,
+    int64_t *offset
+) {
+    key_value = ptn_value_deref(key_value);
+    switch (key_value.type) {
+        case PTN_INT:
+            *offset = key_value.as.integer;
+            return 1;
+        case PTN_BOOL:
+            *offset = key_value.as.boolean ? 1 : 0;
+            return 1;
+        case PTN_NULL:
+            *offset = 0;
+            return 1;
+        case PTN_FLOAT:
+            *offset = ptn_string_offset_float_to_int(key_value.as.floating);
+            return 1;
+        case PTN_STRING: {
+            int warn_illegal = 0;
+            const char *key_string = (const char *)key_value.as.string.data;
+            if (ptn_string_to_offset(key_string, offset, &warn_illegal)) {
+                if (warn_illegal) {
+                    ptn_emit_illegal_string_offset_warning(runtime, key_string, line);
+                }
+                return 1;
+            }
+            return 0;
+        }
+        case PTN_RESOURCE:
+            ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type resource on string");
+            return 0;
+        case PTN_ARRAY:
+            ptn_throw_exception(runtime, "TypeError", "Cannot access offset of type array on string");
+            return 0;
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION: {
+            const char *type_name = ptn_offset_key_type_name(key_value);
+            char message[256];
+            int written = snprintf(
+                message,
+                sizeof(message),
+                "Cannot access offset of type %s on string",
+                type_name
+            );
+            if (written < 0 || (size_t)written >= sizeof(message)) {
+                ptn_abort_out_of_memory();
+            }
+            ptn_throw_exception(runtime, "TypeError", message);
+            return 0;
+        }
+        case PTN_REFERENCE:
+            return 0;
+    }
+    return 0;
+}
+
 static PTN_UNUSED int ptn_string_offset_index(size_t string_len, int64_t offset, size_t *index) {
     if (offset >= 0) {
         uint64_t positive = (uint64_t)offset;
@@ -8601,7 +8665,10 @@ static PTN_UNUSED PtnLookupResult ptn_string_offset_lookup(
     int quiet
 ) {
     int64_t offset = 0;
-    if (!ptn_string_offset_from_value(runtime, key_value, line, quiet, &offset)) {
+    int offset_available = quiet
+        ? ptn_string_offset_from_value_for_quiet_lookup(runtime, key_value, line, &offset)
+        : ptn_string_offset_from_value(runtime, key_value, line, quiet, &offset);
+    if (!offset_available) {
         return ptn_lookup_missing();
     }
     size_t index = 0;
@@ -8725,6 +8792,71 @@ static PTN_UNUSED void ptn_runtime_string_offset_set(
 ) {
     PtnValue result = ptn_runtime_string_offset_set_result(runtime, target, key_value, value, line);
     ptn_value_destroy(&result);
+}
+
+static PTN_UNUSED void ptn_reject_nested_string_offset_array_access(
+    PtnRuntime *runtime,
+    PtnValue key_value,
+    size_t line
+) {
+    int64_t offset = 0;
+    if (!ptn_string_offset_from_value(runtime, key_value, line, 0, &offset)) {
+        return;
+    }
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        "Cannot use string offset as an array",
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
+}
+
+static PTN_UNUSED void ptn_reject_nested_string_offset_unset(
+    PtnRuntime *runtime,
+    PtnValue key_value,
+    size_t line
+) {
+    key_value = ptn_value_deref(key_value);
+    int valid_offset = 0;
+    switch (key_value.type) {
+        case PTN_INT:
+            valid_offset = 1;
+            break;
+        case PTN_BOOL:
+        case PTN_NULL:
+        case PTN_FLOAT: {
+            int64_t offset = 0;
+            valid_offset = ptn_string_offset_from_value(runtime, key_value, line, 0, &offset);
+            break;
+        }
+        case PTN_STRING: {
+            int64_t offset = 0;
+            int warn_illegal = 0;
+            valid_offset = ptn_string_to_offset(
+                (const char *)key_value.as.string.data,
+                &offset,
+                &warn_illegal
+            );
+            break;
+        }
+        case PTN_RESOURCE:
+        case PTN_ARRAY:
+        case PTN_OBJECT:
+        case PTN_CLOSURE:
+        case PTN_EXCEPTION:
+        case PTN_REFERENCE:
+            valid_offset = 0;
+            break;
+    }
+
+    ptn_throw_exception_at(
+        runtime,
+        "Error",
+        valid_offset ? "Cannot use string offset as an array" : "Cannot unset string offsets",
+        runtime == NULL ? NULL : runtime->source_path,
+        line
+    );
 }
 
 static PTN_UNUSED int ptn_arrayaccess_can_dispatch(
@@ -9547,7 +9679,9 @@ static PTN_UNUSED PtnArray *ptn_array_descend_for_reference_write(
     }
     if (entry_value->type == PTN_STRING) {
         if (!segment->append) {
-            ptn_warn_illegal_string_reference_key(runtime, *entry_value, &segment->value, line);
+            if (!ptn_warn_illegal_string_reference_key(runtime, *entry_value, &segment->value, line)) {
+                return NULL;
+            }
         }
         ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return NULL;
@@ -9719,7 +9853,9 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
 
     if (slot != NULL && !segments[0].append) {
         PtnValue slot_value = ptn_value_deref(*slot);
-        ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
+        if (!ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line)) {
+            return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
+        }
     }
 
     PtnArray *array = ptn_runtime_array_for_reference_write(runtime, name, path, line);
@@ -9807,7 +9943,9 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
     if (slot != NULL) {
         PtnValue slot_value = ptn_value_deref(*slot);
         if (!segments[0].append) {
-            ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
+            if (!ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line)) {
+                return;
+            }
         }
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         if (
@@ -9869,7 +10007,9 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
             return;
         }
         if (!segments[0].append) {
-            ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line);
+            if (!ptn_warn_illegal_string_reference_key(runtime, slot_value, &segments[0].value, line)) {
+                return;
+            }
         }
     }
 
@@ -9984,8 +10124,9 @@ static PTN_UNUSED PtnValue ptn_value_reference_for_array_path(
         if (segments[0].append) {
             ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", path, line);
         } else {
-            ptn_warn_illegal_string_reference_key(runtime, *target_value, &segments[0].value, line);
-            ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+            if (ptn_warn_illegal_string_reference_key(runtime, *target_value, &segments[0].value, line)) {
+                ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
+            }
         }
         return ptn_reference_value(ptn_reference_new_owned(ptn_null()));
     } else if ((array = ptn_array_convertible_scalar_for_write(runtime, target_value, line)) != NULL) {
@@ -10055,7 +10196,9 @@ static PTN_UNUSED void ptn_value_bind_array_path_reference(
         array = ptn_array_detach_value(target_value);
     } else if (target_value->type == PTN_STRING) {
         if (!segments[0].append) {
-            ptn_warn_illegal_string_reference_key(runtime, *target_value, &segments[0].value, line);
+            if (!ptn_warn_illegal_string_reference_key(runtime, *target_value, &segments[0].value, line)) {
+                return;
+            }
         }
         ptn_throw_exception_at(runtime, "Error", "Cannot create references to/from string offsets", path, line);
         return;
@@ -10323,6 +10466,17 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
             return;
         }
     }
+    if (segment_count > 2) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            if (segments[1].append) {
+                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            } else {
+                ptn_reject_nested_string_offset_array_access(runtime, segments[1].value, line);
+            }
+            return;
+        }
+    }
 
     PtnArray *array = ptn_array_root_slot_for_write(runtime, slot, line);
     ptn_array_path_set_from_root(
@@ -10383,6 +10537,17 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result(
             return ptn_runtime_string_offset_set_result(runtime, slot_value, segments[1].value, value, line);
         }
     }
+    if (segment_count > 2) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            if (segments[1].append) {
+                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            } else {
+                ptn_reject_nested_string_offset_array_access(runtime, segments[1].value, line);
+            }
+            return ptn_null();
+        }
+    }
 
     PtnArray *array = ptn_array_root_slot_for_write(runtime, slot, line);
     return ptn_array_path_set_result_from_root(
@@ -10439,6 +10604,17 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
                 return;
             }
             ptn_runtime_string_offset_set(runtime, slot_value, segments[0].value, value, line);
+            return;
+        }
+    }
+    if (slot != NULL && segment_count > 1) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            if (segments[0].append) {
+                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            } else {
+                ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
+            }
             return;
         }
     }
@@ -10577,6 +10753,17 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
                 return ptn_null();
             }
             return ptn_runtime_string_offset_set_result(runtime, slot_value, segments[0].value, value, line);
+        }
+    }
+    if (slot != NULL && segment_count > 1) {
+        PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
+        if (slot_value->type == PTN_STRING) {
+            if (segments[0].append) {
+                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            } else {
+                ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
+            }
+            return ptn_null();
         }
     }
     if (slot != NULL && segment_count == 1) {
@@ -10940,6 +11127,10 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
         ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
         return;
     }
+    if (target_value->type == PTN_STRING && segment_count > 1) {
+        ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
+        return;
+    }
     if (segment_count == 1 && target_value->type == PTN_STRING) {
         if (segments[0].append) {
             ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
@@ -11052,6 +11243,10 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
     PtnValue *target_value = target->type == PTN_REFERENCE ? &target->as.reference->value : target;
     if (target_value->type == PTN_STRING && segments[0].append) {
         ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+        return ptn_null();
+    }
+    if (target_value->type == PTN_STRING && segment_count > 1) {
+        ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
         return ptn_null();
     }
     if (segment_count == 1 && target_value->type == PTN_STRING) {
@@ -11335,7 +11530,13 @@ static PTN_UNUSED void ptn_value_array_path_unset(
 
     PtnValue *value = target->type == PTN_REFERENCE ? &target->as.reference->value : target;
     if (value->type == PTN_STRING) {
-        ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        if (segment_count == 1) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        } else if (segments[0].append) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        } else {
+            ptn_reject_nested_string_offset_unset(runtime, segments[0].value, line);
+        }
         return;
     }
     if (value->type == PTN_BOOL && !value->as.boolean) {
@@ -11609,7 +11810,13 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_unset(
 
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
     if (value->type == PTN_STRING) {
-        ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        if (segment_count == 2) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        } else if (segments[1].append) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        } else {
+            ptn_reject_nested_string_offset_unset(runtime, segments[1].value, line);
+        }
         return;
     }
     if (value->type == PTN_BOOL && !value->as.boolean) {
@@ -11739,7 +11946,13 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
     }
     PtnValue *value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
     if (value->type == PTN_STRING) {
-        ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        if (segment_count == 1) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        } else if (segments[0].append) {
+            ptn_throw_exception(runtime, "Error", "Cannot unset string offsets");
+        } else {
+            ptn_reject_nested_string_offset_unset(runtime, segments[0].value, line);
+        }
         return;
     }
     if (value->type == PTN_BOOL && !value->as.boolean) {
