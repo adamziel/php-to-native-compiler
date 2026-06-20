@@ -1,0 +1,26 @@
+# ptn-hvvb4.7: serialize/unserialize reference and identity parity gate.
+ext/standard/tests/serialize/SplObjectStorage_object_reference.phpt
+ext/standard/tests/serialize/bug28325.phpt
+ext/standard/tests/serialize/bug31402.phpt
+ext/standard/tests/serialize/bug36424.phpt
+ext/standard/tests/serialize/bug62836_2.phpt
+ext/standard/tests/serialize/bug69425.phpt
+ext/standard/tests/serialize/bug70172.phpt
+ext/standard/tests/serialize/bug70963.phpt
+ext/standard/tests/serialize/bug73154.phpt
+ext/standard/tests/serialize/counting_of_references.phpt
+ext/standard/tests/serialize/gh12265.phpt
+ext/standard/tests/serialize/overwrite_untyped_ref.phpt
+ext/standard/tests/serialize/ref_to_failed_serialize.phpt
+ext/standard/tests/serialize/serialization_arrays_001.phpt
+ext/standard/tests/serialize/serialization_arrays_002.phpt
+ext/standard/tests/serialize/serialization_arrays_003.phpt
+ext/standard/tests/serialize/serialization_arrays_004.phpt
+ext/standard/tests/serialize/serialization_arrays_005.phpt
+ext/standard/tests/serialize/serialization_objects_015.phpt
+ext/standard/tests/serialize/serialize_globals_var_refs.phpt
+ext/standard/tests/serialize/typed_property_ref_assignment_failure.phpt
+ext/standard/tests/serialize/typed_property_ref_overwrite.phpt
+ext/standard/tests/serialize/typed_property_ref_overwrite2.phpt
+ext/standard/tests/serialize/typed_property_refs.phpt
+ext/standard/tests/serialize/unserialize_ref_to_overwritten_declared_prop.phpt

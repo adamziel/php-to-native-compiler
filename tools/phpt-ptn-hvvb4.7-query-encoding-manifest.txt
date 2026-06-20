@@ -1,0 +1,26 @@
+# ptn-hvvb4.7: http_build_query and parse_str parity gate.
+ext/standard/tests/http/http_build_query/bug26817.phpt
+ext/standard/tests/http/http_build_query/bug26819.phpt
+ext/standard/tests/http/http_build_query/bug77608.phpt
+ext/standard/tests/http/http_build_query/gh12745.phpt
+ext/standard/tests/http/http_build_query/gh20583.phpt
+ext/standard/tests/http/http_build_query/http_build_query.phpt
+ext/standard/tests/http/http_build_query/http_build_query_object_basic.phpt
+ext/standard/tests/http/http_build_query/http_build_query_object_empty.phpt
+ext/standard/tests/http/http_build_query/http_build_query_object_just_stringable.phpt
+ext/standard/tests/http/http_build_query/http_build_query_object_key_val_stringable.phpt
+ext/standard/tests/http/http_build_query/http_build_query_object_nested.phpt
+ext/standard/tests/http/http_build_query/http_build_query_object_recursif.phpt
+ext/standard/tests/http/http_build_query/http_build_query_variation1.phpt
+ext/standard/tests/http/http_build_query/http_build_query_variation2.phpt
+ext/standard/tests/http/http_build_query/http_build_query_variation3.phpt
+ext/standard/tests/http/http_build_query/http_build_query_with_null.phpt
+ext/standard/tests/http/http_build_query/http_build_query_with_references.phpt
+ext/standard/tests/http/http_build_query/http_build_query_with_resource.phpt
+ext/standard/tests/strings/parse_str_basic1.phpt
+ext/standard/tests/strings/parse_str_basic2.phpt
+ext/standard/tests/strings/parse_str_basic3.phpt
+ext/standard/tests/strings/parse_str_basic4.phpt
+ext/standard/tests/strings/parse_str_memory_error.phpt
+ext/standard/tests/strings/parse_str_null_bytes.phpt
+tests/basic/011_empty_query.phpt
