@@ -6659,6 +6659,40 @@ class Book {
 }
 
 #[test]
+fn parser_lowers_constructor_promoted_property_hooks() {
+    let program = parser::parse(
+        "<?php
+class C {
+    public function __construct(
+        $implicit { set => $value * 2; },
+        public private(set) bool $flag = false { final set => $this->flag = $value; },
+    ) {}
+}
+",
+    )
+    .unwrap();
+
+    assert_eq!(program.classes[0].properties.len(), 2);
+    let implicit = &program.classes[0].properties[0];
+    assert_eq!(implicit.name, "implicit");
+    assert_eq!(implicit.visibility, PropertyVisibility::Public);
+    assert!(implicit.has_hooks);
+    assert!(!implicit.is_virtual);
+    assert!(implicit.hook_has_set);
+    assert!(implicit.hook_set_value.is_some());
+
+    let flag = &program.classes[0].properties[1];
+    assert_eq!(flag.name, "flag");
+    assert_eq!(flag.visibility, PropertyVisibility::Public);
+    assert_eq!(flag.set_visibility, PropertyVisibility::Private);
+    assert!(flag.has_hooks);
+    assert!(!flag.is_virtual);
+    assert!(flag.hook_has_set);
+    assert!(flag.hook_set_value.is_none());
+    assert!(flag.hook_set_body.is_some());
+}
+
+#[test]
 fn compile_constructor_promoted_reference_property_to_native_binary() {
     let root = temp_dir("ptn-native-constructor-promoted-reference-property");
     fs::create_dir_all(&root).unwrap();
@@ -29091,6 +29125,60 @@ try {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "assert(0 && new class {\n} && new class(42) extends stdclass {\n})\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_assertion_text_formats_promoted_property_hooks_to_native_binary() {
+    let root = temp_dir("ptn-native-assert-promoted-property-hook-text");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("assert-promoted-property-hook-text.php");
+    let output = root.join("assert-promoted-property-hook-text-bin");
+    fs::write(
+        &input,
+        "<?php
+foreach ([1, 2] as $case) {
+    try {
+        if ($case === 1) {
+            assert(false && new class {
+                public function __construct(public final $prop) {}
+            });
+        } else {
+            assert(false && new class {
+                public function __construct( #[Foo] public private(set) bool $boolVal = false { final set => $this->boolVal = 1;} ) {}
+            });
+        }
+    } catch (Error $e) {
+        echo $e->getMessage(), \"\\n--\\n\";
+    }
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "assert(false && new class {\n",
+            "    public function __construct(public final $prop) {\n",
+            "    }\n",
+            "\n",
+            "})\n",
+            "--\n",
+            "assert(false && new class {\n",
+            "    public function __construct(#[Foo] public private(set) bool $boolVal = false {\n",
+            "        final set => $this->boolVal = 1;\n",
+            "    }) {\n",
+            "    }\n",
+            "\n",
+            "})\n",
+            "--\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -52410,6 +52498,60 @@ $bag->custom = 99;
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_hook_set"));
+}
+
+#[test]
+fn compile_constructor_promoted_property_hooks_to_native_binary() {
+    let root = temp_dir("ptn-native-constructor-promoted-property-hooks");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("constructor-promoted-property-hooks.php");
+    let output = root.join("constructor-promoted-property-hooks-bin");
+    fs::write(
+        &input,
+        "<?php
+class PromotedHookBag {
+    public function __construct(
+        $implicit { set => $value * 2; },
+        public string $backed {
+            get { return strtoupper($this->backed); }
+            set { $this->backed = $value . '!'; }
+        },
+    ) {}
+}
+
+$bag = new PromotedHookBag(21, 'ok');
+var_dump($bag);
+var_dump($bag->backed);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(PromotedHookBag)#1 (2) {\n",
+            "  [\"implicit\"]=>\n",
+            "  int(42)\n",
+            "  [\"backed\"]=>\n",
+            "  string(3) \"ok!\"\n",
+            "}\n",
+            "string(3) \"OK!\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_declared_class_property_hook_get"));
     assert!(c_source.contains("ptn_declared_class_property_hook_set"));
 }
 

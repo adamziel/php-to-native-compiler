@@ -1581,6 +1581,30 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\ndefault on backed hooks\n--FILE--\n<?php\nclass Test { public $prop = 42 { get { return $this->prop; } set { $this->prop = $value; } } }\nvar_dump((new Test())->prop);\n--EXPECT--\nint(42)\n",
         ),
         (
+            "Zend/tests/property_hooks/set_shorthand.phpt",
+            "--TEST--\nset shorthand\n--FILE--\n<?php\nclass Test { public string $prop { set => strtoupper($value); } }\n$test = new Test(); $test->prop = 'foo'; var_dump($test);\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/cpp.phpt",
+            "--TEST--\nconstructor property promotion\n--FILE--\n<?php\nclass Test { public function __construct(public $prop = 42 { get => print('Getting'); set { print('Setting'); } }) {} }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh15438_1.phpt",
+            "--TEST--\npromoted hook no visibility\n--FILE--\n<?php\nclass C { public function __construct($prop { set => $value * 2; }) {} }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/gh15438_2.phpt",
+            "--TEST--\npromoted hook null default\n--FILE--\n<?php\nclass C { public function __construct(public $prop { set => $value * 2; }) {} }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/final_prop_promoted_1.phpt",
+            "--TEST--\nfinal promoted hook\n--FILE--\n<?php\nclass C { public function __construct(public final $prop { get => $this->prop; }) {} }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/property_promotion.phpt",
+            "--TEST--\ngenerated hooks in property promotion\n--FILE--\n<?php\nclass C { public function __construct(public $prop { get { return $this->prop; } set { $this->prop = $value; } }) {} }\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/property_hooks/bug005.phpt",
             "--TEST--\nparent hook parse context\n--FILE--\n<?php\nclass B { protected mixed $x; }\nclass C extends B { protected mixed $x { set { parent::$x::set(1); } } }\n--EXPECT--\n",
         ),

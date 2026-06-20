@@ -10921,6 +10921,14 @@ fn emit_property_hook_set_helper(
             } else {
                 let value_temp =
                     values.emit_materialized_value(out, property.hook_set_value.as_ref().unwrap());
+                out.push_str("        PtnValue ptn_set_shorthand_assigned = ptn_object_write_property(&runtime, receiver, \"");
+                out.push_str(&c_string(&property.name));
+                out.push_str("\", \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", ");
+                out.push_str(&value_temp);
+                out.push_str(", line);\n");
+                out.push_str("        ptn_value_destroy(&ptn_set_shorthand_assigned);\n");
                 out.push_str("        ptn_value_destroy(&");
                 out.push_str(&value_temp);
                 out.push_str(");\n");
@@ -13233,7 +13241,7 @@ impl ReflectionPropertySummary for crate::ir::PropertyDecl {
     }
 
     fn reflection_has_default(&self) -> bool {
-        self.value.is_some() || self.type_hint.is_none()
+        self.value.is_some() || (!self.has_hooks && self.type_hint.is_none())
     }
 }
 
@@ -14475,7 +14483,8 @@ fn trait_property_exists_entries<'a>(
             type_hint: property.type_hint.as_ref(),
             doc_comment: property.doc_comment.as_deref(),
             value: property.value.as_ref(),
-            has_default: property.value.is_some() || property.type_hint.is_none(),
+            has_default: property.value.is_some()
+                || (!property.has_hooks && property.type_hint.is_none()),
         };
     let mut properties = Vec::new();
     properties.extend(
@@ -14688,7 +14697,8 @@ fn class_property_exists_chain<'a>(
                 type_hint: property.type_hint.as_ref(),
                 doc_comment: property.doc_comment.as_deref(),
                 value: property.value.as_ref(),
-                has_default: property.value.is_some() || property.type_hint.is_none(),
+                has_default: property.value.is_some()
+                    || (!property.has_hooks && property.type_hint.is_none()),
             };
         let mut class_properties = Vec::new();
         class_properties.extend(

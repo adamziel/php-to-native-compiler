@@ -4921,7 +4921,56 @@ fn assertion_anonymous_class_source_text(source: &str) -> String {
             line.to_string()
         }
     }));
-    normalized.join("\n")
+
+    let mut expanded = Vec::with_capacity(normalized.len());
+    for line in normalized {
+        if let Some(lines) = assertion_anonymous_class_constructor_lines(&line) {
+            expanded.extend(lines);
+        } else {
+            expanded.push(line);
+        }
+    }
+    expanded.join("\n")
+}
+
+fn assertion_anonymous_class_constructor_lines(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim_start();
+    if !trimmed.contains("function __construct(") {
+        return None;
+    }
+    let signature = trimmed.strip_suffix("{}")?.trim_end();
+    let indent = &line[..line.len() - trimmed.len()];
+    let signature = signature.replacen("__construct( ", "__construct(", 1);
+
+    if let Some(hook_start) = signature.find(" { ") {
+        if let Some(hook_end) = signature.rfind('}') {
+            if hook_end > hook_start {
+                let before_hook = signature[..hook_start].trim_end();
+                let hook = signature[hook_start + 3..hook_end].trim();
+                let after_hook = signature[hook_end + 1..].trim();
+                if after_hook.starts_with(')') && !hook.is_empty() {
+                    let hook = if hook.ends_with(';') {
+                        hook.to_string()
+                    } else {
+                        format!("{hook};")
+                    };
+                    return Some(vec![
+                        format!("{indent}{before_hook} {{"),
+                        format!("{indent}    {hook}"),
+                        format!("{indent}}}{after_hook} {{"),
+                        format!("{indent}}}"),
+                        String::new(),
+                    ]);
+                }
+            }
+        }
+    }
+
+    Some(vec![
+        format!("{indent}{signature} {{"),
+        format!("{indent}}}"),
+        String::new(),
+    ])
 }
 
 fn assertion_float_text(value: f64) -> String {

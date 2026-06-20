@@ -3043,31 +3043,6 @@ impl Parser<'_> {
                     Some(self.peek().span),
                 ));
             }
-            if set_visibility != visibility {
-                let hook_kind = self
-                    .tokens
-                    .get(self.index + 1)
-                    .and_then(|token| match &token.kind {
-                        TokenKind::Identifier(identifier)
-                            if identifier.eq_ignore_ascii_case("get") =>
-                        {
-                            Some("get-only")
-                        }
-                        TokenKind::Identifier(identifier)
-                            if identifier.eq_ignore_ascii_case("set") =>
-                        {
-                            Some("set-only")
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or("virtual");
-                return Err(Diagnostic::new(
-                    format!(
-                        "{hook_kind} virtual property {class_name}::${name} must not specify asymmetric visibility"
-                    ),
-                    Some(self.peek().span),
-                ));
-            }
             if !allow_property_hooks {
                 return Err(Diagnostic::new(
                     "property hooks are unsupported",
@@ -3075,6 +3050,14 @@ impl Parser<'_> {
                 ));
             }
             let hooks = self.parse_property_hook_block(class_name, &name, visibility)?;
+            reject_asymmetric_virtual_property_hook_metadata(
+                class_name,
+                &name,
+                visibility,
+                set_visibility,
+                &hooks,
+                token.span,
+            )?;
             if hooks.is_virtual && value.is_some() {
                 return Err(Diagnostic::new(
                     format!(
@@ -3492,6 +3475,7 @@ impl Parser<'_> {
                                     span,
                                 }]);
                             } else {
+                                hooks.is_virtual = false;
                                 hooks.set_value = Some(value);
                             }
                             hooks.set_parameter_name = Some(set_parameter_name);
@@ -3507,7 +3491,11 @@ impl Parser<'_> {
                                 }]);
                                 hooks.set_parameter_name = Some(set_parameter_name);
                             } else {
-                                hooks.set_value = Some(value);
+                                let span = value.span();
+                                hooks.set_body = Some(vec![Statement::Expression {
+                                    expression: value,
+                                    span,
+                                }]);
                                 hooks.set_parameter_name = Some(set_parameter_name);
                             }
                         } else if matches!(self.peek().kind, TokenKind::LeftBrace) {
@@ -4316,8 +4304,40 @@ impl Parser<'_> {
                 Some(token.span),
             ));
         };
-        let promoted_property = if let Some(modifiers) = promotion_modifiers {
-            let class_name = class_name_for_promotions.expect("promotion modifiers require class");
+        let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
+            self.advance();
+            let value = self.parse_expr()?;
+            validate_constant_expression_closures(&value)?;
+            if !is_supported_parameter_default_expr(&value) {
+                return Err(Diagnostic::new(
+                    "function parameter default value must be a supported constant expression",
+                    Some(value.span()),
+                ));
+            }
+            Some(value)
+        } else {
+            None
+        };
+        let promoted_hook_block = if class_name_for_promotions.is_some()
+            && matches!(self.peek().kind, TokenKind::LeftBrace)
+        {
+            let class_name =
+                class_name_for_promotions.expect("promotion hook parsing requires class");
+            let modifiers = promotion_modifiers.unwrap_or_default();
+            let is_readonly = class_is_readonly || modifiers.is_readonly;
+            if is_readonly {
+                return Err(Diagnostic::new(
+                    "Hooked properties cannot be readonly",
+                    Some(self.peek().span),
+                ));
+            }
+            Some(self.parse_property_hook_block(class_name, &name, modifiers.visibility)?)
+        } else {
+            None
+        };
+        let promoted_property = if promotion_modifiers.is_some() || promoted_hook_block.is_some() {
+            let class_name = class_name_for_promotions.expect("promotion metadata requires class");
+            let modifiers = promotion_modifiers.unwrap_or_default();
             let is_readonly = class_is_readonly || modifiers.is_readonly;
             let set_visibility = modifiers
                 .set_visibility
@@ -4349,43 +4369,105 @@ impl Parser<'_> {
                 set_visibility,
                 modifiers.set_visibility_span.unwrap_or(token.span),
             )?;
+            if let Some(hooks) = promoted_hook_block.as_ref() {
+                reject_asymmetric_virtual_property_hook_metadata(
+                    class_name,
+                    &name,
+                    modifiers.visibility,
+                    set_visibility,
+                    hooks,
+                    token.span,
+                )?;
+            }
+            let (
+                has_hooks,
+                is_virtual,
+                hook_has_get,
+                hook_has_set,
+                hook_get_is_abstract,
+                hook_get_returns_by_ref,
+                hook_set_is_abstract,
+                hook_get_override_span,
+                hook_set_override_span,
+                hook_get_attributes,
+                hook_set_attributes,
+                hook_get_span,
+                hook_set_span,
+                hook_get_value,
+                hook_set_value,
+                hook_get_body,
+                hook_set_body,
+                hook_set_parameter_name,
+            ) = if let Some(hooks) = promoted_hook_block {
+                (
+                    true,
+                    hooks.is_virtual,
+                    hooks.has_get,
+                    hooks.has_set,
+                    hooks.get_is_abstract,
+                    hooks.get_returns_by_ref,
+                    hooks.set_is_abstract,
+                    hooks.get_override_span,
+                    hooks.set_override_span,
+                    hooks.get_attributes,
+                    hooks.set_attributes,
+                    hooks.get_span,
+                    hooks.set_span,
+                    hooks.get_value,
+                    hooks.set_value,
+                    hooks.get_body,
+                    hooks.set_body,
+                    hooks.set_parameter_name,
+                )
+            } else {
+                (
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    None,
+                    None,
+                    AttributeMetadata::default(),
+                    AttributeMetadata::default(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            };
             Some(PromotedProperty {
                 visibility: modifiers.visibility,
                 set_visibility,
                 is_final: modifiers.is_final,
                 is_readonly,
+                has_hooks,
+                is_virtual,
+                hook_has_get,
+                hook_has_set,
+                hook_get_is_abstract,
+                hook_get_returns_by_ref,
+                hook_set_is_abstract,
+                hook_get_override_span,
+                hook_set_override_span,
+                hook_get_attributes,
+                hook_set_attributes,
+                hook_get_span,
+                hook_set_span,
+                hook_get_value,
+                hook_set_value,
+                hook_get_body,
+                hook_set_body,
+                hook_set_parameter_name,
                 doc_comment: parameter_doc_comment,
                 has_override_attribute: attributes.has_override,
-                span: modifiers.visibility_span.unwrap_or(token.span),
+                span: modifiers.first_span().unwrap_or(token.span),
             })
-        } else {
-            None
-        };
-        if let Some(promoted) = &promoted_property {
-            if matches!(self.peek().kind, TokenKind::LeftBrace) {
-                if promoted.is_readonly {
-                    return Err(Diagnostic::new(
-                        "Hooked properties cannot be readonly",
-                        Some(self.peek().span),
-                    ));
-                }
-                return Err(Diagnostic::new(
-                    "property hooks are unsupported",
-                    Some(self.peek().span),
-                ));
-            }
-        }
-        let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
-            self.advance();
-            let value = self.parse_expr()?;
-            validate_constant_expression_closures(&value)?;
-            if !is_supported_parameter_default_expr(&value) {
-                return Err(Diagnostic::new(
-                    "function parameter default value must be a supported constant expression",
-                    Some(value.span()),
-                ));
-            }
-            Some(value)
         } else {
             None
         };
@@ -11624,6 +11706,30 @@ fn validate_property_hook_modifiers(
     Ok(())
 }
 
+fn reject_asymmetric_virtual_property_hook_metadata(
+    class_name: &str,
+    property_name: &str,
+    visibility: PropertyVisibility,
+    set_visibility: PropertyVisibility,
+    hooks: &ParsedPropertyHookBlock,
+    span: SourceSpan,
+) -> Result<()> {
+    if set_visibility == visibility || !hooks.is_virtual {
+        return Ok(());
+    }
+    let hook_kind = match (hooks.has_get, hooks.has_set) {
+        (true, false) => "get-only",
+        (false, true) => "set-only",
+        _ => "virtual",
+    };
+    Err(Diagnostic::new(
+        format!(
+            "{hook_kind} virtual property {class_name}::${property_name} must not specify asymmetric visibility"
+        ),
+        Some(span),
+    ))
+}
+
 fn promoted_properties_from_constructor(
     method: &MethodDecl,
     class_is_readonly: bool,
@@ -11640,24 +11746,24 @@ fn promoted_properties_from_constructor(
                 is_final: promoted.is_final,
                 is_abstract: false,
                 is_readonly: class_is_readonly || promoted.is_readonly,
-                has_hooks: false,
-                is_virtual: false,
-                hook_has_get: false,
-                hook_has_set: false,
-                hook_get_is_abstract: false,
-                hook_get_returns_by_ref: false,
-                hook_set_is_abstract: false,
-                hook_get_override_span: None,
-                hook_set_override_span: None,
-                hook_get_attributes: AttributeMetadata::default(),
-                hook_set_attributes: AttributeMetadata::default(),
-                hook_get_span: None,
-                hook_set_span: None,
-                hook_get_value: None,
-                hook_set_value: None,
-                hook_get_body: None,
-                hook_set_body: None,
-                hook_set_parameter_name: None,
+                has_hooks: promoted.has_hooks,
+                is_virtual: promoted.is_virtual,
+                hook_has_get: promoted.hook_has_get,
+                hook_has_set: promoted.hook_has_set,
+                hook_get_is_abstract: promoted.hook_get_is_abstract,
+                hook_get_returns_by_ref: promoted.hook_get_returns_by_ref,
+                hook_set_is_abstract: promoted.hook_set_is_abstract,
+                hook_get_override_span: promoted.hook_get_override_span,
+                hook_set_override_span: promoted.hook_set_override_span,
+                hook_get_attributes: promoted.hook_get_attributes.clone(),
+                hook_set_attributes: promoted.hook_set_attributes.clone(),
+                hook_get_span: promoted.hook_get_span,
+                hook_set_span: promoted.hook_set_span,
+                hook_get_value: promoted.hook_get_value.clone(),
+                hook_set_value: promoted.hook_set_value.clone(),
+                hook_get_body: promoted.hook_get_body.clone(),
+                hook_set_body: promoted.hook_set_body.clone(),
+                hook_set_parameter_name: promoted.hook_set_parameter_name.clone(),
                 type_hint: parameter
                     .type_hint
                     .as_ref()
