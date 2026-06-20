@@ -1834,6 +1834,8 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(has_runtime_errors|validator_NoDiscard|no_compile_errors|with_(AllowDynamicProperties|Attribute|Deprecated|NoDiscard|ReturnTypeWillChange|SensitiveParameter))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/nodiscard\/unsupported_property_hook_(get|set)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/closures\/closure_0(49|51|53|55|62)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/clone\/clone_with_00[3-5][.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/clone\/clone_with_012[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(direct_hook_call|explicit_set_value_parameter|get(_type_check)?|isset|object_in_hook|set|unset)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(backed_implicit_(get|set)|bug005|default_on_hooks|explicit_(iter|set_value_parameter_type)|field_(assign|guard)|find_property_usage|foreach_002)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/property_hooks\/(abstract_get_set_readonly|abstract_hook(_in_non_abstract_class|_not_implemented)?|abstract_prop_(final|hooks|not_implemented|without_hooks)|backed_invariant|bug00[1248]|default_on_virtual(_with_inheritance)?|duplicate_hook|final_private_prop|final_prop(_2|_promoted_[234])?|gh15419_[12]|interface(_explicit_abstract|_final_hook|_final_prop|_get_only|_get_set_readonly|_invalid_explicitly_abstract|_not_implemented|_not_public)?|invalid_(abstract_(body|final|indirect(_2)?|private)|empty_hooks|final_private|hook_visibility|static|static_prop)|no_get_parameters|parent_get_not_in_class|parent_outside_property|private_prop_final_hook|readonly|set_by_ref|set_variadic|syntax|traits_abstract|unknown_hook(_private)?|var_property)[.]phpt$/ ||
@@ -1853,6 +1855,9 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumUnitCase_(construct|getDocComment|getEnum|getValue)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionEnumBackedCase_getBackingValue[.]phpt$/ ||
                 ptn_path ~ /ext\/spl\/tests\/ArrayObject\/ArrayObject_enum[.]phpt$/
+        }
+        function ptn_supported_readonly_indirect_mutation_row() {
+            return ptn_path ~ /Zend\/tests\/readonly_props\/(cache_slot|readonly_clone_error[237]|readonly_clone_success1|readonly_modification)[.]phpt$/
         }
         {
             line = ptn_php_code_line($0)
@@ -2052,6 +2057,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if ((readonly_class_context || readonly_property_seen) &&
+                !ptn_supported_readonly_indirect_mutation_row() &&
                 (line ~ /=[[:space:]]*&[[:space:]]*\$[a-z_][a-z0-9_]*->[a-z_][a-z0-9_]*/ ||
                     line ~ /->[a-z_][a-z0-9_]*[[:space:]]*=[[:space:]]*&/ ||
                     line ~ /->[a-z_][a-z0-9_]*[[:space:]]*(\[|\+\+|--)/)) {
@@ -2278,6 +2284,11 @@ ptn_phpt_first_unsupported_internal_surface() {
             }
             if (line ~ /(^|[^[:alnum:]_$])stream_wrapper_(register|unregister|restore)[[:space:]]*\(/) {
                 print "unsupported-internal\trequires user stream wrapper registration and stream callback dispatch, outside PTN modeled stream/resource runtime"
+                found = 1
+                exit
+            }
+            if (index(line, "random\\engine\\") > 0) {
+                print "unsupported-internal\trequires Random engine native class state, outside PTN modeled internal class runtime"
                 found = 1
                 exit
             }

@@ -651,6 +651,7 @@ pub enum ValueExpr {
     },
     Clone {
         expr: Box<ValueExpr>,
+        with_properties: Option<Box<ValueExpr>>,
         line: usize,
     },
     PropertyFetch {
@@ -4052,8 +4053,15 @@ impl<'a> LoweringContext<'a> {
                 argument_unpacks: argument_unpacks.clone(),
                 line: span.line,
             },
-            Expr::Clone { expr, span } => ValueExpr::Clone {
+            Expr::Clone {
+                expr,
+                with_properties,
+                span,
+            } => ValueExpr::Clone {
                 expr: Box::new(self.lower_expr(expr)),
+                with_properties: with_properties
+                    .as_ref()
+                    .map(|properties| Box::new(self.lower_expr(properties))),
                 line: span.line,
             },
             Expr::PropertyFetch {

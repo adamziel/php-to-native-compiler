@@ -6791,10 +6791,29 @@ impl Parser<'_> {
 
     fn parse_clone_expr(&mut self) -> Result<Expr> {
         let token = self.advance().clone();
+        if matches!(self.peek().kind, TokenKind::LeftParen) {
+            self.advance();
+            let expr = self.parse_assignment_expr()?;
+            let with_properties = if matches!(self.peek().kind, TokenKind::Comma) {
+                self.advance();
+                let properties = self.parse_assignment_expr()?;
+                Some(Box::new(properties))
+            } else {
+                None
+            };
+            let right_span = self.expect_right_paren()?;
+            let span = combine_spans(token.span, right_span);
+            return Ok(Expr::Clone {
+                expr: Box::new(expr),
+                with_properties,
+                span,
+            });
+        }
         let expr = self.parse_assignment_expr()?;
         let span = combine_spans(token.span, expr.span());
         Ok(Expr::Clone {
             expr: Box::new(expr),
+            with_properties: None,
             span,
         })
     }
@@ -10331,8 +10350,15 @@ fn collect_arrow_captures_from_expr(
             }
             collect_arrow_captures_from_expr(name, exclusions, seen, captures);
         }
-        Expr::Clone { expr, .. } => {
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
             collect_arrow_captures_from_expr(expr, exclusions, seen, captures);
+            if let Some(with_properties) = with_properties {
+                collect_arrow_captures_from_expr(with_properties, exclusions, seen, captures);
+            }
         }
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -16547,8 +16573,17 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
                 validate_control_transfers_in_expr(target)?;
             }
         }
-        Expr::Clone { expr, .. }
-        | Expr::PropertyFetch { receiver: expr, .. }
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            validate_control_transfers_in_expr(expr)?;
+            if let Some(with_properties) = with_properties {
+                validate_control_transfers_in_expr(with_properties)?;
+            }
+        }
+        Expr::PropertyFetch { receiver: expr, .. }
         | Expr::NullsafePropertyFetch { receiver: expr, .. }
         | Expr::DynamicStaticPropertyFetch { receiver: expr, .. }
         | Expr::DynamicClassNameFetch { receiver: expr, .. }
@@ -16964,7 +16999,6 @@ fn expr_array_literal_reference_to_variable(
         }
         | Expr::Include { path: value, .. }
         | Expr::Throw { value, .. }
-        | Expr::Clone { expr: value, .. }
         | Expr::FirstClassCallable {
             callable: value, ..
         }
@@ -16972,6 +17006,15 @@ fn expr_array_literal_reference_to_variable(
         | Expr::PipeValue { expr: value, .. } => {
             expr_array_literal_reference_to_variable(value, variable)
         }
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => expr_array_literal_reference_to_variable(expr, variable).or_else(|| {
+            with_properties
+                .as_deref()
+                .and_then(|value| expr_array_literal_reference_to_variable(value, variable))
+        }),
         Expr::Exit { value, .. } => value
             .as_deref()
             .and_then(|value| expr_array_literal_reference_to_variable(value, variable)),
@@ -17577,7 +17620,6 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         Expr::DynamicVariable { name, .. }
         | Expr::FirstClassCallable { callable: name, .. }
         | Expr::DynamicClassNameFetch { receiver: name, .. }
-        | Expr::Clone { expr: name, .. }
         | Expr::Print {
             expression: name, ..
         }
@@ -17587,6 +17629,16 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::Cast { expr: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_contains_yield(name),
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            expr_contains_yield(expr)
+                || with_properties
+                    .as_ref()
+                    .is_some_and(|value| expr_contains_yield(value))
+        }
         Expr::Exit { value, .. } => value
             .as_ref()
             .is_some_and(|value| expr_contains_yield(value)),
@@ -18087,8 +18139,15 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
                 validate_anonymous_functions_in_expr(target, functions)?;
             }
         }
-        Expr::Clone { expr, .. } => {
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
             validate_anonymous_functions_in_expr(expr, functions)?;
+            if let Some(with_properties) = with_properties {
+                validate_anonymous_functions_in_expr(with_properties, functions)?;
+            }
         }
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
@@ -20967,8 +21026,17 @@ fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
         Expr::Grouped { expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
-        | Expr::Clone { expr, .. }
         | Expr::YieldFrom { expr, .. } => reject_standalone_list_expr(expr)?,
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            reject_standalone_list_expr(expr)?;
+            if let Some(with_properties) = with_properties {
+                reject_standalone_list_expr(with_properties)?;
+            }
+        }
         Expr::Assign { value, .. } => reject_standalone_list_expr(value)?,
         Expr::AssignRef { source, .. } => reject_standalone_list_expr(source)?,
         Expr::FirstClassCallable { callable, .. } => reject_standalone_list_expr(callable)?,
@@ -21196,7 +21264,16 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
                 reject_append_array_read(target)?;
             }
         }
-        Expr::Clone { expr, .. } => reject_append_array_read(expr)?,
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            reject_append_array_read(expr)?;
+            if let Some(with_properties) = with_properties {
+                reject_append_array_read(with_properties)?;
+            }
+        }
         Expr::StaticPropertyFetch { .. } | Expr::ClassConstantFetch { .. } => {}
         Expr::Array { elements, .. } => {
             for element in elements {
@@ -21324,7 +21401,19 @@ fn reject_array_literal_holes(expr: &Expr) -> Result<()> {
         Expr::Grouped { expr, .. }
         | Expr::Unary { expr, .. }
         | Expr::Cast { expr, .. }
-        | Expr::Clone { expr, .. } => reject_array_literal_holes(expr)?,
+        | Expr::Clone {
+            expr,
+            with_properties: None,
+            ..
+        } => reject_array_literal_holes(expr)?,
+        Expr::Clone {
+            expr,
+            with_properties: Some(with_properties),
+            ..
+        } => {
+            reject_array_literal_holes(expr)?;
+            reject_array_literal_holes(with_properties)?;
+        }
         Expr::Binary { left, right, .. } => {
             reject_array_literal_holes(left)?;
             reject_array_literal_holes(right)?;
@@ -22312,7 +22401,6 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::DynamicNewObject {
             class_name: name, ..
         }
-        | Expr::Clone { expr: name, .. }
         | Expr::DynamicClassNameFetch { receiver: name, .. }
         | Expr::Empty { target: name, .. }
         | Expr::Print {
@@ -22325,6 +22413,16 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::Cast { expr: name, .. }
         | Expr::Grouped { expr: name, .. }
         | Expr::PipeValue { expr: name, .. } => expr_uses_this_property(name, property_name),
+        Expr::Clone {
+            expr,
+            with_properties,
+            ..
+        } => {
+            expr_uses_this_property(expr, property_name)
+                || with_properties
+                    .as_ref()
+                    .is_some_and(|value| expr_uses_this_property(value, property_name))
+        }
         Expr::Exit { value, .. } => value
             .as_ref()
             .is_some_and(|value| expr_uses_this_property(value, property_name)),

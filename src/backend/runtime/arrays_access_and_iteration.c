@@ -3332,6 +3332,26 @@ static PTN_UNUSED void ptn_throw_readonly_property_reference_error(
     ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
 }
 
+static PTN_UNUSED void ptn_throw_readonly_property_indirect_modification_error(
+    PtnRuntime *runtime,
+    const char *declaring_class,
+    const char *property,
+    size_t line
+) {
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Cannot indirectly modify readonly property %s::$%s",
+        declaring_class,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
 static PTN_UNUSED void ptn_throw_readonly_property_initialize_error(
     PtnRuntime *runtime,
     const char *declaring_class,
@@ -4979,6 +4999,26 @@ static PTN_UNUSED PtnValue ptn_object_write_property_with_mode(
     }
     int readonly_clone_reinit = 0;
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
+        if (indirect_write) {
+            PtnValue current = ptn_value_deref(entry->value);
+            PtnValue assigned = ptn_value_deref(value);
+            if (current.type == PTN_OBJECT &&
+                assigned.type == PTN_OBJECT &&
+                current.as.object == assigned.as.object) {
+                ptn_array_key_free(key);
+                free(storage_key);
+                return ptn_value_clone(assigned);
+            }
+            ptn_array_key_free(key);
+            free(storage_key);
+            ptn_throw_readonly_property_indirect_modification_error(
+                runtime,
+                metadata->declaring_class,
+                metadata->display_name,
+                line
+            );
+            return ptn_null();
+        }
         readonly_clone_reinit =
             receiver.as.object->readonly_clone_initializing &&
             mutable_metadata != NULL &&
@@ -5070,6 +5110,147 @@ static PTN_UNUSED PtnValue ptn_object_write_property(
         line,
         0
     );
+}
+
+static PTN_UNUSED int ptn_runtime_has_active_exception(PtnRuntime *runtime) {
+    return runtime != NULL &&
+        runtime->exceptions != NULL &&
+        runtime->exceptions->active_exception != NULL;
+}
+
+static PTN_UNUSED void ptn_object_reset_readonly_clone_reinitialization(PtnObject *object) {
+    if (object == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < object->property_metadata_len; i++) {
+        object->property_metadata[i].readonly_clone_reinitialized = 0;
+    }
+}
+
+static PTN_UNUSED char *ptn_clone_with_int_property_name(int64_t integer) {
+    int needed = snprintf(NULL, 0, "%lld", (long long)integer);
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *name = malloc((size_t)needed + 1);
+    if (name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(name, (size_t)needed + 1, "%lld", (long long)integer);
+    return name;
+}
+
+static PTN_UNUSED char *ptn_clone_with_property_name_from_key(
+    PtnRuntime *runtime,
+    PtnArrayKey key,
+    size_t line
+) {
+    if (key.type == PTN_ARRAY_KEY_INT) {
+        return ptn_clone_with_int_property_name(key.as.integer);
+    }
+    if (key.string_len > 0 && key.as.string[0] == '\0') {
+        ptn_throw_exception_at(
+            runtime,
+            "Error",
+            "Cannot access property starting with \"\\0\"",
+            runtime == NULL ? NULL : runtime->source_path,
+            line
+        );
+        return NULL;
+    }
+    PtnString key_string;
+    key_string.data = (const unsigned char *)key.as.string;
+    key_string.len = key.string_len;
+    key_string.payload = NULL;
+    if (ptn_string_has_embedded_nul(key_string)) {
+        if (runtime != NULL) {
+            ptn_emit_type_error(
+                &runtime->diagnostics,
+                "Unsupported dynamic property name containing embedded NUL"
+            );
+        }
+        exit(255);
+    }
+    return ptn_duplicate_string_len(key.as.string, key.string_len);
+}
+
+static PTN_UNUSED PtnValue ptn_clone_value_with_properties(
+    PtnRuntime *runtime,
+    PtnValue value,
+    PtnValue with_properties,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT) {
+        return ptn_clone_value(runtime, value, line);
+    }
+    PtnValue properties = ptn_value_deref(with_properties);
+    if (properties.type != PTN_ARRAY) {
+        char message[192];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "clone(): Argument #2 ($withProperties) must be of type array, %s given",
+            ptn_offset_container_type_name(properties)
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+
+    PtnValue clone = ptn_clone_value(runtime, value, line);
+    if (ptn_runtime_has_active_exception(runtime) || clone.type != PTN_OBJECT) {
+        return clone;
+    }
+
+    PtnObject *cloned = clone.as.object;
+    ptn_object_reset_readonly_clone_reinitialization(cloned);
+    int previous_clone_initializing = cloned->readonly_clone_initializing;
+    cloned->readonly_clone_initializing = 1;
+    for (size_t i = 0; i < properties.as.array->len; i++) {
+        PtnArrayEntry *entry = &properties.as.array->entries[i];
+        char *property_name = ptn_clone_with_property_name_from_key(runtime, entry->key, line);
+        if (ptn_runtime_has_active_exception(runtime)) {
+            cloned->readonly_clone_initializing = previous_clone_initializing;
+            ptn_value_destroy(&clone);
+            free(property_name);
+            return ptn_null();
+        }
+        if (entry->value.type == PTN_REFERENCE &&
+            entry->value.as.reference != NULL &&
+            entry->value.as.reference->refcount > 1) {
+            cloned->readonly_clone_initializing = previous_clone_initializing;
+            free(property_name);
+            ptn_value_destroy(&clone);
+            ptn_throw_exception(
+                runtime,
+                "Error",
+                "Cannot assign by reference when cloning with updated properties"
+            );
+            return ptn_null();
+        }
+        PtnValue property_value = ptn_value_clone_deref(entry->value);
+        PtnValue written = ptn_object_write_property(
+            runtime,
+            clone,
+            property_name,
+            runtime == NULL ? NULL : runtime->current_class_name,
+            property_value,
+            line
+        );
+        ptn_value_destroy(&written);
+        ptn_value_destroy(&property_value);
+        free(property_name);
+        if (ptn_runtime_has_active_exception(runtime)) {
+            cloned->readonly_clone_initializing = previous_clone_initializing;
+            ptn_value_destroy(&clone);
+            return ptn_null();
+        }
+    }
+    cloned->readonly_clone_initializing = previous_clone_initializing;
+    return clone;
 }
 
 static PTN_UNUSED PtnValue ptn_object_write_property_indirect(
@@ -5167,9 +5348,8 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {
         ptn_array_key_free(key);
         free(storage_key);
-        ptn_throw_readonly_property_error(
+        ptn_throw_readonly_property_indirect_modification_error(
             runtime,
-            receiver.as.object->class_name,
             metadata->declaring_class,
             metadata->display_name,
             line
@@ -5399,11 +5579,17 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
             free(storage_key);
             return ptn_reference_value(ptn_reference_new_owned(current));
         }
+        PtnValue current = ptn_value_clone_deref(entry->value);
+        if (current.type == PTN_OBJECT) {
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_reference_value(ptn_reference_new_owned(current));
+        }
+        ptn_value_destroy(&current);
         ptn_array_key_free(key);
         free(storage_key);
-        ptn_throw_readonly_property_error(
+        ptn_throw_readonly_property_indirect_modification_error(
             runtime,
-            receiver.as.object->class_name,
             metadata->declaring_class,
             metadata->display_name,
             line

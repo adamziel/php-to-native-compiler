@@ -3925,6 +3925,32 @@ fn parser_accepts_clone_expressions_with_assignment_operands() {
 }
 
 #[test]
+fn parser_accepts_clone_with_property_updates() {
+    let program = parser::parse("<?php $copy = clone($source, ['foo' => $bar]);").unwrap();
+    let Statement::Assign { value, .. } = &program.statements[0] else {
+        panic!("expected assignment statement");
+    };
+    let Expr::Clone {
+        expr,
+        with_properties,
+        ..
+    } = value
+    else {
+        panic!("expected clone expression");
+    };
+    assert!(matches!(expr.as_ref(), Expr::Variable(name, _) if name == "source"));
+    let Some(with_properties) = with_properties else {
+        panic!("expected clone-with property array");
+    };
+    assert!(matches!(
+        with_properties.as_ref(),
+        Expr::Array { elements, .. }
+            if elements.len() == 1
+                && matches!(&elements[0].value, ArrayElementValue::Value(value) if matches!(value, Expr::Variable(name, _) if name == "bar"))
+    ));
+}
+
+#[test]
 fn parser_accepts_keyword_boolean_precedence() {
     let program = parser::parse(
         "<?php echo true || false and false, false or true && false, true xor false || false;",
@@ -55766,6 +55792,159 @@ foreach ($boxes as $box) {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_clone_value(&runtime"));
     assert!(c_source.contains("root->method_dispatch(root, clone, \"__clone\""));
+}
+
+#[test]
+fn compile_clone_with_property_updates_to_native_binary() {
+    let root = temp_dir("ptn-native-clone-with-property-updates");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("clone-with-property-updates.php");
+    let output = root.join("clone-with-property-updates-bin");
+    fs::write(
+        &input,
+        "<?php
+class CloneWithBox {
+    public string $hooked = 'default' {
+        set {
+            $this->hooked = strtoupper($value);
+        }
+    }
+    public string $plain = 'plain';
+
+    public function __clone() {
+        echo \"__clone\\n\";
+        $this->plain = 'from clone';
+    }
+}
+
+$box = new CloneWithBox();
+$copy = clone($box, ['hooked' => 'updated']);
+echo $copy->hooked, \"\\n\";
+echo $copy->plain, \"\\n\";
+
+try {
+    clone($box, 1);
+} catch (TypeError $e) {
+    echo \"TypeError: \", $e->getMessage(), \"\\n\";
+}
+
+$ref = 'reference';
+$with = ['x' => &$ref];
+try {
+    clone(new stdClass(), $with);
+} catch (Error $e) {
+    echo \"Error: \", $e->getMessage(), \"\\n\";
+}
+unset($ref);
+$copy = clone(new stdClass(), $with);
+echo $copy->x, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "__clone\n",
+            "UPDATED\n",
+            "from clone\n",
+            "TypeError: clone(): Argument #2 ($withProperties) must be of type array, int given\n",
+            "Error: Cannot assign by reference when cloning with updated properties\n",
+            "reference\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_clone_value_with_properties(&runtime"));
+}
+
+#[test]
+fn compile_readonly_indirect_modification_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-readonly-indirect-modification");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("readonly-indirect-modification.php");
+    let output = root.join("readonly-indirect-modification-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReadonlyBox {
+    public function __construct(
+        public readonly array $items,
+        public readonly object $object,
+    ) {}
+
+    public function __clone() {
+        try {
+            $this->items['clone'] = 'value';
+        } catch (Error $e) {
+            echo $e->getMessage(), \"\\n\";
+        }
+    }
+}
+
+class ReadonlyCounter {
+    public function __construct(public readonly int $value) {}
+    public function __clone() {
+        $this->value++;
+    }
+}
+
+$box = new ReadonlyBox([], new stdClass());
+try {
+    $box->items[] = 1;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $ref =& $box->items;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    $box->object++;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    --$box->object;
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+$box->object->foo = 1;
+$ref =& $box->object;
+$ref = new stdClass();
+echo $box->object->foo, \"\\n\";
+$counter = new ReadonlyCounter(1);
+$counter2 = clone $counter;
+echo $counter2->value, \"\\n\";
+echo (clone $counter2)->value, \"\\n\";
+clone $box;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Cannot indirectly modify readonly property ReadonlyBox::$items\n",
+            "Cannot indirectly modify readonly property ReadonlyBox::$items\n",
+            "Cannot modify readonly property ReadonlyBox::$object\n",
+            "Cannot modify readonly property ReadonlyBox::$object\n",
+            "1\n",
+            "2\n",
+            "3\n",
+            "Cannot indirectly modify readonly property ReadonlyBox::$items\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

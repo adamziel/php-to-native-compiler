@@ -1862,11 +1862,49 @@ static PTN_UNUSED PtnValue ptn_property_increment_value(
     size_t line
 ) {
     PtnValue resolved = ptn_value_deref(current);
+    PtnValue object = ptn_value_deref(receiver);
+    if (object.type == PTN_OBJECT) {
+        char *storage_key = ptn_object_resolve_property_storage_key(
+            runtime,
+            object.as.object,
+            property,
+            access_scope,
+            PTN_PROPERTY_ACCESS_READ,
+            1,
+            line
+        );
+        if (storage_key != NULL) {
+            const PtnObjectPropertyMetadata *metadata =
+                ptn_object_property_metadata(object.as.object, storage_key);
+            PtnArrayKey key = ptn_array_string_key(storage_key);
+            PtnArrayEntry *entry = ptn_array_entry_for_key(object.as.object->properties, key);
+            ptn_array_key_free(key);
+            if (metadata != NULL && metadata->is_readonly && entry != NULL) {
+                PtnObjectPropertyMetadata *mutable_metadata =
+                    ptn_object_mutable_property_metadata(object.as.object, storage_key);
+                int readonly_clone_reinit =
+                    object.as.object->readonly_clone_initializing &&
+                    mutable_metadata != NULL &&
+                    !mutable_metadata->readonly_clone_reinitialized;
+                if (!readonly_clone_reinit) {
+                    ptn_throw_readonly_property_error(
+                        runtime,
+                        object.as.object->class_name,
+                        metadata->declaring_class,
+                        metadata->display_name,
+                        line
+                    );
+                    free(storage_key);
+                    return ptn_value_clone(resolved);
+                }
+            }
+            free(storage_key);
+        }
+    }
     int boundary = resolved.type == PTN_INT &&
         ((increment && resolved.as.integer == INT64_MAX) ||
             (!increment && resolved.as.integer == INT64_MIN));
     if (boundary) {
-        PtnValue object = ptn_value_deref(receiver);
         if (object.type == PTN_OBJECT) {
             char *storage_key = ptn_object_resolve_property_storage_key(
                 runtime,

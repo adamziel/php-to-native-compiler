@@ -1,0 +1,13 @@
+Zend/tests/clone/clone_with_001.phpt
+Zend/tests/clone/clone_with_002.phpt
+Zend/tests/clone/clone_with_003.phpt
+Zend/tests/clone/clone_with_004.phpt
+Zend/tests/clone/clone_with_005.phpt
+Zend/tests/clone/clone_with_006.phpt
+Zend/tests/clone/clone_with_007.phpt
+Zend/tests/clone/clone_with_008.phpt
+Zend/tests/clone/clone_with_009.phpt
+Zend/tests/clone/clone_with_010.phpt
+Zend/tests/clone/clone_with_011.phpt
+Zend/tests/clone/clone_with_012.phpt
+Zend/tests/clone/clone_with_013.phpt

@@ -1,0 +1,6 @@
+Zend/tests/readonly_props/cache_slot.phpt
+Zend/tests/readonly_props/readonly_clone_error2.phpt
+Zend/tests/readonly_props/readonly_clone_error3.phpt
+Zend/tests/readonly_props/readonly_clone_success1.phpt
+Zend/tests/readonly_props/readonly_modification.phpt
+Zend/tests/readonly_props/readonly_clone_error7.phpt
