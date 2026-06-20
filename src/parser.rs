@@ -6244,14 +6244,16 @@ impl Parser<'_> {
             Expr::Constant(name, _) => Ok(AttributeArgumentExpression::Constant(name.clone())),
             Expr::ClassConstantFetch {
                 class_name, name, ..
-            } if name.eq_ignore_ascii_case("class") => {
-                Ok(AttributeArgumentExpression::ClassName(class_name.clone()))
-            }
+            } if name.eq_ignore_ascii_case("class") => Ok(AttributeArgumentExpression::ClassName {
+                class_name: class_name.clone(),
+                scope_relative: class_name.eq_ignore_ascii_case("self"),
+            }),
             Expr::ClassConstantFetch {
                 class_name, name, ..
             } => Ok(AttributeArgumentExpression::ClassConstant {
                 class_name: class_name.clone(),
                 name: name.clone(),
+                scope_relative: class_name.eq_ignore_ascii_case("self"),
             }),
             Expr::Array { elements, .. } => {
                 let mut attribute_elements = Vec::with_capacity(elements.len());
@@ -10882,7 +10884,7 @@ fn parsed_attribute_argument_expression_metadata(
             ParsedAttributeArgumentKind::Constant,
             Some(AttributeConstantReference::Constant(name.clone())),
         ),
-        AttributeArgumentExpression::ClassName(class_name) => (
+        AttributeArgumentExpression::ClassName { class_name, .. } => (
             class_name.clone(),
             ParsedAttributeArgumentKind::String,
             Some(AttributeConstantReference::ClassConstant {
@@ -10890,7 +10892,9 @@ fn parsed_attribute_argument_expression_metadata(
                 name: "class".to_string(),
             }),
         ),
-        AttributeArgumentExpression::ClassConstant { class_name, name } => {
+        AttributeArgumentExpression::ClassConstant {
+            class_name, name, ..
+        } => {
             let kind = parsed_attribute_class_constant_kind(class_name, name);
             let text = if matches!(kind, ParsedAttributeArgumentKind::String) {
                 class_name.clone()

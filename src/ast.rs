@@ -322,10 +322,14 @@ pub enum AttributeArgumentExpression {
     Bool(bool),
     Null,
     Constant(String),
-    ClassName(String),
+    ClassName {
+        class_name: String,
+        scope_relative: bool,
+    },
     ClassConstant {
         class_name: String,
         name: String,
+        scope_relative: bool,
     },
     Array(Vec<AttributeArgumentArrayElement>),
     Unary {

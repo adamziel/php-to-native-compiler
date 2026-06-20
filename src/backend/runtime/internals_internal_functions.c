@@ -74448,8 +74448,9 @@ static PtnValue ptn_declared_class_method_reflection_attributes(PtnRuntime *runt
 static PtnValue ptn_declared_class_property_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *property_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_class_constant_reflection_attributes(PtnRuntime *runtime, const char *class_name, const char *constant_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_function_reflection_attributes(PtnRuntime *runtime, const char *function_name, size_t argc, const PtnValue *args, size_t line);
-static PtnValue ptn_declared_closure_reflection_attributes(PtnRuntime *runtime, size_t function_index, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_declared_closure_reflection_attributes(PtnRuntime *runtime, size_t function_index, const char *ptn_attribute_scope_class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_function_parameter_reflection_attributes(PtnRuntime *runtime, const char *function_name, size_t parameter_index, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_declared_closure_parameter_reflection_attributes(PtnRuntime *runtime, size_t function_index, size_t parameter_index, const char *ptn_attribute_scope_class_name, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_declared_constant_attributes(PtnRuntime *runtime, const char *constant_name, size_t argc, const PtnValue *args, size_t line);
 static int ptn_declared_attribute_class_flags(
     const char *class_name,
@@ -86543,6 +86544,9 @@ typedef struct {
 typedef struct {
     PtnFunctionMetadata metadata;
     size_t index;
+    int has_closure_function_index;
+    size_t closure_function_index;
+    char *closure_scope_class_name;
 } PtnReflectionParameterData;
 
 typedef struct {
@@ -88777,7 +88781,12 @@ static void ptn_reflection_extension_data_free(void *data) {
 }
 
 static void ptn_reflection_parameter_data_free(void *data) {
-    free(data);
+    PtnReflectionParameterData *parameter_data = (PtnReflectionParameterData *)data;
+    if (parameter_data == NULL) {
+        return;
+    }
+    free(parameter_data->closure_scope_class_name);
+    free(parameter_data);
 }
 
 static void ptn_reflection_named_type_data_free(void *data) {
@@ -89454,6 +89463,9 @@ static PtnValue ptn_reflection_parameter_object_from_metadata(
     }
     data->metadata = metadata;
     data->index = index;
+    data->has_closure_function_index = 0;
+    data->closure_function_index = 0;
+    data->closure_scope_class_name = NULL;
 
     char fallback[32];
     const char *parameter_name = ptn_function_metadata_parameter_name(
@@ -89471,6 +89483,23 @@ static PtnValue ptn_reflection_parameter_object_from_metadata(
         ptn_array_string_key("name"),
         ptn_owned_string(ptn_duplicate_string(parameter_name))
     );
+    return object;
+}
+
+static PtnValue ptn_reflection_parameter_object_from_closure_metadata(
+    PtnRuntime *runtime,
+    PtnFunctionMetadata metadata,
+    size_t index,
+    size_t closure_function_index,
+    const char *closure_scope_class_name
+) {
+    PtnValue object = ptn_reflection_parameter_object_from_metadata(runtime, metadata, index);
+    PtnReflectionParameterData *data = (PtnReflectionParameterData *)object.as.object->native_data;
+    data->has_closure_function_index = 1;
+    data->closure_function_index = closure_function_index;
+    if (closure_scope_class_name != NULL) {
+        data->closure_scope_class_name = ptn_duplicate_string(closure_scope_class_name);
+    }
     return object;
 }
 
@@ -89643,6 +89672,15 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_new(
     size_t index = 0;
     if (!ptn_reflection_parameter_resolve_index(runtime, metadata, args[1], line, &index)) {
         return ptn_null();
+    }
+    if (args[0].type == PTN_CLOSURE) {
+        return ptn_reflection_parameter_object_from_closure_metadata(
+            runtime,
+            metadata,
+            index,
+            args[0].as.closure->function_index,
+            args[0].as.closure->scope_class_name
+        );
     }
     return ptn_reflection_parameter_object_from_metadata(runtime, metadata, index);
 }
@@ -96468,7 +96506,7 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
             return ptn_declared_function_reflection_attributes(runtime, metadata.name, argc, args, line);
         }
         if (data->has_closure_function_index) {
-            return ptn_declared_closure_reflection_attributes(runtime, data->closure_function_index, argc, args, line);
+            return ptn_declared_closure_reflection_attributes(runtime, data->closure_function_index, data->closure_scope_class_name, argc, args, line);
         }
         return ptn_reflection_empty_attributes(runtime, "ReflectionFunction", "getAttributes", argc, args, line);
     }
@@ -96536,7 +96574,15 @@ static PTN_UNUSED PtnValue ptn_reflection_function_call_method(
             ptn_array_set_entry(
                 result.as.array,
                 ptn_array_int_key((int64_t)i),
-                ptn_reflection_parameter_object_from_metadata(runtime, metadata, i)
+                data->has_closure_function_index
+                    ? ptn_reflection_parameter_object_from_closure_metadata(
+                        runtime,
+                        metadata,
+                        i,
+                        data->closure_function_index,
+                        data->closure_scope_class_name
+                    )
+                    : ptn_reflection_parameter_object_from_metadata(runtime, metadata, i)
             );
         }
         return result;
@@ -96617,6 +96663,17 @@ static PTN_UNUSED PtnValue ptn_reflection_parameter_call_method(
                 runtime,
                 metadata.name,
                 index,
+                argc,
+                args,
+                line
+            );
+        }
+        if (data->has_closure_function_index) {
+            return ptn_declared_closure_parameter_reflection_attributes(
+                runtime,
+                data->closure_function_index,
+                index,
+                data->closure_scope_class_name,
                 argc,
                 args,
                 line
