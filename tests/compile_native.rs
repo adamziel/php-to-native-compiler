@@ -56793,7 +56793,7 @@ var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
 var_dump(Uri\WhatWg\Url::parse("foo"));
 var_dump(Uri\WhatWg\Url::parse("relative", Uri\WhatWg\Url::parse("https://example.com/path?query"))->toAsciiString());
-Uri\WhatWg\Url::parse("https://example.net", errors: $errors);
+Uri\WhatWg\Url::parse("https://example.net", null, $errors);
 var_dump($errors);
 try {
     new Uri\WhatWg\Url("https://");
