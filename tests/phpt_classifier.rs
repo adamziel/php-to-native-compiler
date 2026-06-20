@@ -2270,17 +2270,13 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
 }
 
 #[test]
-fn phpt_classifier_excludes_unmodeled_pcre_array_pattern_rows() {
+fn phpt_classifier_keeps_pcre_array_pattern_rows_runnable() {
     let classification = classify(
         "--TEST--\npcre array pattern\n--INI--\npcre.jit=0\n--FILE--\n<?php\nvar_dump(preg_replace(array('#x#'), '', 'x'));\n--EXPECT--\n",
     );
 
     assert!(
-        classification.starts_with("unsupported-internal-pcre\t"),
-        "{classification:?}"
-    );
-    assert!(
-        classification.contains("preg replacement array-pattern dispatch"),
+        classification.starts_with("runnable\t"),
         "{classification:?}"
     );
 }

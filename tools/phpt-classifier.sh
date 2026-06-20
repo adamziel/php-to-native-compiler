@@ -2275,11 +2275,6 @@ ptn_phpt_first_unsupported_internal_surface() {
                 found = 1
                 exit
             }
-            if (line ~ /(^|[^[:alnum:]_$\\])preg_(filter|replace|replace_callback)[[:space:]]*\([[:space:]]*(array[[:space:]]*\(|\[)/) {
-                print "unsupported-internal-pcre\trequires preg replacement array-pattern dispatch, outside PTN modeled single-pattern PCRE runtime"
-                found = 1
-                exit
-            }
         }
         END {
             exit found ? 0 : 1

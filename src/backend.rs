@@ -23955,6 +23955,11 @@ pub fn compile_c(c_source: &str, output: &Path) -> Result<()> {
         .arg(&c_path)
         .arg("-o")
         .arg(output)
+        .args(if cfg!(target_os = "linux") {
+            &["-ldl"][..]
+        } else {
+            &[]
+        })
         .arg("-lm")
         .status()
         .map_err(|error| Diagnostic::new(format!("failed to launch cc: {error}"), None))?;
@@ -24039,11 +24044,16 @@ fn compile_c_with_ada_url(
         ));
     }
 
-    let link_status = Command::new("c++")
+    let mut link_command = Command::new("c++");
+    link_command
         .arg(&c_object)
         .arg(&ada_object)
         .arg("-o")
-        .arg(output)
+        .arg(output);
+    if cfg!(target_os = "linux") {
+        link_command.arg("-ldl");
+    }
+    let link_status = link_command
         .arg("-lm")
         .status()
         .map_err(|error| Diagnostic::new(format!("failed to launch c++ linker: {error}"), None))?;

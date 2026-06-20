@@ -38,6 +38,35 @@ fn generated_c_static_function_body<'a>(c_source: &'a str, marker: &str) -> &'a 
     &tail[..end]
 }
 
+fn discover_pcre2_library() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("PTN_PCRE2_LIBRARY").map(PathBuf::from) {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    let mut candidates = vec![
+        PathBuf::from("/lib/x86_64-linux-gnu/libpcre2-8.so.0"),
+        PathBuf::from("/usr/lib/x86_64-linux-gnu/libpcre2-8.so.0"),
+        PathBuf::from("/usr/lib64/libpcre2-8.so.0"),
+        PathBuf::from("/usr/local/lib/libpcre2-8.so.0"),
+    ];
+    if let Ok(entries) = fs::read_dir("/nix/store") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.contains("pcre2-") {
+                continue;
+            }
+            let path = entry.path().join("lib/libpcre2-8.so.0");
+            if path.exists() {
+                candidates.push(path);
+            }
+        }
+    }
+    candidates.into_iter().find(|path| path.exists())
+}
+
 #[test]
 fn parser_preserves_echo_expression_order() {
     let program = parser::parse("<?php echo \"a\", 12, true, false, null;").unwrap();
@@ -16831,6 +16860,74 @@ try { preg_match_all('//', '', $dummy, 0xdead); } catch (ValueError $e) { echo $
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_preg_uses_pcre2_runtime_boundary_to_native_binary() {
+    let Some(pcre2_library) = discover_pcre2_library() else {
+        eprintln!("skipping PCRE2 runtime-boundary test: libpcre2-8 was not found");
+        return;
+    };
+
+    let root = temp_dir("ptn-native-preg-pcre2-boundary");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-pcre2-boundary.php");
+    let output = root.join("preg-pcre2-boundary-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+var_dump(preg_match('/(?<word>\\\\p{L}+)/u', '1 café', $m, PREG_OFFSET_CAPTURE));\n\
+var_dump($m['word'][0], $m['word'][1]);\n\
+var_dump(preg_match('/(?<=foo)\\\\d+/', 'foo123', $look));\n\
+var_dump($look[0]);\n\
+var_dump(preg_match('/(*UCP)^\\\\w+$/u', 'é'));\n\
+$count = 0;\n\
+var_dump(preg_replace(['/([\\\\p{L}]+)/u', '/(?<=#)\\\\d+/'], ['[$0]', 'num:$0'], 'café #123', -1, $count));\n\
+var_dump($count);\n\
+var_dump(preg_split('/(?<=\\\\p{L})(?=\\\\d)/u', 'é2 a3'));\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_PCRE2_LIBRARY", &pcre2_library)
+        .output()
+        .unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "string(5) \"café\"\n",
+            "int(2)\n",
+            "int(1)\n",
+            "string(3) \"123\"\n",
+            "int(1)\n",
+            "string(16) \"[café] #num:123\"\n",
+            "int(2)\n",
+            "array(3) {\n",
+            "  [0]=>\n",
+            "  string(2) \"é\"\n",
+            "  [1]=>\n",
+            "  string(3) \"2 a\"\n",
+            "  [2]=>\n",
+            "  string(1) \"3\"\n",
+            "}\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PtnPregProgram"));
+    assert!(c_source.contains("ptn_preg_compile_pcre2"));
+    assert!(c_source.contains("PTN_PCRE2_LIBRARY"));
 }
 
 #[test]
