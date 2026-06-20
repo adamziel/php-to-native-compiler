@@ -11323,6 +11323,40 @@ var_dump(unserialize($poc));
 }
 
 #[test]
+fn compile_unserialize_internal_attribute_declared_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-internal-attribute-properties");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-internal-attribute-properties.php");
+    let output = root.join("unserialize-internal-attribute-properties-bin");
+    fs::write(
+        &input,
+        r#"<?php
+var_dump(unserialize('O:9:"Attribute":1:{s:5:"flags";i:63;}'));
+var_dump(unserialize('O:9:"Attribute":1:{s:5:"flags";i:63;s:5:"flags";R:2}'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(Attribute)#"), "{stdout}");
+    assert!(stdout.contains("int(63)"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: unserialize(): Error at offset 36 of 52 bytes"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("bool(false)"), "{stdout}");
+    assert!(
+        !stdout.contains("Creation of dynamic property Attribute::$flags"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_unserialize_huge_custom_payload_length_to_native_binary() {
     let root = temp_dir("ptn-native-unserialize-huge-custom-payload-length");
     fs::create_dir_all(&root).unwrap();

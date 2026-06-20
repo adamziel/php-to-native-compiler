@@ -7511,6 +7511,89 @@ static PtnValue ptn_zip_archive_new_shell(PtnRuntime *runtime, size_t line) {
     return object;
 }
 
+static void ptn_unserialize_declare_internal_readonly_property(
+    PtnRuntime *runtime,
+    PtnValue object,
+    const char *property_name,
+    const char *declaring_class,
+    PtnPropertyTypeKind type_kind,
+    const char *type_text,
+    int type_allows_null,
+    size_t line
+) {
+    PtnValue assigned = ptn_object_declare_property(
+        runtime,
+        object,
+        property_name,
+        declaring_class,
+        PTN_PROPERTY_PUBLIC,
+        PTN_PROPERTY_PUBLIC,
+        1,
+        type_kind,
+        NULL,
+        type_text,
+        type_allows_null,
+        0,
+        ptn_null(),
+        line
+    );
+    ptn_value_destroy(&assigned);
+}
+
+static PtnValue ptn_unserialize_new_internal_attribute_shell(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    const char *canonical_name = ptn_declared_class_canonical_name(class_name);
+    PtnValue object = ptn_object_new_shell(runtime, canonical_name);
+    if (ptn_internal_class_name_is_attribute(canonical_name)) {
+        ptn_unserialize_declare_internal_readonly_property(
+            runtime,
+            object,
+            "flags",
+            "Attribute",
+            PTN_PROPERTY_TYPE_INT,
+            "int",
+            0,
+            line
+        );
+    } else if (ptn_internal_class_name_is_deprecated(canonical_name)) {
+        ptn_unserialize_declare_internal_readonly_property(
+            runtime,
+            object,
+            "message",
+            "Deprecated",
+            PTN_PROPERTY_TYPE_STRING,
+            "?string",
+            1,
+            line
+        );
+        ptn_unserialize_declare_internal_readonly_property(
+            runtime,
+            object,
+            "since",
+            "Deprecated",
+            PTN_PROPERTY_TYPE_STRING,
+            "?string",
+            1,
+            line
+        );
+    } else if (ptn_internal_class_name_is_no_discard(canonical_name)) {
+        ptn_unserialize_declare_internal_readonly_property(
+            runtime,
+            object,
+            "message",
+            "NoDiscard",
+            PTN_PROPERTY_TYPE_STRING,
+            "?string",
+            1,
+            line
+        );
+    }
+    return object;
+}
+
 static PtnValue ptn_unserialize_new_object_shell(
     PtnRuntime *runtime,
     const char *class_name,
@@ -7531,6 +7614,11 @@ static PtnValue ptn_unserialize_new_object_shell(
         if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
             return ptn_zip_archive_new_shell(runtime, line);
         }
+        if (ptn_internal_class_name_is_attribute(resolved_name) ||
+            ptn_internal_class_name_is_deprecated(resolved_name) ||
+            ptn_internal_class_name_is_no_discard(resolved_name)) {
+            return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
+        }
         return ptn_object_new_shell(runtime, resolved_name);
     }
 
@@ -7549,6 +7637,11 @@ static PtnValue ptn_unserialize_new_object_shell(
             }
             if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
                 return ptn_zip_archive_new_shell(runtime, line);
+            }
+            if (ptn_internal_class_name_is_attribute(resolved_name) ||
+                ptn_internal_class_name_is_deprecated(resolved_name) ||
+                ptn_internal_class_name_is_no_discard(resolved_name)) {
+                return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
             }
             return ptn_object_new_shell(runtime, resolved_name);
         }
@@ -7578,6 +7671,11 @@ static PtnValue ptn_unserialize_new_object_shell(
             }
             if (ptn_internal_class_name_is_zip_archive(resolved_name)) {
                 return ptn_zip_archive_new_shell(runtime, line);
+            }
+            if (ptn_internal_class_name_is_attribute(resolved_name) ||
+                ptn_internal_class_name_is_deprecated(resolved_name) ||
+                ptn_internal_class_name_is_no_discard(resolved_name)) {
+                return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
             }
             return ptn_object_new_shell(runtime, resolved_name);
         }
