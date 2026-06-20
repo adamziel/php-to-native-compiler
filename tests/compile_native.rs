@@ -17114,6 +17114,54 @@ var_dump(mb_split(\"b\", \"abc\"));\n",
 }
 
 #[test]
+fn compile_mbstring_embedded_nul_encoding_lists_to_native_binary() {
+    let root = temp_dir("ptn-native-mb-embedded-nul-encodings");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mb-embedded-nul-encodings.php");
+    let output = root.join("mb-embedded-nul-encodings-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$encoding = \"UTF-8\\0AAAAAAAA\";\n\
+$alias = \"binary\\0AAAAAAAA\";\n\
+$var = 'foo';\n\
+function dump_exception(callable $callback) {\n\
+    try {\n\
+        $callback();\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+dump_exception(fn() => mb_convert_encoding('foo', $encoding, $encoding));\n\
+dump_exception(fn() => mb_convert_encoding('foo', $alias, $alias));\n\
+dump_exception(fn() => mb_detect_encoding('foo', $encoding));\n\
+dump_exception(fn() => mb_detect_encoding('foo', $alias));\n\
+dump_exception(fn() => mb_convert_variables($encoding, $alias, $var));\n\
+dump_exception(fn() => mb_detect_order($encoding));\n\
+dump_exception(fn() => mb_detect_order($alias));\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ValueError: mb_convert_encoding(): Argument #3 ($from_encoding) contains invalid encoding \"UTF-8\"\n",
+            "ValueError: mb_convert_encoding(): Argument #3 ($from_encoding) contains invalid encoding \"binary\"\n",
+            "ValueError: mb_detect_encoding(): Argument #2 ($encodings) contains invalid encoding \"UTF-8\"\n",
+            "ValueError: mb_detect_encoding(): Argument #2 ($encodings) contains invalid encoding \"binary\"\n",
+            "ValueError: mb_convert_variables(): Argument #2 ($from_encoding) contains invalid encoding \"binary\"\n",
+            "ValueError: mb_detect_order(): Argument #1 ($encoding) contains invalid encoding \"UTF-8\"\n",
+            "ValueError: mb_detect_order(): Argument #1 ($encoding) contains invalid encoding \"binary\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_preg_replace_callback_array_and_match_debug_refcounts_to_native_binary() {
     let root = temp_dir("ptn-native-preg-replace-callback-array-debug");
     fs::create_dir_all(&root).unwrap();
@@ -26753,6 +26801,39 @@ fn compile_versioning_registry_and_unknown_extension_to_native_binary() {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "bool(true)\nbool(true)\nbool(true)\nbool(true)\nstring(3) \"cli\"\nstring(5) \"8.4.0\"\nbool(true)\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nstring(5) \"8.4.0\"\nbool(false)\nstring(5) \"4.4.0\"\nCore,bcmath,calendar,ctype,curl,date,dom,filter,hash,iconv,intl,json,libxml,mbstring,openssl,pcre,Phar,Reflection,sockets,soap,SPL,standard,tokenizer,xml,xmlreader,xmlwriter,zip,zlib,PDO,pdo_sqlite,sqlite3,mysqli,pgsql,pdo_mysql,pdo_pgsql,pdo_firebird,pdo_dblib,odbc,Zend OPcache\narray(1) {\n  [0]=>\n  string(12) \"Zend OPcache\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_intl_create_functions_reject_non_string_locale_objects() {
+    let root = temp_dir("ptn-native-intl-create-locale-types");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("intl-create-locale-types.php");
+    let output = root.join("intl-create-locale-types-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+foreach (['collator_create', 'datefmt_create'] as $func) {\n\
+    try {\n\
+        $func(new stdClass());\n\
+        echo \"returned\\n\";\n\
+    } catch (Throwable $e) {\n\
+        echo get_class($e), \"\\n\";\n\
+    }\n\
+}\n\
+var_dump(collator_create('en') instanceof Collator);\n\
+var_dump(datefmt_create(null) instanceof IntlDateFormatter);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "TypeError\nTypeError\nbool(true)\nbool(true)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -42227,6 +42308,57 @@ echo file_get_contents('php://input'), \"\\n\";\n",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "Hello Again\nHello World\na=Hello+World\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn phpc_cgi_request_context_applies_special_chars_default_filter() {
+    let root = temp_dir("ptn-phpc-cgi-request-filter-default");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("cgi-request-filter-default.php");
+    fs::write(
+        &input,
+        "<?php\n\
+echo $_GET['a'], $_GET['b'], $_GET['c'], $_POST['d'], $_POST['e'], \"\\n\";\n\
+echo $_REQUEST['a'], $_REQUEST['b'], $_REQUEST['c'], $_REQUEST['d'], $_REQUEST['e'];\n",
+    )
+    .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-C")
+        .arg("-d")
+        .arg("variables_order=EGPCS")
+        .arg("-d")
+        .arg("register_argc_argv=0")
+        .arg("-d")
+        .arg("filter.default=special_chars")
+        .arg("-d")
+        .arg("error_reporting=22527")
+        .arg("run")
+        .arg(&input)
+        .env("REQUEST_METHOD", "POST")
+        .env("QUERY_STRING", "a=O'Henry&b=&c=<b>Bold</b>")
+        .env("CONTENT_TYPE", "application/x-www-form-urlencoded")
+        .env("CONTENT_LENGTH", "19")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(b"d=\"quotes\"&e=\\slash")
+        .unwrap();
+    let execution = child.wait_with_output().unwrap();
+
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "O&#39;Henry&#60;b&#62;Bold&#60;/b&#62;&#34;quotes&#34;\\slash\n\
+O&#39;Henry&#60;b&#62;Bold&#60;/b&#62;&#34;quotes&#34;\\slash"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

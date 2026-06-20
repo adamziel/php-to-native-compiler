@@ -23349,6 +23349,7 @@ static PtnValue ptn_internal_parse_str(PtnRuntime *runtime, size_t argc, const P
 
 static PtnRuntime *ptn_runtime_config_root(PtnRuntime *runtime);
 static const char *ptn_runtime_default_charset(PtnRuntime *runtime);
+static const char *ptn_runtime_filter_default(PtnRuntime *runtime);
 static char *ptn_request_read_stdin(size_t *len_out);
 static const char *ptn_runtime_variables_order(PtnRuntime *runtime);
 static const char *ptn_runtime_register_argc_argv(PtnRuntime *runtime);
@@ -23606,6 +23607,67 @@ static PtnValue ptn_request_parse_cookie_header(const char *header) {
         free(cookie_name);
     }
     return result;
+}
+
+static char *ptn_request_filter_special_chars_bytes(const unsigned char *data, size_t len, size_t *out_len) {
+    PtnStringBuffer buffer;
+    ptn_string_buffer_init(&buffer);
+    for (size_t i = 0; i < len; i++) {
+        switch (data[i]) {
+            case '&':
+                ptn_string_buffer_append(&buffer, "&#38;");
+                break;
+            case '"':
+                ptn_string_buffer_append(&buffer, "&#34;");
+                break;
+            case '\'':
+                ptn_string_buffer_append(&buffer, "&#39;");
+                break;
+            case '<':
+                ptn_string_buffer_append(&buffer, "&#60;");
+                break;
+            case '>':
+                ptn_string_buffer_append(&buffer, "&#62;");
+                break;
+            default:
+                ptn_string_buffer_append_char(&buffer, (char)data[i]);
+                break;
+        }
+    }
+    *out_len = buffer.len;
+    return buffer.data;
+}
+
+static void ptn_request_apply_special_chars_filter_to_array(PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return;
+    }
+    PtnArray *array = value.as.array;
+    for (size_t i = 0; i < array->len; i++) {
+        PtnArrayEntry *entry = &array->entries[i];
+        PtnValue current = ptn_value_deref(entry->value);
+        if (current.type == PTN_ARRAY) {
+            ptn_request_apply_special_chars_filter_to_array(current);
+        } else if (current.type == PTN_STRING) {
+            size_t filtered_len = 0;
+            char *filtered = ptn_request_filter_special_chars_bytes(
+                current.as.string.data,
+                current.as.string.len,
+                &filtered_len
+            );
+            ptn_value_destroy(&entry->value);
+            entry->value = ptn_owned_string_len(filtered, filtered_len);
+        }
+    }
+}
+
+static void ptn_request_apply_default_filter(PtnRuntime *runtime, PtnValue value) {
+    const char *filter = ptn_runtime_filter_default(runtime);
+    if (filter == NULL || !ptn_ascii_case_equal(filter, "special_chars")) {
+        return;
+    }
+    ptn_request_apply_special_chars_filter_to_array(value);
 }
 
 static const char *ptn_memmem_simple(
@@ -24724,6 +24786,10 @@ static PTN_UNUSED void ptn_initialize_request_context(PtnRuntime *runtime, int a
     } else {
         ptn_request_seed_cli_argv(runtime, server, argc, argv);
     }
+
+    ptn_request_apply_default_filter(runtime, get);
+    ptn_request_apply_default_filter(runtime, post);
+    ptn_request_apply_default_filter(runtime, cookie);
 
     PtnValue request = ptn_request_build_request(runtime, get, post, cookie);
     ptn_runtime_write_global_variable(runtime, "_ENV", env);
@@ -48511,6 +48577,14 @@ static const char *ptn_intl_timezone_display_name(PtnIntlDateFormatterData *data
 }
 
 static PtnValue ptn_internal_datefmt_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+        PtnStringOperand locale =
+            ptn_internal_expect_string_arg(runtime, "datefmt_create", 1, "locale", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        ptn_string_operand_free(locale);
+    }
     return ptn_intl_date_formatter_new(runtime, argc, args, line);
 }
 
@@ -48857,8 +48931,12 @@ static PTN_UNUSED PtnValue ptn_intl_number_formatter_call_method(
 
 static PtnValue ptn_internal_collator_create(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)args;
-    (void)line;
+    PtnStringOperand locale =
+        ptn_internal_expect_string_arg(runtime, "collator_create", 1, "locale", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    ptn_string_operand_free(locale);
     return ptn_object_new_shell(runtime, "Collator");
 }
 
@@ -49625,13 +49703,42 @@ static const char *ptn_mb_encoding_from_value(
         ptn_string_operand_free(encoding);
         return fallback;
     }
-    const char *canonical = ptn_mb_canonical_encoding_name(encoding);
+    PtnStringOperand canonical_input = encoding;
+    char *prefix = NULL;
+    if (ptn_mb_encoding_has_embedded_nul(encoding, &prefix)) {
+        canonical_input = ptn_string_operand_borrowed(prefix);
+    }
+    const char *canonical = ptn_mb_canonical_encoding_name(canonical_input);
     if (canonical == NULL) {
-        ptn_mb_throw_invalid_encoding(runtime, function_name, position, argument_name, encoding);
+        ptn_mb_throw_invalid_encoding(runtime, function_name, position, argument_name, canonical_input);
+        free(prefix);
         ptn_string_operand_free(encoding);
         return NULL;
     }
+    free(prefix);
     ptn_string_operand_free(encoding);
+    return canonical;
+}
+
+static const char *ptn_mb_encoding_list_item_canonical_or_throw(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t position,
+    const char *argument_name,
+    PtnStringOperand item
+) {
+    char *prefix = NULL;
+    if (ptn_mb_encoding_has_embedded_nul(item, &prefix)) {
+        PtnStringOperand shown = ptn_string_operand_borrowed(prefix);
+        ptn_mb_throw_contains_invalid_encoding(runtime, function_name, position, argument_name, shown);
+        free(prefix);
+        return NULL;
+    }
+    const char *canonical = ptn_mb_canonical_encoding_name(item);
+    if (canonical == NULL) {
+        ptn_mb_throw_contains_invalid_encoding(runtime, function_name, position, argument_name, item);
+        return NULL;
+    }
     return canonical;
 }
 
@@ -49650,17 +49757,29 @@ static const char *ptn_mb_encoding_list_first_from_value(
         return fallback;
     }
     if (resolved.type == PTN_ARRAY) {
+        const char *first = NULL;
         for (size_t i = 0; i < resolved.as.array->len; i++) {
             PtnStringOperand item = ptn_value_to_string_operand(resolved.as.array->entries[i].value);
-            const char *canonical = ptn_mb_canonical_encoding_name(item);
+            const char *canonical = ptn_mb_encoding_list_item_canonical_or_throw(
+                runtime,
+                function_name,
+                position,
+                argument_name,
+                item
+            );
             ptn_string_operand_free(item);
-            if (canonical != NULL) {
-                return canonical;
+            if (runtime->exceptions->active_exception != NULL) {
+                return NULL;
+            }
+            if (first == NULL) {
+                first = canonical;
             }
         }
-        return fallback;
+        return first == NULL ? fallback : first;
     }
     PtnStringOperand list = ptn_value_to_string_operand(value);
+    const char *first = NULL;
+    int saw_item = 0;
     size_t start = 0;
     while (start <= list.len) {
         size_t end = start;
@@ -49674,11 +49793,21 @@ static const char *ptn_mb_encoding_list_first_from_value(
             end--;
         }
         if (end > start) {
+            saw_item = 1;
             PtnStringOperand item = ptn_string_operand_borrowed_len(list.data + start, end - start);
-            const char *canonical = ptn_mb_canonical_encoding_name(item);
-            if (canonical != NULL) {
+            const char *canonical = ptn_mb_encoding_list_item_canonical_or_throw(
+                runtime,
+                function_name,
+                position,
+                argument_name,
+                item
+            );
+            if (runtime->exceptions->active_exception != NULL) {
                 ptn_string_operand_free(list);
-                return canonical;
+                return NULL;
+            }
+            if (first == NULL) {
+                first = canonical;
             }
         }
         if (end >= list.len) {
@@ -49686,11 +49815,11 @@ static const char *ptn_mb_encoding_list_first_from_value(
         }
         start = end + 1;
     }
-    if (list.len != 0) {
+    if (!saw_item && list.len != 0) {
         ptn_mb_throw_contains_invalid_encoding(runtime, function_name, position, argument_name, list);
     }
     ptn_string_operand_free(list);
-    return NULL;
+    return first == NULL ? NULL : first;
 }
 
 static char *ptn_mb_iconv_convert_alloc(
@@ -50148,7 +50277,6 @@ static PtnValue ptn_internal_mb_substitute_char(PtnRuntime *runtime, size_t argc
 }
 
 static PtnValue ptn_internal_mb_detect_order(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)line;
     if (argc == 0) {
         PtnValue result = ptn_array_from_literal_entries(0, NULL);
@@ -50196,6 +50324,19 @@ static PtnValue ptn_internal_mb_detect_order(PtnRuntime *runtime, size_t argc, c
             ptn_string_buffer_append(&buffer, canonical);
         }
     } else {
+        (void)ptn_mb_encoding_list_first_from_value(
+            runtime,
+            "mb_detect_order",
+            1,
+            "encoding",
+            args[0],
+            line,
+            NULL
+        );
+        if (runtime->exceptions->active_exception != NULL) {
+            free(buffer.data);
+            return ptn_null();
+        }
         PtnStringOperand order = ptn_value_to_string_operand(args[0]);
         ptn_string_buffer_append_len(&buffer, order.data, order.len);
         ptn_string_operand_free(order);
