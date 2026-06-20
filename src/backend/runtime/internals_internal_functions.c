@@ -98633,6 +98633,47 @@ static PtnArray *ptn_spl_storage_mutable_array(PtnValue *storage) {
     return NULL;
 }
 
+static void ptn_spl_reorder_object_metadata_like_properties(PtnObject *object) {
+    if (object == NULL ||
+        object->properties == NULL ||
+        object->property_metadata == NULL ||
+        object->property_metadata_len < 2) {
+        return;
+    }
+    PtnObjectPropertyMetadata *ordered =
+        malloc(sizeof(PtnObjectPropertyMetadata) * object->property_metadata_len);
+    unsigned char *used = calloc(object->property_metadata_len, sizeof(unsigned char));
+    if (ordered == NULL || used == NULL) {
+        free(ordered);
+        free(used);
+        ptn_abort_out_of_memory();
+    }
+
+    size_t out = 0;
+    for (size_t i = 0; i < object->properties->len; i++) {
+        PtnArrayEntry *entry = &object->properties->entries[i];
+        if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+            continue;
+        }
+        for (size_t j = 0; j < object->property_metadata_len; j++) {
+            if (!used[j] && strcmp(object->property_metadata[j].storage_name, entry->key.as.string) == 0) {
+                ordered[out++] = object->property_metadata[j];
+                used[j] = 1;
+                break;
+            }
+        }
+    }
+    for (size_t j = 0; j < object->property_metadata_len; j++) {
+        if (!used[j]) {
+            ordered[out++] = object->property_metadata[j];
+        }
+    }
+
+    memcpy(object->property_metadata, ordered, sizeof(PtnObjectPropertyMetadata) * object->property_metadata_len);
+    free(ordered);
+    free(used);
+}
+
 static PtnValue ptn_spl_storage_array_copy(
     PtnRuntime *runtime,
     PtnValue storage,
@@ -99195,7 +99236,7 @@ static void ptn_spl_declare_storage_property_inner(
         ptn_value_destroy(&declared);
         for (size_t i = 0; i < resolved_object.as.object->property_metadata_len; i++) {
             PtnObjectPropertyMetadata *metadata = &resolved_object.as.object->property_metadata[i];
-            if (ptn_object_metadata_is_array_object_storage(metadata)) {
+            if (ptn_object_metadata_is_spl_array_backed_storage(metadata)) {
                 PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
                 (void)ptn_array_unset_entry(resolved_object.as.object->properties, key);
                 metadata->is_unset = 1;
@@ -99944,15 +99985,26 @@ static PTN_UNUSED PtnValue ptn_array_iterator_clone(
     if (source_data == NULL) {
         return ptn_null();
     }
-    PtnValue storage_copy = ptn_spl_storage_array_copy(runtime, source_data->storage, NULL);
-    PtnValue clone = ptn_array_iterator_new_from_storage(
-        runtime,
-        ptn_value_deref(source).as.object->class_name,
-        storage_copy,
-        source_data->flags,
-        line
-    );
-    ptn_value_destroy(&storage_copy);
+    PtnValue resolved_source = ptn_value_deref(source);
+    if (resolved_source.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, resolved_source.as.object);
+    PtnArrayIteratorData *clone_data = malloc(sizeof(PtnArrayIteratorData));
+    if (clone_data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue resolved_storage = ptn_value_deref(source_data->storage);
+    if (resolved_storage.type == PTN_OBJECT && resolved_storage.as.object == resolved_source.as.object) {
+        clone_data->storage = ptn_value_clone(clone);
+    } else {
+        clone_data->storage = ptn_spl_storage_array_copy(runtime, source_data->storage, NULL);
+    }
+    clone_data->index = 0;
+    clone_data->flags = source_data->flags;
+    clone.as.object->native_data = clone_data;
+    clone.as.object->native_data_free = ptn_array_iterator_data_free;
+    ptn_spl_declare_storage_property(runtime, clone, "ArrayIterator", clone_data->storage, line);
     return clone;
 }
 
@@ -99965,14 +100017,28 @@ static PTN_UNUSED PtnValue ptn_array_object_clone(
     if (source_data == NULL) {
         return ptn_null();
     }
-    PtnValue storage_copy = ptn_spl_storage_array_copy(runtime, source_data->storage, NULL);
-    PtnValue args[3] = {
-        storage_copy,
-        ptn_int(source_data->flags),
-        ptn_string(source_data->iterator_class == NULL ? "ArrayIterator" : source_data->iterator_class)
-    };
-    PtnValue clone = ptn_array_object_new(runtime, 3, args, line);
-    ptn_value_destroy(&storage_copy);
+    PtnValue resolved_source = ptn_value_deref(source);
+    if (resolved_source.type != PTN_OBJECT) {
+        return ptn_null();
+    }
+    PtnValue clone = ptn_object_clone_storage_without_magic(runtime, resolved_source.as.object);
+    PtnArrayObjectData *clone_data = malloc(sizeof(PtnArrayObjectData));
+    if (clone_data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    PtnValue resolved_storage = ptn_value_deref(source_data->storage);
+    if (resolved_storage.type == PTN_OBJECT && resolved_storage.as.object == resolved_source.as.object) {
+        clone_data->storage = ptn_value_clone(clone);
+    } else {
+        clone_data->storage = ptn_spl_storage_array_copy(runtime, source_data->storage, NULL);
+    }
+    clone_data->flags = source_data->flags;
+    clone_data->iterator_class =
+        ptn_duplicate_string(source_data->iterator_class == NULL ? "ArrayIterator" : source_data->iterator_class);
+    clone_data->sorting = 0;
+    clone.as.object->native_data = clone_data;
+    clone.as.object->native_data_free = ptn_array_object_data_free;
+    ptn_spl_declare_storage_property(runtime, clone, "ArrayObject", clone_data->storage, line);
     return clone;
 }
 
@@ -104479,6 +104545,7 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
         if (array == NULL) {
             return ptn_bool(0);
         }
+        PtnObject *storage_object = ptn_spl_storage_object(data->storage);
         if (ptn_ascii_case_equal(name, "asort")) {
             int64_t flags = argc == 1
                 ? ptn_internal_expect_integer_arg(runtime, "ArrayIterator::asort", 1, "flags", args[0], line)
@@ -104499,6 +104566,9 @@ static PTN_UNUSED PtnValue ptn_array_iterator_call_method(
             ptn_array_natsort_values(array);
         } else {
             ptn_array_natcasesort_values(array);
+        }
+        if (storage_object != NULL && storage_object->properties == array) {
+            ptn_spl_reorder_object_metadata_like_properties(storage_object);
         }
         ptn_spl_declare_storage_property(runtime, receiver, "ArrayIterator", data->storage, line);
         data->index = 0;
@@ -104949,6 +105019,7 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
         if (array == NULL) {
             return ptn_bool(0);
         }
+        PtnObject *storage_object = ptn_spl_storage_object(data->storage);
         data->sorting = 1;
         if (ptn_ascii_case_equal(name, "asort")) {
             int64_t flags = argc == 1
@@ -104986,6 +105057,9 @@ static PTN_UNUSED PtnValue ptn_array_object_call_method(
             ptn_value_destroy(&callback);
         }
         data->sorting = 0;
+        if (storage_object != NULL && storage_object->properties == array) {
+            ptn_spl_reorder_object_metadata_like_properties(storage_object);
+        }
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
         }

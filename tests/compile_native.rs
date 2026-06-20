@@ -11873,6 +11873,163 @@ var_dump($arrayObject["d1"], $arrayObject["scalar"], $arrayObject);
 }
 
 #[test]
+fn compile_array_iterator_parent_style_internal_current_to_native_binary() {
+    let root = temp_dir("ptn-native-array-iterator-parent-internal-current");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-iterator-parent-internal-current.php");
+    let output = root.join("array-iterator-parent-internal-current-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class ArrayIteratorEx extends ArrayIterator {
+    function current(): mixed {
+        return ArrayIterator::current();
+    }
+}
+
+$ar = new ArrayIteratorEx([4]);
+foreach ($ar as $v) {
+    var_dump($v);
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "int(4)\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_self_backed_array_object_and_iterator_clone_to_native_binary() {
+    let root = temp_dir("ptn-native-self-backed-array-clone");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("self-backed-array-clone.php");
+    let output = root.join("self-backed-array-clone-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyArrayObject extends ArrayObject {
+    public function __construct() {
+        parent::__construct($this);
+        $this['bar'] = 'baz';
+    }
+}
+
+class MyArrayIterator extends ArrayIterator {
+    public function __construct() {
+        parent::__construct($this);
+        $this['bar'] = 'baz';
+    }
+}
+
+$object = new MyArrayObject();
+$objectClone = clone $object;
+$objectClone['baz'] = 'Foo';
+var_dump($object);
+var_dump($objectClone);
+
+$iterator = new MyArrayIterator();
+$iteratorClone = clone $iterator;
+$iteratorClone['baz'] = 'Foo';
+var_dump($iterator);
+var_dump($iteratorClone);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("object(MyArrayObject)#"), "{stdout}");
+    assert!(stdout.contains("object(MyArrayIterator)#"), "{stdout}");
+    assert!(
+        stdout.contains("[\"bar\"]=>\n  string(3) \"baz\""),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[\"baz\"]=>\n  string(3) \"Foo\""),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("[\"storage\":\"ArrayObject\":private]"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("[\"storage\":\"ArrayIterator\":private]"),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_array_object_object_backed_ksort_reorders_properties_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-object-backed-ksort");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-object-backed-ksort.php");
+    let output = root.join("array-object-object-backed-ksort-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class C {
+    public $x = 'prop1';
+    public $z = 'prop2';
+    public $a = 'prop3';
+    private $b = 'prop4';
+}
+
+$c = new C();
+$ao = new ArrayObject($c);
+var_dump($ao->ksort());
+var_dump($c);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let private_b = stdout
+        .find("[\"b\":\"C\":private]")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let public_a = stdout
+        .find("[\"a\"]=>")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let public_x = stdout
+        .find("[\"x\"]=>")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    let public_z = stdout
+        .find("[\"z\"]=>")
+        .unwrap_or_else(|| panic!("{stdout}"));
+    assert!(private_b < public_a, "{stdout}");
+    assert!(public_a < public_x, "{stdout}");
+    assert!(public_x < public_z, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_declared_offsets_for_array_as_props_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-declared-offsets-array-as-props");
     fs::create_dir_all(&root).unwrap();
