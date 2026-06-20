@@ -3487,6 +3487,7 @@ static PTN_UNUSED int ptn_internal_array_object_property_isset(
     PtnValue receiver,
     const char *property,
     const char *access_scope,
+    size_t line,
     int *isset_out
 );
 static PTN_UNUSED int ptn_internal_array_object_property_unset(
@@ -3517,6 +3518,13 @@ static PTN_UNUSED int ptn_internal_array_object_offset_reference(
     const PtnValue *offset_value,
     size_t line,
     int create_if_missing,
+    PtnValue *reference_out
+);
+static PTN_UNUSED int ptn_internal_array_object_offset_reference_quiet(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const PtnValue *offset_value,
+    size_t line,
     PtnValue *reference_out
 );
 #endif
@@ -4269,6 +4277,17 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
     )) {
         return internal_xml_value;
     }
+    PtnValue array_object_value = ptn_null();
+    if (ptn_internal_array_object_property_read(
+        runtime,
+        receiver,
+        property,
+        access_scope,
+        line,
+        &array_object_value
+    )) {
+        return array_object_value;
+    }
 #endif
     char *storage_key = ptn_object_resolve_property_storage_key(
         runtime,
@@ -4726,6 +4745,7 @@ static PTN_UNUSED int ptn_object_property_is_set(
         receiver,
         property,
         access_scope,
+        line,
         &array_object_isset
     )) {
         return array_object_isset;
@@ -10991,6 +11011,24 @@ static PTN_UNUSED void ptn_value_array_path_unset(
         return;
     }
     if (segment_count > 1 && ptn_arrayaccess_can_dispatch(runtime, *value, "offsetGet")) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (!segments[0].append) {
+            PtnValue nested_reference = ptn_null();
+            if (ptn_internal_array_object_offset_reference_quiet(
+                    runtime,
+                    *value,
+                    &segments[0].value,
+                    line,
+                    &nested_reference
+                )) {
+                if (ptn_arrayaccess_nested_write_should_apply(runtime, *value, nested_reference, line)) {
+                    ptn_value_array_path_unset(runtime, &nested_reference, segments + 1, segment_count - 1, line);
+                }
+                ptn_value_destroy(&nested_reference);
+                return;
+            }
+        }
+#endif
         PtnValue key = segments[0].append ? ptn_null() : segments[0].value;
         PtnValue nested = ptn_arrayaccess_read(runtime, *value, key, line);
         if (ptn_arrayaccess_nested_write_should_apply(runtime, *value, nested, line)) {

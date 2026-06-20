@@ -11390,6 +11390,96 @@ var_dump($arrayObject["d1"], $arrayObject["scalar"], $arrayObject);
 }
 
 #[test]
+fn compile_array_object_declared_offsets_for_array_as_props_to_native_binary() {
+    let root = temp_dir("ptn-native-array-object-declared-offsets-array-as-props");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("array-object-declared-offsets-array-as-props.php");
+    let output = root.join("array-object-declared-offsets-array-as-props-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class MyArrayObject extends ArrayObject {
+    public function __construct($input = []) {
+        parent::__construct($input, ArrayObject::ARRAY_AS_PROPS);
+    }
+    public function offsetSet($x, $v): void {
+        echo "offsetSet('{$x}')\n";
+        parent::offsetSet($x, $v);
+    }
+    public function offsetGet($x): mixed {
+        echo "offsetGet('{$x}')\n";
+        return parent::offsetGet($x);
+    }
+}
+
+class MyArray extends ArrayObject {
+    public function offsetSet($x, $v): void {
+        echo "offsetSet('{$x}')\n";
+        parent::offsetSet($x, $v);
+    }
+    public function offsetGet($x): mixed {
+        echo "offsetGet('{$x}')\n";
+        return parent::offsetGet($x);
+    }
+}
+
+$x = new MyArrayObject();
+$x->a1 = new stdClass();
+var_dump($x->a1);
+$x->a1->b = 'some value';
+var_dump($x->a1);
+
+$y = new MyArray();
+$y['a2'] = new stdClass();
+var_dump($y['a2']);
+$y['a2']->b = 'some value';
+var_dump($y['a2']);
+
+error_reporting(E_ALL & ~E_NOTICE);
+$items = new ArrayObject();
+unset($items[0]);
+unset($items[0][0]);
+echo "unset-ok\n";
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("offsetSet('a1')\noffsetGet('a1')\nobject(stdClass)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("offsetGet('a1')\noffsetGet('a1')\nobject(stdClass)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("offsetSet('a2')\noffsetGet('a2')\nobject(stdClass)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("offsetGet('a2')\noffsetGet('a2')\nobject(stdClass)#"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.matches("string(10) \"some value\"").count() >= 2,
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("unset-ok\n"), "{stdout}");
+    assert!(!stdout.contains("Warning: Undefined array key"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_array_as_props_declared_property_precedence_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-array-as-props-declared-precedence");
     fs::create_dir_all(&root).unwrap();
@@ -11567,6 +11657,52 @@ exerciseStorage("CollidingHashStorage", new CollidingHashStorage(), $first, $sec
 }
 
 #[test]
+fn compile_spl_object_storage_unserialize_clones_reference_info_to_native_binary() {
+    let root = temp_dir("ptn-native-spl-storage-unserialize-reference-info");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("spl-storage-unserialize-reference-info.php");
+    let output = root.join("spl-storage-unserialize-reference-info-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$storage = new SplObjectStorage();
+$info = 1;
+$object = new stdClass();
+$pair = [$object, &$info];
+$storage->__unserialize([$pair, []]);
+var_dump($storage[$object]);
+$value = $storage[$object];
+$value = 123;
+var_dump($storage[$object]);
+$serialized = $storage->__serialize();
+var_dump(count($serialized[0]), $serialized[0][0] === $object, $serialized[0][1]);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "int(1)\n",
+            "int(1)\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "int(1)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_object_storage_and_heaps_to_native_binary() {
     let root = temp_dir("ptn-native-spl-storage-heaps");
     fs::create_dir_all(&root).unwrap();
@@ -11649,11 +11785,13 @@ echo serialize($queue), "\n";
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         concat!(
+            "\nDeprecated: Method SplObjectStorage::contains() is deprecated since 8.5, use method SplObjectStorage::offsetExists() instead in ptn on line 7\n",
             "bool(true)\n",
             "string(3) \"two\"\n",
             "int(2)\n",
             "0:one:stdClass\n",
             "1:two:stdClass\n",
+            "\nDeprecated: Method SplObjectStorage::contains() is deprecated since 8.5, use method SplObjectStorage::offsetExists() instead in ptn on line 12\n",
             "int(1)\n",
             "bool(false)\n",
             "int(0)\n",
