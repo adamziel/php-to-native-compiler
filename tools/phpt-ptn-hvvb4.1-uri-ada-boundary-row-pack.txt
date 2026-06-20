@@ -1,0 +1,35 @@
+# Focused Ada-backed URI boundary PHPT evidence for ptn-hvvb4.1.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Run:
+#   tools/run-phpt-manifest.sh tools/phpt-ptn-hvvb4.1-uri-ada-boundary-row-pack.txt
+#
+# This pack covers WHATWG URL behavior that PTN routes through vendored Ada:
+# host normalization, IDNA conversion, path normalization, and component
+# percent encoding. RFC3986-only rows stay in
+# tools/phpt-uri-rfc3986-parse-mod-manifest.txt and continue to use PTN's
+# explicitly bounded local RFC3986 helpers.
+
+# bucket: WHATWG host type and normalization rows=4
+ext/uri/tests/whatwg/getters/host_type_success_domain.phpt
+ext/uri/tests/whatwg/getters/host_type_success_ipv4.phpt
+ext/uri/tests/whatwg/getters/host_type_success_ipv6.phpt
+ext/uri/tests/whatwg/parsing/host_success_ipv4_wrong.phpt
+
+# bucket: WHATWG IDNA rows=2
+ext/uri/tests/whatwg/modification/host_success_idna.phpt
+ext/uri/tests/whatwg/parsing/host_success_multibyte.phpt
+
+# bucket: WHATWG path normalization and encoding rows=4
+ext/uri/tests/whatwg/modification/path_success_auto_encoded.phpt
+ext/uri/tests/whatwg/modification/path_success_unicode.phpt
+ext/uri/tests/whatwg/parsing/path_success_multibyte.phpt
+ext/uri/tests/whatwg/parsing/path_success_percent_encode_set2.phpt
+
+# bucket: WHATWG userinfo/query/fragment percent-encoding rows=6
+ext/uri/tests/whatwg/modification/fragment_success_auto_encode.phpt
+ext/uri/tests/whatwg/modification/password_success_auto_encoded.phpt
+ext/uri/tests/whatwg/modification/query_success_auto_encoded.phpt
+ext/uri/tests/whatwg/modification/query_success_context_sensitive_reserved.phpt
+ext/uri/tests/whatwg/modification/username_success_auto_encoded.phpt
+ext/uri/tests/whatwg/parsing/username_success_percent_encode_set.phpt

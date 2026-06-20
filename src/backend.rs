@@ -21361,7 +21361,10 @@ fn collect_value_runtime_requirements(
             if name.eq_ignore_ascii_case("parse") || is_uri_whatwg_url_method_name(name) {
                 requirements.internal_function_dispatch = true;
             }
-            if is_uri_whatwg_url_method_name(name) {
+            if is_uri_whatwg_url_method_name(name)
+                && (value_expr_returns_uri_whatwg_url(receiver)
+                    || is_uri_whatwg_url_specific_method_name(name))
+            {
                 requirements.ada_url = true;
             }
             if name.eq_ignore_ascii_case("__invoke") {
@@ -21675,6 +21678,39 @@ fn is_uri_whatwg_url_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("withPath")
         || name.eq_ignore_ascii_case("withQuery")
         || name.eq_ignore_ascii_case("withFragment")
+}
+
+fn is_uri_whatwg_url_specific_method_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("toAsciiString")
+        || name.eq_ignore_ascii_case("toUnicodeString")
+        || name.eq_ignore_ascii_case("isSpecialScheme")
+        || name.eq_ignore_ascii_case("getUnicodeHost")
+        || name.eq_ignore_ascii_case("getHostType")
+        || name.eq_ignore_ascii_case("withUsername")
+        || name.eq_ignore_ascii_case("withPassword")
+}
+
+fn is_uri_whatwg_url_fluent_method_name(name: &str) -> bool {
+    name.eq_ignore_ascii_case("withScheme")
+        || name.eq_ignore_ascii_case("withUsername")
+        || name.eq_ignore_ascii_case("withPassword")
+        || name.eq_ignore_ascii_case("withHost")
+        || name.eq_ignore_ascii_case("withPort")
+        || name.eq_ignore_ascii_case("withPath")
+        || name.eq_ignore_ascii_case("withQuery")
+        || name.eq_ignore_ascii_case("withFragment")
+}
+
+fn value_expr_returns_uri_whatwg_url(expr: &ValueExpr) -> bool {
+    match expr {
+        ValueExpr::NewObject { class_name, .. } => is_uri_whatwg_url_class_name(class_name),
+        ValueExpr::InternalCall { name, .. } => is_uri_whatwg_url_static_call_name(name),
+        ValueExpr::MethodCall { receiver, name, .. } => {
+            value_expr_returns_uri_whatwg_url(receiver)
+                && is_uri_whatwg_url_fluent_method_name(name)
+        }
+        _ => false,
+    }
 }
 
 fn is_generated_user_function_call(name: &str, functions: &[FunctionDecl]) -> bool {
@@ -39137,6 +39173,24 @@ mod tests {
             "#define PTN_USE_ADA_URL 1\nint main(void) { return 0; }\n"
         ));
         assert!(!c_source_uses_ada_url("int main(void) { return 0; }\n"));
+    }
+
+    #[test]
+    fn generated_c_uses_ada_only_for_whatwg_uri_surface() {
+        let whatwg_program = parser::parse(
+            "<?php echo (new Uri\\WhatWg\\Url(\"https://example.com/\"))->toAsciiString();",
+        )
+        .unwrap();
+        let whatwg_c = emit_c(&ir::lower(&whatwg_program));
+        assert!(whatwg_c.contains("#define PTN_USE_ADA_URL 1\n"));
+        assert!(whatwg_c.contains("ptn_uri_ada_parse_whatwg"));
+
+        let rfc3986_program = parser::parse(
+            "<?php echo (new Uri\\Rfc3986\\Uri(\"https://example.com/\"))->toString();",
+        )
+        .unwrap();
+        let rfc3986_c = emit_c(&ir::lower(&rfc3986_program));
+        assert!(!rfc3986_c.contains("#define PTN_USE_ADA_URL 1\n"));
     }
 
     #[test]

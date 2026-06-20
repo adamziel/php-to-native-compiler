@@ -18767,6 +18767,12 @@ static int ptn_uri_validate_parsed_data(const PtnUriData *data) {
     return 1;
 }
 
+/*
+ * Bounded local RFC3986 parser used only for Uri\Rfc3986\Uri and the
+ * parse_url() compatibility surface below. WHATWG URL semantics are owned by
+ * the Ada boundary in ptn_uri_parse_whatwg() and must not be reimplemented
+ * here.
+ */
 static int ptn_uri_parse(PtnStringOperand input, PtnUriData **result_out) {
     if (!ptn_uri_ascii_clean(input.data, input.len)) {
         return 0;
@@ -19955,6 +19961,7 @@ static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t
     result->path = encoded;
 }
 
+/* WHATWG URL parsing and normalization crosses the Ada URL boundary. */
 static int ptn_uri_parse_whatwg(PtnStringOperand input, PtnUriData **result_out, const char **reason_out) {
 #ifdef PTN_USE_ADA_URL
     return ptn_uri_ada_parse_whatwg(input, result_out, reason_out);
@@ -21543,6 +21550,41 @@ static PtnValue ptn_internal_parse_url(PtnRuntime *runtime, size_t argc, const P
     return result;
 }
 
+static PTN_UNUSED PtnValue ptn_uri_whatwg_url_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_uri_new(runtime, "Uri\\WhatWg\\Url", argc, args, line);
+}
+
+static PtnValue ptn_uri_whatwg_url_static_parse(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_uri_parse_static(runtime, "Uri\\WhatWg\\Url", argc, args, line);
+}
+
+static PTN_UNUSED PtnValue ptn_uri_whatwg_url_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_uri_call_method(runtime, receiver, name, argc, args, line);
+}
+
+#if 0
+/*
+ * Historical local WHATWG parser. Kept disabled as audit context only:
+ * Uri\WhatWg\Url must cross the Ada URL boundary through PtnUriData above.
+ * Do not revive or extend this block for compatibility rows.
+ */
 typedef enum {
     PTN_URI_ENCODE_USERINFO,
     PTN_URI_ENCODE_PATH,
@@ -23105,6 +23147,7 @@ static PTN_UNUSED PtnValue ptn_uri_whatwg_url_call_method(
     ptn_throw_exception(runtime, "Error", "Call to undefined method");
     return ptn_null();
 }
+#endif
 
 static char *ptn_parse_str_mangle_name(const char *input, size_t len, size_t *output_len_out) {
     char *output = malloc(len + 1);

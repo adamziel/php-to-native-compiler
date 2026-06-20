@@ -56942,7 +56942,9 @@ try {
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("#define PTN_USE_ADA_URL 1\n"));
 
     let execution = Command::new(&output).output().unwrap();
     assert!(
@@ -56995,6 +56997,9 @@ var_dump($url->withPath("foo#bar")->toAsciiString());
 var_dump(Uri\WhatWg\Url::parse("https://example.com/")->withPath("/p^th#")->toAsciiString());
 var_dump(Uri\WhatWg\Url::parse("https://example.com/foo\"/<bar>/^{baz}")->getPath());
 var_dump($url->withUsername("u:s/r")->toAsciiString());
+$idna = Uri\WhatWg\Url::parse("https://\xC3\xA9x\xC3\xA4mple.com/");
+var_dump($idna->getAsciiHost());
+var_dump(bin2hex($idna->getUnicodeHost()));
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
 var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
@@ -57012,7 +57017,9 @@ try {
     )
     .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("#define PTN_USE_ADA_URL 1\n"));
 
     let execution = Command::new(&output).output().unwrap();
     assert!(
@@ -57033,6 +57040,8 @@ try {
             "string(27) \"https://example.com/p^th%23\"\n",
             "string(28) \"/foo%22/%3Cbar%3E/^%7Bbaz%7D\"\n",
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
+            "string(19) \"xn--xmple-gra7a.com\"\n",
+            "string(26) \"c3a978c3a46d706c652e636f6d\"\n",
             "bool(true)\n",
             "bool(true)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
