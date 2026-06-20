@@ -5478,6 +5478,27 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "UConverter")
+        && ptn_internal_class_method_exists("UConverter", name)
+    ) {
+        return ptn_intl_uconverter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "MessageFormatter")
+        && ptn_internal_class_method_exists("MessageFormatter", name)
+    ) {
+        return ptn_intl_message_formatter_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "ResourceBundle")
+        && ptn_internal_class_method_exists("ResourceBundle", name)
+    ) {
+        return ptn_intl_resource_bundle_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && (ptn_object_is_internal_or_descendant(receiver, "DateTime") ||
             ptn_object_is_internal_or_descendant(receiver, "DateTimeImmutable"))
         && (ptn_internal_class_method_exists("DateTime", name) ||

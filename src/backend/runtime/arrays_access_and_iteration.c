@@ -1020,7 +1020,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_internal_class_name_is_number_formatter(lookup_class_name) ||
         ptn_internal_class_name_is_collator(lookup_class_name) ||
         ptn_internal_class_name_is_spoofchecker(lookup_class_name) ||
-        ptn_internal_class_name_is_uconverter(lookup_class_name)) {
+        ptn_internal_class_name_is_uconverter(lookup_class_name) ||
+        ptn_internal_class_name_is_message_formatter(lookup_class_name) ||
+        ptn_internal_class_name_is_resource_bundle(lookup_class_name)) {
         return ptn_intl_plain_object_new(runtime, lookup_class_name, argc, args, line);
     }
     if (ptn_internal_class_name_is_reflection_property(lookup_class_name)) {

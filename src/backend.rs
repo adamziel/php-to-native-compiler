@@ -942,6 +942,10 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"ResourceBundle\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
+    out.push_str("            ptn_ascii_case_equal(interface_name, \"Countable\");\n");
+    out.push_str("    }\n");
     out.push_str(
         "    if (ptn_ascii_case_equal(class_name, \"DateTime\") || ptn_ascii_case_equal(class_name, \"DateTimeImmutable\")) {\n",
     );
@@ -5359,6 +5363,8 @@ fn emit_class_metadata_helpers(
         "Collator",
         "Spoofchecker",
         "UConverter",
+        "MessageFormatter",
+        "ResourceBundle",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -5822,6 +5828,8 @@ fn emit_class_metadata_helpers(
         "Collator",
         "Spoofchecker",
         "UConverter",
+        "MessageFormatter",
+        "ResourceBundle",
         "DOMNode",
         "DOMDocument",
         "DOMDocumentFragment",
@@ -14029,6 +14037,8 @@ fn modeled_intl_internal_class_name(name: &str) -> Option<&'static str> {
         "collator" => Some("Collator"),
         "spoofchecker" => Some("Spoofchecker"),
         "uconverter" => Some("UConverter"),
+        "messageformatter" => Some("MessageFormatter"),
+        "resourcebundle" => Some("ResourceBundle"),
         _ => None,
     }
 }
@@ -15254,6 +15264,21 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_spoofchecker(class_name)) {\n");
     out.push_str(
         "        return ptn_intl_spoofchecker_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_uconverter(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_uconverter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_message_formatter(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_message_formatter_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_resource_bundle(class_name)) {\n");
+    out.push_str(
+        "        return ptn_intl_resource_bundle_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
@@ -21455,6 +21480,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("Collator")
                 || class_name.eq_ignore_ascii_case("Spoofchecker")
                 || class_name.eq_ignore_ascii_case("UConverter")
+                || class_name.eq_ignore_ascii_case("MessageFormatter")
+                || class_name.eq_ignore_ascii_case("ResourceBundle")
                 || class_name.eq_ignore_ascii_case("DOMNode")
                 || class_name.eq_ignore_ascii_case("DOMDocument")
                 || class_name.eq_ignore_ascii_case("DOMDocumentFragment")

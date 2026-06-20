@@ -1633,6 +1633,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_number_formatter(const char *cl
 static PTN_UNUSED int ptn_internal_class_name_is_collator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spoofchecker(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_uconverter(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_message_formatter(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_resource_bundle(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_dom(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_reader(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_xml_writer(const char *class_name);
@@ -2486,6 +2488,30 @@ static PTN_UNUSED PtnValue ptn_intl_collator_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_intl_spoofchecker_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_uconverter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_message_formatter_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_intl_resource_bundle_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,
