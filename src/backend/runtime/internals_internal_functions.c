@@ -80801,6 +80801,9 @@ static PtnValue ptn_reflection_class_constant_throw_missing(
     PtnRuntime *runtime,
     const char *class_name,
     const char *constant_name,
+    const char *trace_name,
+    size_t argc,
+    const PtnValue *args,
     size_t line
 ) {
     int needed = snprintf(NULL, 0, "Constant %s::%s does not exist", class_name, constant_name);
@@ -80812,12 +80815,17 @@ static PtnValue ptn_reflection_class_constant_throw_missing(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Constant %s::%s does not exist", class_name, constant_name);
-    ptn_throw_exception_owned_message_at(
+    ptn_throw_exception_owned_message_at_with_trace_frame(
         runtime,
         "ReflectionException",
         message,
         runtime->source_path,
-        line
+        line,
+        trace_name,
+        runtime->source_path,
+        line,
+        argc,
+        args
     );
     return ptn_null();
 }
@@ -80896,6 +80904,9 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_new(
         runtime,
         resolved_class_name,
         constant_name,
+        "ReflectionClassConstant->__construct",
+        argc,
+        args,
         line
     );
     free(class_name);
@@ -90323,6 +90334,16 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
     if (context_written < 0 || (size_t)context_written >= sizeof(context)) {
         ptn_abort_out_of_memory();
     }
+    char trace_context[80];
+    int trace_context_written = snprintf(
+        trace_context,
+        sizeof(trace_context),
+        "%s->__construct",
+        reflection_class_name
+    );
+    if (trace_context_written < 0 || (size_t)trace_context_written >= sizeof(trace_context)) {
+        ptn_abort_out_of_memory();
+    }
     char *class_name = ptn_reflection_enum_resolved_class_name(
         runtime,
         context,
@@ -90350,6 +90371,9 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
             runtime,
             class_name,
             case_name,
+            trace_context,
+            argc,
+            args,
             line
         );
         free(class_name);

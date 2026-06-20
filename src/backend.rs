@@ -13681,6 +13681,7 @@ fn class_property_exists_chain<'a>(
         class: &'a ClassDecl,
         classes: &'a [ClassDecl],
         seen_classes: &mut HashSet<String>,
+        seen_properties: &mut HashSet<&'a str>,
         properties: &mut Vec<ClassPropertyExistsEntry<'a>>,
     ) {
         let lookup_name = class.name.to_ascii_lowercase();
@@ -13741,19 +13742,32 @@ fn class_property_exists_chain<'a>(
             )
         }));
         class_properties.sort_by_key(|(source_order, _)| *source_order);
-        properties.extend(class_properties.into_iter().map(|(_, property)| property));
+        properties.extend(class_properties.into_iter().filter_map(|(_, property)| {
+            if seen_properties.insert(property.name) {
+                Some(property)
+            } else {
+                None
+            }
+        }));
 
         let Some(parent_name) = &class.parent_name else {
             return;
         };
         if let Some(parent) = class_by_name(classes, parent_name) {
-            collect(parent, classes, seen_classes, properties);
+            collect(parent, classes, seen_classes, seen_properties, properties);
         }
     }
 
     let mut properties = Vec::new();
     let mut seen_classes = HashSet::new();
-    collect(class, classes, &mut seen_classes, &mut properties);
+    let mut seen_properties = HashSet::new();
+    collect(
+        class,
+        classes,
+        &mut seen_classes,
+        &mut seen_properties,
+        &mut properties,
+    );
     properties
 }
 
