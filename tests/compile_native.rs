@@ -11626,6 +11626,94 @@ var_dump(unserialize($encoded));
 }
 
 #[test]
+fn compile_unserialize_allowed_classes_options_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-allowed-classes-options");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-allowed-classes-options.php");
+    let output = root.join("unserialize-allowed-classes-options-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class Foo {
+    public $x = "bar";
+}
+class Name {
+    public function __toString(): string { return "Foo"; }
+}
+
+$payload = serialize([new Foo(), 2]);
+function decoded_class($payload, $options) {
+    $value = unserialize($payload, $options);
+    echo get_class($value[0]), "\n";
+}
+
+decoded_class($payload, ["allowed_classes" => false]);
+decoded_class($payload, ["allowed_classes" => true]);
+decoded_class($payload, ["allowed_classes" => ["bar"]]);
+decoded_class($payload, ["allowed_classes" => ["FOO"]]);
+decoded_class($payload, ["allowed_classes" => [new Name()]]);
+
+foreach ([null, 0, 1] as $option) {
+    try {
+        unserialize($payload, ["allowed_classes" => $option]);
+    } catch (Throwable $e) {
+        echo get_class($e), ": ", $e->getMessage(), "\n";
+    }
+}
+try {
+    unserialize($payload, ["allowed_classes" => [new stdClass()]]);
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+try {
+    unserialize($payload, ["allowed_classes" => ["bad name"]]);
+} catch (Throwable $e) {
+    echo get_class($e), ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("__PHP_Incomplete_Class\nFoo\n__PHP_Incomplete_Class\nFoo\nFoo\n"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "TypeError: unserialize(): Option \"allowed_classes\" must be of type array|bool, null given"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "TypeError: unserialize(): Option \"allowed_classes\" must be of type array|bool, int given"
+        ),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Error: Object of class stdClass could not be converted to string"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "ValueError: unserialize(): Option \"allowed_classes\" must be an array of class names, \"bad name\" given"
+        ),
+        "{stdout}"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_object_unserialize_preserves_iterator_class_to_native_binary() {
     let root = temp_dir("ptn-native-array-object-iterator-class-unserialize");
     fs::create_dir_all(&root).unwrap();
