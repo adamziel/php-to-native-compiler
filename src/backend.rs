@@ -6210,6 +6210,7 @@ fn emit_class_metadata_helpers(
         "BcMath\\Number",
         "WeakMap",
         "WeakReference",
+        "XMLParser",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
@@ -17238,14 +17239,22 @@ fn emit_class_declaration_validation(
         out.push_str("        if (ptn_declared_class_is_final(");
         out.push_str(&parent_temp);
         out.push_str(")) {\n");
-        out.push_str("            char final_parent_message[1024];\n");
-        out.push_str(
-            "            snprintf(final_parent_message, sizeof(final_parent_message), \"Class ",
-        );
-        out.push_str(&c_string(&class.name));
-        out.push_str(" cannot extend final class %s\", ");
-        out.push_str(&parent_temp);
-        out.push_str(");\n");
+        if let Some(canonical_parent_name) = modeled_internal_class_name(parent_name) {
+            out.push_str("            const char *final_parent_message = \"Class ");
+            out.push_str(&c_string(&class.name));
+            out.push_str(" cannot extend final class ");
+            out.push_str(&c_string(canonical_parent_name));
+            out.push_str("\";\n");
+        } else {
+            out.push_str("            char final_parent_message[1024];\n");
+            out.push_str(
+                "            snprintf(final_parent_message, sizeof(final_parent_message), \"Class ",
+            );
+            out.push_str(&c_string(&class.name));
+            out.push_str(" cannot extend final class %s\", ");
+            out.push_str(&parent_temp);
+            out.push_str(");\n");
+        }
         out.push_str("            ptn_emit_fatal_error_at(&runtime, final_parent_message, \"");
         out.push_str(&c_string(source_path));
         out.push_str("\", ");

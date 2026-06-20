@@ -27212,6 +27212,77 @@ var_dump(fclose($last));\n",
 }
 
 #[test]
+fn compile_xml_parser_object_swap_and_reader_expand_to_native_binary() {
+    let root = temp_dir("ptn-native-xml-parser-object-swap-reader-expand");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xml-parser-object-swap-reader-expand.php");
+    let output = root.join("xml-parser-object-swap-reader-expand-bin");
+    fs::write(
+        &input,
+        "<?php
+class A {
+    public function start_element($parser, $name, $attributes) {
+        echo \"A::start_element($name)\\n\";
+    }
+    public function end_element($parser, $name) {
+        echo \"A::end_element($name)\\n\";
+    }
+}
+
+class B {
+    public function start_element($parser, $name, $attributes) {
+        echo \"B::start_element($name)\\n\";
+    }
+}
+
+$parser = xml_parser_create();
+xml_set_object($parser, new A());
+xml_set_element_handler($parser, \"start_element\", \"end_element\");
+try {
+    xml_set_object($parser, new B());
+} catch (Throwable $exception) {
+    echo $exception::class, ': ', $exception->getMessage(), \"\\n\";
+}
+
+try {
+    serialize(xml_parser_create());
+} catch (Throwable $exception) {
+    echo $exception->getMessage(), \"\\n\";
+}
+
+$dom = new DOMDocument();
+$dom->loadXML('<books><book>base book</book></books>');
+$reader = new XMLReader();
+$reader->XML('<books><book>new book</book></books>');
+while ($reader->read()) {
+    if ($reader->localName === 'book') {
+        $node = $reader->expand($dom);
+        echo $node->ownerDocument->documentElement->firstChild->textContent, \"\\n\";
+        break;
+    }
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains(
+        "ValueError: xml_set_object(): Argument #2 ($object) cannot safely swap to object of class B as method \"end_element\" does not exist, which was set via xml_set_element_handler()\n"
+    ));
+    assert!(stdout.contains("Serialization of 'XMLParser' is not allowed\n"));
+    assert!(stdout.ends_with("base book\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("XMLParser"));
+    assert!(c_source.contains("ptn_xml_reader_call_method"));
+}
+
+#[test]
 fn compile_libxml_xml_dom_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-xml-dom-boundary");
     fs::create_dir_all(&root).unwrap();

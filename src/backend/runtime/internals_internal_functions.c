@@ -6486,7 +6486,8 @@ static int ptn_serialize_append_value_with_id(
                 return 0;
             }
             if (ptn_internal_class_name_is_weak_reference(value.as.object->class_name) ||
-                ptn_internal_class_name_is_weak_map(value.as.object->class_name)) {
+                ptn_internal_class_name_is_weak_map(value.as.object->class_name) ||
+                ptn_internal_class_name_is_xml_parser(value.as.object->class_name)) {
                 char message[96];
                 int written = snprintf(
                     message,
@@ -72131,6 +72132,31 @@ static PTN_UNUSED PtnValue ptn_xml_reader_call_method(PtnRuntime *runtime, PtnVa
             ptn_emit_spaced_warning(&runtime->diagnostics, "XMLReader::expand(): An Error Occurred while expanding", line);
             return ptn_bool(0);
         }
+        if (argc == 1 && ptn_value_deref(args[0]).type != PTN_NULL) {
+            PtnXmlNode *base_node = ptn_xml_node_data(args[0]);
+            if (base_node == NULL) {
+                PtnValue resolved = ptn_value_deref(args[0]);
+                const char *given = resolved.type == PTN_OBJECT ? resolved.as.object->class_name : ptn_offset_container_type_name(resolved);
+                char message[160];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "XMLReader::expand(): Argument #1 ($baseNode) must be of type ?DOMNode, %s given",
+                    given
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
+                ptn_throw_exception(runtime, "TypeError", message);
+                return ptn_null();
+            }
+            PtnXmlNode *target_doc = base_node->type == PTN_XML_NODE_DOCUMENT
+                ? base_node
+                : ptn_xml_document_for_node(base_node);
+            PtnXmlNode *clone = ptn_xml_clone_node_recursive(runtime, node, 1);
+            ptn_xml_set_owner_document_recursive(clone, target_doc);
+            return ptn_xml_node_value(clone);
+        }
         return ptn_xml_node_value(node);
     }
     if (ptn_ascii_case_equal(name, "close")) {
@@ -72371,13 +72397,17 @@ static void ptn_xml_parser_throw_handler_value_error(
     ptn_throw_exception(runtime, "ValueError", message);
 }
 
-static int ptn_xml_parser_object_string_handler_is_valid(PtnRuntime *runtime, PtnXmlParserData *data, PtnValue handler) {
+static int ptn_xml_parser_object_string_handler_is_valid_for_object(PtnRuntime *runtime, PtnValue object, PtnValue handler) {
     PtnValue callback = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_set_entry(callback.as.array, ptn_array_int_key(0), ptn_value_clone(data->callback_object));
+    ptn_array_set_entry(callback.as.array, ptn_array_int_key(0), ptn_value_clone_deref(object));
     ptn_array_set_entry(callback.as.array, ptn_array_int_key(1), ptn_value_clone_deref(handler));
     int valid = ptn_callable_is_valid(runtime, callback, 0);
     ptn_value_destroy(&callback);
     return valid;
+}
+
+static int ptn_xml_parser_object_string_handler_is_valid(PtnRuntime *runtime, PtnXmlParserData *data, PtnValue handler) {
+    return ptn_xml_parser_object_string_handler_is_valid_for_object(runtime, data->callback_object, handler);
 }
 
 static int ptn_xml_parser_validate_handler(
@@ -72387,14 +72417,20 @@ static int ptn_xml_parser_validate_handler(
     size_t position,
     const char *parameter_name,
     PtnValue handler,
-    size_t line
+    size_t line,
+    int *non_callable_string_deprecation_emitted
 ) {
     PtnValue deref = ptn_value_deref(handler);
     if (deref.type == PTN_NULL) {
         return 1;
     }
     if (deref.type == PTN_STRING && deref.as.string.len == 0) {
-        ptn_xml_parser_emit_non_callable_string_deprecation(runtime, function_name, line);
+        if (non_callable_string_deprecation_emitted == NULL || !*non_callable_string_deprecation_emitted) {
+            ptn_xml_parser_emit_non_callable_string_deprecation(runtime, function_name, line);
+            if (non_callable_string_deprecation_emitted != NULL) {
+                *non_callable_string_deprecation_emitted = 1;
+            }
+        }
         return 1;
     }
     if (deref.type == PTN_STRING) {
@@ -72404,7 +72440,12 @@ static int ptn_xml_parser_validate_handler(
         if (runtime->exceptions->active_exception != NULL) {
             return 0;
         }
-        ptn_xml_parser_emit_non_callable_string_deprecation(runtime, function_name, line);
+        if (non_callable_string_deprecation_emitted == NULL || !*non_callable_string_deprecation_emitted) {
+            ptn_xml_parser_emit_non_callable_string_deprecation(runtime, function_name, line);
+            if (non_callable_string_deprecation_emitted != NULL) {
+                *non_callable_string_deprecation_emitted = 1;
+            }
+        }
         if (!data->has_callback_object) {
             ptn_xml_parser_throw_handler_value_error(
                 runtime,
@@ -72451,6 +72492,27 @@ static int ptn_xml_parser_validate_handler(
     return 0;
 }
 
+static int ptn_xml_parser_validate_handler_default(
+    PtnRuntime *runtime,
+    PtnXmlParserData *data,
+    const char *function_name,
+    size_t position,
+    const char *parameter_name,
+    PtnValue handler,
+    size_t line
+) {
+    return ptn_xml_parser_validate_handler(
+        runtime,
+        data,
+        function_name,
+        position,
+        parameter_name,
+        handler,
+        line,
+        NULL
+    );
+}
+
 static void ptn_xml_parser_set_handler_slot(PtnValue *slot, int *has_slot, PtnValue value) {
     if (*has_slot) {
         ptn_value_destroy(slot);
@@ -72464,14 +72526,77 @@ static void ptn_xml_parser_set_handler_slot(PtnValue *slot, int *has_slot, PtnVa
     *has_slot = 1;
 }
 
+static int ptn_xml_parser_validate_object_swap_handler(
+    PtnRuntime *runtime,
+    PtnValue object,
+    PtnValue handler,
+    int has_handler,
+    const char *setter_name
+) {
+    if (!has_handler) {
+        return 1;
+    }
+    PtnValue deref = ptn_value_deref(handler);
+    if (deref.type != PTN_STRING || deref.as.string.len == 0) {
+        return 1;
+    }
+    if (ptn_callable_is_valid(runtime, deref, 0)) {
+        return 1;
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    if (ptn_xml_parser_object_string_handler_is_valid_for_object(runtime, object, deref)) {
+        return 1;
+    }
+    if (runtime->exceptions->active_exception != NULL) {
+        return 0;
+    }
+    char *method_name = ptn_value_to_string(deref);
+    PtnValue resolved_object = ptn_value_deref(object);
+    const char *class_name = resolved_object.type == PTN_OBJECT && resolved_object.as.object != NULL
+        ? resolved_object.as.object->class_name
+        : ptn_xml_parser_value_type_name(resolved_object);
+    char message[320];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "xml_set_object(): Argument #2 ($object) cannot safely swap to object of class %s as method \"%s\" does not exist, which was set via %s()",
+        class_name,
+        method_name,
+        setter_name
+    );
+    free(method_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "ValueError", message);
+    return 0;
+}
+
+static int ptn_xml_parser_validate_object_swap(PtnRuntime *runtime, PtnXmlParserData *data, PtnValue object) {
+    return
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->start_handler, data->has_start_handler, "xml_set_element_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->end_handler, data->has_end_handler, "xml_set_element_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->character_handler, data->has_character_handler, "xml_set_character_data_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->processing_instruction_handler, data->has_processing_instruction_handler, "xml_set_processing_instruction_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->default_handler, data->has_default_handler, "xml_set_default_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->external_entity_ref_handler, data->has_external_entity_ref_handler, "xml_set_external_entity_ref_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->start_namespace_decl_handler, data->has_start_namespace_decl_handler, "xml_set_start_namespace_decl_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->end_namespace_decl_handler, data->has_end_namespace_decl_handler, "xml_set_end_namespace_decl_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->notation_decl_handler, data->has_notation_decl_handler, "xml_set_notation_decl_handler") &&
+        ptn_xml_parser_validate_object_swap_handler(runtime, object, data->unparsed_entity_decl_handler, data->has_unparsed_entity_decl_handler, "xml_set_unparsed_entity_decl_handler");
+}
+
 static PtnValue ptn_internal_xml_set_element_handler(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
     PtnXmlParserData *data = ptn_xml_parser_expect_arg(runtime, "xml_set_element_handler", args[0], line);
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 2, "start_handler", args[1], line) ||
-        !ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 3, "end_handler", args[2], line)) {
+    int non_callable_string_deprecation_emitted = 0;
+    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 2, "start_handler", args[1], line, &non_callable_string_deprecation_emitted) ||
+        !ptn_xml_parser_validate_handler(runtime, data, "xml_set_element_handler", 3, "end_handler", args[2], line, &non_callable_string_deprecation_emitted)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->start_handler, &data->has_start_handler, args[1]);
@@ -72485,7 +72610,7 @@ static PtnValue ptn_internal_xml_set_character_data_handler(PtnRuntime *runtime,
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_character_data_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_character_data_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->character_handler, &data->has_character_handler, args[1]);
@@ -72498,7 +72623,7 @@ static PtnValue ptn_internal_xml_set_processing_instruction_handler(PtnRuntime *
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_processing_instruction_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_processing_instruction_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->processing_instruction_handler, &data->has_processing_instruction_handler, args[1]);
@@ -72511,7 +72636,7 @@ static PtnValue ptn_internal_xml_set_default_handler(PtnRuntime *runtime, size_t
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_default_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_default_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->default_handler, &data->has_default_handler, args[1]);
@@ -72524,7 +72649,7 @@ static PtnValue ptn_internal_xml_set_external_entity_ref_handler(PtnRuntime *run
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_external_entity_ref_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_external_entity_ref_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->external_entity_ref_handler, &data->has_external_entity_ref_handler, args[1]);
@@ -72537,7 +72662,7 @@ static PtnValue ptn_internal_xml_set_start_namespace_decl_handler(PtnRuntime *ru
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_start_namespace_decl_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_start_namespace_decl_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->start_namespace_decl_handler, &data->has_start_namespace_decl_handler, args[1]);
@@ -72550,7 +72675,7 @@ static PtnValue ptn_internal_xml_set_end_namespace_decl_handler(PtnRuntime *runt
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_end_namespace_decl_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_end_namespace_decl_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->end_namespace_decl_handler, &data->has_end_namespace_decl_handler, args[1]);
@@ -72563,7 +72688,7 @@ static PtnValue ptn_internal_xml_set_notation_decl_handler(PtnRuntime *runtime, 
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_notation_decl_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_notation_decl_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->notation_decl_handler, &data->has_notation_decl_handler, args[1]);
@@ -72576,7 +72701,7 @@ static PtnValue ptn_internal_xml_set_unparsed_entity_decl_handler(PtnRuntime *ru
     if (data == NULL) {
         return ptn_null();
     }
-    if (!ptn_xml_parser_validate_handler(runtime, data, "xml_set_unparsed_entity_decl_handler", 2, "handler", args[1], line)) {
+    if (!ptn_xml_parser_validate_handler_default(runtime, data, "xml_set_unparsed_entity_decl_handler", 2, "handler", args[1], line)) {
         return ptn_null();
     }
     ptn_xml_parser_set_handler_slot(&data->unparsed_entity_decl_handler, &data->has_unparsed_entity_decl_handler, args[1]);
@@ -72600,6 +72725,9 @@ static PtnValue ptn_internal_xml_set_object(PtnRuntime *runtime, size_t argc, co
     }
     PtnValue object = ptn_value_deref(args[1]);
     if (object.type == PTN_OBJECT) {
+        if (!ptn_xml_parser_validate_object_swap(runtime, data, object)) {
+            return ptn_null();
+        }
         data->callback_object = ptn_value_clone_deref(args[1]);
         data->has_callback_object = 1;
     }
@@ -73119,9 +73247,15 @@ static PtnValue ptn_xml_parser_attributes_value(PtnXmlParserData *parser, const 
     return result;
 }
 
-static PtnValue ptn_xml_parser_resolved_callback(PtnXmlParserData *parser, PtnValue handler) {
+static PtnValue ptn_xml_parser_resolved_callback(PtnRuntime *runtime, PtnXmlParserData *parser, PtnValue handler) {
     PtnValue deref = ptn_value_deref(handler);
     if (parser->has_callback_object && deref.type == PTN_STRING) {
+        if (ptn_callable_is_valid(runtime, deref, 0)) {
+            return ptn_value_clone_deref(handler);
+        }
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
         PtnValue callback = ptn_array_from_literal_entries(0, NULL);
         ptn_array_set_entry(callback.as.array, ptn_array_int_key(0), ptn_value_clone(parser->callback_object));
         ptn_array_set_entry(callback.as.array, ptn_array_int_key(1), ptn_value_clone(deref));
@@ -73131,7 +73265,11 @@ static PtnValue ptn_xml_parser_resolved_callback(PtnXmlParserData *parser, PtnVa
 }
 
 static int ptn_xml_parser_call_handler(PtnRuntime *runtime, PtnXmlParserData *parser, PtnValue handler, size_t argc, PtnValue *args, size_t line) {
-    PtnValue callback = ptn_xml_parser_resolved_callback(parser, handler);
+    PtnValue callback = ptn_xml_parser_resolved_callback(runtime, parser, handler);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_value_destroy(&callback);
+        return 0;
+    }
     PtnValue result = ptn_internal_call_callback(runtime, callback, argc, args, line);
     ptn_value_destroy(&result);
     ptn_value_destroy(&callback);
