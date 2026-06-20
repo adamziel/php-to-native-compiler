@@ -56720,6 +56720,7 @@ var_dump($changed->toString());
 var_dump($changed->getHost());
 var_dump($changed->getFragment());
 var_dump(Uri\Rfc3986\Uri::parse("\xF0\x9F\x90\x98"));
+var_dump(Uri\Rfc3986\Uri::parse("http://bad host"));
 try {
     new Uri\Rfc3986\Uri("https://ex\xE1mple.com");
 } catch (Throwable $e) {
@@ -56762,6 +56763,7 @@ try {
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
             "string(0) \"\"\n",
+            "NULL\n",
             "NULL\n",
             "Uri\\InvalidUriException: The specified URI is malformed\n",
         )

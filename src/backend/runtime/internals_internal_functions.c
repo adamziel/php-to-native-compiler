@@ -18413,7 +18413,7 @@ static int ptn_uri_validate_host_component(const char *data, size_t len) {
             }
             continue;
         }
-        if (byte == '[' || byte == ']' || byte == ':' || byte == '@' || byte == '/' || byte == '?' || byte == '#') {
+        if (!ptn_uri_is_unreserved(byte) && !ptn_uri_is_sub_delim(byte)) {
             return 0;
         }
     }
