@@ -1032,7 +1032,23 @@ static PTN_UNUSED int ptn_runtime_variable_is_empty(PtnRuntime *runtime, const c
     return !ptn_symbols_get(&runtime->symbols, name, &value) || !ptn_is_truthy(ptn_value_deref(value));
 }
 
+static PTN_UNUSED int ptn_call_frame_has_parameter(PtnCallFrame *frame, const char *name) {
+    if (frame == NULL || frame->parameter_names == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < frame->parameter_count; i++) {
+        if (strcmp(frame->parameter_names[i], name) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const char *name) {
+    if (ptn_call_frame_has_parameter(runtime->call_frame, name)) {
+        ptn_symbols_set(&runtime->symbols, name, ptn_null());
+        return;
+    }
     ptn_symbols_unset(&runtime->symbols, name);
 }
 
