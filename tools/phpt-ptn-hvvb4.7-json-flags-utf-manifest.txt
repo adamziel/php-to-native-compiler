@@ -1,0 +1,18 @@
+# Focused ext/json flags, UTF, and error metadata PHPT evidence for ptn-hvvb4.7.
+#
+# Paths are relative to PHP_SRC_PHPT, defaulting to /home/claude/php-src-phpt.
+# Run:
+#   tools/run-phpt-manifest.sh tools/phpt-ptn-hvvb4.7-json-flags-utf-manifest.txt
+#
+# This pack guards PTN's generated ext/json constant table, allowed flag
+# metadata, UTF error names/messages, and location-aware json_last_error_msg()
+# formatting while keeping the encoder/parser algorithms runtime-owned.
+
+# bucket: json decode UTF and error text rows=2
+ext/json/tests/json_decode_invalid_utf8.phpt
+ext/json/tests/json_last_error_msg_error_location_006.phpt
+
+# bucket: json_validate flags and UTF rows=3
+ext/json/tests/json_validate_001.phpt
+ext/json/tests/json_validate_004.phpt
+ext/json/tests/json_validate_005.phpt

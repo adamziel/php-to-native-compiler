@@ -3,6 +3,7 @@ pub mod backend;
 pub mod compiler;
 pub mod diagnostic;
 pub mod ir;
+pub(crate) mod json_metadata;
 pub mod lexer;
 pub mod parser;
 

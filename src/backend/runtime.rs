@@ -2,6 +2,7 @@ mod arrays;
 mod core_values;
 mod diagnostics;
 mod internals;
+mod json_metadata;
 mod numeric_comparison;
 mod strings;
 
@@ -13,6 +14,7 @@ static RUNTIME_C: OnceLock<String> = OnceLock::new();
 // - core_values: headers, boxed value types, constructors, and shared allocation helpers.
 // - arrays: ordered-array storage, key canonicalization, iteration, offset reads, and array comparisons.
 // - diagnostics: diagnostic sink setup and generic warning/fatal emission helpers.
+// - json_metadata: php-src-derived ext/json constants, flags, and error messages.
 // - numeric_comparison: numeric conversion, scalar casts, truthiness, comparisons, arithmetic, bitwise, and shifts.
 // - strings: scalar string conversion, concatenation, type predicates, constants, float formatting, and echo output.
 // - internals: runtime symbol tables plus optional internal-function handlers and dispatch.
@@ -22,6 +24,7 @@ pub(super) fn runtime_c() -> &'static str {
         let chunks = [
             core_values::C,
             arrays::STORAGE_C,
+            json_metadata::C,
             internals::SYMBOLS_C,
             diagnostics::C,
             numeric_comparison::CONVERSION_AND_COMPARISON_PROLOGUE_C,

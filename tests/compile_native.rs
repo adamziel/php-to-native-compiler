@@ -15599,6 +15599,64 @@ bool(true)\n"
 }
 
 #[test]
+fn compile_generated_json_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-json-generated-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("json-generated-metadata.php");
+    let output = root.join("json-generated-metadata-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$constants = get_defined_constants(true)[\"json\"];\n\
+echo implode(\",\", array_keys($constants)), \"\\n\";\n\
+var_dump(\n\
+    JSON_HEX_TAG,\n\
+    JSON_THROW_ON_ERROR,\n\
+    JSON_ERROR_NON_BACKED_ENUM,\n\
+    $constants[\"JSON_ERROR_UTF16\"],\n\
+    constant(\"JSON_BIGINT_AS_STRING\"),\n\
+    defined(\"JSON_INVALID_UTF8_SUBSTITUTE\")\n\
+);\n\
+$jsonConstant = new ReflectionConstant(\"JSON_THROW_ON_ERROR\");\n\
+var_dump($jsonConstant->getExtensionName(), $jsonConstant->getExtension()->getName());\n\
+json_decode(\"{\");\n\
+var_dump(json_last_error(), json_last_error_msg());\n\
+try { json_validate(\"{}\", 512, JSON_THROW_ON_ERROR); } catch (ValueError $e) { echo $e->getMessage(), \"\\n\"; }\n\
+var_dump(json_validate(\"{\\\"ok\\\":1}\", 512, JSON_INVALID_UTF8_IGNORE), json_last_error_msg());",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "JSON_HEX_TAG,JSON_HEX_AMP,JSON_HEX_APOS,JSON_HEX_QUOT,JSON_FORCE_OBJECT,JSON_NUMERIC_CHECK,JSON_UNESCAPED_SLASHES,JSON_PRETTY_PRINT,JSON_UNESCAPED_UNICODE,JSON_PARTIAL_OUTPUT_ON_ERROR,JSON_PRESERVE_ZERO_FRACTION,JSON_UNESCAPED_LINE_TERMINATORS,JSON_OBJECT_AS_ARRAY,JSON_BIGINT_AS_STRING,JSON_INVALID_UTF8_IGNORE,JSON_INVALID_UTF8_SUBSTITUTE,JSON_THROW_ON_ERROR,JSON_ERROR_NONE,JSON_ERROR_DEPTH,JSON_ERROR_STATE_MISMATCH,JSON_ERROR_CTRL_CHAR,JSON_ERROR_SYNTAX,JSON_ERROR_UTF8,JSON_ERROR_RECURSION,JSON_ERROR_INF_OR_NAN,JSON_ERROR_UNSUPPORTED_TYPE,JSON_ERROR_INVALID_PROPERTY_NAME,JSON_ERROR_UTF16,JSON_ERROR_NON_BACKED_ENUM\n",
+            "int(1)\n",
+            "int(4194304)\n",
+            "int(11)\n",
+            "int(10)\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "string(4) \"json\"\n",
+            "string(4) \"json\"\n",
+            "int(4)\n",
+            "string(30) \"Syntax error near location 1:2\"\n",
+            "json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: JSON_INVALID_UTF8_IGNORE)\n",
+            "bool(true)\n",
+            "string(8) \"No error\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_json_constant_metadata_entries"));
+    assert!(!c_source.contains("if (strcmp(name, \"JSON_ERROR_NONE\") == 0)"));
+}
+
+#[test]
 fn compile_ctype_extension_to_native_binary() {
     let root = temp_dir("ptn-native-ctype-extension");
     fs::create_dir_all(&root).unwrap();

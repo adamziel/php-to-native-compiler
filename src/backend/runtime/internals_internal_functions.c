@@ -9667,42 +9667,12 @@ static size_t ptn_json_last_error_column(PtnRuntime *runtime) {
     return root == NULL ? 0 : root->json_last_error_column;
 }
 
-static const char *ptn_json_error_message(int error) {
-    switch (error) {
-        case PTN_JSON_ERROR_NONE:
-            return "No error";
-        case PTN_JSON_ERROR_DEPTH:
-            return "Maximum stack depth exceeded";
-        case PTN_JSON_ERROR_STATE_MISMATCH:
-            return "State mismatch (invalid or malformed JSON)";
-        case PTN_JSON_ERROR_CTRL_CHAR:
-            return "Control character error, possibly incorrectly encoded";
-        case PTN_JSON_ERROR_UTF8:
-            return "Malformed UTF-8 characters, possibly incorrectly encoded";
-        case PTN_JSON_ERROR_RECURSION:
-            return "Recursion detected";
-        case PTN_JSON_ERROR_INF_OR_NAN:
-            return "Inf and NaN cannot be JSON encoded";
-        case PTN_JSON_ERROR_UNSUPPORTED_TYPE:
-            return "Type is not supported";
-        case PTN_JSON_ERROR_INVALID_PROPERTY_NAME:
-            return "The decoded property name is invalid";
-        case PTN_JSON_ERROR_UTF16:
-            return "Single unpaired UTF-16 surrogate in unicode escape";
-        case PTN_JSON_ERROR_NON_BACKED_ENUM:
-            return "Non-backed enums have no default serialization";
-        case PTN_JSON_ERROR_SYNTAX:
-        default:
-            return "Syntax error";
-    }
-}
-
 static char *ptn_json_error_message_owned(int error, size_t line, size_t column) {
     const char *base = ptn_json_error_message(error);
     if (error == PTN_JSON_ERROR_NONE || line == 0 || column == 0) {
         return ptn_duplicate_string(base);
     }
-    int needed = snprintf(NULL, 0, "%s near location %zu:%zu", base, line, column);
+    int needed = snprintf(NULL, 0, PTN_JSON_ERROR_LOCATION_FORMAT, base, line, column);
     if (needed < 0) {
         ptn_abort_out_of_memory();
     }
@@ -9710,7 +9680,7 @@ static char *ptn_json_error_message_owned(int error, size_t line, size_t column)
     if (message == NULL) {
         ptn_abort_out_of_memory();
     }
-    snprintf(message, (size_t)needed + 1, "%s near location %zu:%zu", base, line, column);
+    snprintf(message, (size_t)needed + 1, PTN_JSON_ERROR_LOCATION_FORMAT, base, line, column);
     return message;
 }
 
@@ -10301,6 +10271,21 @@ static PtnValue ptn_internal_json_validate(PtnRuntime *runtime, size_t argc, con
     PtnStringOperand json = ptn_internal_expect_string_arg(runtime, "json_validate", 1, "json", args[0], line);
     int64_t requested_depth = argc >= 2 ? ptn_value_to_integer(args[1]) : 512;
     int64_t flags = argc >= 3 ? ptn_value_to_integer(args[2]) : 0;
+    if ((flags & ~(int64_t)PTN_JSON_VALIDATE_ALLOWED_FLAGS) != 0) {
+        char message[160];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "json_validate(): Argument #3 ($flags) must be a valid flag (allowed flags: %s)",
+            PTN_JSON_VALIDATE_ALLOWED_FLAGS_TEXT
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_operand_free(json);
+        ptn_throw_exception(runtime, "ValueError", message);
+        return ptn_null();
+    }
     if (requested_depth <= 0) {
         ptn_string_operand_free(json);
         ptn_throw_exception(
@@ -60843,38 +60828,6 @@ static PtnValue ptn_defined_constants_xml_table(void) {
     return table;
 }
 
-static void ptn_defined_constants_add_json(PtnValue table) {
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_NONE", PTN_JSON_ERROR_NONE);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_DEPTH", PTN_JSON_ERROR_DEPTH);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_STATE_MISMATCH", PTN_JSON_ERROR_STATE_MISMATCH);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_CTRL_CHAR", PTN_JSON_ERROR_CTRL_CHAR);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_SYNTAX", PTN_JSON_ERROR_SYNTAX);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_UTF8", PTN_JSON_ERROR_UTF8);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_RECURSION", PTN_JSON_ERROR_RECURSION);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_INF_OR_NAN", PTN_JSON_ERROR_INF_OR_NAN);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_UNSUPPORTED_TYPE", PTN_JSON_ERROR_UNSUPPORTED_TYPE);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_INVALID_PROPERTY_NAME", PTN_JSON_ERROR_INVALID_PROPERTY_NAME);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_UTF16", PTN_JSON_ERROR_UTF16);
-    ptn_get_defined_constants_add_int(table, "JSON_ERROR_NON_BACKED_ENUM", PTN_JSON_ERROR_NON_BACKED_ENUM);
-    ptn_get_defined_constants_add_int(table, "JSON_OBJECT_AS_ARRAY", PTN_JSON_OBJECT_AS_ARRAY);
-    ptn_get_defined_constants_add_int(table, "JSON_BIGINT_AS_STRING", PTN_JSON_BIGINT_AS_STRING);
-    ptn_get_defined_constants_add_int(table, "JSON_HEX_TAG", PTN_JSON_HEX_TAG);
-    ptn_get_defined_constants_add_int(table, "JSON_HEX_AMP", PTN_JSON_HEX_AMP);
-    ptn_get_defined_constants_add_int(table, "JSON_HEX_APOS", PTN_JSON_HEX_APOS);
-    ptn_get_defined_constants_add_int(table, "JSON_HEX_QUOT", PTN_JSON_HEX_QUOT);
-    ptn_get_defined_constants_add_int(table, "JSON_FORCE_OBJECT", PTN_JSON_FORCE_OBJECT);
-    ptn_get_defined_constants_add_int(table, "JSON_NUMERIC_CHECK", PTN_JSON_NUMERIC_CHECK);
-    ptn_get_defined_constants_add_int(table, "JSON_UNESCAPED_SLASHES", PTN_JSON_UNESCAPED_SLASHES);
-    ptn_get_defined_constants_add_int(table, "JSON_PRETTY_PRINT", PTN_JSON_PRETTY_PRINT);
-    ptn_get_defined_constants_add_int(table, "JSON_UNESCAPED_UNICODE", PTN_JSON_UNESCAPED_UNICODE);
-    ptn_get_defined_constants_add_int(table, "JSON_PARTIAL_OUTPUT_ON_ERROR", PTN_JSON_PARTIAL_OUTPUT_ON_ERROR);
-    ptn_get_defined_constants_add_int(table, "JSON_PRESERVE_ZERO_FRACTION", PTN_JSON_PRESERVE_ZERO_FRACTION);
-    ptn_get_defined_constants_add_int(table, "JSON_UNESCAPED_LINE_TERMINATORS", PTN_JSON_UNESCAPED_LINE_TERMINATORS);
-    ptn_get_defined_constants_add_int(table, "JSON_INVALID_UTF8_IGNORE", PTN_JSON_INVALID_UTF8_IGNORE);
-    ptn_get_defined_constants_add_int(table, "JSON_INVALID_UTF8_SUBSTITUTE", PTN_JSON_INVALID_UTF8_SUBSTITUTE);
-    ptn_get_defined_constants_add_int(table, "JSON_THROW_ON_ERROR", PTN_JSON_THROW_ON_ERROR);
-}
-
 static PtnValue ptn_defined_constants_json_table(void) {
     PtnValue table = ptn_array_from_literal_entries(0, NULL);
     ptn_defined_constants_add_json(table);
@@ -61120,41 +61073,6 @@ static PtnValue ptn_defined_constants_user_table(PtnRuntime *runtime) {
     PtnValue table = ptn_array_from_literal_entries(0, NULL);
     ptn_defined_constants_add_user(runtime, table);
     return table;
-}
-
-static int ptn_reflection_constant_is_json(const char *name) {
-    static const char *const names[] = {
-        "JSON_ERROR_NONE",
-        "JSON_ERROR_DEPTH",
-        "JSON_ERROR_STATE_MISMATCH",
-        "JSON_ERROR_CTRL_CHAR",
-        "JSON_ERROR_SYNTAX",
-        "JSON_ERROR_UTF8",
-        "JSON_ERROR_RECURSION",
-        "JSON_ERROR_INF_OR_NAN",
-        "JSON_ERROR_UNSUPPORTED_TYPE",
-        "JSON_ERROR_INVALID_PROPERTY_NAME",
-        "JSON_ERROR_UTF16",
-        "JSON_ERROR_NON_BACKED_ENUM",
-        "JSON_OBJECT_AS_ARRAY",
-        "JSON_BIGINT_AS_STRING",
-        "JSON_HEX_TAG",
-        "JSON_HEX_AMP",
-        "JSON_HEX_APOS",
-        "JSON_HEX_QUOT",
-        "JSON_FORCE_OBJECT",
-        "JSON_NUMERIC_CHECK",
-        "JSON_UNESCAPED_SLASHES",
-        "JSON_PRETTY_PRINT",
-        "JSON_UNESCAPED_UNICODE",
-        "JSON_PARTIAL_OUTPUT_ON_ERROR",
-        "JSON_PRESERVE_ZERO_FRACTION",
-        "JSON_UNESCAPED_LINE_TERMINATORS",
-        "JSON_INVALID_UTF8_IGNORE",
-        "JSON_INVALID_UTF8_SUBSTITUTE",
-        "JSON_THROW_ON_ERROR",
-    };
-    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
 }
 
 static int ptn_reflection_constant_is_pcre(const char *name) {

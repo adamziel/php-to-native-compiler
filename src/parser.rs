@@ -19286,6 +19286,10 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
 }
 
 fn is_modeled_global_constant_name(name: &str) -> bool {
+    if crate::json_metadata::is_json_constant_name(name) {
+        return true;
+    }
+
     matches!(
         name,
         "E_ERROR"
@@ -19434,35 +19438,6 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "LOCK_NB"
             | "HTML_SPECIALCHARS"
             | "HTML_ENTITIES"
-            | "JSON_ERROR_NONE"
-            | "JSON_ERROR_DEPTH"
-            | "JSON_ERROR_STATE_MISMATCH"
-            | "JSON_ERROR_CTRL_CHAR"
-            | "JSON_ERROR_SYNTAX"
-            | "JSON_ERROR_UTF8"
-            | "JSON_ERROR_RECURSION"
-            | "JSON_ERROR_INF_OR_NAN"
-            | "JSON_ERROR_UNSUPPORTED_TYPE"
-            | "JSON_ERROR_INVALID_PROPERTY_NAME"
-            | "JSON_ERROR_UTF16"
-            | "JSON_ERROR_NON_BACKED_ENUM"
-            | "JSON_HEX_TAG"
-            | "JSON_HEX_AMP"
-            | "JSON_HEX_APOS"
-            | "JSON_HEX_QUOT"
-            | "JSON_FORCE_OBJECT"
-            | "JSON_NUMERIC_CHECK"
-            | "JSON_UNESCAPED_SLASHES"
-            | "JSON_PRETTY_PRINT"
-            | "JSON_UNESCAPED_UNICODE"
-            | "JSON_PARTIAL_OUTPUT_ON_ERROR"
-            | "JSON_PRESERVE_ZERO_FRACTION"
-            | "JSON_UNESCAPED_LINE_TERMINATORS"
-            | "JSON_OBJECT_AS_ARRAY"
-            | "JSON_BIGINT_AS_STRING"
-            | "JSON_INVALID_UTF8_IGNORE"
-            | "JSON_INVALID_UTF8_SUBSTITUTE"
-            | "JSON_THROW_ON_ERROR"
             | "PREG_PATTERN_ORDER"
             | "PREG_SET_ORDER"
             | "PREG_OFFSET_CAPTURE"
