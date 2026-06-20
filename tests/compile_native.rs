@@ -11251,6 +11251,10 @@ var_dump(unserialize($encoded));
         stdout.contains("[\"__PHP_Incomplete_Class_Name\"]=>\n    string(4) \"Bar2\""),
         "{stdout}"
     );
+    assert!(
+        !stdout.contains("Creation of dynamic property __PHP_Incomplete_Class"),
+        "{stdout}"
+    );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
