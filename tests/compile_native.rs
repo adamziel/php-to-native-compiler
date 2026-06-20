@@ -933,6 +933,8 @@ var_dump($ny->getName());
 
 $la = new DateTimeZone('America/Los_Angeles');
 var_dump($la->getOffset($dt));
+$toronto = new DateTimeZone('America/Toronto');
+var_dump($toronto->getOffset($dt));
 
 $abbr = timezone_abbreviations_list();
 var_dump($abbr['utc'][0]['timezone_id']);
@@ -973,6 +975,7 @@ echo new DateTimeZoneExt('Europe/Kyiv'), "\n";
             "int(0)\n",
             "string(16) \"America/New_York\"\n",
             "int(-28800)\n",
+            "int(-18000)\n",
             "string(13) \"Etc/Universal\"\n",
             "string(13) \"Europe/Berlin\"\n",
             "bool(true)\n",
@@ -1145,7 +1148,7 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "array(0) {\n",
             "}\n",
         )
@@ -14464,6 +14467,9 @@ fn compile_scalar_date_time_internals_to_native_binary() {
 date_default_timezone_set(\"UTC\");\n\
 echo date(\"jS w z t L a B g G Z U\", mktime(0, 0, 0, 6, 27, 2006)), \"\\n\";\n\
 echo gmdate(DATE_ISO8601, mktime(8, 8, 8, 8, 8, 2008)), \"\\n\";\n\
+echo gmdate(\"u\", mktime(8, 8, 8, 8, 8, 2008)), \"\\n\";\n\
+echo date(\"Y\", mktime(1, 1, 1, 1, 1, 69)), \" \", date(\"Y\", mktime(1, 1, 1, 1, 1, 100)), \"\\n\";\n\
+try { mktime(); } catch (Throwable $e) { echo $e::class, \": \", $e->getMessage(), \"\\n\"; }\n\
 var_dump(checkdate(2, 29, 2008), checkdate(2, 29, 2009));\n\
 $parts = getdate(10);\n\
 echo $parts[\"year\"], \"-\", $parts[\"mon\"], \"-\", $parts[\"mday\"], \"\\n\";\n\
@@ -14479,6 +14485,9 @@ var_dump(function_exists(\"date_default_timezone_set\"), function_exists(\"gmdat
         String::from_utf8(execution.stdout).unwrap(),
         "27th 2 177 30 0 am 041 12 0 0 1151366400\n\
 2008-08-08T08:08:08+0000\n\
+000000\n\
+2069 2000\n\
+ArgumentCountError: mktime() expects at least 1 argument, 0 given\n\
 bool(true)\n\
 bool(false)\n\
 1970-1-1\n\
@@ -56773,6 +56782,7 @@ var_dump($url->withUsername("u:s/r")->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
 var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
+var_dump(Uri\WhatWg\Url::parse("https://example.com")->resolve("/f\0o")->toAsciiString());
 try {
     Uri\WhatWg\Url::parse("foo");
 } catch (Throwable $e) {
@@ -56780,6 +56790,16 @@ try {
 }
 try {
     new Uri\WhatWg\Url("https://");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->withHost("ex:mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->resolve("https://ex\0mple.com");
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
@@ -56810,8 +56830,11 @@ try {
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "string(25) \"https://example.com/f%00o\"\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

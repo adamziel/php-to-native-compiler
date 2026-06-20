@@ -252,9 +252,17 @@ pub fn emit_c(module: &Module) -> String {
         &module.includes,
         runtime_requirements.internal_function_dispatch,
     );
+    if runtime_requirements.internal_function_dispatch {
+        out.push_str(
+            "\nstatic PTN_UNUSED void ptn_emit_startup_date_timezone_warning(PtnRuntime *runtime);\n",
+        );
+    }
     out.push_str("\nint main(int ptn_native_argc, char **ptn_native_argv) {\n");
     out.push_str("    PtnRuntime runtime;\n");
     out.push_str("    ptn_runtime_init(&runtime);\n");
+    if runtime_requirements.internal_function_dispatch {
+        out.push_str("    ptn_emit_startup_date_timezone_warning(&runtime);\n");
+    }
     out.push_str("    runtime.native_argc = ptn_native_argc;\n");
     out.push_str("    runtime.native_argv = ptn_native_argv;\n");
     if runtime_requirements.request_context {
@@ -21053,6 +21061,7 @@ fn is_uri_whatwg_url_method_name(name: &str) -> bool {
         || name.eq_ignore_ascii_case("withPassword")
         || name.eq_ignore_ascii_case("withHost")
         || name.eq_ignore_ascii_case("withPort")
+        || name.eq_ignore_ascii_case("resolve")
         || name.eq_ignore_ascii_case("withPath")
         || name.eq_ignore_ascii_case("withQuery")
         || name.eq_ignore_ascii_case("withFragment")
