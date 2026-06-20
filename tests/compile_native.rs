@@ -28619,6 +28619,49 @@ test(str_repeat('e', 100));
 }
 
 #[test]
+fn compile_pipe_operator_rejects_by_reference_callables_to_native_binary() {
+    let root = temp_dir("ptn-native-pipe-by-ref-callable");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("pipe-by-ref-callable.php");
+    let output = root.join("pipe-by-ref-callable-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function _modify(int &$a): string {\n\
+    $a += 1;\n\
+    return \"foo\";\n\
+}\n\
+function _append(array &$a): string {\n\
+    $a['bar'] = 'beep';\n\
+    return \"foo\";\n\
+}\n\
+try {\n\
+    $a = 5;\n\
+    var_dump($a |> _modify(...));\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n\
+try {\n\
+    $a = ['foo' => 'beep'];\n\
+    var_dump($a |> _append(...));\n\
+} catch (Error $e) {\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "_modify(): Argument #1 ($a) could not be passed by reference\n_append(): Argument #1 ($a) could not be passed by reference\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_rejects_multiple_match_default_arms() {
     let error =
         parser::parse("<?php match (1) { default => 'a', 1 => 'b', default => 'c' };").unwrap_err();
