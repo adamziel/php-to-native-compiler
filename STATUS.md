@@ -2,7 +2,7 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-20T01:11:18Z |
+| last refresh | 2026-06-20T01:12:11Z |
 | source commit | `0b559c961560` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
@@ -29,7 +29,47 @@
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
-| full PHPT corpus sharded raw loop | 21867 | 8937 | 21867 |
+| full PHPT corpus sharded partial snapshot | 21867 | 8937 | 21867 |
+| hourly history retained 2026-06-18T09:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T10:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T11:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T12:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T13:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T14:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T15:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T16:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T17:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T18:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T19:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T20:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T21:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T22:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-18T23:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T00:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T01:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T02:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T03:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T04:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T05:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T06:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T07:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T08:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T09:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T10:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T11:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T12:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T13:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T14:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T15:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T16:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T17:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T18:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T19:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T20:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T21:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T22:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-19T23:00Z | 0 | 0 | 0 |
+| hourly history retained 2026-06-20T00:00Z | 0 | 0 | 0 |
 
 ## Last 7 Days
 
