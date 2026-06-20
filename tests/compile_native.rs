@@ -28072,6 +28072,9 @@ fn compile_locale_constants_and_setlocale_to_native_binary() {
         &input,
         "<?php\n\
 var_dump(function_exists('setlocale'), defined('LC_ALL'), defined('LC_NUMERIC'));\n\
+$constants = get_defined_constants(true);\n\
+var_dump(isset($constants['standard']['LC_ALL']), isset($constants['standard']['AM_STR']), defined('INT_CURR_SYMBOL'), constant('DECIMAL_POINT') === constant('RADIXCHAR'), constant('THOUSANDS_SEP') === constant('THOUSEP'));\n\
+var_dump(is_string(nl_langinfo(AM_STR)));\n\
 var_dump(function_exists('SETLOCALE'));\n\
 echo gettype(LC_ALL), ' ', gettype(constant('LC_CTYPE')), ' ', gettype(LC_MESSAGES), \"\\n\";\n\
 var_dump(LC_CTYPE === constant('LC_CTYPE'));\n\
@@ -28094,7 +28097,35 @@ var_dump(setlocale(999, 'C'));\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "bool(true)\nbool(true)\nbool(true)\nbool(true)\ninteger integer integer\nbool(true)\nint(0)\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(6)\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
+        "bool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\nbool(true)\ninteger integer integer\nbool(true)\nint(0)\nint(1)\nint(2)\nint(3)\nint(4)\nint(5)\nint(6)\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\nstring(1) \"C\"\nstring(1) \"C\"\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_php_src_locale_metadata_is_generated_into_runtime_c_source() {
+    let root = temp_dir("ptn-native-php-src-locale-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("php-src-locale-metadata.php");
+    let output = root.join("php-src-locale-metadata-bin");
+    fs::write(
+        &input,
+        "<?php var_dump(defined('AM_STR'), INT_CURR_SYMBOL);",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_PHP_SRC_METADATA_REVISION"));
+    assert!(c_source.contains("PTN_PHP_SRC_NL_LANGINFO_CONSTANTS"));
+    assert!(c_source.contains("#define PTN_SPRINTF_MAX_FLOAT_PRECISION 53"));
+    assert!(c_source.contains("const int max_precision = PTN_SPRINTF_MAX_FLOAT_PRECISION;"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "bool(true)\nint(262144)\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

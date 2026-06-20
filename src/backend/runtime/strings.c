@@ -2476,77 +2476,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_standard_stream_resource_value(3);
         return 1;
     }
-    if (strcmp(name, "LC_ALL") == 0) {
-        *out = ptn_int(PTN_LC_ALL);
-        return 1;
+#define PTN_BUILTIN_GENERATED_CONSTANT(name_text, value_macro) \
+    if (strcmp(name, name_text) == 0) { \
+        *out = ptn_int(value_macro); \
+        return 1; \
     }
-    if (strcmp(name, "LC_COLLATE") == 0) {
-        *out = ptn_int(PTN_LC_COLLATE);
-        return 1;
-    }
-    if (strcmp(name, "LC_CTYPE") == 0) {
-        *out = ptn_int(PTN_LC_CTYPE);
-        return 1;
-    }
-    if (strcmp(name, "LC_MESSAGES") == 0) {
-        *out = ptn_int(PTN_LC_MESSAGES);
-        return 1;
-    }
-    if (strcmp(name, "LC_MONETARY") == 0) {
-        *out = ptn_int(PTN_LC_MONETARY);
-        return 1;
-    }
-    if (strcmp(name, "LC_NUMERIC") == 0) {
-        *out = ptn_int(PTN_LC_NUMERIC);
-        return 1;
-    }
-    if (strcmp(name, "LC_TIME") == 0) {
-        *out = ptn_int(PTN_LC_TIME);
-        return 1;
-    }
-    if (strcmp(name, "ABDAY_1") == 0) { *out = ptn_int(PTN_ABDAY_1); return 1; }
-    if (strcmp(name, "ABDAY_2") == 0) { *out = ptn_int(PTN_ABDAY_2); return 1; }
-    if (strcmp(name, "ABDAY_3") == 0) { *out = ptn_int(PTN_ABDAY_3); return 1; }
-    if (strcmp(name, "ABDAY_4") == 0) { *out = ptn_int(PTN_ABDAY_4); return 1; }
-    if (strcmp(name, "ABDAY_5") == 0) { *out = ptn_int(PTN_ABDAY_5); return 1; }
-    if (strcmp(name, "ABDAY_6") == 0) { *out = ptn_int(PTN_ABDAY_6); return 1; }
-    if (strcmp(name, "ABDAY_7") == 0) { *out = ptn_int(PTN_ABDAY_7); return 1; }
-    if (strcmp(name, "DAY_1") == 0) { *out = ptn_int(PTN_DAY_1); return 1; }
-    if (strcmp(name, "DAY_2") == 0) { *out = ptn_int(PTN_DAY_2); return 1; }
-    if (strcmp(name, "DAY_3") == 0) { *out = ptn_int(PTN_DAY_3); return 1; }
-    if (strcmp(name, "DAY_4") == 0) { *out = ptn_int(PTN_DAY_4); return 1; }
-    if (strcmp(name, "DAY_5") == 0) { *out = ptn_int(PTN_DAY_5); return 1; }
-    if (strcmp(name, "DAY_6") == 0) { *out = ptn_int(PTN_DAY_6); return 1; }
-    if (strcmp(name, "DAY_7") == 0) { *out = ptn_int(PTN_DAY_7); return 1; }
-    if (strcmp(name, "ABMON_1") == 0) { *out = ptn_int(PTN_ABMON_1); return 1; }
-    if (strcmp(name, "ABMON_2") == 0) { *out = ptn_int(PTN_ABMON_2); return 1; }
-    if (strcmp(name, "ABMON_3") == 0) { *out = ptn_int(PTN_ABMON_3); return 1; }
-    if (strcmp(name, "ABMON_4") == 0) { *out = ptn_int(PTN_ABMON_4); return 1; }
-    if (strcmp(name, "ABMON_5") == 0) { *out = ptn_int(PTN_ABMON_5); return 1; }
-    if (strcmp(name, "ABMON_6") == 0) { *out = ptn_int(PTN_ABMON_6); return 1; }
-    if (strcmp(name, "ABMON_7") == 0) { *out = ptn_int(PTN_ABMON_7); return 1; }
-    if (strcmp(name, "ABMON_8") == 0) { *out = ptn_int(PTN_ABMON_8); return 1; }
-    if (strcmp(name, "ABMON_9") == 0) { *out = ptn_int(PTN_ABMON_9); return 1; }
-    if (strcmp(name, "ABMON_10") == 0) { *out = ptn_int(PTN_ABMON_10); return 1; }
-    if (strcmp(name, "ABMON_11") == 0) { *out = ptn_int(PTN_ABMON_11); return 1; }
-    if (strcmp(name, "ABMON_12") == 0) { *out = ptn_int(PTN_ABMON_12); return 1; }
-    if (strcmp(name, "MON_1") == 0) { *out = ptn_int(PTN_MON_1); return 1; }
-    if (strcmp(name, "MON_2") == 0) { *out = ptn_int(PTN_MON_2); return 1; }
-    if (strcmp(name, "MON_3") == 0) { *out = ptn_int(PTN_MON_3); return 1; }
-    if (strcmp(name, "MON_4") == 0) { *out = ptn_int(PTN_MON_4); return 1; }
-    if (strcmp(name, "MON_5") == 0) { *out = ptn_int(PTN_MON_5); return 1; }
-    if (strcmp(name, "MON_6") == 0) { *out = ptn_int(PTN_MON_6); return 1; }
-    if (strcmp(name, "MON_7") == 0) { *out = ptn_int(PTN_MON_7); return 1; }
-    if (strcmp(name, "MON_8") == 0) { *out = ptn_int(PTN_MON_8); return 1; }
-    if (strcmp(name, "MON_9") == 0) { *out = ptn_int(PTN_MON_9); return 1; }
-    if (strcmp(name, "MON_10") == 0) { *out = ptn_int(PTN_MON_10); return 1; }
-    if (strcmp(name, "MON_11") == 0) { *out = ptn_int(PTN_MON_11); return 1; }
-    if (strcmp(name, "MON_12") == 0) { *out = ptn_int(PTN_MON_12); return 1; }
-    if (strcmp(name, "RADIXCHAR") == 0) { *out = ptn_int(PTN_RADIXCHAR); return 1; }
-    if (strcmp(name, "THOUSEP") == 0) { *out = ptn_int(PTN_THOUSEP); return 1; }
-    if (strcmp(name, "YESEXPR") == 0) { *out = ptn_int(PTN_YESEXPR); return 1; }
-    if (strcmp(name, "NOEXPR") == 0) { *out = ptn_int(PTN_NOEXPR); return 1; }
-    if (strcmp(name, "CODESET") == 0) { *out = ptn_int(PTN_CODESET); return 1; }
+    PTN_PHP_SRC_LOCALE_CONSTANTS(PTN_BUILTIN_GENERATED_CONSTANT)
+    PTN_PHP_SRC_NL_LANGINFO_CONSTANTS(PTN_BUILTIN_GENERATED_CONSTANT)
+#undef PTN_BUILTIN_GENERATED_CONSTANT
     if (strcmp(name, "DATE_ATOM") == 0) {
         *out = ptn_string("Y-m-d\\TH:i:sP");
         return 1;

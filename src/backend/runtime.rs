@@ -3,6 +3,7 @@ mod core_values;
 mod diagnostics;
 mod internals;
 mod numeric_comparison;
+mod php_src_metadata;
 mod strings;
 
 use std::sync::OnceLock;
@@ -10,6 +11,7 @@ use std::sync::OnceLock;
 static RUNTIME_C: OnceLock<String> = OnceLock::new();
 
 // Ownership map for generated C runtime chunks:
+// - php_src_metadata: generated php-src locale, nl_langinfo, and scalar-format metadata.
 // - core_values: headers, boxed value types, constructors, and shared allocation helpers.
 // - arrays: ordered-array storage, key canonicalization, iteration, offset reads, and array comparisons.
 // - diagnostics: diagnostic sink setup and generic warning/fatal emission helpers.
@@ -20,6 +22,7 @@ pub(super) fn runtime_c() -> &'static str {
     RUNTIME_C.get_or_init(|| {
         let internal_functions_c = internals::internal_functions_c();
         let chunks = [
+            php_src_metadata::C,
             core_values::C,
             arrays::STORAGE_C,
             internals::SYMBOLS_C,

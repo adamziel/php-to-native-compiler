@@ -5,6 +5,7 @@ pub mod diagnostic;
 pub mod ir;
 pub mod lexer;
 pub mod parser;
+pub mod php_src_metadata;
 
 pub use compiler::{compile_file, CompileOptions, CompileOutput};
 pub use diagnostic::{Diagnostic, DiagnosticKind, Result};

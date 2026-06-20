@@ -26946,7 +26946,7 @@ static void ptn_sprintf_throw_argument_count(PtnRuntime *runtime, size_t require
 }
 
 static void ptn_sprintf_cap_float_precision(PtnRuntime *runtime, const char *function_name, PtnSprintfSpec *spec, size_t line) {
-    const int max_precision = 53;
+    const int max_precision = PTN_SPRINTF_MAX_FLOAT_PRECISION;
     if (!spec->has_precision || spec->precision <= max_precision) {
         return;
     }
@@ -60985,6 +60985,18 @@ static PtnValue ptn_defined_constants_mbstring_table(void) {
     return table;
 }
 
+static int ptn_constant_name_matches_php_src_locale_or_nl_langinfo(const char *name) {
+#define PTN_GENERATED_CONSTANT_NAME_MATCH(name_text, value_macro) \
+    (void)value_macro; \
+    if (strcmp(name, name_text) == 0) { \
+        return 1; \
+    }
+    PTN_PHP_SRC_LOCALE_CONSTANTS(PTN_GENERATED_CONSTANT_NAME_MATCH)
+    PTN_PHP_SRC_NL_LANGINFO_CONSTANTS(PTN_GENERATED_CONSTANT_NAME_MATCH)
+#undef PTN_GENERATED_CONSTANT_NAME_MATCH
+    return 0;
+}
+
 static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "CONNECTION_NORMAL", 0);
     ptn_get_defined_constants_add_int(table, "CONNECTION_ABORTED", 1);
@@ -61049,6 +61061,11 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_READ", PTN_STREAM_FILTER_READ);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_WRITE", PTN_STREAM_FILTER_WRITE);
     ptn_get_defined_constants_add_int(table, "STREAM_FILTER_ALL", PTN_STREAM_FILTER_ALL);
+#define PTN_DEFINED_GENERATED_CONSTANT(name_text, value_macro) \
+    ptn_get_defined_constants_add_int(table, name_text, value_macro);
+    PTN_PHP_SRC_LOCALE_CONSTANTS(PTN_DEFINED_GENERATED_CONSTANT)
+    PTN_PHP_SRC_NL_LANGINFO_CONSTANTS(PTN_DEFINED_GENERATED_CONSTANT)
+#undef PTN_DEFINED_GENERATED_CONSTANT
 }
 
 static PtnValue ptn_defined_constants_standard_table(void) {
@@ -61390,7 +61407,8 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "STREAM_FILTER_WRITE",
         "STREAM_FILTER_ALL",
     };
-    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0]));
+    return ptn_constant_name_matches_any(name, names, sizeof(names) / sizeof(names[0])) ||
+        ptn_constant_name_matches_php_src_locale_or_nl_langinfo(name);
 }
 
 static int ptn_reflection_constant_is_sockets(const char *name) {
@@ -62016,31 +62034,15 @@ static PtnValue ptn_internal_uniqid(PtnRuntime *runtime, size_t argc, const PtnV
 
 static int ptn_setlocale_category(int64_t category, int *out) {
     switch (category) {
-        case PTN_LC_CTYPE:
-            *out = LC_CTYPE;
+#define PTN_LOCALE_CATEGORY_CASE(php_value, libc_value) \
+        case php_value: \
+            *out = libc_value; \
             return 1;
-        case PTN_LC_NUMERIC:
-            *out = LC_NUMERIC;
-            return 1;
-        case PTN_LC_TIME:
-            *out = LC_TIME;
-            return 1;
-        case PTN_LC_COLLATE:
-            *out = LC_COLLATE;
-            return 1;
-        case PTN_LC_MONETARY:
-            *out = LC_MONETARY;
-            return 1;
-        case PTN_LC_MESSAGES:
+        PTN_PHP_SRC_LOCALE_CATEGORY_MAPPINGS(PTN_LOCALE_CATEGORY_CASE)
 #if defined(LC_MESSAGES)
-            *out = LC_MESSAGES;
-            return 1;
-#else
-            return 0;
+        PTN_PHP_SRC_LOCALE_MESSAGES_CATEGORY_MAPPING(PTN_LOCALE_CATEGORY_CASE)
 #endif
-        case PTN_LC_ALL:
-            *out = LC_ALL;
-            return 1;
+#undef PTN_LOCALE_CATEGORY_CASE
         default:
             return 0;
     }
@@ -62245,15 +62247,40 @@ static PtnValue ptn_internal_strcoll(PtnRuntime *runtime, size_t argc, const Ptn
     return ptn_int(compared < 0 ? -1 : (compared > 0 ? 1 : 0));
 }
 
+static int ptn_nl_langinfo_item_supported(int64_t item) {
+#define PTN_NL_LANGINFO_ITEM_CHECK(name_text, value_macro) \
+    (void)name_text; \
+    if (item == value_macro) { \
+        return 1; \
+    }
+    PTN_PHP_SRC_NL_LANGINFO_CONSTANTS(PTN_NL_LANGINFO_ITEM_CHECK)
+#undef PTN_NL_LANGINFO_ITEM_CHECK
+    return 0;
+}
+
 static PtnValue ptn_internal_nl_langinfo(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
-    (void)runtime;
     (void)argc;
-    (void)line;
     int64_t item = ptn_value_to_integer(args[0]);
 #if defined(_WIN32)
+    (void)runtime;
+    (void)line;
     (void)item;
     return ptn_bool(0);
 #else
+    if (!ptn_nl_langinfo_item_supported(item)) {
+        char message[96];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "nl_langinfo(): Item '%lld' is not valid",
+            (long long)item
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_emit_warning(&runtime->diagnostics, message, line);
+        return ptn_bool(0);
+    }
     const char *result = nl_langinfo((nl_item)item);
     return ptn_string(result == NULL ? "" : result);
 #endif

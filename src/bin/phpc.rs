@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ptn::{compile_file, CompileOptions, Diagnostic, DiagnosticKind};
+use ptn::{compile_file, php_src_metadata, CompileOptions, Diagnostic, DiagnosticKind};
 
 fn main() {
     match run() {
@@ -359,16 +359,14 @@ fn apply_ini_setting(value: &str, ini: &mut RuntimeIni) {
     };
     let name = name.trim();
     let raw_value = raw_value.trim();
-    if name.eq_ignore_ascii_case("precision") {
+    if let Some(canonical_name) = php_src_metadata::scalar_format_ini_canonical_name(name) {
         if let Ok(parsed) = raw_value.parse::<i16>() {
             if (-1..=1000).contains(&parsed) {
-                ini.precision = Some(parsed);
-            }
-        }
-    } else if name.eq_ignore_ascii_case("serialize_precision") {
-        if let Ok(parsed) = raw_value.parse::<i16>() {
-            if (-1..=1000).contains(&parsed) {
-                ini.serialize_precision = Some(parsed.to_string());
+                match canonical_name {
+                    "precision" => ini.precision = Some(parsed),
+                    "serialize_precision" => ini.serialize_precision = Some(parsed.to_string()),
+                    _ => {}
+                }
             }
         }
     } else if name.eq_ignore_ascii_case("assert.exception") {
