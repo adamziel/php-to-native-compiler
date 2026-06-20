@@ -5090,7 +5090,7 @@ fn emit_user_function_dispatch(
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
-    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
     out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
     out.push_str("            free(ptn_static_call_class);\n");
     out.push_str("            return ptn_static_call_result;\n");
@@ -15449,7 +15449,7 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && (ptn_internal_class_exists_name(target_class_name) || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLReader\")) && ptn_internal_class_static_method_exists(target_class_name, method_name)) {\n");
+    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && (ptn_internal_class_exists_name(target_class_name) || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLWriter\")) && ptn_internal_class_static_method_exists(target_class_name, method_name)) {\n");
     out.push_str("        *result_out = ptn_internal_class_static_call_method(runtime, target_class_name, method_name, argc, args, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
@@ -22835,7 +22835,11 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&COUNT_CHARS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("unpack") {
         Some(&UNPACK_PARAMETERS)
-    } else if name.eq_ignore_ascii_case("XMLReader::fromStream") {
+    } else if name.eq_ignore_ascii_case("XMLReader::fromStream")
+        || name
+            .rsplit_once("::")
+            .is_some_and(|(_, method_name)| method_name.eq_ignore_ascii_case("fromStream"))
+    {
         Some(&XMLREADER_FROM_STREAM_PARAMETERS)
     } else {
         None
