@@ -394,13 +394,13 @@ pub fn emit_c(module: &Module) -> String {
         &module.source_file,
     );
     emit_serializable_deprecations(&mut out, &serializable_deprecations);
+    emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings, &module.source_file);
     emit_declaration_fatals(
         &mut out,
         &declaration_fatals,
         &module.source_file,
-        !module.compile_warnings.is_empty(),
+        !module.compile_warnings.is_empty() || !magic_visibility_warnings.is_empty(),
     );
-    emit_magic_visibility_warnings(&mut out, &magic_visibility_warnings, &module.source_file);
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
         &mut out,
@@ -20414,11 +20414,7 @@ fn magic_declaration_fatal_message(
             "__debuginfo" if !magic_return_type_is_debug_info_compatible(return_type) => {
                 Some("?array")
             }
-            "__set_state"
-                if !magic_return_type_is_exact_or_never(return_type, &TypeHint::Object) =>
-            {
-                Some("object")
-            }
+            "__set_state" if !magic_return_type_is_object_compatible(return_type) => Some("object"),
             _ => None,
         };
         if let Some(expected_label) = expected_label {
@@ -20492,6 +20488,16 @@ fn magic_return_type_is_debug_info_compatible(return_type: &TypeHint) -> bool {
     }
 }
 
+fn magic_return_type_is_object_compatible(return_type: &TypeHint) -> bool {
+    match return_type {
+        TypeHint::Object | TypeHint::Static | TypeHint::Class(_) | TypeHint::Never => true,
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            !types.is_empty() && types.iter().all(magic_return_type_is_object_compatible)
+        }
+        _ => false,
+    }
+}
+
 fn magic_parameter_type_fatal(
     class: &ClassDecl,
     method: &crate::ir::MethodDecl,
@@ -20502,7 +20508,7 @@ fn magic_parameter_type_fatal(
 ) -> Option<String> {
     let parameter = function.parameters.get(parameter_index)?;
     let declared_type = parameter.type_hint.as_ref()?;
-    if declared_type == &expected_type {
+    if magic_parameter_type_accepts_required(declared_type, &expected_type) {
         return None;
     }
     Some(format!(
@@ -20513,6 +20519,27 @@ fn magic_parameter_type_fatal(
         parameter.name,
         expected_label
     ))
+}
+
+fn magic_parameter_type_accepts_required(
+    declared_type: &TypeHint,
+    required_type: &TypeHint,
+) -> bool {
+    if declared_type == required_type {
+        return true;
+    }
+    match declared_type {
+        TypeHint::Mixed => true,
+        TypeHint::Nullable(inner) => {
+            matches!(required_type, TypeHint::Null)
+                || magic_parameter_type_accepts_required(inner, required_type)
+        }
+        TypeHint::Union(types) => types
+            .iter()
+            .any(|member| magic_parameter_type_accepts_required(member, required_type)),
+        TypeHint::Iterable if matches!(required_type, TypeHint::Array) => true,
+        _ => false,
+    }
 }
 
 fn magic_method_requires_public_visibility(name: &str) -> bool {

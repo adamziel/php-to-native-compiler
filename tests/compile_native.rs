@@ -56048,6 +56048,44 @@ done\n",
 }
 
 #[test]
+fn compile_magic_method_visibility_warning_before_declaration_fatal() {
+    let root = temp_dir("ptn-native-magic-method-visibility-before-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-method-visibility-before-fatal.php");
+    let output = root.join("magic-method-visibility-before-fatal-bin");
+    fs::write(
+        &input,
+        "<?php
+class MagicVisibilityFatal {
+    private function __set($name) {}
+}
+echo \"unreachable\\n\";
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(execution.status.code(), Some(255));
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "Warning: The magic method MagicVisibilityFatal::__set() must have public visibility in {} on line 3\n",
+            input.display(),
+        )
+    );
+    assert_eq!(
+        String::from_utf8(execution.stderr).unwrap(),
+        format!(
+            "\nFatal error: Method MagicVisibilityFatal::__set() must take exactly 2 arguments in {} on line 3\n",
+            input.display(),
+        )
+    );
+}
+
+#[test]
 fn compile_magic_method_declaration_fatals_to_native_binary() {
     let cases = [
         (
@@ -56122,6 +56160,91 @@ echo \"unreachable\\n\";
         let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
         assert!(c_source.contains(message), "{name}");
     }
+}
+
+#[test]
+fn compile_magic_method_variance_declarations_to_native_binary() {
+    let root = temp_dir("ptn-native-magic-method-variance");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("magic-method-variance.php");
+    let output = root.join("magic-method-variance-bin");
+    fs::write(
+        &input,
+        "<?php
+class ValidMagicMethods {
+    public function __call(string $name, array $arguments): mixed {}
+    public static function __callStatic(string $name, array $arguments): mixed {}
+    public function __debugInfo(): ?array {}
+    public function __get(string $name): mixed {}
+    public function __isset(string $name): bool {}
+    public function __set(string $name, mixed $value): void {}
+    public static function __set_state(array $properties): object {}
+    public function __unserialize(array $data): void {}
+    public function __unset(string $name): void {}
+}
+class NarrowedReturnType extends ValidMagicMethods {
+    public function __call(string $name, array $arguments): string|float|null {}
+    public static function __callStatic(string $name, array $arguments): ?array {}
+    public function __debugInfo(): array {}
+    public function __get(string $name): int|string {}
+}
+class WidenedArgumentType extends NarrowedReturnType {
+    public function __call(string|array $name, array|string $arguments): string|float|null {}
+    public static function __callStatic(string|object $name, array|object $arguments): ?array {}
+    public function __get(string|array $name): int|string {}
+    public function __isset(string|bool $name): bool {}
+    public function __set(string|bool|float $name, mixed $value): void {}
+    public static function __set_state(string|array $properties): object {}
+    public function __unserialize(array|string $data): void {}
+    public function __unset(string|array $name): void {}
+}
+class Foo { public static function __set_state(array $data): self {} }
+class Foo2 { public static function __set_state(array $data): static {} }
+class Foo3 { public static function __set_state(array $data): Foo3|Foo2 {} }
+echo \"No problems!\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(
+        stdout.contains("Returning null from ValidMagicMethods::__debugInfo() is deprecated"),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("No problems!\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(!c_source.contains("WidenedArgumentType::__call(): Parameter #1"));
+    assert!(!c_source.contains("Foo::__set_state(): Return type must be object"));
+}
+
+#[test]
+fn compile_trait_magic_method_declaration_fatals() {
+    let root = temp_dir("ptn-native-trait-magic-method-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-magic-method-fatal.php");
+    let output = root.join("trait-magic-method-fatal-bin");
+    fs::write(
+        &input,
+        "<?php
+trait T { public function __toString(): int { return 1; } }
+echo \"unreachable\\n\";
+",
+    )
+    .unwrap();
+
+    let error = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(
+        error.message,
+        "T::__toString(): Return type must be string when declared"
+    );
+    assert_eq!(error.span.unwrap().line, 2);
 }
 
 #[test]

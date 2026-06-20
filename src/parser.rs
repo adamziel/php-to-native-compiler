@@ -424,6 +424,7 @@ impl Parser<'_> {
         compose_class_traits(&mut classes, &trait_lookup)?;
         validate_class_names(&classes, &traits, &mut self.compile_warnings)?;
         validate_trait_names(&traits, &mut self.compile_warnings)?;
+        validate_trait_magic_method_declarations(&traits)?;
         validate_builtin_attribute_targets(&classes, &traits, &functions)?;
         let mut validation_classes = classes.clone();
         validation_classes.extend(self.external_classes.iter().cloned());
@@ -16206,6 +16207,216 @@ fn validate_class_constant_names(class: &ClassDecl) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validate_trait_magic_method_declarations(traits: &[TraitDecl]) -> Result<()> {
+    for trait_decl in traits {
+        for method in &trait_decl.methods {
+            if let Some(message) = trait_magic_declaration_fatal_message(trait_decl, method) {
+                return Err(Diagnostic::new(message, Some(method.span)));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn trait_magic_declaration_fatal_message(
+    trait_decl: &TraitDecl,
+    method: &MethodDecl,
+) -> Option<String> {
+    let method_key = method.name.to_ascii_lowercase();
+    let expected_arity = match method_key.as_str() {
+        "__get" | "__isset" | "__unset" | "__set_state" => Some(1),
+        "__set" | "__call" | "__callstatic" => Some(2),
+        "__tostring" | "__debuginfo" => Some(0),
+        _ => None,
+    };
+    if let Some(expected) = expected_arity {
+        let actual = method.parameters.len();
+        if actual != expected {
+            if expected == 0 {
+                return Some(format!(
+                    "Method {}::{}() cannot take arguments",
+                    trait_decl.name, method.name
+                ));
+            }
+            let suffix = if expected == 1 { "" } else { "s" };
+            return Some(format!(
+                "Method {}::{}() must take exactly {expected} argument{suffix}",
+                trait_decl.name, method.name
+            ));
+        }
+    }
+
+    match method_key.as_str() {
+        "__callstatic" | "__set_state" if !method.is_static => {
+            return Some(format!(
+                "Method {}::{}() must be static",
+                trait_decl.name, method.name
+            ));
+        }
+        "__call" | "__get" | "__set" | "__isset" | "__unset" | "__tostring" | "__debuginfo"
+            if method.is_static =>
+        {
+            return Some(format!(
+                "Method {}::{}() cannot be static",
+                trait_decl.name, method.name
+            ));
+        }
+        _ => {}
+    }
+
+    if matches!(
+        method_key.as_str(),
+        "__call" | "__callstatic" | "__get" | "__set" | "__isset" | "__unset"
+    ) && method.parameters.iter().any(|parameter| parameter.by_ref)
+    {
+        return Some(format!(
+            "Method {}::{}() cannot take arguments by reference",
+            trait_decl.name, method.name
+        ));
+    }
+
+    if matches!(method_key.as_str(), "__construct" | "__destruct") && method.return_type.is_some() {
+        return Some(format!(
+            "Method {}::{}() cannot declare a return type",
+            trait_decl.name, method.name
+        ));
+    }
+
+    if let Some(return_type) = method.return_type.as_ref() {
+        let expected_label = match method_key.as_str() {
+            "__clone" | "__set" | "__unset"
+                if !trait_magic_return_type_is_void_compatible(return_type) =>
+            {
+                Some("void")
+            }
+            "__isset"
+                if !trait_magic_return_type_is_exact_or_never(return_type, &TypeHint::Bool) =>
+            {
+                Some("bool")
+            }
+            "__tostring"
+                if !trait_magic_return_type_is_exact_or_never(return_type, &TypeHint::String) =>
+            {
+                Some("string")
+            }
+            "__debuginfo" if !trait_magic_return_type_is_debug_info_compatible(return_type) => {
+                Some("?array")
+            }
+            "__set_state" if !trait_magic_return_type_is_object_compatible(return_type) => {
+                Some("object")
+            }
+            _ => None,
+        };
+        if let Some(expected_label) = expected_label {
+            return Some(format!(
+                "{}::{}(): Return type must be {} when declared",
+                trait_decl.name, method.name, expected_label
+            ));
+        }
+    }
+
+    match method_key.as_str() {
+        "__get" | "__set" | "__isset" | "__unset" | "__call" | "__callstatic" => {
+            if let Some(message) =
+                trait_magic_parameter_type_fatal(trait_decl, method, 0, TypeHint::String, "string")
+            {
+                return Some(message);
+            }
+        }
+        _ => {}
+    }
+    match method_key.as_str() {
+        "__call" | "__callstatic" => {
+            trait_magic_parameter_type_fatal(trait_decl, method, 1, TypeHint::Array, "array")
+        }
+        "__set_state" => {
+            trait_magic_parameter_type_fatal(trait_decl, method, 0, TypeHint::Array, "array")
+        }
+        _ => None,
+    }
+}
+
+fn trait_magic_return_type_is_exact_or_never(return_type: &TypeHint, expected: &TypeHint) -> bool {
+    return_type == expected || matches!(return_type, TypeHint::Never)
+}
+
+fn trait_magic_return_type_is_void_compatible(return_type: &TypeHint) -> bool {
+    matches!(return_type, TypeHint::Void | TypeHint::Never)
+}
+
+fn trait_magic_return_type_is_debug_info_compatible(return_type: &TypeHint) -> bool {
+    match return_type {
+        TypeHint::Array | TypeHint::Never => true,
+        TypeHint::Nullable(inner) => matches!(inner.as_ref(), TypeHint::Array),
+        TypeHint::Union(types) => {
+            types.len() == 2
+                && types
+                    .iter()
+                    .any(|type_hint| matches!(type_hint, TypeHint::Array))
+                && types
+                    .iter()
+                    .any(|type_hint| matches!(type_hint, TypeHint::Null))
+        }
+        _ => false,
+    }
+}
+
+fn trait_magic_return_type_is_object_compatible(return_type: &TypeHint) -> bool {
+    match return_type {
+        TypeHint::Object | TypeHint::Static | TypeHint::Class(_) | TypeHint::Never => true,
+        TypeHint::Union(types) | TypeHint::Intersection(types) => {
+            !types.is_empty()
+                && types
+                    .iter()
+                    .all(trait_magic_return_type_is_object_compatible)
+        }
+        _ => false,
+    }
+}
+
+fn trait_magic_parameter_type_fatal(
+    trait_decl: &TraitDecl,
+    method: &MethodDecl,
+    parameter_index: usize,
+    expected_type: TypeHint,
+    expected_label: &str,
+) -> Option<String> {
+    let parameter = method.parameters.get(parameter_index)?;
+    let declared_type = parameter.type_hint.as_ref()?;
+    if trait_magic_parameter_type_accepts_required(declared_type, &expected_type) {
+        return None;
+    }
+    Some(format!(
+        "{}::{}(): Parameter #{} (${}) must be of type {} when declared",
+        trait_decl.name,
+        method.name,
+        parameter_index + 1,
+        parameter.name,
+        expected_label
+    ))
+}
+
+fn trait_magic_parameter_type_accepts_required(
+    declared_type: &TypeHint,
+    required_type: &TypeHint,
+) -> bool {
+    if declared_type == required_type {
+        return true;
+    }
+    match declared_type {
+        TypeHint::Mixed => true,
+        TypeHint::Nullable(inner) => {
+            matches!(required_type, TypeHint::Null)
+                || trait_magic_parameter_type_accepts_required(inner, required_type)
+        }
+        TypeHint::Union(types) => types
+            .iter()
+            .any(|member| trait_magic_parameter_type_accepts_required(member, required_type)),
+        TypeHint::Iterable if matches!(required_type, TypeHint::Array) => true,
+        _ => false,
+    }
 }
 
 #[derive(Debug, Clone)]
