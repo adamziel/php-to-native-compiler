@@ -27465,6 +27465,18 @@ $root->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:g', 'urn:g');
 $dom->appendChild($root);
 $root->append($dom->createElementNS('urn:g', 'g:item', 'house'));
 echo $dom->saveXML();
+$attrsDoc = new DOMDocument();
+$attrsDoc->loadXML('<a href=\"hi\" foo=\"bar\"/>');
+$attrs = $attrsDoc->documentElement->attributes;
+var_dump($attrs instanceof DOMNamedNodeMap, isset($attrs['href']), $attrs['href']->value, $attrs[1]->value);
+$nsDoc = new DOMDocument();
+$nsRoot = $nsDoc->appendChild($nsDoc->createElement('root'));
+$nsRoot->setAttributeNS('urn:a', 'a:root1', 'bar');
+$nsAttr = $nsRoot->getAttributeNodeNS('urn:a', 'root1');
+var_dump($nsAttr->namespaceURI, $nsAttr->prefix, $nsAttr->localName, $nsAttr->nodeValue);
+$adoptedDoc = new DOMDocument();
+$adoptedDoc->appendChild($adoptedDoc->adoptNode($nsRoot));
+echo $adoptedDoc->saveXML();
 $other = new DOMDocument('1.0', 'utf-8');
 $other->loadXML('<other><child/></other>');
 $method = 'append';
@@ -27541,6 +27553,16 @@ echo $writer->flush();
             "<root xmlns=\"urn:root\" xmlns:g=\"urn:g\">\n",
             "  <g:item>house</g:item>\n",
             "</root>\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "string(2) \"hi\"\n",
+            "string(3) \"bar\"\n",
+            "string(5) \"urn:a\"\n",
+            "string(1) \"a\"\n",
+            "string(5) \"root1\"\n",
+            "string(3) \"bar\"\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<root xmlns:a=\"urn:a\" a:root1=\"bar\"/>\n",
             "Wrong Document Error\n",
             "bool(true)\n",
             "R:books\n",
@@ -58703,7 +58725,13 @@ var_dump($changed->toRawString());
 var_dump($changed->toString());
 var_dump($changed->getHost());
 var_dump($changed->getFragment());
+var_dump($uri->resolve("../baz?y=1")->toString());
 var_dump(Uri\Rfc3986\Uri::parse("\xF0\x9F\x90\x98"));
+try {
+    $uri->resolve("/f\0o");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
 try {
     new Uri\Rfc3986\Uri("https://ex\xE1mple.com");
 } catch (Throwable $e) {
@@ -58740,7 +58768,9 @@ try {
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
             "string(0) \"\"\n",
+            "string(41) \"https://user:info@example.com:443/baz?y=1\"\n",
             "NULL\n",
+            "Uri\\InvalidUriException: The specified URI is malformed\n",
             "Uri\\InvalidUriException: The specified URI is malformed\n",
         )
     );
@@ -58769,12 +58799,13 @@ var_dump($url->withUsername("u:s/r")->toAsciiString());
 $normalized = Uri\WhatWg\Url::parse("HTTPS://user:info@EXAMPLE.COM:443/../foo/bar?abc=123#hash");
 var_dump($url->equals($normalized));
 var_dump($url->equals($normalized, Uri\UriComparisonMode::ExcludeFragment));
-$ipv6Host = Uri\WhatWg\Url::parse("https://example.com")->withHost("[2001:0db8:3333:4444:5555:6666:7777:8888]");
+$base = Uri\WhatWg\Url::parse("https://example.com");
+$ipv6Host = $base->withHost("[2001:0db8:3333:4444:5555:6666:7777:8888]");
 var_dump($ipv6Host->getAsciiHost());
 var_dump($ipv6Host->toAsciiString());
-var_dump(Uri\WhatWg\Url::parse("https://example.com")->resolve("/f\0o")->toAsciiString());
+var_dump($base->resolve("/f\0o")->toAsciiString());
 try {
-    Uri\WhatWg\Url::parse("https://example.com")->withScheme("");
+    $base->withScheme("");
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
@@ -58784,12 +58815,17 @@ try {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
 try {
-    Uri\WhatWg\Url::parse("https://example.com")->withHost("ex@mple.com");
+    $base->withHost("ex@mple.com");
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
 try {
-    Uri\WhatWg\Url::parse("https://example.com")->withHost("ex:mple.com");
+    $base->withHost("ex:mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $base->resolve("https://ex\0mple.com");
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
@@ -58837,6 +58873,7 @@ try {
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (HostInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (DomainInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
         )

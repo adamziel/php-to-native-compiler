@@ -979,7 +979,8 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     );
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DateTimeInterface\");\n");
     out.push_str("    }\n");
-    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMNodeList\")) {\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMNodeList\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMNamedNodeMap\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Iterator\") ||\n");
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
@@ -5471,6 +5472,7 @@ fn emit_class_metadata_helpers(
         "DOMCdataSection",
         "DOMComment",
         "DOMNodeList",
+        "DOMNamedNodeMap",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -5936,6 +5938,7 @@ fn emit_class_metadata_helpers(
         "DOMCdataSection",
         "DOMComment",
         "DOMNodeList",
+        "DOMNamedNodeMap",
         "XMLReader",
         "XMLWriter",
         "XMLParser",
@@ -14621,6 +14624,7 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domcdatasection" => Some("DOMCdataSection"),
         "domcomment" => Some("DOMComment"),
         "domnodelist" => Some("DOMNodeList"),
+        "domnamednodemap" => Some("DOMNamedNodeMap"),
         "xmlreader" => Some("XMLReader"),
         "xmlwriter" => Some("XMLWriter"),
         "xmlparser" => Some("XMLParser"),
@@ -22101,6 +22105,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DOMCDataSection")
                 || class_name.eq_ignore_ascii_case("DOMComment")
                 || class_name.eq_ignore_ascii_case("DOMNodeList")
+                || class_name.eq_ignore_ascii_case("DOMNamedNodeMap")
                 || class_name.eq_ignore_ascii_case("XMLReader")
                 || class_name.eq_ignore_ascii_case("XMLWriter")
                 || class_name.eq_ignore_ascii_case("XMLParser")
