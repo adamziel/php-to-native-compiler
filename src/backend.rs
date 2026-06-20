@@ -10921,14 +10921,16 @@ fn emit_property_hook_set_helper(
             } else {
                 let value_temp =
                     values.emit_materialized_value(out, property.hook_set_value.as_ref().unwrap());
-                out.push_str("        PtnValue ptn_set_shorthand_assigned = ptn_object_write_property(&runtime, receiver, \"");
-                out.push_str(&c_string(&property.name));
-                out.push_str("\", \"");
-                out.push_str(&c_string(&class.name));
-                out.push_str("\", ");
-                out.push_str(&value_temp);
-                out.push_str(", line);\n");
-                out.push_str("        ptn_value_destroy(&ptn_set_shorthand_assigned);\n");
+                if !property.is_virtual {
+                    out.push_str("        PtnValue ptn_set_shorthand_assigned = ptn_object_write_property(&runtime, receiver, \"");
+                    out.push_str(&c_string(&property.name));
+                    out.push_str("\", \"");
+                    out.push_str(&c_string(&class.name));
+                    out.push_str("\", ");
+                    out.push_str(&value_temp);
+                    out.push_str(", line);\n");
+                    out.push_str("        ptn_value_destroy(&ptn_set_shorthand_assigned);\n");
+                }
                 out.push_str("        ptn_value_destroy(&");
                 out.push_str(&value_temp);
                 out.push_str(");\n");

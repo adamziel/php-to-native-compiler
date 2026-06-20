@@ -6693,6 +6693,37 @@ class C {
 }
 
 #[test]
+fn compile_constructor_promoted_expression_set_hook_to_native_binary() {
+    let root = temp_dir("ptn-native-constructor-promoted-expression-set-hook");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("constructor-promoted-expression-set-hook.php");
+    let output = root.join("constructor-promoted-expression-set-hook-bin");
+    fs::write(
+        &input,
+        "<?php
+class C {
+    public function __construct(
+        $prop { set => $value * 2; }
+    ) {}
+}
+
+$c = new C(42);
+var_dump($c);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "object(C)#1 (1) {\n  [\"prop\"]=>\n  int(84)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_constructor_promoted_reference_property_to_native_binary() {
     let root = temp_dir("ptn-native-constructor-promoted-reference-property");
     fs::create_dir_all(&root).unwrap();

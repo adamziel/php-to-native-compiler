@@ -4906,7 +4906,8 @@ fn assertion_anonymous_class_source_text(source: &str) -> String {
     };
     let rest = lines.collect::<Vec<_>>();
     if rest.is_empty() {
-        return first.to_string();
+        let text = first.to_string();
+        return assertion_anonymous_class_constructor_text(&text).unwrap_or(text);
     }
     let strip = rest
         .iter()
@@ -4923,56 +4924,100 @@ fn assertion_anonymous_class_source_text(source: &str) -> String {
             line.to_string()
         }
     }));
-
-    let mut expanded = Vec::with_capacity(normalized.len());
-    for line in normalized {
-        if let Some(lines) = assertion_anonymous_class_constructor_lines(&line) {
-            expanded.extend(lines);
-        } else {
-            expanded.push(line);
-        }
-    }
-    expanded.join("\n")
+    let text = normalized.join("\n");
+    assertion_anonymous_class_constructor_text(&text).unwrap_or(text)
 }
 
-fn assertion_anonymous_class_constructor_lines(line: &str) -> Option<Vec<String>> {
-    let trimmed = line.trim_start();
-    if !trimmed.contains("function __construct(") {
+fn assertion_anonymous_class_constructor_text(source: &str) -> Option<String> {
+    let class_open = source.find('{')?;
+    let class_close = find_matching_ascii_delimiter(source, class_open, b'{', b'}')?;
+    if !source[class_close + 1..].trim().is_empty() {
         return None;
     }
-    let signature = trimmed.strip_suffix("{}")?.trim_end();
-    let indent = &line[..line.len() - trimmed.len()];
-    let signature = signature.replacen("__construct( ", "__construct(", 1);
+    let class_head = source[..class_open].trim_end();
+    let class_body = source[class_open + 1..class_close].trim();
+    let construct = class_body.find("function __construct")?;
+    if !class_body[..construct].trim().is_empty()
+        && !class_body[..construct].trim().ends_with("public")
+    {
+        return None;
+    }
+    let parameters_open = class_body[construct..].find('(')? + construct;
+    let method_prefix = class_body[..parameters_open].trim();
+    let parameters_close = find_matching_ascii_delimiter(class_body, parameters_open, b'(', b')')?;
+    let method_body_open = class_body[parameters_close + 1..].find('{')? + parameters_close + 1;
+    if !class_body[parameters_close + 1..method_body_open]
+        .trim()
+        .is_empty()
+    {
+        return None;
+    }
+    let method_body_close =
+        find_matching_ascii_delimiter(class_body, method_body_open, b'{', b'}')?;
+    if !class_body[method_body_open + 1..method_body_close]
+        .trim()
+        .is_empty()
+    {
+        return None;
+    }
+    if !class_body[method_body_close + 1..].trim().is_empty() {
+        return None;
+    }
 
-    if let Some(hook_start) = signature.find(" { ") {
-        if let Some(hook_end) = signature.rfind('}') {
-            if hook_end > hook_start {
-                let before_hook = signature[..hook_start].trim_end();
-                let hook = signature[hook_start + 3..hook_end].trim();
-                let after_hook = signature[hook_end + 1..].trim();
-                if after_hook.starts_with(')') && !hook.is_empty() {
-                    let hook = if hook.ends_with(';') {
-                        hook.to_string()
-                    } else {
-                        format!("{hook};")
-                    };
-                    return Some(vec![
-                        format!("{indent}{before_hook} {{"),
-                        format!("{indent}    {hook}"),
-                        format!("{indent}}}{after_hook} {{"),
-                        format!("{indent}}}"),
-                        String::new(),
-                    ]);
-                }
+    let parameters = class_body[parameters_open + 1..parameters_close].trim();
+    let parameters = assertion_constructor_parameter_text(parameters);
+    Some(format!(
+        "{class_head} {{\n    {method_prefix}({parameters}) {{\n    }}\n\n}}"
+    ))
+}
+
+fn assertion_constructor_parameter_text(parameters: &str) -> String {
+    let mut formatted = String::new();
+    let mut cursor = 0usize;
+    while let Some(relative_open) = parameters[cursor..].find('{') {
+        let open = cursor + relative_open;
+        let Some(close) = find_matching_ascii_delimiter(parameters, open, b'{', b'}') else {
+            break;
+        };
+        formatted.push_str(&parameters[cursor..open]);
+        let hook_body = parameters[open + 1..close].trim();
+        formatted.push_str("{\n");
+        formatted.push_str(&assertion_property_hook_block_text(hook_body));
+        formatted.push('\n');
+        formatted.push_str("    }");
+        cursor = close + 1;
+    }
+    formatted.push_str(&parameters[cursor..]);
+    formatted.trim().to_string()
+}
+
+fn assertion_property_hook_block_text(body: &str) -> String {
+    body.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| format!("        {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn find_matching_ascii_delimiter(
+    text: &str,
+    open_index: usize,
+    open: u8,
+    close: u8,
+) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, byte) in text.as_bytes().iter().enumerate().skip(open_index) {
+        if *byte == open {
+            depth += 1;
+        } else if *byte == close {
+            depth = depth.checked_sub(1)?;
+            if depth == 0 {
+                return Some(index);
             }
         }
     }
-
-    Some(vec![
-        format!("{indent}{signature} {{"),
-        format!("{indent}}}"),
-        String::new(),
-    ])
+    None
 }
 
 fn assertion_float_text(value: f64) -> String {
