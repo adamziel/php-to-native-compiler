@@ -24191,6 +24191,68 @@ try {
 }
 
 #[test]
+fn compile_trait_reflection_attributes_defer_scoped_argument_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-trait-attribute-deferred-scope-error");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("trait-attribute-deferred-scope-error.php");
+    let output = root.join("trait-attribute-deferred-scope-error-bin");
+    fs::write(
+        &input,
+        "<?php
+#[Attribute]
+class A1 {
+    public function __construct($class, $value) {}
+}
+
+trait T1 {
+    #[A1(self::class, self::FOO)]
+    public function foo() {}
+}
+
+class C2 {
+    use T1;
+    private const FOO = 'bar';
+}
+
+$attr = (new ReflectionClass(T1::class))->getMethod('foo')->getAttributes()[0];
+echo \"attribute ok\\n\";
+try {
+    $attr->getArguments();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+print_r((new ReflectionClass(C2::class))->getMethod('foo')->getAttributes()[0]->getArguments());
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "attribute ok\n",
+            "Undefined constant self::FOO\n",
+            "Array\n(\n    [0] => C2\n    [1] => bar\n)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_attribute_try_frame"));
+    assert!(c_source.contains("ptn_runtime_read_class_constant_with_scope_message_class"));
+    assert!(c_source.contains("ptn_reflection_attribute_object_from_name_with_arguments_error"));
+}
+
+#[test]
 fn compile_reflection_attribute_self_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-attribute-self");
     fs::create_dir_all(&root).unwrap();

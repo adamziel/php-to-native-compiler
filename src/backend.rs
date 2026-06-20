@@ -8000,6 +8000,7 @@ fn emit_declared_class_reflection_attributes(
     if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
+    let mut label_namespace = 0usize;
     for class in classes {
         if class.attributes.instances.is_empty() {
             continue;
@@ -8013,12 +8014,14 @@ fn emit_declared_class_reflection_attributes(
             "ReflectionClass::getAttributes",
             &class.attributes,
             1,
+            label_namespace,
             classes,
             functions,
-            None,
+            Some("class_name"),
             false,
             Some(AttributeClassLikeTarget::Class(class)),
         );
+        label_namespace += 1;
         out.push_str("    }\n");
     }
     for trait_decl in traits {
@@ -8034,12 +8037,14 @@ fn emit_declared_class_reflection_attributes(
             "ReflectionClass::getAttributes",
             &trait_decl.attributes,
             1,
+            label_namespace,
             classes,
             functions,
-            None,
+            Some("class_name"),
             false,
             Some(AttributeClassLikeTarget::Trait(trait_decl)),
         );
+        label_namespace += 1;
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionClass\", \"getAttributes\", argc, args, line);\n");
@@ -8080,6 +8085,7 @@ fn emit_declared_class_method_reflection_attributes(
         out.push_str("    (void)class_name;\n");
         out.push_str("    (void)method_name;\n");
     }
+    let mut label_namespace = 0usize;
     for class in classes {
         for method in &class.methods {
             if method.attributes.instances.is_empty() {
@@ -8096,11 +8102,13 @@ fn emit_declared_class_method_reflection_attributes(
                 "ReflectionMethod::getAttributes",
                 &method.attributes,
                 4,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                Some("class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
         for property in &class.properties {
@@ -8116,11 +8124,13 @@ fn emit_declared_class_method_reflection_attributes(
                     "ReflectionMethod::getAttributes",
                     &property.hook_get_attributes,
                     4,
+                    label_namespace,
                     classes,
                     functions,
-                    None,
+                    Some("class_name"),
                     true,
                 );
+                label_namespace += 1;
                 out.push_str("    }\n");
             }
             if property.hook_has_set && !property.hook_set_attributes.instances.is_empty() {
@@ -8135,11 +8145,13 @@ fn emit_declared_class_method_reflection_attributes(
                     "ReflectionMethod::getAttributes",
                     &property.hook_set_attributes,
                     4,
+                    label_namespace,
                     classes,
                     functions,
-                    None,
+                    Some("class_name"),
                     true,
                 );
+                label_namespace += 1;
                 out.push_str("    }\n");
             }
         }
@@ -8160,11 +8172,13 @@ fn emit_declared_class_method_reflection_attributes(
                 "ReflectionMethod::getAttributes",
                 &method.attributes,
                 4,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                Some("class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
         for property in &trait_decl.properties {
@@ -8180,11 +8194,13 @@ fn emit_declared_class_method_reflection_attributes(
                     "ReflectionMethod::getAttributes",
                     &property.hook_get_attributes,
                     4,
+                    label_namespace,
                     classes,
                     functions,
-                    None,
+                    Some("class_name"),
                     true,
                 );
+                label_namespace += 1;
                 out.push_str("    }\n");
             }
             if property.hook_has_set && !property.hook_set_attributes.instances.is_empty() {
@@ -8199,11 +8215,13 @@ fn emit_declared_class_method_reflection_attributes(
                     "ReflectionMethod::getAttributes",
                     &property.hook_set_attributes,
                     4,
+                    label_namespace,
                     classes,
                     functions,
-                    None,
+                    Some("class_name"),
                     true,
                 );
+                label_namespace += 1;
                 out.push_str("    }\n");
             }
         }
@@ -8246,6 +8264,7 @@ fn emit_declared_class_property_reflection_attributes(
         out.push_str("    (void)class_name;\n");
         out.push_str("    (void)property_name;\n");
     }
+    let mut label_namespace = 0usize;
     for class in classes {
         for property in &class.properties {
             if property.attributes.instances.is_empty() {
@@ -8262,11 +8281,13 @@ fn emit_declared_class_property_reflection_attributes(
                 "ReflectionProperty::getAttributes",
                 &property.attributes,
                 8,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                Some("class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
         for property in &class.static_properties {
@@ -8284,11 +8305,13 @@ fn emit_declared_class_property_reflection_attributes(
                 "ReflectionProperty::getAttributes",
                 &property.attributes,
                 8,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                Some("class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
     }
@@ -8308,11 +8331,13 @@ fn emit_declared_class_property_reflection_attributes(
                 "ReflectionProperty::getAttributes",
                 &property.attributes,
                 8,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                Some("class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
         for property in &trait_decl.static_properties {
@@ -8330,11 +8355,13 @@ fn emit_declared_class_property_reflection_attributes(
                 "ReflectionProperty::getAttributes",
                 &property.attributes,
                 8,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                Some("class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
     }
@@ -8362,6 +8389,7 @@ fn emit_declared_class_constant_reflection_attributes(
         out.push_str("    (void)class_name;\n");
         out.push_str("    (void)constant_name;\n");
     }
+    let mut label_namespace = 0usize;
     for class in classes {
         for constant in &class.constants {
             if constant.attributes.instances.is_empty() {
@@ -8378,11 +8406,13 @@ fn emit_declared_class_constant_reflection_attributes(
                 "ReflectionClassConstant::getAttributes",
                 &constant.attributes,
                 16,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                Some("class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
     }
@@ -8407,6 +8437,7 @@ fn emit_declared_function_reflection_attributes(
     if !has_function_attributes {
         out.push_str("    (void)function_name;\n");
     }
+    let mut label_namespace = 0usize;
     for function in functions {
         if function.is_anonymous
             || function.class_name.is_some()
@@ -8423,11 +8454,13 @@ fn emit_declared_function_reflection_attributes(
             "ReflectionFunction::getAttributes",
             &function.attributes,
             2,
+            label_namespace,
             classes,
             functions,
             None,
             false,
         );
+        label_namespace += 1;
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionFunction\", \"getAttributes\", argc, args, line);\n");
@@ -8443,6 +8476,7 @@ fn emit_declared_function_reflection_attributes(
     if !has_closure_attributes {
         out.push_str("    (void)function_index;\n");
     }
+    let mut label_namespace = 0usize;
     for (index, function) in functions.iter().enumerate() {
         if !function.is_anonymous || function.attributes.instances.is_empty() {
             continue;
@@ -8456,11 +8490,13 @@ fn emit_declared_function_reflection_attributes(
             "ReflectionFunction::getAttributes",
             &function.attributes,
             2,
+            label_namespace,
             classes,
             functions,
             Some("ptn_attribute_scope_class_name"),
             false,
         );
+        label_namespace += 1;
         out.push_str("    }\n");
     }
     out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionFunction\", \"getAttributes\", argc, args, line);\n");
@@ -8849,10 +8885,15 @@ fn emit_declared_function_parameter_reflection_attributes(
         out.push_str("    (void)function_name;\n");
         out.push_str("    (void)parameter_index;\n");
     }
+    let mut label_namespace = 0usize;
     for function in functions {
         if function.is_anonymous {
             continue;
         }
+        let scope_class_expr = function
+            .class_name
+            .as_deref()
+            .map(|class_name| format!("\"{}\"", c_string(class_name)));
         for (index, parameter) in function.parameters.iter().enumerate() {
             if parameter.attributes.instances.is_empty() {
                 continue;
@@ -8868,11 +8909,13 @@ fn emit_declared_function_parameter_reflection_attributes(
                 "ReflectionParameter::getAttributes",
                 &parameter.attributes,
                 32,
+                label_namespace,
                 classes,
                 functions,
-                None,
+                scope_class_expr.as_deref(),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
     }
@@ -8896,6 +8939,7 @@ fn emit_declared_function_parameter_reflection_attributes(
         out.push_str("    (void)function_index;\n");
         out.push_str("    (void)parameter_index;\n");
     }
+    let mut label_namespace = 0usize;
     for (function_index, function) in functions.iter().enumerate() {
         if !function.is_anonymous {
             continue;
@@ -8915,11 +8959,13 @@ fn emit_declared_function_parameter_reflection_attributes(
                 "ReflectionParameter::getAttributes",
                 &parameter.attributes,
                 32,
+                label_namespace,
                 classes,
                 functions,
                 Some("ptn_attribute_scope_class_name"),
                 false,
             );
+            label_namespace += 1;
             out.push_str("    }\n");
         }
     }
@@ -8944,6 +8990,7 @@ fn emit_declared_constant_attributes(
     }) {
         out.push_str("    (void)constant_name;\n");
     }
+    let mut label_namespace = 0usize;
     for instruction in instructions {
         let Instruction::DefineConstant {
             name, attributes, ..
@@ -8963,11 +9010,13 @@ fn emit_declared_constant_attributes(
                 "ReflectionConstant::getAttributes",
                 attributes,
                 64,
+                label_namespace,
                 classes,
                 functions,
                 None,
                 false,
             );
+            label_namespace += 1;
         }
         out.push_str("    }\n");
     }
@@ -9101,6 +9150,7 @@ fn emit_declared_attribute_result(
     filter_function_name: &str,
     metadata: &AttributeMetadata,
     target: i32,
+    label_namespace: usize,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
     attribute_scope_class_var: Option<&str>,
@@ -9112,6 +9162,7 @@ fn emit_declared_attribute_result(
         filter_function_name,
         metadata,
         target,
+        label_namespace,
         classes,
         functions,
         attribute_scope_class_var,
@@ -9126,6 +9177,7 @@ fn emit_declared_attribute_result_for_class_like(
     filter_function_name: &str,
     metadata: &AttributeMetadata,
     target: i32,
+    label_namespace: usize,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
     attribute_scope_class_var: Option<&str>,
@@ -9155,9 +9207,13 @@ fn emit_declared_attribute_result_for_class_like(
         out.push_str("        if (attribute_allowed_");
         out.push_str(&attribute_index.to_string());
         out.push_str(") {\n");
+        let label_suffix = format!("{label_namespace}_{attribute_index}");
         out.push_str("            PtnValue attribute_args_");
         out.push_str(&attribute_index.to_string());
         out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+        out.push_str("            PtnValue constructor_args_");
+        out.push_str(&attribute_index.to_string());
+        out.push_str(" = ptn_null();\n");
         let constructor_plan = attribute_constructor_argument_plan(instance, classes, functions);
         let mut constructor_error = reflection_attribute_arguments_error(instance, classes)
             .or_else(|| {
@@ -9176,7 +9232,7 @@ fn emit_declared_attribute_result_for_class_like(
                 .and_then(|target| delayed_builtin_class_like_attribute_error(instance, target));
         }
         if let Some(error_message) = constructor_error {
-            out.push_str("            PtnValue constructor_args_");
+            out.push_str("            constructor_args_");
             out.push_str(&attribute_index.to_string());
             out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
             out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name_with_arguments_error(runtime, \"");
@@ -9199,6 +9255,15 @@ fn emit_declared_attribute_result_for_class_like(
             out.push_str(&c_string(&error_message));
             out.push_str("\"));\n");
         } else {
+            out.push_str("            PtnTryFrame ptn_attribute_try_frame_");
+            out.push_str(&label_suffix);
+            out.push_str(";\n");
+            out.push_str("            ptn_try_frame_push(runtime, &ptn_attribute_try_frame_");
+            out.push_str(&label_suffix);
+            out.push_str(");\n");
+            out.push_str("            if (setjmp(ptn_attribute_try_frame_");
+            out.push_str(&label_suffix);
+            out.push_str(".jump) == 0) {\n");
             let mut positional_index = 0usize;
             for (argument_index, argument) in instance.arguments.iter().enumerate() {
                 let argument_temp = format!("attribute_arg_{attribute_index}_{argument_index}");
@@ -9211,11 +9276,14 @@ fn emit_declared_attribute_result_for_class_like(
                     attribute_scope_class_var,
                 );
                 out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
-                out.push_str("                ptn_value_destroy(&attribute_args_");
-                out.push_str(&attribute_index.to_string());
+                out.push_str(
+                    "                ptn_try_frame_pop(runtime, &ptn_attribute_try_frame_",
+                );
+                out.push_str(&label_suffix);
                 out.push_str(");\n");
-                out.push_str("                ptn_value_destroy(&result);\n");
-                out.push_str("                return ptn_null();\n");
+                out.push_str("                goto ptn_attribute_arguments_error_");
+                out.push_str(&label_suffix);
+                out.push_str(";\n");
                 out.push_str("            }\n");
                 out.push_str("            ptn_array_set_entry(attribute_args_");
                 out.push_str(&attribute_index.to_string());
@@ -9238,7 +9306,7 @@ fn emit_declared_attribute_result_for_class_like(
             }
             match &constructor_plan {
                 AttributeConstructorArgumentPlan::Ordered(constructor_order) => {
-                    out.push_str("            PtnValue constructor_args_");
+                    out.push_str("            constructor_args_");
                     out.push_str(&attribute_index.to_string());
                     out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
                     for (constructor_index, argument_index) in constructor_order.iter().enumerate()
@@ -9262,7 +9330,7 @@ fn emit_declared_attribute_result_for_class_like(
                 }
                 AttributeConstructorArgumentPlan::Default
                 | AttributeConstructorArgumentPlan::Error(_) => {
-                    out.push_str("            PtnValue constructor_args_");
+                    out.push_str("            constructor_args_");
                     out.push_str(&attribute_index.to_string());
                     out.push_str(" = ptn_value_clone_deref(attribute_args_");
                     out.push_str(&attribute_index.to_string());
@@ -9286,6 +9354,44 @@ fn emit_declared_attribute_result_for_class_like(
             out.push_str(", ");
             out.push_str(if instance.strict_types { "1" } else { "0" });
             out.push_str("));\n");
+            out.push_str("            ptn_try_frame_pop(runtime, &ptn_attribute_try_frame_");
+            out.push_str(&label_suffix);
+            out.push_str(");\n");
+            out.push_str("            goto ptn_attribute_after_");
+            out.push_str(&label_suffix);
+            out.push_str(";\n");
+            out.push_str("            } else {\n");
+            out.push_str("                ptn_try_frame_pop(runtime, &ptn_attribute_try_frame_");
+            out.push_str(&label_suffix);
+            out.push_str(");\n");
+            out.push_str("            }\n");
+            out.push_str("ptn_attribute_arguments_error_");
+            out.push_str(&label_suffix);
+            out.push_str(":;\n");
+            out.push_str("            constructor_args_");
+            out.push_str(&attribute_index.to_string());
+            out.push_str(" = ptn_array_from_literal_entries(0, NULL);\n");
+            out.push_str("            ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_reflection_attribute_object_from_name_with_arguments_error(runtime, \"");
+            out.push_str(&c_string(&instance.name));
+            out.push_str("\", attribute_args_");
+            out.push_str(&attribute_index.to_string());
+            out.push_str(", constructor_args_");
+            out.push_str(&attribute_index.to_string());
+            out.push_str(", ");
+            out.push_str(&target.to_string());
+            out.push_str(", ");
+            out.push_str(if repeated { "1" } else { "0" });
+            out.push_str(", ");
+            out.push_str(&c_attribute_source_file(instance));
+            out.push_str(", ");
+            out.push_str(&instance.line.to_string());
+            out.push_str(", ");
+            out.push_str(if instance.strict_types { "1" } else { "0" });
+            out.push_str(", runtime->exceptions->active_exception->class_name, runtime->exceptions->active_exception->message));\n");
+            out.push_str("            ptn_clear_exception(runtime);\n");
+            out.push_str("ptn_attribute_after_");
+            out.push_str(&label_suffix);
+            out.push_str(":;\n");
         }
         out.push_str("            ptn_value_destroy(&constructor_args_");
         out.push_str(&attribute_index.to_string());
@@ -9449,10 +9555,10 @@ fn attribute_class_constant_arguments_error(
     name: &str,
     classes: &[ClassDecl],
 ) -> Option<String> {
-    if class_name.eq_ignore_ascii_case("self")
-        || class_name.eq_ignore_ascii_case("static")
-        || class_name.eq_ignore_ascii_case("parent")
-    {
+    if class_name.eq_ignore_ascii_case("self") {
+        return None;
+    }
+    if class_name.eq_ignore_ascii_case("static") || class_name.eq_ignore_ascii_case("parent") {
         return Some(format!("Undefined constant {class_name}::{name}"));
     }
     let lookup_class_name = class_name.trim_start_matches('\\');
@@ -9589,16 +9695,21 @@ fn emit_attribute_argument_expression(
                 attribute_scope_class_var,
                 true,
             );
-            emit_attribute_argument_simple(
-                out,
-                target,
-                indent,
-                &format!(
+            let read_expression = if *scope_relative {
+                let access_scope = attribute_scope_class_var.unwrap_or("NULL");
+                format!(
+                    "ptn_runtime_read_class_constant_with_scope_message_class(runtime, {class_name_expr}, \"{}\", \"self\", {access_scope}, {})",
+                    c_string(name),
+                    fallback_line
+                )
+            } else {
+                format!(
                     "ptn_runtime_read_class_constant(runtime, {class_name_expr}, \"{}\", {})",
                     c_string(name),
                     fallback_line
-                ),
-            );
+                )
+            };
+            emit_attribute_argument_simple(out, target, indent, &read_expression);
         }
         AttributeArgumentExpression::Array(elements) => {
             out.push_str(indent);
