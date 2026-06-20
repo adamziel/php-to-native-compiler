@@ -1775,12 +1775,31 @@ impl Parser<'_> {
                     Some(token.span),
                 ));
             };
+            if matches!(self.peek().kind, TokenKind::Pipe) {
+                let mut type_names = vec![type_name.to_string()];
+                while matches!(self.peek().kind, TokenKind::Pipe) {
+                    self.advance();
+                    let token = self.advance().clone();
+                    let Some(next_name) = name_segment_from_token(&token.kind) else {
+                        return Err(Diagnostic::new(
+                            "expected enum backing type",
+                            Some(token.span),
+                        ));
+                    };
+                    type_names.push(next_name.to_string());
+                }
+                let type_name = enum_backing_union_diagnostic_name(&type_names);
+                return Err(Diagnostic::new(
+                    format!("Enum backing type must be int or string, {type_name} given"),
+                    Some(token.span),
+                ));
+            }
             match type_name.to_ascii_lowercase().as_str() {
                 "int" => Some(EnumBackingType::Int),
                 "string" => Some(EnumBackingType::String),
                 _ => {
                     return Err(Diagnostic::new(
-                        "Enum backing type must be int or string",
+                        format!("Enum backing type must be int or string, {type_name} given"),
                         Some(token.span),
                     ));
                 }
@@ -1838,15 +1857,15 @@ impl Parser<'_> {
                 };
                 if enum_backing_type.is_some() && enum_case_value.is_none() {
                     return Err(Diagnostic::new(
-                        format!(
-                            "Case {class_name}::{name} of backed enum {class_name} must have a value"
-                        ),
+                        format!("Case {name} of backed enum {class_name} must have a value"),
                         Some(token.span),
                     ));
                 }
                 if enum_backing_type.is_none() && enum_case_value.is_some() {
                     return Err(Diagnostic::new(
-                        format!("Case {class_name}::{name} of non-backed enum {class_name} must not have a value"),
+                        format!(
+                            "Case {name} of non-backed enum {class_name} must not have a value"
+                        ),
                         Some(token.span),
                     ));
                 }
@@ -10102,6 +10121,19 @@ fn name_segment_from_token(kind: &TokenKind) -> Option<String> {
     }
 }
 
+fn enum_backing_union_diagnostic_name(type_names: &[String]) -> String {
+    let has_int = type_names
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case("int"));
+    let has_string = type_names
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case("string"));
+    if type_names.len() == 2 && has_int && has_string {
+        return "string|int".to_string();
+    }
+    type_names.join("|")
+}
+
 fn method_name_from_token(kind: &TokenKind) -> Option<String> {
     match kind {
         TokenKind::Identifier(name) => Some(name.clone()),
@@ -12228,7 +12260,10 @@ fn import_trait_method_into_class(
     let original_excluded =
         trait_method_excluded_by_precedence(&trait_use.adaptations, &trait_decl.name, &method.name);
     let method_key = method.name.to_ascii_lowercase();
-    if !original_excluded && !own_method_names.contains(&method_key) {
+    if !original_excluded
+        && !own_method_names.contains(&method_key)
+        && !(class.is_enum && method_key == "cases")
+    {
         let imported = adapted_original_trait_method(method, trait_decl, &trait_use.adaptations);
         if let Err(existing) =
             insert_imported_trait_method(class, imported_method_names, &method_key, imported)
@@ -12249,7 +12284,7 @@ fn import_trait_method_into_class(
             continue;
         };
         let alias_key = alias_name.to_ascii_lowercase();
-        if own_method_names.contains(&alias_key) {
+        if own_method_names.contains(&alias_key) || (class.is_enum && alias_key == "cases") {
             continue;
         }
         let mut imported = method_with_trait_origin(method, trait_decl);
@@ -12683,6 +12718,8 @@ fn validate_class_names(
         if declaration_name_segment(&lookup_name) == "_" {
             let subject = if class.is_interface {
                 "an interface"
+            } else if class.is_enum {
+                "an enum"
             } else {
                 "a class"
             };
@@ -15169,6 +15206,17 @@ fn validate_no_discard_function_target(
 
 fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
     for class in classes {
+        if class.is_enum {
+            if let Some(method) = class.methods.iter().find(|method| method.is_abstract) {
+                return Err(Diagnostic::new(
+                    format!(
+                        "Enum method {}::{}() must not be abstract",
+                        class.name, method.name
+                    ),
+                    Some(method.span),
+                ));
+            }
+        }
         if class.is_abstract {
             continue;
         }

@@ -5791,6 +5791,47 @@ static void ptn_print_r_object(
     size_t indent,
     PtnDumpSeenArrays *seen
 ) {
+    if (object != NULL && object->enum_case_name != NULL) {
+        const char *backing_type = NULL;
+        for (size_t i = 0; i < object->property_metadata_len; i++) {
+            PtnObjectPropertyMetadata *metadata = &object->property_metadata[i];
+            if (strcmp(metadata->display_name, "value") == 0) {
+                backing_type = metadata->type_text;
+                break;
+            }
+        }
+        if (backing_type != NULL && backing_type[0] != '\0') {
+            ptn_string_buffer_append_format(
+                buffer,
+                "%s Enum:%s\n",
+                object->class_name,
+                backing_type
+            );
+        } else {
+            ptn_string_buffer_append_format(buffer, "%s Enum\n", object->class_name);
+        }
+        ptn_string_buffer_append_indent(buffer, indent);
+        ptn_string_buffer_append(buffer, "(\n");
+        ptn_dump_seen_objects_push(seen, object);
+        for (size_t i = 0; i < object->properties->len; i++) {
+            ptn_string_buffer_append_indent(buffer, indent + 4);
+            ptn_string_buffer_append_char(buffer, '[');
+            ptn_print_r_object_key(buffer, object, object->properties->entries[i].key);
+            ptn_string_buffer_append(buffer, "] => ");
+            PtnValue entry_value = ptn_value_deref(object->properties->entries[i].value);
+            if (entry_value.type == PTN_ARRAY || entry_value.type == PTN_OBJECT) {
+                ptn_print_r_value_indented(buffer, entry_value, indent + 8, seen);
+                ptn_string_buffer_append_char(buffer, '\n');
+            } else {
+                ptn_print_r_value_indented(buffer, entry_value, indent, seen);
+                ptn_string_buffer_append_char(buffer, '\n');
+            }
+        }
+        ptn_dump_seen_objects_pop(seen);
+        ptn_string_buffer_append_indent(buffer, indent);
+        ptn_string_buffer_append(buffer, ")\n");
+        return;
+    }
     if (object != NULL && ptn_internal_class_name_is_spl_fixed_array(object->class_name)) {
         PtnSplFixedArrayData *data = object->native_data == NULL
             ? NULL
@@ -8874,6 +8915,13 @@ static void ptn_var_export_append_object(
         ptn_string_buffer_append(buffer, "NULL");
         return;
     }
+    if (object != NULL && object->enum_case_name != NULL) {
+        ptn_string_buffer_append_char(buffer, '\\');
+        ptn_string_buffer_append(buffer, object->class_name);
+        ptn_string_buffer_append(buffer, "::");
+        ptn_string_buffer_append(buffer, object->enum_case_name);
+        return;
+    }
     ptn_dump_seen_objects_push(seen, object);
     if (strcmp(object->class_name, "stdClass") == 0) {
         ptn_string_buffer_append(buffer, "(object) ");
@@ -9453,6 +9501,15 @@ static int ptn_json_encode_append_object(
         ptn_value_destroy(&serialized);
         ptn_dump_seen_objects_pop(seen);
         return ok;
+    }
+    if (object != NULL && object->enum_case_name != NULL) {
+        PtnArrayKey value_key = ptn_array_string_key("value");
+        PtnArrayEntry *value_entry = ptn_array_entry_for_key(object->properties, value_key);
+        if (value_entry == NULL) {
+            ptn_json_note_error(error, PTN_JSON_ERROR_NON_BACKED_ENUM);
+            return 0;
+        }
+        return ptn_json_encode_append_value(buffer, value_entry->value, seen, depth - 1, flags, error);
     }
     ptn_dump_seen_objects_push(seen, object);
     ptn_string_buffer_append_char(buffer, '{');

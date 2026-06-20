@@ -397,7 +397,9 @@ pub fn emit_c(module: &Module) -> String {
         &mut out,
         &declaration_fatals,
         &module.source_file,
-        !module.compile_warnings.is_empty() || !magic_visibility_warnings.is_empty(),
+        !module.compile_warnings.is_empty()
+            || !serializable_deprecations.is_empty()
+            || !magic_visibility_warnings.is_empty(),
     );
     emit_magic_debug_info_return_deprecations(&mut out, &magic_debug_info_deprecations);
     let early_constant_indexes = emit_static_property_initializers_with_constants(
@@ -1550,7 +1552,13 @@ fn emit_declared_class_new_instance_without_constructor(
         out.push_str("if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&declared_class.name));
         out.push_str("\")) {\n");
-        if declared_class.is_interface || declared_class.is_abstract {
+        if declared_class.is_enum {
+            out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate enum ");
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\");\n");
+            out.push_str("    ptn_runtime_free(&runtime);\n");
+            out.push_str("    return ptn_null();\n");
+        } else if declared_class.is_interface || declared_class.is_abstract {
             out.push_str("    ptn_throw_exception(&runtime, \"Error\", \"Cannot instantiate ");
             out.push_str(if declared_class.is_interface {
                 "interface "
@@ -3378,6 +3386,31 @@ fn emit_class_constant_initializer_helper(
                         .unwrap_or(&ValueExpr::Null);
                     let backing_temp = values.emit_const_materialized_value(out, backing_value);
                     extra_cleanup_temps.push(backing_temp.clone());
+                    out.push_str("            PtnValue ");
+                    out.push_str(&backing_temp);
+                    out.push_str("_resolved = ptn_value_deref(");
+                    out.push_str(&backing_temp);
+                    out.push_str(");\n");
+                    out.push_str("            if (");
+                    out.push_str(&backing_temp);
+                    out.push_str("_resolved.type != ");
+                    out.push_str(match backing_type {
+                        EnumBackingType::Int => "PTN_INT",
+                        EnumBackingType::String => "PTN_STRING",
+                    });
+                    out.push_str(") {\n");
+                    out.push_str("                char ptn_enum_type_message[192];\n");
+                    out.push_str("                int ptn_enum_type_written = snprintf(ptn_enum_type_message, sizeof(ptn_enum_type_message), \"Enum case type %s does not match enum backing type ");
+                    out.push_str(c_enum_backing_type_name(backing_type));
+                    out.push_str("\", ptn_offset_container_type_name(");
+                    out.push_str(&backing_temp);
+                    out.push_str("_resolved));\n");
+                    out.push_str("                if (ptn_enum_type_written < 0 || (size_t)ptn_enum_type_written >= sizeof(ptn_enum_type_message)) {\n");
+                    out.push_str("                    ptn_abort_out_of_memory();\n");
+                    out.push_str("                }\n");
+                    out.push_str("                ptn_throw_exception(&runtime, \"TypeError\", ptn_enum_type_message);\n");
+                    out.push_str("                return 0;\n");
+                    out.push_str("            }\n");
                     out.push_str("            PtnValue ");
                     out.push_str(&value_temp);
                     out.push_str(" = ptn_enum_case_with_backing(&runtime, \"");
@@ -7114,6 +7147,19 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")) {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"from\")) {\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"tryFrom\")) {\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
@@ -7307,6 +7353,15 @@ fn emit_class_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")");
+            if class.enum_backing_type.is_some() {
+                out.push_str(" || ptn_ascii_case_equal(method_name, \"from\") || ptn_ascii_case_equal(method_name, \"tryFrom\")");
+            }
+            out.push_str(") {\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
         for entry in class_method_lookup_chain(class, classes) {
             let method = entry.method;
             out.push_str("        if (ptn_ascii_case_equal(method_name, \"");
@@ -7866,6 +7921,30 @@ fn emit_declared_enum_static_method(out: &mut String, classes: &[ClassDecl]) {
             if let Some(message) = enum_duplicate_message(class) {
                 out.push_str("            ptn_throw_exception(runtime, \"Error\", \"");
                 out.push_str(&c_string(&message));
+                out.push_str("\");\n");
+                out.push_str("            *result_out = ptn_null();\n");
+                out.push_str("            return 1;\n");
+            }
+            let mismatched_case_type = class
+                .constants
+                .iter()
+                .filter(|constant| constant.is_enum_case)
+                .find_map(
+                    |constant| match (backing_type, enum_case_backing_literal(constant)) {
+                        (EnumBackingType::Int, Some(EnumBackingLiteral::String(_))) => {
+                            Some("string")
+                        }
+                        (EnumBackingType::String, Some(EnumBackingLiteral::Int(_))) => Some("int"),
+                        _ => None,
+                    },
+                );
+            if let Some(mismatched_case_type) = mismatched_case_type {
+                out.push_str(
+                    "            ptn_throw_exception(runtime, \"TypeError\", \"Enum case type ",
+                );
+                out.push_str(mismatched_case_type);
+                out.push_str(" does not match enum backing type ");
+                out.push_str(c_enum_backing_type_name(backing_type));
                 out.push_str("\");\n");
                 out.push_str("            *result_out = ptn_null();\n");
                 out.push_str("            return 1;\n");
@@ -10853,6 +10932,29 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("\");\n");
             out.push_str("        }\n");
         }
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")) {\n");
+            out.push_str("            return ptn_reflection_method_object_from_name(runtime, \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\", \"cases\");\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"from\")) {\n");
+                out.push_str(
+                    "            return ptn_reflection_method_object_from_name(runtime, \"",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"from\");\n");
+                out.push_str("        }\n");
+                out.push_str("        if (ptn_ascii_case_equal(method_name, \"tryFrom\")) {\n");
+                out.push_str(
+                    "            return ptn_reflection_method_object_from_name(runtime, \"",
+                );
+                out.push_str(&c_string(&class.name));
+                out.push_str("\", \"tryFrom\");\n");
+                out.push_str("        }\n");
+            }
+        }
         out.push_str("        return ptn_null();\n");
         out.push_str("    }\n");
     }
@@ -11119,6 +11221,19 @@ fn emit_class_reflection_metadata_helpers(
             out.push_str("            *is_abstract = ");
             out.push_str(if method.is_abstract { "1" } else { "0" });
             out.push_str(";\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        if class.is_enum {
+            out.push_str("        if (ptn_ascii_case_equal(method_name, \"cases\")");
+            if class.enum_backing_type.is_some() {
+                out.push_str(" || ptn_ascii_case_equal(method_name, \"from\") || ptn_ascii_case_equal(method_name, \"tryFrom\")");
+            }
+            out.push_str(") {\n");
+            out.push_str("            *is_static = 1;\n");
+            out.push_str("            *visibility = PTN_PROPERTY_PUBLIC;\n");
+            out.push_str("            *is_final = 0;\n");
+            out.push_str("            *is_abstract = 0;\n");
             out.push_str("            return 1;\n");
             out.push_str("        }\n");
         }
@@ -11868,6 +11983,30 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (strcmp(property_name, \"name\") == 0) {\n");
+            out.push_str("            *declaring_class = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("            *is_static = 0;\n");
+            out.push_str("            *visibility = PTN_PROPERTY_PUBLIC;\n");
+            out.push_str("            *has_default = 0;\n");
+            out.push_str("            *modifiers = 129;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            if class.enum_backing_type.is_some() {
+                out.push_str("        if (strcmp(property_name, \"value\") == 0) {\n");
+                out.push_str("            *declaring_class = \"");
+                out.push_str(&c_string(&class.name));
+                out.push_str("\";\n");
+                out.push_str("            *is_static = 0;\n");
+                out.push_str("            *visibility = PTN_PROPERTY_PUBLIC;\n");
+                out.push_str("            *has_default = 0;\n");
+                out.push_str("            *modifiers = 129;\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_property_exists_chain(class, classes) {
             if entry.visibility == PropertyVisibility::Private
                 && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
@@ -12009,6 +12148,30 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
+        if class.is_enum {
+            out.push_str("        if (strcmp(property_name, \"name\") == 0) {\n");
+            out.push_str("            *is_readonly = 1;\n");
+            out.push_str("            *type_name = \"string\";\n");
+            out.push_str("            *type_display_name = \"string\";\n");
+            out.push_str("            *allows_null = 0;\n");
+            out.push_str("            *is_builtin = 1;\n");
+            out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+            if let Some(backing_type) = class.enum_backing_type {
+                out.push_str("        if (strcmp(property_name, \"value\") == 0) {\n");
+                out.push_str("            *is_readonly = 1;\n");
+                out.push_str("            *type_name = \"");
+                out.push_str(c_enum_backing_type_name(backing_type));
+                out.push_str("\";\n");
+                out.push_str("            *type_display_name = \"");
+                out.push_str(c_enum_backing_type_name(backing_type));
+                out.push_str("\";\n");
+                out.push_str("            *allows_null = 0;\n");
+                out.push_str("            *is_builtin = 1;\n");
+                out.push_str("            return 1;\n");
+                out.push_str("        }\n");
+            }
+        }
         for entry in class_property_exists_chain(class, classes) {
             if entry.visibility == PropertyVisibility::Private
                 && !entry.declaring_class.eq_ignore_ascii_case(&class.name)
@@ -14305,6 +14468,52 @@ fn class_property_exists_chain<'a>(
         let lookup_name = class.name.to_ascii_lowercase();
         if !seen_classes.insert(lookup_name) {
             return;
+        }
+        if class.is_enum {
+            if seen_properties.insert("name") {
+                properties.push(ClassPropertyExistsEntry {
+                    declaring_class: class.name.as_str(),
+                    name: "name",
+                    visibility: PropertyVisibility::Public,
+                    set_visibility: PropertyVisibility::Public,
+                    is_static: false,
+                    is_final: false,
+                    is_abstract: false,
+                    is_readonly: true,
+                    has_hooks: false,
+                    is_virtual: false,
+                    hook_has_get: false,
+                    hook_has_set: false,
+                    hook_get_is_abstract: false,
+                    hook_set_is_abstract: false,
+                    type_hint: None,
+                    doc_comment: None,
+                    value: None,
+                    has_default: false,
+                });
+            }
+            if class.enum_backing_type.is_some() && seen_properties.insert("value") {
+                properties.push(ClassPropertyExistsEntry {
+                    declaring_class: class.name.as_str(),
+                    name: "value",
+                    visibility: PropertyVisibility::Public,
+                    set_visibility: PropertyVisibility::Public,
+                    is_static: false,
+                    is_final: false,
+                    is_abstract: false,
+                    is_readonly: true,
+                    has_hooks: false,
+                    is_virtual: false,
+                    hook_has_get: false,
+                    hook_has_set: false,
+                    hook_get_is_abstract: false,
+                    hook_set_is_abstract: false,
+                    type_hint: None,
+                    doc_comment: None,
+                    value: None,
+                    has_default: false,
+                });
+            }
         }
         let instance_property_entry =
             |property: &'a crate::ir::PropertyDecl| ClassPropertyExistsEntry {
@@ -20402,7 +20611,7 @@ fn collect_module_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
                 line: class.line,
             });
         }
-        if let Some(message) = enum_class_declaration_fatal_message(class) {
+        if let Some(message) = enum_class_declaration_fatal_message(class, &module.classes) {
             fatals.push(DeclarationFatal {
                 message,
                 line: class.line,
@@ -20412,6 +20621,12 @@ fn collect_module_declaration_fatals(module: &Module) -> Vec<DeclarationFatal> {
             let Some(function) = module.functions.get(method.function_index) else {
                 continue;
             };
+            if let Some(message) = enum_method_declaration_fatal_message(class, method) {
+                fatals.push(DeclarationFatal {
+                    message,
+                    line: method.line,
+                });
+            }
             if let Some(message) = magic_declaration_fatal_message(class, method, function) {
                 fatals.push(DeclarationFatal {
                     message,
@@ -20496,7 +20711,10 @@ fn reserved_declaration_name_segment(name: &str) -> Option<&str> {
     .then_some(segment)
 }
 
-fn enum_class_declaration_fatal_message(class: &ClassDecl) -> Option<String> {
+fn enum_class_declaration_fatal_message(
+    class: &ClassDecl,
+    classes: &[ClassDecl],
+) -> Option<String> {
     if !class.is_enum {
         if class
             .interfaces
@@ -20519,6 +20737,45 @@ fn enum_class_declaration_fatal_message(class: &ClassDecl) -> Option<String> {
                 class.name, parent_name
             ));
         }
+        return None;
+    }
+    if class
+        .interfaces
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case("UnitEnum"))
+    {
+        return Some(format!(
+            "Enum {} cannot implement previously implemented interface UnitEnum",
+            class.name
+        ));
+    }
+    if class
+        .interfaces
+        .iter()
+        .any(|interface| interface.eq_ignore_ascii_case("BackedEnum"))
+    {
+        if class.enum_backing_type.is_some() {
+            return Some(format!(
+                "Enum {} cannot implement previously implemented interface BackedEnum",
+                class.name
+            ));
+        }
+        return Some(format!(
+            "Non-backed enum {} cannot implement interface BackedEnum",
+            class.name
+        ));
+    }
+    if class_transitive_interfaces(class, classes)
+        .into_iter()
+        .any(|interface| interface.eq_ignore_ascii_case("Serializable"))
+    {
+        return Some(format!(
+            "Enum {} cannot implement the Serializable interface",
+            class.name
+        ));
+    }
+    if !class.properties.is_empty() || !class.static_properties.is_empty() {
+        return Some(format!("Enum {} cannot include properties", class.name));
     }
     None
 }
@@ -20531,6 +20788,31 @@ fn is_builtin_enum_class_name(name: &str) -> bool {
 
 fn is_builtin_enum_interface_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("UnitEnum") || name.eq_ignore_ascii_case("BackedEnum")
+}
+
+fn enum_method_declaration_fatal_message(
+    class: &ClassDecl,
+    method: &crate::ir::MethodDecl,
+) -> Option<String> {
+    if !class.is_enum {
+        return None;
+    }
+    if method.is_abstract {
+        return Some(format!(
+            "Enum method {}::{}() must not be abstract",
+            class.name, method.name
+        ));
+    }
+    let method_key = method.name.to_ascii_lowercase();
+    if method_key == "cases"
+        || (class.enum_backing_type.is_some() && (method_key == "from" || method_key == "tryfrom"))
+    {
+        return Some(format!(
+            "Cannot redeclare {}::{}()",
+            class.name, method.name
+        ));
+    }
+    None
 }
 
 fn magic_declaration_fatal_message(
@@ -20659,6 +20941,8 @@ fn enum_magic_method_is_forbidden(method_key: &str) -> bool {
     matches!(
         method_key,
         "__clone"
+            | "__construct"
+            | "__destruct"
             | "__get"
             | "__isset"
             | "__serialize"
@@ -32381,6 +32665,22 @@ impl ValueEmitter {
         line: usize,
         declare_result: bool,
     ) {
+        if declared_class.is_enum {
+            out.push_str("    ");
+            if declare_result {
+                out.push_str("PtnValue ");
+            }
+            out.push_str(result_temp);
+            out.push_str(" = ptn_null();\n");
+            out.push_str(
+                "    ptn_throw_exception_at(&runtime, \"Error\", \"Cannot instantiate enum ",
+            );
+            out.push_str(&c_string(&declared_class.name));
+            out.push_str("\", runtime.source_path, ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            return;
+        }
         if declared_class.is_interface || declared_class.is_abstract {
             out.push_str("    ");
             if declare_result {

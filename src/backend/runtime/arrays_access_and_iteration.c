@@ -1340,7 +1340,7 @@ static PTN_UNUSED PtnValue ptn_clone_value(PtnRuntime *runtime, PtnValue value, 
         return ptn_datetime_zone_clone(runtime, resolved, line);
     }
 #endif
-    if (source->native_data != NULL) {
+    if (source->enum_case_name != NULL || source->native_data != NULL) {
         char message[192];
         int written = snprintf(
             message,
@@ -4023,7 +4023,8 @@ static PTN_UNUSED char *ptn_object_resolve_property_storage_key(
         if (
             (access_mode == PTN_PROPERTY_ACCESS_WRITE ||
              access_mode == PTN_PROPERTY_ACCESS_INDIRECT_WRITE) &&
-            (ptn_ascii_case_equal(object->class_name, "BcMath\\Number") ||
+            (object->enum_case_name != NULL ||
+             ptn_ascii_case_equal(object->class_name, "BcMath\\Number") ||
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
              ptn_internal_class_name_is_weak_map(object->class_name) ||
              ptn_internal_class_name_is_weak_reference(object->class_name) ||
