@@ -1804,7 +1804,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_path ~ /Zend\/tests\/attributes\/(001_placement|003_ast_nodes|005_objects|006_filter|009_doctrine_annotations_example|011_inheritance|013_class_scope|014_class_const_group|017_closure_scope|020_userland_attribute_validation|031_backtrace|gh8421)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/(021_attribute_flags_type_is_validated|022_attribute_flags_value_is_validated|023_ast_node_in_validation|ossfuzz371445205)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/constants\/(allow_named_parameters|constant_listed_as_target-userland|constant_redefined_(addition|change|removal)|multiple_attributes_(grouped|ungrouped)|must_target_const-userland|not_repeatable-userland|oss_fuzz_428053935|repeatable-userland|target_all_targets_const-(default|explicit))[.]phpt$/ ||
-                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(has_runtime_errors|validator_(NoDiscard|success)|with_Attribute)[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/(has_runtime_errors|validator_(AllowDynamicProperties|Attribute|Deprecated|NoDiscard|success)|with_Attribute)[.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionAttribute_(constructor_001|newInstance_(deprecated|exception))[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/007_self_reflect_attribute[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/002_rfcexample[.]phpt$/ ||
@@ -1839,6 +1839,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_path ~ /Zend\/tests\/enum\/(__call|__callStatic|__class__|__clone|__function__|__get|__invoke|__isset|__method__|__serialize|__set|__set_state|__sleep|__toString|__unserialize|__unset|__wakeup|backed-cases-int|backed-cases-string|backed-duplicate-int|backed-duplicate-string|backed-from-invalid-int|backed-from-invalid-string)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/Attribute\/Attribute_on_enum[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/allow_dynamic_properties_on_enum[.]phpt$/ ||
+                ptn_path ~ /Zend\/tests\/attributes\/delayed_target_validation\/validator_(AllowDynamicProperties|Attribute|Deprecated)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/deprecated\/(class_constants\/101|error_on_enum)[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/attributes\/override\/01[45][.]phpt$/ ||
                 ptn_path ~ /ext\/reflection\/tests\/ReflectionClass(Constant_isEnumCase|_isEnum)[.]phpt$/ ||

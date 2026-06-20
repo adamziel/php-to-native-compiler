@@ -108,11 +108,14 @@ pub enum EnumBackingType {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraitDecl {
     pub name: String,
+    pub source_file: String,
     pub trait_uses: Vec<TraitUseDecl>,
+    pub attributes: AttributeMetadata,
     pub deprecated_message: Option<String>,
     pub deprecated_since: Option<String>,
     pub doc_comment: Option<String>,
     pub line: usize,
+    pub end_line: usize,
     pub properties: Vec<PropertyDecl>,
     pub static_properties: Vec<StaticPropertyDecl>,
     pub methods: Vec<TraitMethodDecl>,
@@ -2339,6 +2342,11 @@ impl<'a> LoweringContext<'a> {
     }
 
     fn lower_trait(&mut self, trait_decl: &crate::ast::TraitDecl) -> TraitDecl {
+        let trait_attributes = self.lower_class_scoped_attribute_metadata(
+            &trait_decl.attributes,
+            &trait_decl.name,
+            None,
+        );
         let properties = trait_decl
             .properties
             .iter()
@@ -2417,11 +2425,14 @@ impl<'a> LoweringContext<'a> {
             .collect();
         TraitDecl {
             name: trait_decl.name.clone(),
+            source_file: self.source_file.clone(),
             trait_uses: lower_trait_uses(&trait_decl.trait_uses),
+            attributes: trait_attributes,
             deprecated_message: trait_decl.attributes.deprecated_message.clone(),
             deprecated_since: trait_decl.attributes.deprecated_since.clone(),
             doc_comment: trait_decl.doc_comment.clone(),
             line: trait_decl.span.line,
+            end_line: trait_decl.span.end_line,
             properties,
             static_properties,
             methods: trait_decl

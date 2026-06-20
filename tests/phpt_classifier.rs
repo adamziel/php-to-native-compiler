@@ -2255,14 +2255,18 @@ fn phpt_classifier_allows_focused_enum_metadata_rows() {
         );
     }
 
-    let delayed = classify_at_relative_path(
-        enum_row,
+    let delayed_validator_row = "--TEST--\ndelayed validator metadata\n--FILE--\n<?php\n#[DelayedTargetValidation]\n#[Attribute]\nenum Demo { case A; }\n$r = new ReflectionClass(Demo::class);\nvar_dump($r->getAttributes());\n--EXPECTF--\n";
+    for path in [
+        "Zend/tests/attributes/delayed_target_validation/validator_AllowDynamicProperties.phpt",
         "Zend/tests/attributes/delayed_target_validation/validator_Attribute.phpt",
-    );
-    assert!(
-        delayed.starts_with("unsupported-enum-metadata\t"),
-        "{delayed:?}"
-    );
+        "Zend/tests/attributes/delayed_target_validation/validator_Deprecated.phpt",
+    ] {
+        let classification = classify_at_relative_path(delayed_validator_row, path);
+        assert!(
+            classification.starts_with("runnable\t"),
+            "{path}: {classification:?}"
+        );
+    }
 }
 
 #[test]

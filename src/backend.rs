@@ -181,6 +181,7 @@ pub fn emit_c(module: &Module) -> String {
         &module.classes,
         runtime_requirements.internal_function_dispatch,
     );
+    emit_declared_property_default_array_helpers(&mut out, &module.classes);
     emit_user_functions(
         &mut out,
         &module.classes,
@@ -4619,6 +4620,92 @@ fn function_static_variables_provider_name(function_index: usize) -> String {
     format!("ptn_function_{function_index}_static_variables")
 }
 
+fn c_identifier_fragment(value: &str) -> String {
+    let mut fragment = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            fragment.push(byte as char);
+        } else {
+            fragment.push('_');
+            fragment.push_str(&format!("{byte:02x}"));
+        }
+    }
+    if fragment.is_empty() {
+        fragment.push_str("anon");
+    }
+    fragment
+}
+
+fn property_default_array_helper_name(
+    declaring_class: &str,
+    property_name: &str,
+    line: usize,
+) -> String {
+    format!(
+        "ptn_declared_property_default_array_{}_{}_{}",
+        c_identifier_fragment(declaring_class),
+        c_identifier_fragment(property_name),
+        line
+    )
+}
+
+fn value_expr_is_shareable_property_default(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::String(_)
+        | ValueExpr::Int(_)
+        | ValueExpr::Float(_)
+        | ValueExpr::Bool(_)
+        | ValueExpr::Null => true,
+        ValueExpr::Binary {
+            op, left, right, ..
+        } => c_property_default_binary_value(*op, left, right).is_some(),
+        ValueExpr::Array(elements) => elements.iter().all(|element| {
+            match element.key.as_ref() {
+                Some(ValueExpr::String(_)) | Some(ValueExpr::Int(_)) | None => {}
+                _ => return false,
+            }
+            match &element.value {
+                IrArrayElementValue::Value(value) => {
+                    value_expr_is_shareable_property_default(value)
+                }
+                IrArrayElementValue::Reference(_) | IrArrayElementValue::Unpack { .. } => false,
+            }
+        }),
+        _ => false,
+    }
+}
+
+fn emit_declared_property_default_array_helpers(out: &mut String, classes: &[ClassDecl]) {
+    for class in classes {
+        for property in &class.properties {
+            let Some(value @ ValueExpr::Array(_)) = property.value.as_ref() else {
+                continue;
+            };
+            if !value_expr_is_shareable_property_default(value) {
+                continue;
+            }
+            out.push_str("\nstatic PTN_UNUSED PtnValue ");
+            out.push_str(&property_default_array_helper_name(
+                &class.name,
+                &property.name,
+                property.line,
+            ));
+            out.push_str("(PtnRuntime *runtime) {\n");
+            out.push_str("    (void)runtime;\n");
+            out.push_str("    static int initialized = 0;\n");
+            out.push_str("    static PtnValue value;\n");
+            out.push_str("    if (!initialized) {\n");
+            out.push_str("        value = ");
+            out.push_str(&c_property_default_value(Some(value)));
+            out.push_str(";\n");
+            out.push_str("        initialized = 1;\n");
+            out.push_str("    }\n");
+            out.push_str("    return ptn_value_clone(value);\n");
+            out.push_str("}\n");
+        }
+    }
+}
+
 fn emit_function_static_variable_providers(out: &mut String, functions: &[FunctionDecl]) {
     for (function_index, function) in functions.iter().enumerate() {
         let bindings = function_static_local_bindings(function);
@@ -5102,7 +5189,7 @@ fn emit_user_function_dispatch(
     out.push_str("        ptn_static_call_class[ptn_static_call_class_len] = '\\0';\n");
     out.push_str("        const char *ptn_static_call_resolved_class = ptn_runtime_resolve_class_alias(runtime, ptn_static_call_class);\n");
     out.push_str("        const char *ptn_static_call_method = ptn_static_call_separator + 2;\n");
-    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
+    out.push_str("        if ((ptn_internal_class_exists_name(ptn_static_call_resolved_class) || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTime\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"DateTimeImmutable\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(ptn_static_call_resolved_class, \"XMLWriter\")) && ptn_internal_class_static_method_exists(ptn_static_call_resolved_class, ptn_static_call_method)) {\n");
     out.push_str("            PtnValue ptn_static_call_result = ptn_internal_class_static_call_method(runtime, ptn_static_call_resolved_class, ptn_static_call_method, argc, args, line);\n");
     out.push_str("            free(ptn_static_call_class);\n");
     out.push_str("            return ptn_static_call_result;\n");
@@ -7531,7 +7618,7 @@ fn emit_reflection_attribute_metadata_helpers(
     functions: &[FunctionDecl],
     instructions: &[Instruction],
 ) {
-    emit_declared_class_reflection_attributes(out, classes, functions);
+    emit_declared_class_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_method_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_property_reflection_attributes(out, classes, traits, functions);
     emit_declared_class_constant_reflection_attributes(out, classes, functions);
@@ -7754,13 +7841,14 @@ fn emit_declared_enum_static_method(out: &mut String, classes: &[ClassDecl]) {
 fn emit_declared_class_reflection_attributes(
     out: &mut String,
     classes: &[ClassDecl],
+    traits: &[TraitDecl],
     functions: &[FunctionDecl],
 ) {
     out.push_str(
         "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_attributes(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
     out.push_str("    (void)class_name;\n");
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
     }
     for class in classes {
@@ -7770,7 +7858,7 @@ fn emit_declared_class_reflection_attributes(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        emit_declared_attribute_result(
+        emit_declared_attribute_result_for_class_like(
             out,
             "ReflectionClass",
             "ReflectionClass::getAttributes",
@@ -7780,6 +7868,28 @@ fn emit_declared_class_reflection_attributes(
             functions,
             None,
             false,
+            Some(AttributeClassLikeTarget::Class(class)),
+        );
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        if trait_decl.attributes.instances.is_empty() {
+            continue;
+        }
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        emit_declared_attribute_result_for_class_like(
+            out,
+            "ReflectionClass",
+            "ReflectionClass::getAttributes",
+            &trait_decl.attributes,
+            1,
+            classes,
+            functions,
+            None,
+            false,
+            Some(AttributeClassLikeTarget::Trait(trait_decl)),
         );
         out.push_str("    }\n");
     }
@@ -8722,6 +8832,12 @@ enum AttributeConstructorArgumentPlan {
     Error(String),
 }
 
+#[derive(Clone, Copy)]
+enum AttributeClassLikeTarget<'a> {
+    Class(&'a ClassDecl),
+    Trait(&'a TraitDecl),
+}
+
 fn internal_attribute_constructor_parameters(name: &str) -> Option<&'static [&'static str]> {
     match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
         "attribute" => Some(&["flags"]),
@@ -8832,6 +8948,31 @@ fn attribute_constructor_argument_plan(
 
 fn emit_declared_attribute_result(
     out: &mut String,
+    reflector_class: &str,
+    filter_function_name: &str,
+    metadata: &AttributeMetadata,
+    target: i32,
+    classes: &[ClassDecl],
+    functions: &[FunctionDecl],
+    attribute_scope_class_var: Option<&str>,
+    property_hook_context: bool,
+) {
+    emit_declared_attribute_result_for_class_like(
+        out,
+        reflector_class,
+        filter_function_name,
+        metadata,
+        target,
+        classes,
+        functions,
+        attribute_scope_class_var,
+        property_hook_context,
+        None,
+    );
+}
+
+fn emit_declared_attribute_result_for_class_like(
+    out: &mut String,
     _reflector_class: &str,
     filter_function_name: &str,
     metadata: &AttributeMetadata,
@@ -8840,6 +8981,7 @@ fn emit_declared_attribute_result(
     functions: &[FunctionDecl],
     attribute_scope_class_var: Option<&str>,
     property_hook_context: bool,
+    class_like_target: Option<AttributeClassLikeTarget<'_>>,
 ) {
     out.push_str("        PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
     out.push_str("        int64_t index = 0;\n");
@@ -8879,6 +9021,10 @@ fn emit_declared_attribute_result(
         if property_hook_context && instance.name.eq_ignore_ascii_case("NoDiscard") {
             constructor_error =
                 Some("#[\\NoDiscard] is not supported for property hooks".to_string());
+        }
+        if constructor_error.is_none() && metadata.delayed_target_validation_count > 0 {
+            constructor_error = class_like_target
+                .and_then(|target| delayed_builtin_class_like_attribute_error(instance, target));
         }
         if let Some(error_message) = constructor_error {
             out.push_str("            PtnValue constructor_args_");
@@ -9009,6 +9155,90 @@ fn c_attribute_source_file(instance: &crate::ast::AttributeInstance) -> String {
     } else {
         format!("\"{}\"", c_string(&instance.source_file))
     }
+}
+
+fn delayed_builtin_class_like_attribute_error(
+    instance: &AttributeInstance,
+    target: AttributeClassLikeTarget<'_>,
+) -> Option<String> {
+    let name = instance.name.trim_start_matches('\\');
+    match target {
+        AttributeClassLikeTarget::Class(class) => {
+            if name.eq_ignore_ascii_case("Attribute") {
+                if class.is_enum {
+                    return Some(format!(
+                        "Cannot apply #[\\Attribute] to enum {}",
+                        class.name
+                    ));
+                }
+                if class.is_interface {
+                    return Some(format!(
+                        "Cannot apply #[\\Attribute] to interface {}",
+                        class.name
+                    ));
+                }
+                if class.is_abstract {
+                    return Some(format!(
+                        "Cannot apply #[\\Attribute] to abstract class {}",
+                        class.name
+                    ));
+                }
+            }
+            if name.eq_ignore_ascii_case("AllowDynamicProperties") {
+                if class.is_enum {
+                    return Some(format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to enum {}",
+                        class.name
+                    ));
+                }
+                if class.is_interface {
+                    return Some(format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to interface {}",
+                        class.name
+                    ));
+                }
+                if class.is_readonly {
+                    return Some(format!(
+                        "Cannot apply #[\\AllowDynamicProperties] to readonly class {}",
+                        class.name
+                    ));
+                }
+            }
+            if name.eq_ignore_ascii_case("Deprecated") {
+                if class.is_interface {
+                    return Some(format!(
+                        "Cannot apply #[\\Deprecated] to interface {}",
+                        class.name
+                    ));
+                }
+                if class.is_enum {
+                    return Some(format!(
+                        "Cannot apply #[\\Deprecated] to enum {}",
+                        class.name
+                    ));
+                }
+                return Some(format!(
+                    "Cannot apply #[\\Deprecated] to class {}",
+                    class.name
+                ));
+            }
+        }
+        AttributeClassLikeTarget::Trait(trait_decl) => {
+            if name.eq_ignore_ascii_case("Attribute") {
+                return Some(format!(
+                    "Cannot apply #[\\Attribute] to trait {}",
+                    trait_decl.name
+                ));
+            }
+            if name.eq_ignore_ascii_case("AllowDynamicProperties") {
+                return Some(format!(
+                    "Cannot apply #[\\AllowDynamicProperties] to trait {}",
+                    trait_decl.name
+                ));
+            }
+        }
+    }
+    None
 }
 
 fn reflection_attribute_arguments_error(
@@ -10182,9 +10412,9 @@ fn emit_class_reflection_metadata_helpers(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name) {\n",
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_class_reflection_to_string(PtnRuntime *runtime, const char *class_name, int include_enum_cases) {\n",
     );
-    if classes.is_empty() {
+    if classes.is_empty() && traits.is_empty() {
         out.push_str("    (void)class_name;\n");
         out.push_str("    (void)runtime;\n");
     }
@@ -10192,7 +10422,21 @@ fn emit_class_reflection_metadata_helpers(
         out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
         out.push_str(&c_string(&class.name));
         out.push_str("\")) {\n");
-        emit_reflection_class_to_string_runtime(out, class, classes, functions);
+        emit_reflection_class_to_string_runtime(
+            out,
+            class,
+            classes,
+            functions,
+            "include_enum_cases",
+        );
+        out.push_str("        return ptn_owned_string(ptn_reflection_buffer.data);\n");
+        out.push_str("    }\n");
+    }
+    for trait_decl in traits {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&trait_decl.name));
+        out.push_str("\")) {\n");
+        emit_reflection_trait_to_string_runtime(out, trait_decl, functions);
         out.push_str("        return ptn_owned_string(ptn_reflection_buffer.data);\n");
         out.push_str("    }\n");
     }
@@ -11441,9 +11685,10 @@ fn emit_reflection_class_to_string_runtime(
     class: &ClassDecl,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    include_enum_cases: &str,
 ) {
     if class.is_enum {
-        emit_reflection_enum_to_string_runtime(out, class, classes, functions);
+        emit_reflection_enum_to_string_runtime(out, class, classes, functions, include_enum_cases);
         return;
     }
     let header = reflection_class_to_string_header(class);
@@ -11459,11 +11704,33 @@ fn emit_reflection_class_to_string_runtime(
     out.push_str("\");\n");
 }
 
+fn emit_reflection_trait_to_string_runtime(
+    out: &mut String,
+    trait_decl: &TraitDecl,
+    functions: &[FunctionDecl],
+) {
+    let header = reflection_trait_to_string_header(trait_decl);
+    let constants = reflection_trait_constants_to_string();
+    let methods = reflection_trait_to_string_methods_tail(trait_decl, functions);
+    out.push_str("        PtnStringBuffer ptn_reflection_buffer;\n");
+    out.push_str("        ptn_string_buffer_init(&ptn_reflection_buffer);\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&header));
+    out.push_str("\");\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&constants));
+    out.push_str("\");\n");
+    out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
+    out.push_str(&c_string(&methods));
+    out.push_str("\");\n");
+}
+
 fn emit_reflection_enum_to_string_runtime(
     out: &mut String,
     class: &ClassDecl,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    include_enum_cases: &str,
 ) {
     let header = reflection_enum_to_string_header(class);
     let enum_cases = reflection_enum_cases_to_string(class);
@@ -11473,9 +11740,13 @@ fn emit_reflection_enum_to_string_runtime(
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
     out.push_str(&c_string(&header));
     out.push_str("\");\n");
+    out.push_str("        if (");
+    out.push_str(include_enum_cases);
+    out.push_str(") {\n");
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
     out.push_str(&c_string(&enum_cases));
     out.push_str("\");\n");
+    out.push_str("        }\n");
     emit_reflection_class_constants_to_string_runtime(out, class, false);
     out.push_str("        ptn_string_buffer_append(&ptn_reflection_buffer, \"");
     out.push_str(&c_string(&methods));
@@ -11622,6 +11893,9 @@ fn reflection_class_to_string_header(class: &ClassDecl) -> String {
     if class.is_final {
         out.push_str("final ");
     }
+    if class.is_readonly {
+        out.push_str("readonly ");
+    }
     out.push_str(if class.is_interface {
         "interface "
     } else {
@@ -11645,6 +11919,25 @@ fn reflection_class_to_string_header(class: &ClassDecl) -> String {
     out.push_str(&class.end_line.to_string());
     out.push_str("\n\n");
     out
+}
+
+fn reflection_trait_to_string_header(trait_decl: &TraitDecl) -> String {
+    let mut out = String::new();
+    out.push_str("Trait [ <user> trait ");
+    out.push_str(&trait_decl.name);
+    out.push_str(" ] {\n");
+    out.push_str("  @@ ");
+    out.push_str(&trait_decl.source_file);
+    out.push(' ');
+    out.push_str(&trait_decl.line.to_string());
+    out.push('-');
+    out.push_str(&trait_decl.end_line.to_string());
+    out.push_str("\n\n");
+    out
+}
+
+fn reflection_trait_constants_to_string() -> String {
+    "  - Constants [0] {\n  }\n\n".to_string()
 }
 
 fn reflection_class_to_string_methods_tail(
@@ -11681,6 +11974,49 @@ fn reflection_class_to_string_methods_tail(
         .collect::<Vec<_>>();
     reflection_class_properties_to_string(&mut out, "Properties", &properties);
     reflection_class_methods_to_string(&mut out, "Methods", class, &instance_methods, functions);
+
+    out.push_str("}\n");
+    out
+}
+
+fn reflection_trait_to_string_methods_tail(
+    trait_decl: &TraitDecl,
+    functions: &[FunctionDecl],
+) -> String {
+    let mut out = String::new();
+    reflection_class_properties_to_string(
+        &mut out,
+        "Static properties",
+        &trait_decl.static_properties,
+    );
+
+    let static_methods = trait_decl
+        .methods
+        .iter()
+        .filter(|method| method.is_static)
+        .collect::<Vec<_>>();
+    let instance_methods = trait_decl
+        .methods
+        .iter()
+        .filter(|method| !method.is_static)
+        .collect::<Vec<_>>();
+    reflection_trait_methods_to_string(
+        &mut out,
+        "Static methods",
+        trait_decl,
+        &static_methods,
+        functions,
+    );
+    out.push('\n');
+
+    reflection_class_properties_to_string(&mut out, "Properties", &trait_decl.properties);
+    reflection_trait_methods_to_string(
+        &mut out,
+        "Methods",
+        trait_decl,
+        &instance_methods,
+        functions,
+    );
 
     out.push_str("}\n");
     out
@@ -11917,6 +12253,68 @@ impl ReflectionPropertySummary for ClassPropertyExistsEntry<'_> {
 
     fn reflection_has_default(&self) -> bool {
         self.has_default
+    }
+}
+
+impl ReflectionPropertySummary for crate::ir::PropertyDecl {
+    fn reflection_name(&self) -> &str {
+        &self.name
+    }
+
+    fn reflection_visibility(&self) -> PropertyVisibility {
+        self.visibility
+    }
+
+    fn reflection_set_visibility(&self) -> PropertyVisibility {
+        self.set_visibility
+    }
+
+    fn reflection_is_static(&self) -> bool {
+        false
+    }
+
+    fn reflection_is_final(&self) -> bool {
+        self.is_final
+    }
+
+    fn reflection_is_abstract(&self) -> bool {
+        self.is_abstract
+    }
+
+    fn reflection_is_virtual(&self) -> bool {
+        self.is_virtual
+    }
+
+    fn reflection_has_hooks(&self) -> bool {
+        self.has_hooks
+    }
+
+    fn reflection_hook_has_get(&self) -> bool {
+        self.hook_has_get
+    }
+
+    fn reflection_hook_has_set(&self) -> bool {
+        self.hook_has_set
+    }
+
+    fn reflection_hook_get_is_abstract(&self) -> bool {
+        self.hook_get_is_abstract
+    }
+
+    fn reflection_hook_set_is_abstract(&self) -> bool {
+        self.hook_set_is_abstract
+    }
+
+    fn reflection_type_hint(&self) -> Option<&PropertyTypeHint> {
+        self.type_hint.as_ref()
+    }
+
+    fn reflection_value(&self) -> Option<&ValueExpr> {
+        self.value.as_ref()
+    }
+
+    fn reflection_has_default(&self) -> bool {
+        self.value.is_some() || self.type_hint.is_none()
     }
 }
 
@@ -12226,6 +12624,32 @@ fn reflection_property_hook_method_to_string(
     }
     out.push_str("}\n");
     out
+}
+
+fn reflection_trait_methods_to_string(
+    out: &mut String,
+    label: &str,
+    trait_decl: &TraitDecl,
+    methods: &[&TraitMethodDecl],
+    functions: &[FunctionDecl],
+) {
+    out.push_str("  - ");
+    out.push_str(label);
+    out.push_str(" [");
+    out.push_str(&methods.len().to_string());
+    out.push_str("] {\n");
+    for (index, method) in methods.iter().enumerate() {
+        let method_text = reflection_trait_method_to_string(trait_decl, method, functions);
+        for line in method_text.lines() {
+            out.push_str("    ");
+            out.push_str(line);
+            out.push('\n');
+        }
+        if index + 1 < methods.len() {
+            out.push('\n');
+        }
+    }
+    out.push_str("  }\n");
 }
 
 fn reflection_trait_method_to_string(
@@ -15135,7 +15559,7 @@ fn emit_method_dispatch(
         out.push_str("    }\n");
     }
     out.push_str("#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH\n");
-    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && (ptn_internal_class_exists_name(target_class_name) || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLReader\")) && ptn_internal_class_static_method_exists(target_class_name, method_name)) {\n");
+    out.push_str("    if (resolved_receiver.type != PTN_OBJECT && (ptn_internal_class_exists_name(target_class_name) || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLReader\") || ptn_declared_class_is_same_or_descendant(target_class_name, \"XMLWriter\")) && ptn_internal_class_static_method_exists(target_class_name, method_name)) {\n");
     out.push_str("        *result_out = ptn_internal_class_static_call_method(runtime, target_class_name, method_name, argc, args, line);\n");
     out.push_str("        return 1;\n");
     out.push_str("    }\n");
@@ -22564,7 +22988,11 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
         Some(&COUNT_CHARS_PARAMETERS)
     } else if name.eq_ignore_ascii_case("unpack") {
         Some(&UNPACK_PARAMETERS)
-    } else if name.eq_ignore_ascii_case("XMLReader::fromStream") {
+    } else if name.eq_ignore_ascii_case("XMLReader::fromStream")
+        || name
+            .rsplit_once("::")
+            .is_some_and(|(_, method_name)| method_name.eq_ignore_ascii_case("fromStream"))
+    {
         Some(&XMLREADER_FROM_STREAM_PARAMETERS)
     } else {
         None
@@ -31027,6 +31455,22 @@ impl ValueEmitter {
                 .current_class_name
                 .replace(declaring_class_name.clone());
             let effective_value = hook_get_value.as_ref().or(property.value.as_ref());
+            let shared_array_default_helper = if hook_get_value.is_none() {
+                match property.value.as_ref() {
+                    Some(value @ ValueExpr::Array(_))
+                        if value_expr_is_shareable_property_default(value) =>
+                    {
+                        Some(property_default_array_helper_name(
+                            &declaring_class_name,
+                            &property.name,
+                            property.line,
+                        ))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let value_temp = match effective_value {
                 Some(value) => {
                     let previous_scope_temp = self.next_temp();
@@ -31047,7 +31491,18 @@ impl ValueEmitter {
                     out.push_str("runtime.current_called_class_name = \"");
                     out.push_str(&c_string(&declaring_class_name));
                     out.push_str("\";\n");
-                    let value_temp = self.emit_const_materialized_value(out, value);
+                    let value_temp = if let Some(helper_name) = shared_array_default_helper {
+                        let temp = self.next_temp();
+                        out.push_str(indent);
+                        out.push_str("PtnValue ");
+                        out.push_str(&temp);
+                        out.push_str(" = ");
+                        out.push_str(&helper_name);
+                        out.push_str("(&runtime);\n");
+                        temp
+                    } else {
+                        self.emit_const_materialized_value(out, value)
+                    };
                     out.push_str(indent);
                     out.push_str("runtime.current_called_class_name = ");
                     out.push_str(&previous_called_scope_temp);
