@@ -1320,6 +1320,42 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(5);
         return 1;
     }
+    if (strcmp(name, "XML_ELEMENT_NODE") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
+    if (strcmp(name, "XML_ATTRIBUTE_NODE") == 0) {
+        *out = ptn_int(2);
+        return 1;
+    }
+    if (strcmp(name, "XML_TEXT_NODE") == 0) {
+        *out = ptn_int(3);
+        return 1;
+    }
+    if (strcmp(name, "XML_CDATA_SECTION_NODE") == 0) {
+        *out = ptn_int(4);
+        return 1;
+    }
+    if (strcmp(name, "XML_ENTITY_REF_NODE") == 0) {
+        *out = ptn_int(5);
+        return 1;
+    }
+    if (strcmp(name, "XML_PI_NODE") == 0) {
+        *out = ptn_int(7);
+        return 1;
+    }
+    if (strcmp(name, "XML_COMMENT_NODE") == 0) {
+        *out = ptn_int(8);
+        return 1;
+    }
+    if (strcmp(name, "XML_DOCUMENT_NODE") == 0) {
+        *out = ptn_int(9);
+        return 1;
+    }
+    if (strcmp(name, "XML_DOCUMENT_FRAG_NODE") == 0) {
+        *out = ptn_int(11);
+        return 1;
+    }
     if (strcmp(name, "ASSERT_ACTIVE") == 0) {
         *out = ptn_int(1);
         return 1;

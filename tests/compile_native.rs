@@ -26548,6 +26548,113 @@ echo $writer->flush();
 }
 
 #[test]
+fn compile_dom_document_load_save_html_surfaces_to_native_binary() {
+    let root = temp_dir("ptn-native-dom-document-load-save-html-surfaces");
+    fs::create_dir_all(&root).unwrap();
+    let xml_file = root.join("input.xml");
+    let saved_xml_file = root.join("saved.xml");
+    let saved_html_file = root.join("saved.html");
+    let input = root.join("dom-document-load-save-html-surfaces.php");
+    let output = root.join("dom-document-load-save-html-surfaces-bin");
+    fs::write(
+        &input,
+        format!(
+            r#"<?php
+$xmlFile = {};
+$savedXmlFile = {};
+$savedHtmlFile = {};
+file_put_contents($xmlFile, "<?xml version=\"1.0\"?>\n<root><item>one</item><item>two</item></root>\n");
+
+$doc = new DOMDocument();
+var_dump($doc->load($xmlFile));
+var_dump($doc->documentElement->hasChildNodes());
+$items = $doc->getElementsByTagName('item');
+var_dump($items->length, $items->item(1)->textContent);
+echo $doc->saveXML(options: LIBXML_NOXMLDECL);
+var_dump($doc->save($savedXmlFile, LIBXML_NOXMLDECL) > 0);
+echo file_get_contents($savedXmlFile);
+
+$created = new DOMDocument('1.0');
+$para = $created->appendChild($created->createElement('para'));
+$para->appendChild($created->createAttribute('flag'));
+var_dump($para->hasAttributes(), $para->getAttributeNames());
+$detached = $created->createElement('detached');
+var_dump($detached->getRootNode() === $detached);
+$para->appendChild($created->createProcessingInstruction('pi', 'data'));
+$fragment = $created->createDocumentFragment();
+var_dump($fragment->appendXML('<extra>ok</extra>'), $fragment->hasChildNodes());
+$para->appendChild($fragment);
+$clone = $para->cloneNode(deep: true);
+var_dump(XML_TEXT_NODE, $clone->hasAttribute('flag'), $clone->getAttribute('flag'));
+var_dump($clone->getElementsByTagName('extra')->item(0)->textContent);
+echo $clone->getNodePath(), "\n";
+$created->appendChild($created->createEntityReference('nbsp'));
+echo $created->saveXML();
+
+$html = new DOMDocument();
+var_dump($html->loadHTML("<html><head></head><body><p>a<br></p></body></html>"));
+echo $html->saveHTML();
+var_dump($html->saveHTMLFile($savedHtmlFile) > 0);
+echo file_get_contents($savedHtmlFile);
+
+try {{
+    $doc->load('');
+}} catch (ValueError $exception) {{
+    echo $exception->getMessage(), "\n";
+}}
+"#,
+            php_string_literal(&xml_file),
+            php_string_literal(&saved_xml_file),
+            php_string_literal(&saved_html_file)
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(2)\n",
+            "string(3) \"two\"\n",
+            "<root><item>one</item><item>two</item></root>\n",
+            "bool(true)\n",
+            "<root><item>one</item><item>two</item></root>\n",
+            "bool(true)\n",
+            "array(1) {\n",
+            "  [0]=>\n",
+            "  string(4) \"flag\"\n",
+            "}\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "int(3)\n",
+            "bool(true)\n",
+            "string(0) \"\"\n",
+            "string(2) \"ok\"\n",
+            "/para\n",
+            "<?xml version=\"1.0\"?>\n",
+            "<para flag=\"\"><?pi data?><extra>ok</extra></para>&nbsp;\n",
+            "bool(true)\n",
+            "<html><head></head><body><p>a<br></p></body></html>\n",
+            "bool(true)\n",
+            "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><p>a<br></p></body></html>\n",
+            "DOMDocument::load(): Argument #1 ($filename) must not be empty\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_dom_call_method"));
+    assert!(c_source.contains("ptn_dom_save_html_file_method"));
+    assert!(c_source.contains("PTN_LIBXML_NOXMLDECL"));
+}
+
+#[test]
 fn compile_archive_network_extension_surface_to_native_binary() {
     let root = temp_dir("ptn-native-archive-network-extension-surface");
     fs::create_dir_all(&root).unwrap();

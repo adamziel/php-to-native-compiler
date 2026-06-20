@@ -958,7 +958,9 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"DOMText\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMCdataSection\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"DOMCDataSection\") ||\n");
-    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMComment\")) {\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMComment\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMEntityReference\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"DOMProcessingInstruction\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"DOMChildNode\");\n");
     out.push_str("    }\n");
     for class_name in BUILTIN_ENUM_CLASS_NAMES {
@@ -5184,6 +5186,8 @@ fn emit_class_metadata_helpers(
         "DOMDocumentFragment",
         "DOMElement",
         "DOMAttr",
+        "DOMEntityReference",
+        "DOMProcessingInstruction",
         "DOMCharacterData",
         "DOMText",
         "DOMCdataSection",
@@ -5637,6 +5641,8 @@ fn emit_class_metadata_helpers(
         "DOMDocumentFragment",
         "DOMElement",
         "DOMAttr",
+        "DOMEntityReference",
+        "DOMProcessingInstruction",
         "DOMCharacterData",
         "DOMText",
         "DOMCdataSection",
@@ -6047,6 +6053,8 @@ fn emit_class_metadata_helpers(
         ("DOMDocumentFragment", "DOMNode"),
         ("DOMElement", "DOMNode"),
         ("DOMAttr", "DOMNode"),
+        ("DOMEntityReference", "DOMNode"),
+        ("DOMProcessingInstruction", "DOMNode"),
         ("DOMCharacterData", "DOMNode"),
         ("DOMText", "DOMCharacterData"),
         ("DOMCdataSection", "DOMText"),
@@ -13346,6 +13354,8 @@ fn modeled_xml_internal_class_name(name: &str) -> Option<&'static str> {
         "domdocumentfragment" => Some("DOMDocumentFragment"),
         "domelement" => Some("DOMElement"),
         "domattr" => Some("DOMAttr"),
+        "domentityreference" => Some("DOMEntityReference"),
+        "domprocessinginstruction" => Some("DOMProcessingInstruction"),
         "domcharacterdata" => Some("DOMCharacterData"),
         "domtext" => Some("DOMText"),
         "domcdatasection" => Some("DOMCdataSection"),
@@ -20731,6 +20741,8 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("DOMDocumentFragment")
                 || class_name.eq_ignore_ascii_case("DOMElement")
                 || class_name.eq_ignore_ascii_case("DOMAttr")
+                || class_name.eq_ignore_ascii_case("DOMEntityReference")
+                || class_name.eq_ignore_ascii_case("DOMProcessingInstruction")
                 || class_name.eq_ignore_ascii_case("DOMCharacterData")
                 || class_name.eq_ignore_ascii_case("DOMText")
                 || class_name.eq_ignore_ascii_case("DOMCdataSection")
@@ -22226,6 +22238,85 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             default: Some(InternalParameterDefault::Null),
         },
     ];
+    static DOM_LOAD_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static DOM_LOAD_SOURCE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "source",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static DOM_APPEND_XML_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "data",
+        default: None,
+    }];
+    static DOM_CLONE_NODE_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "deep",
+        default: Some(InternalParameterDefault::Int(0)),
+    }];
+    static DOM_SAVE_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "filename",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static DOM_SAVE_HTML_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "node",
+        default: Some(InternalParameterDefault::Null),
+    }];
+    static DOM_SAVE_HTML_FILE_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "filename",
+        default: None,
+    }];
+    static DOM_SAVE_XML_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "node",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Int(0)),
+        },
+    ];
+    static DOM_GET_ELEMENTS_BY_TAG_NAME_PARAMETERS: [InternalParameterSpec; 1] =
+        [InternalParameterSpec {
+            name: "qualifiedName",
+            default: None,
+        }];
+    static DOM_CREATE_NAMED_NODE_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "name",
+        default: None,
+    }];
+    static DOM_CREATE_PROCESSING_INSTRUCTION_PARAMETERS: [InternalParameterSpec; 2] = [
+        InternalParameterSpec {
+            name: "target",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "data",
+            default: Some(InternalParameterDefault::String("")),
+        },
+    ];
+    static DOM_ATTRIBUTE_NAME_PARAMETERS: [InternalParameterSpec; 1] = [InternalParameterSpec {
+        name: "qualifiedName",
+        default: None,
+    }];
 
     if name.eq_ignore_ascii_case("fgetcsv") {
         Some(&SPL_FILE_OBJECT_FGETCSV_PARAMETERS)
@@ -22237,6 +22328,34 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         Some(&XMLWRITER_FLUSH_PARAMETERS)
     } else if name.eq_ignore_ascii_case("startDocument") {
         Some(&XMLWRITER_START_DOCUMENT_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("load") {
+        Some(&DOM_LOAD_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("loadHTML") || name.eq_ignore_ascii_case("loadXML") {
+        Some(&DOM_LOAD_SOURCE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("appendXML") {
+        Some(&DOM_APPEND_XML_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("cloneNode") {
+        Some(&DOM_CLONE_NODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("save") {
+        Some(&DOM_SAVE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("saveHTML") {
+        Some(&DOM_SAVE_HTML_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("saveHTMLFile") {
+        Some(&DOM_SAVE_HTML_FILE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("saveXML") {
+        Some(&DOM_SAVE_XML_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("getElementsByTagName") {
+        Some(&DOM_GET_ELEMENTS_BY_TAG_NAME_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("createEntityReference") {
+        Some(&DOM_CREATE_NAMED_NODE_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("createProcessingInstruction") {
+        Some(&DOM_CREATE_PROCESSING_INSTRUCTION_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("createAttribute")
+        || name.eq_ignore_ascii_case("hasAttribute")
+        || name.eq_ignore_ascii_case("getAttribute")
+        || name.eq_ignore_ascii_case("getAttributeNode")
+    {
+        Some(&DOM_ATTRIBUTE_NAME_PARAMETERS)
     } else {
         None
     }
