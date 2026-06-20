@@ -847,6 +847,96 @@ fn apply_memory_limit_bounds(ini: &mut RuntimeIni) -> Option<String> {
     }
 }
 
+fn date_timezone_offset_literal_is_valid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 5 && bytes.len() != 6 {
+        return false;
+    }
+    if bytes[0] != b'+' && bytes[0] != b'-' {
+        return false;
+    }
+    let (hour_end, minute_start) = if bytes[3] == b':' {
+        (3, 4)
+    } else if bytes.len() == 5 {
+        (3, 3)
+    } else {
+        return false;
+    };
+    if !bytes[1..hour_end].iter().all(u8::is_ascii_digit)
+        || !bytes[minute_start..].iter().all(u8::is_ascii_digit)
+    {
+        return false;
+    }
+    let hours = value[1..hour_end].parse::<u8>().unwrap_or(15);
+    let minutes = value[minute_start..].parse::<u8>().unwrap_or(60);
+    hours < 14 || (hours == 14 && minutes == 0)
+}
+
+fn date_timezone_name_is_supported(value: &str) -> bool {
+    if value.is_empty() || value.as_bytes().contains(&0) {
+        return false;
+    }
+    if date_timezone_offset_literal_is_valid(value) {
+        return true;
+    }
+    let lower = value.to_ascii_lowercase();
+    matches!(
+        lower.as_str(),
+        "gmt"
+            | "utc"
+            | "z"
+            | "zulu"
+            | "etc/universal"
+            | "etc/utc"
+            | "etc/zulu"
+            | "bst"
+            | "cet"
+            | "cest"
+            | "met"
+            | "edt"
+            | "est"
+            | "pst"
+            | "adt"
+            | "africa/abidjan"
+            | "africa/casablanca"
+            | "america/chicago"
+            | "america/halifax"
+            | "america/indiana/knox"
+            | "america/los_angeles"
+            | "america/new_york"
+            | "america/sao_paulo"
+            | "america/toronto"
+            | "asia/calcutta"
+            | "asia/hong_kong"
+            | "asia/jerusalem"
+            | "asia/kolkata"
+            | "australia/brisbane"
+            | "europe/amsterdam"
+            | "europe/berlin"
+            | "europe/kyiv"
+            | "europe/london"
+            | "europe/moscow"
+            | "europe/oslo"
+            | "europe/paris"
+            | "europe/rome"
+            | "pacific/samoa"
+            | "pacific/wallis"
+            | "us/alaska"
+            | "us/eastern"
+    )
+}
+
+fn apply_date_timezone_bounds(ini: &mut RuntimeIni) -> Option<String> {
+    let timezone = ini.date_timezone.clone()?;
+    if date_timezone_name_is_supported(&timezone) {
+        return None;
+    }
+    ini.date_timezone = Some("UTC".to_string());
+    Some(format!(
+        "Warning: PHP Startup: Invalid date.timezone value '{timezone}', using 'UTC' instead in Unknown on line 0\n"
+    ))
+}
+
 fn compile_and_run(
     script: &Path,
     args: &[String],
@@ -918,6 +1008,7 @@ fn compile_and_run(
         }
     }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
+    let date_timezone_warning = apply_date_timezone_bounds(&mut ini);
     let native = TempPath::new("ptn-phpc-native", "bin");
     compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
         if error.span.is_some() {
@@ -1115,12 +1206,16 @@ fn compile_and_run(
         command.env("PTN_REQUEST_MODE", "cli");
     }
     let startup_warning_emitted = memory_limit_warning.is_some()
+        || date_timezone_warning.is_some()
         || ini.mbstring_internal_encoding.is_some()
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
         command.env("PTN_STARTUP_WARNING_EMITTED", "1");
     }
     if let Some(warning) = memory_limit_warning {
+        print!("{warning}");
+    }
+    if let Some(warning) = date_timezone_warning {
         print!("{warning}");
     }
     if ini.allow_url_include_deprecated {
