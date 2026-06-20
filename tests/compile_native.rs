@@ -26829,6 +26829,75 @@ echo xmlwriter_flush($xw);
 }
 
 #[test]
+fn compile_xmlwriter_resources_and_invalid_targets_to_native_binary() {
+    let root = temp_dir("ptn-native-xmlwriter-resources-invalid-targets");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("xmlwriter-resources-invalid-targets.php");
+    let output = root.join("xmlwriter-resources-invalid-targets-bin");
+    let missing = root.join("missing-parent").join("out.xml");
+    let writer_path = root.join("writer.xml");
+    let reader_path = root.join("reader.xml");
+    fs::write(
+        &input,
+        format!(
+            "<?php\n\
+var_dump(function_exists('get_resources'));\n\
+var_dump(xmlwriter_open_uri('{}'));\n\
+\n\
+$h = fopen('php://temp', 'w');\n\
+$writer = XMLWriter::toStream($h);\n\
+$writer->startElement('root');\n\
+fclose($h);\n\
+var_dump($writer->flush());\n\
+try {{\n\
+    XMLWriter::toStream($h);\n\
+}} catch (TypeError $e) {{\n\
+    echo $e->getMessage(), \"\\n\";\n\
+}}\n\
+\n\
+$uriWriter = XMLWriter::toUri('{}');\n\
+var_dump($uriWriter instanceof XMLWriter);\n\
+$last = end(get_resources());\n\
+var_dump(get_resource_type($last));\n\
+var_dump(fclose($last));\n\
+\n\
+file_put_contents('{}', 'a');\n\
+$reader = new XMLReader();\n\
+var_dump($reader->open('{}'));\n\
+$last = end(get_resources());\n\
+var_dump(get_resource_type($last));\n\
+var_dump(fclose($last));\n",
+            missing.display(),
+            writer_path.display(),
+            reader_path.display(),
+            reader_path.display()
+        ),
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("bool(true)\n"));
+    assert!(stdout.contains("Warning: xmlwriter_open_uri(): Unable to resolve file path"));
+    assert!(stdout.contains("bool(false)\nint(-1)\n"));
+    assert!(stdout
+        .contains("XMLWriter::toStream(): supplied resource is not a valid stream resource\n"));
+    assert_eq!(
+        stdout.matches("Warning: fclose(): cannot close the provided stream, as it must not be manually closed").count(),
+        2
+    );
+    assert!(stdout.contains("string(6) \"stream\"\n"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_get_resources"));
+    assert!(c_source.contains("ptn_xmlwriter_prepare_uri_target"));
+}
+
+#[test]
 fn compile_libxml_xml_dom_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-xml-dom-boundary");
     fs::create_dir_all(&root).unwrap();

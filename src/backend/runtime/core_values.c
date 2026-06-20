@@ -854,7 +854,8 @@ typedef enum {
     PTN_STREAM_BACKEND_FILE,
     PTN_STREAM_BACKEND_MEMORY,
     PTN_STREAM_BACKEND_INPUT,
-    PTN_STREAM_BACKEND_TEMP
+    PTN_STREAM_BACKEND_TEMP,
+    PTN_STREAM_BACKEND_OUTPUT
 } PtnStreamBackend;
 
 typedef struct {
@@ -925,6 +926,9 @@ struct PtnResource {
     PtnStreamFilter *write_filters;
     int persistent;
     PtnValue context_options;
+    PtnResource *registry_prev;
+    PtnResource *registry_next;
+    int manual_close_forbidden;
 };
 
 struct PtnStreamFilter {
@@ -3068,6 +3072,51 @@ static PTN_UNUSED void ptn_exception_retain(PtnException *exception) {
 }
 
 static int64_t ptn_next_resource_id = 5;
+static PtnResource *ptn_resource_registry_head = NULL;
+static PtnResource *ptn_resource_registry_tail = NULL;
+
+static PTN_UNUSED void ptn_resource_register(PtnResource *resource) {
+    if (resource == NULL || resource->persistent) {
+        return;
+    }
+    resource->registry_prev = ptn_resource_registry_tail;
+    resource->registry_next = NULL;
+    resource->manual_close_forbidden = 0;
+    if (ptn_resource_registry_tail != NULL) {
+        ptn_resource_registry_tail->registry_next = resource;
+    } else {
+        ptn_resource_registry_head = resource;
+    }
+    ptn_resource_registry_tail = resource;
+}
+
+static PTN_UNUSED void ptn_resource_unregister(PtnResource *resource) {
+    if (resource == NULL || resource->persistent) {
+        return;
+    }
+    if (resource->registry_prev != NULL) {
+        resource->registry_prev->registry_next = resource->registry_next;
+    } else if (ptn_resource_registry_head == resource) {
+        ptn_resource_registry_head = resource->registry_next;
+    }
+    if (resource->registry_next != NULL) {
+        resource->registry_next->registry_prev = resource->registry_prev;
+    } else if (ptn_resource_registry_tail == resource) {
+        ptn_resource_registry_tail = resource->registry_prev;
+    }
+    resource->registry_prev = NULL;
+    resource->registry_next = NULL;
+}
+
+static PTN_UNUSED void ptn_resource_forbid_manual_close(PtnResource *resource) {
+    if (resource != NULL) {
+        resource->manual_close_forbidden = 1;
+    }
+}
+
+static PTN_UNUSED int ptn_resource_manual_close_forbidden(PtnResource *resource) {
+    return resource != NULL && resource->manual_close_forbidden;
+}
 
 static PTN_UNUSED PtnMemoryStream *ptn_memory_stream_new(size_t max_memory, int writable, int append) {
     PtnMemoryStream *stream = malloc(sizeof(PtnMemoryStream));
@@ -3133,6 +3182,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_stream(FILE *stream, const char 
     resource->write_filters = NULL;
     resource->persistent = 0;
     resource->context_options = ptn_null();
+    ptn_resource_register(resource);
     return resource;
 }
 
@@ -3165,6 +3215,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_memory_stream(
     resource->write_filters = NULL;
     resource->persistent = 0;
     resource->context_options = ptn_null();
+    ptn_resource_register(resource);
     return resource;
 }
 
@@ -3194,6 +3245,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_directory(void *directory, const
     resource->write_filters = NULL;
     resource->persistent = 0;
     resource->context_options = ptn_null();
+    ptn_resource_register(resource);
     return resource;
 }
 
@@ -3218,6 +3270,7 @@ static PTN_UNUSED PtnResource *ptn_resource_new_named(const char *type_name) {
     resource->write_filters = NULL;
     resource->persistent = 0;
     resource->context_options = ptn_null();
+    ptn_resource_register(resource);
     return resource;
 }
 
@@ -3256,6 +3309,10 @@ static PTN_UNUSED size_t ptn_stream_write_bytes(PtnResource *resource, const voi
         return 0;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return 0;
+        }
         size_t written = fwrite(data, 1, len, resource->stream);
         if (written > 0) {
             (void)fflush(resource->stream);
@@ -3299,6 +3356,10 @@ static PTN_UNUSED size_t ptn_stream_read_bytes(PtnResource *resource, void *buff
         return 0;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return 0;
+        }
         return fread(buffer, 1, len, resource->stream);
     }
 
@@ -3324,6 +3385,10 @@ static PTN_UNUSED int ptn_stream_get_byte(PtnResource *resource) {
         return EOF;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return EOF;
+        }
         return fgetc(resource->stream);
     }
     unsigned char byte = 0;
@@ -3335,6 +3400,10 @@ static PTN_UNUSED int ptn_stream_unget_byte(PtnResource *resource, int byte) {
         return EOF;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return EOF;
+        }
         return ungetc(byte, resource->stream);
     }
     PtnMemoryStream *stream = resource->memory_stream;
@@ -3352,6 +3421,10 @@ static PTN_UNUSED int ptn_stream_seek(PtnResource *resource, int64_t offset, int
         return -1;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return -1;
+        }
         return fseek(resource->stream, (long)offset, whence);
     }
     PtnMemoryStream *stream = resource->memory_stream;
@@ -3391,6 +3464,10 @@ static PTN_UNUSED int64_t ptn_stream_tell(PtnResource *resource) {
         return -1;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return -1;
+        }
         long position = ftell(resource->stream);
         return position < 0 ? -1 : (int64_t)position;
     }
@@ -3406,6 +3483,10 @@ static PTN_UNUSED int ptn_stream_flush(PtnResource *resource) {
         return -1;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return -1;
+        }
         return fflush(resource->stream);
     }
     resource->memory_stream->error = 0;
@@ -3417,6 +3498,9 @@ static PTN_UNUSED int ptn_stream_eof(PtnResource *resource) {
         return 1;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            return 1;
+        }
         return feof(resource->stream) != 0;
     }
     return resource->memory_stream->eof != 0;
@@ -3427,6 +3511,9 @@ static PTN_UNUSED int ptn_stream_error(PtnResource *resource) {
         return 1;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            return 1;
+        }
         return ferror(resource->stream) != 0;
     }
     return resource->memory_stream->error != 0;
@@ -3437,6 +3524,9 @@ static PTN_UNUSED void ptn_stream_clear_error(PtnResource *resource) {
         return;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            return;
+        }
         clearerr(resource->stream);
         return;
     }
@@ -3449,6 +3539,10 @@ static PTN_UNUSED int ptn_stream_truncate(PtnResource *resource, int64_t size) {
         return 0;
     }
     if (resource->memory_stream == NULL) {
+        if (resource->stream == NULL) {
+            errno = EBADF;
+            return 0;
+        }
         int descriptor = -1;
 #if defined(_WIN32)
         descriptor = _fileno(resource->stream);
@@ -3515,7 +3609,9 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
         return;
     }
     if (resource->stream != NULL) {
-        fclose(resource->stream);
+        if (resource->stream_backend != PTN_STREAM_BACKEND_OUTPUT) {
+            fclose(resource->stream);
+        }
         resource->stream = NULL;
     }
     if (resource->memory_stream != NULL) {
@@ -3544,6 +3640,7 @@ static PTN_UNUSED void ptn_resource_release(PtnResource *resource) {
     if (resource->refcount != 0) {
         return;
     }
+    ptn_resource_unregister(resource);
     ptn_resource_close(resource);
     ptn_stream_filter_chain_free(resource->read_filters);
     ptn_stream_filter_chain_free(resource->write_filters);

@@ -18657,6 +18657,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "func_get_arg"
             | "func_get_args"
             | "func_num_args"
+            | "get_resources"
             | "get_resource_type"
             | "gettype"
             | "is_array"

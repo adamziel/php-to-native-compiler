@@ -38088,11 +38088,15 @@ static int ptn_try_open_php_input_stream(PtnRuntime *runtime, const char *path, 
 static int ptn_try_open_php_standard_stream(const char *path, PtnValue *out) {
     if (ptn_ascii_case_equal(path, "php://output") ||
         ptn_ascii_case_equal(path, "php://stdout")) {
-        *out = ptn_standard_stream_resource_value(2);
+        PtnResource *resource = ptn_resource_new_stream(stdout, path, "w");
+        resource->stream_backend = PTN_STREAM_BACKEND_OUTPUT;
+        *out = ptn_resource(resource);
         return 1;
     }
     if (ptn_ascii_case_equal(path, "php://stderr")) {
-        *out = ptn_standard_stream_resource_value(3);
+        PtnResource *resource = ptn_resource_new_stream(stderr, path, "w");
+        resource->stream_backend = PTN_STREAM_BACKEND_OUTPUT;
+        *out = ptn_resource(resource);
         return 1;
     }
     return 0;
@@ -38356,8 +38360,15 @@ static PtnValue ptn_internal_fclose(PtnRuntime *runtime, size_t argc, const PtnV
     if (!ptn_stream_resource_is_open(value.as.resource)) {
         return ptn_bool(0);
     }
+    if (ptn_resource_manual_close_forbidden(value.as.resource)) {
+        ptn_emit_warning(
+            &runtime->diagnostics,
+            "fclose(): cannot close the provided stream, as it must not be manually closed",
+            line
+        );
+        return ptn_bool(0);
+    }
     ptn_resource_close(value.as.resource);
-    (void)line;
     return ptn_bool(1);
 }
 
@@ -40435,13 +40446,15 @@ static PtnValue ptn_internal_stream_get_meta_data(PtnRuntime *runtime, size_t ar
     ptn_stream_meta_set(
         result.as.array,
         "wrapper_type",
-        ptn_string(resource->memory_stream != NULL ? "PHP" : "plainfile")
+        ptn_string(resource->memory_stream != NULL || resource->stream_backend == PTN_STREAM_BACKEND_OUTPUT ? "PHP" : "plainfile")
     );
     ptn_stream_meta_set(
         result.as.array,
         "stream_type",
         ptn_string(
-            resource->memory_stream == NULL
+            resource->stream_backend == PTN_STREAM_BACKEND_OUTPUT
+                ? "Output"
+                : resource->memory_stream == NULL
                 ? (is_directory ? "dir" : "STDIO")
                 : (resource->stream_backend == PTN_STREAM_BACKEND_INPUT ? "Input" : "MEMORY")
         )
@@ -44525,6 +44538,35 @@ static PtnValue ptn_internal_get_resource_id(PtnRuntime *runtime, size_t argc, c
         return ptn_null();
     }
     return ptn_int(value.as.resource->id);
+}
+
+static PtnValue ptn_internal_get_resources(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    PtnStringOperand filter = ptn_string_operand_borrowed("");
+    int has_filter = argc >= 1 && ptn_value_deref(args[0]).type != PTN_NULL;
+    if (has_filter) {
+        filter = ptn_internal_expect_string_arg(runtime, "get_resources", 1, "type", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(filter);
+            return ptn_null();
+        }
+    }
+
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    int64_t index = 0;
+    for (PtnResource *resource = ptn_resource_registry_head; resource != NULL; resource = resource->registry_next) {
+        if (!ptn_resource_is_open(resource)) {
+            continue;
+        }
+        if (has_filter &&
+            (strlen(resource->type_name) != filter.len ||
+             memcmp(resource->type_name, filter.data, filter.len) != 0)) {
+            continue;
+        }
+        ptn_resource_retain(resource);
+        ptn_array_set_entry(result.as.array, ptn_array_int_key(index++), ptn_resource(resource));
+    }
+    ptn_string_operand_free(filter);
+    return result;
 }
 
 static PtnValue ptn_internal_gethostname(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -65905,6 +65947,7 @@ typedef struct {
     int parser_subst_entities;
     int validation_enabled;
     char *base_uri;
+    PtnResource *source_resource;
 } PtnXmlReaderData;
 
 typedef struct {
@@ -69224,6 +69267,9 @@ static void ptn_xml_reader_data_free(void *raw) {
     if (data == NULL) {
         return;
     }
+    if (data->source_resource != NULL) {
+        ptn_resource_release(data->source_resource);
+    }
     free(data->events);
     free(data->base_uri);
     free(data);
@@ -69315,6 +69361,10 @@ static void ptn_xml_reader_collect_events(PtnXmlReaderData *reader, PtnXmlNode *
 }
 
 static void ptn_xml_reader_reset_events(PtnXmlReaderData *data) {
+    if (data->source_resource != NULL) {
+        ptn_resource_release(data->source_resource);
+        data->source_resource = NULL;
+    }
     data->event_count = 0;
     data->cursor = 0;
     data->current = 0;
@@ -69325,6 +69375,22 @@ static void ptn_xml_reader_reset_events(PtnXmlReaderData *data) {
     data->validation_enabled = 0;
     free(data->base_uri);
     data->base_uri = NULL;
+}
+
+static void ptn_xml_reader_set_source_resource(PtnXmlReaderData *data, const char *path) {
+    if (data == NULL || path == NULL) {
+        return;
+    }
+    if (data->source_resource != NULL) {
+        ptn_resource_release(data->source_resource);
+        data->source_resource = NULL;
+    }
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return;
+    }
+    data->source_resource = ptn_resource_new_stream(file, path, "r");
+    ptn_resource_forbid_manual_close(data->source_resource);
 }
 
 static void ptn_xml_reader_set_base_uri(PtnXmlReaderData *data, const char *base_uri) {
@@ -69667,6 +69733,7 @@ static PtnValue ptn_xml_reader_load_file(PtnRuntime *runtime, PtnValue receiver,
         if (data != NULL) {
             ptn_xml_reader_reset_events(data);
             ptn_xml_reader_set_base_uri(data, path);
+            ptn_xml_reader_set_source_resource(data, path);
             data->loaded = 1;
         }
         return ptn_bool(1);
@@ -69683,6 +69750,7 @@ static PtnValue ptn_xml_reader_load_file(PtnRuntime *runtime, PtnValue receiver,
     if (runtime->exceptions->active_exception == NULL && ptn_is_truthy(result)) {
         PtnXmlReaderData *data = ptn_xml_reader_data(receiver);
         ptn_xml_reader_set_base_uri(data, path);
+        ptn_xml_reader_set_source_resource(data, path);
     }
     free(buffer);
     return result;
@@ -71002,6 +71070,8 @@ typedef struct {
     int context_returns_to_dtd;
 } PtnXmlWriterData;
 
+#define PTN_XMLWRITER_MAXPATHLEN 4096
+
 static int ptn_xmlwriter_buffer_ends_with(PtnStringBuffer *buffer, char ch) {
     return buffer->len > 0 && buffer->data[buffer->len - 1] == ch;
 }
@@ -71132,6 +71202,102 @@ static void ptn_xmlwriter_throw_empty_uri(PtnRuntime *runtime, const char *funct
         ptn_abort_out_of_memory();
     }
     ptn_throw_exception(runtime, "ValueError", message);
+}
+
+static int ptn_xmlwriter_uri_prefix_equals(PtnStringOperand uri, const char *prefix) {
+    size_t prefix_len = strlen(prefix);
+    if (uri.len < prefix_len) {
+        return 0;
+    }
+    for (size_t i = 0; i < prefix_len; i++) {
+        if (tolower((unsigned char)uri.data[i]) != tolower((unsigned char)prefix[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static char *ptn_xmlwriter_uri_path(PtnStringOperand uri) {
+    if (uri.len == 0 || memchr(uri.data, '\0', uri.len) != NULL) {
+        return NULL;
+    }
+    size_t path_start = 0;
+    if (ptn_xmlwriter_uri_prefix_equals(uri, "file://localhost")) {
+        path_start = strlen("file://localhost");
+    } else if (ptn_xmlwriter_uri_prefix_equals(uri, "file:///")) {
+        path_start = strlen("file://");
+    } else if (ptn_xmlwriter_uri_prefix_equals(uri, "file://")) {
+        return NULL;
+    }
+    size_t path_len = uri.len - path_start;
+    if (path_len == 0 || path_len > PTN_XMLWRITER_MAXPATHLEN) {
+        return NULL;
+    }
+    char *path = ptn_duplicate_string_len(uri.data + path_start, path_len);
+    if (strcmp(path, "/") == 0) {
+        free(path);
+        return NULL;
+    }
+    return path;
+}
+
+static void ptn_xmlwriter_emit_unresolved_uri_warning(PtnRuntime *runtime, const char *function_name, size_t line) {
+    char message[160];
+    int written = snprintf(message, sizeof(message), "%s(): Unable to resolve file path", function_name);
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+}
+
+static int ptn_xmlwriter_prepare_uri_target(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnStringOperand uri,
+    size_t line,
+    char **path_out,
+    PtnResource **resource_out,
+    int *stream_target_out
+) {
+    *path_out = NULL;
+    *resource_out = NULL;
+    *stream_target_out = 0;
+    if (uri.len == 0 || memchr(uri.data, '\0', uri.len) != NULL) {
+        ptn_xmlwriter_emit_unresolved_uri_warning(runtime, function_name, line);
+        return 0;
+    }
+    if (ptn_xmlwriter_uri_prefix_equals(uri, "php://")) {
+        char *stream_uri = ptn_duplicate_string_len(uri.data, uri.len);
+        PtnValue stream = ptn_null();
+        int opened = ptn_try_open_php_memory_stream(stream_uri, "w", &stream) ||
+            ptn_try_open_php_standard_stream(stream_uri, &stream);
+        free(stream_uri);
+        if (opened && stream.type == PTN_RESOURCE) {
+            ptn_resource_forbid_manual_close(stream.as.resource);
+            *resource_out = stream.as.resource;
+            *stream_target_out = 1;
+            return 1;
+        }
+        ptn_xmlwriter_emit_unresolved_uri_warning(runtime, function_name, line);
+        return 0;
+    }
+
+    char *path = ptn_xmlwriter_uri_path(uri);
+    if (path == NULL) {
+        ptn_xmlwriter_emit_unresolved_uri_warning(runtime, function_name, line);
+        return 0;
+    }
+    FILE *file = fopen(path, "ab");
+    if (file == NULL) {
+        free(path);
+        ptn_xmlwriter_emit_unresolved_uri_warning(runtime, function_name, line);
+        return 0;
+    }
+    PtnResource *resource = ptn_resource_new_stream(file, path, "wb");
+    ptn_resource_forbid_manual_close(resource);
+    *path_out = path;
+    *resource_out = resource;
+    return 1;
 }
 
 static void ptn_xmlwriter_append_indent(PtnXmlWriterData *data, size_t depth) {
@@ -71373,19 +71539,35 @@ static void ptn_xmlwriter_finish_document(PtnXmlWriterData *data) {
     data->document_finished = 1;
 }
 
-static size_t ptn_xmlwriter_write_target(PtnXmlWriterData *data, int empty) {
+static int64_t ptn_xmlwriter_write_target(PtnXmlWriterData *data, int empty) {
     size_t len = data->buffer.len;
-    size_t written = len;
+    if (len > (size_t)INT64_MAX) {
+        ptn_abort_out_of_memory();
+    }
+    int64_t written = (int64_t)len;
     if (data->target == PTN_XMLWRITER_TARGET_URI && data->uri != NULL) {
         FILE *file = fopen(data->uri, "wb");
         if (file == NULL) {
-            written = 0;
+            written = -1;
         } else {
-            written = fwrite(data->buffer.data, 1, len, file);
+            size_t count = fwrite(data->buffer.data, 1, len, file);
+            if (count > (size_t)INT64_MAX) {
+                fclose(file);
+                ptn_abort_out_of_memory();
+            }
+            written = (int64_t)count;
             fclose(file);
         }
-    } else if (data->target == PTN_XMLWRITER_TARGET_STREAM && data->stream != NULL) {
-        written = ptn_stream_write_bytes(data->stream, data->buffer.data, len);
+    } else if (data->target == PTN_XMLWRITER_TARGET_STREAM) {
+        if (data->stream == NULL || !ptn_stream_resource_is_open(data->stream)) {
+            written = -1;
+        } else {
+            size_t count = ptn_stream_write_bytes(data->stream, data->buffer.data, len);
+            if (count > (size_t)INT64_MAX) {
+                ptn_abort_out_of_memory();
+            }
+            written = (int64_t)count;
+        }
     }
     if (empty) {
         ptn_xmlwriter_buffer_clear(&data->buffer);
@@ -71491,14 +71673,14 @@ static void ptn_xmlwriter_set_target_memory(PtnXmlWriterData *data) {
     ptn_xmlwriter_buffer_clear(&data->buffer);
 }
 
-static void ptn_xmlwriter_set_target_uri(PtnXmlWriterData *data, PtnStringOperand uri) {
+static void ptn_xmlwriter_set_target_uri(PtnXmlWriterData *data, const char *path, PtnResource *resource) {
     data->target = PTN_XMLWRITER_TARGET_URI;
     free(data->uri);
-    data->uri = ptn_duplicate_string_len(uri.data, uri.len);
+    data->uri = ptn_duplicate_string(path);
     if (data->stream != NULL) {
         ptn_resource_release(data->stream);
-        data->stream = NULL;
     }
+    data->stream = resource;
     ptn_xmlwriter_buffer_clear(&data->buffer);
 }
 
@@ -71693,7 +71875,20 @@ static PtnValue ptn_xmlwriter_dispatch(
             ptn_xmlwriter_throw_empty_uri(runtime, function_name);
             return ptn_null();
         }
-        ptn_xmlwriter_set_target_uri(data, uri);
+        char *path = NULL;
+        PtnResource *resource = NULL;
+        int stream_target = 0;
+        if (!ptn_xmlwriter_prepare_uri_target(runtime, function_name, uri, line, &path, &resource, &stream_target)) {
+            ptn_string_operand_free(uri);
+            return ptn_bool(0);
+        }
+        if (stream_target) {
+            ptn_xmlwriter_set_target_stream(data, resource);
+            ptn_resource_release(resource);
+        } else {
+            ptn_xmlwriter_set_target_uri(data, path, resource);
+            free(path);
+        }
         ptn_string_operand_free(uri);
         return ptn_bool(1);
     }
@@ -72272,9 +72467,27 @@ static PtnValue ptn_xmlwriter_static_to_memory(PtnRuntime *runtime, const char *
     return ptn_xmlwriter_object_with_data(runtime, class_name, data, line);
 }
 
-static PtnValue ptn_xmlwriter_static_to_uri(PtnRuntime *runtime, const char *class_name, PtnStringOperand uri, size_t line) {
+static PtnValue ptn_xmlwriter_static_to_uri(
+    PtnRuntime *runtime,
+    const char *class_name,
+    PtnStringOperand uri,
+    size_t line,
+    const char *function_name
+) {
+    char *path = NULL;
+    PtnResource *resource = NULL;
+    int stream_target = 0;
+    if (!ptn_xmlwriter_prepare_uri_target(runtime, function_name, uri, line, &path, &resource, &stream_target)) {
+        return ptn_bool(0);
+    }
     PtnXmlWriterData *data = ptn_xmlwriter_data_new();
-    ptn_xmlwriter_set_target_uri(data, uri);
+    if (stream_target) {
+        ptn_xmlwriter_set_target_stream(data, resource);
+        ptn_resource_release(resource);
+    } else {
+        ptn_xmlwriter_set_target_uri(data, path, resource);
+        free(path);
+    }
     return ptn_xmlwriter_object_with_data(runtime, class_name, data, line);
 }
 
@@ -72314,7 +72527,7 @@ static PtnValue ptn_xmlwriter_static_call_method(
             ptn_xmlwriter_throw_empty_uri(runtime, "XMLWriter::toUri");
             return ptn_null();
         }
-        PtnValue object = ptn_xmlwriter_static_to_uri(runtime, class_name, uri, line);
+        PtnValue object = ptn_xmlwriter_static_to_uri(runtime, class_name, uri, line, "XMLWriter::toUri");
         ptn_string_operand_free(uri);
         return object;
     }
@@ -72324,7 +72537,7 @@ static PtnValue ptn_xmlwriter_static_call_method(
             return ptn_null();
         }
         PtnValue stream_value = ptn_value_deref(args[0]);
-        if (stream_value.type != PTN_RESOURCE || !ptn_stream_resource_is_open(stream_value.as.resource)) {
+        if (stream_value.type != PTN_RESOURCE) {
             char message[160];
             int written = snprintf(
                 message,
@@ -72336,6 +72549,10 @@ static PtnValue ptn_xmlwriter_static_call_method(
                 ptn_abort_out_of_memory();
             }
             ptn_throw_exception(runtime, "TypeError", message);
+            return ptn_null();
+        }
+        if (!ptn_stream_resource_is_open(stream_value.as.resource)) {
+            ptn_throw_exception(runtime, "TypeError", "XMLWriter::toStream(): supplied resource is not a valid stream resource");
             return ptn_null();
         }
         return ptn_xmlwriter_static_to_stream(runtime, class_name, stream_value.as.resource, line);
@@ -72362,7 +72579,7 @@ static PtnValue ptn_internal_xmlwriter_open_uri(PtnRuntime *runtime, size_t argc
         ptn_xmlwriter_throw_empty_uri(runtime, "xmlwriter_open_uri");
         return ptn_null();
     }
-    PtnValue object = ptn_xmlwriter_static_to_uri(runtime, "XMLWriter", uri, line);
+    PtnValue object = ptn_xmlwriter_static_to_uri(runtime, "XMLWriter", uri, line, "xmlwriter_open_uri");
     ptn_string_operand_free(uri);
     return object;
 }
@@ -74638,6 +74855,7 @@ static PtnValue ptn_internal_get_mangled_object_vars(PtnRuntime *runtime, size_t
 static PtnValue ptn_internal_get_extension_funcs(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_object_vars(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_get_parent_class(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PtnValue ptn_internal_get_resources(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gmdate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_gmmktime(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
 static PtnValue ptn_internal_idate(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
@@ -75043,6 +75261,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "get_mangled_object_vars", 1, 1, ptn_internal_get_mangled_object_vars },
         { "get_object_vars", 1, 1, ptn_internal_get_object_vars },
         { "get_parent_class", 0, 1, ptn_internal_get_parent_class },
+        { "get_resources", 0, 1, ptn_internal_get_resources },
         { "gethostbyname", 1, 1, ptn_internal_gethostbyname },
         { "gethostname", 0, 0, ptn_internal_gethostname },
         { "getprotobyname", 1, 1, ptn_internal_getprotobyname },
