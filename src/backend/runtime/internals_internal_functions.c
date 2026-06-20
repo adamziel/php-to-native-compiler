@@ -27265,6 +27265,8 @@ typedef enum {
     PTN_HTML_ENCODING_LEGACY_MULTIBYTE,
 } PtnHtmlEncoding;
 
+/* PTN_HTML_TABLES_GENERATED_START */
+
 typedef enum {
     PTN_HTML_ESCAPE_SPECIALCHARS,
     PTN_HTML_ESCAPE_ENTITIES,
@@ -29474,65 +29476,18 @@ static int ptn_html_ascii_case_equal_literal(const char *data, size_t len, const
 }
 
 static int ptn_html_encoding_from_operand(PtnStringOperand encoding, PtnHtmlEncoding *out) {
-    if (encoding.len == 0 ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "UTF-8") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "UTF8")) {
+    if (encoding.len == 0 || ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "UTF8")) {
         *out = PTN_HTML_ENCODING_UTF8;
         return 1;
     }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-1") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-1")) {
-        *out = PTN_HTML_ENCODING_ISO_8859_1;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "WINDOWS-1252") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "CP1252") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "1252")) {
-        *out = PTN_HTML_ENCODING_WINDOWS_1252;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "CP866") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "IBM866") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "866")) {
-        *out = PTN_HTML_ENCODING_CP866;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-15") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-15")) {
-        *out = PTN_HTML_ENCODING_ISO_8859_15;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO-8859-5") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "ISO8859-5")) {
-        *out = PTN_HTML_ENCODING_ISO_8859_5;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "KOI8-R")) {
-        *out = PTN_HTML_ENCODING_KOI8_R;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "MACROMAN")) {
-        *out = PTN_HTML_ENCODING_MACROMAN;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "WINDOWS-1251") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "CP1251")) {
-        *out = PTN_HTML_ENCODING_WINDOWS_1251;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SJIS") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SHIFT_JIS") ||
-        ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "SHIFT-JIS")) {
-        *out = PTN_HTML_ENCODING_SJIS;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "EUC-JP")) {
-        *out = PTN_HTML_ENCODING_EUC_JP;
-        return 1;
-    }
-    if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, "BIG5")) {
-        *out = PTN_HTML_ENCODING_LEGACY_MULTIBYTE;
-        return 1;
+
+    size_t count = 0;
+    const PtnHtmlCharsetMapEntry *charset_map = ptn_html_generated_charset_map(&count);
+    for (size_t i = 0; i < count; i++) {
+        if (ptn_html_ascii_case_equal_literal(encoding.data, encoding.len, charset_map[i].label)) {
+            *out = charset_map[i].encoding;
+            return 1;
+        }
     }
     return 0;
 }
@@ -29870,15 +29825,12 @@ static const unsigned int PTN_HTML_WINDOWS_1251_TABLE[128] = {
 };
 
 static const unsigned int *ptn_html_single_byte_table(PtnHtmlEncoding encoding) {
-    switch (encoding) {
-        case PTN_HTML_ENCODING_CP866: return PTN_HTML_CP866_TABLE;
-        case PTN_HTML_ENCODING_ISO_8859_15: return PTN_HTML_ISO_8859_15_TABLE;
-        case PTN_HTML_ENCODING_ISO_8859_5: return PTN_HTML_ISO_8859_5_TABLE;
-        case PTN_HTML_ENCODING_KOI8_R: return PTN_HTML_KOI8_R_TABLE;
-        case PTN_HTML_ENCODING_MACROMAN: return PTN_HTML_MACROMAN_TABLE;
-        case PTN_HTML_ENCODING_WINDOWS_1251: return PTN_HTML_WINDOWS_1251_TABLE;
-        default: return NULL;
-    }
+    return ptn_html_generated_single_byte_table(encoding);
+}
+
+static int ptn_html_single_byte_undefined_for_byte(PtnHtmlEncoding encoding, unsigned char byte) {
+    const unsigned int *table = ptn_html_single_byte_table(encoding);
+    return byte > 0x7f && table != NULL && table[byte - 0x80] == 0xffff;
 }
 
 static int ptn_html_single_byte_for_codepoint(
@@ -29957,9 +29909,14 @@ static int ptn_html_encoding_append_codepoint(
     unsigned int codepoint,
     PtnHtmlEncoding encoding
 ) {
-    if (encoding == PTN_HTML_ENCODING_UTF8 ||
-        encoding == PTN_HTML_ENCODING_LEGACY_BYTE ||
-        ptn_html_encoding_is_legacy_multibyte(encoding)) {
+    if (ptn_html_encoding_is_legacy_multibyte(encoding)) {
+        if (codepoint > 0x7f) {
+            return 0;
+        }
+        ptn_string_buffer_append_char(output, (char)codepoint);
+        return 1;
+    }
+    if (encoding == PTN_HTML_ENCODING_UTF8 || encoding == PTN_HTML_ENCODING_LEGACY_BYTE) {
         ptn_html_append_utf8_codepoint(output, codepoint);
         return 1;
     }
@@ -29968,14 +29925,6 @@ static int ptn_html_encoding_append_codepoint(
             return 0;
         }
         ptn_string_buffer_append_char(output, (char)(unsigned char)codepoint);
-        return 1;
-    }
-    if (encoding == PTN_HTML_ENCODING_WINDOWS_1252) {
-        unsigned char byte = 0;
-        if (!ptn_html_windows_1252_byte_for_codepoint(codepoint, &byte)) {
-            return 0;
-        }
-        ptn_string_buffer_append_char(output, (char)byte);
         return 1;
     }
     if (ptn_html_single_byte_table(encoding) != NULL) {
@@ -30001,9 +29950,16 @@ static int ptn_html_append_decoded_entity_encoded(
     size_t decoded_len,
     PtnHtmlEncoding encoding
 ) {
-    if (encoding == PTN_HTML_ENCODING_UTF8 ||
-        encoding == PTN_HTML_ENCODING_LEGACY_BYTE ||
-        ptn_html_encoding_is_legacy_multibyte(encoding)) {
+    if (ptn_html_encoding_is_legacy_multibyte(encoding)) {
+        for (size_t i = 0; i < decoded_len; i++) {
+            if ((unsigned char)decoded[i] > 0x7f) {
+                return 0;
+            }
+        }
+        ptn_string_buffer_append_len(output, decoded, decoded_len);
+        return 1;
+    }
+    if (encoding == PTN_HTML_ENCODING_UTF8 || encoding == PTN_HTML_ENCODING_LEGACY_BYTE) {
         ptn_string_buffer_append_len(output, decoded, decoded_len);
         return 1;
     }
@@ -30994,10 +30950,12 @@ static int ptn_html_escape_byte_string(
             }
         }
         unsigned char byte = (unsigned char)string.data[i];
-        unsigned int codepoint = encoding == PTN_HTML_ENCODING_WINDOWS_1252
-            ? ptn_html_windows_1252_codepoint_for_byte(byte)
-            : ptn_html_single_byte_codepoint_for_byte(encoding, byte);
         char original[1] = { (char)byte };
+        if (ptn_html_single_byte_undefined_for_byte(encoding, byte)) {
+            ptn_string_buffer_append_len(output, original, 1);
+            continue;
+        }
+        unsigned int codepoint = ptn_html_single_byte_codepoint_for_byte(encoding, byte);
         if (ptn_html_should_replace_disallowed(mode, codepoint, flags, encoding)) {
             ptn_html_append_replacement_character_for_encoding(output, encoding);
             continue;

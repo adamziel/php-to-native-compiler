@@ -17388,6 +17388,69 @@ var_dump(htmlentities(hex2bin(\"80\"), ENT_HTML5 | ENT_DISALLOWED, \"SJIS\"));\n
 }
 
 #[test]
+fn compile_html_charset_aliases_and_default_charset_to_native_binary() {
+    let root = temp_dir("ptn-native-html-charset-aliases");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("html-charset-aliases.php");
+    let output = root.join("html-charset-aliases-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(0);\n\
+$cases = [\n\
+    ['ISO8859-1', 'A0'], ['ISO8859-15', 'A4'], ['iso8859-5', 'A1'],\n\
+    ['cp1252', '80'], ['1252', '9F'], ['win-1251', '80'],\n\
+    ['koi8-ru', '80'], ['koi8r', '9A'], ['MacRoman', '80'], ['ibm866', '80'], ['866', 'AF'],\n\
+];\n\
+foreach ($cases as [$enc, $hex]) {\n\
+    echo $enc, ':', bin2hex(htmlentities(hex2bin($hex), ENT_QUOTES | ENT_HTML5 | ENT_DISALLOWED, $enc)), ':', bin2hex(html_entity_decode('&euro;', ENT_QUOTES | ENT_HTML5, $enc)), \"\\n\";\n\
+}\n\
+$multi = [['932', '815b'], ['SJIS-win', '815b'], ['EUCJP', '8eae'], ['eucJP-win', '8eae'], ['950', '8140'], ['BIG5-HKSCS', '8140']];\n\
+foreach ($multi as [$enc, $hex]) {\n\
+    echo $enc, ':', bin2hex(htmlspecialchars(hex2bin($hex), ENT_QUOTES | ENT_SUBSTITUTE, $enc)), ':', bin2hex(html_entity_decode('&euro;', ENT_QUOTES | ENT_HTML5, $enc)), \"\\n\";\n\
+}\n\
+foreach (['koi8-ru', 'win-1251', 'ISO8859-15', 'MacRoman', '1252'] as $enc) {\n\
+    ini_set('default_charset', $enc);\n\
+    echo 'default-', $enc, ':', bin2hex(htmlentities(chr(0x80), ENT_QUOTES | ENT_HTML5, '')), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ISO8859-1:266e6273703b:266575726f3b\n",
+            "ISO8859-15:266575726f3b:a4\n",
+            "iso8859-5:26494f63793b:266575726f3b\n",
+            "cp1252:266575726f3b:80\n",
+            "1252:2659756d6c3b:80\n",
+            "win-1251:26444a63793b:88\n",
+            "koi8-ru:26486f72697a6f6e74616c4c696e653b:266575726f3b\n",
+            "koi8r:266e6273703b:266575726f3b\n",
+            "MacRoman:2641756d6c3b:db\n",
+            "ibm866:264163793b:266575726f3b\n",
+            "866:267063793b:266575726f3b\n",
+            "932:815b:266575726f3b\n",
+            "SJIS-win:815b:266575726f3b\n",
+            "EUCJP:8eae:266575726f3b\n",
+            "eucJP-win:8eae:266575726f3b\n",
+            "950:8140:266575726f3b\n",
+            "BIG5-HKSCS:8140:266575726f3b\n",
+            "default-koi8-ru:26486f72697a6f6e74616c4c696e653b\n",
+            "default-win-1251:26444a63793b\n",
+            "default-ISO8859-15:80\n",
+            "default-MacRoman:2641756d6c3b\n",
+            "default-1252:266575726f3b\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_quoted_printable_encode_php_folding_to_native_binary() {
     let root = temp_dir("ptn-native-quoted-printable-encode-folding");
     fs::create_dir_all(&root).unwrap();
