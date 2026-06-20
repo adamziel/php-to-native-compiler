@@ -1230,7 +1230,7 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "array(0) {\n",
             "}\n",
         )
@@ -58066,9 +58066,11 @@ fn compile_uri_rfc3986_core_surface_to_native_binary() {
         r#"<?php
 var_dump(class_exists("Uri\\Rfc3986\\Uri"));
 var_dump(class_exists("Uri\\Rfc3986\\UriType"));
+var_dump(class_exists("Uri\\Rfc3986\\UriHostType"));
 var_dump(Uri\Rfc3986\UriType::Uri);
 $uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61");
 var_dump($uri->getUriType());
+var_dump($uri->getHostType());
 var_dump($uri->toRawString());
 var_dump($uri->toString());
 var_dump($uri->getRawPath());
@@ -58076,6 +58078,10 @@ var_dump($uri->getPath());
 var_dump(Uri\Rfc3986\Uri::parse("//example.com/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("foo")->getUriType());
+var_dump(Uri\Rfc3986\Uri::parse("https://192.168.0.1")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://[2001:db8::1]")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://[vF.addr]")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("/foo/bar")->getHostType());
 $changed = $uri
     ->withHost("%65xample.net")
     ->withScheme("HTTP")
@@ -58110,8 +58116,10 @@ try {
         concat!(
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::RegisteredName)\n",
             "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
             "string(12) \"/foo%2Fb%61r\"\n",
@@ -58119,6 +58127,10 @@ try {
             "enum(Uri\\Rfc3986\\UriType::NetworkPathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::RelativePathReference)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPv4)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPv6)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPvFuture)\n",
+            "NULL\n",
             "string(43) \"HTTP://user:info@%65xample.net/foo%2Fb%61r#\"\n",
             "string(39) \"http://user:info@example.net/foo%2Fbar#\"\n",
             "string(11) \"example.net\"\n",
@@ -58162,6 +58174,22 @@ try {
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
+try {
+    $url->withScheme("");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $url->withHost("ex@mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $url->withHost("ex:mple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+var_dump($url->withHost("ex#mple.com")->getAsciiHost());
 "#,
     )
     .unwrap();
@@ -58189,8 +58217,12 @@ try {
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified scheme is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (DomainInvalidCodePoint)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
+            "string(2) \"ex\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
