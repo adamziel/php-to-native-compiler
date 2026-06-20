@@ -3011,6 +3011,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uri_rfc3986_uri(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_uri_whatwg_url(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_internal_class_static_method_exists(const char *class_name, const char *method_name);
 static PTN_UNUSED int ptn_declared_class_method_is_callable(const char *class_name, const char *method_name, const char *access_scope);
@@ -8496,6 +8498,12 @@ static PtnValue ptn_internal_unserialize(PtnRuntime *runtime, size_t argc, const
     return result;
 }
 
+static int ptn_internal_object_has_empty_public_property_view(PtnObject *object) {
+    return object != NULL &&
+        (ptn_internal_class_name_is_uri_rfc3986_uri(object->class_name) ||
+         ptn_internal_class_name_is_uri_whatwg_url(object->class_name));
+}
+
 static void ptn_var_export_append_value(
     PtnStringBuffer *buffer,
     PtnRuntime *runtime,
@@ -8610,6 +8618,11 @@ static void ptn_var_export_append_object_state_array(
 ) {
     PtnArray *properties = object->properties;
     ptn_string_buffer_append(buffer, "array(\n");
+    if (ptn_internal_object_has_empty_public_property_view(object)) {
+        ptn_string_buffer_append_indent(buffer, indent);
+        ptn_string_buffer_append_char(buffer, ')');
+        return;
+    }
     for (size_t i = 0; i < properties->len; i++) {
         PtnArrayEntry *entry = &properties->entries[i];
         PtnValue entry_value = ptn_value_deref(entry->value);
@@ -9242,6 +9255,10 @@ static int ptn_json_encode_append_object(
         ptn_value_destroy(&serialized);
         ptn_dump_seen_objects_pop(seen);
         return ok;
+    }
+    if (ptn_internal_object_has_empty_public_property_view(object)) {
+        ptn_string_buffer_append(buffer, "{}");
+        return 1;
     }
     ptn_dump_seen_objects_push(seen, object);
     ptn_string_buffer_append_char(buffer, '{');
@@ -89283,6 +89300,12 @@ static PTN_UNUSED int ptn_internal_cast_array_object(PtnValue value, PtnValue *a
     if (value.type == PTN_OBJECT &&
         ptn_internal_class_name_is_spl_fixed_array(value.as.object->class_name)) {
         *array_out = ptn_spl_fixed_array_storage_to_array((PtnSplFixedArrayData *)value.as.object->native_data);
+        return 1;
+    }
+    if (value.type == PTN_OBJECT &&
+        (ptn_internal_class_name_is_uri_rfc3986_uri(value.as.object->class_name) ||
+         ptn_internal_class_name_is_uri_whatwg_url(value.as.object->class_name))) {
+        *array_out = ptn_array_from_literal_entries(0, NULL);
         return 1;
     }
     PtnArrayObjectData *data = ptn_spl_array_object_data_from_value(value);

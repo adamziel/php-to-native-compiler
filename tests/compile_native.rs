@@ -56706,6 +56706,9 @@ var_dump($uri->getRawPath());
 var_dump($uri->getPath());
 $uriClone = clone $uri;
 var_dump($uriClone->toRawString());
+var_dump(json_encode($uri));
+echo var_export($uri, true), "\n";
+var_dump((array) $uri);
 var_dump(Uri\Rfc3986\Uri::parse("//example.com/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("/foo")->getUriType());
 var_dump(Uri\Rfc3986\Uri::parse("foo")->getUriType());
@@ -56757,6 +56760,11 @@ try {
             "string(12) \"/foo%2Fb%61r\"\n",
             "string(10) \"/foo%2Fbar\"\n",
             "string(60) \"https://us%65r:in%66o@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
+            "string(2) \"{}\"\n",
+            "\\Uri\\Rfc3986\\Uri::__set_state(array(\n",
+            "))\n",
+            "array(0) {\n",
+            "}\n",
             "enum(Uri\\Rfc3986\\UriType::NetworkPathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::AbsolutePathReference)\n",
             "enum(Uri\\Rfc3986\\UriType::RelativePathReference)\n",
@@ -56789,6 +56797,9 @@ $url = Uri\WhatWg\Url::parse("https://user:info@example.com:443/foo/bar?abc=123#
 var_dump($url->toAsciiString());
 $urlClone = clone $url;
 var_dump($urlClone->toAsciiString());
+var_dump(json_encode($url));
+echo var_export($url, true), "\n";
+var_dump((array) $url);
 var_dump($url->getPort());
 var_dump($url->getHostType());
 var_dump($url->withPath("foo#bar")->toAsciiString());
@@ -56827,6 +56838,11 @@ try {
             "bool(true)\n",
             "string(50) \"https://user:info@example.com/foo/bar?abc=123#hash\"\n",
             "string(50) \"https://user:info@example.com/foo/bar?abc=123#hash\"\n",
+            "string(2) \"{}\"\n",
+            "\\Uri\\WhatWg\\Url::__set_state(array(\n",
+            "))\n",
+            "array(0) {\n",
+            "}\n",
             "NULL\n",
             "enum(Uri\\WhatWg\\UrlHostType::Domain)\n",
             "string(52) \"https://user:info@example.com/foo%23bar?abc=123#hash\"\n",
