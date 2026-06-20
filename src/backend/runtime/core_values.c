@@ -1626,6 +1626,9 @@ static PTN_UNUSED int ptn_internal_class_name_is_pdo_row(const char *class_name)
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_stmt(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_sqlite3_result(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli_driver(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_mysqli_result(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
@@ -1835,6 +1838,13 @@ static PTN_UNUSED PtnValue ptn_pdo_statement_new(
 );
 static PTN_UNUSED PtnValue ptn_sqlite3_new(
     PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_mysqli_new(
+    PtnRuntime *runtime,
+    const char *class_name,
     size_t argc,
     const PtnValue *args,
     size_t line

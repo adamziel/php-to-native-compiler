@@ -1008,6 +1008,14 @@ static PTN_UNUSED PtnValue ptn_new_object(
         ptn_throw_exception(runtime, "Error", "Cannot directly instantiate internal class");
         return ptn_null();
     }
+    if (ptn_internal_class_name_is_mysqli(lookup_class_name) ||
+        ptn_internal_class_name_is_mysqli_driver(lookup_class_name)) {
+        return ptn_mysqli_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_mysqli_result(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot directly instantiate internal class");
+        return ptn_null();
+    }
     if (ptn_ascii_case_equal(lookup_class_name, "IntlBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlRuleBasedBreakIterator") ||
         ptn_ascii_case_equal(lookup_class_name, "IntlCodePointBreakIterator") ||
