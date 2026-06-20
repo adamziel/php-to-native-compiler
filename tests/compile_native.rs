@@ -48009,6 +48009,58 @@ class ArrowBoundNonstaticCall {
 }
 
 #[test]
+fn compile_arrow_this_binding_matches_method_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-arrow-this-binding-method-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("arrow-this-binding-method-scope.php");
+    let output = root.join("arrow-this-binding-method-scope-bin");
+    fs::write(
+        &input,
+        "<?php
+class ArrowThisBinding {
+    public $name = \"box\";
+
+    public function run() {
+        $plain = fn() => 42;
+        $reflection = new ReflectionFunction($plain);
+        echo get_class($reflection->getClosureThis()), \":\", $reflection->getClosureThis()->name, \"\\n\";
+
+        $direct = fn() => ArrowThisBinding::label(\"direct\");
+        echo $direct(), \"\\n\";
+
+        $callback = fn() => call_user_func(\"ArrowThisBinding::label\", \"callback\");
+        echo $callback(), \"\\n\";
+
+        $thisName = \"this\";
+        $dynamic = fn() => $$thisName;
+        echo get_class($dynamic()), \":\", $dynamic()->name, \"\\n\";
+
+        $static = static fn() => isset($this);
+        var_dump($static());
+    }
+
+    public function label($prefix) {
+        return $prefix . \":\" . $this->name;
+    }
+}
+
+(new ArrowThisBinding())->run();
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "ArrowThisBinding:box\ndirect:box\ncallback:box\nArrowThisBinding:box\nbool(false)\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_array_walk_closure_use_capture_global_swap_to_native_binary() {
     let root = temp_dir("ptn-native-array-walk-closure-use-global-swap");
     fs::create_dir_all(&root).unwrap();

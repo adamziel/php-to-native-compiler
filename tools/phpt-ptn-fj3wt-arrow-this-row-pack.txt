@@ -1,0 +1,2 @@
+# Full-corpus arrow/closure $this binding row for ptn-fj3wt.
+Zend/tests/arrow_functions/005.phpt

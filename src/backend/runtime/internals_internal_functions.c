@@ -1811,6 +1811,26 @@ static PTN_UNUSED PtnValue ptn_direct_var_dump_value(
 }
 /* PTN_DIRECT_INTERNAL_HELPERS_END */
 
+static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata) {
+    return metadata != NULL &&
+        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
+        ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") &&
+        strcmp(metadata->display_name, "storage") == 0;
+}
+
+static PtnArrayEntry *ptn_object_property_entry_for_metadata(
+    PtnObject *object,
+    const PtnObjectPropertyMetadata *metadata
+) {
+    if (object == NULL || object->properties == NULL || metadata == NULL) {
+        return NULL;
+    }
+    PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
+    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
+    ptn_array_key_free(key);
+    return entry;
+}
+
 /* PTN_COMPACT_INTERNAL_HELPERS_START */
 
 static PTN_UNUSED const char *ptn_direct_array_arg_type_name(PtnValue value) {
@@ -4242,13 +4262,6 @@ static void ptn_var_dump_object_property_metadata_key(const PtnObjectPropertyMet
     );
 }
 
-static int ptn_object_metadata_is_array_object_storage(const PtnObjectPropertyMetadata *metadata) {
-    return metadata != NULL &&
-        metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
-        ptn_ascii_case_equal(metadata->declaring_class, "ArrayObject") &&
-        strcmp(metadata->display_name, "storage") == 0;
-}
-
 static int ptn_object_metadata_is_spl_array_backed_storage(const PtnObjectPropertyMetadata *metadata) {
     return metadata != NULL &&
         metadata->read_visibility == PTN_PROPERTY_PRIVATE &&
@@ -4306,18 +4319,6 @@ static void ptn_var_dump_object_uninitialized_properties(PtnObject *object, size
 
 static void ptn_var_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
 static void ptn_debug_zval_dump_value_indented(PtnValue value, size_t indent, PtnDumpSeenArrays *seen);
-static PtnArrayEntry *ptn_object_property_entry_for_metadata(
-    PtnObject *object,
-    const PtnObjectPropertyMetadata *metadata
-) {
-    if (object == NULL || object->properties == NULL || metadata == NULL) {
-        return NULL;
-    }
-    PtnArrayKey key = ptn_array_string_key(metadata->storage_name);
-    PtnArrayEntry *entry = ptn_array_entry_for_key(object->properties, key);
-    ptn_array_key_free(key);
-    return entry;
-}
 
 static void ptn_var_dump_array_key(PtnArrayKey key) {
     if (key.type == PTN_ARRAY_KEY_INT) {
