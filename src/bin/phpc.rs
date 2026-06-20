@@ -606,6 +606,121 @@ fn normalize_ini_scalar(raw_value: &str) -> String {
     }
 }
 
+fn date_timezone_offset_literal_is_supported(name: &str) -> bool {
+    let Some(sign) = name.as_bytes().first() else {
+        return false;
+    };
+    if *sign != b'+' && *sign != b'-' {
+        return false;
+    }
+    let rest = &name[1..];
+    let (hours, minutes) = if let Some((hours, minutes)) = rest.split_once(':') {
+        (hours, minutes)
+    } else if rest.len() >= 4 {
+        (&rest[..2], &rest[2..])
+    } else {
+        return false;
+    };
+    if hours.len() > 2
+        || minutes.len() != 2
+        || !hours.bytes().all(|byte| byte.is_ascii_digit())
+        || !minutes.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let Ok(hours) = hours.parse::<u8>() else {
+        return false;
+    };
+    let Ok(minutes) = minutes.parse::<u8>() else {
+        return false;
+    };
+    minutes <= 59 && (hours < 14 || (hours == 14 && minutes == 0))
+}
+
+fn date_timezone_name_is_safe_zoneinfo_name(name: &str) -> bool {
+    if name.is_empty()
+        || name.starts_with('/')
+        || name.starts_with("right/")
+        || name.starts_with("posix/")
+    {
+        return false;
+    }
+    name.split('/').all(|segment| {
+        !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'+' | b'.')
+            })
+    })
+}
+
+fn date_timezone_zoneinfo_exists(name: &str) -> bool {
+    if !date_timezone_name_is_safe_zoneinfo_name(name) {
+        return false;
+    }
+    [
+        "/usr/share/zoneinfo",
+        "/etc/zoneinfo",
+        "/usr/share/lib/zoneinfo",
+    ]
+    .into_iter()
+    .any(|root| Path::new(root).join(name).is_file())
+}
+
+fn date_timezone_identifier_is_supported(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    if date_timezone_offset_literal_is_supported(name) {
+        return true;
+    }
+    const KNOWN: &[&str] = &[
+        "Africa/Abidjan",
+        "Africa/Casablanca",
+        "America/Chicago",
+        "America/Halifax",
+        "America/Indiana/Knox",
+        "America/Los_Angeles",
+        "America/New_York",
+        "America/Sao_Paulo",
+        "America/Toronto",
+        "Asia/Calcutta",
+        "Asia/Hong_Kong",
+        "Asia/Jerusalem",
+        "Asia/Kolkata",
+        "Australia/Brisbane",
+        "Europe/Amsterdam",
+        "Europe/Berlin",
+        "Europe/Kyiv",
+        "Europe/London",
+        "Europe/Moscow",
+        "Europe/Oslo",
+        "Europe/Paris",
+        "MET",
+        "UTC",
+        "Pacific/Samoa",
+        "Pacific/Wallis",
+        "US/Alaska",
+        "US/Eastern",
+        "GMT",
+        "Z",
+        "Zulu",
+        "Etc/Universal",
+        "Etc/UTC",
+        "Etc/Zulu",
+        "BST",
+        "CET",
+        "CEST",
+        "EDT",
+        "EST",
+        "PST",
+        "ADT",
+    ];
+    KNOWN.iter().any(|known| known.eq_ignore_ascii_case(name))
+        || date_timezone_zoneinfo_exists(name)
+}
+
 fn parse_error_reporting_level(raw_value: &str) -> Option<i64> {
     ErrorReportingParser::new(raw_value).parse()
 }
@@ -918,6 +1033,19 @@ fn compile_and_run(
         }
     }
     let memory_limit_warning = apply_memory_limit_bounds(&mut ini);
+    let date_timezone_warning = if let Some(timezone) = ini.date_timezone.clone() {
+        if date_timezone_identifier_is_supported(&timezone) {
+            None
+        } else {
+            let warning = format!(
+                "Warning: PHP Startup: Invalid date.timezone value '{timezone}', using 'UTC' instead in Unknown on line 0\n"
+            );
+            ini.date_timezone = Some("UTC".to_string());
+            Some(warning)
+        }
+    } else {
+        None
+    };
     let native = TempPath::new("ptn-phpc-native", "bin");
     compile_file(script, native.path(), CompileOptions { emit_c: false }).map_err(|error| {
         if error.span.is_some() {
@@ -1115,12 +1243,16 @@ fn compile_and_run(
         command.env("PTN_REQUEST_MODE", "cli");
     }
     let startup_warning_emitted = memory_limit_warning.is_some()
+        || date_timezone_warning.is_some()
         || ini.mbstring_internal_encoding.is_some()
         || ini.allow_url_include_deprecated;
     if startup_warning_emitted {
         command.env("PTN_STARTUP_WARNING_EMITTED", "1");
     }
     if let Some(warning) = memory_limit_warning {
+        print!("{warning}");
+    }
+    if let Some(warning) = date_timezone_warning {
         print!("{warning}");
     }
     if ini.allow_url_include_deprecated {

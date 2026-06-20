@@ -970,6 +970,9 @@ var_dump(timezone_name_from_abbr('CET'));
 var_dump(in_array('Europe/London', timezone_identifiers_list()));
 var_dump(in_array('UTC', DateTimeZone::listIdentifiers(DateTimeZone::EUROPE | DateTimeZone::UTC)));
 
+$nullable = new DateTime('2009-01-01', null);
+echo $nullable->format(DateTime::COOKIE), "\n";
+
 $dto = new DateTime();
 $old = $dto->getTimezone();
 $dto->setTimezone(new DateTimeZone('US/Eastern'));
@@ -1006,6 +1009,7 @@ echo new DateTimeZoneExt('Europe/Kyiv'), "\n";
             "string(13) \"Europe/Berlin\"\n",
             "bool(true)\n",
             "bool(true)\n",
+            "Thursday, 01-Jan-2009 00:00:00 UTC\n",
             "string(10) \"US/Eastern\"\n",
             "string(3) \"UTC\"\n",
             "Europe/Kyiv\n",
@@ -1136,6 +1140,16 @@ try {
     echo $e::class, ": ", $e->getMessage(), "\n";
     var_dump($e->errors);
 }
+try {
+    $url->withHost("ex:mple.com");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $url->withScheme("");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
 "##,
     )
     .unwrap();
@@ -1174,9 +1188,11 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "array(0) {\n",
             "}\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified scheme is malformed\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -14673,6 +14689,51 @@ bool(true)\n"
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("static PtnValue ptn_internal_date_default_timezone_set("));
     assert!(c_source.contains("static PtnValue ptn_internal_gmdate("));
+}
+
+#[test]
+fn compile_scalar_date_php_timezone_edges_to_native_binary() {
+    let root = temp_dir("ptn-native-date-timezone-edges");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-timezone-edges.php");
+    let output = root.join("date-timezone-edges-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+date_default_timezone_set('UTC');\n\
+echo gmdate('u', mktime(8, 8, 8, 8, 8, 2008)), \"\\n\";\n\
+try {\n\
+    mktime();\n\
+} catch (TypeError $e) {\n\
+    echo $e::class, ': ', $e->getMessage(), \"\\n\";\n\
+}\n\
+date_default_timezone_set('America/Toronto');\n\
+echo date('Y-m-d\\TH:i:sO', mktime(1, 1, 1, 1, 1, 69)), \"\\n\";\n\
+echo date('Y-m-d\\TH:i:sO', mktime(1, 1, 1, 1, 1, 100)), \"\\n\";\n\
+date_default_timezone_set('America/Indiana/Knox');\n\
+echo date_default_timezone_get(), \"\\n\";\n\
+echo date(DATE_ISO8601, strtotime('2005-07-12 08:00:00')), \"\\n\";",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "000000\n\
+ArgumentCountError: mktime() expects at least 1 argument, 0 given\n\
+2069-01-01T01:01:01-0500\n\
+2000-01-01T01:01:01-0500\n\
+America/Indiana/Knox\n\
+2005-07-12T08:00:00-0500\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("{ \"mktime\", 1, 6, ptn_internal_mktime }"));
+    assert!(c_source.contains("America/Indiana/Knox"));
 }
 
 #[test]
@@ -42809,6 +42870,37 @@ echo ini_get('arg_separator.input'), \"\\n\";",
 }
 
 #[test]
+fn phpc_date_timezone_ini_invalid_value_warns_and_falls_back_to_utc() {
+    let root = temp_dir("ptn-phpc-date-timezone-ini-invalid");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-timezone-ini-invalid.php");
+    fs::write(
+        &input,
+        "<?php\n\
+putenv('TZ=');\n\
+echo date_default_timezone_get(), \"\\n\";\n\
+echo date('e'), \"\\n\";",
+    )
+    .unwrap();
+
+    let execution = Command::new(env!("CARGO_BIN_EXE_phpc"))
+        .arg("-d")
+        .arg("date.timezone=Incorrect/Zone")
+        .arg("-f")
+        .arg(&input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Warning: PHP Startup: Invalid date.timezone value 'Incorrect/Zone', using 'UTC' instead in Unknown on line 0\n\
+UTC\n\
+UTC\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_ini_parse_quantity_and_memory_limit_ini_to_native_binary() {
     let root = temp_dir("ptn-native-ini-quantity-memory-limit");
     fs::create_dir_all(&root).unwrap();
@@ -57179,9 +57271,15 @@ fn compile_uri_rfc3986_core_surface_to_native_binary() {
         r#"<?php
 var_dump(class_exists("Uri\\Rfc3986\\Uri"));
 var_dump(class_exists("Uri\\Rfc3986\\UriType"));
+var_dump(class_exists("Uri\\Rfc3986\\UriHostType"));
 var_dump(Uri\Rfc3986\UriType::Uri);
 $uri = Uri\Rfc3986\Uri::parse("https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61");
 var_dump($uri->getUriType());
+var_dump($uri->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://192.168.0.1")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://[2001:0db8:3333:4444:5555:6666:7777:8888]")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("https://[vF.addr]")->getHostType());
+var_dump(Uri\Rfc3986\Uri::parse("/foo")->getHostType());
 var_dump($uri->toRawString());
 var_dump($uri->toString());
 var_dump($uri->getRawPath());
@@ -57223,8 +57321,14 @@ try {
         concat!(
             "bool(true)\n",
             "bool(true)\n",
+            "bool(true)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
             "enum(Uri\\Rfc3986\\UriType::Uri)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::RegisteredName)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPv4)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPv6)\n",
+            "enum(Uri\\Rfc3986\\UriHostType::IPvFuture)\n",
+            "NULL\n",
             "string(56) \"https://user:info@example.com:443/foo%2Fb%61r?x=%3d#f%61\"\n",
             "string(52) \"https://user:info@example.com:443/foo%2Fbar?x=%3D#fa\"\n",
             "string(12) \"/foo%2Fb%61r\"\n",
@@ -57302,8 +57406,8 @@ try {
             "string(55) \"https://u%3As%2Fr:info@example.com/foo/bar?abc=123#hash\"\n",
             "bool(true)\n",
             "bool(true)\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
