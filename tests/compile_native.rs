@@ -42181,6 +42181,35 @@ var_dump($str[-11111111111111111111111]);",
 }
 
 #[test]
+fn compile_large_float_string_offset_reads_to_native_binary() {
+    let root = temp_dir("ptn-native-large-float-string-offset-reads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("large-float-string-offset-reads.php");
+    let output = root.join("large-float-string-offset-reads-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+error_reporting(E_ALL);\n\
+$text = 'foo';\n\
+$text[111111111111111111111];\n\
+$text[-11111111111111111111111];",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    let normalized_stdout = stdout.replace(input.to_str().unwrap(), "ptn");
+    assert_eq!(
+        normalized_stdout,
+        "\nWarning: String offset cast occurred in ptn on line 4\n\nWarning: Uninitialized string offset 430646668853805056 in ptn on line 4\n\nWarning: String offset cast occurred in ptn on line 5\n\nWarning: Uninitialized string offset -6171178737961271296 in ptn on line 5\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_numeric_string_offset_reads_to_native_binary() {
     let root = temp_dir("ptn-native-numeric-string-offset-reads");
     fs::create_dir_all(&root).unwrap();
@@ -57771,6 +57800,111 @@ var_dump($test);
             "}\n",
         )
     );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_overloaded_property_reference_assignment_by_value_source_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-property-reference-assignment-by-value-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-property-reference-assignment-by-value-source.php");
+    let output = root.join("overloaded-property-reference-assignment-by-value-source-bin");
+    fs::write(
+        &input,
+        "<?php
+class Wpq {
+    private $unreferenced;
+
+    public function __get($name) {
+        return $this->$name . \"XXX\";
+    }
+}
+
+function ret_assoc() {
+    $x = \"XXX\";
+    return array('foo' => 'bar', $x);
+}
+
+$wpq = new Wpq;
+try {
+    $wpq->interesting =& ret_assoc();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            concat!(
+                "\nWarning: Undefined property: Wpq::$interesting in {} on line 6\n",
+                "\nNotice: Indirect modification of overloaded property Wpq::$interesting has no effect in {} on line 17\n",
+                "Cannot assign by reference to overloaded object\n",
+            ),
+            input.display(),
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_reject_overloaded_property_reference_assignment"));
+}
+
+#[test]
+fn compile_overloaded_property_reference_assignment_by_ref_source_to_native_binary() {
+    let root = temp_dir("ptn-native-overloaded-property-reference-assignment-by-ref-source");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("overloaded-property-reference-assignment-by-ref-source.php");
+    let output = root.join("overloaded-property-reference-assignment-by-ref-source-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    private $var;
+    function __get($name) {
+        return $this;
+    }
+}
+
+function &noref() {
+    $foo = 1;
+    return $foo;
+}
+
+$foo = new Foo;
+try {
+    $foo->i = &noref();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+var_dump($foo);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        concat!(
+            "Cannot assign by reference to overloaded object\n",
+            "object(Foo)#1 (1) {\n",
+            "  [\"var\":\"Foo\":private]=>\n",
+            "  NULL\n",
+            "}\n",
+        )
+    );
+    assert!(!stdout.contains("Indirect modification"), "{stdout}");
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 

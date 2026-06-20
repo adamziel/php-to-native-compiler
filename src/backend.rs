@@ -29548,7 +29548,8 @@ impl ValueEmitter {
         out.push_str(&source_temp);
         out.push_str(");\n");
         out.push_str("    } else {\n");
-        let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
+        let stored_temp =
+            self.emit_store_reference_assignment_target_from_temp(out, target, &source_temp);
         if !self.source_is_declared_by_ref_call(source) {
             emit_only_variables_assigned_by_reference_notice_unless_return_fallback(
                 out,
@@ -29719,7 +29720,8 @@ impl ValueEmitter {
         out.push_str(&source_temp);
         out.push_str(");\n");
         out.push_str("    } else {\n");
-        let stored_temp = self.emit_store_assignment_target_from_temp(out, target, &source_temp);
+        let stored_temp =
+            self.emit_store_reference_assignment_target_from_temp(out, target, &source_temp);
         if self.source_is_declared_by_ref_call(source) {
             let target_reference_temp = self.emit_assignment_target_reference(out, target);
             out.push_str("        ");
@@ -29752,6 +29754,85 @@ impl ValueEmitter {
         out.push_str("    }\n");
         emit_value_cleanup(out, "    ", &source_temp);
         result_temp
+    }
+
+    fn emit_store_reference_assignment_target_from_temp(
+        &mut self,
+        out: &mut String,
+        target: &AssignmentTarget,
+        value_temp: &str,
+    ) -> String {
+        match target {
+            AssignmentTarget::Property {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                out.push_str("    (void)ptn_object_reject_overloaded_property_reference_assignment(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(", 1);\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_write_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", \"");
+                out.push_str(&c_string(name));
+                out.push_str("\", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                result_temp
+            }
+            AssignmentTarget::DynamicProperty {
+                receiver,
+                name,
+                line,
+            } => {
+                let receiver_temp = self.emit_materialized_value(out, receiver);
+                let name_temp = self.emit_dynamic_property_name(out, name, *line);
+                out.push_str("    (void)ptn_object_reject_overloaded_property_reference_assignment(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(", 1);\n");
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_write_property(&runtime, ");
+                out.push_str(&receiver_temp);
+                out.push_str(", ");
+                out.push_str(&name_temp);
+                out.push_str(", ");
+                self.emit_access_scope(out);
+                out.push_str(", ");
+                out.push_str(value_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    free(");
+                out.push_str(&name_temp);
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &receiver_temp);
+                result_temp
+            }
+            _ => self.emit_store_assignment_target_from_temp(out, target, value_temp),
+        }
     }
 
     fn emit_store_reference_source_to_variable(

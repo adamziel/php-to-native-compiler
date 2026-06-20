@@ -1740,14 +1740,13 @@ static PTN_UNUSED void ptn_emit_undefined_property_warning(
     )) {
         return;
     }
-    fputc('\n', stdout);
-    fputs("Warning: ", stdout);
-    fputs(message, stdout);
-    fputs(" in ", stdout);
-    fputs(runtime->source_path != NULL ? runtime->source_path : "ptn", stdout);
-    fputs(" on line ", stdout);
-    fprintf(stdout, "%zu", line);
-    fputc('\n', stdout);
+    ptn_diagnostic_printf(
+        &runtime->diagnostics,
+        "\nWarning: %s in %s on line %zu\n",
+        message,
+        runtime->source_path != NULL ? runtime->source_path : "ptn",
+        line
+    );
 }
 
 static PTN_UNUSED int ptn_property_is_get_only_virtual(
@@ -3286,11 +3285,12 @@ static PTN_UNUSED void ptn_call_magic_get_then_throw_overloaded_property_referen
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *property,
-    size_t line
+    size_t line,
+    int emit_indirect_notice
 ) {
     PtnValue magic_value = ptn_null();
     if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
-        if (magic_value.type != PTN_REFERENCE) {
+        if (emit_indirect_notice && magic_value.type != PTN_REFERENCE) {
             ptn_emit_indirect_modification_overloaded_property_notice(
                 runtime,
                 receiver,
@@ -3301,6 +3301,45 @@ static PTN_UNUSED void ptn_call_magic_get_then_throw_overloaded_property_referen
         ptn_value_destroy(&magic_value);
     }
     ptn_throw_overloaded_property_reference_error(runtime, line);
+}
+
+static PTN_UNUSED int ptn_object_reject_overloaded_property_reference_assignment(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line,
+    int emit_indirect_notice
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        return 0;
+    }
+    PtnObjectPropertyMetadata *blocked_metadata =
+        ptn_object_blocked_magic_metadata(runtime, receiver.as.object, property, access_scope, 1);
+    if (blocked_metadata != NULL && ptn_magic_property_get_exists(runtime, receiver)) {
+        ptn_call_magic_get_then_throw_overloaded_property_reference_error(
+            runtime,
+            receiver,
+            property,
+            line,
+            emit_indirect_notice
+        );
+        return 1;
+    }
+    if (blocked_metadata == NULL &&
+        ptn_object_metadata_for_display_name(receiver.as.object, property) == NULL &&
+        ptn_magic_property_get_exists(runtime, receiver)) {
+        ptn_call_magic_get_then_throw_overloaded_property_reference_error(
+            runtime,
+            receiver,
+            property,
+            line,
+            emit_indirect_notice
+        );
+        return 1;
+    }
+    return 0;
 }
 
 static int ptn_reflection_internal_readonly_property_declaring_class(const char *declaring_class) {
@@ -5381,7 +5420,8 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
             runtime,
             receiver,
             property,
-            line
+            line,
+            0
         );
         return;
     }
@@ -5400,7 +5440,8 @@ static PTN_UNUSED void ptn_object_bind_property_reference(
             runtime,
             receiver,
             property,
-            line
+            line,
+            0
         );
         return;
     }
@@ -8457,31 +8498,7 @@ static PTN_UNUSED int ptn_string_to_offset(const char *string, int64_t *offset, 
 }
 
 static PTN_UNUSED int64_t ptn_string_offset_float_to_int(double value) {
-    if (!isfinite(value)) {
-        return 0;
-    }
-    if (!ptn_float_to_int_out_of_range(value)) {
-        return (int64_t)value;
-    }
-
-    double wrapped = fmod(value, 18446744073709551616.0);
-    if (wrapped < 0) {
-        wrapped += 18446744073709551616.0;
-    }
-    if (wrapped >= 18446744073709551616.0) {
-        wrapped = 0;
-    }
-
-    uint64_t unsigned_offset = (uint64_t)wrapped;
-    uint64_t signed_min_magnitude = UINT64_MAX / 2 + 1;
-    if (unsigned_offset >= signed_min_magnitude) {
-        uint64_t magnitude = UINT64_MAX - unsigned_offset + 1;
-        if (magnitude == signed_min_magnitude) {
-            return INT64_MIN;
-        }
-        return -(int64_t)magnitude;
-    }
-    return (int64_t)unsigned_offset;
+    return ptn_float_to_php_integer(value);
 }
 
 static PTN_UNUSED int ptn_string_offset_from_value(

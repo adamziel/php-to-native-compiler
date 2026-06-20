@@ -125,11 +125,21 @@ static PTN_UNUSED void ptn_abort_illegal_array_key(void) {
     exit(255);
 }
 
-static PTN_UNUSED int64_t ptn_array_integer_key_from_float(double value) {
-    if (!isfinite(value) || value < -9223372036854775808.0 || value >= 9223372036854775808.0) {
+static PTN_UNUSED int64_t ptn_float_to_php_integer(double value) {
+    if (!isfinite(value)) {
         return 0;
     }
-    return (int64_t)value;
+    if (value >= -9223372036854775808.0 && value < 9223372036854775808.0) {
+        return (int64_t)value;
+    }
+
+    double remainder = fmod(value, 18446744073709551616.0);
+    if (remainder >= 9223372036854775808.0) {
+        remainder -= 18446744073709551616.0;
+    } else if (remainder < -9223372036854775808.0) {
+        remainder += 18446744073709551616.0;
+    }
+    return (int64_t)remainder;
 }
 
 static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
@@ -142,7 +152,7 @@ static PTN_UNUSED PtnArrayKey ptn_array_key_from_value(PtnValue value) {
         case PTN_INT:
             return ptn_array_int_key(value.as.integer);
         case PTN_FLOAT:
-            return ptn_array_int_key(ptn_array_integer_key_from_float(value.as.floating));
+            return ptn_array_int_key(ptn_float_to_php_integer(value.as.floating));
         case PTN_RESOURCE:
             return ptn_array_int_key(value.as.resource->id);
         case PTN_STRING: {
