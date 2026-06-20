@@ -3224,6 +3224,40 @@ static PTN_UNUSED void ptn_throw_overloaded_property_reference_error(
     );
 }
 
+static PTN_UNUSED void ptn_emit_indirect_modification_overloaded_property_notice(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    size_t line
+) {
+    if (runtime == NULL) {
+        return;
+    }
+    PtnValue resolved = ptn_value_deref(receiver);
+    const char *class_name = resolved.type == PTN_OBJECT
+        ? resolved.as.object->class_name
+        : "stdClass";
+    char message[256];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Indirect modification of overloaded property %s::$%s has no effect",
+        class_name,
+        property
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    PtnRuntime *root = ptn_runtime_root(runtime);
+    ptn_emit_notice_with_path(
+        &runtime->diagnostics,
+        message,
+        runtime->source_path,
+        line,
+        root != NULL && root->output_has_started
+    );
+}
+
 static PTN_UNUSED void ptn_call_magic_get_then_throw_overloaded_property_reference_error(
     PtnRuntime *runtime,
     PtnValue receiver,
@@ -3232,6 +3266,14 @@ static PTN_UNUSED void ptn_call_magic_get_then_throw_overloaded_property_referen
 ) {
     PtnValue magic_value = ptn_null();
     if (ptn_magic_property_get(runtime, receiver, property, line, &magic_value)) {
+        if (magic_value.type != PTN_REFERENCE) {
+            ptn_emit_indirect_modification_overloaded_property_notice(
+                runtime,
+                receiver,
+                property,
+                line
+            );
+        }
         ptn_value_destroy(&magic_value);
     }
     ptn_throw_overloaded_property_reference_error(runtime, line);
@@ -4366,6 +4408,14 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
                 ptn_value_destroy(&current);
             }
             free(read_storage_key);
+        }
+        PtnValue magic_value;
+        if (
+            runtime != NULL &&
+            runtime->magic_property_read != NULL &&
+            runtime->magic_property_read(runtime, receiver, property, line, 0, &magic_value)
+        ) {
+            return magic_value;
         }
         storage_key = ptn_object_resolve_property_storage_key(
             runtime,
@@ -5572,7 +5622,17 @@ static PTN_UNUSED PtnValue ptn_object_reference_for_property(
                 free(storage_key);
                 return magic_value;
             }
+            ptn_emit_indirect_modification_overloaded_property_notice(
+                runtime,
+                receiver,
+                property,
+                line
+            );
+            PtnValue current = ptn_value_clone_deref(magic_value);
             ptn_value_destroy(&magic_value);
+            ptn_array_key_free(key);
+            free(storage_key);
+            return ptn_reference_value(ptn_reference_new_owned(current));
         }
     }
     if (metadata != NULL && metadata->is_readonly && entry != NULL) {

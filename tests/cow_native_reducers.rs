@@ -547,6 +547,36 @@ echo $properties[\"foo\"], \":\", $object->foo, \"\\n\";",
             expected_stdout: "456\n789:789\n",
         },
         CowReducerCase {
+            name: "overloaded_property_reference_uses_temporary",
+            oracle: "Zend/tests/magic_methods/bug32660.phpt",
+            source: "<?php\n\
+class A {\n\
+    public $q;\n\
+    function __construct() { $this->q = 3; }\n\
+    function __get($name) { return $this->q; }\n\
+}\n\
+$a = new A;\n\
+$c =& $a->whatever;\n\
+$c = \"long\";\n\
+print_r($a);",
+            expected_stdout: "Notice: Indirect modification of overloaded property A::$whatever has no effect in {source_path} on line 8\nA Object\n(\n    [q] => 3\n)\n",
+        },
+        CowReducerCase {
+            name: "nested_write_through_magic_get_object",
+            oracle: "Zend/tests/magic_methods/bug70321.phpt",
+            source: "<?php\n\
+class Foo {\n\
+    private $bar;\n\
+    function __construct() { $this->bar = new Bar; }\n\
+    public function &__get($key) { return $this->bar; }\n\
+}\n\
+class Bar { public $items = []; }\n\
+$foo = new Foo;\n\
+$foo->bar->items[] = \"x\";\n\
+echo count($foo->bar->items), \":\", $foo->bar->items[0], \"\\n\";",
+            expected_stdout: "1:x\n",
+        },
+        CowReducerCase {
             name: "reflection_reference_array_element_separates_cast_property",
             oracle: "Zend/tests/bugGH-8655.phpt",
             source: "<?php\n\
@@ -672,7 +702,7 @@ echo bin2hex($s), \":\", bin2hex($t), \"\\n\";",
         );
     }
 
-    assert_eq!(passed, 44, "COW reducer pass count changed");
+    assert_eq!(passed, 46, "COW reducer pass count changed");
     assert_eq!(failed, 0, "COW reducer fail count changed");
 }
 
