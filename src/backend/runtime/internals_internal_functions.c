@@ -77524,7 +77524,9 @@ static int ptn_reflection_class_constant_method_exists(const char *method_name) 
         || ptn_ascii_case_equal(method_name, "getDocComment")
         || ptn_ascii_case_equal(method_name, "getModifiers")
         || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getType")
         || ptn_ascii_case_equal(method_name, "getValue")
+        || ptn_ascii_case_equal(method_name, "hasType")
         || ptn_ascii_case_equal(method_name, "isDeprecated")
         || ptn_ascii_case_equal(method_name, "isEnumCase")
         || ptn_ascii_case_equal(method_name, "isFinal")
@@ -78756,8 +78758,11 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getDocComment",
             "getModifiers",
             "getName",
+            "getType",
             "getValue",
+            "hasType",
             "isDeprecated",
+            "isEnumCase",
             "isFinal",
             "isPrivate",
             "isProtected",
@@ -80795,7 +80800,8 @@ static PtnValue ptn_reflection_enum_case_object_from_name(
 static PtnValue ptn_reflection_class_constant_throw_missing(
     PtnRuntime *runtime,
     const char *class_name,
-    const char *constant_name
+    const char *constant_name,
+    size_t line
 ) {
     int needed = snprintf(NULL, 0, "Constant %s::%s does not exist", class_name, constant_name);
     if (needed < 0) {
@@ -80806,7 +80812,13 @@ static PtnValue ptn_reflection_class_constant_throw_missing(
         ptn_abort_out_of_memory();
     }
     snprintf(message, (size_t)needed + 1, "Constant %s::%s does not exist", class_name, constant_name);
-    ptn_throw_exception_owned_message(runtime, "ReflectionException", message);
+    ptn_throw_exception_owned_message_at(
+        runtime,
+        "ReflectionException",
+        message,
+        runtime->source_path,
+        line
+    );
     return ptn_null();
 }
 
@@ -80883,7 +80895,8 @@ static PTN_UNUSED PtnValue ptn_reflection_class_constant_new(
     PtnValue result = ptn_reflection_class_constant_throw_missing(
         runtime,
         resolved_class_name,
-        constant_name
+        constant_name,
+        line
     );
     free(class_name);
     free(constant_name);
@@ -90336,7 +90349,8 @@ static PTN_UNUSED PtnValue ptn_reflection_enum_case_new(
         PtnValue result = ptn_reflection_class_constant_throw_missing(
             runtime,
             class_name,
-            case_name
+            case_name,
+            line
         );
         free(class_name);
         free(case_name);

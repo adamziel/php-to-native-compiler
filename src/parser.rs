@@ -2599,13 +2599,16 @@ impl Parser<'_> {
                 set_visibility_span,
             ));
         }
+        let first_doc_comment = self
+            .doc_comment_before(self.peek().span.byte_start)
+            .or_else(|| doc_comment.clone());
         let mut properties = vec![self.parse_static_property_declaration(
             visibility,
             set_visibility,
             is_final,
             type_hint.clone(),
             attributes.clone(),
-            doc_comment.clone(),
+            first_doc_comment,
             class_name,
         )?];
         validate_builtin_attributes_for_target(
@@ -2643,13 +2646,16 @@ impl Parser<'_> {
     ) -> Result<Vec<ClassConstantDecl>> {
         self.expect_const()?;
         let type_hint = self.parse_optional_class_constant_type_hint()?;
+        let first_doc_comment = self
+            .doc_comment_before(self.peek().span.byte_start)
+            .or_else(|| doc_comment.clone());
         let mut constants = vec![self.parse_class_constant_declaration(
             visibility,
             is_final,
             class_name,
             type_hint.clone(),
             attributes.clone(),
-            doc_comment.clone(),
+            first_doc_comment,
         )?];
         while matches!(self.peek().kind, TokenKind::Comma) {
             self.advance();
@@ -2780,6 +2786,9 @@ impl Parser<'_> {
                 set_visibility_span,
             ));
         }
+        let first_doc_comment = self
+            .doc_comment_before(self.peek().span.byte_start)
+            .or_else(|| doc_comment.clone());
         let (first_property, first_had_hooks) = self.parse_property_declaration(
             visibility,
             set_visibility,
@@ -2788,7 +2797,7 @@ impl Parser<'_> {
             is_readonly,
             type_hint.clone(),
             attributes.clone(),
-            doc_comment.clone(),
+            first_doc_comment,
             allow_property_hooks,
             class_is_interface,
             class_name,
