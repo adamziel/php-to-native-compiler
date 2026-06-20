@@ -53490,28 +53490,34 @@ echo json_encode($object), \"\\n\";
 }
 
 #[test]
-fn compile_incomplete_class_is_internal_final_to_native_binary() {
-    let root = temp_dir("ptn-native-incomplete-class-final");
+fn compile_internal_final_classes_to_native_binary() {
+    let root = temp_dir("ptn-native-internal-final-classes");
     fs::create_dir_all(&root).unwrap();
-    let input = root.join("incomplete-class-final.php");
-    let output = root.join("incomplete-class-final-bin");
-    fs::write(
-        &input,
-        "<?php
-new class extends __PHP_Incomplete_Class {
-};
-",
-    )
-    .unwrap();
+    for (index, parent) in [
+        "__PHP_Incomplete_Class",
+        "Uri\\Rfc3986\\Uri",
+        "Uri\\WhatWg\\Url",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let input = root.join(format!("internal-final-{index}.php"));
+        let output = root.join(format!("internal-final-{index}-bin"));
+        fs::write(
+            &input,
+            format!("<?php\nclass PtnFinalProbe extends {parent} {{}}\n"),
+        )
+        .unwrap();
 
-    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
 
-    let execution = Command::new(&output).output().unwrap();
-    assert!(!execution.status.success());
-    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
-    assert!(String::from_utf8(execution.stderr)
-        .unwrap()
-        .contains("cannot extend final class __PHP_Incomplete_Class"));
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success());
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        assert!(String::from_utf8(execution.stderr)
+            .unwrap()
+            .contains(&format!("cannot extend final class {parent}")));
+    }
 }
 
 #[test]

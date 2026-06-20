@@ -6018,6 +6018,8 @@ fn emit_class_metadata_helpers(
         "BcMath\\Number",
         "WeakMap",
         "WeakReference",
+        "Uri\\Rfc3986\\Uri",
+        "Uri\\WhatWg\\Url",
     ] {
         out.push_str("    if (ptn_ascii_case_equal(name, \"");
         out.push_str(&c_string(class_name));
