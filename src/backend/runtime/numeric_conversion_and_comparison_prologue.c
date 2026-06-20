@@ -1687,6 +1687,7 @@ static PTN_UNUSED PtnException *ptn_exception_new_owned(
     exception->errors = ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\InvalidUrlException")
         ? ptn_array_from_literal_entries(0, NULL)
         : ptn_null();
+    exception->soap_fault_headerfault = ptn_null();
     return exception;
 }
 
@@ -2246,6 +2247,10 @@ static PTN_UNUSED const char *ptn_exception_constructor_declaring_class(
     if (ptn_declared_class_is_same_or_descendant(class_name, "ErrorException")) {
         return "ErrorException";
     }
+    if (ptn_exception_name_equal(class_name, "SoapFault") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "SoapFault")) {
+        return "SoapFault";
+    }
     if (ptn_declared_class_is_same_or_descendant(class_name, "Error")) {
         return "Error";
     }
@@ -2253,7 +2258,11 @@ static PTN_UNUSED const char *ptn_exception_constructor_declaring_class(
 }
 
 static PTN_UNUSED size_t ptn_exception_constructor_max_args(const char *declaring_class) {
-    return ptn_exception_name_equal(declaring_class, "ErrorException") ? 6 : 3;
+    if (ptn_exception_name_equal(declaring_class, "ErrorException") ||
+        ptn_exception_name_equal(declaring_class, "SoapFault")) {
+        return 6;
+    }
+    return 3;
 }
 
 static const char *ptn_exception_constructor_given_type(PtnValue value) {
@@ -2292,7 +2301,11 @@ static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
     const PtnValue *args,
     size_t line
 ) {
-    if (argc == 0) {
+    size_t message_index = ptn_exception_name_equal(declaring_class, "SoapFault") ? 1 : 0;
+    const char *message_parameter_name = ptn_exception_name_equal(declaring_class, "SoapFault")
+        ? "string"
+        : "message";
+    if (argc <= message_index) {
         char *message = ptn_duplicate_string("");
         return (PtnStringOperand) { message, message, 0 };
     }
@@ -2313,7 +2326,7 @@ static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
         args
     );
 
-    PtnValue value = ptn_value_deref(args[0]);
+    PtnValue value = ptn_value_deref(args[message_index]);
     if (
         value.type == PTN_ARRAY ||
         value.type == PTN_OBJECT ||
@@ -2325,8 +2338,10 @@ static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
         int needed = snprintf(
             NULL,
             0,
-            "%s::__construct(): Argument #1 ($message) must be of type string, %s given",
+            "%s::__construct(): Argument #%zu ($%s) must be of type string, %s given",
             declaring_class,
+            message_index + 1,
+            message_parameter_name,
             given
         );
         if (needed < 0) {
@@ -2339,8 +2354,10 @@ static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
         snprintf(
             message,
             (size_t)needed + 1,
-            "%s::__construct(): Argument #1 ($message) must be of type string, %s given",
+            "%s::__construct(): Argument #%zu ($%s) must be of type string, %s given",
             declaring_class,
+            message_index + 1,
+            message_parameter_name,
             given
         );
         ptn_throw_exception_owned_message_at(
@@ -2363,6 +2380,110 @@ static PTN_UNUSED PtnStringOperand ptn_exception_constructor_message(
     }
     ptn_runtime_pop_trace_frame(runtime, &trace_frame);
     return (PtnStringOperand) { message, message, message_len };
+}
+
+static PTN_UNUSED int ptn_exception_is_soap_fault_class(const char *class_name) {
+    return ptn_exception_name_equal(class_name, "SoapFault") ||
+        ptn_declared_class_is_same_or_descendant(class_name, "SoapFault");
+}
+
+static PTN_UNUSED void ptn_exception_set_soap_fault_headerfault(
+    PtnException *exception,
+    size_t argc,
+    const PtnValue *args
+) {
+    if (exception == NULL || !ptn_exception_is_soap_fault_class(exception->class_name)) {
+        return;
+    }
+    PtnValue headerfault = argc >= 6 ? ptn_value_clone_deref(args[5]) : ptn_null();
+    ptn_value_destroy(&exception->soap_fault_headerfault);
+    exception->soap_fault_headerfault = headerfault;
+}
+
+static PTN_UNUSED PtnValue ptn_exception_reconstruct(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_EXCEPTION) {
+        (void)runtime;
+        (void)line;
+        return ptn_null();
+    }
+
+    const char *declaring_class =
+        ptn_exception_constructor_declaring_class(runtime, receiver.as.exception->class_name);
+    size_t max_args = ptn_exception_constructor_max_args(declaring_class);
+    if (argc > max_args) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "%s constructor expects at most %zu arguments",
+            declaring_class,
+            max_args
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand message = ptn_exception_constructor_message(
+        runtime,
+        declaring_class,
+        argc,
+        args,
+        line
+    );
+    if (runtime->exceptions->active_exception != NULL) {
+        free(message.owned);
+        return ptn_null();
+    }
+
+    PtnException *exception = receiver.as.exception;
+    free(exception->message);
+    exception->message = message.owned;
+    exception->message_len = message.len;
+    exception->code = 0;
+    if (!ptn_exception_name_equal(declaring_class, "SoapFault") && argc >= 2) {
+        PtnValue code_value = ptn_value_deref(args[1]);
+        if (code_value.type == PTN_INT) {
+            exception->code = code_value.as.integer;
+        } else if (code_value.type == PTN_BOOL) {
+            exception->code = code_value.as.boolean ? 1 : 0;
+        } else if (code_value.type == PTN_FLOAT) {
+            exception->code = (int64_t)code_value.as.floating;
+        }
+    }
+    exception->severity = PTN_E_ERROR;
+    if (ptn_exception_name_equal(declaring_class, "ErrorException") && argc >= 3) {
+        PtnValue severity_value = ptn_value_deref(args[2]);
+        if (severity_value.type == PTN_INT) {
+            exception->severity = severity_value.as.integer;
+        } else if (severity_value.type == PTN_BOOL) {
+            exception->severity = severity_value.as.boolean ? 1 : 0;
+        } else if (severity_value.type == PTN_FLOAT) {
+            exception->severity = (int64_t)severity_value.as.floating;
+        }
+    }
+
+    size_t previous_index = ptn_exception_name_equal(declaring_class, "ErrorException") ? 5 : 2;
+    PtnValue previous = ptn_null();
+    if (!ptn_exception_name_equal(declaring_class, "SoapFault") && argc > previous_index) {
+        PtnValue previous_value = ptn_value_deref(args[previous_index]);
+        if (previous_value.type == PTN_EXCEPTION) {
+            previous = ptn_value_clone_deref(previous_value);
+        }
+    }
+    ptn_value_destroy(&exception->previous);
+    exception->previous = previous;
+    ptn_exception_set_soap_fault_headerfault(exception, argc, args);
+    return ptn_null();
 }
 
 static PTN_UNUSED int ptn_object_is_declared_throwable(PtnRuntime *runtime, PtnObject *object) {
@@ -5193,6 +5314,9 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     int is_throwable_receiver = receiver.type == PTN_EXCEPTION ||
         (receiver.type == PTN_OBJECT && ptn_object_is_declared_throwable(runtime, receiver.as.object));
+    if (receiver.type == PTN_EXCEPTION && ptn_exception_name_equal(name, "__construct")) {
+        return ptn_exception_reconstruct(runtime, receiver, argc, args, line);
+    }
     if (is_throwable_receiver && (
         ptn_exception_name_equal(name, "getMessage") ||
         ptn_exception_name_equal(name, "getCode") ||
@@ -5452,6 +5576,17 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {
         return ptn_zip_archive_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && (ptn_object_is_internal_or_descendant(receiver, "SoapClient") ||
+            ptn_object_is_internal_or_descendant(receiver, "SoapServer") ||
+            ptn_object_is_internal_or_descendant(receiver, "SoapHeader"))
+        && (ptn_internal_class_method_exists("SoapClient", name) ||
+            ptn_internal_class_method_exists("SoapServer", name) ||
+            ptn_internal_class_method_exists("SoapHeader", name))
+    ) {
+        return ptn_soap_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

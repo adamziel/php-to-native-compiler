@@ -38,6 +38,7 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "ZipArchive",
     "SoapClient",
     "SoapServer",
+    "SoapHeader",
     "XMLWriter",
     "PDO",
     "Pdo\\Sqlite",
@@ -5480,6 +5481,7 @@ fn emit_class_metadata_helpers(
         "ZipArchive",
         "SoapClient",
         "SoapServer",
+        "SoapHeader",
         "IntlBreakIterator",
         "IntlRuleBasedBreakIterator",
         "IntlCodePointBreakIterator",
@@ -5948,6 +5950,7 @@ fn emit_class_metadata_helpers(
         "ZipArchive",
         "SoapClient",
         "SoapServer",
+        "SoapHeader",
         "IntlBreakIterator",
         "IntlRuleBasedBreakIterator",
         "IntlCodePointBreakIterator",
@@ -14980,6 +14983,7 @@ fn modeled_internal_class_name(name: &str) -> Option<&'static str> {
             || match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
                 "soapclient" => Some("SoapClient"),
                 "soapserver" => Some("SoapServer"),
+                "soapheader" => Some("SoapHeader"),
                 "phptoken" => Some("PhpToken"),
                 "__php_incomplete_class" => Some("__PHP_Incomplete_Class"),
                 "weakmap" => Some("WeakMap"),
@@ -16163,6 +16167,11 @@ fn emit_method_dispatch(
     out.push_str("    if (ptn_internal_class_name_is_uri_whatwg_url(class_name)) {\n");
     out.push_str(
         "        return ptn_uri_call_method(runtime, resolved, method_name, argc, args, line);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_internal_class_name_is_soap_client(class_name) || ptn_internal_class_name_is_soap_server(class_name) || ptn_internal_class_name_is_soap_header(class_name)) {\n");
+    out.push_str(
+        "        return ptn_soap_call_method(runtime, resolved, method_name, argc, args, line);\n",
     );
     out.push_str("    }\n");
     out.push_str("    if (ptn_internal_class_name_is_pdo(class_name)) {\n");
@@ -23785,7 +23794,6 @@ fn internal_named_call_parameters(name: &str) -> Option<&'static [InternalParame
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
-
     if name.eq_ignore_ascii_case("array_filter") {
         Some(&ARRAY_FILTER_PARAMETERS)
     } else if name.eq_ignore_ascii_case("grapheme_extract") {
@@ -24145,6 +24153,33 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
             default: Some(InternalParameterDefault::Int(0)),
         },
     ];
+    static SOAP_CLIENT_SET_SOAP_HEADERS_PARAMETERS: [InternalParameterSpec; 1] =
+        [InternalParameterSpec {
+            name: "headers",
+            default: Some(InternalParameterDefault::Null),
+        }];
+    static SOAP_CLIENT_SOAP_CALL_PARAMETERS: [InternalParameterSpec; 5] = [
+        InternalParameterSpec {
+            name: "name",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "args",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "options",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "inputHeaders",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "outputHeaders",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
 
     if name.eq_ignore_ascii_case("fgetcsv") {
         Some(&SPL_FILE_OBJECT_FGETCSV_PARAMETERS)
@@ -24188,6 +24223,14 @@ fn internal_named_method_call_parameters(name: &str) -> Option<&'static [Interna
         || name.eq_ignore_ascii_case("XMLReader::fromStream")
     {
         Some(&XMLREADER_FROM_STREAM_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("__setSoapHeaders")
+        || name.eq_ignore_ascii_case("SoapClient::__setSoapHeaders")
+    {
+        Some(&SOAP_CLIENT_SET_SOAP_HEADERS_PARAMETERS)
+    } else if name.eq_ignore_ascii_case("__soapCall")
+        || name.eq_ignore_ascii_case("SoapClient::__soapCall")
+    {
+        Some(&SOAP_CLIENT_SOAP_CALL_PARAMETERS)
     } else {
         None
     }
@@ -24218,6 +24261,44 @@ fn bind_named_internal_method_call_arguments(
     arguments: &[ValueExpr],
     argument_names: &[Option<String>],
 ) -> Option<std::result::Result<Vec<ValueExpr>, NamedArgumentBindingError>> {
+    static SOAP_FAULT_CONSTRUCT_PARAMETERS: [InternalParameterSpec; 6] = [
+        InternalParameterSpec {
+            name: "code",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "string",
+            default: None,
+        },
+        InternalParameterSpec {
+            name: "actor",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "details",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "name",
+            default: Some(InternalParameterDefault::Null),
+        },
+        InternalParameterSpec {
+            name: "headerFault",
+            default: Some(InternalParameterDefault::Null),
+        },
+    ];
+    let soap_fault_headerfault_named = name.eq_ignore_ascii_case("__construct")
+        && argument_names
+            .iter()
+            .flatten()
+            .any(|argument_name| argument_name == "headerFault");
+    if soap_fault_headerfault_named {
+        return bind_named_internal_arguments(
+            &SOAP_FAULT_CONSTRUCT_PARAMETERS,
+            arguments,
+            argument_names,
+        );
+    }
     bind_named_internal_arguments(
         internal_named_method_call_parameters(name)?,
         arguments,

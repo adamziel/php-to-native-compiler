@@ -964,6 +964,7 @@ struct PtnException {
     PtnValue previous;
     int64_t severity;
     PtnValue errors;
+    PtnValue soap_fault_headerfault;
 };
 
 struct PtnResource {
@@ -1695,6 +1696,7 @@ static PTN_UNUSED int ptn_internal_class_name_is_phar(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_zip_archive(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_client(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_soap_header(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_php_token(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_intl_date_formatter(const char *class_name);
@@ -2441,6 +2443,20 @@ static PTN_UNUSED void ptn_zip_archive_run_destructor(
 static PTN_UNUSED PtnValue ptn_soap_client_new(
     PtnRuntime *runtime,
     const char *class_name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_soap_header_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_soap_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
     size_t argc,
     const PtnValue *args,
     size_t line

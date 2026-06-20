@@ -4902,6 +4902,9 @@ static int ptn_internal_function_parameter_by_ref(const char *name, size_t index
          ptn_ascii_case_equal(name, "SQLite3Stmt::bindParam"))) {
         return 1;
     }
+    if (index == 4 && ptn_ascii_case_equal(name, "SoapClient::__soapCall")) {
+        return 1;
+    }
     if (index == 0 && ptn_internal_function_first_parameter_is_array_reference(name)) {
         return 1;
     }
@@ -80112,6 +80115,211 @@ static PTN_UNUSED PtnValue ptn_soap_client_new(
     return ptn_object_new_shell(runtime, class_name);
 }
 
+static PTN_UNUSED PtnValue ptn_soap_header_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2 || argc > 5) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 2
+                ? "SoapHeader::__construct() expects at least 2 arguments, %zu given"
+                : "SoapHeader::__construct() expects at most 5 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+
+    PtnStringOperand namespace_name =
+        ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(namespace_name);
+        return ptn_null();
+    }
+    PtnStringOperand header_name =
+        ptn_value_to_string_operand_with_runtime(runtime, args[1], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(namespace_name);
+        ptn_string_operand_free(header_name);
+        return ptn_null();
+    }
+    ptn_string_operand_free(namespace_name);
+    ptn_string_operand_free(header_name);
+    return ptn_object_new_shell(runtime, "SoapHeader");
+}
+
+static int ptn_soap_value_is_header(PtnValue value, size_t depth) {
+    if (depth > 64) {
+        return 0;
+    }
+    value = ptn_value_deref(value);
+    if (value.type == PTN_NULL) {
+        return 1;
+    }
+    if (value.type == PTN_OBJECT &&
+        (ptn_internal_class_name_is_soap_header(value.as.object->class_name) ||
+         ptn_declared_class_is_same_or_descendant(value.as.object->class_name, "SoapHeader"))) {
+        return 1;
+    }
+    if (value.type != PTN_ARRAY || value.as.array == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < value.as.array->len; i++) {
+        if (!ptn_soap_value_is_header(value.as.array->entries[i].value, depth + 1)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_soap_validate_headers_or_fatal(
+    PtnRuntime *runtime,
+    const char *method_name,
+    PtnValue headers,
+    size_t line
+) {
+    if (ptn_soap_value_is_header(headers, 0)) {
+        return;
+    }
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Invalid SOAP header",
+        method_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_fatal_error_at(runtime, message, runtime != NULL ? runtime->source_path : NULL, line);
+}
+
+static PtnValue ptn_soap_set_soap_headers(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc > 1) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "SoapClient::__setSoapHeaders() expects at most 1 argument, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    if (argc == 1) {
+        ptn_soap_validate_headers_or_fatal(
+            runtime,
+            "SoapClient::__setSoapHeaders",
+            args[0],
+            line
+        );
+    }
+    return ptn_bool(1);
+}
+
+static PtnValue ptn_soap_soap_call(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    if (argc < 2 || argc > 5) {
+        char message[128];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            argc < 2
+                ? "SoapClient::__soapCall() expects at least 2 arguments, %zu given"
+                : "SoapClient::__soapCall() expects at most 5 arguments, %zu given",
+            argc
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "ArgumentCountError", message);
+        return ptn_null();
+    }
+    PtnStringOperand function_name =
+        ptn_value_to_string_operand_with_runtime(runtime, args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_string_operand_free(function_name);
+        return ptn_null();
+    }
+    ptn_string_operand_free(function_name);
+    if (argc >= 4) {
+        ptn_soap_validate_headers_or_fatal(
+            runtime,
+            "SoapClient::__soapCall",
+            args[3],
+            line
+        );
+    }
+    if (argc >= 5 && args[4].type == PTN_REFERENCE) {
+        (void)ptn_reference_assign(runtime, args[4].as.reference, ptn_array_from_literal_entries(0, NULL));
+    }
+    return ptn_null();
+}
+
+static PTN_UNUSED PtnValue ptn_soap_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (receiver.type != PTN_OBJECT) {
+        ptn_throw_undefined_method_for_receiver(runtime, receiver, name, line);
+        return ptn_null();
+    }
+    int is_client = ptn_object_is_internal_or_descendant(receiver, "SoapClient");
+    int is_server = ptn_object_is_internal_or_descendant(receiver, "SoapServer");
+    int is_header = ptn_object_is_internal_or_descendant(receiver, "SoapHeader");
+    if (ptn_ascii_case_equal(name, "__construct")) {
+        if (is_header) {
+            PtnValue replacement = ptn_soap_header_new(runtime, argc, args, line);
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+        if (is_client || is_server) {
+            PtnValue replacement = ptn_soap_client_new(
+                runtime,
+                is_server ? "SoapServer" : "SoapClient",
+                argc,
+                args,
+                line
+            );
+            ptn_value_destroy(&replacement);
+            return ptn_null();
+        }
+    }
+    if (is_client && ptn_ascii_case_equal(name, "__setSoapHeaders")) {
+        return ptn_soap_set_soap_headers(runtime, argc, args, line);
+    }
+    if (is_client && ptn_ascii_case_equal(name, "__soapCall")) {
+        return ptn_soap_soap_call(runtime, argc, args, line);
+    }
+    ptn_throw_exception(runtime, "Error", "Call to undefined method");
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_intl_break_iterator_create_word_instance(
     PtnRuntime *runtime,
     size_t argc,
@@ -82216,6 +82424,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_soap_server(const char *class_n
     return ptn_ascii_case_equal(class_name, "SoapServer");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_soap_header(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "SoapHeader");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_hash_context(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "HashContext");
 }
@@ -82401,6 +82613,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_zip_archive(class_name)
         || ptn_internal_class_name_is_soap_client(class_name)
         || ptn_internal_class_name_is_soap_server(class_name)
+        || ptn_internal_class_name_is_soap_header(class_name)
         || ptn_internal_class_name_is_hash_context(class_name)
         || ptn_internal_class_name_is_php_token(class_name)
         || ptn_internal_class_name_is_intl_break_iterator(class_name)
@@ -84058,8 +84271,13 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
             || ptn_ascii_case_equal(method_name, "addFromString")
             || ptn_ascii_case_equal(method_name, "close");
     }
-    if (ptn_internal_class_name_is_soap_client(class_name) ||
-        ptn_internal_class_name_is_soap_server(class_name)) {
+    if (ptn_internal_class_name_is_soap_client(class_name)) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "__setSoapHeaders")
+            || ptn_ascii_case_equal(method_name, "__soapCall");
+    }
+    if (ptn_internal_class_name_is_soap_server(class_name) ||
+        ptn_internal_class_name_is_soap_header(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct");
     }
     if (ptn_internal_class_name_is_dom(class_name)) {
@@ -85205,8 +85423,14 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
         ptn_append_method_name(result, &index, "close");
         return result;
     }
-    if (ptn_internal_class_name_is_soap_client(class_name) ||
-        ptn_internal_class_name_is_soap_server(class_name)) {
+    if (ptn_internal_class_name_is_soap_client(class_name)) {
+        ptn_append_method_name(result, &index, "__construct");
+        ptn_append_method_name(result, &index, "__setSoapHeaders");
+        ptn_append_method_name(result, &index, "__soapCall");
+        return result;
+    }
+    if (ptn_internal_class_name_is_soap_server(class_name) ||
+        ptn_internal_class_name_is_soap_header(class_name)) {
         ptn_append_method_name(result, &index, "__construct");
         return result;
     }
@@ -88382,6 +88606,17 @@ static int ptn_builtin_exception_reflection_property_metadata(
         *modifiers = 1;
         return 1;
     }
+    if (
+        ptn_exception_name_equal(canonical_class, "SoapFault") &&
+        ptn_exception_name_equal(property_name, "headerfault")
+    ) {
+        *declaring_class = "SoapFault";
+        *is_static = 0;
+        *visibility = PTN_PROPERTY_PUBLIC;
+        *has_default = 1;
+        *modifiers = 1;
+        return 1;
+    }
 
     const char *base_class = ptn_exception_type_matches_name(canonical_class, "Error")
         ? "Error"
@@ -88435,6 +88670,12 @@ static PtnValue ptn_builtin_exception_reflection_property_default(
         ptn_exception_name_equal(property_name, "errors")
     ) {
         return ptn_array_from_literal_entries(0, NULL);
+    }
+    if (
+        ptn_exception_name_equal(class_name, "SoapFault") &&
+        ptn_exception_name_equal(property_name, "headerfault")
+    ) {
+        return ptn_null();
     }
     if (
         ptn_exception_name_equal(property_name, "message") ||
@@ -88564,6 +88805,12 @@ static PtnValue ptn_reflection_exception_property_value(
     ) {
         return ptn_value_clone_deref(exception->errors);
     }
+    if (
+        ptn_exception_is_soap_fault_class(exception->class_name) &&
+        ptn_exception_name_equal(property_name, "headerfault")
+    ) {
+        return ptn_value_clone_deref(exception->soap_fault_headerfault);
+    }
     return ptn_null();
 }
 
@@ -88609,6 +88856,15 @@ static PtnValue ptn_reflection_exception_write_property(
     }
     if (ptn_exception_name_equal(property_name, "severity")) {
         exception->severity = ptn_value_to_integer(value);
+        return ptn_value_clone_deref(value);
+    }
+    if (
+        ptn_exception_is_soap_fault_class(exception->class_name) &&
+        ptn_exception_name_equal(property_name, "headerfault")
+    ) {
+        PtnValue stored = ptn_value_clone_deref(value);
+        ptn_value_destroy(&exception->soap_fault_headerfault);
+        exception->soap_fault_headerfault = stored;
         return ptn_value_clone_deref(value);
     }
     return ptn_value_clone_deref(value);
@@ -90810,6 +91066,7 @@ static const char *ptn_reflection_class_extension_name_cstr(const char *class_na
     }
     if (ptn_internal_class_name_is_soap_client(class_name) ||
         ptn_internal_class_name_is_soap_server(class_name) ||
+        ptn_internal_class_name_is_soap_header(class_name) ||
         ptn_exception_name_equal(class_name, "SoapFault")) {
         return "soap";
     }
@@ -97047,6 +97304,7 @@ static PtnValue ptn_reflection_extension_classes(
         static const char *const names[] = {
             "SoapClient",
             "SoapServer",
+            "SoapHeader",
             "SoapFault",
         };
         for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {

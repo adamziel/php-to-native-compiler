@@ -27855,6 +27855,18 @@ try {
 } catch (Throwable $e) {
     echo get_class($e), ': ', $e->getMessage(), \"\\n\";
 }
+
+$sf = new SoapFault(null, 'x');
+$sf->__construct(null, 'x', headerFault: []);
+var_dump(
+    class_exists('SoapHeader'),
+    in_array('SoapHeader', $soap->getClassNames(), true),
+    method_exists('SoapClient', '__setSoapHeaders'),
+    method_exists('SoapClient', '__soapCall'),
+    $sf->headerfault
+);
+$sf->__construct(null, 'x');
+var_dump($sf->headerfault);
 ",
     )
     .unwrap();
@@ -27918,6 +27930,13 @@ try {
                 "bool(true)\n",
                 "SoapFault: SoapClient::__construct(): Invalid 'encoding' option - 'non-sense'\n",
                 "SoapFault: SoapClient::__construct(): 'location' option is required in nonWSDL mode\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "bool(true)\n",
+                "array(0) {\n",
+                "}\n",
+                "NULL\n",
             ),
         )
     );
@@ -27926,8 +27945,68 @@ try {
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_internal_phar_can_compress"));
     assert!(c_source.contains("ptn_soap_client_new"));
+    assert!(c_source.contains("ptn_soap_header_new"));
+    assert!(c_source.contains("ptn_soap_call_method"));
     assert!(c_source.contains("ptn_internal_socket_strerror"));
     assert!(c_source.contains("ptn_zip_archive_call_method"));
+}
+
+#[test]
+fn compile_soap_client_invalid_headers_fatal_to_native_binary() {
+    let root = temp_dir("ptn-native-soap-client-invalid-headers-fatal");
+    fs::create_dir_all(&root).unwrap();
+    let cases = [
+        (
+            "soap-set-headers-invalid.php",
+            "__setSoapHeaders",
+            "$client->__setSoapHeaders($headers);",
+        ),
+        (
+            "soap-call-invalid-headers.php",
+            "__soapCall",
+            "$client->__soapCall('function', ['arg'], ['options'], $headers);",
+        ),
+    ];
+
+    for (file_name, method_name, call_source) in cases {
+        let input = root.join(file_name);
+        let output = root.join(format!("{file_name}-bin"));
+        fs::write(
+            &input,
+            format!(
+                "<?php
+class ExtendedSoapClient extends SoapClient {{
+    public function __construct() {{}}
+}}
+$client = new ExtendedSoapClient();
+$header = new SoapHeader('namespace', 'name');
+$headers = [$header, 'giberrish'];
+try {{
+    {call_source}
+    echo \"not reached\\n\";
+}} catch (Throwable $e) {{
+    echo \"caught\\n\";
+}}
+"
+            ),
+        )
+        .unwrap();
+
+        compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+        let execution = Command::new(&output).output().unwrap();
+        assert!(!execution.status.success(), "{method_name}");
+        assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+        let stderr = String::from_utf8(execution.stderr).unwrap();
+        assert!(
+            stderr.contains(&format!(
+                "Fatal error: SoapClient::{method_name}(): Invalid SOAP header in {} on line ",
+                input.display()
+            )),
+            "{stderr}"
+        );
+        assert!(!stderr.contains("caught"), "{stderr}");
+    }
 }
 
 #[test]

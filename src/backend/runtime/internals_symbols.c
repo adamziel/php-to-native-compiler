@@ -14,6 +14,7 @@ static PTN_UNUSED void ptn_exception_free(PtnException *exception) {
     ptn_value_destroy(&exception->trace);
     ptn_value_destroy(&exception->previous);
     ptn_value_destroy(&exception->errors);
+    ptn_value_destroy(&exception->soap_fault_headerfault);
     free(exception);
 }
 
