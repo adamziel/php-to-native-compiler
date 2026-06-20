@@ -120,6 +120,15 @@ if [[ ! "$phpt_test_timeout" =~ ^[0-9]+$ || "$phpt_test_timeout" -le 0 ]]; then
   echo "PTN_PHPT_TEST_TIMEOUT must be a positive integer number of seconds: $phpt_test_timeout" >&2
   exit 2
 fi
+phpt_jobs="${PTN_PHPT_JOBS:-}"
+run_tests_jobs=()
+if [[ -n "$phpt_jobs" ]]; then
+  if [[ ! "$phpt_jobs" =~ ^[0-9]+$ || "$phpt_jobs" -le 0 ]]; then
+    echo "PTN_PHPT_JOBS must be a positive integer number of worker jobs: $phpt_jobs" >&2
+    exit 2
+  fi
+  run_tests_jobs=("-j$phpt_jobs")
+fi
 
 cd "$repo_root"
 if [[ -z "${PHPC_BIN:-}" ]]; then
@@ -129,7 +138,7 @@ fi
 start="$(date +%s)"
 
 set +e
-PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${paths[@]}" 2>&1 | tee "$log"
+PHPC_BIN="$phpc_bin" php "$php_src/run-tests.php" -q "${run_tests_jobs[@]}" --set-timeout "$phpt_test_timeout" -p "$phpc_bin" "${paths[@]}" 2>&1 | tee "$log"
 run_status="${PIPESTATUS[0]}"
 set -e
 
@@ -152,7 +161,7 @@ summary="$(awk '
 
 {
   echo
-  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) corpus_revision=$corpus_revision manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows timeout_seconds=$phpt_test_timeout elapsed=${elapsed}s status=$run_status"
+  echo "[ptn-patrol] commit=$(git rev-parse --short HEAD) corpus_revision=$corpus_revision manifest=$resolved_manifest runnable_manifest=$runnable_manifest selected=$total_rows runnable=${#paths[@]} excluded=$excluded_rows timeout_seconds=$phpt_test_timeout jobs=${phpt_jobs:-1} elapsed=${elapsed}s status=$run_status"
   if [[ -n "$summary" ]]; then
     echo "[ptn-patrol] $summary"
   fi

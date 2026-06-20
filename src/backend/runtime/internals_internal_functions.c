@@ -18682,6 +18682,8 @@ static PtnUriData *ptn_uri_ada_data_from_url(ada_url url) {
             ada_string password = ada_get_password(url);
             data->password = ptn_uri_ada_string_slice(password, 0, password.length);
             data->userinfo_colon_present = password.length != 0;
+        } else {
+            data->password = ptn_uri_duplicate_len("", 0);
         }
     }
 
