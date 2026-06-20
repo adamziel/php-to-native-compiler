@@ -1192,6 +1192,37 @@ try {
     echo $e::class, ": ", $e->getMessage(), "\n";
     var_dump($e->errors);
 }
+
+$parseFailures = [
+    "parse-empty" => "",
+    "parse-host-missing" => "https://",
+    "parse-userinfo-empty-host" => "https://user:pass@",
+    "parse-port-invalid" => "http://example.com:-1",
+    "parse-ipvfuture" => "https://[v7.host]",
+];
+foreach ($parseFailures as $label => $raw) {
+    try {
+        Uri\WhatWg\Url::parse($raw);
+    } catch (Uri\WhatWg\InvalidUrlException $e) {
+        echo $label, ": ", $e->getMessage(), "\n";
+    }
+}
+
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->withHost("ex@mple.com");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo "host-at: ", $e->getMessage(), "\n";
+}
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->withHost("ex:mple.com");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo "host-colon: ", $e->getMessage(), "\n";
+}
+try {
+    Uri\WhatWg\Url::parse("https://example.com")->withScheme("");
+} catch (Uri\WhatWg\InvalidUrlException $e) {
+    echo "scheme-empty: ", $e->getMessage(), "\n";
+}
 "##,
     )
     .unwrap();
@@ -1230,9 +1261,17 @@ try {
             "bool(false)\n",
             "enum(Uri\\WhatWg\\UrlHostType::Opaque)\n",
             "string(0) \"\"\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "array(0) {\n",
             "}\n",
+            "parse-empty: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "parse-host-missing: The specified URI is malformed (HostMissing)\n",
+            "parse-userinfo-empty-host: The specified URI is malformed\n",
+            "parse-port-invalid: The specified URI is malformed (PortInvalid)\n",
+            "parse-ipvfuture: The specified URI is malformed (Ipv6InvalidCodePoint)\n",
+            "host-at: The specified host is malformed (DomainInvalidCodePoint)\n",
+            "host-colon: The specified host is malformed\n",
+            "scheme-empty: The specified scheme is malformed\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -17387,6 +17426,55 @@ dump_exception(fn() => mb_detect_order($alias));\n",
             "ValueError: mb_convert_variables(): Argument #2 ($from_encoding) contains invalid encoding \"binary\"\n",
             "ValueError: mb_detect_order(): Argument #1 ($encoding) contains invalid encoding \"UTF-8\"\n",
             "ValueError: mb_detect_order(): Argument #1 ($encoding) contains invalid encoding \"binary\"\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_mbstring_edge_helpers_to_native_binary() {
+    let root = temp_dir("ptn-native-mbstring-edge-helpers");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("mbstring-edge-helpers.php");
+    let output = root.join("mbstring-edge-helpers-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+function report(string $label, callable $callback) {\n\
+    try {\n\
+        var_dump($callback());\n\
+    } catch (Throwable $e) {\n\
+        echo $label, ': ', $e->getMessage(), \"\\n\";\n\
+    }\n\
+}\n\
+report('lower-empty-encoding', fn() => mb_strtolower('Hello, World', ''));\n\
+echo mb_decode_mimeheader('Works: =?iso-8859-1?q?=3F=3f=3F?='), \"\\n\";\n\
+$map = [0, 0x10FFFF, 0, 0xFFFFFF];\n\
+var_dump(mb_decode_numericentity('&#61', $map, 'UTF-8'));\n\
+var_dump(mb_decode_numericentity('&#x3d', $map, 'UTF-8'));\n\
+var_dump(mb_strrpos('●○◆ ●○◆ ●○◆', '●○◆', -6, 'UTF-8'));\n\
+echo mb_strimwidth('helloworld', 0, 5, '...', 'UTF-8'), \"\\n\";\n\
+var_dump(mb_http_input());\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_INPUT_ENCODING", "UTF-8")
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "lower-empty-encoding: mb_strtolower(): Argument #2 ($encoding) must be a valid encoding, \"\" given\n",
+            "Works: ???\n",
+            "string(1) \"=\"\n",
+            "string(1) \"=\"\n",
+            "int(4)\n",
+            "he...\n",
+            "string(5) \"UTF-8\"\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
