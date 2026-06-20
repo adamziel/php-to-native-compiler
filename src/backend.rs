@@ -7761,6 +7761,7 @@ fn emit_declared_class_reflection_attributes(
             1,
             classes,
             functions,
+            None,
             false,
         );
         out.push_str("    }\n");
@@ -7821,6 +7822,7 @@ fn emit_declared_class_method_reflection_attributes(
                 4,
                 classes,
                 functions,
+                None,
                 false,
             );
             out.push_str("    }\n");
@@ -7840,6 +7842,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     classes,
                     functions,
+                    None,
                     true,
                 );
                 out.push_str("    }\n");
@@ -7858,6 +7861,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     classes,
                     functions,
+                    None,
                     true,
                 );
                 out.push_str("    }\n");
@@ -7882,6 +7886,7 @@ fn emit_declared_class_method_reflection_attributes(
                 4,
                 classes,
                 functions,
+                None,
                 false,
             );
             out.push_str("    }\n");
@@ -7901,6 +7906,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     classes,
                     functions,
+                    None,
                     true,
                 );
                 out.push_str("    }\n");
@@ -7919,6 +7925,7 @@ fn emit_declared_class_method_reflection_attributes(
                     4,
                     classes,
                     functions,
+                    None,
                     true,
                 );
                 out.push_str("    }\n");
@@ -7981,6 +7988,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                None,
                 false,
             );
             out.push_str("    }\n");
@@ -8002,6 +8010,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                None,
                 false,
             );
             out.push_str("    }\n");
@@ -8025,6 +8034,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                None,
                 false,
             );
             out.push_str("    }\n");
@@ -8046,6 +8056,7 @@ fn emit_declared_class_property_reflection_attributes(
                 8,
                 classes,
                 functions,
+                None,
                 false,
             );
             out.push_str("    }\n");
@@ -8093,6 +8104,7 @@ fn emit_declared_class_constant_reflection_attributes(
                 16,
                 classes,
                 functions,
+                None,
                 false,
             );
             out.push_str("    }\n");
@@ -8137,6 +8149,7 @@ fn emit_declared_function_reflection_attributes(
             2,
             classes,
             functions,
+            None,
             false,
         );
         out.push_str("    }\n");
@@ -8145,8 +8158,9 @@ fn emit_declared_function_reflection_attributes(
     out.push_str("}\n");
 
     out.push_str(
-        "\nstatic PTN_UNUSED PtnValue ptn_declared_closure_reflection_attributes(PtnRuntime *runtime, size_t function_index, size_t argc, const PtnValue *args, size_t line) {\n",
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_closure_reflection_attributes(PtnRuntime *runtime, size_t function_index, const char *ptn_attribute_scope_class_name, size_t argc, const PtnValue *args, size_t line) {\n",
     );
+    out.push_str("    (void)ptn_attribute_scope_class_name;\n");
     let has_closure_attributes = functions
         .iter()
         .any(|function| function.is_anonymous && !function.attributes.instances.is_empty());
@@ -8168,6 +8182,7 @@ fn emit_declared_function_reflection_attributes(
             2,
             classes,
             functions,
+            Some("ptn_attribute_scope_class_name"),
             false,
         );
         out.push_str("    }\n");
@@ -8313,7 +8328,7 @@ fn attribute_flag_argument_expression_value(
         AttributeArgumentExpression::Int(value) => value
             .parse::<i64>()
             .map_err(|_| AttributeFlagError::InvalidValue),
-        AttributeArgumentExpression::String(_) | AttributeArgumentExpression::ClassName(_) => {
+        AttributeArgumentExpression::String(_) | AttributeArgumentExpression::ClassName { .. } => {
             Err(AttributeFlagError::Type {
                 type_name: "string",
             })
@@ -8327,9 +8342,9 @@ fn attribute_flag_argument_expression_value(
             Err(AttributeFlagError::Type { type_name: "array" })
         }
         AttributeArgumentExpression::Constant(_) => Err(AttributeFlagError::InvalidValue),
-        AttributeArgumentExpression::ClassConstant { class_name, name } => {
-            attribute_class_constant_flag_value(class_name, name, current_class, classes, seen)
-        }
+        AttributeArgumentExpression::ClassConstant {
+            class_name, name, ..
+        } => attribute_class_constant_flag_value(class_name, name, current_class, classes, seen),
         AttributeArgumentExpression::Unary { op, expr } => {
             let value =
                 attribute_flag_argument_expression_value(expr, current_class, classes, seen)?;
@@ -8579,6 +8594,54 @@ fn emit_declared_function_parameter_reflection_attributes(
                 32,
                 classes,
                 functions,
+                None,
+                false,
+            );
+            out.push_str("    }\n");
+        }
+    }
+    out.push_str("    return ptn_reflection_empty_attributes(runtime, \"ReflectionParameter\", \"getAttributes\", argc, args, line);\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED PtnValue ptn_declared_closure_parameter_reflection_attributes(PtnRuntime *runtime, size_t function_index, size_t parameter_index, const char *ptn_attribute_scope_class_name, size_t argc, const PtnValue *args, size_t line) {\n",
+    );
+    out.push_str("    (void)function_index;\n");
+    out.push_str("    (void)parameter_index;\n");
+    out.push_str("    (void)ptn_attribute_scope_class_name;\n");
+    let has_closure_parameter_attributes = functions.iter().any(|function| {
+        function.is_anonymous
+            && function
+                .parameters
+                .iter()
+                .any(|parameter| !parameter.attributes.instances.is_empty())
+    });
+    if !has_closure_parameter_attributes {
+        out.push_str("    (void)function_index;\n");
+        out.push_str("    (void)parameter_index;\n");
+    }
+    for (function_index, function) in functions.iter().enumerate() {
+        if !function.is_anonymous {
+            continue;
+        }
+        for (parameter_index, parameter) in function.parameters.iter().enumerate() {
+            if parameter.attributes.instances.is_empty() {
+                continue;
+            }
+            out.push_str("    if (function_index == ");
+            out.push_str(&function_index.to_string());
+            out.push_str(" && parameter_index == ");
+            out.push_str(&parameter_index.to_string());
+            out.push_str(") {\n");
+            emit_declared_attribute_result(
+                out,
+                "ReflectionParameter",
+                "ReflectionParameter::getAttributes",
+                &parameter.attributes,
+                32,
+                classes,
+                functions,
+                Some("ptn_attribute_scope_class_name"),
                 false,
             );
             out.push_str("    }\n");
@@ -8626,6 +8689,7 @@ fn emit_declared_constant_attributes(
                 64,
                 classes,
                 functions,
+                None,
                 false,
             );
         }
@@ -8757,6 +8821,7 @@ fn emit_declared_attribute_result(
     target: i32,
     classes: &[ClassDecl],
     functions: &[FunctionDecl],
+    attribute_scope_class_var: Option<&str>,
     property_hook_context: bool,
 ) {
     out.push_str("        PtnValue result = ptn_array_from_literal_entries(0, NULL);\n");
@@ -8831,6 +8896,7 @@ fn emit_declared_attribute_result(
                     &argument.value,
                     "            ",
                     instance.line,
+                    attribute_scope_class_var,
                 );
                 out.push_str("            if (runtime->exceptions->active_exception != NULL) {\n");
                 out.push_str("                ptn_value_destroy(&attribute_args_");
@@ -8961,9 +9027,9 @@ fn attribute_expression_arguments_error(
     classes: &[ClassDecl],
 ) -> Option<String> {
     match expression {
-        AttributeArgumentExpression::ClassConstant { class_name, name } => {
-            attribute_class_constant_arguments_error(class_name, name, classes)
-        }
+        AttributeArgumentExpression::ClassConstant {
+            class_name, name, ..
+        } => attribute_class_constant_arguments_error(class_name, name, classes),
         AttributeArgumentExpression::Array(elements) => elements.iter().find_map(|element| {
             element
                 .key
@@ -9031,9 +9097,17 @@ fn emit_attribute_argument_value(
     value: &AttributeArgumentValue,
     indent: &str,
     line: usize,
+    attribute_scope_class_var: Option<&str>,
 ) {
     if let Some(expression) = &value.expression {
-        emit_attribute_argument_expression(out, target, expression, indent, line);
+        emit_attribute_argument_expression(
+            out,
+            target,
+            expression,
+            indent,
+            line,
+            attribute_scope_class_var,
+        );
         return;
     }
     out.push_str(indent);
@@ -9050,6 +9124,7 @@ fn emit_attribute_argument_expression(
     expression: &AttributeArgumentExpression,
     indent: &str,
     fallback_line: usize,
+    attribute_scope_class_var: Option<&str>,
 ) {
     match expression {
         AttributeArgumentExpression::String(value) => {
@@ -9089,22 +9164,41 @@ fn emit_attribute_argument_expression(
                 fallback_line
             ));
         }
-        AttributeArgumentExpression::ClassName(class_name) => {
-            emit_attribute_argument_simple(
-                out,
-                target,
-                indent,
-                &format!("ptn_string(\"{}\")", c_string(class_name)),
+        AttributeArgumentExpression::ClassName {
+            class_name,
+            scope_relative,
+        } => {
+            let uses_scope_var = *scope_relative && attribute_scope_class_var.is_some();
+            let class_name_expr = c_attribute_argument_class_name_expression(
+                class_name,
+                *scope_relative,
+                attribute_scope_class_var,
+                false,
             );
+            let value_expr = if uses_scope_var {
+                format!("ptn_owned_string(ptn_duplicate_string({class_name_expr}))")
+            } else {
+                format!("ptn_string({class_name_expr})")
+            };
+            emit_attribute_argument_simple(out, target, indent, &value_expr);
         }
-        AttributeArgumentExpression::ClassConstant { class_name, name } => {
+        AttributeArgumentExpression::ClassConstant {
+            class_name,
+            name,
+            scope_relative,
+        } => {
+            let class_name_expr = c_attribute_argument_class_name_expression(
+                class_name,
+                *scope_relative,
+                attribute_scope_class_var,
+                true,
+            );
             emit_attribute_argument_simple(
                 out,
                 target,
                 indent,
                 &format!(
-                    "ptn_runtime_read_class_constant(runtime, \"{}\", \"{}\", {})",
-                    c_string(class_name.trim_start_matches('\\')),
+                    "ptn_runtime_read_class_constant(runtime, {class_name_expr}, \"{}\", {})",
                     c_string(name),
                     fallback_line
                 ),
@@ -9119,7 +9213,14 @@ fn emit_attribute_argument_expression(
                 let value_temp = format!("{target}_value_{index}");
                 let (has_key, key_temp) = if let Some(key) = &element.key {
                     let key_temp = format!("{target}_key_{index}");
-                    emit_attribute_argument_expression(out, &key_temp, key, indent, element.line);
+                    emit_attribute_argument_expression(
+                        out,
+                        &key_temp,
+                        key,
+                        indent,
+                        element.line,
+                        attribute_scope_class_var,
+                    );
                     ("1", key_temp)
                 } else {
                     ("0", "ptn_null()".to_string())
@@ -9130,6 +9231,7 @@ fn emit_attribute_argument_expression(
                     &element.value,
                     indent,
                     element.line,
+                    attribute_scope_class_var,
                 );
                 out.push_str(indent);
                 out.push_str("ptn_array_literal_append_entry(runtime, ");
@@ -9151,7 +9253,14 @@ fn emit_attribute_argument_expression(
         }
         AttributeArgumentExpression::Unary { op, expr } => {
             let value_temp = format!("{target}_value");
-            emit_attribute_argument_expression(out, &value_temp, expr, indent, fallback_line);
+            emit_attribute_argument_expression(
+                out,
+                &value_temp,
+                expr,
+                indent,
+                fallback_line,
+                attribute_scope_class_var,
+            );
             out.push_str(indent);
             out.push_str("PtnValue ");
             out.push_str(target);
@@ -9176,8 +9285,39 @@ fn emit_attribute_argument_expression(
             left,
             right,
             line,
-        } => emit_attribute_argument_binary(out, target, *op, left, right, indent, *line),
+        } => emit_attribute_argument_binary(
+            out,
+            target,
+            *op,
+            left,
+            right,
+            indent,
+            *line,
+            attribute_scope_class_var,
+        ),
     }
+}
+
+fn c_attribute_argument_class_name_expression(
+    class_name: &str,
+    scope_relative: bool,
+    attribute_scope_class_var: Option<&str>,
+    trim_leading_backslash: bool,
+) -> String {
+    let fallback = if trim_leading_backslash {
+        class_name.trim_start_matches('\\')
+    } else {
+        class_name
+    };
+    if scope_relative {
+        if let Some(scope_var) = attribute_scope_class_var {
+            return format!(
+                "({scope_var} != NULL ? {scope_var} : \"{}\")",
+                c_string(fallback)
+            );
+        }
+    }
+    format!("\"{}\"", c_string(fallback))
 }
 
 fn emit_attribute_argument_simple(out: &mut String, target: &str, indent: &str, value: &str) {
@@ -9197,11 +9337,26 @@ fn emit_attribute_argument_binary(
     right: &AttributeArgumentExpression,
     indent: &str,
     line: usize,
+    attribute_scope_class_var: Option<&str>,
 ) {
     let left_temp = format!("{target}_left");
     let right_temp = format!("{target}_right");
-    emit_attribute_argument_expression(out, &left_temp, left, indent, line);
-    emit_attribute_argument_expression(out, &right_temp, right, indent, line);
+    emit_attribute_argument_expression(
+        out,
+        &left_temp,
+        left,
+        indent,
+        line,
+        attribute_scope_class_var,
+    );
+    emit_attribute_argument_expression(
+        out,
+        &right_temp,
+        right,
+        indent,
+        line,
+        attribute_scope_class_var,
+    );
     out.push_str(indent);
     out.push_str("PtnValue ");
     out.push_str(target);

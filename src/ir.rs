@@ -1046,6 +1046,7 @@ struct LoweringContext<'a> {
     runtime_class_names: HashSet<(String, String)>,
     early_bound_class_names: HashSet<(String, String)>,
     current_class_name: Option<String>,
+    current_class_parent_name: Option<String>,
     current_trait_name: Option<String>,
     current_function_display_name: Option<String>,
 }
@@ -1135,6 +1136,7 @@ impl<'a> LoweringContext<'a> {
             runtime_class_names,
             early_bound_class_names: HashSet::new(),
             current_class_name: None,
+            current_class_parent_name: None,
             current_trait_name: None,
             current_function_display_name: None,
         };
@@ -1614,13 +1616,38 @@ impl<'a> LoweringContext<'a> {
 
     fn lower_anonymous_function(&mut self, function: &AstAnonymousFunction) -> ValueExpr {
         let function_index = self.functions.len();
+        let current_class_name = self.current_class_name.clone();
+        let current_class_parent_name = self.current_class_parent_name.clone();
         let parameters = function
             .parameters
             .iter()
-            .map(|parameter| self.lower_parameter(parameter))
+            .map(|parameter| {
+                if let Some(current_class) = current_class_name.as_deref() {
+                    self.lower_parameter_for_class_scope(
+                        parameter,
+                        current_class,
+                        current_class_parent_name.as_deref(),
+                    )
+                } else {
+                    self.lower_parameter(parameter)
+                }
+            })
             .collect();
-        let attributes = self.annotate_attribute_metadata(&function.attributes);
-        let deprecated_metadata = self.function_deprecated_metadata(&attributes, None, None, None);
+        let attributes = if let Some(current_class) = current_class_name.as_deref() {
+            self.lower_class_scoped_attribute_metadata(
+                &function.attributes,
+                current_class,
+                current_class_parent_name.as_deref(),
+            )
+        } else {
+            self.annotate_attribute_metadata(&function.attributes)
+        };
+        let deprecated_metadata = self.function_deprecated_metadata(
+            &attributes,
+            current_class_name.as_deref(),
+            current_class_parent_name.as_deref(),
+            None,
+        );
         let display_name = if let Some(scope_name) = &self.current_function_display_name {
             format!("{{closure:{}():{}}}", scope_name, function.span.line)
         } else {
@@ -1847,6 +1874,10 @@ impl<'a> LoweringContext<'a> {
                 let method_display_name = format!("{}::{}", class.name, method.name);
                 let previous_class_name =
                     std::mem::replace(&mut self.current_class_name, Some(class.name.clone()));
+                let previous_class_parent_name = std::mem::replace(
+                    &mut self.current_class_parent_name,
+                    class.parent_name.clone(),
+                );
                 let previous_trait_name =
                     std::mem::replace(&mut self.current_trait_name, method.trait_name.clone());
                 let previous_function_display_name = std::mem::replace(
@@ -1855,6 +1886,7 @@ impl<'a> LoweringContext<'a> {
                 );
                 let body = self.lower_statements(&method.body);
                 self.current_class_name = previous_class_name;
+                self.current_class_parent_name = previous_class_parent_name;
                 self.current_trait_name = previous_trait_name;
                 self.current_function_display_name = previous_function_display_name;
                 self.functions[function_index].body = body;
@@ -2476,7 +2508,7 @@ fn resolve_attribute_argument_expression_for_class_scope(
     current_parent: Option<&str>,
 ) {
     match expression {
-        AttributeArgumentExpression::ClassName(class_name)
+        AttributeArgumentExpression::ClassName { class_name, .. }
         | AttributeArgumentExpression::ClassConstant { class_name, .. } => {
             if let Some(resolved_class) =
                 resolve_attribute_class_scope_name(class_name, current_class, current_parent)
