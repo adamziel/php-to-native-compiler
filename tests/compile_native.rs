@@ -58196,6 +58196,98 @@ try {
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
+#[test]
+fn compile_uri_whatwg_url_failure_reasons_to_native_binary() {
+    let root = temp_dir("ptn-native-uri-whatwg-failure-reasons");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("uri-whatwg-failure-reasons.php");
+    let output = root.join("uri-whatwg-failure-reasons-bin");
+    fs::write(
+        &input,
+        r#"<?php
+try {
+    new Uri\WhatWg\Url("");
+} catch (Throwable $e) {
+    echo "parse-empty: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new Uri\WhatWg\Url("https://ex[a]mple.com");
+} catch (Throwable $e) {
+    echo "parse-host-codepoint: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new Uri\WhatWg\Url("https://");
+} catch (Throwable $e) {
+    echo "parse-host-missing: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new Uri\WhatWg\Url("https://[v7.host]");
+} catch (Throwable $e) {
+    echo "parse-ipvfuture: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new Uri\WhatWg\Url("http://example.com:-1");
+} catch (Throwable $e) {
+    echo "parse-port-invalid: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new Uri\WhatWg\Url("/foo");
+} catch (Throwable $e) {
+    echo "parse-relative: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+$special = Uri\WhatWg\Url::parse("https://example.com");
+try {
+    $special->withScheme("");
+} catch (Throwable $e) {
+    echo "with-scheme-empty: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $special->withHost("ex@mple.com");
+} catch (Throwable $e) {
+    echo "with-host-domain: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    $special->withHost("ex:mple.com");
+} catch (Throwable $e) {
+    echo "with-host-colon: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+$opaque = Uri\WhatWg\Url::parse("foo://example.com");
+try {
+    $opaque->withHost("ex@mple.com");
+} catch (Throwable $e) {
+    echo "with-host-opaque: ", $e::class, ": ", $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "parse-empty: Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "parse-host-codepoint: Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
+            "parse-host-missing: Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
+            "parse-ipvfuture: Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (Ipv6InvalidCodePoint)\n",
+            "parse-port-invalid: Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (PortInvalid)\n",
+            "parse-relative: Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (MissingSchemeNonRelativeUrl)\n",
+            "with-scheme-empty: Uri\\WhatWg\\InvalidUrlException: The specified scheme is malformed\n",
+            "with-host-domain: Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (DomainInvalidCodePoint)\n",
+            "with-host-colon: Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
+            "with-host-opaque: Uri\\WhatWg\\InvalidUrlException: The specified host is malformed (HostInvalidCodePoint)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

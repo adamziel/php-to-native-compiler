@@ -1,0 +1,38 @@
+# ptn-2qzgs focused Uri\WhatWg\Url failure-reason row pack.
+#
+# Source: php-src PHPT corpus 8c63ec400ce8e07c57a8d9499317b96a8beafb8b.
+# Selection: rows from tools/phpt-ptn-w17z161-uri-whatwg-row-pack.txt that
+# failed on 20260620T123647Z because PTN threw Uri\WhatWg\InvalidUrlException
+# without the WHATWG validation reason or accepted an empty withScheme().
+#
+# Run:
+#   PTN_PHPT_TEST_TIMEOUT=60 tools/run-bounded-phpt.sh tools/phpt-ptn-2qzgs-whatwg-reason-row-pack.txt
+
+ext/uri/tests/whatwg/modification/host_error_forbidden_host_codepoint_opaque1.phpt
+ext/uri/tests/whatwg/modification/host_error_forbidden_host_codepoint_special1.phpt
+ext/uri/tests/whatwg/modification/host_error_forbidden_host_codepoint_special2.phpt
+ext/uri/tests/whatwg/modification/host_error_forbidden_host_codepoint_special3.phpt
+ext/uri/tests/whatwg/modification/host_error_null_byte.phpt
+ext/uri/tests/whatwg/modification/scheme_error_empty.phpt
+ext/uri/tests/whatwg/parsing/basic_error_empty.phpt
+ext/uri/tests/whatwg/parsing/host_error_Invalid.phpt
+ext/uri/tests/whatwg/parsing/host_error_empty1.phpt
+ext/uri/tests/whatwg/parsing/host_error_empty3.phpt
+ext/uri/tests/whatwg/parsing/host_error_ipvfuture.phpt
+ext/uri/tests/whatwg/parsing/host_error_null_byte.phpt
+ext/uri/tests/whatwg/parsing/host_success_empty4.phpt
+ext/uri/tests/whatwg/parsing/path_error_relative_reference.phpt
+ext/uri/tests/whatwg/parsing/path_error_relative_reference_absolute.phpt
+ext/uri/tests/whatwg/parsing/path_error_relative_reference_only_query_fragment.phpt
+ext/uri/tests/whatwg/parsing/port_error_multibyte.phpt
+ext/uri/tests/whatwg/parsing/port_error_negative.phpt
+ext/uri/tests/whatwg/parsing/port_error_percent_encoded.phpt
+ext/uri/tests/whatwg/parsing/port_error_user_info_wrong_place.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_empty.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_invalid.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_multibyte.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_null_byte.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_only1.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_only2.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_percent_encoded.phpt
+ext/uri/tests/whatwg/parsing/scheme_error_special.phpt

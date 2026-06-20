@@ -19277,6 +19277,186 @@ static int ptn_uri_whatwg_default_port(const char *scheme, int64_t *port_out) {
     return 0;
 }
 
+static int ptn_uri_whatwg_scheme_byte_is_first(unsigned char byte) {
+    return (byte >= 'A' && byte <= 'Z') || (byte >= 'a' && byte <= 'z');
+}
+
+static int ptn_uri_whatwg_scheme_byte_is_trailing(unsigned char byte) {
+    return ptn_uri_whatwg_scheme_byte_is_first(byte) ||
+        (byte >= '0' && byte <= '9') ||
+        byte == '+' ||
+        byte == '-' ||
+        byte == '.';
+}
+
+static int ptn_uri_whatwg_scheme_span_is_special(const char *data, size_t len) {
+    return ptn_ascii_case_equal_span_to_string(data, len, "http") ||
+        ptn_ascii_case_equal_span_to_string(data, len, "https") ||
+        ptn_ascii_case_equal_span_to_string(data, len, "ws") ||
+        ptn_ascii_case_equal_span_to_string(data, len, "wss") ||
+        ptn_ascii_case_equal_span_to_string(data, len, "ftp") ||
+        ptn_ascii_case_equal_span_to_string(data, len, "file");
+}
+
+static int ptn_uri_whatwg_find_valid_scheme_colon(const char *data, size_t len, size_t *colon_out) {
+    if (len == 0 || !ptn_uri_whatwg_scheme_byte_is_first((unsigned char)data[0])) {
+        return 0;
+    }
+    for (size_t i = 1; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (byte == ':') {
+            *colon_out = i;
+            return 1;
+        }
+        if (!ptn_uri_whatwg_scheme_byte_is_trailing(byte)) {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+static const char *ptn_uri_whatwg_host_failure_reason(const char *host, size_t host_len, int special) {
+    if (host_len == 0) {
+        return special ? "HostMissing" : NULL;
+    }
+    if (host[0] == '[') {
+        if (host_len >= 2 && (host[1] == 'v' || host[1] == 'V')) {
+            return "Ipv6InvalidCodePoint";
+        }
+        return NULL;
+    }
+    for (size_t i = 0; i < host_len; i++) {
+        unsigned char byte = (unsigned char)host[i];
+        if (byte == 0 ||
+            byte == '[' ||
+            byte == ']' ||
+            byte == '/' ||
+            byte == '?' ||
+            byte == '#' ||
+            byte == '@') {
+            return special ? "DomainInvalidCodePoint" : "HostInvalidCodePoint";
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_uri_whatwg_port_failure_reason(const char *port, size_t port_len) {
+    if (port_len == 0) {
+        return NULL;
+    }
+    for (size_t i = 0; i < port_len; i++) {
+        if (!isdigit((unsigned char)port[i])) {
+            return "PortInvalid";
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_uri_whatwg_authority_failure_reason(
+    const char *authority,
+    size_t authority_len,
+    int special
+) {
+    if (authority_len == 0) {
+        return special ? "HostMissing" : NULL;
+    }
+
+    size_t host_start = 0;
+    for (size_t i = authority_len; i > 0; i--) {
+        if (authority[i - 1] == '@') {
+            host_start = i;
+            break;
+        }
+    }
+
+    const char *hostport = authority + host_start;
+    size_t hostport_len = authority_len - host_start;
+    if (hostport_len == 0) {
+        return special ? "HostMissing" : NULL;
+    }
+
+    size_t host_len = hostport_len;
+    size_t port_start = hostport_len;
+    if (hostport[0] == '[') {
+        size_t close = ptn_uri_find_byte(hostport, hostport_len, 1, ']');
+        if (close >= hostport_len) {
+            return "Ipv6InvalidCodePoint";
+        }
+        host_len = close + 1;
+        if (host_len < hostport_len) {
+            if (hostport[host_len] != ':') {
+                return "Ipv6InvalidCodePoint";
+            }
+            port_start = host_len + 1;
+        }
+    } else {
+        for (size_t i = hostport_len; i > 0; i--) {
+            if (hostport[i - 1] == ':') {
+                host_len = i - 1;
+                port_start = i;
+                break;
+            }
+        }
+    }
+
+    const char *host_reason = ptn_uri_whatwg_host_failure_reason(hostport, host_len, special);
+    if (host_reason != NULL) {
+        return host_reason;
+    }
+    if (port_start < hostport_len) {
+        const char *port_reason = ptn_uri_whatwg_port_failure_reason(
+            hostport + port_start,
+            hostport_len - port_start
+        );
+        if (port_reason != NULL) {
+            return port_reason;
+        }
+    }
+    return NULL;
+}
+
+static const char *ptn_uri_whatwg_infer_parse_failure_reason(PtnStringOperand input) {
+    size_t scheme_colon = 0;
+    if (!ptn_uri_whatwg_find_valid_scheme_colon(input.data, input.len, &scheme_colon)) {
+        return "MissingSchemeNonRelativeUrl";
+    }
+
+    int special = ptn_uri_whatwg_scheme_span_is_special(input.data, scheme_colon);
+    size_t after_scheme = scheme_colon + 1;
+    if (special && after_scheme >= input.len) {
+        return "HostMissing";
+    }
+    if (special &&
+        after_scheme < input.len &&
+        input.data[after_scheme] == '/' &&
+        (after_scheme + 1 >= input.len || input.data[after_scheme + 1] != '/')) {
+        return "HostMissing";
+    }
+
+    if (after_scheme + 1 < input.len &&
+        input.data[after_scheme] == '/' &&
+        input.data[after_scheme + 1] == '/') {
+        size_t authority_start = after_scheme + 2;
+        size_t authority_end = authority_start;
+        while (authority_end < input.len &&
+            input.data[authority_end] != '/' &&
+            input.data[authority_end] != '?' &&
+            input.data[authority_end] != '#') {
+            authority_end++;
+        }
+        const char *authority_reason = ptn_uri_whatwg_authority_failure_reason(
+            input.data + authority_start,
+            authority_end - authority_start,
+            special
+        );
+        if (authority_reason != NULL) {
+            return authority_reason;
+        }
+    }
+
+    return "MissingSchemeNonRelativeUrl";
+}
+
 static void ptn_uri_whatwg_clear_default_port(PtnUriData *data) {
     int64_t default_port = 0;
     if (data->port_present &&
@@ -19987,7 +20167,11 @@ static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t
 
 static int ptn_uri_parse_whatwg(PtnStringOperand input, PtnUriData **result_out, const char **reason_out) {
 #ifdef PTN_USE_ADA_URL
-    return ptn_uri_ada_parse_whatwg(input, result_out, reason_out);
+    int ok = ptn_uri_ada_parse_whatwg(input, result_out, reason_out);
+    if (!ok && (*reason_out == NULL || (*reason_out)[0] == '\0')) {
+        *reason_out = ptn_uri_whatwg_infer_parse_failure_reason(input);
+    }
+    return ok;
 #else
     (void)input;
     *result_out = NULL;
@@ -20510,6 +20694,11 @@ static PtnValue ptn_uri_whatwg_with_scheme(
         ptn_string_operand_free(value);
         return ptn_null();
     }
+    if (value.len == 0) {
+        ptn_string_operand_free(value);
+        ptn_uri_whatwg_throw_malformed(runtime, "scheme", NULL);
+        return ptn_null();
+    }
 #ifndef PTN_USE_ADA_URL
     ptn_string_operand_free(value);
     ptn_uri_whatwg_throw_malformed(runtime, "scheme", "AdaParserUnavailable");
@@ -20563,6 +20752,18 @@ static PtnValue ptn_uri_whatwg_with_host(
     if (special && host_arg.len == 0) {
         ptn_string_operand_free(host_arg);
         ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
+        return ptn_null();
+    }
+    const char *host_reason = ptn_uri_whatwg_host_failure_reason(host_arg.data, host_arg.len, special);
+    if (host_reason != NULL) {
+        ptn_string_operand_free(host_arg);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", host_reason);
+        return ptn_null();
+    }
+    if (host_arg.len != 0 && host_arg.data[0] != '[' &&
+        ptn_uri_find_byte(host_arg.data, host_arg.len, 0, ':') < host_arg.len) {
+        ptn_string_operand_free(host_arg);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", NULL);
         return ptn_null();
     }
 #ifndef PTN_USE_ADA_URL
