@@ -1456,6 +1456,10 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(11);
         return 1;
     }
+    if (strcmp(name, "DOM_INVALID_CHARACTER_ERR") == 0) {
+        *out = ptn_int(5);
+        return 1;
+    }
     if (strcmp(name, "ASSERT_ACTIVE") == 0) {
         *out = ptn_int(1);
         return 1;

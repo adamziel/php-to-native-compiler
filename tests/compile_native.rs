@@ -27297,6 +27297,20 @@ var_dump($clone->getElementsByTagName('extra')->item(0)->textContent);
 echo $clone->getNodePath(), "\n";
 $created->appendChild($created->createEntityReference('nbsp'));
 echo $created->saveXML();
+$entity = new DOMEntityReference('amp');
+var_dump($entity->nodeName, $entity->textContent);
+$entity->__construct('copy');
+var_dump($entity->nodeName, $entity->textContent);
+try {{
+    new DOMEntityReference('!');
+}} catch (DOMException $exception) {{
+    var_dump($exception->getCode() === DOM_INVALID_CHARACTER_ERR, $exception->getMessage());
+}}
+try {{
+    $created->createEntityReference('!');
+}} catch (DOMException $exception) {{
+    var_dump($exception->getCode() === DOM_INVALID_CHARACTER_ERR, $exception->getMessage());
+}}
 
 $html = new DOMDocument();
 var_dump($html->loadHTML("<html><head></head><body><p>a<br></p></body></html>"));
@@ -27346,6 +27360,14 @@ try {{
             "/para\n",
             "<?xml version=\"1.0\"?>\n",
             "<para flag=\"\"><?pi data?><extra>ok</extra></para>&nbsp;\n",
+            "string(3) \"amp\"\n",
+            "string(0) \"\"\n",
+            "string(4) \"copy\"\n",
+            "string(0) \"\"\n",
+            "bool(true)\n",
+            "string(23) \"Invalid Character Error\"\n",
+            "bool(true)\n",
+            "string(23) \"Invalid Character Error\"\n",
             "bool(true)\n",
             "<html><head></head><body><p>a<br></p></body></html>\n",
             "bool(true)\n",

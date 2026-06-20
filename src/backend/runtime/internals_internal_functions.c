@@ -66780,6 +66780,7 @@ static PTN_UNUSED int ptn_libxml_boundary_is_local_bounded(const PtnLibxmlBounda
 #define PTN_XML_ERROR_RESERVED_XML_NAME 64
 #define PTN_XML_ERROR_NAME_REQUIRED 68
 #define PTN_XML_ERROR_TAG_NOT_FINISHED 77
+#define PTN_DOM_INVALID_CHARACTER_ERR 5
 
 typedef struct PtnXmlNode PtnXmlNode;
 
@@ -66923,6 +66924,9 @@ static const char *ptn_dom_canonical_class_name(const char *class_name) {
     }
     if (ptn_ascii_case_equal(class_name, "DOMAttr")) {
         return "DOMAttr";
+    }
+    if (ptn_ascii_case_equal(class_name, "DOMEntityReference")) {
+        return "DOMEntityReference";
     }
     if (ptn_ascii_case_equal(class_name, "DOMCharacterData")) {
         return "DOMCharacterData";
@@ -68017,6 +68021,22 @@ static int ptn_xml_name_char(unsigned char byte) {
     return isalnum(byte) || byte == '_' || byte == '-' || byte == ':' || byte == '.';
 }
 
+static int ptn_xml_name_start_char(unsigned char byte) {
+    return isalpha(byte) || byte == '_' || byte == ':';
+}
+
+static int ptn_xml_name_is_valid_span(const char *data, size_t len) {
+    if (data == NULL || len == 0 || !ptn_xml_name_start_char((unsigned char)data[0])) {
+        return 0;
+    }
+    for (size_t i = 1; i < len; i++) {
+        if (!ptn_xml_name_char((unsigned char)data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static char *ptn_xml_read_name(const char *data, size_t len, size_t *pos) {
     size_t start = *pos;
     while (*pos < len && ptn_xml_name_char((unsigned char)data[*pos])) {
@@ -68376,6 +68396,28 @@ static PtnValue ptn_dom_throw_count(PtnRuntime *runtime, const char *name, const
     return ptn_null();
 }
 
+static void ptn_dom_throw_exception_code(PtnRuntime *runtime, const char *message, int64_t code, size_t line) {
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "DOMException",
+        ptn_duplicate_string(message),
+        strlen(message),
+        code,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
 static PtnValue ptn_dom_construct_attr(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     if (argc < 1) {
         return ptn_dom_throw_count(runtime, "DOMAttr::__construct", "at least 1 argument", argc);
@@ -68403,6 +68445,32 @@ static PtnValue ptn_dom_construct_attr(PtnRuntime *runtime, size_t argc, const P
     ptn_string_operand_free(value);
     ptn_xml_node_ensure_object(runtime, attr);
     return ptn_xml_node_value(attr);
+}
+
+static PtnValue ptn_dom_construct_entity_reference(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(
+            runtime,
+            "DOMEntityReference::__construct",
+            argc < 1 ? "exactly 1 argument" : "at most 1 argument",
+            argc
+        );
+    }
+    PtnStringOperand name = ptn_internal_expect_string_arg(runtime, "DOMEntityReference::__construct", 1, "name", args[0], line);
+    if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_xml_name_is_valid_span(name.data, name.len)) {
+        ptn_string_operand_free(name);
+        ptn_dom_throw_exception_code(runtime, "Invalid Character Error", PTN_DOM_INVALID_CHARACTER_ERR, line);
+        return ptn_null();
+    }
+    PtnXmlNode *node = ptn_xml_node_alloc(PTN_XML_NODE_ENTITY_REFERENCE, "", "");
+    free(node->name);
+    node->name = ptn_duplicate_string_len(name.data, name.len);
+    ptn_string_operand_free(name);
+    ptn_xml_node_ensure_object(runtime, node);
+    return ptn_xml_node_value(node);
 }
 
 static PtnValue ptn_dom_construct_character(PtnRuntime *runtime, const char *class_name, int type, size_t argc, const PtnValue *args, size_t line) {
@@ -68471,6 +68539,9 @@ static PTN_UNUSED PtnValue ptn_dom_new(
     }
     if (ptn_ascii_case_equal(canonical, "DOMAttr")) {
         return ptn_dom_construct_attr(runtime, argc, args, line);
+    }
+    if (ptn_ascii_case_equal(canonical, "DOMEntityReference")) {
+        return ptn_dom_construct_entity_reference(runtime, argc, args, line);
     }
     if (ptn_ascii_case_equal(canonical, "DOMComment")) {
         return ptn_dom_construct_character(runtime, "DOMComment", PTN_XML_NODE_COMMENT, argc, args, line);
@@ -68674,6 +68745,11 @@ static PtnValue ptn_dom_create_named_node_method(PtnRuntime *runtime, PtnValue r
     const char *first_arg_name = type == PTN_XML_NODE_PROCESSING_INSTRUCTION ? "target" : "name";
     PtnStringOperand name = ptn_internal_expect_string_arg(runtime, method_name, 1, first_arg_name, args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (type == PTN_XML_NODE_ENTITY_REFERENCE && !ptn_xml_name_is_valid_span(name.data, name.len)) {
+        ptn_string_operand_free(name);
+        ptn_dom_throw_exception_code(runtime, "Invalid Character Error", PTN_DOM_INVALID_CHARACTER_ERR, line);
         return ptn_null();
     }
     PtnStringOperand data = argc >= 2
@@ -70130,6 +70206,19 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
     }
     if (ptn_ascii_case_equal(class_name, "DOMAttr")) {
         return ptn_ascii_case_equal(method_name, "__construct");
+    }
+    if (ptn_ascii_case_equal(class_name, "DOMEntityReference")) {
+        return ptn_ascii_case_equal(method_name, "__construct")
+            || ptn_ascii_case_equal(method_name, "appendChild")
+            || ptn_ascii_case_equal(method_name, "removeChild")
+            || ptn_ascii_case_equal(method_name, "before")
+            || ptn_ascii_case_equal(method_name, "after")
+            || ptn_ascii_case_equal(method_name, "replaceWith")
+            || ptn_ascii_case_equal(method_name, "remove")
+            || ptn_ascii_case_equal(method_name, "getRootNode")
+            || ptn_ascii_case_equal(method_name, "getNodePath")
+            || ptn_ascii_case_equal(method_name, "cloneNode")
+            || ptn_ascii_case_equal(method_name, "hasChildNodes");
     }
     if (ptn_ascii_case_equal(class_name, "DOMCharacterData") ||
         ptn_ascii_case_equal(class_name, "DOMText") ||
