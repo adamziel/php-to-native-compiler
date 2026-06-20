@@ -1,0 +1,10 @@
+Zend/tests/property_hooks/backed_implicit_get.phpt
+Zend/tests/property_hooks/backed_implicit_set.phpt
+Zend/tests/property_hooks/bug005.phpt
+Zend/tests/property_hooks/default_on_hooks.phpt
+Zend/tests/property_hooks/explicit_iter.phpt
+Zend/tests/property_hooks/explicit_set_value_parameter_type.phpt
+Zend/tests/property_hooks/field_assign.phpt
+Zend/tests/property_hooks/field_guard.phpt
+Zend/tests/property_hooks/find_property_usage.phpt
+Zend/tests/property_hooks/foreach_002.phpt

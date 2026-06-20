@@ -1175,6 +1175,8 @@ struct PtnRuntime {
     PtnMagicDebugInfoHandler magic_debug_info;
     PtnPropertyHookGetHandler property_hook_get;
     PtnPropertyHookSetHandler property_hook_set;
+    const char *active_property_hook_class;
+    const char *active_property_hook_property;
     PtnClassConstantInitializerHandler class_constant_initializer;
     PtnNewInstanceWithoutConstructorHandler new_instance_without_constructor;
     int in_magic_property_dispatch;

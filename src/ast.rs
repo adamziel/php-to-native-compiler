@@ -123,6 +123,8 @@ pub struct PropertyDecl {
     pub hook_set_span: Option<SourceSpan>,
     pub hook_get_value: Option<Expr>,
     pub hook_set_value: Option<Expr>,
+    pub hook_get_body: Option<Vec<Statement>>,
+    pub hook_set_body: Option<Vec<Statement>>,
     pub hook_set_parameter_name: Option<String>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,

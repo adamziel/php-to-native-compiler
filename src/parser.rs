@@ -128,6 +128,7 @@ fn parse_with_options(
         active_type_scope: None,
         allow_unscoped_relative_types: 0,
         return_by_ref_stack: Vec::new(),
+        property_hook_body_depth: 0,
         strict_types: false,
         strict_types_declare_allowed: true,
         compiler_halt_offset,
@@ -168,6 +169,7 @@ struct Parser<'a> {
     active_type_scope: Option<ActiveTypeScope>,
     allow_unscoped_relative_types: usize,
     return_by_ref_stack: Vec<bool>,
+    property_hook_body_depth: usize,
     strict_types: bool,
     strict_types_declare_allowed: bool,
     compiler_halt_offset: Option<i64>,
@@ -380,6 +382,8 @@ struct ParsedPropertyHookBlock {
     set_span: Option<SourceSpan>,
     get_value: Option<Expr>,
     set_value: Option<Expr>,
+    get_body: Option<Vec<Statement>>,
+    set_body: Option<Vec<Statement>>,
     set_parameter_name: Option<String>,
 }
 
@@ -3069,6 +3073,8 @@ impl Parser<'_> {
                     hook_set_span: hooks.set_span,
                     hook_get_value: hooks.get_value,
                     hook_set_value: hooks.set_value,
+                    hook_get_body: hooks.get_body,
+                    hook_set_body: hooks.set_body,
                     hook_set_parameter_name: hooks.set_parameter_name,
                     type_hint,
                     attributes: attributes.clone(),
@@ -3112,6 +3118,8 @@ impl Parser<'_> {
                 hook_set_span: None,
                 hook_get_value: None,
                 hook_set_value: None,
+                hook_get_body: None,
+                hook_set_body: None,
                 hook_set_parameter_name: None,
                 type_hint,
                 attributes: attributes.clone(),
@@ -3308,6 +3316,11 @@ impl Parser<'_> {
                             hooks.has_get = true;
                             if uses_backing_property {
                                 hooks.is_virtual = false;
+                                let span = value.span();
+                                hooks.get_body = Some(vec![Statement::Return {
+                                    value: Some(value),
+                                    span,
+                                }]);
                             } else {
                                 hooks.get_value = Some(value);
                             }
@@ -3330,7 +3343,15 @@ impl Parser<'_> {
                             )?;
                             hooks.has_get = true;
                             hooks.get_is_abstract = is_abstract_hook;
-                            if self.skip_property_hook_body("get", property_name)? {
+                            if !is_abstract_hook && matches!(self.peek().kind, TokenKind::LeftBrace)
+                            {
+                                let (body, uses_backing_property) =
+                                    self.parse_property_hook_statement_body(property_name)?;
+                                hooks.get_body = Some(body);
+                                if uses_backing_property {
+                                    hooks.is_virtual = false;
+                                }
+                            } else if self.skip_property_hook_body("get", property_name)? {
                                 hooks.is_virtual = false;
                             }
                         }
@@ -3353,7 +3374,14 @@ impl Parser<'_> {
                         )?;
                         hooks.has_get = true;
                         hooks.get_is_abstract = is_abstract_hook;
-                        if self.skip_property_hook_body("get", property_name)? {
+                        if !is_abstract_hook && matches!(self.peek().kind, TokenKind::LeftBrace) {
+                            let (body, uses_backing_property) =
+                                self.parse_property_hook_statement_body(property_name)?;
+                            hooks.get_body = Some(body);
+                            if uses_backing_property {
+                                hooks.is_virtual = false;
+                            }
+                        } else if self.skip_property_hook_body("get", property_name)? {
                             hooks.is_virtual = false;
                         }
                     }
@@ -3396,9 +3424,23 @@ impl Parser<'_> {
                         {
                             if uses_backing_property {
                                 hooks.is_virtual = false;
+                                let span = value.span();
+                                hooks.set_body = Some(vec![Statement::Expression {
+                                    expression: value,
+                                    span,
+                                }]);
+                                hooks.set_parameter_name = Some(set_parameter_name);
                             } else {
                                 hooks.set_value = Some(value);
                                 hooks.set_parameter_name = Some(set_parameter_name);
+                            }
+                        } else if matches!(self.peek().kind, TokenKind::LeftBrace) {
+                            let (body, uses_backing_property) =
+                                self.parse_property_hook_statement_body(property_name)?;
+                            hooks.set_body = Some(body);
+                            hooks.set_parameter_name = Some(set_parameter_name);
+                            if uses_backing_property {
+                                hooks.is_virtual = false;
                             }
                         } else if self.skip_property_hook_body(&name, property_name)? {
                             hooks.is_virtual = false;
@@ -3498,6 +3540,18 @@ impl Parser<'_> {
         self.advance();
         let uses_backing_property = expr_uses_this_property(&value, property_name);
         Some((value, uses_backing_property))
+    }
+
+    fn parse_property_hook_statement_body(
+        &mut self,
+        property_name: &str,
+    ) -> Result<(Vec<Statement>, bool)> {
+        self.property_hook_body_depth += 1;
+        let body = self.parse_block();
+        self.property_hook_body_depth -= 1;
+        let body = body?;
+        let uses_backing_property = statements_use_this_property(&body, property_name);
+        Ok((body, uses_backing_property))
     }
 
     fn parse_property_hook_set_parameters(
@@ -7146,13 +7200,15 @@ impl Parser<'_> {
                                     Some(start_span),
                                 ));
                             }
-                            return Err(Diagnostic::new(
-                                format!(
-                                    "Must not use parent::${property_name}::{}() outside a property hook",
-                                    literal_name.as_ref().expect("hook name checked above")
-                                ),
-                                Some(start_span),
-                            ));
+                            if self.property_hook_body_depth == 0 {
+                                return Err(Diagnostic::new(
+                                    format!(
+                                        "Must not use parent::${property_name}::{}() outside a property hook",
+                                        literal_name.as_ref().expect("hook name checked above")
+                                    ),
+                                    Some(start_span),
+                                ));
+                            }
                         }
                     }
                     if self.peek_is_first_class_callable_arguments() {
@@ -7507,6 +7563,7 @@ impl Parser<'_> {
             active_type_scope: self.active_type_scope.clone(),
             allow_unscoped_relative_types: self.allow_unscoped_relative_types,
             return_by_ref_stack: self.return_by_ref_stack.clone(),
+            property_hook_body_depth: self.property_hook_body_depth,
             strict_types: self.strict_types,
             strict_types_declare_allowed: self.strict_types_declare_allowed,
             compiler_halt_offset: None,
@@ -11389,6 +11446,8 @@ fn promoted_properties_from_constructor(
                 hook_set_span: None,
                 hook_get_value: None,
                 hook_set_value: None,
+                hook_get_body: None,
+                hook_set_body: None,
                 hook_set_parameter_name: None,
                 type_hint: parameter
                     .type_hint
@@ -22130,6 +22189,10 @@ fn validate_constant_expression_runtime_restrictions(expr: &Expr) -> Result<()> 
 
 fn token_string_parts_use_this_property(parts: &[TokenStringPart], property_name: &str) -> bool {
     parts.iter().any(|part| match part {
+        TokenStringPart::Variable(variable)
+        | TokenStringPart::LegacyDollarBraceVariable(variable) => {
+            variable.eq_ignore_ascii_case("field")
+        }
         TokenStringPart::PropertyFetch { variable, property } => {
             variable.eq_ignore_ascii_case("this") && property == property_name
         }
@@ -22165,6 +22228,7 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
                 || expr_uses_this_property(name, property_name)
         }
         Expr::InterpolatedString(parts, _) => string_parts_use_this_property(parts, property_name),
+        Expr::Variable(name, _) => name.eq_ignore_ascii_case("field"),
         Expr::DynamicVariable { name, .. }
         | Expr::FirstClassCallable { callable: name, .. }
         | Expr::DynamicNewObject {
@@ -22286,7 +22350,6 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
         | Expr::Float(_, _)
         | Expr::Bool(_, _)
         | Expr::Null(_)
-        | Expr::Variable(_, _)
         | Expr::AnonymousFunction(_)
         | Expr::Constant(_, _)
         | Expr::MagicConstant(_, _)
@@ -22298,6 +22361,9 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
 
 fn string_parts_use_this_property(parts: &[StringPart], property_name: &str) -> bool {
     parts.iter().any(|part| match part {
+        StringPart::Variable(variable) | StringPart::LegacyDollarBraceVariable(variable) => {
+            variable.eq_ignore_ascii_case("field")
+        }
         StringPart::PropertyFetch { variable, property } => {
             variable.eq_ignore_ascii_case("this") && property == property_name
         }
@@ -22332,6 +22398,196 @@ fn array_element_uses_this_property(element: &ArrayElement, property_name: &str)
                 reference_target_uses_this_property(target, property_name)
             }
         }
+}
+
+fn statements_use_this_property(statements: &[Statement], property_name: &str) -> bool {
+    statements
+        .iter()
+        .any(|statement| statement_uses_this_property(statement, property_name))
+}
+
+fn statement_uses_this_property(statement: &Statement, property_name: &str) -> bool {
+    match statement {
+        Statement::Empty { .. }
+        | Statement::ClassDeclaration { .. }
+        | Statement::FunctionDeclaration { .. }
+        | Statement::Break { .. }
+        | Statement::Continue { .. }
+        | Statement::Label { .. }
+        | Statement::Goto { .. }
+        | Statement::InlineHtml { .. } => false,
+        Statement::Assign { name, value, .. } => {
+            name.eq_ignore_ascii_case("field") || expr_uses_this_property(value, property_name)
+        }
+        Statement::AssignRef { name, source, .. } => {
+            name.eq_ignore_ascii_case("field") || expr_uses_this_property(source, property_name)
+        }
+        Statement::ArrayAssign { target, value, .. } => {
+            array_dim_target_uses_this_property(target, property_name)
+                || expr_uses_this_property(value, property_name)
+        }
+        Statement::ArrayAssignRef { target, source, .. } => {
+            array_dim_target_uses_this_property(target, property_name)
+                || expr_uses_this_property(source, property_name)
+        }
+        Statement::Increment { target, .. } => {
+            inc_dec_target_uses_this_property(target, property_name)
+        }
+        Statement::Unset { targets, .. } => targets
+            .iter()
+            .any(|target| unset_target_uses_this_property(target, property_name)),
+        Statement::Global { targets, .. } => targets.iter().any(|target| match target {
+            GlobalTarget::Variable { name, .. } => name.eq_ignore_ascii_case("field"),
+            GlobalTarget::DynamicVariable { name, .. } => {
+                expr_uses_this_property(name, property_name)
+            }
+        }),
+        Statement::Static { declarations, .. } => declarations.iter().any(|declaration| {
+            declaration.name.eq_ignore_ascii_case("field")
+                || declaration
+                    .value
+                    .as_ref()
+                    .is_some_and(|value| expr_uses_this_property(value, property_name))
+        }),
+        Statement::Call { arguments, .. } => arguments
+            .iter()
+            .any(|argument| expr_uses_this_property(argument, property_name)),
+        Statement::Echo { expressions, .. } => expressions
+            .iter()
+            .any(|expression| expr_uses_this_property(expression, property_name)),
+        Statement::Print { expression, .. } | Statement::Expression { expression, .. } => {
+            expr_uses_this_property(expression, property_name)
+        }
+        Statement::Const { declarations, .. } => declarations
+            .iter()
+            .any(|declaration| expr_uses_this_property(&declaration.value, property_name)),
+        Statement::Block { statements, .. } => {
+            statements_use_this_property(statements, property_name)
+        }
+        Statement::If {
+            condition,
+            then_body,
+            else_body,
+            ..
+        } => {
+            expr_uses_this_property(condition, property_name)
+                || statements_use_this_property(then_body, property_name)
+                || statements_use_this_property(else_body, property_name)
+        }
+        Statement::While {
+            condition, body, ..
+        } => {
+            expr_uses_this_property(condition, property_name)
+                || statements_use_this_property(body, property_name)
+        }
+        Statement::DoWhile {
+            body, condition, ..
+        } => {
+            statements_use_this_property(body, property_name)
+                || expr_uses_this_property(condition, property_name)
+        }
+        Statement::For {
+            initializers,
+            conditions,
+            updates,
+            body,
+            ..
+        } => {
+            statements_use_this_property(initializers, property_name)
+                || conditions
+                    .iter()
+                    .any(|condition| expr_uses_this_property(condition, property_name))
+                || statements_use_this_property(updates, property_name)
+                || statements_use_this_property(body, property_name)
+        }
+        Statement::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => {
+            expr_uses_this_property(iterable, property_name)
+                || key
+                    .as_ref()
+                    .is_some_and(|key| assignment_target_uses_this_property(key, property_name))
+                || assignment_target_uses_this_property(value, property_name)
+                || statements_use_this_property(body, property_name)
+        }
+        Statement::Switch {
+            expression, cases, ..
+        } => {
+            expr_uses_this_property(expression, property_name)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(|condition| expr_uses_this_property(condition, property_name))
+                        || statements_use_this_property(&case.body, property_name)
+                })
+        }
+        Statement::Return { value, .. } | Statement::Exit { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| expr_uses_this_property(value, property_name)),
+        Statement::Throw { value, .. } => expr_uses_this_property(value, property_name),
+        Statement::Try {
+            body,
+            catches,
+            finally_body,
+            ..
+        } => {
+            statements_use_this_property(body, property_name)
+                || catches
+                    .iter()
+                    .any(|catch| statements_use_this_property(&catch.body, property_name))
+                || statements_use_this_property(finally_body, property_name)
+        }
+    }
+}
+
+fn unset_target_uses_this_property(target: &UnsetTarget, property_name: &str) -> bool {
+    match target {
+        UnsetTarget::Variable { name, .. } => name.eq_ignore_ascii_case("field"),
+        UnsetTarget::DynamicVariable { name, .. } => expr_uses_this_property(name, property_name),
+        UnsetTarget::DynamicArrayDim {
+            name, dimensions, ..
+        } => {
+            expr_uses_this_property(name, property_name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        UnsetTarget::PropertyArrayDim {
+            receiver,
+            name,
+            dimensions,
+            ..
+        } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        UnsetTarget::DynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            expr_uses_this_property(receiver, property_name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        UnsetTarget::Property { receiver, name, .. } => {
+            receiver_is_this_property(receiver, name, property_name)
+                || expr_uses_this_property(receiver, property_name)
+        }
+        UnsetTarget::ArrayDim(target) => array_dim_target_uses_this_property(target, property_name),
+        UnsetTarget::StaticPropertyArrayDim { dimensions, .. } => dimensions
+            .iter()
+            .any(|dimension| expr_uses_this_property(dimension, property_name)),
+        UnsetTarget::StaticProperty { .. } => false,
+    }
 }
 
 fn assignment_target_uses_this_property(target: &AssignmentTarget, property_name: &str) -> bool {
@@ -22513,11 +22769,12 @@ fn list_assignment_target_uses_this_property(
 }
 
 fn array_dim_target_uses_this_property(target: &ArrayDimTarget, property_name: &str) -> bool {
-    target
-        .dimensions
-        .iter()
-        .flatten()
-        .any(|dimension| expr_uses_this_property(dimension, property_name))
+    target.array.eq_ignore_ascii_case("field")
+        || target
+            .dimensions
+            .iter()
+            .flatten()
+            .any(|dimension| expr_uses_this_property(dimension, property_name))
 }
 
 fn is_supported_first_class_callable_const_target(callable: &Expr) -> bool {

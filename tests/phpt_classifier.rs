@@ -1519,6 +1519,46 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\nexplicit set parameter\n--FILE--\n<?php\nclass Test { public $prop { set($customName) { var_dump($customName); } } }\n(new Test())->prop = 42;\n--EXPECT--\nint(42)\n",
         ),
         (
+            "Zend/tests/property_hooks/backed_implicit_get.phpt",
+            "--TEST--\nbacked implicit get\n--FILE--\n<?php\nclass Test { public $prop { set { $this->prop = $value; } } }\n$test = new Test(); $test->prop = 42; var_dump($test->prop);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/backed_implicit_set.phpt",
+            "--TEST--\nbacked implicit set\n--FILE--\n<?php\nclass Test { public $prop { get { return $this->prop; } } }\n$test = new Test(); $test->prop = 42; var_dump($test->prop);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/default_on_hooks.phpt",
+            "--TEST--\ndefault on backed hooks\n--FILE--\n<?php\nclass Test { public $prop = 42 { get { return $this->prop; } set { $this->prop = $value; } } }\nvar_dump((new Test())->prop);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/bug005.phpt",
+            "--TEST--\nparent hook parse context\n--FILE--\n<?php\nclass B { protected mixed $x; }\nclass C extends B { protected mixed $x { set { parent::$x::set(1); } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/explicit_iter.phpt",
+            "--TEST--\nexplicit iterator with hooks\n--FILE--\n<?php\nclass Test implements IteratorAggregate { public $prop { get { return 42; } } public function getIterator(): Traversable { yield 1; } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/explicit_set_value_parameter_type.phpt",
+            "--TEST--\nexplicit typed set parameter\n--FILE--\n<?php\nclass Test { public $prop { set(int $value) { var_dump($value); } } }\n(new Test())->prop = 42;\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/field_assign.phpt",
+            "--TEST--\nfield assign\n--FILE--\n<?php\nclass Test { public $prop { set { $field ??= 42; $field++; } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/field_guard.phpt",
+            "--TEST--\nfield guard\n--FILE--\n<?php\nclass Test { public $prop { get { $this->prop = 'prop'; } set { var_dump($this->prop); } } }\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/foreach_002.phpt",
+            "--TEST--\nforeach hooked properties\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } }\nforeach (new Test() as $k => $v) {}\n--EXPECT--\n",
+        ),
+        (
+            "Zend/tests/property_hooks/find_property_usage.phpt",
+            "--TEST--\nproperty usage adds backing store\n--FILE--\n<?php\nclass Test { public $prop { get { return $this->prop; } } }\n--EXPECT--\n",
+        ),
+        (
             "Zend/tests/property_hooks/direct_hook_call.phpt",
             "--TEST--\ndirect hook call\n--FILE--\n<?php\nclass Test { public $prop { get { return 42; } } }\nvar_dump(Test::$prop::get(...));\n--EXPECTF--\n",
         ),

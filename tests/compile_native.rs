@@ -50546,6 +50546,135 @@ $bag->custom = 99;
 }
 
 #[test]
+fn compile_backed_property_hook_bodies_to_native_binary() {
+    let root = temp_dir("ptn-native-backed-property-hook-bodies");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("backed-property-hook-bodies.php");
+    let output = root.join("backed-property-hook-bodies-bin");
+    fs::write(
+        &input,
+        "<?php
+class SetOnlyBacked {
+    public $prop {
+        set {
+            echo __METHOD__, \"\\n\";
+            $this->prop = $value;
+        }
+    }
+}
+
+class GetOnlyBacked {
+    public $prop {
+        get {
+            echo __METHOD__, \"\\n\";
+            return $this->prop;
+        }
+    }
+}
+
+class DefaultBacked {
+    public $prop = 42 {
+        get {
+            echo __METHOD__, \"\\n\";
+            return $this->prop;
+        }
+        set {
+            echo __METHOD__, \"\\n\";
+            $this->prop = $value;
+        }
+    }
+}
+
+$set = new SetOnlyBacked();
+$set->prop = 42;
+var_dump($set->prop);
+
+$get = new GetOnlyBacked();
+$get->prop = 99;
+var_dump($get->prop);
+
+$default = new DefaultBacked();
+var_dump($default->prop);
+$default->prop = 43;
+var_dump($default->prop);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "SetOnlyBacked::$prop::set\n",
+            "int(42)\n",
+            "GetOnlyBacked::$prop::get\n",
+            "int(99)\n",
+            "DefaultBacked::$prop::get\n",
+            "int(42)\n",
+            "DefaultBacked::$prop::set\n",
+            "DefaultBacked::$prop::get\n",
+            "int(43)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("active_property_hook_property"));
+    assert!(c_source.contains("ptn_declared_class_property_hook_get"));
+    assert!(c_source.contains("ptn_declared_class_property_hook_set"));
+}
+
+#[test]
+fn compile_property_hook_field_backing_reference_to_native_binary() {
+    let root = temp_dir("ptn-native-property-hook-field-reference");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("property-hook-field-reference.php");
+    let output = root.join("property-hook-field-reference-bin");
+    fs::write(
+        &input,
+        "<?php
+class FieldBacked {
+    public $prop {
+        set {
+            $field ??= 42;
+            var_dump($field);
+            $field += 1;
+            var_dump($field);
+        }
+    }
+}
+
+$field = new FieldBacked();
+$field->prop = null;
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!("int(42)\n", "int(43)\n")
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_property_hook_get_hook_attributes_and_deprecations_to_native_binary() {
     let root = temp_dir("ptn-native-property-hook-get-hook-attributes");
     fs::create_dir_all(&root).unwrap();
@@ -54133,7 +54262,7 @@ var_dump(C2::foo(new C1));
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
-    assert!(c_source.contains("ptn_object_declare_property(&runtime"));
+    assert!(c_source.contains("ptn_object_declare_property_with_hooks(&runtime"));
     assert!(c_source.contains("\"P\""));
 }
 

@@ -336,20 +336,18 @@ pub fn emit_c(module: &Module) -> String {
     if needs_magic_debug_info {
         out.push_str("    runtime.magic_debug_info = ptn_declared_magic_debug_info;\n");
     }
-    if module.classes.iter().any(|class| {
-        class
-            .properties
-            .iter()
-            .any(|property| property.hook_get_value.is_some())
-    }) {
+    if module
+        .classes
+        .iter()
+        .any(|class| class.properties.iter().any(property_hook_get_has_runtime))
+    {
         out.push_str("    runtime.property_hook_get = ptn_declared_class_property_hook_get;\n");
     }
-    if module.classes.iter().any(|class| {
-        class
-            .properties
-            .iter()
-            .any(|property| property.hook_set_value.is_some())
-    }) {
+    if module
+        .classes
+        .iter()
+        .any(|class| class.properties.iter().any(property_hook_set_has_runtime))
+    {
         out.push_str("    runtime.property_hook_set = ptn_declared_class_property_hook_set;\n");
     }
     if has_declared_class_constants {
@@ -10005,6 +10003,215 @@ fn emit_property_hook_deprecation_helper(
     out.push_str("}\n");
 }
 
+fn property_hook_get_has_runtime(property: &crate::ir::PropertyDecl) -> bool {
+    property.hook_get_value.is_some() || property.hook_get_body.is_some()
+}
+
+fn property_hook_set_has_runtime(property: &crate::ir::PropertyDecl) -> bool {
+    property.hook_set_value.is_some() || property.hook_set_body.is_some()
+}
+
+fn property_hook_body_mentions_field(body: &[Instruction]) -> bool {
+    instructions_mention_variable(body, "field")
+}
+
+fn instructions_mention_variable(instructions: &[Instruction], name: &str) -> bool {
+    instructions
+        .iter()
+        .any(|instruction| instruction_mentions_variable(instruction, name))
+}
+
+fn instruction_mentions_variable(instruction: &Instruction, name: &str) -> bool {
+    match instruction {
+        Instruction::Store {
+            name: target,
+            value,
+        } => target == name || value_mentions_variable(value, name),
+        Instruction::StoreRef {
+            name: target,
+            source,
+            ..
+        } => target == name || value_mentions_variable(source, name),
+        Instruction::StoreArrayDim {
+            array,
+            dimensions,
+            value,
+            ..
+        } => {
+            array == name
+                || dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+                || value_mentions_variable(value, name)
+        }
+        Instruction::StoreArrayDimRef { target, source } => {
+            target.array == name
+                || target
+                    .dimensions
+                    .iter()
+                    .flatten()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+                || value_mentions_variable(source, name)
+        }
+        Instruction::Increment { target, .. } => inc_dec_target_mentions_variable(target, name),
+        Instruction::UnsetVariable { name: target } => target == name,
+        Instruction::UnsetDynamicVariable { name: target, .. }
+        | Instruction::BindDynamicGlobal { name: target, .. } => {
+            value_mentions_variable(target, name)
+        }
+        Instruction::BindGlobal { name: target } => target == name,
+        Instruction::BindStatic {
+            name: target,
+            value,
+            ..
+        } => {
+            target == name
+                || value
+                    .as_ref()
+                    .is_some_and(|value| value_mentions_variable(value, name))
+        }
+        Instruction::UnsetArrayDim {
+            array, dimensions, ..
+        } => {
+            array == name
+                || dimensions
+                    .iter()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
+        Instruction::UnsetDynamicArrayDim {
+            name: target,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(target, name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
+        Instruction::UnsetPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
+        Instruction::UnsetStaticPropertyArrayDim { dimensions, .. } => dimensions
+            .iter()
+            .any(|dimension| value_mentions_variable(dimension, name)),
+        Instruction::UnsetDynamicStaticPropertyArrayDim {
+            receiver,
+            dimensions,
+            ..
+        } => {
+            value_mentions_variable(receiver, name)
+                || dimensions
+                    .iter()
+                    .any(|dimension| value_mentions_variable(dimension, name))
+        }
+        Instruction::UnsetProperty { receiver, .. } => value_mentions_variable(receiver, name),
+        Instruction::UnsetStaticProperty { .. }
+        | Instruction::DeclareFunction { .. }
+        | Instruction::EarlyDeclareClass { .. }
+        | Instruction::DeclareClass { .. }
+        | Instruction::ValidateClass { .. }
+        | Instruction::Break { .. }
+        | Instruction::Continue { .. }
+        | Instruction::Label { .. }
+        | Instruction::Goto { .. } => false,
+        Instruction::DefineConstant { value, .. }
+        | Instruction::Expression(value)
+        | Instruction::Echo(value)
+        | Instruction::Throw { value, .. } => value_mentions_variable(value, name),
+        Instruction::InternalCall { arguments, .. } => arguments
+            .iter()
+            .any(|argument| value_mentions_variable(argument, name)),
+        Instruction::Return { value, .. } | Instruction::Exit { value, .. } => value
+            .as_ref()
+            .is_some_and(|value| value_mentions_variable(value, name)),
+        Instruction::Try {
+            body,
+            catches,
+            finally_body,
+        } => {
+            instructions_mention_variable(body, name)
+                || catches
+                    .iter()
+                    .any(|catch| instructions_mention_variable(&catch.body, name))
+                || instructions_mention_variable(finally_body, name)
+        }
+        Instruction::Branch {
+            condition,
+            then_body,
+            else_body,
+        } => {
+            value_mentions_variable(condition, name)
+                || instructions_mention_variable(then_body, name)
+                || instructions_mention_variable(else_body, name)
+        }
+        Instruction::While { condition, body } | Instruction::DoWhile { condition, body } => {
+            value_mentions_variable(condition, name) || instructions_mention_variable(body, name)
+        }
+        Instruction::For {
+            initializers,
+            conditions,
+            updates,
+            body,
+        } => {
+            instructions_mention_variable(initializers, name)
+                || conditions
+                    .iter()
+                    .any(|condition| value_mentions_variable(condition, name))
+                || instructions_mention_variable(updates, name)
+                || instructions_mention_variable(body, name)
+        }
+        Instruction::Foreach {
+            iterable,
+            key,
+            value,
+            body,
+            ..
+        } => {
+            value_mentions_variable(iterable, name)
+                || key
+                    .as_ref()
+                    .is_some_and(|key| assignment_target_mentions_variable(key, name))
+                || assignment_target_mentions_variable(value, name)
+                || instructions_mention_variable(body, name)
+        }
+        Instruction::Switch { expression, cases } => {
+            value_mentions_variable(expression, name)
+                || cases.iter().any(|case| {
+                    case.condition
+                        .as_ref()
+                        .is_some_and(|condition| value_mentions_variable(condition, name))
+                        || instructions_mention_variable(&case.body, name)
+                })
+        }
+    }
+}
+
+fn emit_property_hook_field_binding(
+    out: &mut String,
+    class_name: &str,
+    property_name: &str,
+    body: &[Instruction],
+) {
+    if !property_hook_body_mentions_field(body) {
+        return;
+    }
+    out.push_str("        PtnValue ptn_hook_field_reference = ptn_object_reference_for_property(&runtime, receiver, \"");
+    out.push_str(&c_string(property_name));
+    out.push_str("\", \"");
+    out.push_str(&c_string(class_name));
+    out.push_str("\", line);\n");
+    out.push_str("        ptn_runtime_bind_variable_reference(&runtime, \"field\", ptn_hook_field_reference);\n");
+    out.push_str("        ptn_value_destroy(&ptn_hook_field_reference);\n");
+}
+
 fn emit_property_hook_get_helper(
     out: &mut String,
     classes: &[ClassDecl],
@@ -10017,12 +10224,9 @@ fn emit_property_hook_get_helper(
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_property_hook_get(PtnRuntime *caller_runtime, PtnValue receiver, const char *class_name, const char *property_name, size_t line, PtnValue *value_out) {\n",
     );
-    let has_get_values = classes.iter().any(|class| {
-        class
-            .properties
-            .iter()
-            .any(|property| property.hook_get_value.is_some())
-    });
+    let has_get_values = classes
+        .iter()
+        .any(|class| class.properties.iter().any(property_hook_get_has_runtime));
     if !has_get_values {
         out.push_str("    (void)caller_runtime;\n");
         out.push_str("    (void)receiver;\n");
@@ -10037,11 +10241,12 @@ fn emit_property_hook_get_helper(
 
     out.push_str("    PtnValue resolved_receiver = ptn_value_deref(receiver);\n");
     let mut emitted_branch = false;
+    let mut branch_index = 0usize;
     for class in classes {
         for property in class
             .properties
             .iter()
-            .filter(|property| property.hook_get_value.is_some())
+            .filter(|property| property_hook_get_has_runtime(property))
         {
             out.push_str("    ");
             if emitted_branch {
@@ -10070,6 +10275,12 @@ fn emit_property_hook_get_helper(
             out.push_str("        runtime.current_receiver = receiver;\n");
             out.push_str("        ptn_runtime_write_variable(&runtime, \"this\", receiver);\n");
             out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
+            out.push_str("        runtime.active_property_hook_class = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.active_property_hook_property = \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\";\n");
 
             let mut values = ValueEmitter::new_with_scope(
                 source_file,
@@ -10079,19 +10290,66 @@ fn emit_property_hook_get_helper(
                 includes,
                 full_internal_dispatch,
                 None,
-                Some(display_name.as_str()),
                 Some(hook_name.as_str()),
+                Some(display_name.as_str()),
                 Some(class.name.as_str()),
                 None,
                 false,
                 false,
-                false,
-                false,
+                property.hook_get_body.is_some(),
+                property.hook_get_body.is_some(),
                 false,
                 false,
             );
-            let value_temp =
-                values.emit_materialized_value(out, property.hook_get_value.as_ref().unwrap());
+            let value_temp = if let Some(body) = &property.hook_get_body {
+                emit_property_hook_field_binding(out, &class.name, &property.name, body);
+                out.push_str("        PtnValue ptn_return_value = ptn_null();\n");
+                out.push_str("        int ptn_return_value_was_set = 0;\n");
+                out.push_str("        size_t ptn_return_line = line;\n");
+                let mut break_targets = Vec::new();
+                let mut finally_stack = Vec::new();
+                let return_label = format!("ptn_property_hook_get_return_{branch_index}");
+                out.push_str("        PtnTryFrame ptn_property_hook_try_frame;\n");
+                out.push_str(
+                    "        ptn_try_frame_push(&runtime, &ptn_property_hook_try_frame);\n",
+                );
+                out.push_str("        if (setjmp(ptn_property_hook_try_frame.jump) == 0) {\n");
+                for instruction in body {
+                    emit_instruction(
+                        out,
+                        &mut values,
+                        instruction,
+                        &mut break_targets,
+                        &mut finally_stack,
+                        source_file,
+                        Some(&return_label),
+                        None,
+                    );
+                }
+                out.push_str("            goto ");
+                out.push_str(&return_label);
+                out.push_str(";\n");
+                out.push_str("        }\n");
+                out.push_str(
+                    "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
+                );
+                out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str("        ptn_rethrow_exception(caller_runtime);\n");
+                out.push_str("        *value_out = ptn_null();\n");
+                out.push_str("        return 1;\n");
+                emit_label_reference(out, &return_label);
+                out.push_str("        ");
+                out.push_str(&return_label);
+                out.push_str(":\n");
+                out.push_str("        ;\n");
+                out.push_str(
+                    "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
+                );
+                "ptn_return_value".to_string()
+            } else {
+                values.emit_materialized_value(out, property.hook_get_value.as_ref().unwrap())
+            };
             let result_temp = if let Some(coercion_helper) =
                 property_type_scalar_return_coercion_helper(property.type_hint.as_ref())
             {
@@ -10107,7 +10365,11 @@ fn emit_property_hook_get_helper(
                 out.push_str(&c_string(&property.type_hint.as_ref().unwrap().text));
                 out.push_str("\", ");
                 out.push_str(&value_temp);
-                out.push_str(", 1, line, &");
+                if property.hook_get_body.is_some() {
+                    out.push_str(", ptn_return_value_was_set, ptn_return_line, &");
+                } else {
+                    out.push_str(", 1, line, &");
+                }
                 out.push_str(typed_temp);
                 out.push_str(")) {\n");
                 out.push_str("            ptn_value_destroy(&");
@@ -10132,6 +10394,7 @@ fn emit_property_hook_get_helper(
             out.push_str("        ptn_runtime_free(&runtime);\n");
             out.push_str("        return 1;\n");
             emitted_branch = true;
+            branch_index += 1;
         }
     }
     if emitted_branch {
@@ -10153,12 +10416,9 @@ fn emit_property_hook_set_helper(
     out.push_str(
         "\nstatic PTN_UNUSED int ptn_declared_class_property_hook_set(PtnRuntime *caller_runtime, PtnValue receiver, const char *class_name, const char *property_name, PtnValue value, size_t line) {\n",
     );
-    let has_set_values = classes.iter().any(|class| {
-        class
-            .properties
-            .iter()
-            .any(|property| property.hook_set_value.is_some())
-    });
+    let has_set_values = classes
+        .iter()
+        .any(|class| class.properties.iter().any(property_hook_set_has_runtime));
     if !has_set_values {
         out.push_str("    (void)caller_runtime;\n");
         out.push_str("    (void)receiver;\n");
@@ -10173,11 +10433,12 @@ fn emit_property_hook_set_helper(
 
     out.push_str("    PtnValue resolved_receiver = ptn_value_deref(receiver);\n");
     let mut emitted_branch = false;
+    let mut branch_index = 0usize;
     for class in classes {
         for property in class
             .properties
             .iter()
-            .filter(|property| property.hook_set_value.is_some())
+            .filter(|property| property_hook_set_has_runtime(property))
         {
             out.push_str("    ");
             if emitted_branch {
@@ -10214,6 +10475,12 @@ fn emit_property_hook_set_helper(
             ));
             out.push_str("\", value);\n");
             out.push_str("        ptn_runtime_set_call_frame(&runtime, 0, NULL, 0, NULL, 0, NULL, ((size_t)-1));\n");
+            out.push_str("        runtime.active_property_hook_class = \"");
+            out.push_str(&c_string(&class.name));
+            out.push_str("\";\n");
+            out.push_str("        runtime.active_property_hook_property = \"");
+            out.push_str(&c_string(&property.name));
+            out.push_str("\";\n");
 
             let mut values = ValueEmitter::new_with_scope(
                 source_file,
@@ -10223,8 +10490,8 @@ fn emit_property_hook_set_helper(
                 includes,
                 full_internal_dispatch,
                 None,
-                Some(display_name.as_str()),
                 Some(hook_name.as_str()),
+                Some(display_name.as_str()),
                 Some(class.name.as_str()),
                 None,
                 false,
@@ -10234,15 +10501,61 @@ fn emit_property_hook_set_helper(
                 false,
                 false,
             );
-            let value_temp =
-                values.emit_materialized_value(out, property.hook_set_value.as_ref().unwrap());
-            out.push_str("        ptn_value_destroy(&");
-            out.push_str(&value_temp);
-            out.push_str(");\n");
+            if let Some(body) = &property.hook_set_body {
+                emit_property_hook_field_binding(out, &class.name, &property.name, body);
+                out.push_str("        PtnValue ptn_return_value = ptn_null();\n");
+                let mut break_targets = Vec::new();
+                let mut finally_stack = Vec::new();
+                let return_label = format!("ptn_property_hook_set_return_{branch_index}");
+                out.push_str("        PtnTryFrame ptn_property_hook_try_frame;\n");
+                out.push_str(
+                    "        ptn_try_frame_push(&runtime, &ptn_property_hook_try_frame);\n",
+                );
+                out.push_str("        if (setjmp(ptn_property_hook_try_frame.jump) == 0) {\n");
+                for instruction in body {
+                    emit_instruction(
+                        out,
+                        &mut values,
+                        instruction,
+                        &mut break_targets,
+                        &mut finally_stack,
+                        source_file,
+                        Some(&return_label),
+                        None,
+                    );
+                }
+                out.push_str("            goto ");
+                out.push_str(&return_label);
+                out.push_str(";\n");
+                out.push_str("        }\n");
+                out.push_str(
+                    "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
+                );
+                out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
+                out.push_str("        ptn_runtime_free(&runtime);\n");
+                out.push_str("        ptn_rethrow_exception(caller_runtime);\n");
+                out.push_str("        return 1;\n");
+                emit_label_reference(out, &return_label);
+                out.push_str("        ");
+                out.push_str(&return_label);
+                out.push_str(":\n");
+                out.push_str("        ;\n");
+                out.push_str(
+                    "        ptn_try_frame_pop(&runtime, &ptn_property_hook_try_frame);\n",
+                );
+                out.push_str("        ptn_value_destroy(&ptn_return_value);\n");
+            } else {
+                let value_temp =
+                    values.emit_materialized_value(out, property.hook_set_value.as_ref().unwrap());
+                out.push_str("        ptn_value_destroy(&");
+                out.push_str(&value_temp);
+                out.push_str(");\n");
+            }
             out.push_str("        caller_runtime->diagnostics.error_reporting = runtime.diagnostics.error_reporting;\n");
             out.push_str("        ptn_runtime_free(&runtime);\n");
             out.push_str("        return 1;\n");
             emitted_branch = true;
+            branch_index += 1;
         }
     }
     if emitted_branch {

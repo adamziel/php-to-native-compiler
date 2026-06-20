@@ -157,6 +157,8 @@ pub struct PropertyDecl {
     pub hook_set_line: usize,
     pub hook_get_value: Option<ValueExpr>,
     pub hook_set_value: Option<ValueExpr>,
+    pub hook_get_body: Option<Vec<Instruction>>,
+    pub hook_set_body: Option<Vec<Instruction>>,
     pub hook_set_parameter_name: Option<String>,
     pub type_hint: Option<PropertyTypeHint>,
     pub attributes: AttributeMetadata,
@@ -1749,6 +1751,14 @@ impl<'a> LoweringContext<'a> {
                     .hook_set_value
                     .as_ref()
                     .map(|value| self.lower_expr(value)),
+                hook_get_body: property
+                    .hook_get_body
+                    .as_ref()
+                    .map(|body| self.lower_statements(body)),
+                hook_set_body: property
+                    .hook_set_body
+                    .as_ref()
+                    .map(|body| self.lower_statements(body)),
                 hook_set_parameter_name: property.hook_set_parameter_name.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 attributes: self.lower_class_scoped_attribute_metadata(
@@ -2391,6 +2401,14 @@ impl<'a> LoweringContext<'a> {
                     .hook_set_value
                     .as_ref()
                     .map(|value| self.lower_expr(value)),
+                hook_get_body: property
+                    .hook_get_body
+                    .as_ref()
+                    .map(|body| self.lower_statements(body)),
+                hook_set_body: property
+                    .hook_set_body
+                    .as_ref()
+                    .map(|body| self.lower_statements(body)),
                 hook_set_parameter_name: property.hook_set_parameter_name.clone(),
                 type_hint: property.type_hint.as_ref().map(lower_property_type_hint),
                 attributes: self.lower_class_scoped_attribute_metadata(
