@@ -68195,6 +68195,8 @@ static int ptn_xml_reader_node_has_value(PtnXmlReaderData *data);
 static int ptn_xml_reader_property_known(const char *property);
 static const char *ptn_xml_element_attribute_value(PtnXmlNode *element, const char *name);
 static void ptn_xml_reader_apply_default_attributes(PtnRuntime *runtime, PtnXmlReaderData *data);
+static void ptn_xml_parser_default_attribute_add(PtnXmlParserData *parser, const char *element_name, const char *attribute_name, const char *value);
+static void ptn_xml_parser_default_attributes_free(PtnXmlParserData *data);
 static void ptn_xml_parser_collect_attlist_defaults(PtnXmlParserData *parser, const char *data, size_t len);
 static const char *ptn_dom_xmlns_namespace_uri(void) {
     return "http://www.w3.org/2000/xmlns/";
@@ -69656,6 +69658,136 @@ static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos) {
     return result;
 }
 
+static const char *ptn_xml_find_bytes(const char *data, size_t len, size_t start, const char *needle) {
+    size_t needle_len = strlen(needle);
+    if (needle_len == 0 || start > len || needle_len > len - start) {
+        return NULL;
+    }
+    for (size_t i = start; i <= len - needle_len; i++) {
+        if (memcmp(data + i, needle, needle_len) == 0) {
+            return data + i;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_xml_fragment_source_is_balanced(const char *data, size_t len) {
+    char **stack = NULL;
+    size_t stack_len = 0;
+    size_t stack_capacity = 0;
+    size_t pos = 0;
+    int ok = 1;
+
+    while (pos < len && ok) {
+        const char *tag = memchr(data + pos, '<', len - pos);
+        if (tag == NULL) {
+            break;
+        }
+        pos = (size_t)(tag - data) + 1;
+        if (pos >= len) {
+            ok = 0;
+            break;
+        }
+        if (data[pos] == '?' || data[pos] == '!') {
+            const char *end = NULL;
+            if (pos + 2 < len && memcmp(data + pos, "!--", 3) == 0) {
+                end = ptn_xml_find_bytes(data, len, pos + 3, "-->");
+                pos = end == NULL ? len : (size_t)(end - data) + 3;
+            } else if (pos + 7 < len && memcmp(data + pos, "![CDATA[", 8) == 0) {
+                end = ptn_xml_find_bytes(data, len, pos + 8, "]]>");
+                pos = end == NULL ? len : (size_t)(end - data) + 3;
+            } else if (data[pos] == '?') {
+                end = ptn_xml_find_bytes(data, len, pos + 1, "?>");
+                pos = end == NULL ? len : (size_t)(end - data) + 2;
+            } else {
+                end = memchr(data + pos, '>', len - pos);
+                pos = end == NULL ? len : (size_t)(end - data) + 1;
+            }
+            if (end == NULL) {
+                ok = 0;
+            }
+            continue;
+        }
+
+        int closing = data[pos] == '/';
+        if (closing) {
+            pos++;
+        }
+        ptn_xml_skip_ws(data, len, &pos);
+        size_t name_start = pos;
+        while (pos < len && ptn_xml_name_char((unsigned char)data[pos])) {
+            pos++;
+        }
+        if (pos == name_start) {
+            ok = 0;
+            break;
+        }
+        char *name = ptn_duplicate_string_len(data + name_start, pos - name_start);
+        int in_quote = 0;
+        char quote = '\0';
+        int self_closing = 0;
+        while (pos < len) {
+            char ch = data[pos];
+            if (in_quote) {
+                if (ch == quote) {
+                    in_quote = 0;
+                }
+                pos++;
+                continue;
+            }
+            if (ch == '"' || ch == '\'') {
+                in_quote = 1;
+                quote = ch;
+                pos++;
+                continue;
+            }
+            if (ch == '>') {
+                size_t cursor = pos;
+                while (cursor > name_start && isspace((unsigned char)data[cursor - 1])) {
+                    cursor--;
+                }
+                self_closing = cursor > name_start && data[cursor - 1] == '/';
+                pos++;
+                break;
+            }
+            pos++;
+        }
+        if (pos > len) {
+            ok = 0;
+        } else if (closing) {
+            if (stack_len == 0 || strcmp(stack[stack_len - 1], name) != 0) {
+                ok = 0;
+            } else {
+                free(stack[--stack_len]);
+            }
+        } else if (!self_closing) {
+            if (stack_len == stack_capacity) {
+                size_t new_capacity = stack_capacity == 0 ? 8 : stack_capacity * 2;
+                if (new_capacity < stack_capacity) {
+                    ptn_abort_out_of_memory();
+                }
+                char **new_stack = realloc(stack, new_capacity * sizeof(char *));
+                if (new_stack == NULL) {
+                    ptn_abort_out_of_memory();
+                }
+                stack = new_stack;
+                stack_capacity = new_capacity;
+            }
+            stack[stack_len++] = name;
+            name = NULL;
+        }
+        free(name);
+    }
+    if (stack_len != 0) {
+        ok = 0;
+    }
+    for (size_t i = 0; i < stack_len; i++) {
+        free(stack[i]);
+    }
+    free(stack);
+    return ok;
+}
+
 static void ptn_xml_element_add_attribute(PtnXmlNode *element, PtnXmlNode *attr) {
     if (element == NULL || attr == NULL) {
         return;
@@ -69715,6 +69847,545 @@ static void ptn_xml_element_set_attribute_string(PtnRuntime *runtime, PtnXmlNode
     }
     free(attr->value);
     attr->value = ptn_duplicate_string(value == NULL ? "" : value);
+}
+
+static const char *ptn_xml_find_tag_end(const char *data, size_t len, size_t start) {
+    int quote = 0;
+    for (size_t i = start; i < len; i++) {
+        unsigned char byte = (unsigned char)data[i];
+        if (quote != 0) {
+            if (byte == (unsigned char)quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        if (byte == '"' || byte == '\'') {
+            quote = byte;
+            continue;
+        }
+        if (byte == '>') {
+            return data + i;
+        }
+    }
+    return NULL;
+}
+
+static int ptn_xml_tag_name_span(const char *tag, size_t tag_len, size_t *start_out, size_t *len_out) {
+    size_t pos = 0;
+    if (pos < tag_len && tag[pos] == '/') {
+        pos++;
+    }
+    while (pos < tag_len && isspace((unsigned char)tag[pos])) {
+        pos++;
+    }
+    size_t start = pos;
+    while (pos < tag_len && ptn_xml_name_char((unsigned char)tag[pos])) {
+        pos++;
+    }
+    if (pos == start) {
+        return 0;
+    }
+    *start_out = start;
+    *len_out = pos - start;
+    return 1;
+}
+
+static int ptn_xml_name_span_local_equals(const char *name, size_t name_len, const char *local_name) {
+    size_t local_start = 0;
+    for (size_t i = 0; i < name_len; i++) {
+        if (name[i] == ':') {
+            local_start = i + 1;
+        }
+    }
+    size_t local_len = name_len - local_start;
+    size_t expected_len = strlen(local_name);
+    return local_len == expected_len && memcmp(name + local_start, local_name, local_len) == 0;
+}
+
+static int ptn_xml_tag_local_name_is(const char *tag, size_t tag_len, const char *local_name) {
+    size_t name_start = 0;
+    size_t name_len = 0;
+    return ptn_xml_tag_name_span(tag, tag_len, &name_start, &name_len) &&
+        ptn_xml_name_span_local_equals(tag + name_start, name_len, local_name);
+}
+
+static int ptn_xml_tag_is_self_closing(const char *tag, size_t tag_len) {
+    while (tag_len > 0 && isspace((unsigned char)tag[tag_len - 1])) {
+        tag_len--;
+    }
+    return tag_len > 0 && tag[tag_len - 1] == '/';
+}
+
+static char *ptn_xml_tag_attribute_dup(const char *tag, size_t tag_len, const char *attribute_name) {
+    size_t name_start = 0;
+    size_t name_len = 0;
+    if (!ptn_xml_tag_name_span(tag, tag_len, &name_start, &name_len)) {
+        return NULL;
+    }
+    size_t pos = name_start + name_len;
+    while (pos < tag_len) {
+        while (pos < tag_len && isspace((unsigned char)tag[pos])) {
+            pos++;
+        }
+        if (pos >= tag_len || tag[pos] == '/') {
+            break;
+        }
+        size_t attr_start = pos;
+        while (pos < tag_len && ptn_xml_name_char((unsigned char)tag[pos])) {
+            pos++;
+        }
+        size_t attr_len = pos - attr_start;
+        while (pos < tag_len && isspace((unsigned char)tag[pos])) {
+            pos++;
+        }
+        if (pos >= tag_len || tag[pos] != '=') {
+            continue;
+        }
+        pos++;
+        while (pos < tag_len && isspace((unsigned char)tag[pos])) {
+            pos++;
+        }
+        if (pos >= tag_len || (tag[pos] != '"' && tag[pos] != '\'')) {
+            continue;
+        }
+        char quote = tag[pos++];
+        size_t value_start = pos;
+        while (pos < tag_len && tag[pos] != quote) {
+            pos++;
+        }
+        size_t value_len = pos - value_start;
+        if (pos < tag_len) {
+            pos++;
+        }
+        if (ptn_xml_name_span_local_equals(tag + attr_start, attr_len, attribute_name)) {
+            return ptn_duplicate_string_len(tag + value_start, value_len);
+        }
+    }
+    return NULL;
+}
+
+static int ptn_xml_source_has_tag_local(const char *data, size_t len, const char *local_name) {
+    size_t pos = 0;
+    while (pos < len) {
+        const char *open = memchr(data + pos, '<', len - pos);
+        if (open == NULL) {
+            return 0;
+        }
+        pos = (size_t)(open - data) + 1;
+        if (pos >= len || data[pos] == '?' || data[pos] == '!') {
+            continue;
+        }
+        const char *end = ptn_xml_find_tag_end(data, len, pos);
+        if (end == NULL) {
+            return 0;
+        }
+        size_t tag_len = (size_t)(end - (data + pos));
+        if (data[pos] != '/' && ptn_xml_tag_local_name_is(data + pos, tag_len, local_name)) {
+            return 1;
+        }
+        pos = (size_t)(end - data) + 1;
+    }
+    return 0;
+}
+
+static void ptn_xml_string_stack_push(char ***items, size_t *count, size_t *capacity, char *value) {
+    if (*count == *capacity) {
+        size_t new_capacity = *capacity == 0 ? 4 : *capacity * 2;
+        if (new_capacity < *capacity || new_capacity > SIZE_MAX / sizeof(char *)) {
+            ptn_abort_out_of_memory();
+        }
+        char **new_items = realloc(*items, new_capacity * sizeof(char *));
+        if (new_items == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        *items = new_items;
+        *capacity = new_capacity;
+    }
+    (*items)[(*count)++] = value;
+}
+
+static void ptn_xml_string_stack_free(char **items, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        free(items[i]);
+    }
+    free(items);
+}
+
+static int ptn_xml_schema_declares_element_name(const char *schema, size_t len, const char *element_name) {
+    size_t pos = 0;
+    while (pos < len) {
+        const char *open = memchr(schema + pos, '<', len - pos);
+        if (open == NULL) {
+            return 0;
+        }
+        pos = (size_t)(open - schema) + 1;
+        if (pos >= len || schema[pos] == '?' || schema[pos] == '!' || schema[pos] == '/') {
+            continue;
+        }
+        const char *end = ptn_xml_find_tag_end(schema, len, pos);
+        if (end == NULL) {
+            return 0;
+        }
+        size_t tag_len = (size_t)(end - (schema + pos));
+        if (ptn_xml_tag_local_name_is(schema + pos, tag_len, "element")) {
+            char *name = ptn_xml_tag_attribute_dup(schema + pos, tag_len, "name");
+            int matches = name != NULL && strcmp(name, element_name) == 0;
+            free(name);
+            if (matches) {
+                return 1;
+            }
+        }
+        pos = (size_t)(end - schema) + 1;
+    }
+    return 0;
+}
+
+static void ptn_xml_schema_collect_attribute_defaults(PtnXmlParserData *defaults, const char *schema, size_t len) {
+    char **element_stack = NULL;
+    size_t element_count = 0;
+    size_t element_capacity = 0;
+    size_t pos = 0;
+    while (pos < len) {
+        const char *open = memchr(schema + pos, '<', len - pos);
+        if (open == NULL) {
+            break;
+        }
+        pos = (size_t)(open - schema) + 1;
+        if (pos >= len) {
+            break;
+        }
+        if (schema[pos] == '?' || schema[pos] == '!') {
+            const char *end = ptn_xml_find_tag_end(schema, len, pos);
+            pos = end == NULL ? len : (size_t)(end - schema) + 1;
+            continue;
+        }
+        const char *end = ptn_xml_find_tag_end(schema, len, pos);
+        if (end == NULL) {
+            break;
+        }
+        size_t tag_len = (size_t)(end - (schema + pos));
+        const char *tag = schema + pos;
+        if (tag_len > 0 && tag[0] == '/') {
+            if (ptn_xml_tag_local_name_is(tag, tag_len, "element") && element_count > 0) {
+                free(element_stack[--element_count]);
+            }
+            pos = (size_t)(end - schema) + 1;
+            continue;
+        }
+        if (ptn_xml_tag_local_name_is(tag, tag_len, "element")) {
+            char *element_name = ptn_xml_tag_attribute_dup(tag, tag_len, "name");
+            if (!ptn_xml_tag_is_self_closing(tag, tag_len)) {
+                ptn_xml_string_stack_push(
+                    &element_stack,
+                    &element_count,
+                    &element_capacity,
+                    element_name == NULL ? ptn_duplicate_string("") : element_name
+                );
+            } else {
+                free(element_name);
+            }
+        } else if (ptn_xml_tag_local_name_is(tag, tag_len, "attribute") && element_count > 0) {
+            char *attribute_name = ptn_xml_tag_attribute_dup(tag, tag_len, "name");
+            char *default_value = ptn_xml_tag_attribute_dup(tag, tag_len, "default");
+            if (default_value == NULL) {
+                default_value = ptn_xml_tag_attribute_dup(tag, tag_len, "fixed");
+            }
+            const char *element_name = element_stack[element_count - 1];
+            if (element_name[0] != '\0' && attribute_name != NULL && default_value != NULL) {
+                ptn_xml_parser_default_attribute_add(defaults, element_name, attribute_name, default_value);
+            }
+            free(attribute_name);
+            free(default_value);
+        }
+        pos = (size_t)(end - schema) + 1;
+    }
+    ptn_xml_string_stack_free(element_stack, element_count);
+}
+
+static void ptn_dom_apply_schema_defaults_to_node(PtnRuntime *runtime, PtnXmlNode *node, PtnXmlParserData *defaults) {
+    if (node == NULL || defaults == NULL) {
+        return;
+    }
+    if (node->type == PTN_XML_NODE_ELEMENT) {
+        const char *element_name = ptn_xml_local_name(node->name == NULL ? "" : node->name);
+        for (size_t i = 0; i < defaults->default_attribute_count; i++) {
+            PtnXmlDefaultAttribute *default_attribute = &defaults->default_attributes[i];
+            if (strcmp(default_attribute->element_name, element_name) != 0) {
+                continue;
+            }
+            if (ptn_xml_element_find_attribute(node, default_attribute->attribute_name) != NULL) {
+                continue;
+            }
+            ptn_xml_element_set_attribute_string(
+                runtime,
+                node,
+                default_attribute->attribute_name,
+                default_attribute->value
+            );
+        }
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        ptn_dom_apply_schema_defaults_to_node(runtime, node->children[i], defaults);
+    }
+}
+
+static void ptn_dom_apply_schema_defaults(PtnRuntime *runtime, PtnXmlNode *document, const char *schema, size_t len) {
+    PtnXmlParserData defaults;
+    memset(&defaults, 0, sizeof(defaults));
+    ptn_xml_schema_collect_attribute_defaults(&defaults, schema, len);
+    ptn_dom_apply_schema_defaults_to_node(runtime, ptn_xml_document_element(document), &defaults);
+    ptn_xml_parser_default_attributes_free(&defaults);
+}
+
+static void ptn_dom_emit_validation_warning(PtnRuntime *runtime, const char *method, const char *detail, size_t line) {
+    size_t method_len = strlen(method);
+    size_t detail_len = strlen(detail);
+    if (method_len > SIZE_MAX - detail_len - 5) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc(method_len + detail_len + 5);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    int written = snprintf(message, method_len + detail_len + 5, "%s(): %s", method, detail);
+    if (written < 0 || (size_t)written >= method_len + detail_len + 5) {
+        free(message);
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_warning(&runtime->diagnostics, message, line);
+    free(message);
+}
+
+static void ptn_dom_emit_validation_warning_join(
+    PtnRuntime *runtime,
+    const char *method,
+    const char *prefix,
+    const char *value,
+    const char *suffix,
+    size_t line
+) {
+    size_t prefix_len = strlen(prefix);
+    size_t value_len = strlen(value);
+    size_t suffix_len = strlen(suffix);
+    if (prefix_len > SIZE_MAX - value_len ||
+        prefix_len + value_len > SIZE_MAX - suffix_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    size_t detail_len = prefix_len + value_len + suffix_len;
+    char *detail = malloc(detail_len + 1);
+    if (detail == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(detail, prefix, prefix_len);
+    memcpy(detail + prefix_len, value, value_len);
+    memcpy(detail + prefix_len + value_len, suffix, suffix_len + 1);
+    ptn_dom_emit_validation_warning(runtime, method, detail, line);
+    free(detail);
+}
+
+static char *ptn_xml_first_line_dup(const char *data, size_t len) {
+    size_t line_len = 0;
+    while (line_len < len && data[line_len] != '\n' && data[line_len] != '\r') {
+        line_len++;
+    }
+    return ptn_duplicate_string_len(data, line_len);
+}
+
+static void ptn_dom_emit_xml_parse_failure(
+    PtnRuntime *runtime,
+    const char *method,
+    const char *resource_name,
+    const char *source,
+    size_t source_len,
+    size_t line
+) {
+    if (resource_name == NULL) {
+        ptn_dom_emit_validation_warning(
+            runtime,
+            method,
+            "Entity: line 1: parser error : Start tag expected, '<' not found",
+            line
+        );
+    } else {
+        ptn_dom_emit_validation_warning_join(
+            runtime,
+            method,
+            "",
+            resource_name,
+            ":1: parser error : Start tag expected, '<' not found",
+            line
+        );
+    }
+    char *first_line = ptn_xml_first_line_dup(source, source_len);
+    ptn_dom_emit_validation_warning(runtime, method, first_line, line);
+    free(first_line);
+    ptn_dom_emit_validation_warning(runtime, method, "^", line);
+    ptn_dom_emit_validation_warning_join(
+        runtime,
+        method,
+        "Failed to parse the XML resource '",
+        resource_name == NULL ? "in_memory_buffer" : resource_name,
+        "'.",
+        line
+    );
+}
+
+static void ptn_xml_relaxng_first_element_names(const char *schema, size_t len, char **root_out, char **child_out) {
+    *root_out = NULL;
+    *child_out = NULL;
+    size_t pos = 0;
+    while (pos < len && (*root_out == NULL || *child_out == NULL)) {
+        const char *open = memchr(schema + pos, '<', len - pos);
+        if (open == NULL) {
+            return;
+        }
+        pos = (size_t)(open - schema) + 1;
+        if (pos >= len || schema[pos] == '?' || schema[pos] == '!' || schema[pos] == '/') {
+            continue;
+        }
+        const char *end = ptn_xml_find_tag_end(schema, len, pos);
+        if (end == NULL) {
+            return;
+        }
+        size_t tag_len = (size_t)(end - (schema + pos));
+        if (ptn_xml_tag_local_name_is(schema + pos, tag_len, "element")) {
+            char *name = ptn_xml_tag_attribute_dup(schema + pos, tag_len, "name");
+            if (name != NULL) {
+                if (*root_out == NULL) {
+                    *root_out = name;
+                } else {
+                    *child_out = name;
+                }
+            }
+        }
+        pos = (size_t)(end - schema) + 1;
+    }
+}
+
+static size_t ptn_xml_direct_child_element_count(PtnXmlNode *node, const char *local_name) {
+    size_t count = 0;
+    if (node == NULL || local_name == NULL) {
+        return 0;
+    }
+    for (size_t i = 0; i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        if (child != NULL && child->type == PTN_XML_NODE_ELEMENT &&
+            strcmp(ptn_xml_local_name(child->name == NULL ? "" : child->name), local_name) == 0) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static PtnValue ptn_dom_schema_validation_result(
+    PtnRuntime *runtime,
+    PtnXmlNode *document,
+    const char *method,
+    const char *schema,
+    size_t schema_len,
+    const char *resource_name,
+    int64_t options,
+    size_t line
+) {
+    if (memchr(schema, '<', schema_len) == NULL) {
+        ptn_dom_emit_xml_parse_failure(runtime, method, resource_name, schema, schema_len, line);
+        ptn_dom_emit_validation_warning(runtime, method, "Invalid Schema", line);
+        return ptn_bool(0);
+    }
+    if (!ptn_xml_source_has_tag_local(schema, schema_len, "schema")) {
+        ptn_dom_emit_validation_warning(runtime, method, "Invalid Schema", line);
+        return ptn_bool(0);
+    }
+    PtnXmlNode *root = ptn_xml_document_element(document);
+    if (root != NULL) {
+        const char *root_name = ptn_xml_local_name(root->name == NULL ? "" : root->name);
+        if (!ptn_xml_schema_declares_element_name(schema, schema_len, root_name)) {
+            ptn_dom_emit_validation_warning_join(
+                runtime,
+                method,
+                "Element '",
+                root_name,
+                "': No matching global declaration available for the validation root.",
+                line
+            );
+            return ptn_bool(0);
+        }
+    }
+    if ((options & PTN_LIBXML_SCHEMA_CREATE) != 0) {
+        ptn_dom_apply_schema_defaults(runtime, document, schema, schema_len);
+    }
+    return ptn_bool(root != NULL);
+}
+
+static PtnValue ptn_dom_relaxng_validation_result(
+    PtnRuntime *runtime,
+    PtnXmlNode *document,
+    const char *method,
+    const char *schema,
+    size_t schema_len,
+    size_t line
+) {
+    if (memchr(schema, '<', schema_len) == NULL ||
+        (!ptn_xml_source_has_tag_local(schema, schema_len, "grammar") &&
+            !ptn_xml_source_has_tag_local(schema, schema_len, "element"))) {
+        ptn_dom_emit_validation_warning(runtime, method, "Invalid RelaxNG", line);
+        return ptn_bool(0);
+    }
+    char *root_decl = NULL;
+    char *child_decl = NULL;
+    ptn_xml_relaxng_first_element_names(schema, schema_len, &root_decl, &child_decl);
+    if (root_decl != NULL && child_decl == NULL &&
+        !ptn_xml_source_has_tag_local(schema, schema_len, "data") &&
+        !ptn_xml_source_has_tag_local(schema, schema_len, "empty") &&
+        !ptn_xml_source_has_tag_local(schema, schema_len, "text") &&
+        !ptn_xml_source_has_tag_local(schema, schema_len, "value")) {
+        ptn_dom_emit_validation_warning(runtime, method, "xmlRelaxNGParseElement: element has no content", line);
+        ptn_dom_emit_validation_warning(runtime, method, "Invalid RelaxNG", line);
+        free(root_decl);
+        free(child_decl);
+        return ptn_bool(0);
+    }
+    PtnXmlNode *root = ptn_xml_document_element(document);
+    if (root != NULL && root_decl != NULL &&
+        strcmp(ptn_xml_local_name(root->name == NULL ? "" : root->name), root_decl) == 0 &&
+        child_decl != NULL &&
+        ptn_xml_direct_child_element_count(root, child_decl) > 1 &&
+        !ptn_xml_source_has_tag_local(schema, schema_len, "oneOrMore") &&
+        !ptn_xml_source_has_tag_local(schema, schema_len, "zeroOrMore")) {
+        ptn_dom_emit_validation_warning_join(
+            runtime,
+            method,
+            "Did not expect element ",
+            child_decl,
+            " there",
+            line
+        );
+        free(root_decl);
+        free(child_decl);
+        return ptn_bool(0);
+    }
+    free(root_decl);
+    free(child_decl);
+    return ptn_bool(root != NULL);
+}
+
+static char *ptn_xml_xmlns_name_for_prefix(const char *prefix) {
+    if (prefix == NULL || prefix[0] == '\0') {
+        return ptn_duplicate_string("xmlns");
+    }
+    const char xmlns_prefix[] = "xmlns:";
+    size_t xmlns_prefix_len = strlen(xmlns_prefix);
+    size_t prefix_len = strlen(prefix);
+    if (prefix_len > SIZE_MAX - xmlns_prefix_len - 1) {
+        ptn_abort_out_of_memory();
+    }
+    char *name = malloc(xmlns_prefix_len + prefix_len + 1);
+    if (name == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    memcpy(name, xmlns_prefix, xmlns_prefix_len);
+    memcpy(name + xmlns_prefix_len, prefix, prefix_len + 1);
+    return name;
 }
 
 static void ptn_xml_element_remove_attribute(PtnXmlNode *element, const char *name) {
@@ -70521,7 +71192,6 @@ static PtnValue ptn_dom_replace_children_method(PtnRuntime *runtime, PtnValue re
 }
 
 static PtnValue ptn_dom_append_child_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args, size_t line) {
-    (void)line;
     if (argc != 1) {
         return ptn_dom_throw_count(runtime, "DOMNode::appendChild", "exactly 1 argument", argc);
     }
@@ -70531,6 +71201,10 @@ static PtnValue ptn_dom_append_child_method(PtnRuntime *runtime, PtnValue receiv
         candidate != NULL && candidate->type == PTN_XML_NODE_ATTRIBUTE) {
         ptn_xml_element_add_attribute(parent, candidate);
         return ptn_xml_node_value(candidate);
+    }
+    if (candidate != NULL && candidate->type == PTN_XML_NODE_DOCUMENT_FRAGMENT && candidate->child_count == 0) {
+        ptn_emit_warning(&runtime->diagnostics, "DOMNode::appendChild(): Document Fragment is empty", line);
+        return ptn_null();
     }
     if (!ptn_xml_check_insertable(runtime, "DOMNode::appendChild", 1, parent, args[0])) {
         return ptn_null();
@@ -70888,6 +71562,66 @@ static PtnValue ptn_dom_get_attribute_node_ns_method(PtnRuntime *runtime, PtnVal
     PtnXmlNode *attr = ptn_dom_find_attribute_ns(ptn_xml_node_data(receiver), namespace_copy, local_copy);
     free(namespace_copy);
     free(local_copy);
+    return ptn_xml_node_value(attr);
+}
+
+static void ptn_dom_attribute_bind_namespace_on_element(PtnRuntime *runtime, PtnXmlNode *element, PtnXmlNode *attr) {
+    if (element == NULL || attr == NULL || attr->type != PTN_XML_NODE_ATTRIBUTE ||
+        attr->namespace_uri == NULL || attr->namespace_uri[0] == '\0') {
+        return;
+    }
+    char *prefix = ptn_xml_prefix_dup(attr->name == NULL ? "" : attr->name);
+    if (ptn_ascii_case_equal(prefix, "xmlns")) {
+        free(prefix);
+        return;
+    }
+    const char *binding = prefix[0] == '\0' ? NULL : ptn_xml_lookup_namespace_uri(element, prefix);
+    if (binding != NULL && strcmp(binding, attr->namespace_uri) != 0) {
+        free(prefix);
+        prefix = ptn_duplicate_string("default");
+        char *local = ptn_duplicate_string(ptn_xml_local_name(attr->name == NULL ? "" : attr->name));
+        size_t prefix_len = strlen(prefix);
+        size_t local_len = strlen(local);
+        if (prefix_len > SIZE_MAX - local_len - 2) {
+            ptn_abort_out_of_memory();
+        }
+        char *qualified = malloc(prefix_len + local_len + 2);
+        if (qualified == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        memcpy(qualified, prefix, prefix_len);
+        qualified[prefix_len] = ':';
+        memcpy(qualified + prefix_len + 1, local, local_len + 1);
+        free(attr->name);
+        attr->name = qualified;
+        free(local);
+    }
+    if (prefix[0] != '\0') {
+        char *xmlns_name = ptn_xml_xmlns_name_for_prefix(prefix);
+        ptn_xml_element_set_attribute_string(runtime, element, xmlns_name, attr->namespace_uri);
+        free(xmlns_name);
+    }
+    free(prefix);
+}
+
+static PtnValue ptn_dom_set_attribute_node_ns_method(PtnRuntime *runtime, PtnValue receiver, size_t argc, const PtnValue *args) {
+    if (argc != 1) {
+        return ptn_dom_throw_count(runtime, "DOMElement::setAttributeNodeNS", "exactly 1 argument", argc);
+    }
+    PtnXmlNode *element = ptn_xml_node_data(receiver);
+    PtnXmlNode *attr = ptn_xml_node_data(args[0]);
+    if (element == NULL || attr == NULL || attr->type != PTN_XML_NODE_ATTRIBUTE) {
+        ptn_throw_exception(runtime, "TypeError", "DOMElement::setAttributeNodeNS(): Argument #1 ($attr) must be of type DOMAttr");
+        return ptn_null();
+    }
+    char *namespace_copy = attr->namespace_uri == NULL ? NULL : ptn_duplicate_string(attr->namespace_uri);
+    ptn_dom_attribute_bind_namespace_on_element(runtime, element, attr);
+    ptn_xml_element_add_attribute(element, attr);
+    ptn_xml_resolve_namespace_recursive(element);
+    if (namespace_copy != NULL) {
+        free(attr->namespace_uri);
+        attr->namespace_uri = namespace_copy;
+    }
     return ptn_xml_node_value(attr);
 }
 
@@ -71292,6 +72026,15 @@ static PtnValue ptn_dom_fragment_append_xml_method(PtnRuntime *runtime, PtnValue
     }
     PtnXmlNode *fragment = ptn_xml_node_data(receiver);
     if (fragment == NULL || fragment->type != PTN_XML_NODE_DOCUMENT_FRAGMENT) {
+        ptn_string_operand_free(source);
+        return ptn_bool(0);
+    }
+    if (fragment->owner_document == NULL) {
+        ptn_string_operand_free(source);
+        ptn_throw_exception(runtime, "DOMException", "No Modification Allowed Error");
+        return ptn_null();
+    }
+    if (!ptn_xml_fragment_source_is_balanced(source.data, source.len)) {
         ptn_string_operand_free(source);
         return ptn_bool(0);
     }
@@ -71962,6 +72705,13 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         if (argc < 1 || argc > 2) {
             return ptn_dom_throw_count(runtime, method, argc < 1 ? "at least 1 argument" : "at most 2 arguments", argc);
         }
+        int64_t options = 0;
+        if (argc >= 2) {
+            options = ptn_internal_expect_integer_arg(runtime, method, 2, "flags", args[1], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
+        }
         PtnStringOperand path = ptn_internal_expect_string_arg(runtime, method, 1, "filename", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
             return ptn_null();
@@ -71980,16 +72730,27 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             ptn_throw_exception(runtime, "ValueError", message);
             return ptn_null();
         }
-        char *path_copy = ptn_duplicate_string_len(path.data, path.len);
-        ptn_string_operand_free(path);
-        FILE *schema = fopen(path_copy, "rb");
-        free(path_copy);
-        if (schema == NULL) {
-            ptn_emit_warning(&runtime->diagnostics, ptn_ascii_case_equal(name, "schemaValidate") ? "DOMDocument::schemaValidate(): Invalid Schema" : "DOMDocument::relaxNGValidate(): Invalid RelaxNG", line);
+        if (path.len > 4096) {
+            ptn_string_operand_free(path);
+            ptn_dom_emit_validation_warning(runtime, method, ptn_ascii_case_equal(name, "schemaValidate") ? "Invalid Schema file source" : "Invalid RelaxNG file source", line);
             return ptn_bool(0);
         }
-        fclose(schema);
-        return ptn_bool(ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        char *path_copy = ptn_duplicate_string_len(path.data, path.len);
+        ptn_string_operand_free(path);
+        unsigned char *schema = NULL;
+        size_t schema_len = 0;
+        int read_result = ptn_read_file_bytes(path_copy, &schema, &schema_len);
+        if (read_result <= 0) {
+            ptn_dom_emit_validation_warning(runtime, method, ptn_ascii_case_equal(name, "schemaValidate") ? "Invalid Schema" : "Invalid RelaxNG", line);
+            free(path_copy);
+            return ptn_bool(0);
+        }
+        PtnValue result = ptn_ascii_case_equal(name, "schemaValidate")
+            ? ptn_dom_schema_validation_result(runtime, ptn_xml_node_data(receiver), method, (const char *)schema, schema_len, path_copy, options, line)
+            : ptn_dom_relaxng_validation_result(runtime, ptn_xml_node_data(receiver), method, (const char *)schema, schema_len, line);
+        free(schema);
+        free(path_copy);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "schemaValidateSource") ||
         ptn_ascii_case_equal(name, "relaxNGValidateSource")) {
@@ -71998,6 +72759,13 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             : "DOMDocument::relaxNGValidateSource";
         if (argc < 1 || argc > 2) {
             return ptn_dom_throw_count(runtime, method, argc < 1 ? "at least 1 argument" : "at most 2 arguments", argc);
+        }
+        int64_t options = 0;
+        if (argc >= 2) {
+            options = ptn_internal_expect_integer_arg(runtime, method, 2, "flags", args[1], line);
+            if (runtime->exceptions->active_exception != NULL) {
+                return ptn_null();
+            }
         }
         PtnStringOperand source = ptn_internal_expect_string_arg(runtime, method, 1, "source", args[0], line);
         if (runtime->exceptions->active_exception != NULL) {
@@ -72010,13 +72778,11 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
             ptn_throw_exception(runtime, "ValueError", message);
             return ptn_null();
         }
-        int looks_like_schema = memchr(source.data, '<', source.len) != NULL;
+        PtnValue result = ptn_ascii_case_equal(name, "schemaValidateSource")
+            ? ptn_dom_schema_validation_result(runtime, ptn_xml_node_data(receiver), method, source.data, source.len, NULL, options, line)
+            : ptn_dom_relaxng_validation_result(runtime, ptn_xml_node_data(receiver), method, source.data, source.len, line);
         ptn_string_operand_free(source);
-        if (!looks_like_schema) {
-            ptn_emit_warning(&runtime->diagnostics, ptn_ascii_case_equal(name, "schemaValidateSource") ? "DOMDocument::schemaValidateSource(): Invalid Schema" : "DOMDocument::relaxNGValidateSource(): Invalid RelaxNG", line);
-            return ptn_bool(0);
-        }
-        return ptn_bool(ptn_xml_document_element(ptn_xml_node_data(receiver)) != NULL);
+        return result;
     }
     if (ptn_ascii_case_equal(name, "xinclude")) {
         if (argc > 1) {
@@ -72042,6 +72808,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
         PtnXmlNode *result = ptn_ascii_case_equal(name, "importNode")
             ? ptn_xml_clone_node_recursive(runtime, source, argc >= 2 && ptn_is_truthy(args[1]))
             : source;
+        if (ptn_ascii_case_equal(name, "importNode") && result != NULL && result->type == PTN_XML_NODE_ATTRIBUTE) {
+            ptn_dom_attribute_bind_namespace_on_element(runtime, ptn_xml_document_element(target_doc), result);
+        }
         if (ptn_ascii_case_equal(name, "adoptNode")) {
             ptn_xml_detach_node(result);
         }
@@ -72050,6 +72819,9 @@ static PTN_UNUSED PtnValue ptn_dom_call_method(
     }
     if (ptn_ascii_case_equal(name, "setAttribute") || ptn_ascii_case_equal(name, "setAttributeNS")) {
         return ptn_dom_set_attribute_method(runtime, receiver, ptn_ascii_case_equal(name, "setAttributeNS") ? "DOMElement::setAttributeNS" : "DOMElement::setAttribute", argc, args, line, ptn_ascii_case_equal(name, "setAttributeNS"));
+    }
+    if (ptn_ascii_case_equal(name, "setAttributeNodeNS")) {
+        return ptn_dom_set_attribute_node_ns_method(runtime, receiver, argc, args);
     }
     if (ptn_ascii_case_equal(name, "appendData") ||
         ptn_ascii_case_equal(name, "insertData") ||
@@ -72926,6 +73698,7 @@ static int ptn_dom_method_exists(const char *class_name, const char *method_name
     if (ptn_ascii_case_equal(class_name, "DOMElement")) {
         return ptn_ascii_case_equal(method_name, "setAttribute")
             || ptn_ascii_case_equal(method_name, "setAttributeNS")
+            || ptn_ascii_case_equal(method_name, "setAttributeNodeNS")
             || ptn_ascii_case_equal(method_name, "hasAttribute")
             || ptn_ascii_case_equal(method_name, "hasAttributeNS")
             || ptn_ascii_case_equal(method_name, "getAttribute")

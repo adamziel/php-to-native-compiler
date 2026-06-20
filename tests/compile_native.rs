@@ -28309,6 +28309,14 @@ echo $html->saveHTML();
 var_dump($html->saveHTMLFile($savedHtmlFile) > 0);
 echo file_get_contents($savedHtmlFile);
 
+$schemaDoc = new DOMDocument();
+$schemaDoc->loadXML('<books><book><title>T</title><author>A</author></book><book is-hardback="true"><title>U</title><author>B</author></book></books>');
+$xsd = '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="books"><xs:complexType><xs:sequence><xs:element name="book" maxOccurs="unbounded"><xs:complexType><xs:sequence><xs:element name="title" type="xs:string"/><xs:element name="author" type="xs:string"/></xs:sequence><xs:attribute name="is-hardback" type="xs:boolean" default="false"/></xs:complexType></xs:element></xs:sequence></xs:complexType></xs:element></xs:schema>';
+var_dump($schemaDoc->schemaValidateSource($xsd, LIBXML_SCHEMA_CREATE));
+foreach ($schemaDoc->getElementsByTagName('book') as $book) {{
+    var_dump($book->getAttribute('is-hardback'));
+}}
+
 try {{
     $doc->load('');
 }} catch (ValueError $exception) {{
@@ -28365,6 +28373,9 @@ try {{
             "bool(true)\n",
             "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.0 Transitional//EN\" \"http://www.w3.org/TR/REC-html40/loose.dtd\">\n",
             "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body><p>a<br></p></body></html>\n",
+            "bool(true)\n",
+            "string(5) \"false\"\n",
+            "string(4) \"true\"\n",
             "DOMDocument::load(): Argument #1 ($filename) must not be empty\n",
         )
     );
@@ -28402,6 +28413,14 @@ var_dump(
     $attributes->getNamedItem('b:flag')->nodeValue,
     $attributes->getNamedItemNS('urn:b', 'flag')->nodeName
 );
+
+$detachedDoc = new DOMDocument();
+$detachedRoot = $detachedDoc->createElement('detached');
+$detachedDoc->appendChild($detachedRoot);
+$detachedAttr = $detachedRoot->setAttribute('category', 'books');
+$detachedDoc->removeChild($detachedRoot);
+$detachedRoot = null;
+var_dump($detachedAttr->ownerElement);
 
 $copy = clone $doc;
 $copyItem = $copy->documentElement->firstElementChild;
@@ -28452,6 +28471,7 @@ var_dump($detachedAttr->ownerElement);
             "string(6) \"b:flag\"\n",
             "string(1) \"v\"\n",
             "string(6) \"b:flag\"\n",
+            "NULL\n",
             "string(5) \"Ctext\"\n",
             "<?xml version=\"1.0\"?>\n",
             "<root xmlns:a=\"urn:a\" xmlns:b=\"urn:b\" b:flag=\"v\"><item id=\"one\">Ctext</item></root>\n",
