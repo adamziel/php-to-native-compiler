@@ -1265,6 +1265,7 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_metadata_key(
 }
 
 static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
 static PTN_UNUSED int ptn_internal_xml_reader_has_current(PtnObject *object);
 static PTN_UNUSED int ptn_internal_xml_property_read(
     PtnRuntime *runtime,
@@ -1273,6 +1274,7 @@ static PTN_UNUSED int ptn_internal_xml_property_read(
     size_t line,
     PtnValue *value_out
 );
+#endif
 
 static const char *const PTN_XML_READER_VAR_DUMP_PROPERTIES[] = {
     "attributeCount",
@@ -1298,17 +1300,28 @@ static int ptn_object_is_xml_reader_instance(PtnObject *object) {
 }
 
 static size_t ptn_xml_reader_var_dump_virtual_property_count(PtnObject *object) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    return 0;
+#else
     if (!ptn_object_is_xml_reader_instance(object)) {
         return 0;
     }
     return ptn_internal_xml_reader_has_current(object)
         ? sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0])
         : (sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0])) - 1;
+#endif
 }
 
 static int ptn_xml_reader_var_dump_should_skip_property(PtnObject *object, const char *property) {
+#ifndef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+    (void)object;
+    (void)property;
+    return 0;
+#else
     return ptn_ascii_case_equal(property, "isEmptyElement") &&
         !ptn_internal_xml_reader_has_current(object);
+#endif
 }
 
 static PtnValue ptn_xml_reader_var_dump_receiver(PtnObject *object) {
@@ -1732,26 +1745,32 @@ static PTN_UNUSED void ptn_direct_value_var_dump_object_initialized_properties(
         ptn_direct_value_var_dump_object_metadata_key(runtime, metadata);
         ptn_direct_value_var_dump_value_indented(runtime, entry->value, indent + 1, seen);
     }
-    if (!ptn_object_is_xml_reader_instance(object)) {
-        return;
-    }
-    PtnValue receiver = ptn_xml_reader_var_dump_receiver(object);
-    size_t property_count = sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0]);
-    for (size_t i = 0; i < property_count; i++) {
-        const char *property = PTN_XML_READER_VAR_DUMP_PROPERTIES[i];
-        if (ptn_xml_reader_var_dump_should_skip_property(object, property)) {
-            continue;
-        }
-        PtnValue value = ptn_null();
-        if (!ptn_internal_xml_property_read(runtime, receiver, property, 0, &value) ||
-            (runtime != NULL && runtime->exceptions->active_exception != NULL)) {
+    if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        PtnValue receiver = ptn_xml_reader_var_dump_receiver(object);
+        size_t property_count = sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0]);
+        for (size_t i = 0; i < property_count; i++) {
+            const char *property = PTN_XML_READER_VAR_DUMP_PROPERTIES[i];
+            if (ptn_xml_reader_var_dump_should_skip_property(object, property)) {
+                continue;
+            }
+            PtnValue value = ptn_null();
+            if (!ptn_internal_xml_property_read(runtime, receiver, property, 0, &value) ||
+                (runtime != NULL && runtime->exceptions->active_exception != NULL)) {
+                ptn_value_destroy(&value);
+                return;
+            }
+            ptn_direct_value_var_dump_indent(runtime, indent + 1);
+            ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", property);
+            ptn_direct_value_var_dump_value_indented(runtime, value, indent + 1, seen);
             ptn_value_destroy(&value);
-            return;
         }
-        ptn_direct_value_var_dump_indent(runtime, indent + 1);
-        ptn_direct_dump_printf(runtime, "[\"%s\"]=>\n", property);
-        ptn_direct_value_var_dump_value_indented(runtime, value, indent + 1, seen);
-        ptn_value_destroy(&value);
+#else
+        (void)runtime;
+        (void)indent;
+        (void)seen;
+#endif
+        return;
     }
 }
 
@@ -1842,9 +1861,12 @@ static PTN_UNUSED void ptn_direct_value_var_dump_value_indented(
             ptn_direct_value_dump_seen_object_pop(seen);
             ptn_direct_value_var_dump_indent(runtime, indent);
             ptn_direct_dump_write_cstr(runtime, "}\n");
-            if (ptn_object_is_xml_reader_instance(object) &&
-                !ptn_internal_xml_reader_has_current(object)) {
-                ptn_xml_reader_throw_no_data_property(runtime);
+            if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+                if (!ptn_internal_xml_reader_has_current(object)) {
+                    ptn_xml_reader_throw_no_data_property(runtime);
+                }
+#endif
             }
             break;
         }
@@ -2770,6 +2792,7 @@ static PTN_UNUSED void ptn_direct_var_dump_object_indented(
         }
     }
     if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         PtnValue receiver = ptn_xml_reader_var_dump_receiver(object);
         size_t virtual_count = sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES) / sizeof(PTN_XML_READER_VAR_DUMP_PROPERTIES[0]);
         for (size_t i = 0; i < virtual_count; i++) {
@@ -2788,13 +2811,21 @@ static PTN_UNUSED void ptn_direct_var_dump_object_indented(
             ptn_direct_var_dump_value_indented(runtime, value, indent + 1, seen);
             ptn_value_destroy(&value);
         }
+#else
+        (void)runtime;
+        (void)indent;
+        (void)seen;
+#endif
     }
     ptn_direct_dump_seen_object_pop(seen);
     ptn_direct_var_dump_indent(runtime, indent);
     ptn_output_write_cstr(runtime, "}\n");
-    if (ptn_object_is_xml_reader_instance(object) &&
-        !ptn_internal_xml_reader_has_current(object)) {
+    if (ptn_object_is_xml_reader_instance(object)) {
+#ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
+        if (!ptn_internal_xml_reader_has_current(object)) {
         ptn_xml_reader_throw_no_data_property(runtime);
+        }
+#endif
     }
 }
 
