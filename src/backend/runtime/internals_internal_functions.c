@@ -58558,6 +58558,7 @@ static PtnValue ptn_defined_constants_libxml_table(void) {
 }
 
 static void ptn_defined_constants_add_xml(PtnValue table) {
+    ptn_get_defined_constants_add_int(table, "DOM_INVALID_CHARACTER_ERR", 5);
     ptn_get_defined_constants_add_int(table, "XML_OPTION_CASE_FOLDING", 1);
     ptn_get_defined_constants_add_int(table, "XML_OPTION_PARSE_HUGE", 5);
     ptn_get_defined_constants_add_int(table, "XML_ELEMENT_NODE", 1);
@@ -58884,6 +58885,7 @@ static int ptn_reflection_constant_is_libxml(const char *name) {
 
 static int ptn_reflection_constant_is_xml(const char *name) {
     static const char *const names[] = {
+        "DOM_INVALID_CHARACTER_ERR",
         "XML_OPTION_CASE_FOLDING",
         "XML_OPTION_PARSE_HUGE",
         "XML_ELEMENT_NODE",
@@ -65852,6 +65854,49 @@ static PtnXmlNode *ptn_xml_node_alloc(int type, const char *name, const char *va
     return node;
 }
 
+static int ptn_dom_xml_name_start_char(unsigned char byte) {
+    return isalpha(byte) || byte == '_' || byte == ':';
+}
+
+static int ptn_dom_xml_name_char(unsigned char byte) {
+    return ptn_dom_xml_name_start_char(byte) || isdigit(byte) || byte == '-' || byte == '.';
+}
+
+static int ptn_dom_valid_xml_name(PtnStringOperand name) {
+    if (name.len == 0 || !ptn_dom_xml_name_start_char((unsigned char)name.data[0])) {
+        return 0;
+    }
+    for (size_t i = 1; i < name.len; i++) {
+        if (!ptn_dom_xml_name_char((unsigned char)name.data[i])) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void ptn_dom_throw_invalid_character(PtnRuntime *runtime, size_t line) {
+    char *message = ptn_duplicate_string("Invalid Character Error");
+    PtnValue previous = ptn_exception_previous_or_active(runtime, ptn_null());
+    PtnException *exception = ptn_exception_new_owned(
+        runtime,
+        "DOMException",
+        message,
+        strlen(message),
+        5,
+        previous,
+        PTN_E_ERROR,
+        runtime->source_path,
+        line
+    );
+    ptn_exception_free(runtime->exceptions->active_exception);
+    runtime->exceptions->active_exception = exception;
+    if (runtime->exceptions->try_frame != NULL) {
+        longjmp(runtime->exceptions->try_frame->jump, 1);
+    }
+    ptn_emit_uncaught_exception(runtime, runtime->exceptions->active_exception);
+    exit(255);
+}
+
 static PtnXmlNode *ptn_xml_node_data(PtnValue value) {
     value = ptn_value_deref(value);
     if (value.type != PTN_OBJECT || value.as.object->native_data == NULL) {
@@ -67060,6 +67105,26 @@ static PTN_UNUSED PtnValue ptn_dom_new(
         ptn_xml_node_ensure_object(runtime, node);
         return ptn_xml_node_value(node);
     }
+    if (ptn_ascii_case_equal(canonical, "DOMEntityReference")) {
+        if (argc != 1) {
+            return ptn_dom_throw_count(runtime, "DOMEntityReference::__construct", "exactly 1 argument", argc);
+        }
+        PtnStringOperand name = ptn_internal_expect_string_arg(runtime, "DOMEntityReference::__construct", 1, "name", args[0], line);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        if (!ptn_dom_valid_xml_name(name)) {
+            ptn_string_operand_free(name);
+            ptn_dom_throw_invalid_character(runtime, line);
+            return ptn_null();
+        }
+        char *name_copy = ptn_duplicate_string_len(name.data, name.len);
+        PtnXmlNode *node = ptn_xml_node_alloc(PTN_XML_NODE_ENTITY_REFERENCE, name_copy, "");
+        free(name_copy);
+        ptn_string_operand_free(name);
+        ptn_xml_node_ensure_object(runtime, node);
+        return ptn_xml_node_value(node);
+    }
     return ptn_object_new_shell(runtime, canonical);
 }
 
@@ -67238,6 +67303,11 @@ static PtnValue ptn_dom_create_named_node_method(PtnRuntime *runtime, PtnValue r
     const char *first_arg_name = type == PTN_XML_NODE_PROCESSING_INSTRUCTION ? "target" : "name";
     PtnStringOperand name = ptn_internal_expect_string_arg(runtime, method_name, 1, first_arg_name, args[0], line);
     if (runtime->exceptions->active_exception != NULL) {
+        return ptn_null();
+    }
+    if (!ptn_dom_valid_xml_name(name)) {
+        ptn_string_operand_free(name);
+        ptn_dom_throw_invalid_character(runtime, line);
         return ptn_null();
     }
     PtnStringOperand data = argc >= 2
