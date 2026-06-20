@@ -2,8 +2,8 @@
 
 | field | value |
 | --- | --- |
-| last refresh | 2026-06-20T01:07:05Z |
-| source commit | `6248c978d6ee` |
+| last refresh | 2026-06-20T01:11:18Z |
+| source commit | `0b559c961560` |
 | php-src revision | `8c63ec400ce8e07c57a8d9499317b96a8beafb8b` |
 | upstream PHPT corpus | `php-src@8c63ec400ce8e07c57a8d9499317b96a8beafb8b (21867 PHPT tests)` |
 | evidence source | `tools/status-dashboard-features.tsv` |
@@ -14,62 +14,22 @@
 | metric | tests |
 | --- | ---: |
 | ported tests | 21867 |
-| passed tests | 6458 |
+| passed tests | 8937 |
 | upstream tests | 21867 |
 
 ## Recent Progress
 
 | window | newly passed tests |
 | --- | ---: |
-| latest hour (2026-06-20T01:00Z) | 0 |
-| last 24 hours (2026-06-19T02:00Z - 2026-06-20T01:00Z) | 0 |
-| last 7 days (2026-06-13T02:00Z - 2026-06-20T01:00Z) | 0 |
+| latest hour (2026-06-20T01:00Z) | 2479 |
+| last 24 hours (2026-06-19T02:00Z - 2026-06-20T01:00Z) | 2479 |
+| last 7 days (2026-06-13T02:00Z - 2026-06-20T01:00Z) | 2479 |
 
 ## Feature Table
 
 | feature | ported tests | passed tests | upstream tests |
 | --- | ---: | ---: | ---: |
-| full PHPT corpus sharded partial snapshot | 21867 | 6458 | 21867 |
-| hourly history retained 2026-06-18T09:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T10:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T11:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T12:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T13:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T14:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T15:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T16:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T17:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T18:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T19:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T20:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T21:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T22:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-18T23:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T00:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T01:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T02:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T03:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T04:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T05:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T06:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T07:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T08:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T09:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T10:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T11:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T12:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T13:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T14:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T15:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T16:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T17:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T18:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T19:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T20:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T21:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T22:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-19T23:00Z | 0 | 0 | 0 |
-| hourly history retained 2026-06-20T00:00Z | 0 | 0 | 0 |
+| full PHPT corpus sharded raw loop | 21867 | 8937 | 21867 |
 
 ## Last 7 Days
 
@@ -242,4 +202,4 @@
 | 2026-06-19T22:00Z | 0 | 6458 |
 | 2026-06-19T23:00Z | 0 | 6458 |
 | 2026-06-20T00:00Z | 0 | 6458 |
-| 2026-06-20T01:00Z | 0 | 6458 |
+| 2026-06-20T01:00Z | 2479 | 8937 |
