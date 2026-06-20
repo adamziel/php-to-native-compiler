@@ -3606,15 +3606,6 @@ static PTN_UNUSED void ptn_resource_retain(PtnResource *resource) {
     if (resource == NULL) {
         return;
     }
-    resource->closed = 1;
-    if (resource->persistent) {
-        resource->stream = NULL;
-        resource->memory_stream = NULL;
-#if !defined(_WIN32)
-        resource->directory = NULL;
-#endif
-        return;
-    }
     if (resource->refcount == SIZE_MAX) {
         ptn_abort_out_of_memory();
     }
@@ -3625,7 +3616,13 @@ static PTN_UNUSED void ptn_resource_close(PtnResource *resource) {
     if (resource == NULL) {
         return;
     }
+    resource->closed = 1;
     if (resource->persistent) {
+        resource->stream = NULL;
+        resource->memory_stream = NULL;
+#if !defined(_WIN32)
+        resource->directory = NULL;
+#endif
         return;
     }
     if (resource->stream != NULL) {
