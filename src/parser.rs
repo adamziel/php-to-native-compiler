@@ -129,6 +129,7 @@ fn parse_with_options(
         allow_unscoped_relative_types: 0,
         return_by_ref_stack: Vec::new(),
         property_hook_body_depth: 0,
+        active_property_hook_scope: None,
         strict_types: false,
         strict_types_declare_allowed: true,
         compiler_halt_offset,
@@ -170,6 +171,7 @@ struct Parser<'a> {
     allow_unscoped_relative_types: usize,
     return_by_ref_stack: Vec<bool>,
     property_hook_body_depth: usize,
+    active_property_hook_scope: Option<ActivePropertyHookScope>,
     strict_types: bool,
     strict_types_declare_allowed: bool,
     compiler_halt_offset: Option<i64>,
@@ -183,6 +185,12 @@ struct ActiveTypeScope {
     class_name: String,
     parent_name: Option<String>,
     allow_unresolved_parent: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ActivePropertyHookScope {
+    property_name: String,
+    hook_name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3324,7 +3332,10 @@ impl Parser<'_> {
                     hooks.get_span = Some(token.span);
                     if matches!(self.peek().kind, TokenKind::DoubleArrow) {
                         self.advance();
-                        let value = self.parse_expr()?;
+                        let value =
+                            self.with_property_hook_body_context(property_name, "get", |parser| {
+                                parser.parse_expr()
+                            })?;
                         let uses_backing_property = expr_uses_this_property(&value, property_name);
                         self.expect_semicolon()?;
                         hooks.has_get = true;
@@ -3376,7 +3387,7 @@ impl Parser<'_> {
                             if !is_abstract_hook && matches!(self.peek().kind, TokenKind::LeftBrace)
                             {
                                 let (body, uses_backing_property) =
-                                    self.parse_property_hook_statement_body(property_name)?;
+                                    self.parse_property_hook_statement_body(property_name, "get")?;
                                 hooks.get_body = Some(body);
                                 if uses_backing_property {
                                     hooks.is_virtual = false;
@@ -3406,7 +3417,7 @@ impl Parser<'_> {
                         hooks.get_is_abstract = is_abstract_hook;
                         if !is_abstract_hook && matches!(self.peek().kind, TokenKind::LeftBrace) {
                             let (body, uses_backing_property) =
-                                self.parse_property_hook_statement_body(property_name)?;
+                                self.parse_property_hook_statement_body(property_name, "get")?;
                             hooks.get_body = Some(body);
                             if uses_backing_property {
                                 hooks.is_virtual = false;
@@ -3449,7 +3460,28 @@ impl Parser<'_> {
                     hooks.has_set = true;
                     hooks.set_is_abstract = is_abstract_hook;
                     if !is_abstract_hook {
-                        if let Some((value, uses_backing_property)) =
+                        if matches!(self.peek().kind, TokenKind::DoubleArrow) {
+                            self.advance();
+                            let value = self.with_property_hook_body_context(
+                                property_name,
+                                "set",
+                                |parser| parser.parse_expr(),
+                            )?;
+                            let uses_backing_property =
+                                expr_uses_this_property(&value, property_name);
+                            self.expect_semicolon()?;
+                            if uses_backing_property {
+                                hooks.is_virtual = false;
+                                let span = value.span();
+                                hooks.set_body = Some(vec![Statement::Expression {
+                                    expression: value,
+                                    span,
+                                }]);
+                            } else {
+                                hooks.set_value = Some(value);
+                            }
+                            hooks.set_parameter_name = Some(set_parameter_name);
+                        } else if let Some((value, uses_backing_property)) =
                             self.parse_simple_property_hook_set_body(property_name)
                         {
                             if uses_backing_property {
@@ -3466,7 +3498,7 @@ impl Parser<'_> {
                             }
                         } else if matches!(self.peek().kind, TokenKind::LeftBrace) {
                             let (body, uses_backing_property) =
-                                self.parse_property_hook_statement_body(property_name)?;
+                                self.parse_property_hook_statement_body(property_name, "set")?;
                             hooks.set_body = Some(body);
                             hooks.set_parameter_name = Some(set_parameter_name);
                             if uses_backing_property {
@@ -3522,7 +3554,9 @@ impl Parser<'_> {
         let saved_block_depth = self.block_depth;
         self.advance();
         self.advance();
-        let value = match self.parse_expr() {
+        let value = match self
+            .with_property_hook_body_context(property_name, "get", |parser| parser.parse_expr())
+        {
             Ok(value) => value,
             Err(_) => {
                 self.index = saved_index;
@@ -3551,7 +3585,9 @@ impl Parser<'_> {
         let saved_index = self.index;
         let saved_block_depth = self.block_depth;
         self.advance();
-        let value = match self.parse_expr() {
+        let value = match self
+            .with_property_hook_body_context(property_name, "set", |parser| parser.parse_expr())
+        {
             Ok(value) => value,
             Err(_) => {
                 self.index = saved_index;
@@ -3575,13 +3611,33 @@ impl Parser<'_> {
     fn parse_property_hook_statement_body(
         &mut self,
         property_name: &str,
+        hook_name: &str,
     ) -> Result<(Vec<Statement>, bool)> {
-        self.property_hook_body_depth += 1;
-        let body = self.parse_block();
-        self.property_hook_body_depth -= 1;
+        let body = self.with_property_hook_body_context(property_name, hook_name, |parser| {
+            parser.parse_block()
+        });
         let body = body?;
         let uses_backing_property = statements_use_this_property(&body, property_name);
         Ok((body, uses_backing_property))
+    }
+
+    fn with_property_hook_body_context<T>(
+        &mut self,
+        property_name: &str,
+        hook_name: &str,
+        parse: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let saved_depth = self.property_hook_body_depth;
+        let saved_scope = self.active_property_hook_scope.clone();
+        self.property_hook_body_depth += 1;
+        self.active_property_hook_scope = Some(ActivePropertyHookScope {
+            property_name: property_name.to_string(),
+            hook_name: hook_name.to_string(),
+        });
+        let result = parse(self);
+        self.property_hook_body_depth = saved_depth;
+        self.active_property_hook_scope = saved_scope;
+        result
     }
 
     fn parse_property_hook_set_parameters(
@@ -7268,26 +7324,61 @@ impl Parser<'_> {
                         ..
                     } = &expr
                     {
-                        if class_name.eq_ignore_ascii_case("parent")
-                            && literal_name.as_ref().is_some_and(|name| {
-                                name.eq_ignore_ascii_case("get") || name.eq_ignore_ascii_case("set")
-                            })
-                        {
+                        if let Some(hook_name) = literal_name.as_ref().filter(|name| {
+                            class_name.eq_ignore_ascii_case("parent")
+                                && (name.eq_ignore_ascii_case("get")
+                                    || name.eq_ignore_ascii_case("set"))
+                        }) {
                             if self.active_type_scope.is_none() {
                                 return Err(Diagnostic::new(
                                     "Cannot use \"parent\" when no class scope is active",
                                     Some(start_span),
                                 ));
                             }
-                            if self.property_hook_body_depth == 0 {
+                            let Some(active_hook) = self.active_property_hook_scope.as_ref() else {
                                 return Err(Diagnostic::new(
                                     format!(
                                         "Must not use parent::${property_name}::{}() outside a property hook",
-                                        literal_name.as_ref().expect("hook name checked above")
+                                        hook_name
+                                    ),
+                                    Some(start_span),
+                                ));
+                            };
+                            if active_hook.property_name != *property_name {
+                                return Err(Diagnostic::new(
+                                    format!(
+                                        "Must not use parent::${property_name}::{hook_name}() in a different property (${})",
+                                        active_hook.property_name
                                     ),
                                     Some(start_span),
                                 ));
                             }
+                            if !active_hook.hook_name.eq_ignore_ascii_case(hook_name) {
+                                return Err(Diagnostic::new(
+                                    format!(
+                                        "Must not use parent::${property_name}::{hook_name}() in a different property hook ({})",
+                                        active_hook.hook_name
+                                    ),
+                                    Some(start_span),
+                                ));
+                            }
+                            if self.peek_is_first_class_callable_arguments() {
+                                return Err(Diagnostic::new(
+                                    "Cannot create Closure for parent property hook call",
+                                    Some(member_span),
+                                ));
+                            }
+                            let (arguments, argument_names, argument_unpacks, right_span) =
+                                self.parse_call_arguments()?;
+                            expr = Expr::ParentPropertyHookCall {
+                                property_name: property_name.clone(),
+                                hook_name: hook_name.to_ascii_lowercase(),
+                                arguments,
+                                argument_names,
+                                argument_unpacks,
+                                span: combine_spans(start_span, right_span),
+                            };
+                            continue;
                         }
                     }
                     if self.peek_is_first_class_callable_arguments() {
@@ -7643,6 +7734,7 @@ impl Parser<'_> {
             allow_unscoped_relative_types: self.allow_unscoped_relative_types,
             return_by_ref_stack: self.return_by_ref_stack.clone(),
             property_hook_body_depth: self.property_hook_body_depth,
+            active_property_hook_scope: self.active_property_hook_scope.clone(),
             strict_types: self.strict_types,
             strict_types_declare_allowed: self.strict_types_declare_allowed,
             compiler_halt_offset: None,
@@ -10360,7 +10452,9 @@ fn collect_arrow_captures_from_expr(
             );
             collect_arrow_captures_from_expr(source, exclusions, seen, captures);
         }
-        Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
+        Expr::Call { arguments, .. }
+        | Expr::ParentPropertyHookCall { arguments, .. }
+        | Expr::NewObject { arguments, .. } => {
             for argument in arguments {
                 collect_arrow_captures_from_expr(argument, exclusions, seen, captures);
             }
@@ -16829,7 +16923,9 @@ fn validate_control_transfers_in_expr(expr: &Expr) -> Result<()> {
             validate_control_transfers_in_assignment_target(target)?;
             validate_control_transfers_in_expr(source)?;
         }
-        Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
+        Expr::Call { arguments, .. }
+        | Expr::ParentPropertyHookCall { arguments, .. }
+        | Expr::NewObject { arguments, .. } => {
             validate_control_transfers_in_exprs(arguments)?;
         }
         Expr::FirstClassCallable { callable, .. } => {
@@ -17346,6 +17442,7 @@ fn expr_array_literal_reference_to_variable(
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
+        | Expr::ParentPropertyHookCall { .. }
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::PropertyFetch { .. }
@@ -17455,6 +17552,7 @@ fn validate_reference_source_expr(source: &Expr) -> Result<()> {
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
+        | Expr::ParentPropertyHookCall { .. }
         | Expr::PropertyFetch { .. }
         | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. } => Ok(()),
@@ -17952,6 +18050,7 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
             arguments.iter().any(expr_contains_yield)
         }
+        Expr::ParentPropertyHookCall { arguments, .. } => arguments.iter().any(expr_contains_yield),
         Expr::DynamicCall {
             callee, arguments, ..
         } => expr_contains_yield(callee) || arguments.iter().any(expr_contains_yield),
@@ -18386,6 +18485,7 @@ fn validate_anonymous_functions_in_expr(expr: &Expr, functions: &[FunctionDecl])
         | Expr::DynamicCall { arguments, .. }
         | Expr::MethodCall { arguments, .. }
         | Expr::DynamicMethodCall { arguments, .. }
+        | Expr::ParentPropertyHookCall { arguments, .. }
         | Expr::NewObject { arguments, .. } => {
             for argument in arguments {
                 validate_anonymous_functions_in_expr(argument, functions)?;
@@ -20469,7 +20569,10 @@ fn unset_array_dim_target_from_expr(expr: Expr) -> Result<UnsetTarget> {
 
 fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTarget> {
     let target = assignment_target_from_expr(expr).map_err(|diagnostic| {
-        if is_nullsafe_write_context_diagnostic(&diagnostic) {
+        if is_nullsafe_write_context_diagnostic(&diagnostic)
+            || diagnostic.message == "Can't use function return value in write context"
+            || diagnostic.message == "Can't use method return value in write context"
+        {
             diagnostic
         } else {
             Diagnostic::new(
@@ -20736,9 +20839,12 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             "Can't use function return value in write context",
             Some(span),
         )),
-        Expr::MethodCall { span, .. } | Expr::DynamicMethodCall { span, .. } => Err(
-            Diagnostic::new("Can't use method return value in write context", Some(span)),
-        ),
+        Expr::MethodCall { span, .. }
+        | Expr::DynamicMethodCall { span, .. }
+        | Expr::ParentPropertyHookCall { span, .. } => Err(Diagnostic::new(
+            "Can't use method return value in write context",
+            Some(span),
+        )),
         Expr::Grouped { expr, .. } => assignment_target_from_expr(*expr),
         other => Err(Diagnostic::new(
             "unsupported assignment target",
@@ -21410,6 +21516,11 @@ fn reject_standalone_list_expr(expr: &Expr) -> Result<()> {
                 reject_standalone_list_expr(argument)?;
             }
         }
+        Expr::ParentPropertyHookCall { arguments, .. } => {
+            for argument in arguments {
+                reject_standalone_list_expr(argument)?;
+            }
+        }
         Expr::MethodCall {
             receiver,
             arguments,
@@ -21583,6 +21694,11 @@ fn reject_append_array_read(expr: &Expr) -> Result<()> {
         Expr::Assign { value, .. } => reject_append_array_read(value)?,
         Expr::AssignRef { source, .. } => reject_append_array_read(source)?,
         Expr::Call { .. } => {}
+        Expr::ParentPropertyHookCall { arguments, .. } => {
+            for argument in arguments {
+                reject_append_array_read(argument)?;
+            }
+        }
         Expr::FirstClassCallable { callable, .. } => reject_append_array_read(callable)?,
         Expr::DynamicCall { callee, .. } => {
             reject_append_array_read(callee)?;
@@ -22267,6 +22383,7 @@ fn is_supported_global_const_expr_with_options(
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
+        | Expr::ParentPropertyHookCall { .. }
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
@@ -22790,6 +22907,16 @@ fn expr_uses_this_property(expr: &Expr, property_name: &str) -> bool {
                 || expr_uses_this_property(source, property_name)
         }
         Expr::IncDec { target, .. } => inc_dec_target_uses_this_property(target, property_name),
+        Expr::ParentPropertyHookCall {
+            property_name: hook_property_name,
+            arguments,
+            ..
+        } => {
+            hook_property_name == property_name
+                || arguments
+                    .iter()
+                    .any(|argument| expr_uses_this_property(argument, property_name))
+        }
         Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => arguments
             .iter()
             .any(|argument| expr_uses_this_property(argument, property_name)),
@@ -23392,6 +23519,7 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
+        | Expr::ParentPropertyHookCall { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
         | Expr::PropertyFetch { .. }
@@ -23533,6 +23661,7 @@ fn validate_class_scoped_constant_expr(expr: &Expr, parent_name: Option<&str>) -
         | Expr::DynamicCall { .. }
         | Expr::MethodCall { .. }
         | Expr::DynamicMethodCall { .. }
+        | Expr::ParentPropertyHookCall { .. }
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }

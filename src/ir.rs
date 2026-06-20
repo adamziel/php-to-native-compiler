@@ -679,6 +679,14 @@ pub enum ValueExpr {
         name: String,
         line: usize,
     },
+    ParentPropertyHookCall {
+        property_name: String,
+        hook_name: String,
+        arguments: Vec<ValueExpr>,
+        argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
+        line: usize,
+    },
     DynamicStaticPropertyFetch {
         receiver: Box<ValueExpr>,
         name: String,
@@ -3191,6 +3199,7 @@ fn expr_contains_yield(expr: &Expr) -> bool {
         | Expr::MagicConstant(_, _)
         | Expr::StaticPropertyFetch { .. }
         | Expr::ClassConstantFetch { .. } => false,
+        Expr::ParentPropertyHookCall { arguments, .. } => arguments.iter().any(expr_contains_yield),
         Expr::DynamicStaticPropertyFetch { receiver, .. } => expr_contains_yield(receiver),
         Expr::DynamicClassConstantFetch { receiver, name, .. } => {
             receiver
@@ -4117,6 +4126,24 @@ impl<'a> LoweringContext<'a> {
                 name: name.clone(),
                 line: span.line,
             },
+            Expr::ParentPropertyHookCall {
+                property_name,
+                hook_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                span,
+            } => ValueExpr::ParentPropertyHookCall {
+                property_name: property_name.clone(),
+                hook_name: hook_name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.lower_expr(argument))
+                    .collect(),
+                argument_names: argument_names.clone(),
+                argument_unpacks: argument_unpacks.clone(),
+                line: span.line,
+            },
             Expr::DynamicStaticPropertyFetch {
                 receiver,
                 name,
@@ -4587,6 +4614,15 @@ fn assertion_expr_text(expr: &Expr) -> String {
         Expr::StaticPropertyFetch {
             class_name, name, ..
         } => format!("{class_name}::${name}"),
+        Expr::ParentPropertyHookCall {
+            property_name,
+            hook_name,
+            arguments,
+            ..
+        } => format!(
+            "parent::${property_name}::{hook_name}({})",
+            assertion_argument_list_text(arguments)
+        ),
         Expr::DynamicStaticPropertyFetch { receiver, name, .. } => {
             format!("{}::${name}", assertion_expr_text(receiver))
         }

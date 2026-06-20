@@ -1573,6 +1573,26 @@ fn phpt_classifier_keeps_supported_property_hook_contract_rows_runnable_by_path(
             "--TEST--\nparent hook parse context\n--FILE--\n<?php\nclass B { protected mixed $x; }\nclass C extends B { protected mixed $x { set { parent::$x::set(1); } } }\n--EXPECT--\n",
         ),
         (
+            "Zend/tests/property_hooks/parent_get.phpt",
+            "--TEST--\nparent hook get\n--FILE--\n<?php\nclass B { public mixed $x { get => 42; } }\nclass C extends B { public mixed $x { get => parent::$x::get(); } }\nvar_dump((new C())->x);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/parent_get_ci.phpt",
+            "--TEST--\nparent hook get case-insensitive\n--FILE--\n<?php\nclass B { public mixed $x { get => 42; } }\nclass C extends B { public mixed $x { get => PARENT::$x::GET(); } }\nvar_dump((new C())->x);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/parent_set_plain_zpp.phpt",
+            "--TEST--\nparent hook set\n--FILE--\n<?php\nclass B { public mixed $x { set { $this->x = $value; } } }\nclass C extends B { public mixed $x { set { parent::$x::set($value); } } }\n$c = new C(); $c->x = 42; var_dump($c->x);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/parent_superfluous_args.phpt",
+            "--TEST--\nparent hook extra args\n--FILE--\n<?php\nclass B { public mixed $x { get => 42; } }\nclass C extends B { public mixed $x { get => parent::$x::get(1); } }\nvar_dump((new C())->x);\n--EXPECT--\nint(42)\n",
+        ),
+        (
+            "Zend/tests/property_hooks/parent_syntax.phpt",
+            "--TEST--\nparent hook syntax\n--FILE--\n<?php\nclass B { public mixed $x { get => 42; } }\nclass C extends B { public mixed $x { get => parent::$x::get(); } }\nvar_dump((new C())->x);\n--EXPECT--\nint(42)\n",
+        ),
+        (
             "Zend/tests/property_hooks/explicit_iter.phpt",
             "--TEST--\nexplicit iterator with hooks\n--FILE--\n<?php\nclass Test implements IteratorAggregate { public $prop { get { return 42; } } public function getIterator(): Traversable { yield 1; } }\n--EXPECT--\n",
         ),

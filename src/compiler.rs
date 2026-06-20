@@ -726,7 +726,9 @@ impl IncludeCollector {
             Expr::IncDec { target, .. } => {
                 self.collect_inc_dec_target(target, source_file, source_dir)
             }
-            Expr::Call { arguments, .. } | Expr::NewObject { arguments, .. } => {
+            Expr::Call { arguments, .. }
+            | Expr::ParentPropertyHookCall { arguments, .. }
+            | Expr::NewObject { arguments, .. } => {
                 self.collect_exprs(arguments, source_file, source_dir)
             }
             Expr::DynamicNewObject {

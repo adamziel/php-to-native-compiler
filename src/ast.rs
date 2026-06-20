@@ -959,6 +959,14 @@ pub enum Expr {
         name: String,
         span: SourceSpan,
     },
+    ParentPropertyHookCall {
+        property_name: String,
+        hook_name: String,
+        arguments: Vec<Expr>,
+        argument_names: Vec<Option<String>>,
+        argument_unpacks: Vec<bool>,
+        span: SourceSpan,
+    },
     DynamicStaticPropertyFetch {
         receiver: Box<Expr>,
         name: String,
@@ -1223,6 +1231,7 @@ impl Expr {
             | Expr::NullsafePropertyFetch { span, .. }
             | Expr::DynamicPropertyFetch { span, .. }
             | Expr::StaticPropertyFetch { span, .. }
+            | Expr::ParentPropertyHookCall { span, .. }
             | Expr::DynamicStaticPropertyFetch { span, .. }
             | Expr::ClassConstantFetch { span, .. }
             | Expr::DynamicClassConstantFetch { span, .. }

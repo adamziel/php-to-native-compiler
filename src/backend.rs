@@ -10343,8 +10343,19 @@ fn property_hook_get_has_runtime(property: &crate::ir::PropertyDecl) -> bool {
     property.hook_get_value.is_some() || property.hook_get_body.is_some()
 }
 
+fn property_hook_set_value_is_identity(property: &crate::ir::PropertyDecl) -> bool {
+    let Some(ValueExpr::Load { name, .. }) = property.hook_set_value.as_ref() else {
+        return false;
+    };
+    name == property
+        .hook_set_parameter_name
+        .as_deref()
+        .unwrap_or("value")
+}
+
 fn property_hook_set_has_runtime(property: &crate::ir::PropertyDecl) -> bool {
-    property.hook_set_value.is_some() || property.hook_set_body.is_some()
+    property.hook_set_body.is_some()
+        || (property.hook_set_value.is_some() && !property_hook_set_value_is_identity(property))
 }
 
 fn property_hook_body_mentions_field(body: &[Instruction]) -> bool {
@@ -14555,7 +14566,7 @@ fn property_runtime_declaring_class(
     property: &crate::ir::PropertyDecl,
     classes: &[ClassDecl],
 ) -> String {
-    if property.visibility != PropertyVisibility::Private {
+    if !property.has_hooks && property.visibility != PropertyVisibility::Private {
         if let Some((declaring_class, _)) = inherited_hook_property(class, &property.name, classes)
         {
             return declaring_class.to_string();
@@ -20704,6 +20715,7 @@ fn default_value_type_name(value: &ValueExpr) -> Option<&'static str> {
         | ValueExpr::DynamicCall { .. }
         | ValueExpr::MethodCall { .. }
         | ValueExpr::DynamicMethodCall { .. }
+        | ValueExpr::ParentPropertyHookCall { .. }
         | ValueExpr::NewObject { .. }
         | ValueExpr::DynamicNewObject { .. }
         | ValueExpr::Clone { .. }
@@ -21639,7 +21651,9 @@ fn collect_value_legacy_dollar_brace_deprecations(
         ValueExpr::Throw { value, .. } => {
             collect_value_legacy_dollar_brace_deprecations(value, deprecations);
         }
-        ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
+        ValueExpr::InternalCall { arguments, .. }
+        | ValueExpr::ParentPropertyHookCall { arguments, .. }
+        | ValueExpr::NewObject { arguments, .. } => {
             for argument in arguments {
                 collect_value_legacy_dollar_brace_deprecations(argument, deprecations);
             }
@@ -22547,6 +22561,11 @@ fn collect_value_runtime_requirements(
             }
             requirements.method_dispatch = true;
             requirements.internal_function_dispatch = true;
+        }
+        ValueExpr::ParentPropertyHookCall { arguments, .. } => {
+            for argument in arguments {
+                collect_value_runtime_requirements(argument, functions, requirements);
+            }
         }
         ValueExpr::NewObject {
             class_name,
@@ -24728,7 +24747,8 @@ fn temporary_array_dim_by_ref_argument_path(
             ValueExpr::InternalCall { .. }
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
-            | ValueExpr::DynamicMethodCall { .. } => {
+            | ValueExpr::DynamicMethodCall { .. }
+            | ValueExpr::ParentPropertyHookCall { .. } => {
                 if dimensions.is_empty() {
                     return None;
                 }
@@ -24831,6 +24851,7 @@ fn property_receiver_is_temporary_write_context(value: &ValueExpr) -> bool {
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
             | ValueExpr::DynamicMethodCall { .. }
+            | ValueExpr::ParentPropertyHookCall { .. }
             | ValueExpr::Binary { .. }
             | ValueExpr::Ternary { .. }
             | ValueExpr::Unary { .. }
@@ -25579,6 +25600,7 @@ fn list_reference_source_warns_non_referenceable(value: &ValueExpr) -> bool {
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
             | ValueExpr::DynamicMethodCall { .. }
+            | ValueExpr::ParentPropertyHookCall { .. }
     )
 }
 
@@ -25594,6 +25616,7 @@ fn list_reference_source_fatals_non_referenceable(value: &ValueExpr) -> bool {
             | ValueExpr::DynamicCall { .. }
             | ValueExpr::MethodCall { .. }
             | ValueExpr::DynamicMethodCall { .. }
+            | ValueExpr::ParentPropertyHookCall { .. }
     )
 }
 
@@ -25797,11 +25820,11 @@ fn value_mentions_variable(value: &ValueExpr, name: &str) -> bool {
             .as_ref()
             .is_some_and(|value| value_mentions_variable(value, name)),
         ValueExpr::Throw { value, .. } => value_mentions_variable(value, name),
-        ValueExpr::InternalCall { arguments, .. } | ValueExpr::NewObject { arguments, .. } => {
-            arguments
-                .iter()
-                .any(|argument| value_mentions_variable(argument, name))
-        }
+        ValueExpr::InternalCall { arguments, .. }
+        | ValueExpr::ParentPropertyHookCall { arguments, .. }
+        | ValueExpr::NewObject { arguments, .. } => arguments
+            .iter()
+            .any(|argument| value_mentions_variable(argument, name)),
         ValueExpr::DynamicNewObject {
             class_name,
             arguments,
@@ -26045,6 +26068,7 @@ fn value_expr_runtime_line(value: &ValueExpr) -> Option<usize> {
         | ValueExpr::DynamicCall { line, .. }
         | ValueExpr::MethodCall { line, .. }
         | ValueExpr::DynamicMethodCall { line, .. }
+        | ValueExpr::ParentPropertyHookCall { line, .. }
         | ValueExpr::NewObject { line, .. }
         | ValueExpr::DynamicNewObject { line, .. }
         | ValueExpr::Clone { line, .. }
@@ -26765,6 +26789,7 @@ fn value_expr_uses_this(value: &ValueExpr) -> bool {
         ValueExpr::InternalCall { arguments, .. }
         | ValueExpr::DynamicCall { arguments, .. }
         | ValueExpr::MethodCall { arguments, .. }
+        | ValueExpr::ParentPropertyHookCall { arguments, .. }
         | ValueExpr::NewObject { arguments, .. } => arguments.iter().any(value_expr_uses_this),
         ValueExpr::DynamicMethodCall {
             receiver,
@@ -31097,6 +31122,22 @@ impl ValueEmitter {
                 name,
                 line,
             } => self.emit_static_property_fetch(out, class_name, name, *line),
+            ValueExpr::ParentPropertyHookCall {
+                property_name,
+                hook_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                line,
+            } => self.emit_parent_property_hook_call(
+                out,
+                property_name,
+                hook_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
+            ),
             ValueExpr::DynamicStaticPropertyFetch {
                 receiver,
                 name,
@@ -33705,6 +33746,275 @@ impl ValueEmitter {
         result_temp
     }
 
+    fn modeled_parent_property_hook_runtime(
+        &self,
+        property_name: &str,
+        hook_name: &str,
+    ) -> (Option<String>, Option<String>, bool) {
+        let parent_class_name = self
+            .current_class_name
+            .as_ref()
+            .and_then(|class_name| self.declared_parent_class_name(class_name));
+        let Some(parent_class_name) = parent_class_name else {
+            return (None, None, false);
+        };
+        let property = self
+            .classes
+            .iter()
+            .find(|class| class.name.eq_ignore_ascii_case(&parent_class_name))
+            .and_then(|class| {
+                class
+                    .properties
+                    .iter()
+                    .find(|property| property.name == property_name)
+            });
+        let has_runtime_hook = property.is_some_and(|property| {
+            if hook_name.eq_ignore_ascii_case("get") {
+                property_hook_get_has_runtime(property)
+            } else {
+                property_hook_set_has_runtime(property)
+            }
+        });
+        let set_parameter_name = property.map(|property| {
+            if property_hook_set_has_runtime(property) {
+                property
+                    .hook_set_parameter_name
+                    .clone()
+                    .unwrap_or_else(|| "value".to_string())
+            } else {
+                "value".to_string()
+            }
+        });
+        (
+            Some(parent_class_name),
+            set_parameter_name,
+            has_runtime_hook,
+        )
+    }
+
+    fn emit_parent_property_hook_call(
+        &mut self,
+        out: &mut String,
+        property_name: &str,
+        hook_name: &str,
+        arguments: &[ValueExpr],
+        argument_names: &[Option<String>],
+        argument_unpacks: &[bool],
+        line: usize,
+    ) -> String {
+        let (modeled_parent_class_name, modeled_set_parameter_name, modeled_has_runtime_hook) =
+            self.modeled_parent_property_hook_runtime(property_name, hook_name);
+        let mut argument_temps = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            argument_temps.push(self.emit_materialized_value(out, argument));
+        }
+
+        let result_temp = self.next_temp();
+        let parent_class_temp = self.next_temp();
+        let handled_temp = self.next_temp();
+        let arity_message_temp = self.next_temp();
+        out.push_str("    PtnValue ");
+        out.push_str(&result_temp);
+        out.push_str(" = ptn_null();\n");
+        out.push_str("    const char *");
+        out.push_str(&parent_class_temp);
+        out.push_str("_class_name = NULL;\n");
+        out.push_str("    if (runtime.current_class_name != NULL) {\n");
+        out.push_str("        ");
+        out.push_str(&parent_class_temp);
+        out.push_str("_class_name = ptn_declared_class_parent_name(runtime.current_class_name);\n");
+        out.push_str("    }\n");
+        out.push_str("    if (");
+        out.push_str(&parent_class_temp);
+        out.push_str("_class_name == NULL) {\n");
+        out.push_str("        if (runtime.current_class_name != NULL) {\n");
+        out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use \\\"parent\\\" when current class scope has no parent\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        } else {\n");
+        out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use \\\"parent\\\" in the global scope\", \"");
+        out.push_str(&c_string(&self.source_file));
+        out.push_str("\", ");
+        out.push_str(&line.to_string());
+        out.push_str(");\n");
+        out.push_str("        }\n");
+        out.push_str("    }\n");
+
+        for (index, argument_name) in argument_names.iter().enumerate() {
+            let Some(argument_name) = argument_name else {
+                continue;
+            };
+            let allowed_name = if hook_name.eq_ignore_ascii_case("set") {
+                modeled_set_parameter_name.as_deref()
+            } else {
+                None
+            };
+            if allowed_name.is_some_and(|allowed| allowed == argument_name) {
+                continue;
+            }
+            out.push_str("    if (runtime.exceptions->active_exception == NULL");
+            if modeled_parent_class_name.is_some() {
+                out.push_str(" && ");
+                out.push_str(&parent_class_temp);
+                out.push_str("_class_name != NULL");
+            }
+            out.push_str(") {\n");
+            out.push_str(
+                "        ptn_throw_exception_at(&runtime, \"Error\", \"Unknown named parameter $",
+            );
+            out.push_str(&c_string(argument_name));
+            out.push_str("\", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+            let _ = index;
+            break;
+        }
+
+        if argument_unpacks.iter().any(|unpack| *unpack) {
+            out.push_str("    if (runtime.exceptions->active_exception == NULL) {\n");
+            out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"Cannot use argument unpacking in parent property hook call\", \"");
+            out.push_str(&c_string(&self.source_file));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    }\n");
+        }
+
+        out.push_str("    if (runtime.exceptions->active_exception == NULL && ");
+        out.push_str(&parent_class_temp);
+        out.push_str("_class_name != NULL) {\n");
+        out.push_str("        int ");
+        out.push_str(&handled_temp);
+        out.push_str("_handled = 0;\n");
+        if hook_name.eq_ignore_ascii_case("get") {
+            out.push_str("        ");
+            out.push_str(&handled_temp);
+            out.push_str("_handled = ptn_declared_class_property_hook_get(&runtime, runtime.has_current_receiver ? runtime.current_receiver : ptn_null(), ");
+            out.push_str(&parent_class_temp);
+            out.push_str("_class_name, \"");
+            out.push_str(&c_string(property_name));
+            out.push_str("\", ");
+            out.push_str(&line.to_string());
+            out.push_str(", &");
+            out.push_str(&result_temp);
+            out.push_str(");\n");
+            out.push_str("        if (runtime.exceptions->active_exception == NULL && !");
+            out.push_str(&handled_temp);
+            out.push_str("_handled) {\n");
+            if arguments.is_empty() {
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_read_property(&runtime, runtime.has_current_receiver ? runtime.current_receiver : ptn_null(), \"");
+                out.push_str(&c_string(property_name));
+                out.push_str("\", ");
+                out.push_str(&parent_class_temp);
+                out.push_str("_class_name, ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else {
+                out.push_str("            char ");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message[256];\n");
+                out.push_str("            snprintf(");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message, sizeof(");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message), \"%s::$");
+                out.push_str(&c_string(property_name));
+                out.push_str("::get() expects exactly 0 arguments, ");
+                out.push_str(&arguments.len().to_string());
+                out.push_str(" given\", ");
+                out.push_str(&parent_class_temp);
+                out.push_str("_class_name);\n");
+                out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", ");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message, \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            out.push_str("        }\n");
+        } else {
+            let set_value = argument_temps
+                .first()
+                .map(String::as_str)
+                .unwrap_or("ptn_null()");
+            out.push_str("        ");
+            out.push_str(&handled_temp);
+            out.push_str("_handled = ptn_declared_class_property_hook_set(&runtime, runtime.has_current_receiver ? runtime.current_receiver : ptn_null(), ");
+            out.push_str(&parent_class_temp);
+            out.push_str("_class_name, \"");
+            out.push_str(&c_string(property_name));
+            out.push_str("\", ");
+            out.push_str(set_value);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("        if (runtime.exceptions->active_exception == NULL && ");
+            out.push_str(&handled_temp);
+            out.push_str("_handled) {\n");
+            if let Some(set_value) = argument_temps.first() {
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_value_clone_deref(");
+                out.push_str(set_value);
+                out.push_str(");\n");
+            }
+            out.push_str("        }\n");
+            out.push_str("        if (runtime.exceptions->active_exception == NULL && !");
+            out.push_str(&handled_temp);
+            out.push_str("_handled) {\n");
+            if arguments.len() == 1 {
+                out.push_str("            ");
+                out.push_str(&result_temp);
+                out.push_str(" = ptn_object_write_property(&runtime, runtime.has_current_receiver ? runtime.current_receiver : ptn_null(), \"");
+                out.push_str(&c_string(property_name));
+                out.push_str("\", ");
+                out.push_str(&parent_class_temp);
+                out.push_str("_class_name, ");
+                out.push_str(argument_temps.first().expect("one argument checked above"));
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            } else {
+                out.push_str("            char ");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message[256];\n");
+                out.push_str("            snprintf(");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message, sizeof(");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message), \"%s::$");
+                out.push_str(&c_string(property_name));
+                out.push_str("::set() expects exactly 1 argument, ");
+                out.push_str(&arguments.len().to_string());
+                out.push_str(" given\", ");
+                out.push_str(&parent_class_temp);
+                out.push_str("_class_name);\n");
+                out.push_str("            ptn_throw_exception_at(&runtime, \"Error\", ");
+                out.push_str(&arity_message_temp);
+                out.push_str("_message, \"");
+                out.push_str(&c_string(&self.source_file));
+                out.push_str("\", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+            }
+            out.push_str("        }\n");
+        }
+        out.push_str("    }\n");
+        for argument_temp in argument_temps {
+            emit_value_cleanup(out, "    ", &argument_temp);
+        }
+        let _ = modeled_has_runtime_hook;
+        result_temp
+    }
+
     fn emit_static_property_reference(
         &mut self,
         out: &mut String,
@@ -36168,6 +36478,22 @@ impl ValueEmitter {
                 argument_unpacks,
                 *line,
                 false,
+            )),
+            ValueExpr::ParentPropertyHookCall {
+                property_name,
+                hook_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                line,
+            } => Some(self.emit_parent_property_hook_call(
+                out,
+                property_name,
+                hook_name,
+                arguments,
+                argument_names,
+                argument_unpacks,
+                *line,
             )),
             _ => None,
         }
@@ -39209,7 +39535,8 @@ impl ValueEmitter {
                 ValueExpr::InternalCall { name, .. } => !name.eq_ignore_ascii_case("func_get_args"),
                 ValueExpr::DynamicCall { .. }
                 | ValueExpr::MethodCall { .. }
-                | ValueExpr::DynamicMethodCall { .. } => true,
+                | ValueExpr::DynamicMethodCall { .. }
+                | ValueExpr::ParentPropertyHookCall { .. } => true,
                 _ => false,
             };
             if root_allowed {
