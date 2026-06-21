@@ -13361,6 +13361,14 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
             }
             if (next_segment->append) {
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            } else if (i + 2 == segment_count) {
+                return ptn_runtime_string_offset_set_result(
+                    runtime,
+                    entry_value,
+                    next_segment->value,
+                    value,
+                    line
+                );
             } else {
                 ptn_reject_nested_string_offset_array_access(runtime, next_segment->value, line);
             }
@@ -13575,6 +13583,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
                 return;
             }
+            ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
             ptn_runtime_string_offset_set(runtime, slot_value, segments[1].value, value, line);
             return;
         }
@@ -13585,6 +13594,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
             if (segments[1].append) {
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
             } else {
+                ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
                 ptn_reject_nested_string_offset_array_access(runtime, segments[1].value, line);
             }
             return;
@@ -13648,6 +13658,7 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result_impl(
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
                 return ptn_null();
             }
+            ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
             return ptn_runtime_string_offset_set_result(runtime, slot_value, segments[1].value, value, line);
         }
     }
@@ -13657,6 +13668,7 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result_impl(
             if (segments[1].append) {
                 ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
             } else {
+                ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
                 ptn_reject_nested_string_offset_array_access(runtime, segments[1].value, line);
             }
             return ptn_null();
@@ -13933,11 +13945,13 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
             PtnValue resolved = ptn_value_deref(*slot_value);
             if (resolved.type == PTN_ARRAY) {
                 PtnArray *array = ptn_array_detach_value(slot_value);
+                PtnValue guard_root = ptn_value_clone_deref(*slot_value);
+                uint64_t guarded_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
                 ptn_array_path_set_from_root_after_dimension_eval(
                     runtime,
                     name,
-                    pre_eval_root,
-                    current_epoch,
+                    guard_root,
+                    guarded_epoch,
                     array,
                     segments,
                     segment_count,
@@ -13945,6 +13959,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_after_dimension_eval(
                     line,
                     emit_null_key_deprecation
                 );
+                ptn_value_destroy(&guard_root);
                 return;
             }
         }
@@ -13990,11 +14005,13 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_after_dimension_eva
             PtnValue resolved = ptn_value_deref(*slot_value);
             if (resolved.type == PTN_ARRAY) {
                 PtnArray *array = ptn_array_detach_value(slot_value);
-                return ptn_array_path_set_result_from_root_after_dimension_eval(
+                PtnValue guard_root = ptn_value_clone_deref(*slot_value);
+                uint64_t guarded_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
+                PtnValue result = ptn_array_path_set_result_from_root_after_dimension_eval(
                     runtime,
                     name,
-                    pre_eval_root,
-                    current_epoch,
+                    guard_root,
+                    guarded_epoch,
                     array,
                     segments,
                     segment_count,
@@ -14002,6 +14019,8 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_after_dimension_eva
                     line,
                     emit_null_key_deprecation
                 );
+                ptn_value_destroy(&guard_root);
+                return result;
             }
         }
     }
@@ -14566,6 +14585,7 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
         return;
     }
     if (target_value->type == PTN_STRING && segment_count > 1) {
+        ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
         ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
         return;
     }
@@ -14574,6 +14594,7 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
             ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
             return;
         }
+        ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
         ptn_runtime_string_offset_set(runtime, target_value, segments[0].value, value, line);
         return;
     }
@@ -14684,6 +14705,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
         return ptn_null();
     }
     if (target_value->type == PTN_STRING && segment_count > 1) {
+        ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
         ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
         return ptn_null();
     }
@@ -14692,6 +14714,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
             ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
             return ptn_null();
         }
+        ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
         return ptn_runtime_string_offset_set_result(runtime, target_value, segments[0].value, value, line);
     }
     if (ptn_weak_map_reject_append_offset(runtime, *target_value, &segments[0])) {

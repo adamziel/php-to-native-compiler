@@ -49540,6 +49540,36 @@ var_dump($a);
 }
 
 #[test]
+fn compile_nested_string_offset_write_updates_leaf_after_non_mutating_handler_to_native_binary() {
+    let root = temp_dir("ptn-native-nested-string-offset-write-updates-leaf");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("nested-string-offset-write-updates-leaf.php");
+    let output = root.join("nested-string-offset-write-updates-leaf-bin");
+    fs::write(
+        &input,
+        r#"<?php
+set_error_handler(function($code, $msg) {
+    echo "Err: $msg\n";
+});
+$a = ['a'];
+$a[0][$d] = 'b';
+var_dump($a);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Err: Undefined variable $d\nErr: String offset cast occurred\narray(1) {\n  [0]=>\n  string(1) \"b\"\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_nested_false_array_write_skips_stale_leaf_key_after_handler_to_native_binary() {
     let root = temp_dir("ptn-native-nested-false-array-write-stale-root");
     fs::create_dir_all(&root).unwrap();
