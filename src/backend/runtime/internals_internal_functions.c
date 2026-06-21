@@ -39853,10 +39853,18 @@ static PtnStringOperand ptn_preg_apply_replacement_callback(
     );
     ptn_value_debug_hide_ref(match_array);
     PtnValue callback_args[] = { match_array };
-    PtnValue callback_result = ptn_internal_call_callback(runtime, callback, 1, callback_args, line);
+    PtnValue callback_result = ptn_null();
+    int callback_succeeded = ptn_internal_call_callback_capturing_exception(
+        runtime,
+        callback,
+        1,
+        callback_args,
+        line,
+        &callback_result
+    );
     ptn_value_debug_unhide_ref(match_array);
     ptn_value_destroy(&match_array);
-    if (runtime->exceptions->active_exception != NULL) {
+    if (!callback_succeeded || runtime->exceptions->active_exception != NULL) {
         ptn_value_destroy(&callback_result);
         return ptn_string_operand_borrowed("");
     }
@@ -40362,14 +40370,8 @@ static PtnValue ptn_preg_replace_callback_apply_array_patterns_to_string(
     PtnStringOperand empty_replacement = ptn_string_operand_borrowed("");
     PtnValue current = ptn_owned_string_len(ptn_duplicate_string_len(subject.data, subject.len), subject.len);
     for (size_t i = 0; i < patterns->len; i++) {
-        PtnStringOperand pattern = ptn_internal_expect_string_arg(
-            runtime,
-            "preg_replace_callback",
-            1,
-            "pattern",
-            patterns->entries[i].value,
-            line
-        );
+        PtnStringOperand pattern =
+            ptn_str_replace_entry_to_string(runtime, patterns->entries[i].value, line);
         if (runtime->exceptions->active_exception != NULL) {
             ptn_value_destroy(&current);
             ptn_string_operand_free(pattern);
@@ -40401,6 +40403,56 @@ static PtnValue ptn_preg_replace_callback_apply_array_patterns_to_string(
     return current;
 }
 
+static void ptn_preg_emit_remaining_array_subject_warnings(
+    PtnRuntime *runtime,
+    PtnArray *subjects,
+    size_t start,
+    size_t line
+) {
+    for (size_t i = start; i < subjects->len; i++) {
+        if (ptn_value_deref(subjects->entries[i].value).type == PTN_ARRAY) {
+            ptn_emit_spaced_warning(&runtime->diagnostics, "Array to string conversion", line);
+        }
+    }
+}
+
+static int ptn_preg_pattern_entry_will_throw_on_string_coercion(PtnRuntime *runtime, PtnValue value) {
+    value = ptn_value_deref(value);
+    if (value.type == PTN_CLOSURE) {
+        return 1;
+    }
+    if (value.type != PTN_OBJECT) {
+        return 0;
+    }
+    if (runtime == NULL || runtime->method_dispatch == NULL) {
+        return 1;
+    }
+    int has_to_string = 0;
+    if (runtime->declared_method_exists != NULL) {
+        has_to_string = runtime->declared_method_exists(value.as.object->class_name, "__toString");
+    }
+    return !has_to_string && !ptn_internal_class_method_exists(value.as.object->class_name, "__toString");
+}
+
+static void ptn_preg_emit_array_subject_warnings_before_pattern_coercion(
+    PtnRuntime *runtime,
+    PtnArray *patterns,
+    PtnArray *subjects,
+    size_t line
+) {
+    int pattern_will_throw = 0;
+    for (size_t i = 0; i < patterns->len; i++) {
+        if (ptn_preg_pattern_entry_will_throw_on_string_coercion(runtime, patterns->entries[i].value)) {
+            pattern_will_throw = 1;
+            break;
+        }
+    }
+    if (!pattern_will_throw) {
+        return;
+    }
+    ptn_preg_emit_remaining_array_subject_warnings(runtime, subjects, 0, line);
+}
+
 static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     PtnValue pattern_value = ptn_value_deref(args[0]);
     PtnStringOperand pattern = ptn_string_operand_borrowed("");
@@ -40425,6 +40477,12 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
     PtnValue result;
     if (pattern_value.type == PTN_ARRAY) {
         if (subject_value.type == PTN_ARRAY) {
+            ptn_preg_emit_array_subject_warnings_before_pattern_coercion(
+                runtime,
+                pattern_value.as.array,
+                subject_value.as.array,
+                line
+            );
             result = ptn_array_from_literal_entries(0, NULL);
             for (size_t i = 0; i < subject_value.as.array->len; i++) {
                 PtnArrayEntry *entry = &subject_value.as.array->entries[i];
@@ -40445,9 +40503,15 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
                 );
                 ptn_string_operand_free(subject);
                 if (runtime->exceptions->active_exception != NULL) {
+                    ptn_preg_emit_remaining_array_subject_warnings(
+                        runtime,
+                        subject_value.as.array,
+                        i + 1,
+                        line
+                    );
                     ptn_value_destroy(&result);
-                    result = ptn_null();
-                    break;
+                    ptn_rethrow_exception(runtime);
+                    return ptn_null();
                 }
                 ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), replaced);
             }
@@ -40466,6 +40530,10 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
                 line
             );
             ptn_string_operand_free(subject);
+            if (runtime->exceptions->active_exception != NULL) {
+                ptn_rethrow_exception(runtime);
+                return ptn_null();
+            }
         }
     } else if (subject_value.type == PTN_ARRAY) {
         result = ptn_array_from_literal_entries(0, NULL);
@@ -40491,9 +40559,15 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
             );
             ptn_string_operand_free(subject);
             if (runtime->exceptions->active_exception != NULL) {
+                ptn_preg_emit_remaining_array_subject_warnings(
+                    runtime,
+                    subject_value.as.array,
+                    i + 1,
+                    line
+                );
                 ptn_value_destroy(&result);
-                result = ptn_null();
-                break;
+                ptn_rethrow_exception(runtime);
+                return ptn_null();
             }
             ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), replaced);
         }
@@ -40515,6 +40589,10 @@ static PtnValue ptn_internal_preg_replace_callback(PtnRuntime *runtime, size_t a
             line
         );
         ptn_string_operand_free(subject);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_rethrow_exception(runtime);
+            return ptn_null();
+        }
     }
 
     if (argc >= 5 && args[4].type == PTN_REFERENCE) {
@@ -40631,7 +40709,14 @@ static PtnValue ptn_preg_replace_callback_array_apply_subject(
             );
             ptn_string_operand_free(subject);
             if (runtime->exceptions->active_exception != NULL) {
+                ptn_preg_emit_remaining_array_subject_warnings(
+                    runtime,
+                    subject_value.as.array,
+                    i + 1,
+                    line
+                );
                 ptn_value_destroy(&result);
+                ptn_rethrow_exception(runtime);
                 return ptn_null();
             }
             ptn_array_set_entry(result.as.array, ptn_array_key_clone(entry->key), replaced);
@@ -40656,6 +40741,10 @@ static PtnValue ptn_preg_replace_callback_array_apply_subject(
         line
     );
     ptn_string_operand_free(subject);
+    if (runtime->exceptions->active_exception != NULL) {
+        ptn_rethrow_exception(runtime);
+        return ptn_null();
+    }
     return result;
 }
 
@@ -40679,19 +40768,6 @@ static PtnValue ptn_internal_preg_replace_callback_array(PtnRuntime *runtime, si
             );
             return ptn_null();
         }
-        PtnValue callback = ptn_value_clone_deref(entry->value);
-        if (!ptn_callable_is_valid(runtime, callback, 0)) {
-            ptn_value_destroy(&callback);
-            ptn_throw_exception_at(
-                runtime,
-                "TypeError",
-                "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks",
-                runtime->source_path,
-                line
-            );
-            return ptn_null();
-        }
-        ptn_value_destroy(&callback);
     }
 
     PtnValue current = ptn_value_clone_deref(args[1]);
@@ -40701,6 +40777,20 @@ static PtnValue ptn_internal_preg_replace_callback_array(PtnRuntime *runtime, si
         PtnStringOperand pattern =
             ptn_value_to_string_operand_with_runtime(runtime, pattern_value, line);
         PtnValue callback = ptn_value_clone_deref(entry->value);
+        if (!ptn_callable_is_valid(runtime, callback, 0)) {
+            ptn_string_operand_free(pattern);
+            ptn_value_destroy(&pattern_value);
+            ptn_value_destroy(&callback);
+            ptn_value_destroy(&current);
+            ptn_throw_exception_at(
+                runtime,
+                "TypeError",
+                "preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks",
+                runtime->source_path,
+                line
+            );
+            return ptn_null();
+        }
 
         PtnValue next = ptn_preg_replace_callback_array_apply_subject(
             runtime,

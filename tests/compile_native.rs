@@ -19312,6 +19312,62 @@ var_dump(preg_replace_callback_array(['/(.)(.)(.)/' => static function ($matches
 }
 
 #[test]
+fn compile_preg_replace_callback_array_pattern_errors_to_native_binary() {
+    let root = temp_dir("ptn-native-preg-replace-callback-array-pattern-errors");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("preg-replace-callback-array-pattern-errors.php");
+    let output = root.join("preg-replace-callback-array-pattern-errors-bin");
+    fs::write(
+        &input,
+        "<?php
+class TrampolineTarget {
+    public function __call(string $name, array $arguments): string {
+        echo 'callback ', $name, PHP_EOL;
+        return 'X';
+    }
+}
+$target = new TrampolineTarget();
+
+function report($callback) {
+    try {
+        var_dump($callback());
+    } catch (Throwable $e) {
+        echo $e::class, ': ', $e->getMessage(), PHP_EOL;
+    }
+}
+
+report(fn() => preg_replace_callback([new stdClass()], [$target, 'trampoline'], 'a'));
+report(fn() => preg_replace_callback('/a/', function ($matches) {
+    throw new Exception('boom');
+}, ['a', ['b']]));
+report(fn() => preg_replace_callback_array([
+    '/a/' => [$target, 'trampoline'],
+    '/X/' => new stdClass(),
+], 'a'));
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("Error: Object of class stdClass could not be converted to string\n"));
+    assert!(stdout.contains("Warning: Array to string conversion"));
+    assert!(stdout.contains("Exception: boom\n"));
+    assert!(
+        stdout.find("Warning: Array to string conversion").unwrap()
+            < stdout.find("Exception: boom\n").unwrap(),
+        "{stdout:?}"
+    );
+    assert!(stdout.contains(
+        "callback trampoline\nTypeError: preg_replace_callback_array(): Argument #1 ($pattern) must contain only valid callbacks\n"
+    ));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_chunk_split_basic_phpt_shape_to_native_binary() {
     let root = temp_dir("ptn-native-chunk-split-basic-phpt-shape");
     fs::create_dir_all(&root).unwrap();
