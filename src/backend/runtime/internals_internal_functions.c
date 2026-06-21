@@ -5638,6 +5638,11 @@ static void ptn_spl_dllist_sync_properties(
     PtnSplDoublyLinkedListData *data,
     size_t line
 );
+static void ptn_unserialize_replace_native_data(
+    PtnObject *object,
+    void *native_data,
+    void (*free_fn)(void *)
+);
 
 typedef struct {
     char *path;
@@ -10512,7 +10517,16 @@ static PtnValue ptn_unserialize_new_resolved_object_shell(
         ptn_internal_class_name_is_no_discard(resolved_name)) {
         return ptn_unserialize_new_internal_attribute_shell(runtime, resolved_name, line);
     }
-    return ptn_object_new_shell(runtime, resolved_name);
+    PtnValue object = ptn_object_new_shell(runtime, resolved_name);
+    if (object.type == PTN_OBJECT &&
+        ptn_declared_class_is_same_or_descendant(resolved_name, "RegexIterator")) {
+        ptn_array_set_entry(
+            object.as.object->properties,
+            ptn_array_string_key("replacement"),
+            ptn_null()
+        );
+    }
+    return object;
 }
 
 static void ptn_unserialize_autoload_class_isolated(
@@ -11388,6 +11402,14 @@ static int ptn_unserialize_spl_object_storage_legacy_payload(
     int register_count_slot,
     PtnUnserializeValue *result
 );
+static int ptn_unserialize_spl_dllist_legacy_payload(
+    PtnRuntime *runtime,
+    PtnUnserializeState *state,
+    PtnValue object,
+    const char *payload,
+    size_t payload_len,
+    size_t line
+);
 
 static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *state, PtnRuntime *runtime) {
     PtnUnserializeValue result;
@@ -11713,6 +11735,22 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             result.value = ptn_unserialize_new_object_shell(state, runtime, class_name, state->line);
             result.id = ptn_unserialize_add_slot(state, &result.value);
             int handled_custom_payload = 0;
+            if (runtime != NULL &&
+                result.value.type == PTN_OBJECT &&
+                ptn_class_name_is_spl_dllist_family(result.value.as.object->class_name)) {
+                if (!ptn_unserialize_spl_dllist_legacy_payload(
+                        runtime,
+                        state,
+                        result.value,
+                        payload,
+                        payload_len,
+                        state->line
+                    )) {
+                    free(class_name);
+                    return result;
+                }
+                handled_custom_payload = 1;
+            }
             if (runtime != NULL &&
                 result.value.type == PTN_OBJECT &&
                 !ptn_ascii_case_equal(result.value.as.object->class_name, "__PHP_Incomplete_Class") &&
@@ -12095,6 +12133,160 @@ typedef struct {
     size_t insufficient_required;
     size_t insufficient_present;
 } PtnUnserializeSavedInput;
+
+static void ptn_spl_dllist_throw_unserialize_error(
+    PtnRuntime *runtime,
+    size_t offset,
+    size_t len
+) {
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "Error at offset %zu of %zu bytes",
+        offset,
+        len
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception(runtime, "UnexpectedValueException", message);
+}
+
+static int ptn_unserialize_spl_dllist_legacy_payload(
+    PtnRuntime *runtime,
+    PtnUnserializeState *state,
+    PtnValue object,
+    const char *payload,
+    size_t payload_len,
+    size_t line
+) {
+    PtnValue resolved_object = ptn_value_deref(object);
+    if (resolved_object.type != PTN_OBJECT ||
+        !ptn_class_name_is_spl_dllist_family(resolved_object.as.object->class_name)) {
+        return 0;
+    }
+
+    PtnUnserializeSavedInput saved;
+    saved.data = state->data;
+    saved.len = state->len;
+    saved.pos = state->pos;
+    saved.error_pos = state->error_pos;
+    saved.line = state->line;
+    saved.failed = state->failed;
+    saved.bad_data = state->bad_data;
+    saved.unexpected_end = state->unexpected_end;
+    saved.insufficient_data = state->insufficient_data;
+    saved.insufficient_required = state->insufficient_required;
+    saved.insufficient_present = state->insufficient_present;
+    size_t saved_id_len = state->id_len;
+
+    state->data = payload;
+    state->len = payload_len;
+    state->pos = 0;
+    state->error_pos = 0;
+    state->line = line;
+    state->failed = 0;
+    state->bad_data = 0;
+    state->unexpected_end = 0;
+    state->insufficient_data = 0;
+    state->insufficient_required = 0;
+    state->insufficient_present = 0;
+
+    PtnUnserializeValue flags;
+    flags.value = ptn_null();
+    flags.id = 0;
+    PtnValue storage = ptn_array_from_literal_entries(0, NULL);
+    int64_t parsed_flags = 0;
+
+    size_t flags_start = state->pos;
+    flags = ptn_unserialize_parse_value(state, runtime);
+    PtnValue resolved_flags = ptn_value_deref(flags.value);
+    if (state->failed ||
+        resolved_flags.type != PTN_INT ||
+        resolved_flags.as.integer < 0) {
+        if (!state->failed) {
+            ptn_unserialize_fail_at(state, flags_start);
+        }
+        goto fail;
+    }
+    parsed_flags = resolved_flags.as.integer;
+    ptn_unserialize_retain_id_value(state, flags.id, flags.value);
+    ptn_value_destroy(&flags.value);
+    flags.value = ptn_null();
+
+    size_t index = 0;
+    while (state->pos < state->len) {
+        if (index > (size_t)INT64_MAX ||
+            !ptn_unserialize_consume(state, ':')) {
+            goto fail;
+        }
+        PtnUnserializeValue entry = ptn_unserialize_parse_value(state, runtime);
+        if (state->failed) {
+            ptn_value_destroy(&entry.value);
+            goto fail;
+        }
+        if (!ptn_unserialize_store_entry(
+                runtime,
+                state,
+                storage.as.array,
+                ptn_array_int_key((int64_t)index),
+                entry
+            )) {
+            goto fail;
+        }
+        index++;
+    }
+
+    PtnSplDoublyLinkedListData *data = malloc(sizeof(PtnSplDoublyLinkedListData));
+    if (data == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    data->storage = storage;
+    storage = ptn_null();
+    data->index = 0;
+    data->flags = parsed_flags;
+    ptn_unserialize_replace_native_data(
+        resolved_object.as.object,
+        data,
+        ptn_spl_doubly_linked_list_data_free
+    );
+    ptn_spl_dllist_sync_properties(runtime, object, data, line);
+
+    state->data = saved.data;
+    state->len = saved.len;
+    state->pos = saved.pos;
+    state->error_pos = saved.error_pos;
+    state->line = saved.line;
+    state->failed = saved.failed;
+    state->bad_data = saved.bad_data;
+    state->unexpected_end = saved.unexpected_end;
+    state->insufficient_data = saved.insufficient_data;
+    state->insufficient_required = saved.insufficient_required;
+    state->insufficient_present = saved.insufficient_present;
+    return 1;
+
+fail:
+    {
+        size_t offset = state->error_pos;
+        ptn_value_destroy(&flags.value);
+        ptn_value_destroy(&storage);
+        ptn_unserialize_truncate_ids(state, saved_id_len);
+        state->data = saved.data;
+        state->len = saved.len;
+        state->pos = saved.pos;
+        state->error_pos = saved.error_pos;
+        state->line = saved.line;
+        state->failed = saved.failed;
+        state->bad_data = saved.bad_data;
+        state->unexpected_end = saved.unexpected_end;
+        state->insufficient_data = saved.insufficient_data;
+        state->insufficient_required = saved.insufficient_required;
+        state->insufficient_present = saved.insufficient_present;
+        ptn_spl_dllist_throw_unserialize_error(runtime, offset, payload_len);
+        return 0;
+    }
+}
 
 static int ptn_unserialize_value_from_operand(
     PtnRuntime *runtime,

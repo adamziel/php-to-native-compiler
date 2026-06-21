@@ -1186,6 +1186,35 @@ var_dump(iterator_to_array($i));
 }
 
 #[test]
+fn compile_unserialize_regex_iterator_declares_replacement_property_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-regex-iterator-replacement");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-regex-iterator-replacement.php");
+    let output = root.join("unserialize-regex-iterator-replacement-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$value = unserialize('O:13:"RegexIterator":0:{}');
+var_dump($value->replacement);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "NULL\n");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_directory_iterator_foreach_by_reference_guard_to_native_binary() {
     let root = temp_dir("ptn-native-directory-iterator-by-ref-guard");
     fs::create_dir_all(&root).unwrap();
@@ -13613,6 +13642,50 @@ try {
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "UnexpectedValueException:Incomplete or ill-typed serialization data\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_unserialize_spl_dllist_legacy_custom_payload_to_native_binary() {
+    let root = temp_dir("ptn-native-unserialize-spl-dllist-legacy-custom-payload");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("unserialize-spl-dllist-legacy-custom-payload.php");
+    let output = root.join("unserialize-spl-dllist-legacy-custom-payload-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$payload = 'O:8:"stdClass":1:{s:5:"stack";C:8:"SplStack":29:{i:4;:r:1;:O:8:"stdClass":0:{}}}';
+$value = unserialize($payload);
+$stack = $value->stack;
+var_dump($stack instanceof SplStack);
+var_dump($stack->getIteratorMode());
+var_dump(count($stack));
+var_dump($stack->bottom() === $value);
+var_dump($stack->top() instanceof stdClass);
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "int(4)\n",
+            "int(2)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
