@@ -3401,7 +3401,7 @@ fn emit_class_constant_instantiation_reads(
         out.push_str(indent);
         out.push_str("    PtnValue ");
         out.push_str(&temp);
-        out.push_str(" = ptn_runtime_read_class_constant(&runtime, \"");
+        out.push_str(" = ptn_runtime_read_class_constant_suppress_deprecation(&runtime, \"");
         out.push_str(&c_string(entry.declaring_class));
         out.push_str("\", \"");
         out.push_str(&c_string(&entry.constant.name));
@@ -18495,9 +18495,19 @@ fn emit_callable_dispatch(
             let Some(invoke_method) = class_magic_invoke_method(class, classes) else {
                 continue;
             };
+            let function = &functions[invoke_method.function_index];
             out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
             out.push_str(&c_string(&class.name));
             out.push_str("\")) {\n");
+            emit_deprecated_function_warning(
+                out,
+                "        ",
+                "runtime",
+                "runtime->source_path",
+                "&runtime->diagnostics",
+                function,
+                "line",
+            );
             out.push_str("        const char *ptn_previous_called_class = runtime->called_class_name_override;\n");
             out.push_str("        runtime->called_class_name_override = class_name;\n");
             out.push_str("        PtnValue ptn_invoke_result = ");

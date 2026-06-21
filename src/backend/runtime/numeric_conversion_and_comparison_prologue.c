@@ -4440,7 +4440,15 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
 ) {
     char message[256];
     int written;
-    if (ptn_declared_trait_exists(lookup_class_name)) {
+    if (ptn_declared_trait_exists(lookup_class_name) &&
+        !(
+            message_class_name != NULL &&
+            (
+                ptn_ascii_case_equal(message_class_name, "self") ||
+                ptn_ascii_case_equal(message_class_name, "static") ||
+                ptn_ascii_case_equal(message_class_name, "parent")
+            )
+        )) {
         const char *display_class_name =
             message_class_name == NULL ? lookup_class_name : message_class_name;
         written = snprintf(
@@ -4452,6 +4460,7 @@ static PTN_UNUSED PtnValue ptn_runtime_undefined_class_constant(
         );
     } else if (!ptn_declared_runtime_class_exists(runtime, lookup_class_name) &&
         !ptn_declared_runtime_interface_exists(runtime, lookup_class_name)
+        && !ptn_declared_trait_exists(lookup_class_name)
 #ifdef PTN_HAS_INTERNAL_FUNCTION_DISPATCH
         && !ptn_internal_class_exists_name(lookup_class_name)
         && !ptn_internal_interface_exists_name(lookup_class_name)
@@ -4704,6 +4713,24 @@ static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_with_scope(
         1,
         line,
         line
+    );
+}
+
+static PTN_UNUSED PtnValue ptn_runtime_read_class_constant_suppress_deprecation(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *constant,
+    size_t line
+) {
+    return ptn_runtime_read_class_constant_impl(
+        runtime,
+        class_name,
+        constant,
+        NULL,
+        NULL,
+        0,
+        line,
+        0
     );
 }
 

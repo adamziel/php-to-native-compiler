@@ -55498,6 +55498,55 @@ var_dump($sameReflection->getNumberOfParameters());
 }
 
 #[test]
+fn compile_closure_from_invokable_preserves_method_deprecated_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-closure-invokable-deprecated-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("closure-invokable-deprecated-metadata.php");
+    let output = root.join("closure-invokable-deprecated-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+class Foo {
+    #[Deprecated(\"xyzzy\")]
+    public function __invoke() {
+        echo \"In __invoke\\n\";
+    }
+}
+
+$foo = new Foo;
+$closure = Closure::fromCallable($foo);
+$test = $closure->__invoke(...);
+
+$rc = new ReflectionMethod($test, '__invoke');
+$attributes = $rc->getAttributes();
+echo count($attributes), \"\\n\";
+echo $attributes[0]->getName(), \"\\n\";
+var_dump($rc->isDeprecated());
+
+$test();
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("1\nDeprecated\nbool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("Deprecated: Method Foo::__invoke() is deprecated, xyzzy in ptn on line "),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("In __invoke\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_find_callable_metadata"));
+    assert!(c_source.contains("ptn_reflection_method_metadata_attributes"));
+}
+
+#[test]
 fn compile_closure_from_callable_parameter_type_reflection_to_native_binary() {
     let root = temp_dir("ptn-native-closure-from-callable-parameter-types");
     fs::create_dir_all(&root).unwrap();
@@ -57668,6 +57717,48 @@ var_dump($value === 'RuntimeUnknown-' . SUFFIX);
     assert!(c_source.contains("ptn_runtime_define_class_constant_deprecation(&runtime"));
     assert!(c_source.contains("Constant Clazz::TEST4 is deprecated, constant message"));
     assert!(c_source.contains("Constant Clazz::TEST5 is deprecated, self message"));
+}
+
+#[test]
+fn compile_class_constant_instantiation_reads_suppress_deprecation_to_native_binary() {
+    let root = temp_dir("ptn-native-class-constant-instantiation-deprecation");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("class-constant-instantiation-deprecation.php");
+    let output = root.join("class-constant-instantiation-deprecation-bin");
+    fs::write(
+        &input,
+        "<?php
+class InitConst {
+    #[Deprecated]
+    public const VALUE = 'v';
+
+    public function __construct() {
+        echo \"construct\\n\";
+    }
+}
+
+new InitConst();
+echo \"after\\n\";
+var_dump(InitConst::VALUE);
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.starts_with("construct\nafter\n"), "{stdout}");
+    assert!(
+        stdout.contains("Deprecated: Constant InitConst::VALUE is deprecated in ptn on line "),
+        "{stdout}"
+    );
+    assert!(stdout.ends_with("string(1) \"v\"\n"), "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_runtime_read_class_constant_suppress_deprecation"));
 }
 
 #[test]
@@ -63592,6 +63683,53 @@ $foo->clearName();
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_object_write_property_indirect"));
     assert!(c_source.contains("ptn_throw_property_unset_visibility_error"));
+}
+
+#[test]
+fn compile_asymmetric_uninitialized_array_dim_unset_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-asymmetric-uninitialized-array-unset");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("asymmetric-uninitialized-array-unset.php");
+    let output = root.join("asymmetric-uninitialized-array-unset-bin");
+    fs::write(
+        &input,
+        "<?php
+class Box {
+    public private(set) array $items;
+
+    public function init() {
+        $this->items = [];
+    }
+
+    public function clear() {
+        unset($this->items[0]);
+        echo \"in\\n\";
+    }
+}
+
+$box = new Box();
+$box->clear();
+unset($box->items[0]);
+echo \"out\\n\";
+$box->init();
+try {
+    unset($box->items[0]);
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "in\nout\nCannot indirectly modify private(set) property Box::$items from global scope\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

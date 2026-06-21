@@ -14280,6 +14280,9 @@ static PTN_UNUSED void ptn_object_array_path_unset(
     ptn_array_key_free(read_key);
     free(read_storage_key);
     if (entry == NULL) {
+        if (metadata != NULL && metadata->type_kind == PTN_PROPERTY_TYPE_ARRAY) {
+            return;
+        }
         PtnValue current = ptn_object_read_property_for_indirect_write(
             runtime,
             receiver,
@@ -14295,6 +14298,12 @@ static PTN_UNUSED void ptn_object_array_path_unset(
         }
         PtnValue resolved = ptn_value_deref(current);
         if (current.type == PTN_REFERENCE || resolved.type == PTN_OBJECT) {
+            ptn_value_array_path_unset(runtime, &current, segments, segment_count, line);
+        } else if (
+            metadata != NULL &&
+            metadata->type_kind == PTN_PROPERTY_TYPE_ARRAY &&
+            resolved.type == PTN_ARRAY
+        ) {
             ptn_value_array_path_unset(runtime, &current, segments, segment_count, line);
         } else if (resolved.type != PTN_NULL) {
             ptn_emit_indirect_modification_overloaded_property_notice(
