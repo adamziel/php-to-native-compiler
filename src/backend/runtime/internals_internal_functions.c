@@ -3648,6 +3648,8 @@ static int ptn_declared_class_is_same_or_descendant(const char *class_name, cons
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_is_enum(const char *name);
 static int ptn_declared_runtime_class_is_enum(PtnRuntime *runtime, const char *name);
+static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
+static int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name);
 static int ptn_declared_class_implements_interface(const char *class_name, const char *interface_name);
 static int ptn_declared_class_method_exists(const char *class_name, const char *method_name);
 static int ptn_declared_class_reflection_method_metadata(const char *class_name, const char *method_name, int *is_static, int *visibility, int *is_final, int *is_abstract);
@@ -8096,6 +8098,19 @@ static int ptn_serialize_append_object(PtnStringBuffer *buffer, PtnObject *objec
             return 0;
         }
     }
+    if (object != NULL && object->enum_case_name != NULL) {
+        size_t class_len = strlen(object->class_name);
+        size_t case_len = strlen(object->enum_case_name);
+        if (class_len > SIZE_MAX - case_len - 1) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_string_buffer_append_format(buffer, "E:%zu:\"", class_len + 1 + case_len);
+        ptn_string_buffer_append_len(buffer, object->class_name, class_len);
+        ptn_string_buffer_append_char(buffer, ':');
+        ptn_string_buffer_append_len(buffer, object->enum_case_name, case_len);
+        ptn_string_buffer_append(buffer, "\";");
+        return 1;
+    }
     if (ptn_serialize_object_is_spl_array_backed(object)) {
         ptn_serialize_append_spl_array_backed_object(buffer, object, state);
         return 1;
@@ -8215,11 +8230,23 @@ static int ptn_serialize_append_value_with_id(
             ptn_serialize_append_array(buffer, value.as.array, state, existing_id != 0);
             break;
         case PTN_OBJECT: {
-            if (ptn_ascii_case_equal(value.as.object->class_name, "ReflectionReference")) {
+            if (ptn_ascii_case_equal(value.as.object->class_name, "ReflectionReference") ||
+                ptn_ascii_case_equal(value.as.object->class_name, "Generator") ||
+                ptn_ascii_case_equal(value.as.object->class_name, "SensitiveParameterValue")) {
+                char message[96];
+                int written = snprintf(
+                    message,
+                    sizeof(message),
+                    "Serialization of '%s' is not allowed",
+                    value.as.object->class_name
+                );
+                if (written < 0 || (size_t)written >= sizeof(message)) {
+                    ptn_abort_out_of_memory();
+                }
                 ptn_throw_exception(
                     state->runtime,
                     "Exception",
-                    "Serialization of 'ReflectionReference' is not allowed"
+                    message
                 );
                 ptn_string_buffer_append(buffer, "N;");
                 return 0;
@@ -8974,6 +9001,151 @@ static void ptn_unserialize_emit_non_enum_class_warning(
     );
     ptn_emit_runtime_warning(runtime, message, line);
     free(message);
+}
+
+static void ptn_unserialize_emit_enum_class_not_found_warning(
+    PtnRuntime *runtime,
+    const char *class_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "unserialize(): Class '%s' not found",
+        class_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "unserialize(): Class '%s' not found",
+        class_name
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static void ptn_unserialize_emit_invalid_enum_name_warning(
+    PtnRuntime *runtime,
+    const char *enum_name,
+    size_t enum_len,
+    size_t line
+) {
+    char *name = ptn_duplicate_string_len(enum_name, enum_len);
+    int needed = snprintf(
+        NULL,
+        0,
+        "unserialize(): Invalid enum name '%s' (missing colon)",
+        name
+    );
+    if (needed < 0) {
+        free(name);
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        free(name);
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "unserialize(): Invalid enum name '%s' (missing colon)",
+        name
+    );
+    free(name);
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static void ptn_unserialize_emit_enum_case_warning(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name,
+    const char *suffix,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "unserialize(): %s::%s %s",
+        class_name,
+        case_name,
+        suffix
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "unserialize(): %s::%s %s",
+        class_name,
+        case_name,
+        suffix
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static void ptn_unserialize_emit_undefined_enum_case_warning(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *case_name,
+    size_t line
+) {
+    int needed = snprintf(
+        NULL,
+        0,
+        "unserialize(): Undefined constant %s::%s",
+        class_name,
+        case_name
+    );
+    if (needed < 0) {
+        ptn_abort_out_of_memory();
+    }
+    char *message = malloc((size_t)needed + 1);
+    if (message == NULL) {
+        ptn_abort_out_of_memory();
+    }
+    snprintf(
+        message,
+        (size_t)needed + 1,
+        "unserialize(): Undefined constant %s::%s",
+        class_name,
+        case_name
+    );
+    ptn_emit_runtime_warning(runtime, message, line);
+    free(message);
+}
+
+static int ptn_unserialize_builtin_enum_case_exists(
+    const char *class_name,
+    const char *case_name
+) {
+    if (ptn_ascii_case_equal(class_name, "RoundingMode")) {
+        return ptn_rounding_mode_case_name(case_name) != NULL;
+    }
+    if (ptn_ascii_case_equal(class_name, "Uri\\WhatWg\\UrlHostType")) {
+        return ptn_uri_url_host_type_case_name(case_name) != NULL;
+    }
+    if (ptn_ascii_case_equal(class_name, "Uri\\Rfc3986\\UriType")) {
+        return ptn_uri_type_case_name(case_name) != NULL;
+    }
+    if (ptn_ascii_case_equal(class_name, "Uri\\UriComparisonMode")) {
+        return ptn_uri_comparison_mode_case_name(case_name) != NULL;
+    }
+    return 0;
 }
 
 static void ptn_zip_archive_declare_public_property(
@@ -10368,6 +10540,7 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             state->pos += class_len;
             size_t class_name_end = state->pos;
             if (ptn_ascii_case_equal(class_name, "ReflectionReference") ||
+                ptn_ascii_case_equal(class_name, "Generator") ||
                 ptn_internal_class_name_is_weak_reference(class_name) ||
                 ptn_internal_class_name_is_weak_map(class_name)) {
                 char message[96];
@@ -10506,7 +10679,8 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
                 free(class_name);
                 return result;
             }
-            if (ptn_internal_class_name_is_weak_reference(class_name) ||
+            if (ptn_ascii_case_equal(class_name, "Generator") ||
+                ptn_internal_class_name_is_weak_reference(class_name) ||
                 ptn_internal_class_name_is_weak_map(class_name)) {
                 char message[96];
                 int written = snprintf(
@@ -10606,24 +10780,80 @@ static PtnUnserializeValue ptn_unserialize_parse_value(PtnUnserializeState *stat
             }
             const char *enum_name = state->data + state->pos;
             const char *separator = memchr(enum_name, ':', enum_len);
-            if (separator == NULL || separator == enum_name || separator + 1 >= enum_name + enum_len) {
+            if (separator == NULL) {
+                ptn_unserialize_emit_invalid_enum_name_warning(runtime, enum_name, enum_len, state->line);
+                ptn_unserialize_fail_at(state, value_start);
+                return result;
+            }
+            if (separator == enum_name || separator + 1 >= enum_name + enum_len) {
                 ptn_unserialize_fail_at(state, value_start);
                 return result;
             }
             size_t class_len = (size_t)(separator - enum_name);
+            size_t case_len = enum_len - class_len - 1;
             char *class_name = ptn_duplicate_string_len(enum_name, class_len);
+            char *case_name = ptn_duplicate_string_len(separator + 1, case_len);
             state->pos += enum_len;
             if (!ptn_unserialize_consume(state, '"') ||
                 !ptn_unserialize_consume(state, ';')) {
                 free(class_name);
+                free(case_name);
                 return result;
             }
-            if ((ptn_declared_class_exists(class_name) || ptn_internal_class_exists_name(class_name)) &&
-                !ptn_declared_class_is_enum(class_name)) {
-                ptn_unserialize_emit_non_enum_class_warning(runtime, class_name, state->line);
+            int class_exists = ptn_declared_runtime_class_exists(runtime, class_name) ||
+                ptn_internal_class_exists_name(class_name);
+            int is_enum = ptn_declared_runtime_class_is_enum(runtime, class_name);
+            if (!class_exists && !is_enum) {
+                ptn_unserialize_emit_enum_class_not_found_warning(runtime, class_name, state->line);
+                free(class_name);
+                free(case_name);
+                ptn_unserialize_fail_at(state, value_start);
+                return result;
             }
+            if (class_exists && !is_enum) {
+                ptn_unserialize_emit_non_enum_class_warning(runtime, class_name, state->line);
+                free(class_name);
+                free(case_name);
+                ptn_unserialize_fail_at(state, value_start);
+                return result;
+            }
+            int builtin_enum_case = ptn_unserialize_builtin_enum_case_exists(class_name, case_name);
+            int declared_constant = ptn_declared_class_constant_exists(class_name, case_name);
+            if (!builtin_enum_case && !declared_constant) {
+                ptn_unserialize_emit_undefined_enum_case_warning(
+                    runtime,
+                    class_name,
+                    case_name,
+                    state->line
+                );
+                free(class_name);
+                free(case_name);
+                ptn_unserialize_fail(state);
+                return result;
+            }
+            if (!builtin_enum_case &&
+                !ptn_declared_class_constant_is_enum_case(class_name, case_name)) {
+                ptn_unserialize_emit_enum_case_warning(
+                    runtime,
+                    class_name,
+                    case_name,
+                    "is not an enum case",
+                    state->line
+                );
+                free(class_name);
+                free(case_name);
+                ptn_unserialize_fail(state);
+                return result;
+            }
+            result.value = ptn_runtime_read_class_constant(runtime, class_name, case_name, state->line);
             free(class_name);
-            ptn_unserialize_fail_at(state, value_start);
+            free(case_name);
+            if (runtime != NULL &&
+                runtime->exceptions != NULL &&
+                runtime->exceptions->active_exception != NULL) {
+                return result;
+            }
+            result.id = ptn_unserialize_add_slot(state, &result.value);
             return result;
         }
         case 'R': {
@@ -83812,6 +84042,7 @@ static PtnValue ptn_declared_class_reflection_enum_cases(PtnRuntime *runtime, co
 static PtnValue ptn_declared_class_reflection_enum_case(PtnRuntime *runtime, const char *class_name, const char *case_name, size_t line);
 static const char *ptn_declared_class_parent_name(const char *name);
 static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);
+static int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name);
 static PtnValue ptn_declared_class_constants(PtnRuntime *runtime, const char *class_name, int filter_present, int filter);
 static int ptn_declared_class_property_exists(const char *class_name, const char *property_name);
 static const char *ptn_property_exists_target_type_name(PtnValue value);

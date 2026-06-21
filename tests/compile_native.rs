@@ -62942,6 +62942,118 @@ var_dump(unserialize('E:7:\"Foo:Bar\";'));
 }
 
 #[test]
+fn compile_enum_serialization_payloads_to_native_binary() {
+    let root = temp_dir("ptn-native-enum-serialization-payloads");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("enum-serialization-payloads.php");
+    let output = root.join("enum-serialization-payloads-bin");
+    fs::write(
+        &input,
+        r#"<?php
+enum Foo {
+    case Bar;
+    const Baz = Foo::Bar;
+}
+
+$serialized = serialize(Foo::Bar);
+var_dump($serialized);
+$bar = unserialize($serialized);
+var_dump($bar);
+var_dump($bar === Foo::Bar);
+var_dump(unserialize('E:7:"Foo:Baz";'));
+var_dump(unserialize('E:7:"Foo:Qux";'));
+var_dump(unserialize('E:6:"FooBar";'));
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("E:7:\"Foo:Bar\";"), "{stdout}");
+    assert!(stdout.contains("enum(Foo::Bar)\n"), "{stdout}");
+    assert!(stdout.contains("bool(true)\n"), "{stdout}");
+    assert!(
+        stdout.contains("Warning: unserialize(): Foo::Baz is not an enum case"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Undefined constant Foo::Qux"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Warning: unserialize(): Invalid enum name 'FooBar' (missing colon)"),
+        "{stdout}"
+    );
+    assert!(stdout.matches("bool(false)").count() >= 3, "{stdout}");
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_forbidden_internal_serialization_to_native_binary() {
+    let root = temp_dir("ptn-native-forbidden-internal-serialization");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("forbidden-internal-serialization.php");
+    let output = root.join("forbidden-internal-serialization-bin");
+    fs::write(
+        &input,
+        r#"<?php
+function gen() { yield; }
+
+try {
+    serialize(gen());
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    unserialize('O:9:"Generator":0:{}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    unserialize('C:9:"Generator":0:{}');
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+
+try {
+    serialize(new SensitiveParameterValue('secret'));
+} catch (Exception $e) {
+    echo $e->getMessage(), "\n";
+}
+"#,
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Serialization of 'Generator' is not allowed\n\
+Unserialization of 'Generator' is not allowed\n\
+Unserialization of 'Generator' is not allowed\n\
+Serialization of 'SensitiveParameterValue' is not allowed\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_reference_reflection_and_http_query_edges_to_native_binary() {
     let root = temp_dir("ptn-native-reference-reflection-http-query");
     fs::create_dir_all(&root).unwrap();

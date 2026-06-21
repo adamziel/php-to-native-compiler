@@ -5552,7 +5552,9 @@ fn emit_private_property_metadata_prototype(out: &mut String) {
     );
     out.push_str("static int ptn_declared_class_is_final(const char *name);\n");
     out.push_str("static int ptn_declared_class_has_call_magic(const char *class_name);\n");
+    out.push_str("static int ptn_declared_class_constant_exists(const char *class_name, const char *constant_name);\n");
     out.push_str("static int ptn_declared_class_constant_metadata(const char *class_name, const char *constant_name, const char **declaring_class_out, int *visibility_out);\n");
+    out.push_str("static int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name);\n");
     out.push_str(
         "static int ptn_declared_class_is_same_or_descendant(const char *class_name, const char *ancestor_name);\n",
     );
@@ -6969,6 +6971,35 @@ fn emit_class_metadata_helpers(
             out.push_str(&c_string(&constant.name));
             out.push_str("\") == 0) {\n");
             out.push_str("            return 1;\n");
+            out.push_str("        }\n");
+        }
+        out.push_str("        return 0;\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("    return 0;\n");
+    out.push_str("}\n");
+
+    out.push_str(
+        "\nstatic PTN_UNUSED int ptn_declared_class_constant_is_enum_case(const char *class_name, const char *constant_name) {\n",
+    );
+    if classes.is_empty() {
+        out.push_str("    (void)class_name;\n");
+    }
+    if !has_class_constant_lookup_entries {
+        out.push_str("    (void)constant_name;\n");
+    }
+    for class in classes {
+        out.push_str("    if (ptn_ascii_case_equal(class_name, \"");
+        out.push_str(&c_string(&class.name));
+        out.push_str("\")) {\n");
+        for entry in class_constant_lookup_chain(class, classes) {
+            let constant = entry.constant;
+            out.push_str("        if (strcmp(constant_name, \"");
+            out.push_str(&c_string(&constant.name));
+            out.push_str("\") == 0) {\n");
+            out.push_str("            return ");
+            out.push_str(if constant.is_enum_case { "1" } else { "0" });
+            out.push_str(";\n");
             out.push_str("        }\n");
         }
         out.push_str("        return 0;\n");
