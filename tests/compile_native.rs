@@ -23212,6 +23212,30 @@ echo get_class(new EmptyClass()), \"\\n\";
 }
 
 #[test]
+fn compile_direct_var_dump_helper_links_without_internal_dispatch_to_native_binary() {
+    let root = temp_dir("ptn-native-direct-var-dump-helper-link");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("direct-var-dump-helper-link.php");
+    let output = root.join("direct-var-dump-helper-link-bin");
+    fs::write(&input, "<?php\nvar_dump([1]);\n").unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "array(1) {\n  [0]=>\n  int(1)\n}\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_direct_var_dump(&runtime"));
+    assert!(c_source.contains("ptn_direct_var_dump_weak_reference_object"));
+    assert!(!c_source.contains("#define PTN_HAS_INTERNAL_FUNCTION_DISPATCH"));
+}
+
+#[test]
 fn compile_conditional_class_metadata_visibility_to_native_binary() {
     let root = temp_dir("ptn-native-conditional-class-metadata-visibility");
     fs::create_dir_all(&root).unwrap();
