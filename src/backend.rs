@@ -26640,6 +26640,12 @@ fn builtin_constant_deprecated_warning(name: &str) -> Option<String> {
                 .to_string(),
         );
     }
+    if name.eq_ignore_ascii_case("MT_RAND_PHP") {
+        return Some(
+            "Constant MT_RAND_PHP is deprecated since 8.3, as it uses a biased non-standard variant of Mt19937"
+                .to_string(),
+        );
+    }
     None
 }
 

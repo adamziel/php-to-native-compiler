@@ -2398,6 +2398,22 @@ static PTN_UNUSED PtnValue ptn_bcmath_number_call_method(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_randomizer_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_random_engine_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
 static PTN_UNUSED int ptn_bcmath_number_cast_array(PtnValue value, PtnValue *array_out);
 static PTN_UNUSED int ptn_bcmath_number_is_truthy(PtnValue value, int *truthy_out);
 static PTN_UNUSED int ptn_bcmath_number_compare(
