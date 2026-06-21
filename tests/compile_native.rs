@@ -36106,6 +36106,54 @@ class Test2 extends Test1 {\n\
 }
 
 #[test]
+fn compile_inaccessible_private_method_by_ref_signature_does_not_bind_argument_to_native_binary() {
+    let root = temp_dir("ptn-native-private-method-by-ref-signature-visibility");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("private-method-by-ref-signature-visibility.php");
+    let output = root.join("private-method-by-ref-signature-visibility-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+class A {\n\
+    private function method($x) {}\n\
+}\n\
+class B extends A {\n\
+    public function test() {\n\
+        $x = 1;\n\
+        $this->method($x);\n\
+        var_dump($x);\n\
+    }\n\
+}\n\
+class C extends B {\n\
+    public function method(&$x) { ++$x; }\n\
+}\n\
+(new C)->test();\n\
+\n\
+class D {\n\
+    private function method(&$x) { ++$x; }\n\
+}\n\
+class E extends D {\n\
+    public function __call($name, $args) { }\n\
+    public function test() {\n\
+        $this->method($x);\n\
+    }\n\
+}\n\
+(new E)->test();",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!("int(2)\n{}", undefined_variable_warning(&input, "x", 23))
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_by_reference_assignment_call_result_value_fallback_to_native_binary() {
     let root = temp_dir("ptn-native-by-reference-assignment-call-result-value-fallback");
     fs::create_dir_all(&root).unwrap();

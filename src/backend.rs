@@ -16909,7 +16909,7 @@ fn emit_method_dispatch(
                 out.push_str(" && !ptn_declared_protected_static_method_root_allows(runtime->current_class_name, class_name, method_name)");
             }
             out.push_str(") {\n");
-            out.push_str("                return -1;\n");
+            out.push_str("                return 0;\n");
             out.push_str("            }\n");
             let function = &functions[method.function_index];
             if function.parameters.is_empty() {
@@ -28515,7 +28515,11 @@ impl ValueEmitter {
         let class = class_by_name(&self.classes, &class_name)?;
         let method = class_method_lookup_chain(class, &self.classes)
             .into_iter()
-            .find(|method| !method.is_static && method.name.eq_ignore_ascii_case(name))?;
+            .find(|method| {
+                !method.is_static
+                    && method.name.eq_ignore_ascii_case(name)
+                    && self.method_visibility_allows(method.visibility, method.declaring_class)
+            })?;
         let function = self.user_functions.get(method.function_index)?;
         Some((function.display_name.clone(), function.parameters.clone()))
     }
