@@ -24391,48 +24391,56 @@ static PtnValue ptn_uri_whatwg_with_host(
             ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
             return ptn_null();
         }
-        ptn_uri_whatwg_throw_malformed(runtime, "host", "AdaParserUnavailable");
-        return ptn_null();
+        PtnUriData *copy = ptn_uri_data_clone(source);
+        free(copy->host);
+        free(copy->unicode_host);
+        copy->host = NULL;
+        copy->unicode_host = NULL;
+        copy->host_type = PTN_URI_HOST_TYPE_NONE;
+        copy->authority_present = 0;
+        copy->port_present = 0;
+        copy->port_separator_present = 0;
+        return ptn_uri_clone_with(runtime, receiver, copy);
     }
     PtnStringOperand host_arg = ptn_internal_expect_string_arg(runtime, "Uri\\WhatWg\\Url::withHost", 1, "host", value, line);
     if (runtime->exceptions->active_exception != NULL) {
         ptn_string_operand_free(host_arg);
         return ptn_null();
     }
-    if (special && host_arg.len == 0) {
-        ptn_string_operand_free(host_arg);
-        ptn_uri_whatwg_throw_malformed(runtime, "host", "HostMissing");
-        return ptn_null();
-    }
-    const char *component_guard_reason = ptn_uri_whatwg_host_invalid_code_point_reason(host_arg.data, host_arg.len, special);
-    if (component_guard_reason != NULL && component_guard_reason[0] == '\0') {
-        ptn_string_operand_free(host_arg);
-        ptn_uri_whatwg_throw_malformed(runtime, "host", component_guard_reason);
-        return ptn_null();
-    }
-#ifndef PTN_USE_ADA_URL
+    char *ascii_host = NULL;
+    char *unicode_host = NULL;
+    int host_type = PTN_URI_HOST_TYPE_NONE;
+    const char *invalid_reason = NULL;
+    int ok = ptn_uri_whatwg_normalize_host(
+        host_arg.data,
+        host_arg.len,
+        special,
+        source->scheme,
+        &ascii_host,
+        &unicode_host,
+        &host_type,
+        &invalid_reason
+    );
     ptn_string_operand_free(host_arg);
-    ptn_uri_whatwg_throw_malformed(runtime, "host", "AdaParserUnavailable");
-    return ptn_null();
-#else
-    ada_url url = ptn_uri_ada_url_from_data(source);
-    int host_arg_empty = host_arg.len == 0;
-    if (url == NULL ||
-        !ptn_uri_ada_set_bool(url, host_arg.data, host_arg.len, ada_set_host) ||
-        !ada_is_valid(url)) {
-        if (url != NULL) {
-            ada_free(url);
-        }
-        const char *invalid_reason = ptn_uri_whatwg_host_invalid_code_point_reason(host_arg.data, host_arg.len, special);
-        ptn_string_operand_free(host_arg);
-        ptn_uri_whatwg_throw_malformed(runtime, "host", special && host_arg_empty ? "HostMissing" : invalid_reason);
+    if (!ok) {
+        free(ascii_host);
+        free(unicode_host);
+        ptn_uri_whatwg_throw_malformed(runtime, "host", invalid_reason);
         return ptn_null();
     }
-    PtnValue result = ptn_uri_ada_clone_with_url(runtime, receiver, url, 0);
-    ada_free(url);
-    ptn_string_operand_free(host_arg);
-    return result;
-#endif
+    PtnUriData *copy = ptn_uri_data_clone(source);
+    free(copy->host);
+    free(copy->unicode_host);
+    copy->host = ascii_host;
+    copy->unicode_host = unicode_host;
+    copy->host_type = host_type;
+    copy->authority_present = 1;
+    if (special && copy->path != NULL && copy->path[0] == '\0') {
+        free(copy->path);
+        copy->path = ptn_uri_duplicate_len("/", 1);
+    }
+    ptn_uri_whatwg_clear_default_port(copy);
+    return ptn_uri_clone_with(runtime, receiver, copy);
 }
 
 static PtnValue ptn_uri_whatwg_with_path(
