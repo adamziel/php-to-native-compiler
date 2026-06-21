@@ -58180,6 +58180,8 @@ static size_t ptn_runtime_next_gc_mark_epoch(PtnRuntime *root) {
     return root->gc_mark_epoch;
 }
 
+static void ptn_gc_mark_weak_map_values(PtnGcMarkStack *stack, PtnObject *object);
+
 static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
     if (stack == NULL || epoch == 0) {
         return;
@@ -58210,6 +58212,7 @@ static void ptn_gc_mark_reachable_values(PtnGcMarkStack *stack, size_t epoch) {
             ptn_gc_mark_stack_push(stack, ptn_gc_borrowed_array_value(object->properties));
             ptn_gc_mark_stack_push(stack, object->lazy_initializer);
             ptn_gc_mark_stack_push(stack, object->lazy_proxy_instance);
+            ptn_gc_mark_weak_map_values(stack, object);
         }
     }
 }
@@ -58265,7 +58268,7 @@ static size_t ptn_gc_count_unreachable_arrays_in_object_properties(PtnObject *ob
     return count;
 }
 
-static size_t ptn_runtime_count_unreachable_objects(PtnRuntime *runtime) {
+static size_t ptn_runtime_collect_unreachable_objects(PtnRuntime *runtime) {
     PtnRuntime *root = ptn_runtime_root(runtime);
     if (root == NULL) {
         root = runtime;
@@ -58301,24 +58304,32 @@ static size_t ptn_runtime_count_unreachable_objects(PtnRuntime *runtime) {
     ptn_gc_mark_reachable_values(&stack, epoch);
     free(stack.items);
 
-    size_t unreachable = 0;
-    for (size_t i = 0; i < root->live_objects_len; i++) {
-        PtnObject *object = root->live_objects[i];
+    size_t collected = 0;
+    size_t index = root->live_objects_len;
+    while (index > 0) {
+        index--;
+        PtnObject *object = root->live_objects[index];
         if (
             object != NULL &&
             object->refcount > 0 &&
+            object->native_data == NULL &&
             object->gc_mark_epoch != epoch &&
             !ptn_object_has_pending_declared_destructor(object)
         ) {
-            unreachable++;
             size_t nested_arrays = ptn_gc_count_unreachable_arrays_in_object_properties(object, epoch);
-            if (unreachable > SIZE_MAX - nested_arrays) {
+            if (collected > SIZE_MAX - 1 || collected + 1 > SIZE_MAX - nested_arrays) {
                 ptn_abort_out_of_memory();
             }
-            unreachable += nested_arrays;
+            collected += 1 + nested_arrays;
+            ptn_runtime_remove_live_object_at(root, index);
+            object->refcount = 1;
+            ptn_object_release(object);
+            if (index > root->live_objects_len) {
+                index = root->live_objects_len;
+            }
         }
     }
-    return unreachable;
+    return collected;
 }
 
 static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
@@ -58333,7 +58344,7 @@ static PtnValue ptn_internal_gc_collect_cycles(PtnRuntime *runtime, size_t argc,
         return ptn_int(0);
     }
     root->gc_running = 1;
-    size_t object_cycles = ptn_runtime_count_unreachable_objects(runtime);
+    size_t object_cycles = ptn_runtime_collect_unreachable_objects(runtime);
     ptn_runtime_run_unreferenced_object_destructors(root);
     size_t weak_map_cycles = ptn_runtime_collect_weak_map_cycles(runtime);
     size_t array_cycles = ptn_pending_array_cycle_collections;
@@ -84611,6 +84622,22 @@ typedef struct PtnWeakMapData {
     size_t capacity;
     size_t index;
 } PtnWeakMapData;
+
+static void ptn_gc_mark_weak_map_values(PtnGcMarkStack *stack, PtnObject *object) {
+    if (
+        stack == NULL ||
+        object == NULL ||
+        object->native_data == NULL ||
+        !ptn_internal_class_name_is_weak_map(object->class_name)
+    ) {
+        return;
+    }
+
+    PtnWeakMapData *map = (PtnWeakMapData *)object->native_data;
+    for (size_t i = 0; i < map->len; i++) {
+        ptn_gc_mark_stack_push(stack, map->values[i]);
+    }
+}
 
 static void ptn_weak_map_data_free(void *data) {
     PtnWeakMapData *map = (PtnWeakMapData *)data;

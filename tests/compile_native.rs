@@ -11240,6 +11240,43 @@ var_dump($file, $line);
 }
 
 #[test]
+fn compile_shutdown_destructor_exception_uses_internal_frame_to_native_binary() {
+    let root = temp_dir("ptn-native-shutdown-destructor-internal-frame");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("shutdown-destructor-internal-frame.php");
+    let output = root.join("shutdown-destructor-internal-frame-bin");
+    fs::write(
+        &input,
+        "<?php
+$map = new WeakMap;
+$obj = new stdClass;
+$map[$obj] = new class {
+    function __destruct() {
+        throw new Exception('Test');
+    }
+};
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(!execution.status.success());
+    assert_eq!(String::from_utf8(execution.stdout).unwrap(), "");
+    let stderr = String::from_utf8(execution.stderr).unwrap();
+    assert!(
+        stderr.contains("Fatal error: Uncaught Exception: Test in "),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("#0 [internal function]: class@anonymous->__destruct()"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("#1 {main}"), "{stderr}");
+}
+
+#[test]
 fn compile_weak_reference_guards_to_native_binary() {
     let root = temp_dir("ptn-native-weak-reference-guards");
     fs::create_dir_all(&root).unwrap();
@@ -11426,6 +11463,66 @@ var_dump($ref->get());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         "int(1)\nbool(true)\nNULL\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_weak_map_gc_collects_weak_key_cycle_and_keeps_values_to_native_binary() {
+    let root = temp_dir("ptn-native-weak-map-gc-key-cycle-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("weak-map-gc-key-cycle-values.php");
+    let output = root.join("weak-map-gc-key-cycle-values-bin");
+    fs::write(
+        &input,
+        "<?php
+$map = new WeakMap;
+$key = new stdClass;
+$key->self = $key;
+$map[$key] = 4;
+unset($key);
+gc_collect_cycles();
+var_dump($map);
+
+$map = new WeakMap;
+var_dump($map);
+
+$key = new stdClass;
+$value = new stdClass;
+$value->self = $value;
+$map[$key] = $value;
+unset($value);
+gc_collect_cycles();
+var_dump($map);
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "object(WeakMap)#1 (0) {\n",
+            "}\n",
+            "object(WeakMap)#2 (0) {\n",
+            "}\n",
+            "object(WeakMap)#2 (1) {\n",
+            "  [0]=>\n",
+            "  array(2) {\n",
+            "    [\"key\"]=>\n",
+            "    object(stdClass)#1 (0) {\n",
+            "    }\n",
+            "    [\"value\"]=>\n",
+            "    object(stdClass)#3 (1) {\n",
+            "      [\"self\"]=>\n",
+            "      *RECURSION*\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+        )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

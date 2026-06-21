@@ -806,9 +806,16 @@ static PTN_UNUSED void ptn_object_run_destructor_ex(PtnObject *object, int durin
     object->destructor_called = 1;
     const char *previous_scope = root->current_class_name;
     int previous_shutdown_phase = root->destructor_shutdown_phase;
+    int previous_suppress_user_call_frame_location =
+        root->suppress_user_call_frame_location;
     root->current_class_name = root->destructor_access_scope;
     root->destructor_shutdown_phase = during_shutdown;
+    if (during_shutdown) {
+        root->suppress_user_call_frame_location = 1;
+    }
     PtnValue result = root->method_dispatch(root, receiver, "__destruct", 0, NULL, destructor_line);
+    root->suppress_user_call_frame_location =
+        previous_suppress_user_call_frame_location;
     root->destructor_shutdown_phase = previous_shutdown_phase;
     root->current_class_name = previous_scope;
     ptn_value_destroy(&result);
