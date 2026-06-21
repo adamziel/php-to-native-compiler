@@ -4541,6 +4541,55 @@ static PTN_UNUSED int ptn_property_metadata_accepts_array_auto_initialization(
         );
 }
 
+static PTN_UNUSED int ptn_runtime_static_property_typed_uninitialized_key(
+    PtnRuntime *runtime,
+    const char *key,
+    const char *declaring_class,
+    const char *property
+) {
+    PtnObjectPropertyMetadata metadata;
+    if (!ptn_runtime_static_property_metadata(runtime, key, declaring_class, property, &metadata)) {
+        return 0;
+    }
+    PtnValue initialized;
+    return !(
+        ptn_symbols_get(
+            ptn_runtime_static_property_initialized_table(runtime),
+            key,
+            &initialized
+        ) && ptn_is_truthy(initialized)
+    );
+}
+
+static PTN_UNUSED int ptn_runtime_static_property_typed_uninitialized(
+    PtnRuntime *runtime,
+    const char *class_name,
+    const char *property,
+    const char **declaring_class_out
+) {
+    const char *declaring_class = NULL;
+    char *key = ptn_runtime_resolve_static_property_key(
+        runtime,
+        class_name,
+        property,
+        &declaring_class
+    );
+    if (key == NULL) {
+        return 0;
+    }
+    int result = ptn_runtime_static_property_typed_uninitialized_key(
+        runtime,
+        key,
+        declaring_class,
+        property
+    );
+    free(key);
+    if (declaring_class_out != NULL) {
+        *declaring_class_out = declaring_class;
+    }
+    return result;
+}
+
 static PTN_UNUSED void ptn_throw_property_array_auto_initialization_error(
     PtnRuntime *runtime,
     const char *declaring_class,
@@ -4579,16 +4628,19 @@ static PTN_UNUSED void ptn_throw_property_array_auto_initialization_error(
 
 static PTN_UNUSED void ptn_throw_uninitialized_typed_static_property_error(
     PtnRuntime *runtime,
-    const char *declaring_class,
+    const char *class_name,
     const char *property,
-    size_t line
+    size_t line,
+    int mention_static
 ) {
-    char message[256];
+    char message[384];
     int written = snprintf(
         message,
         sizeof(message),
-        "Typed static property %s::$%s must not be accessed before initialization",
-        declaring_class,
+        mention_static
+            ? "Typed static property %s::$%s must not be accessed before initialization"
+            : "Typed property %s::$%s must not be accessed before initialization",
+        class_name,
         property
     );
     if (written < 0 || (size_t)written >= sizeof(message)) {
@@ -5235,7 +5287,8 @@ static PTN_UNUSED PtnValue ptn_runtime_read_static_property(
                 runtime,
                 declaring_class,
                 property,
-                line
+                line,
+                1
             );
             return ptn_null();
         }
@@ -5386,6 +5439,15 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_static_property_quiet(
     );
     if (key != NULL) {
         if (!ptn_runtime_ensure_static_property_initialized(runtime, key, declaring_class, property)) {
+            free(key);
+            return ptn_lookup_missing();
+        }
+        if (ptn_runtime_static_property_typed_uninitialized_key(
+                runtime,
+                key,
+                declaring_class,
+                property
+            )) {
             free(key);
             return ptn_lookup_missing();
         }
@@ -5746,13 +5808,8 @@ static PTN_UNUSED PtnValue ptn_runtime_write_static_property_impl(
             free(key);
             return result;
         }
-        ptn_symbols_set(
-            ptn_runtime_static_property_initialized_table(runtime),
-            key,
-            ptn_bool(1)
-        );
         free(key);
-        return ptn_value_clone_deref(value);
+        return ptn_null();
     }
     PtnValue result = ptn_null();
     if (!ptn_runtime_static_property_type_coerce_assignment(

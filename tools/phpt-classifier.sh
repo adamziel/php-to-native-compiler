@@ -1827,6 +1827,10 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
             return ptn_path !~ /(^|\/)(lazy_objects|property_hooks)\// &&
                 ptn_path !~ /ext\/reflection\/tests\/types\//
         }
+        function ptn_supported_typed_static_property_metadata_row() {
+            return ptn_reflection_property_typed_metadata_row ||
+                ptn_path ~ /ext\/reflection\/tests\/(ReflectionClass_setStaticPropertyValue_003|ReflectionProperty_(isReadable_static|isWritable_static|typed_static)|gh12856)[.]phpt$/
+        }
         function ptn_supported_property_hook_metadata_row() {
             return ptn_path ~ /Zend\/tests\/asymmetric_visibility\/gh19044[.]phpt$/ ||
                 ptn_path ~ /Zend\/tests\/asymmetric_visibility\/virtual_(get|set)_only[.]phpt$/ ||
@@ -2073,7 +2077,7 @@ ptn_phpt_first_unsupported_class_metadata_surface() {
                 exit
             }
             if (!ptn_has_override_attribute &&
-                !ptn_reflection_property_typed_metadata_row &&
+                !ptn_supported_typed_static_property_metadata_row() &&
                 line ~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+([?]?[a-z_\\][a-z0-9_\\]*|int|float|string|bool|array|object|mixed|iterable)[[:space:]]+\$[a-z_]/ &&
                 line !~ /(^|[[:space:]])(public|protected|private)[[:space:]]+static[[:space:]]+final[[:space:]]+\$[a-z_]/) {
                 print "unsupported-typed-property-metadata\trequires typed static property metadata, outside PTN modeled static property declarations"

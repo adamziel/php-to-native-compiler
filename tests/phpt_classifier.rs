@@ -2068,6 +2068,40 @@ fn phpt_classifier_keeps_direct_static_property_rows_runnable() {
 }
 
 #[test]
+fn phpt_classifier_keeps_supported_typed_static_reflection_rows_runnable_by_path() {
+    let phpt =
+        "--TEST--\ntyped static reflection\n--FILE--\n<?php\nclass Box { public static int $value; }\n$ref = new ReflectionProperty('Box', 'value');\n--EXPECT--\n";
+    let rows = [
+        "ext/reflection/tests/ReflectionClass_setStaticPropertyValue_003.phpt",
+        "ext/reflection/tests/ReflectionProperty_isReadable_static.phpt",
+        "ext/reflection/tests/ReflectionProperty_isWritable_static.phpt",
+        "ext/reflection/tests/ReflectionProperty_typed_static.phpt",
+        "ext/reflection/tests/gh12856.phpt",
+    ];
+
+    for row in rows {
+        let classification = classify_at_relative_path(phpt, row);
+        assert_eq!(
+            classification, "runnable\tselected for PTN semantic measurement\n",
+            "{row}"
+        );
+    }
+}
+
+#[test]
+fn phpt_classifier_still_excludes_unproven_typed_static_property_rows() {
+    let classification = classify_at_relative_path(
+        "--TEST--\ntyped static property\n--FILE--\n<?php\nclass Box { public static int $value; }\n--EXPECT--\n",
+        "ext/reflection/tests/unproven_typed_static_property.phpt",
+    );
+
+    assert!(
+        classification.starts_with("unsupported-typed-property-metadata\t"),
+        "{classification:?}"
+    );
+}
+
+#[test]
 fn phpt_classifier_keeps_dynamic_member_dispatch_rows_runnable() {
     let cases = [
         "--TEST--\ndynamic property\n--FILE--\n<?php\nclass Box { public function read($name) { return $this->$name; } }\n--EXPECT--\n",

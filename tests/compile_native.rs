@@ -61895,6 +61895,81 @@ try {
 }
 
 #[test]
+fn compile_reflection_typed_static_property_values_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-typed-static-property-values");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-typed-static-property-values.php");
+    let output = root.join("reflection-typed-static-property-values-bin");
+    fs::write(
+        &input,
+        "<?php
+class ReflectTypedStatic {
+    public static int $i;
+    public static int $x = 1;
+    public static int $y = 2;
+}
+
+$rc = new ReflectionClass(ReflectTypedStatic::class);
+$rp = new ReflectionProperty(ReflectTypedStatic::class, 'i');
+
+try {
+    $rc->getStaticPropertyValue('i');
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+try {
+    $rp->getValue();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+$rc->setStaticPropertyValue('i', '21');
+var_dump(ReflectTypedStatic::$i);
+
+try {
+    $rc->setStaticPropertyValue('i', 'foo');
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+
+ReflectTypedStatic::$x =& ReflectTypedStatic::$y;
+try {
+    $rc->setStaticPropertyValue('x', 'foo');
+} catch (TypeError $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Typed property ReflectTypedStatic::$i must not be accessed before initialization\n",
+            "Typed static property ReflectTypedStatic::$i must not be accessed before initialization\n",
+            "int(21)\n",
+            "Cannot assign string to property ReflectTypedStatic::$i of type int\n",
+            "Cannot assign string to reference held by property ReflectTypedStatic::$y of type int\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("PTN_PROPERTY_TYPE_INT"));
+    assert!(c_source.contains("ptn_runtime_define_static_property(&runtime"));
+}
+
+#[test]
 fn compile_lazy_reflection_property_metadata_to_native_binary() {
     let root = temp_dir("ptn-native-lazy-reflection-property-metadata");
     fs::create_dir_all(&root).unwrap();

@@ -100974,9 +100974,26 @@ static PTN_UNUSED PtnValue ptn_reflection_property_call_method(
                 data->class_name,
                 line
             );
-            return lookup.exists
-                ? lookup.value
-                : ptn_reflection_property_default_value(runtime, data->class_name, data->name);
+            if (lookup.exists) {
+                return lookup.value;
+            }
+            const char *typed_declaring_class = NULL;
+            if (ptn_runtime_static_property_typed_uninitialized(
+                    runtime,
+                    data->class_name,
+                    data->name,
+                    &typed_declaring_class
+                )) {
+                ptn_throw_uninitialized_typed_static_property_error(
+                    runtime,
+                    typed_declaring_class == NULL ? data->class_name : typed_declaring_class,
+                    data->name,
+                    line,
+                    1
+                );
+                return ptn_null();
+            }
+            return ptn_reflection_property_default_value(runtime, data->class_name, data->name);
         }
         if (argc != 1) {
             char message[160];
@@ -103295,6 +103312,23 @@ static PTN_UNUSED PtnValue ptn_reflection_class_call_method(
         if (argc >= 2) {
             free(property_name);
             return ptn_value_clone_deref(args[1]);
+        }
+        const char *typed_declaring_class = NULL;
+        if (ptn_runtime_static_property_typed_uninitialized(
+                runtime,
+                class_name,
+                property_name,
+                &typed_declaring_class
+            )) {
+            ptn_throw_uninitialized_typed_static_property_error(
+                runtime,
+                typed_declaring_class == NULL ? class_name : typed_declaring_class,
+                property_name,
+                line,
+                0
+            );
+            free(property_name);
+            return ptn_null();
         }
         ptn_reflection_class_throw_missing_property(runtime, class_name, property_name);
         free(property_name);
