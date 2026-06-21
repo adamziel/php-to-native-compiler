@@ -305,6 +305,12 @@ static PTN_UNUSED char *ptn_unhandled_match_message(PtnRuntime *runtime, PtnValu
     return buffer.data;
 }
 
+static PTN_UNUSED PtnStringOperand ptn_value_to_string_operand_with_runtime(
+    PtnRuntime *runtime,
+    PtnValue value,
+    size_t line
+);
+
 static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue value, size_t line) {
     value = ptn_value_deref(value);
 
@@ -316,10 +322,15 @@ static PTN_UNUSED char *ptn_dynamic_variable_name(PtnRuntime *runtime, PtnValue 
         case PTN_STRING:
         case PTN_RESOURCE:
             return ptn_value_to_string(value);
-        case PTN_ARRAY:
         case PTN_OBJECT:
         case PTN_CLOSURE:
-        case PTN_EXCEPTION:
+        case PTN_EXCEPTION: {
+            PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, value, line);
+            char *result = ptn_duplicate_string_len(string.data, string.len);
+            ptn_string_operand_free(string);
+            return result;
+        }
+        case PTN_ARRAY:
         case PTN_REFERENCE:
             break;
     }

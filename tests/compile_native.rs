@@ -3696,6 +3696,27 @@ fn parser_accepts_global_variable_statements() {
 }
 
 #[test]
+fn parser_rejects_this_as_global_variable() {
+    let error = parser::parse("<?php function invalid_global() { global $this; }").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+    assert_eq!(error.message, "Cannot use $this as global variable");
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
+fn parser_reports_global_dynamic_variable_separator_error() {
+    let error = parser::parse("<?php global $$foo->bar;").unwrap_err();
+
+    assert_eq!(error.kind, DiagnosticKind::ParseError);
+    assert_eq!(
+        error.message,
+        "syntax error, unexpected token \"->\", expecting \",\" or \";\""
+    );
+    assert_eq!(error.span.unwrap().line, 1);
+}
+
+#[test]
 fn parser_accepts_nested_named_function_declarations() {
     let program = parser::parse(
         "<?php function outer() { function inner() { return 'ok'; } } outer(); inner();",
@@ -46233,7 +46254,8 @@ echo $argc, \"\\n\";\n\
 echo $argv[0] === __FILE__ ? \"script\\n\" : \"wrong\\n\";\n\
 echo $_SERVER['argc'], \"\\n\";\n\
 echo $_SERVER['argv'][1], '/', $_SERVER['argv'][2], '/', $_SERVER['argv'][3], \"\\n\";\n\
-echo $argv === $_SERVER['argv'] ? \"same\\n\" : \"different\\n\";\n",
+echo $argv === $_SERVER['argv'] ? \"same\\n\" : \"different\\n\";\n\
+echo $_SERVER['PHP_SELF'] === __FILE__ ? \"self\\n\" : \"wrong-self\\n\";\n",
     )
     .unwrap();
 
@@ -46253,7 +46275,7 @@ echo $argv === $_SERVER['argv'] ? \"same\\n\" : \"different\\n\";\n",
     assert!(execution.status.success());
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "4\nscript\n4\nalpha/beta/gamma\nsame\n"
+        "4\nscript\n4\nalpha/beta/gamma\nsame\nself\n"
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -59044,6 +59066,72 @@ echo $ref3, \"\\n\";\n",
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_runtime_bind_global_variable(&runtime, ptn_tmp_"));
     assert!(c_source.contains("ptn_runtime_bind_array_path_reference(&runtime, ptn_tmp_"));
+}
+
+#[test]
+fn compile_autoglobal_symbols_share_global_scope_to_native_binary() {
+    let root = temp_dir("ptn-native-autoglobal-symbol-scope");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("autoglobal-symbol-scope.php");
+    let output = root.join("autoglobal-symbol-scope-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$_SERVER['probe'] = 'global';\n\
+function read_auto_global() {\n\
+    var_dump(isset($_SERVER));\n\
+    echo $_SERVER['probe'], \"\\n\";\n\
+    unset($_SERVER);\n\
+}\n\
+read_auto_global();\n\
+var_dump($_SERVER);\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output)
+        .env("PTN_SCRIPT_FILENAME", &input)
+        .output()
+        .unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        format!(
+            "bool(true)\nglobal\n\nWarning: Undefined global variable $_SERVER in {} on line 9\nNULL\n",
+            input.display()
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
+fn compile_dynamic_global_object_name_throws_catchable_error_to_native_binary() {
+    let root = temp_dir("ptn-native-dynamic-global-object-name");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("dynamic-global-object-name.php");
+    let output = root.join("dynamic-global-object-name-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+try {\n\
+    global ${new stdClass};\n\
+    echo \"unreached\\n\";\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), ': ', $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        "Error: Object of class stdClass could not be converted to string\n"
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
 
 #[test]

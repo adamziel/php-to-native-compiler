@@ -28267,12 +28267,23 @@ static PtnValue ptn_request_argv_from_query(const char *query) {
     return result;
 }
 
+static const char *ptn_request_script_filename_from_native(int argc, char **argv) {
+    const char *script_filename = getenv("PTN_SCRIPT_FILENAME");
+    if (script_filename != NULL && script_filename[0] != '\0') {
+        return script_filename;
+    }
+    if (argc > 0 && argv != NULL && argv[0] != NULL && argv[0][0] != '\0') {
+        return argv[0];
+    }
+    return "";
+}
+
 static PtnValue ptn_request_argv_from_native(int argc, char **argv) {
     PtnValue result = ptn_array_from_literal_entries(0, NULL);
-    const char *script_filename = getenv("PTN_SCRIPT_FILENAME");
+    const char *script_filename = ptn_request_script_filename_from_native(argc, argv);
     for (int i = 0; i < argc; i++) {
         const char *value = argv[i] == NULL ? "" : argv[i];
-        if (i == 0 && script_filename != NULL && script_filename[0] != '\0') {
+        if (i == 0 && script_filename[0] != '\0') {
             value = script_filename;
         }
         ptn_array_set_entry(
@@ -28288,6 +28299,10 @@ static void ptn_request_seed_cli_argv(PtnRuntime *runtime, PtnValue server, int 
     PtnValue argv_array = ptn_request_argv_from_native(argc, argv);
     PtnValue argc_value = ptn_int(argc);
     if (server.type == PTN_ARRAY && ptn_request_order_contains(runtime, 'S')) {
+        const char *script_filename = ptn_request_script_filename_from_native(argc, argv);
+        ptn_array_set_entry(server.as.array, ptn_array_string_key("PHP_SELF"), ptn_string(script_filename));
+        ptn_array_set_entry(server.as.array, ptn_array_string_key("SCRIPT_NAME"), ptn_string(script_filename));
+        ptn_array_set_entry(server.as.array, ptn_array_string_key("SCRIPT_FILENAME"), ptn_string(script_filename));
         ptn_array_set_entry(server.as.array, ptn_array_string_key("argc"), ptn_value_clone(argc_value));
         ptn_array_set_entry(server.as.array, ptn_array_string_key("argv"), ptn_value_clone(argv_array));
     }

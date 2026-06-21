@@ -7063,12 +7063,13 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_for_reference_write(
     const char *path,
     size_t line
 ) {
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    PtnValue *slot = ptn_symbols_value_slot(symbols, name);
     if (slot == NULL) {
         PtnValue array = ptn_array_from_literal_entries(0, NULL);
         ptn_runtime_write_variable(runtime, name, array);
         ptn_value_destroy(&array);
-        slot = ptn_symbols_value_slot(&runtime->symbols, name);
+        slot = ptn_symbols_value_slot(symbols, name);
         if (slot == NULL) {
             return NULL;
         }
@@ -8223,9 +8224,18 @@ static PTN_UNUSED void ptn_call_arguments_unpack_variable_with_parameter_modes(
         return;
     }
 
-    PtnValue *slot = ptn_symbols_get_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_get_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot == NULL) {
-        ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, runtime->source_path, line);
+        if (ptn_runtime_is_auto_global_symbol_name(name)) {
+            ptn_emit_undefined_global_variable_warning(
+                &runtime->diagnostics,
+                name,
+                runtime->source_path,
+                line
+            );
+        } else {
+            ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, runtime->source_path, line);
+        }
         PtnValue missing = ptn_null();
         ptn_call_arguments_unpack_array_with_parameter_modes(
             runtime,
@@ -8484,7 +8494,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_dim(
     const char *path,
     size_t line
 ) {
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot != NULL) {
         PtnValue slot_value = ptn_value_deref(*slot);
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
@@ -9504,8 +9514,13 @@ static PTN_UNUSED PtnArrayIterator ptn_array_iterator_by_ref_from_variable(
     const char *path,
     size_t line
 ) {
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot == NULL) {
+        if (ptn_runtime_is_auto_global_symbol_name(name)) {
+            ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, path, line);
+            ptn_emit_foreach_non_array_warning(runtime, ptn_null(), path, line);
+            return ptn_array_iterator_empty();
+        }
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
         ptn_emit_foreach_non_array_warning(runtime, ptn_null(), path, line);
         return ptn_array_iterator_empty();
@@ -10894,17 +10909,22 @@ static PTN_UNUSED void ptn_runtime_array_warn_missing_base_for_assign_op(
         return;
     }
     PtnValue container;
-    if (!ptn_symbols_get(&runtime->symbols, name, &container)) {
+    if (!ptn_symbols_get(ptn_runtime_variable_symbol_table(runtime, name), name, &container)) {
+        if (ptn_runtime_is_auto_global_symbol_name(name)) {
+            ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, path, line);
+            return;
+        }
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
     }
 }
 
 static PTN_UNUSED PtnArray *ptn_runtime_array_detach_variable(PtnRuntime *runtime, const char *name) {
-    size_t index = ptn_symbols_find(&runtime->symbols, name);
-    if (index >= runtime->symbols.len) {
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    size_t index = ptn_symbols_find(symbols, name);
+    if (index >= symbols->len) {
         return NULL;
     }
-    PtnValue *value = &runtime->symbols.items[index].value;
+    PtnValue *value = &symbols->items[index].value;
     if (value->type == PTN_REFERENCE) {
         return ptn_array_detach_value(&value->as.reference->value);
     }
@@ -10954,7 +10974,8 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
     const char *name,
     size_t line
 ) {
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    PtnValue *slot = ptn_symbols_value_slot(symbols, name);
     if (slot != NULL) {
         return ptn_array_root_slot_for_write(runtime, slot, line);
     }
@@ -10962,7 +10983,7 @@ static PTN_UNUSED PtnArray *ptn_runtime_array_root_for_write(
     PtnValue array = ptn_array_from_literal_entries(0, NULL);
     ptn_runtime_write_variable(runtime, name, array);
     ptn_value_destroy(&array);
-    slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    slot = ptn_symbols_value_slot(symbols, name);
     if (slot == NULL) {
         return NULL;
     }
@@ -11380,7 +11401,7 @@ static PTN_UNUSED PtnValue ptn_runtime_reference_for_array_path(
         return ptn_runtime_reference_for_variable(runtime, name);
     }
 
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot != NULL) {
         PtnValue slot_value = ptn_value_deref(*slot);
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
@@ -11535,7 +11556,7 @@ static PTN_UNUSED void ptn_runtime_bind_array_path_reference(
         return;
     }
 
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot != NULL) {
         PtnValue slot_value = ptn_value_deref(*slot);
         if (!segments[0].append) {
@@ -12181,7 +12202,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
         return;
     }
 
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot != NULL && segments[0].append) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
@@ -12333,7 +12354,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result(
         return ptn_value_clone_deref(value);
     }
 
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot != NULL && segments[0].append) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
@@ -12473,7 +12494,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_from_inc_dec(
         return;
     }
 
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot != NULL && segment_count == 1) {
         PtnValue slot_value = ptn_value_deref(*slot);
         if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
@@ -12553,7 +12574,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
         );
     }
 
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot == NULL) {
         if (!segments[0].append) {
             ptn_emit_assign_op_missing_array_key(runtime, segments[0].value, line);
@@ -12683,7 +12704,7 @@ static PTN_UNUSED int ptn_runtime_array_path_read_overloaded_base_for_assign_op(
 ) {
     *container_out = ptn_null();
     if (segment_count > 1 && !ptn_runtime_is_globals_name(name)) {
-        PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+        PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
         if (slot != NULL) {
             PtnValue slot_value = ptn_value_deref(*slot);
             if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
@@ -13635,8 +13656,12 @@ static PTN_UNUSED void ptn_runtime_array_path_unset(
         return;
     }
 
-    PtnValue *slot = ptn_symbols_value_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_value_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot == NULL) {
+        if (ptn_runtime_is_auto_global_symbol_name(name)) {
+            ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, runtime->source_path, line);
+            return;
+        }
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, runtime->source_path, line);
         return;
     }

@@ -5189,6 +5189,12 @@ impl Parser<'_> {
             let target = match token.kind {
                 TokenKind::Variable(name) => {
                     self.advance();
+                    if name == "this" {
+                        return Err(Diagnostic::new(
+                            "Cannot use $this as global variable",
+                            Some(token.span),
+                        ));
+                    }
                     GlobalTarget::Variable {
                         name,
                         span: token.span,
@@ -5213,10 +5219,15 @@ impl Parser<'_> {
                 }
             };
             targets.push(target);
-            if !matches!(self.peek().kind, TokenKind::Comma) {
-                break;
+            match self.peek().kind {
+                TokenKind::Comma => {
+                    self.advance();
+                }
+                TokenKind::Semicolon | TokenKind::CloseTag | TokenKind::Eof => break,
+                _ => {
+                    return Err(syntax_error_unexpected(self.peek(), Some("\",\" or \";\"")));
+                }
             }
-            self.advance();
         }
         self.expect_statement_terminator()?;
         Ok(Statement::Global { targets, span })

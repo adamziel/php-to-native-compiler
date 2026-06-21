@@ -670,6 +670,23 @@ static PTN_UNUSED PtnSymbolTable *ptn_runtime_global_symbol_table(PtnRuntime *ru
     return runtime->global_symbols == NULL ? &runtime->symbols : runtime->global_symbols;
 }
 
+static PTN_UNUSED int ptn_runtime_is_auto_global_symbol_name(const char *name) {
+    return strcmp(name, "_SERVER") == 0 ||
+        strcmp(name, "_GET") == 0 ||
+        strcmp(name, "_POST") == 0 ||
+        strcmp(name, "_FILES") == 0 ||
+        strcmp(name, "_COOKIE") == 0 ||
+        strcmp(name, "_SESSION") == 0 ||
+        strcmp(name, "_REQUEST") == 0 ||
+        strcmp(name, "_ENV") == 0;
+}
+
+static PTN_UNUSED PtnSymbolTable *ptn_runtime_variable_symbol_table(PtnRuntime *runtime, const char *name) {
+    return ptn_runtime_is_auto_global_symbol_name(name)
+        ? ptn_runtime_global_symbol_table(runtime)
+        : &runtime->symbols;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_globals_snapshot(PtnRuntime *runtime) {
     PtnSymbolTable *globals = ptn_runtime_global_symbol_table(runtime);
     PtnArrayLiteralEntry *entries = NULL;
@@ -697,15 +714,16 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_snapshot(PtnRuntime *runtime) {
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_write_variable_result(PtnRuntime *runtime, const char *name, PtnValue value) {
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
     PtnValue current;
-    if (ptn_symbols_get(&runtime->symbols, name, &current) && current.type == PTN_REFERENCE) {
+    if (ptn_symbols_get(symbols, name, &current) && current.type == PTN_REFERENCE) {
         if (ptn_reference_assign(runtime, current.as.reference, value)) {
             return ptn_value_clone(current.as.reference->value);
         }
         return ptn_value_clone(current.as.reference->value);
     }
     PtnValue result = ptn_value_clone_deref(value);
-    ptn_symbols_set_with_runtime_scope(&runtime->symbols, name, result, runtime);
+    ptn_symbols_set_with_runtime_scope(symbols, name, result, runtime);
     return result;
 }
 
@@ -737,7 +755,7 @@ static PTN_UNUSED void ptn_runtime_bind_variable_reference(PtnRuntime *runtime, 
     if (reference.type != PTN_REFERENCE) {
         ptn_abort_out_of_memory();
     }
-    ptn_symbols_bind_reference(&runtime->symbols, name, reference);
+    ptn_symbols_bind_reference(ptn_runtime_variable_symbol_table(runtime, name), name, reference);
 }
 
 static PTN_UNUSED void ptn_runtime_bind_global_variable(PtnRuntime *runtime, const char *name) {
@@ -747,7 +765,7 @@ static PTN_UNUSED void ptn_runtime_bind_global_variable(PtnRuntime *runtime, con
 }
 
 static PTN_UNUSED PtnValue ptn_runtime_reference_for_variable(PtnRuntime *runtime, const char *name) {
-    return ptn_symbols_reference_for_variable(&runtime->symbols, name);
+    return ptn_symbols_reference_for_variable(ptn_runtime_variable_symbol_table(runtime, name), name);
 }
 
 static PTN_UNUSED PtnValue *ptn_runtime_global_variable_slot(PtnRuntime *runtime, const char *name) {
@@ -964,7 +982,8 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
         return ptn_runtime_globals_snapshot(runtime);
     }
     PtnValue value;
-    if (ptn_symbols_get(&runtime->symbols, name, &value)) {
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    if (ptn_symbols_get(symbols, name, &value)) {
         return ptn_value_deref(value);
     }
     if (strcmp(name, "this") == 0) {
@@ -975,6 +994,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable(
             path,
             line
         );
+        return ptn_null();
+    }
+    if (ptn_runtime_is_auto_global_symbol_name(name)) {
+        ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, path, line);
         return ptn_null();
     }
     ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
@@ -991,7 +1014,8 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_increment(
         return ptn_runtime_globals_snapshot(runtime);
     }
     PtnValue value;
-    if (ptn_symbols_get(&runtime->symbols, name, &value)) {
+    PtnSymbolTable *symbols = ptn_runtime_variable_symbol_table(runtime, name);
+    if (ptn_symbols_get(symbols, name, &value)) {
         return ptn_value_clone(value);
     }
     if (strcmp(name, "this") == 0) {
@@ -1004,6 +1028,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_increment(
         );
         return ptn_null();
     }
+    if (ptn_runtime_is_auto_global_symbol_name(name)) {
+        ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, path, line);
+        return ptn_null();
+    }
     ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
     return ptn_null();
 }
@@ -1014,7 +1042,7 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_array_mutation(
     const char *path,
     size_t line
 ) {
-    PtnValue *slot = ptn_symbols_get_slot(&runtime->symbols, name);
+    PtnValue *slot = ptn_symbols_get_slot(ptn_runtime_variable_symbol_table(runtime, name), name);
     if (slot == NULL) {
         if (strcmp(name, "this") == 0) {
             ptn_throw_exception_at(
@@ -1024,6 +1052,10 @@ static PTN_UNUSED PtnValue ptn_runtime_read_variable_for_array_mutation(
                 path,
                 line
             );
+            return ptn_null();
+        }
+        if (ptn_runtime_is_auto_global_symbol_name(name)) {
+            ptn_emit_undefined_global_variable_warning(&runtime->diagnostics, name, path, line);
             return ptn_null();
         }
         ptn_emit_undefined_variable_warning(&runtime->diagnostics, name, path, line);
@@ -1040,7 +1072,7 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *ru
         return ptn_lookup_found(ptn_runtime_globals_snapshot(runtime));
     }
     PtnValue value;
-    if (ptn_symbols_get(&runtime->symbols, name, &value)) {
+    if (ptn_symbols_get(ptn_runtime_variable_symbol_table(runtime, name), name, &value)) {
         return ptn_lookup_found(ptn_value_deref(value));
     }
     return ptn_lookup_missing();
@@ -1048,12 +1080,12 @@ static PTN_UNUSED PtnLookupResult ptn_runtime_read_variable_quiet(PtnRuntime *ru
 
 static PTN_UNUSED int ptn_runtime_variable_is_set(PtnRuntime *runtime, const char *name) {
     PtnValue value;
-    return ptn_symbols_get(&runtime->symbols, name, &value) && ptn_value_deref(value).type != PTN_NULL;
+    return ptn_symbols_get(ptn_runtime_variable_symbol_table(runtime, name), name, &value) && ptn_value_deref(value).type != PTN_NULL;
 }
 
 static PTN_UNUSED int ptn_runtime_variable_is_empty(PtnRuntime *runtime, const char *name) {
     PtnValue value;
-    return !ptn_symbols_get(&runtime->symbols, name, &value) || !ptn_is_truthy(ptn_value_deref(value));
+    return !ptn_symbols_get(ptn_runtime_variable_symbol_table(runtime, name), name, &value) || !ptn_is_truthy(ptn_value_deref(value));
 }
 
 static PTN_UNUSED int ptn_call_frame_has_parameter(PtnCallFrame *frame, const char *name) {
@@ -1069,6 +1101,10 @@ static PTN_UNUSED int ptn_call_frame_has_parameter(PtnCallFrame *frame, const ch
 }
 
 static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const char *name) {
+    if (ptn_runtime_is_auto_global_symbol_name(name)) {
+        ptn_runtime_unset_global_variable(runtime, name);
+        return;
+    }
     if (ptn_call_frame_has_parameter(runtime->call_frame, name)) {
         ptn_symbols_set_with_runtime_scope(&runtime->symbols, name, ptn_null(), runtime);
         return;
