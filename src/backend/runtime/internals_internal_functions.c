@@ -19235,6 +19235,55 @@ static PtnArray **ptn_array_set_operation_array_args(
     const PtnValue *args
 );
 
+static void ptn_array_throw_total_elements_error(PtnRuntime *runtime, size_t line) {
+    char message[96];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "The total number of elements must be lower than %llu",
+        (unsigned long long)PTN_ARRAY_MAX_TOTAL_ELEMENTS
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+}
+
+static int ptn_array_total_elements_would_exceed_limit(
+    PtnRuntime *runtime,
+    size_t total,
+    size_t additional,
+    size_t line
+) {
+    if (total >= (size_t)PTN_ARRAY_MAX_TOTAL_ELEMENTS ||
+        additional >= (size_t)PTN_ARRAY_MAX_TOTAL_ELEMENTS - total) {
+        ptn_array_throw_total_elements_error(runtime, line);
+        return 1;
+    }
+    return 0;
+}
+
+static int ptn_array_operand_total_elements_exceed_limit(
+    PtnRuntime *runtime,
+    PtnArray *source,
+    size_t array_count,
+    PtnArray **arrays,
+    size_t line
+) {
+    size_t total = 0;
+    if (ptn_array_total_elements_would_exceed_limit(runtime, total, source->len, line)) {
+        return 1;
+    }
+    total += source->len;
+    for (size_t i = 0; i < array_count; i++) {
+        if (ptn_array_total_elements_would_exceed_limit(runtime, total, arrays[i]->len, line)) {
+            return 1;
+        }
+        total += arrays[i]->len;
+    }
+    return 0;
+}
+
 static PtnArray **ptn_array_set_operation_arrays(
     PtnRuntime *runtime,
     const char *function_name,
