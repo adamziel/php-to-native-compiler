@@ -3928,6 +3928,7 @@ struct MagicDebugInfoReturnDeprecation {
 struct DeclarationFatal {
     message: String,
     line: usize,
+    uncaught_error: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23171,6 +23172,7 @@ fn collect_module_startup_declaration_fatals(module: &Module) -> Vec<Declaration
             fatals.push(DeclarationFatal {
                 message,
                 line: trait_decl.line,
+                uncaught_error: false,
             });
         }
         collect_property_hook_attribute_declaration_fatals(&mut fatals, &trait_decl.properties);
@@ -23191,6 +23193,17 @@ fn emit_class_declaration_fatals(
     else {
         return;
     };
+    if fatal.uncaught_error {
+        out.push_str("        ptn_throw_exception_at(&runtime, \"Error\", \"");
+        out.push_str(&c_string(&fatal.message));
+        out.push_str("\", \"");
+        out.push_str(&c_string(source_path));
+        out.push_str("\", ");
+        out.push_str(&fatal.line.to_string());
+        out.push_str(");\n");
+        out.push_str("        ptn_rethrow_exception(&runtime);\n");
+        return;
+    }
     out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
     out.push_str(&c_string(&fatal.message));
     out.push_str("\", \"");
@@ -23213,6 +23226,7 @@ fn collect_class_declaration_fatals(
             .map(|fatal| DeclarationFatal {
                 message: fatal.message.clone(),
                 line: fatal.line,
+                uncaught_error: class_declaration_fatal_is_uncaught_error(&fatal.message),
             }),
     );
     if let Some(message) = reserved_declaration_name_fatal_message(
@@ -23226,12 +23240,14 @@ fn collect_class_declaration_fatals(
         fatals.push(DeclarationFatal {
             message,
             line: class.line,
+            uncaught_error: false,
         });
     }
     if let Some(message) = enum_class_declaration_fatal_message(class, classes) {
         fatals.push(DeclarationFatal {
             message,
             line: class.line,
+            uncaught_error: false,
         });
     }
     for method in &class.methods {
@@ -23242,17 +23258,26 @@ fn collect_class_declaration_fatals(
             fatals.push(DeclarationFatal {
                 message,
                 line: method.line,
+                uncaught_error: false,
             });
         }
         if let Some(message) = magic_declaration_fatal_message(class, method, function) {
             fatals.push(DeclarationFatal {
                 message,
                 line: method.line,
+                uncaught_error: false,
             });
         }
     }
     collect_property_hook_attribute_declaration_fatals(&mut fatals, &class.properties);
     fatals
+}
+
+fn class_declaration_fatal_is_uncaught_error(message: &str) -> bool {
+    (message.starts_with("Trait \"") && message.ends_with("\" not found"))
+        || (message.starts_with("Interface \"") && message.ends_with("\" not found"))
+        || (message.starts_with("Class \"") && message.ends_with("\" not found"))
+        || message.contains(" - it is not a trait")
 }
 
 fn collect_property_hook_attribute_declaration_fatals(
@@ -23266,6 +23291,7 @@ fn collect_property_hook_attribute_declaration_fatals(
             fatals.push(DeclarationFatal {
                 message: "#[\\NoDiscard] is not supported for property hooks".to_string(),
                 line: property.hook_get_line,
+                uncaught_error: false,
             });
         }
         if property.hook_set_attributes.no_discard_count > 0
@@ -23274,6 +23300,7 @@ fn collect_property_hook_attribute_declaration_fatals(
             fatals.push(DeclarationFatal {
                 message: "#[\\NoDiscard] is not supported for property hooks".to_string(),
                 line: property.hook_set_line,
+                uncaught_error: false,
             });
         }
     }

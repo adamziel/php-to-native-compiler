@@ -6260,6 +6260,69 @@ class Sample {
 }
 
 #[test]
+fn parser_validates_typed_class_constant_inheritance_and_composition() {
+    let error = parser::parse(
+        "<?php
+class A {
+    public const int VALUE = 1;
+}
+class B extends A {
+    public const string VALUE = 'b';
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Type of B::VALUE must be compatible with A::VALUE of type int"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+
+    let error = parser::parse(
+        "<?php
+interface I {
+    public const string VALUE = 'i';
+}
+class C implements I {
+    public const VALUE = 'c';
+}",
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.message,
+        "Type of C::VALUE must be compatible with I::VALUE of type string"
+    );
+    assert_eq!(error.kind, DiagnosticKind::Fatal);
+
+    let program = parser::parse(
+        "<?php
+trait T {
+    public const ?array VALUE = [];
+}
+class UsesTrait {
+    use T;
+    public const array VALUE = [];
+}",
+    )
+    .unwrap();
+    assert_eq!(
+        program.classes[0].declaration_fatals[0].message,
+        "UsesTrait and T define the same constant (VALUE) in the composition of UsesTrait. However, the definition differs and is considered incompatible. Class was composed"
+    );
+
+    let program = parser::parse(
+        "<?php
+class ParentConstant {
+    public const iterable VALUE = [];
+}
+class ChildConstant extends ParentConstant {
+    public const array VALUE = [];
+}",
+    )
+    .unwrap();
+    assert_eq!(program.classes.len(), 2);
+}
+
+#[test]
 fn parser_accepts_dynamic_class_name_fetch_syntax() {
     let program =
         parser::parse("<?php $e = new Exception; echo $e::class; echo (new stdClass)::CLASS;")

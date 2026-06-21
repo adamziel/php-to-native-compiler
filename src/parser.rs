@@ -186,6 +186,7 @@ struct ActiveTypeScope {
     class_name: String,
     parent_name: Option<String>,
     allow_unresolved_parent: bool,
+    is_trait: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1733,6 +1734,7 @@ impl Parser<'_> {
             class_name: class_name.clone(),
             parent_name: parent_name.clone(),
             allow_unresolved_parent: false,
+            is_trait: false,
         });
         let mut properties = Vec::new();
         let mut static_properties = Vec::new();
@@ -1882,6 +1884,7 @@ impl Parser<'_> {
             class_name: class_name.clone(),
             parent_name: None,
             allow_unresolved_parent: false,
+            is_trait: false,
         });
         let mut trait_uses = Vec::new();
         let mut methods = Vec::new();
@@ -2010,6 +2013,7 @@ impl Parser<'_> {
             class_name: trait_name.clone(),
             parent_name: None,
             allow_unresolved_parent: true,
+            is_trait: true,
         });
 
         let mut properties = Vec::new();
@@ -4712,7 +4716,7 @@ impl Parser<'_> {
     fn parse_type_hint_with_context(&mut self, context: TypeHintContext) -> Result<ParsedTypeHint> {
         if matches!(self.peek().kind, TokenKind::Question) {
             let span = self.advance().span;
-            let inner = self.parse_type_hint_with_context(context)?;
+            let inner = self.parse_type_hint_atom(context)?;
             let nullable_span = combine_spans(span, inner.span);
             return Ok(ParsedTypeHint {
                 type_hint: nullable_type_hint(inner.type_hint, span)?,
@@ -4852,16 +4856,31 @@ impl Parser<'_> {
                 TypeHint::False
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("self") => {
+                let keyword = self
+                    .source
+                    .get(token.span.byte_start..token.span.byte_end)
+                    .unwrap_or(name)
+                    .to_string();
                 self.advance();
-                self.relative_type_hint("self", token.span)?
+                self.relative_type_hint(&keyword, token.span)?
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("parent") => {
+                let keyword = self
+                    .source
+                    .get(token.span.byte_start..token.span.byte_end)
+                    .unwrap_or(name)
+                    .to_string();
                 self.advance();
-                self.relative_type_hint("parent", token.span)?
+                self.relative_type_hint(&keyword, token.span)?
             }
             TokenKind::Identifier(name) if name.eq_ignore_ascii_case("static") => {
+                let keyword = self
+                    .source
+                    .get(token.span.byte_start..token.span.byte_end)
+                    .unwrap_or(name)
+                    .to_string();
                 self.advance();
-                self.relative_type_hint("static", token.span)?
+                self.relative_type_hint(&keyword, token.span)?
             }
             TokenKind::Backslash => {
                 let parsed = self.parse_name("expected type hint")?;
@@ -4875,12 +4894,14 @@ impl Parser<'_> {
             }
             TokenKind::Identifier(name) if !is_unsupported_builtin_type_hint_name(name) => {
                 let parsed = self.parse_name("expected type hint")?;
+                validate_qualified_type_name_not_reserved(&parsed)?;
                 TypeHint::Class(self.resolve_class_name(&parsed))
             }
             _ if name_segment_from_token(&token.kind).is_some()
                 && matches!(self.peek_next().kind, TokenKind::Backslash) =>
             {
                 let parsed = self.parse_name("expected type hint")?;
+                validate_qualified_type_name_not_reserved(&parsed)?;
                 TypeHint::Class(self.resolve_class_name(&parsed))
             }
             TokenKind::AttributeStart => {
@@ -4905,9 +4926,13 @@ impl Parser<'_> {
         match keyword.to_ascii_lowercase().as_str() {
             "self" => {
                 if let Some(scope) = &self.active_type_scope {
-                    Ok(TypeHint::Class(scope.class_name.clone()))
+                    if scope.is_trait {
+                        Ok(TypeHint::Class(keyword.to_string()))
+                    } else {
+                        Ok(TypeHint::Class(scope.class_name.clone()))
+                    }
                 } else if self.allow_unscoped_relative_types > 0 {
-                    Ok(TypeHint::Class("self".to_string()))
+                    Ok(TypeHint::Class(keyword.to_string()))
                 } else {
                     Err(Diagnostic::new(
                         "Cannot use \"self\" when no class scope is active",
@@ -4920,7 +4945,7 @@ impl Parser<'_> {
                     if let Some(parent_name) = &scope.parent_name {
                         Ok(TypeHint::Class(parent_name.clone()))
                     } else if scope.allow_unresolved_parent {
-                        Ok(TypeHint::Class("parent".to_string()))
+                        Ok(TypeHint::Class(keyword.to_string()))
                     } else {
                         Err(Diagnostic::new(
                             "Cannot use \"parent\" when current class scope has no parent",
@@ -4928,7 +4953,7 @@ impl Parser<'_> {
                         ))
                     }
                 } else if self.allow_unscoped_relative_types > 0 {
-                    Ok(TypeHint::Class("parent".to_string()))
+                    Ok(TypeHint::Class(keyword.to_string()))
                 } else {
                     Err(Diagnostic::new(
                         "Cannot use \"parent\" when no class scope is active",
@@ -8619,10 +8644,81 @@ impl Parser<'_> {
         })
     }
 
+    fn parse_anonymous_class_modifiers(&mut self) -> Result<ClassModifiers> {
+        let mut modifiers = ClassModifiers::default();
+        loop {
+            if token_is_identifier_named(self.peek(), "abstract")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly"))
+            {
+                if modifiers.is_abstract {
+                    return Err(Diagnostic::new(
+                        "Multiple abstract modifiers are not allowed",
+                        Some(self.peek().span),
+                    ));
+                }
+                modifiers.is_abstract = true;
+                modifiers.abstract_span = Some(self.advance().span);
+                continue;
+            }
+            if token_is_identifier_named(self.peek(), "final")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
+                    || token_is_identifier_named(self.peek_next(), "readonly"))
+            {
+                if modifiers.is_final {
+                    return Err(Diagnostic::new(
+                        "Multiple final modifiers are not allowed",
+                        Some(self.peek().span),
+                    ));
+                }
+                modifiers.is_final = true;
+                modifiers.final_span = Some(self.advance().span);
+                continue;
+            }
+            if token_is_identifier_named(self.peek(), "readonly")
+                && (token_is_identifier_named(self.peek_next(), "class")
+                    || token_is_identifier_named(self.peek_next(), "abstract")
+                    || token_is_identifier_named(self.peek_next(), "final")
+                    || token_is_identifier_named(self.peek_next(), "readonly"))
+            {
+                if modifiers.is_readonly {
+                    return Err(Diagnostic::new(
+                        "Multiple readonly modifiers are not allowed",
+                        Some(self.peek().span),
+                    ));
+                }
+                modifiers.is_readonly = true;
+                modifiers.readonly_span = Some(self.advance().span);
+                continue;
+            }
+            break;
+        }
+        Ok(modifiers)
+    }
+
     fn parse_new_object_expr(&mut self, start_span: SourceSpan) -> Result<Expr> {
         let attributes = self.parse_attribute_groups()?;
+        let anonymous_modifiers = self.parse_anonymous_class_modifiers()?;
         if token_is_identifier_named(self.peek(), "class") {
-            return self.parse_anonymous_class_expr(start_span, attributes);
+            if anonymous_modifiers.is_abstract {
+                return Err(Diagnostic::new(
+                    "Cannot use the abstract modifier on an anonymous class",
+                    anonymous_modifiers.abstract_span,
+                ));
+            }
+            if anonymous_modifiers.is_final {
+                return Err(Diagnostic::new(
+                    "Cannot use the final modifier on an anonymous class",
+                    anonymous_modifiers.final_span,
+                ));
+            }
+            return self.parse_anonymous_class_expr(
+                start_span,
+                attributes,
+                anonymous_modifiers.is_readonly,
+            );
         }
         if matches!(self.peek().kind, TokenKind::Variable(_)) {
             let token = self.advance().clone();
@@ -8758,6 +8854,7 @@ impl Parser<'_> {
         &mut self,
         start_span: SourceSpan,
         attributes: ParsedAttributes,
+        is_readonly: bool,
     ) -> Result<Expr> {
         let class_span = self.advance().span;
         let (arguments, argument_names, argument_unpacks) =
@@ -8795,6 +8892,7 @@ impl Parser<'_> {
             class_name: class_name.clone(),
             parent_name: parent_name.clone(),
             allow_unresolved_parent: false,
+            is_trait: false,
         });
         let mut properties = Vec::new();
         let mut static_properties = Vec::new();
@@ -8802,7 +8900,7 @@ impl Parser<'_> {
         let mut methods = Vec::new();
         let mut trait_uses = Vec::new();
         while !matches!(self.peek().kind, TokenKind::RightBrace | TokenKind::Eof) {
-            match self.parse_class_member(false, false, false, &class_name)? {
+            match self.parse_class_member(is_readonly, false, false, &class_name)? {
                 ParsedClassMember::Method(method) => {
                     if method.is_abstract {
                         return Err(Diagnostic::new(
@@ -8850,7 +8948,7 @@ impl Parser<'_> {
             is_abstract: false,
             is_final: false,
             is_interface: false,
-            is_readonly: false,
+            is_readonly,
             is_enum: false,
             enum_backing_type: None,
             properties,
@@ -9851,7 +9949,7 @@ impl Parser<'_> {
         if matches!(token.kind, TokenKind::LeftBrace) {
             Ok(token.span)
         } else {
-            Err(Diagnostic::new("expected left brace", Some(token.span)))
+            Err(syntax_error_unexpected(token, Some("\"{\"")))
         }
     }
 
@@ -10198,6 +10296,48 @@ fn is_unqualified_only_builtin_type_hint_name(name: &str) -> bool {
             | "binary"
             | "void"
             | "never"
+    )
+}
+
+fn validate_qualified_type_name_not_reserved(parsed: &ParsedName) -> Result<()> {
+    if !matches!(
+        parsed.resolution,
+        NameResolution::Qualified | NameResolution::NamespaceRelative
+    ) {
+        return Ok(());
+    }
+    let Some(last_segment) = parsed.name.rsplit('\\').next() else {
+        return Ok(());
+    };
+    if !is_reserved_namespace_qualified_type_name(last_segment) {
+        return Ok(());
+    }
+    Err(Diagnostic::new(
+        format!(
+            "Cannot use \"{}\" as a type name as it is reserved",
+            parsed.name
+        ),
+        Some(parsed.span),
+    ))
+}
+
+fn is_reserved_namespace_qualified_type_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "array"
+            | "callable"
+            | "bool"
+            | "float"
+            | "int"
+            | "iterable"
+            | "mixed"
+            | "null"
+            | "object"
+            | "string"
+            | "void"
+            | "never"
+            | "true"
+            | "false"
     )
 }
 
@@ -10592,6 +10732,14 @@ fn validate_union_type_hint(types: &[TypeHint], span: SourceSpan) -> Result<()> 
         }
         seen.push(key);
     }
+    if let Some((redundant, less_restrictive)) = dnf_redundant_union_member(types) {
+        return Err(Diagnostic::new(
+            format!(
+                "Type {redundant} is redundant as it is more restrictive than type {less_restrictive}"
+            ),
+            Some(span),
+        ));
+    }
     Ok(())
 }
 
@@ -10599,6 +10747,14 @@ fn validate_intersection_type_hint(types: &[TypeHint], span: SourceSpan) -> Resu
     let mut seen = Vec::new();
     for type_hint in types {
         match type_hint {
+            TypeHint::Class(name)
+                if matches!(name.to_ascii_lowercase().as_str(), "self" | "parent") =>
+            {
+                return Err(Diagnostic::new(
+                    format!("Type {name} cannot be part of an intersection type"),
+                    Some(span),
+                ));
+            }
             TypeHint::Class(_) => {}
             TypeHint::Iterable => {
                 return Err(Diagnostic::new(
@@ -10629,6 +10785,48 @@ fn validate_intersection_type_hint(types: &[TypeHint], span: SourceSpan) -> Resu
         seen.push(key);
     }
     Ok(())
+}
+
+fn dnf_redundant_union_member(types: &[TypeHint]) -> Option<(String, String)> {
+    for redundant in types {
+        let redundant_atoms = dnf_type_atom_keys(redundant)?;
+        for less_restrictive in types {
+            if std::ptr::eq(redundant, less_restrictive) {
+                continue;
+            }
+            let less_restrictive_atoms = dnf_type_atom_keys(less_restrictive)?;
+            if redundant_atoms.len() <= less_restrictive_atoms.len() {
+                continue;
+            }
+            if less_restrictive_atoms
+                .iter()
+                .all(|atom| redundant_atoms.iter().any(|candidate| candidate == atom))
+            {
+                return Some((
+                    type_hint_display(redundant),
+                    type_hint_display(less_restrictive),
+                ));
+            }
+        }
+    }
+    None
+}
+
+fn dnf_type_atom_keys(type_hint: &TypeHint) -> Option<Vec<String>> {
+    match type_hint {
+        TypeHint::Class(name) => Some(vec![name.to_ascii_lowercase()]),
+        TypeHint::Intersection(types) => {
+            let mut atoms = Vec::new();
+            for type_hint in types {
+                let TypeHint::Class(name) = type_hint else {
+                    return None;
+                };
+                atoms.push(name.to_ascii_lowercase());
+            }
+            Some(atoms)
+        }
+        _ => None,
+    }
 }
 
 fn type_hint_is_array(type_hint: &TypeHint) -> bool {
@@ -10730,6 +10928,11 @@ fn nested_ternary_message(first_is_short: bool, second_is_short: bool) -> &'stat
 
 fn describe_unexpected_token(token: &Token) -> String {
     match &token.kind {
+        TokenKind::Identifier(name)
+            if matches!(name.to_ascii_lowercase().as_str(), "extends" | "implements") =>
+        {
+            format!("token \"{name}\"")
+        }
         TokenKind::Identifier(name) => format!("identifier \"{name}\""),
         TokenKind::Variable(name) => format!("variable \"${name}\""),
         TokenKind::String(value) => format!("string \"{}\"", escape_token_text(value)),
@@ -13367,6 +13570,7 @@ fn validate_composed_constant_compatibility(
 ) -> Result<()> {
     if existing.visibility == imported.visibility
         && existing.is_final == imported.is_final
+        && existing.type_hint == imported.type_hint
         && !const_expr_values_provably_different(
             &existing.value,
             &imported.value,
@@ -17280,6 +17484,7 @@ fn validate_property_override_set_visibility(classes: &[ClassDecl]) -> Result<()
 }
 
 fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
+    let runtime_class_aliases = HashMap::new();
     for class in classes {
         validate_inherited_class_constant_ambiguity(class, classes)?;
 
@@ -17355,39 +17560,99 @@ fn validate_class_constant_overrides(classes: &[ClassDecl]) -> Result<()> {
                         Some(class.span),
                     ));
                 }
+                validate_class_constant_type_compatibility(
+                    class,
+                    constant,
+                    parent,
+                    parent_constant,
+                    classes,
+                    &runtime_class_aliases,
+                )?;
                 break;
             }
 
-            for interface_name in &class.interfaces {
-                let Some(interface) = classes
-                    .iter()
-                    .find(|candidate| candidate.name.eq_ignore_ascii_case(interface_name))
-                else {
+            let mut interface_constants = Vec::new();
+            collect_class_hierarchy_interface_constants(class, classes, &mut interface_constants);
+            for interface_constant in interface_constants {
+                if interface_constant.constant.name != constant.name {
                     continue;
-                };
-                let Some(interface_constant) = interface
-                    .constants
-                    .iter()
-                    .find(|candidate| candidate.name == constant.name)
-                else {
-                    continue;
-                };
-                if constant.visibility != interface_constant.visibility {
+                }
+                if constant.visibility != interface_constant.constant.visibility {
                     return Err(Diagnostic::new(
                         format!(
                             "Access level to {}::{} must be {} (as in interface {})",
                             class.name,
                             constant.name,
-                            property_visibility_name(interface_constant.visibility),
-                            interface.name
+                            property_visibility_name(interface_constant.constant.visibility),
+                            interface_constant.class.name
                         ),
                         Some(class.span),
                     ));
                 }
+                validate_class_constant_type_compatibility(
+                    class,
+                    constant,
+                    interface_constant.class,
+                    interface_constant.constant,
+                    classes,
+                    &runtime_class_aliases,
+                )?;
             }
         }
     }
     Ok(())
+}
+
+fn validate_class_constant_type_compatibility(
+    class: &ClassDecl,
+    constant: &ClassConstantDecl,
+    inherited_class: &ClassDecl,
+    inherited_constant: &ClassConstantDecl,
+    classes: &[ClassDecl],
+    runtime_class_aliases: &HashMap<String, String>,
+) -> Result<()> {
+    let Some(inherited_type) = inherited_constant.type_hint.as_ref() else {
+        return Ok(());
+    };
+    let Some(type_hint) = constant.type_hint.as_ref() else {
+        return Err(class_constant_type_compatibility_error(
+            class,
+            constant,
+            inherited_class,
+            inherited_constant,
+            inherited_type,
+        ));
+    };
+    if type_hint_is_subtype(type_hint, inherited_type, classes, runtime_class_aliases) {
+        return Ok(());
+    }
+    Err(class_constant_type_compatibility_error(
+        class,
+        constant,
+        inherited_class,
+        inherited_constant,
+        inherited_type,
+    ))
+}
+
+fn class_constant_type_compatibility_error(
+    class: &ClassDecl,
+    constant: &ClassConstantDecl,
+    inherited_class: &ClassDecl,
+    inherited_constant: &ClassConstantDecl,
+    inherited_type: &TypeHint,
+) -> Diagnostic {
+    Diagnostic::new(
+        format!(
+            "Type of {}::{} must be compatible with {}::{} of type {}",
+            class.name,
+            constant.name,
+            inherited_class.name,
+            inherited_constant.name,
+            type_hint_display(inherited_type)
+        ),
+        Some(constant.span),
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -17515,6 +17780,28 @@ fn collect_interface_constants<'a>(
     }
     for parent_interface in &interface.interfaces {
         collect_interface_constants(parent_interface, classes, seen_interfaces, constants);
+    }
+}
+
+fn collect_class_hierarchy_interface_constants<'a>(
+    class: &'a ClassDecl,
+    classes: &'a [ClassDecl],
+    constants: &mut Vec<InheritedClassConstant<'a>>,
+) {
+    let mut seen_classes = HashSet::new();
+    let mut seen_interfaces = HashSet::new();
+    let mut current = Some(class);
+    while let Some(candidate) = current {
+        if !seen_classes.insert(candidate.name.to_ascii_lowercase()) {
+            break;
+        }
+        for interface_name in &candidate.interfaces {
+            collect_interface_constants(interface_name, classes, &mut seen_interfaces, constants);
+        }
+        current = candidate
+            .parent_name
+            .as_deref()
+            .and_then(|name| find_class(classes, name));
     }
 }
 
