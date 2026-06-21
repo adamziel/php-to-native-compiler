@@ -20430,6 +20430,7 @@ fn is_modeled_internal_function_name(name: &str) -> bool {
             | "libxml_clear_errors"
             | "libxml_get_errors"
             | "libxml_get_last_error"
+            | "libxml_set_streams_context"
             | "libxml_use_internal_errors"
             | "simplexml_load_file"
             | "simplexml_load_string"

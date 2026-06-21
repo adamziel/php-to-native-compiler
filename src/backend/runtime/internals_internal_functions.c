@@ -75553,6 +75553,7 @@ static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos) {
 
 static int ptn_libxml_external_entity_loader_is_configured = 0;
 static PtnValue ptn_libxml_external_entity_loader;
+static PtnResource *ptn_libxml_streams_context = NULL;
 static int ptn_libxml_internal_errors = 0;
 
 typedef void *PtnLibxml2DocPtr;
@@ -75621,6 +75622,13 @@ static void ptn_libxml_external_entity_loader_reset(void) {
     if (ptn_libxml_external_entity_loader_is_configured) {
         ptn_value_destroy(&ptn_libxml_external_entity_loader);
         ptn_libxml_external_entity_loader_is_configured = 0;
+    }
+}
+
+static void ptn_libxml_streams_context_reset(void) {
+    if (ptn_libxml_streams_context != NULL) {
+        ptn_resource_release(ptn_libxml_streams_context);
+        ptn_libxml_streams_context = NULL;
     }
 }
 
@@ -83132,6 +83140,41 @@ static PtnValue ptn_internal_libxml_use_internal_errors(PtnRuntime *runtime, siz
     return ptn_bool(previous);
 }
 
+static PtnValue ptn_internal_libxml_set_streams_context(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
+    (void)argc;
+    (void)line;
+    PtnValue value = ptn_value_deref(args[0]);
+    if (value.type != PTN_RESOURCE) {
+        const char *given = value.type == PTN_OBJECT
+            ? value.as.object->class_name
+            : ptn_offset_container_type_name(value);
+        char message[208];
+        int written = snprintf(
+            message,
+            sizeof(message),
+            "libxml_set_streams_context(): Argument #1 ($context) must be of type resource, %s given",
+            given
+        );
+        if (written < 0 || (size_t)written >= sizeof(message)) {
+            ptn_abort_out_of_memory();
+        }
+        ptn_throw_exception(runtime, "TypeError", message);
+        return ptn_null();
+    }
+    if (strcmp(value.as.resource->type_name, "stream-context") != 0) {
+        ptn_throw_exception(
+            runtime,
+            "TypeError",
+            "libxml_set_streams_context(): supplied resource is not a valid stream context resource"
+        );
+        return ptn_null();
+    }
+    ptn_libxml_streams_context_reset();
+    ptn_libxml_streams_context = value.as.resource;
+    ptn_resource_retain(ptn_libxml_streams_context);
+    return ptn_null();
+}
+
 static PtnValue ptn_internal_libxml_get_errors(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)ptn_libxml_boundary_is_local_bounded(ptn_libxml_boundary_for_surface(PTN_LIBXML_SURFACE_ERROR_BUFFER));
     (void)runtime;
@@ -88183,6 +88226,7 @@ static const PtnInternalFunction *ptn_internal_functions(size_t *count) {
         { "libxml_get_external_entity_loader", 0, 0, ptn_internal_libxml_get_external_entity_loader },
         { "libxml_get_last_error", 0, 0, ptn_internal_libxml_get_last_error },
         { "libxml_set_external_entity_loader", 1, 1, ptn_internal_libxml_set_external_entity_loader },
+        { "libxml_set_streams_context", 1, 1, ptn_internal_libxml_set_streams_context },
         { "libxml_use_internal_errors", 0, 1, ptn_internal_libxml_use_internal_errors },
         { "link", 2, 2, ptn_internal_link },
         { "linkinfo", 1, 1, ptn_internal_linkinfo },

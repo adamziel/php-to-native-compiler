@@ -32256,6 +32256,59 @@ echo $writer->flush();
 }
 
 #[test]
+fn compile_libxml_streams_context_to_native_binary() {
+    let root = temp_dir("ptn-native-libxml-streams-context");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("libxml-streams-context.php");
+    let output = root.join("libxml-streams-context-bin");
+    fs::write(
+        &input,
+        "<?php
+$contexts = [
+    null,
+    'bogus',
+    123,
+    new stdClass(),
+    ['a'],
+    stream_context_create(),
+];
+
+foreach ($contexts as $context) {
+    try {
+        var_dump(libxml_set_streams_context($context));
+    } catch (TypeError $exception) {
+        echo $exception->getMessage(), \"\\n\";
+    }
+}
+var_dump(function_exists('libxml_set_streams_context'));
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "libxml_set_streams_context(): Argument #1 ($context) must be of type resource, null given\n",
+            "libxml_set_streams_context(): Argument #1 ($context) must be of type resource, string given\n",
+            "libxml_set_streams_context(): Argument #1 ($context) must be of type resource, int given\n",
+            "libxml_set_streams_context(): Argument #1 ($context) must be of type resource, stdClass given\n",
+            "libxml_set_streams_context(): Argument #1 ($context) must be of type resource, array given\n",
+            "NULL\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_libxml_set_streams_context"));
+    assert!(c_source.contains("stream-context"));
+}
+
+#[test]
 fn compile_libxml_external_entity_loader_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-external-entity-loader");
     fs::create_dir_all(&root).unwrap();
