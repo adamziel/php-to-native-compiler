@@ -60604,6 +60604,82 @@ echo substr_count($dump, \"[\\\"instance\\\"]=>\") === 1 ? \"proxy-instance-once
 }
 
 #[test]
+fn compile_lazy_dynamic_property_compound_restores_declared_defaults_to_native_binary() {
+    let root = temp_dir("ptn-native-lazy-dynamic-property-compound");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("lazy-dynamic-property-compound.php");
+    let output = root.join("lazy-dynamic-property-compound-bin");
+    fs::write(
+        &input,
+        "<?php
+#[AllowDynamicProperties]
+class LazyDynamicCompoundBox {
+    public int $b = 1;
+
+    public function __construct() {
+        echo \"ctor\\n\";
+        $this->a = 1;
+        $this->b = 3;
+    }
+}
+
+$reflector = new ReflectionClass(LazyDynamicCompoundBox::class);
+
+$ghost = $reflector->newLazyGhost(function ($obj) {
+    echo \"ghost init\\n\";
+    $obj->__construct();
+});
+$ghost->a += 1;
+echo \"ghost:\", $ghost->a, \":\", $ghost->b, \"\\n\";
+
+$proxy = $reflector->newLazyProxy(function () {
+    echo \"proxy init\\n\";
+    return new LazyDynamicCompoundBox();
+});
+$proxy->a += 1;
+echo \"proxy:\", $proxy->a, \":\", $proxy->b, \"\\n\";
+
+$write = $reflector->newLazyGhost(function ($obj) {
+    echo \"write init\\n\";
+    $obj->__construct();
+});
+$write->custom = 9;
+echo \"write:\", $write->a, \":\", $write->b, \":\", $write->custom, \"\\n\";
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "ghost init\n",
+            "ctor\n",
+            "ghost:2:1\n",
+            "proxy init\n",
+            "ctor\n",
+            "proxy:2:3\n",
+            "write init\n",
+            "ctor\n",
+            "write:1:3:9\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_object_read_property_for_compound_assignment"));
+    assert!(c_source.contains("ptn_lazy_object_initialize_for_dynamic_property_compound"));
+}
+
+#[test]
 fn compile_property_and_static_property_inc_dec_to_native_binary() {
     let root = temp_dir("ptn-native-property-static-inc-dec");
     fs::create_dir_all(&root).unwrap();

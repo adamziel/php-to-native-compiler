@@ -5477,6 +5477,63 @@ static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
     return ptn_value_clone_deref(entry->value);
 }
 
+static int ptn_lazy_object_compound_read_targets_dynamic_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    receiver = ptn_value_deref(receiver);
+    if (property == NULL ||
+        receiver.type != PTN_OBJECT ||
+        receiver.as.object == NULL ||
+        !receiver.as.object->lazy_uninitialized ||
+        receiver.as.object->lazy_initializing ||
+        receiver.as.object->lazy_is_proxy) {
+        return 0;
+    }
+    if (ptn_object_metadata_for_display_name(receiver.as.object, property) != NULL) {
+        return 0;
+    }
+    char *storage_key = ptn_object_resolve_property_storage_key(
+        runtime,
+        receiver.as.object,
+        property,
+        access_scope,
+        PTN_PROPERTY_ACCESS_READ,
+        1,
+        line
+    );
+    if (storage_key == NULL) {
+        return 0;
+    }
+    int dynamic_property =
+        ptn_object_property_metadata(receiver.as.object, storage_key) == NULL;
+    free(storage_key);
+    return dynamic_property;
+}
+
+static PTN_UNUSED PtnValue ptn_object_read_property_for_compound_assignment(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    if (ptn_lazy_object_compound_read_targets_dynamic_property(
+            runtime,
+            receiver,
+            property,
+            access_scope,
+            line
+        ) &&
+        !ptn_lazy_object_initialize_for_dynamic_property_compound(runtime, receiver, line)) {
+        return ptn_null();
+    }
+    return ptn_object_read_property(runtime, receiver, property, access_scope, line);
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property_for_nested_write_receiver(
     PtnRuntime *runtime,
     PtnValue receiver,
