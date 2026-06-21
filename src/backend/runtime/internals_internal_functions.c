@@ -3303,6 +3303,9 @@ static PTN_UNUSED int ptn_declared_class_has_static_call_magic(const char *class
 static int ptn_internal_class_exists_name(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_fiber(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_rounding_mode(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_randomizer(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_builtin(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_random_interval_boundary(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_fixed_array(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_spl_object_storage(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, const char *method_name);
@@ -61286,6 +61289,8 @@ static void ptn_defined_constants_add_standard(PtnValue table) {
     ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_DOWN", PTN_PHP_ROUND_HALF_DOWN);
     ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_EVEN", PTN_PHP_ROUND_HALF_EVEN);
     ptn_get_defined_constants_add_int(table, "PHP_ROUND_HALF_ODD", PTN_PHP_ROUND_HALF_ODD);
+    ptn_get_defined_constants_add_int(table, "MT_RAND_MT19937", 0);
+    ptn_get_defined_constants_add_int(table, "MT_RAND_PHP", 1);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_BOTH", PTN_ARRAY_FILTER_USE_BOTH);
     ptn_get_defined_constants_add_int(table, "ARRAY_FILTER_USE_KEY", PTN_ARRAY_FILTER_USE_KEY);
     ptn_get_defined_constants_add_int(table, "FILTER_VALIDATE_REGEXP", PTN_FILTER_VALIDATE_REGEXP);
@@ -61626,6 +61631,8 @@ static int ptn_reflection_constant_is_standard(const char *name) {
         "SORT_LOCALE_STRING",
         "SORT_NATURAL",
         "SORT_FLAG_CASE",
+        "MT_RAND_MT19937",
+        "MT_RAND_PHP",
         "ARRAY_FILTER_USE_BOTH",
         "ARRAY_FILTER_USE_KEY",
         "FILTER_VALIDATE_REGEXP",
@@ -83276,6 +83283,37 @@ static PTN_UNUSED int ptn_internal_class_name_is_bcmath_number(const char *class
     return ptn_ascii_case_equal(class_name, "BcMath\\Number");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_randomizer(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\Randomizer");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_mt19937(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\Engine\\Mt19937");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_pcg(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\Engine\\PcgOneseq128XslRr64");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_secure(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\Engine\\Secure");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_xoshiro(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\Engine\\Xoshiro256StarStar");
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_random_engine_builtin(const char *class_name) {
+    return ptn_internal_class_name_is_random_engine_mt19937(class_name)
+        || ptn_internal_class_name_is_random_engine_pcg(class_name)
+        || ptn_internal_class_name_is_random_engine_secure(class_name)
+        || ptn_internal_class_name_is_random_engine_xoshiro(class_name);
+}
+
+static PTN_UNUSED int ptn_internal_class_name_is_random_interval_boundary(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "Random\\IntervalBoundary");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_pdo(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "PDO")
         || ptn_ascii_case_equal(class_name, "Pdo\\Sqlite")
@@ -83455,6 +83493,8 @@ static int ptn_internal_interface_exists_name(const char *name) {
         || ptn_ascii_case_equal(name, "UnitEnum")
         || ptn_ascii_case_equal(name, "BackedEnum")
         || ptn_ascii_case_equal(name, "DateTimeInterface")
+        || ptn_ascii_case_equal(name, "Random\\Engine")
+        || ptn_ascii_case_equal(name, "Random\\CryptoSafeEngine")
         || ptn_ascii_case_equal(name, "DOMParentNode")
         || ptn_ascii_case_equal(name, "DOMChildNode")
         || ptn_ascii_case_equal(name, "Countable")
@@ -83505,6 +83545,9 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_datetime_zone(class_name)
         || ptn_internal_class_name_is_date_interval(class_name)
         || ptn_internal_class_name_is_bcmath_number(class_name)
+        || ptn_internal_class_name_is_randomizer(class_name)
+        || ptn_internal_class_name_is_random_engine_builtin(class_name)
+        || ptn_internal_class_name_is_random_interval_boundary(class_name)
         || ptn_internal_class_name_is_pdo(class_name)
         || ptn_internal_class_name_is_pdo_statement(class_name)
         || ptn_internal_class_name_is_pdo_row(class_name)

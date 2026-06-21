@@ -865,6 +865,8 @@ static PtnValue ptn_declared_class_new_instance(
     const PtnValue *args,
     size_t line
 );
+static PTN_UNUSED PtnValue ptn_randomizer_new(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line);
+static PTN_UNUSED PtnValue ptn_random_engine_new(PtnRuntime *runtime, const char *class_name, size_t argc, const PtnValue *args, size_t line);
 
 static PTN_UNUSED PtnValue ptn_new_object(
     PtnRuntime *runtime,
@@ -997,6 +999,16 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_return_type_will_change(lookup_class_name)) {
         return ptn_return_type_will_change_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_randomizer(lookup_class_name)) {
+        return ptn_randomizer_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_random_engine_builtin(lookup_class_name)) {
+        return ptn_random_engine_new(runtime, lookup_class_name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_random_interval_boundary(lookup_class_name)) {
+        ptn_throw_exception(runtime, "Error", "Cannot instantiate enum Random\\IntervalBoundary");
+        return ptn_null();
     }
     if (ptn_internal_class_name_is_pdo(lookup_class_name)) {
         return ptn_pdo_new(runtime, lookup_class_name, argc, args, line);

@@ -46,6 +46,11 @@ const MODELED_EXTENSION_INTERNAL_CLASS_NAMES: &[&str] = &[
     "Pdo\\Pgsql",
     "PDOStatement",
     "PDORow",
+    "Random\\Engine\\Mt19937",
+    "Random\\Engine\\PcgOneseq128XslRr64",
+    "Random\\Engine\\Secure",
+    "Random\\Engine\\Xoshiro256StarStar",
+    "Random\\Randomizer",
     "SQLite3",
     "SQLite3Stmt",
     "SQLite3Result",
@@ -76,6 +81,8 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
     ("Uri\\WhatWg\\InvalidUrlException", "ValueError"),
     ("DateRangeError", "ValueError"),
     ("DateObjectError", "Error"),
+    ("Random\\RandomException", "Exception"),
+    ("Random\\BrokenRandomEngineError", "Error"),
     ("ArithmeticError", "Error"),
     ("DivisionByZeroError", "ArithmeticError"),
     ("AssertionError", "Error"),
@@ -83,6 +90,7 @@ const BUILTIN_EXCEPTION_PARENT_NAMES: &[(&str, &str)] = &[
 ];
 const BUILTIN_ENUM_CLASS_NAMES: &[&str] = &[
     "RoundingMode",
+    "Random\\IntervalBoundary",
     "Uri\\Rfc3986\\UriType",
     "Uri\\UriComparisonMode",
     "Uri\\Rfc3986\\UriHostType",
@@ -882,6 +890,14 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"BcMath\\\\Number\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"Stringable\");\n");
+    out.push_str("    }\n");
+    out.push_str("    if (ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Mt19937\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\PcgOneseq128XslRr64\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Secure\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Xoshiro256StarStar\")) {\n");
+    out.push_str("        return ptn_ascii_case_equal(interface_name, \"Random\\\\Engine\") ||\n");
+    out.push_str("            (ptn_ascii_case_equal(class_name, \"Random\\\\Engine\\\\Secure\") &&\n");
+    out.push_str("             ptn_ascii_case_equal(interface_name, \"Random\\\\CryptoSafeEngine\"));\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"ArrayIterator\")) {\n");
     out.push_str("        return ptn_ascii_case_equal(interface_name, \"ArrayAccess\") ||\n");
@@ -5956,6 +5972,11 @@ fn emit_class_metadata_helpers(
         "SensitiveParameterValue",
         "WeakMap",
         "WeakReference",
+        "Random\\Engine\\Mt19937",
+        "Random\\Engine\\PcgOneseq128XslRr64",
+        "Random\\Engine\\Secure",
+        "Random\\Engine\\Xoshiro256StarStar",
+        "Random\\Randomizer",
         "ArrayIterator",
         "RecursiveArrayIterator",
         "ArrayObject",
@@ -5986,6 +6007,7 @@ fn emit_class_metadata_helpers(
         "DateTimeZone",
         "DateInterval",
         "RoundingMode",
+        "Random\\IntervalBoundary",
         "Phar",
         "ZipArchive",
         "SoapClient",
@@ -22737,6 +22759,11 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("NoDiscard")
                 || class_name.eq_ignore_ascii_case("ReturnTypeWillChange")
                 || class_name.eq_ignore_ascii_case("BcMath\\Number")
+                || class_name.eq_ignore_ascii_case("Random\\Engine\\Mt19937")
+                || class_name.eq_ignore_ascii_case("Random\\Engine\\PcgOneseq128XslRr64")
+                || class_name.eq_ignore_ascii_case("Random\\Engine\\Secure")
+                || class_name.eq_ignore_ascii_case("Random\\Engine\\Xoshiro256StarStar")
+                || class_name.eq_ignore_ascii_case("Random\\Randomizer")
                 || class_name.eq_ignore_ascii_case("AppendIterator")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")

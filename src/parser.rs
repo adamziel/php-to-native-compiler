@@ -11603,6 +11603,8 @@ fn is_modeled_builtin_exception_class_name(name: &str) -> bool {
             | "jsonexception"
             | "soapfault"
             | "uri\\whatwg\\invalidurlexception"
+            | "random\\randomexception"
+            | "random\\brokenrandomengineerror"
             | "runtimeexception"
             | "invalidargumentexception"
             | "unexpectedvalueexception"
@@ -11639,6 +11641,8 @@ fn is_modeled_builtin_interface_name(name: &str) -> bool {
             | "unitenum"
             | "backedenum"
             | "datetimeinterface"
+            | "random\\engine"
+            | "random\\cryptosafeengine"
             | "countable"
             | "serializable"
     )
@@ -11672,6 +11676,17 @@ fn is_modeled_builtin_date_class_name(name: &str) -> bool {
     matches!(
         name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
         "datetime" | "datetimeimmutable" | "datetimezone" | "dateinterval"
+    )
+}
+
+fn is_modeled_builtin_random_class_name(name: &str) -> bool {
+    matches!(
+        name.trim_start_matches('\\').to_ascii_lowercase().as_str(),
+        "random\\engine\\mt19937"
+            | "random\\engine\\pcgoneseq128xslrr64"
+            | "random\\engine\\secure"
+            | "random\\engine\\xoshiro256starstar"
+            | "random\\randomizer"
     )
 }
 
@@ -14029,6 +14044,7 @@ fn class_type_name_is_available(name: &str, classes: &[ClassDecl]) -> bool {
         || name
             .trim_start_matches('\\')
             .eq_ignore_ascii_case("BcMath\\Number")
+        || is_modeled_builtin_random_class_name(name)
         || name.eq_ignore_ascii_case("Generator")
         || is_modeled_builtin_date_class_name(name)
         || is_modeled_builtin_enum_class_name(name)
@@ -14459,6 +14475,21 @@ fn builtin_class_type_is_subtype(candidate_name: &str, target_name: &str) -> boo
         .eq_ignore_ascii_case("BcMath\\Number")
     {
         &["Stringable"][..]
+    } else if candidate_name
+        .trim_start_matches('\\')
+        .eq_ignore_ascii_case("Random\\Engine\\Secure")
+    {
+        &["Random\\Engine", "Random\\CryptoSafeEngine"][..]
+    } else if matches!(
+        candidate_name
+            .trim_start_matches('\\')
+            .to_ascii_lowercase()
+            .as_str(),
+        "random\\engine\\mt19937"
+            | "random\\engine\\pcgoneseq128xslrr64"
+            | "random\\engine\\xoshiro256starstar"
+    ) {
+        &["Random\\Engine"][..]
     } else if candidate_name.eq_ignore_ascii_case("DateTime")
         || candidate_name.eq_ignore_ascii_case("DateTimeImmutable")
     {
@@ -14967,6 +14998,7 @@ fn modeled_builtin_interface_method_exists(interface_name: &str, method_name: &s
             | ("seekableiterator", "seek")
             | ("serializable", "unserialize")
             | ("stringable", "__tostring")
+            | ("random\\engine", "generate")
     )
 }
 
@@ -19967,6 +19999,8 @@ fn is_modeled_global_constant_name(name: &str) -> bool {
             | "PHP_ROUND_HALF_DOWN"
             | "PHP_ROUND_HALF_EVEN"
             | "PHP_ROUND_HALF_ODD"
+            | "MT_RAND_MT19937"
+            | "MT_RAND_PHP"
             | "ARRAY_FILTER_USE_BOTH"
             | "ARRAY_FILTER_USE_KEY"
             | "FNM_NOESCAPE"

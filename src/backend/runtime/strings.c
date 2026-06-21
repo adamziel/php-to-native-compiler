@@ -1776,6 +1776,14 @@ static PTN_UNUSED int ptn_builtin_constant_value(const char *name, PtnValue *out
         *out = ptn_int(PTN_PHP_ROUND_HALF_ODD);
         return 1;
     }
+    if (strcmp(name, "MT_RAND_MT19937") == 0) {
+        *out = ptn_int(0);
+        return 1;
+    }
+    if (strcmp(name, "MT_RAND_PHP") == 0) {
+        *out = ptn_int(1);
+        return 1;
+    }
     if (strcmp(name, "ARRAY_FILTER_USE_BOTH") == 0) {
         *out = ptn_int(PTN_ARRAY_FILTER_USE_BOTH);
         return 1;
