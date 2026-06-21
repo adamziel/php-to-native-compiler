@@ -6654,6 +6654,82 @@ enum Direction {
 }
 
 #[test]
+fn compile_constant_expression_property_fetches_to_native_binary() {
+    let root = temp_dir("ptn-native-constant-expression-property-fetches");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("constant-expression-property-fetches.php");
+    let output = root.join("constant-expression-property-fetches-bin");
+    fs::write(
+        &input,
+        "<?php
+enum A: string {
+    case Case = 'A::Case';
+}
+
+class Printer {
+    public function __construct() {
+        echo \"Printer\\n\";
+    }
+}
+
+const A_NAME = A::Case->name;
+const A_VALUE = A::Case?->value;
+const F = (null)?->{new Printer};
+const G = (null)?->test + (new Printer ? 1 : 0);
+
+class C {
+    const NAME = A::Case->name;
+}
+
+function defaults($name = A::Case->name, $value = A::Case?->value) {
+    var_dump($name, $value);
+}
+
+class Plain {
+    public $prop = 42;
+}
+
+function reject_default($prop = (new Plain)->prop) {}
+
+var_dump(A_NAME, A_VALUE, F, G, C::NAME);
+defaults();
+try {
+    reject_default();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+try {
+    reject_default();
+} catch (Error $e) {
+    echo $e->getMessage(), \"\\n\";
+}
+",
+    )
+    .unwrap();
+
+    compile_file(&input, &output, CompileOptions { emit_c: false }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "Printer\n",
+            "string(4) \"Case\"\n",
+            "string(7) \"A::Case\"\n",
+            "NULL\n",
+            "int(1)\n",
+            "string(4) \"Case\"\n",
+            "string(4) \"Case\"\n",
+            "string(7) \"A::Case\"\n",
+            "Fetching properties on non-enums in constant expressions is not allowed\n",
+            "Fetching properties on non-enums in constant expressions is not allowed\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn parser_accepts_static_class_methods_as_callable_functions() {
     let program = parser::parse(
         "<?php

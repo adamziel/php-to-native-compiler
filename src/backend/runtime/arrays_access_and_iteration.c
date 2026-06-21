@@ -5298,6 +5298,46 @@ static PTN_UNUSED PtnValue ptn_object_read_property(
     return ptn_value_clone_deref(entry->value);
 }
 
+static PTN_UNUSED int ptn_constant_expression_property_receiver_allowed(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(receiver);
+    int forbidden_object = 0;
+    if (resolved.type == PTN_OBJECT) {
+        forbidden_object =
+            resolved.as.object == NULL || resolved.as.object->enum_case_name == NULL;
+    } else if (resolved.type == PTN_CLOSURE || resolved.type == PTN_EXCEPTION) {
+        forbidden_object = 1;
+    }
+    if (forbidden_object) {
+        const char *message =
+            "Fetching properties on non-enums in constant expressions is not allowed";
+        if (runtime != NULL) {
+            ptn_throw_exception_at(runtime, "Error", message, runtime->source_path, line);
+        } else {
+            fprintf(stderr, "Fatal error: %s\n", message);
+            exit(255);
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static PTN_UNUSED PtnValue ptn_constant_expression_read_property(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *property,
+    const char *access_scope,
+    size_t line
+) {
+    if (!ptn_constant_expression_property_receiver_allowed(runtime, receiver, line)) {
+        return ptn_null();
+    }
+    return ptn_object_read_property(runtime, receiver, property, access_scope, line);
+}
+
 static PTN_UNUSED PtnValue ptn_object_read_property_for_indirect_write(
     PtnRuntime *runtime,
     PtnValue receiver,

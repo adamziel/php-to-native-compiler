@@ -1868,7 +1868,7 @@ impl Parser<'_> {
                 let doc_comment = self.doc_comment_before(self.peek().span.byte_start);
                 self.advance();
                 let token = self.advance().clone();
-                let TokenKind::Identifier(name) = token.kind else {
+                let Some(name) = name_segment_from_source_token(self.source, &token) else {
                     return Err(Diagnostic::new("expected enum case name", Some(token.span)));
                 };
                 let enum_case_value = if matches!(self.peek().kind, TokenKind::Equal) {
@@ -7690,8 +7690,9 @@ impl Parser<'_> {
                     let (literal_name, dynamic_name, member_span, direct_variable_member) =
                         match member.kind {
                             _ if name_segment_from_token(&member.kind).is_some() => {
-                                let member_name = name_segment_from_token(&member.kind)
-                                    .expect("name segment checked above");
+                                let member_name =
+                                    name_segment_from_source_token(self.source, &member)
+                                        .expect("name segment checked above");
                                 if member_name.eq_ignore_ascii_case("class")
                                     && !matches!(self.peek().kind, TokenKind::LeftParen)
                                 {
@@ -8483,7 +8484,7 @@ impl Parser<'_> {
             }
             return self.parse_dynamic_static_method_call(class_name, class_span, name_expr);
         }
-        let Some(member_name) = name_segment_from_token(&member.kind) else {
+        let Some(member_name) = name_segment_from_source_token(self.source, &member) else {
             return Err(Diagnostic::new(
                 CLASS_CONSTANT_FETCH_UNSUPPORTED,
                 Some(scope_span),
@@ -10783,6 +10784,16 @@ fn name_segment_from_token(kind: &TokenKind) -> Option<String> {
         | TokenKind::BooleanType => Some(token_text(kind).to_string()),
         _ => None,
     }
+}
+
+fn name_segment_from_source_token(source: &str, token: &Token) -> Option<String> {
+    let mut name = name_segment_from_token(&token.kind)?;
+    if !matches!(token.kind, TokenKind::Identifier(_)) {
+        if let Some(source_name) = source.get(token.span.byte_start..token.span.byte_end) {
+            name = source_name.to_string();
+        }
+    }
+    Some(name)
 }
 
 fn enum_backing_union_diagnostic_name(type_names: &[String]) -> String {
@@ -23900,6 +23911,19 @@ fn is_supported_global_const_expr_with_options(
                 allow_new_object,
             )
         }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            is_supported_global_const_expr_with_options(
+                receiver,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+                allow_new_object,
+            ) && is_supported_global_const_expr_with_options(
+                name,
+                allow_const_array_unpack_error_operands,
+                allow_array_access,
+                allow_new_object,
+            )
+        }
         Expr::NewObject {
             arguments,
             argument_names,
@@ -23942,7 +23966,6 @@ fn is_supported_global_const_expr_with_options(
         | Expr::NewObject { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
-        | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }
@@ -24016,6 +24039,9 @@ fn const_expr_contains_new_object(expr: &Expr) -> bool {
         }
         Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
             const_expr_contains_new_object(receiver)
+        }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            const_expr_contains_new_object(receiver) || const_expr_contains_new_object(name)
         }
         Expr::DynamicClassNameFetch { receiver, .. } => const_expr_contains_new_object(receiver),
         Expr::Array { elements, .. } => elements.iter().any(|element| {
@@ -24117,6 +24143,9 @@ fn const_expr_contains_object_cast(expr: &Expr) -> bool {
         }
         Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
             const_expr_contains_object_cast(receiver)
+        }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            const_expr_contains_object_cast(receiver) || const_expr_contains_object_cast(name)
         }
         Expr::Array { elements, .. } => elements.iter().any(|element| {
             element
@@ -24230,6 +24259,10 @@ fn validate_constant_expression_closures(expr: &Expr) -> Result<()> {
         Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
             validate_constant_expression_closures(receiver)
         }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            validate_constant_expression_closures(receiver)?;
+            validate_constant_expression_closures(name)
+        }
         Expr::Binary { left, right, .. } => {
             validate_constant_expression_closures(left)?;
             validate_constant_expression_closures(right)
@@ -24335,6 +24368,10 @@ fn validate_constant_expression_runtime_restrictions(expr: &Expr) -> Result<()> 
         }
         Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
             validate_constant_expression_runtime_restrictions(receiver)
+        }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            validate_constant_expression_runtime_restrictions(receiver)?;
+            validate_constant_expression_runtime_restrictions(name)
         }
         Expr::Binary { left, right, .. } => {
             validate_constant_expression_runtime_restrictions(left)?;
@@ -25044,6 +25081,13 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         } => {
             is_supported_parameter_default_expr(array) && is_supported_parameter_default_expr(index)
         }
+        Expr::PropertyFetch { receiver, .. } | Expr::NullsafePropertyFetch { receiver, .. } => {
+            is_supported_parameter_default_expr(receiver)
+        }
+        Expr::DynamicPropertyFetch { receiver, name, .. } => {
+            is_supported_parameter_default_expr(receiver)
+                && is_supported_parameter_default_expr(name)
+        }
         Expr::AnonymousFunction(function) => is_supported_constant_closure(function),
         Expr::FirstClassCallable { callable, .. } => {
             is_supported_first_class_callable_const_target(callable)
@@ -25091,9 +25135,6 @@ fn is_supported_parameter_default_expr(expr: &Expr) -> bool {
         | Expr::ParentPropertyHookCall { .. }
         | Expr::DynamicNewObject { .. }
         | Expr::Clone { .. }
-        | Expr::PropertyFetch { .. }
-        | Expr::NullsafePropertyFetch { .. }
-        | Expr::DynamicPropertyFetch { .. }
         | Expr::StaticPropertyFetch { .. }
         | Expr::DynamicStaticPropertyFetch { .. }
         | Expr::DynamicClassConstantFetch { .. }
