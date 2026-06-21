@@ -83605,6 +83605,10 @@ static PTN_UNUSED int ptn_internal_class_name_is_append_iterator(const char *cla
     return ptn_ascii_case_equal(class_name, "AppendIterator");
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_caching_iterator(const char *class_name) {
+    return ptn_ascii_case_equal(class_name, "CachingIterator");
+}
+
 static PTN_UNUSED int ptn_internal_class_name_is_callback_filter_iterator(const char *class_name) {
     return ptn_ascii_case_equal(class_name, "CallbackFilterIterator");
 }
@@ -83939,6 +83943,7 @@ static int ptn_internal_class_exists_name(const char *class_name) {
         || ptn_internal_class_name_is_array_object(class_name)
         || ptn_internal_class_name_is_spl_fixed_array(class_name)
         || ptn_internal_class_name_is_append_iterator(class_name)
+        || ptn_internal_class_name_is_caching_iterator(class_name)
         || ptn_internal_class_name_is_callback_filter_iterator(class_name)
         || ptn_internal_class_name_is_recursive_callback_filter_iterator(class_name)
         || ptn_internal_class_name_is_filter_iterator(class_name)
@@ -85547,6 +85552,10 @@ static PTN_UNUSED int ptn_internal_class_method_exists(const char *class_name, c
     if (ptn_internal_class_name_is_append_iterator(class_name)) {
         return ptn_ascii_case_equal(method_name, "__construct");
     }
+    if (ptn_internal_class_name_is_caching_iterator(class_name)) {
+        return ptn_iterator_iterator_method_exists(method_name)
+            || ptn_ascii_case_equal(method_name, "__toString");
+    }
     if (ptn_internal_class_name_is_callback_filter_iterator(class_name) ||
         ptn_internal_class_name_is_recursive_callback_filter_iterator(class_name)) {
         return ptn_iterator_iterator_method_exists(method_name)
@@ -86554,6 +86563,20 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "rewind",
             "valid",
             "accept",
+        };
+        ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
+        return result;
+    }
+    if (ptn_internal_class_name_is_caching_iterator(class_name)) {
+        static const char *const names[] = {
+            "current",
+            "getInnerIterator",
+            "key",
+            "next",
+            "offsetGet",
+            "rewind",
+            "valid",
+            "__toString",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -96908,6 +96931,7 @@ static PtnIteratorIteratorData *ptn_iterator_iterator_data(PtnRuntime *runtime, 
     if (
         receiver.type != PTN_OBJECT
         || !(ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "IteratorIterator") ||
+             ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "CachingIterator") ||
              ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "FilterIterator") ||
              ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "InfiniteIterator") ||
              ptn_declared_class_is_same_or_descendant(receiver.as.object->class_name, "NoRewindIterator"))
@@ -98750,6 +98774,7 @@ static PtnValue ptn_reflection_extension_classes(
             "RecursiveArrayIterator",
             "ArrayObject",
             "SplFixedArray",
+            "CachingIterator",
             "CallbackFilterIterator",
             "FilterIterator",
             "InfiniteIterator",
@@ -104306,6 +104331,15 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_new(
     return ptn_iterator_iterator_new_for_class(runtime, "IteratorIterator", argc, args, line);
 }
 
+static PTN_UNUSED PtnValue ptn_caching_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+) {
+    return ptn_iterator_iterator_new_for_class(runtime, "CachingIterator", argc, args, line);
+}
+
 static PTN_UNUSED PtnValue ptn_no_rewind_iterator_new(
     PtnRuntime *runtime,
     size_t argc,
@@ -106542,6 +106576,10 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
     const PtnValue *args,
     size_t line
 ) {
+    PtnValue resolved_receiver = ptn_value_deref(receiver);
+    const char *receiver_class_name = resolved_receiver.type == PTN_OBJECT
+        ? resolved_receiver.as.object->class_name
+        : "IteratorIterator";
     PtnIteratorIteratorData *data = ptn_iterator_iterator_data(runtime, receiver);
     if (data == NULL) {
         return ptn_null();
@@ -106550,7 +106588,7 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         ptn_reflection_check_no_arguments(runtime, "IteratorIterator", name, argc);
         return runtime->exceptions->active_exception != NULL ? ptn_null() : ptn_value_clone_deref(data->inner);
     }
-    if (ptn_internal_class_name_is_infinite_iterator(ptn_value_deref(receiver).as.object->class_name) &&
+    if (ptn_internal_class_name_is_infinite_iterator(receiver_class_name) &&
         ptn_ascii_case_equal(name, "valid") &&
         data->has_cached_valid) {
         ptn_reflection_check_no_arguments(runtime, "InfiniteIterator", name, argc);
@@ -106560,7 +106598,7 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         data->has_cached_valid = 0;
         return ptn_bool(data->cached_valid);
     }
-    if (ptn_internal_class_name_is_infinite_iterator(ptn_value_deref(receiver).as.object->class_name) &&
+    if (ptn_internal_class_name_is_infinite_iterator(receiver_class_name) &&
         ptn_ascii_case_equal(name, "next")) {
         ptn_reflection_check_no_arguments(runtime, "InfiniteIterator", name, argc);
         if (runtime->exceptions->active_exception != NULL) {
@@ -106583,7 +106621,6 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         }
         return ptn_null();
     }
-    const char *receiver_class_name = ptn_value_deref(receiver).as.object->class_name;
     if (ptn_internal_class_name_is_no_rewind_iterator(receiver_class_name) &&
         ptn_ascii_case_equal(name, "rewind")) {
         ptn_reflection_check_no_arguments(runtime, "NoRewindIterator", name, argc);
@@ -106605,6 +106642,31 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         }
         return current;
     }
+    if (ptn_declared_class_is_same_or_descendant(receiver_class_name, "CachingIterator") &&
+        ptn_ascii_case_equal(name, "__toString")) {
+        ptn_reflection_check_no_arguments(runtime, "CachingIterator", name, argc);
+        if (runtime->exceptions->active_exception != NULL) {
+            return ptn_null();
+        }
+        PtnValue current = ptn_iterator_inner_call_no_args(runtime, data->inner, "current", line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_value_destroy(&current);
+            return ptn_null();
+        }
+        PtnStringOperand string = ptn_value_to_string_operand_with_runtime(runtime, current, line);
+        if (runtime->exceptions->active_exception != NULL) {
+            ptn_string_operand_free(string);
+            ptn_value_destroy(&current);
+            return ptn_null();
+        }
+        PtnValue result = ptn_owned_string_len(
+            ptn_duplicate_string_len(string.data, string.len),
+            string.len
+        );
+        ptn_string_operand_free(string);
+        ptn_value_destroy(&current);
+        return result;
+    }
     if (
         ptn_ascii_case_equal(name, "rewind") ||
         ptn_ascii_case_equal(name, "valid") ||
@@ -106612,6 +106674,9 @@ static PTN_UNUSED PtnValue ptn_iterator_iterator_call_method(
         ptn_ascii_case_equal(name, "next") ||
         ptn_ascii_case_equal(name, "offsetGet")
     ) {
+        return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_caching_iterator(receiver_class_name)) {
         return ptn_iterator_inner_call(runtime, data->inner, name, argc, args, line);
     }
     ptn_throw_exception(runtime, "Error", "Call to undefined method");

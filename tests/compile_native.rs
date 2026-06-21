@@ -840,6 +840,76 @@ var_dump($ref->implementsInterface("OuterIterator"));
 }
 
 #[test]
+fn compile_caching_iterator_current_string_and_inner_forwarding_to_native_binary() {
+    let root = temp_dir("ptn-native-caching-iterator");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("caching-iterator.php");
+    let output = root.join("caching-iterator-bin");
+    fs::write(
+        &input,
+        r#"<?php
+class CacheStudent {
+    public $id;
+    public $name;
+    public function __construct($id, $name) {
+        $this->id = $id;
+        $this->name = $name;
+    }
+    public function __toString() {
+        return $this->id . ", " . $this->name;
+    }
+}
+class CacheInner extends ArrayIterator {
+    public function greaterThan($target) {
+        return $this->current() > $target;
+    }
+}
+$students = new ArrayObject([
+    new CacheStudent("01234123", "Joe"),
+    new CacheStudent("00000014", "Bob"),
+]);
+$it = new CachingIterator($students->getIterator());
+foreach ($it as $student) {
+    echo $it->__toString(), "\n";
+}
+$cache = new CachingIterator(new CacheInner([1, 3]));
+foreach ($cache as $value) {
+    echo $value, ":", ($cache->greaterThan(2) ? "gt" : "le"), "\n";
+}
+var_dump(class_exists("CachingIterator"), $cache instanceof Iterator, $cache instanceof OuterIterator);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_caching_iterator_new"));
+    assert!(c_source.contains("ptn_iterator_iterator_call_method"));
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstdout:\n{}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stdout),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "01234123, Joe\n",
+            "00000014, Bob\n",
+            "1:le\n",
+            "3:gt\n",
+            "bool(true)\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+}
+
+#[test]
 fn compile_spl_iterator_materialization_and_recursive_filter_to_native_binary() {
     let root = temp_dir("ptn-native-spl-iterator-materialization-filter");
     fs::create_dir_all(&root).unwrap();

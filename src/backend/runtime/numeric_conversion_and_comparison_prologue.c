@@ -1,4 +1,5 @@
 static void ptn_declared_class_property_hook_deprecation(PtnRuntime *runtime, const char *class_name, const char *property_name, int hook_type, size_t line);
+static PTN_UNUSED int ptn_internal_class_name_is_caching_iterator(const char *class_name);
 
 static PTN_UNUSED void ptn_runtime_init_function_frame(PtnRuntime *runtime, PtnRuntime *caller_runtime) {
     ptn_symbols_init(&runtime->symbols);
@@ -5706,6 +5707,14 @@ static PTN_UNUSED PtnValue ptn_call_method(
         && ptn_internal_class_method_exists("LimitIterator", name)
     ) {
         return ptn_limit_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_object_is_internal_or_descendant(receiver, "CachingIterator")
+        && (ptn_internal_class_method_exists("CachingIterator", name) ||
+            ptn_internal_class_name_is_caching_iterator(receiver.as.object->class_name))
+    ) {
+        return ptn_iterator_iterator_call_method(runtime, receiver, name, argc, args, line);
     }
     if (
         receiver.type == PTN_OBJECT

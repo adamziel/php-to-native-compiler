@@ -916,6 +916,7 @@ fn emit_type_hint_runtime_helpers(out: &mut String) {
     out.push_str("            ptn_ascii_case_equal(interface_name, \"Traversable\");\n");
     out.push_str("    }\n");
     out.push_str("    if (ptn_ascii_case_equal(class_name, \"AppendIterator\") ||\n");
+    out.push_str("        ptn_ascii_case_equal(class_name, \"CachingIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"IteratorIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"FilterIterator\") ||\n");
     out.push_str("        ptn_ascii_case_equal(class_name, \"CallbackFilterIterator\") ||\n");
@@ -5572,6 +5573,7 @@ fn emit_class_metadata_helpers(
         "SplMinHeap",
         "SplPriorityQueue",
         "AppendIterator",
+        "CachingIterator",
         "IteratorIterator",
         "RecursiveIteratorIterator",
         "FilterIterator",
@@ -6073,6 +6075,7 @@ fn emit_class_metadata_helpers(
         "SplPriorityQueue",
         "SplFixedArray",
         "AppendIterator",
+        "CachingIterator",
         "CallbackFilterIterator",
         "RecursiveCallbackFilterIterator",
         "FilterIterator",
@@ -6510,6 +6513,7 @@ fn emit_class_metadata_helpers(
     }
     for (class_name, parent_name) in [
         ("AppendIterator", "IteratorIterator"),
+        ("CachingIterator", "IteratorIterator"),
         ("CallbackFilterIterator", "FilterIterator"),
         ("FilterIterator", "IteratorIterator"),
         ("InfiniteIterator", "IteratorIterator"),
@@ -15224,6 +15228,7 @@ fn modeled_spl_internal_class_name(name: &str) -> Option<&'static str> {
         "appenditerator" => Some("AppendIterator"),
         "arrayiterator" => Some("ArrayIterator"),
         "arrayobject" => Some("ArrayObject"),
+        "cachingiterator" => Some("CachingIterator"),
         "callbackfilteriterator" => Some("CallbackFilterIterator"),
         "filteriterator" => Some("FilterIterator"),
         "infiniteiterator" => Some("InfiniteIterator"),
@@ -22847,6 +22852,7 @@ fn collect_value_runtime_requirements(
                 || class_name.eq_ignore_ascii_case("AppendIterator")
                 || class_name.eq_ignore_ascii_case("ArrayIterator")
                 || class_name.eq_ignore_ascii_case("ArrayObject")
+                || class_name.eq_ignore_ascii_case("CachingIterator")
                 || class_name.eq_ignore_ascii_case("CallbackFilterIterator")
                 || class_name.eq_ignore_ascii_case("FilterIterator")
                 || class_name.eq_ignore_ascii_case("InfiniteIterator")

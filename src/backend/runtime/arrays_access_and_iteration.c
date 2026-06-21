@@ -295,6 +295,14 @@ static PTN_UNUSED PtnArrayEntry *ptn_array_entry_for_key(PtnArray *array, PtnArr
     return index < array->len ? &array->entries[index] : NULL;
 }
 
+static PTN_UNUSED int ptn_internal_class_name_is_caching_iterator(const char *class_name);
+static PTN_UNUSED PtnValue ptn_caching_iterator_new(
+    PtnRuntime *runtime,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+
 static PTN_UNUSED const char *ptn_offset_container_type_name(PtnValue value) {
     value = ptn_value_deref(value);
     switch (value.type) {
@@ -1073,6 +1081,9 @@ static PTN_UNUSED PtnValue ptn_new_object(
     }
     if (ptn_internal_class_name_is_append_iterator(lookup_class_name)) {
         return ptn_append_iterator_new(runtime, argc, args, line);
+    }
+    if (ptn_internal_class_name_is_caching_iterator(lookup_class_name)) {
+        return ptn_caching_iterator_new(runtime, argc, args, line);
     }
     if (ptn_internal_class_name_is_callback_filter_iterator(lookup_class_name)) {
         return ptn_callback_filter_iterator_new(runtime, argc, args, line);
@@ -8372,6 +8383,10 @@ static PTN_UNUSED int ptn_object_has_iterator_method(
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "ArrayIterator") &&
         ptn_internal_class_method_exists("ArrayIterator", method_name)) {
+        return 1;
+    }
+    if (ptn_declared_class_is_same_or_descendant(object->class_name, "CachingIterator") &&
+        ptn_internal_class_method_exists("CachingIterator", method_name)) {
         return 1;
     }
     if (ptn_declared_class_is_same_or_descendant(object->class_name, "RecursiveArrayIterator") &&
