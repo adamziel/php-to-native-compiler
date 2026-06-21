@@ -4366,6 +4366,12 @@ impl Parser<'_> {
                 Some(token.span),
             ));
         };
+        if name.eq_ignore_ascii_case("this") {
+            return Err(Diagnostic::new(
+                "Cannot use $this as parameter",
+                Some(token.span),
+            ));
+        }
         let default_value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             let value = self.parse_expr()?;
@@ -5332,6 +5338,12 @@ impl Parser<'_> {
                 Some(token.span),
             ));
         };
+        if name.eq_ignore_ascii_case("this") {
+            return Err(Diagnostic::new(
+                "Cannot use $this as static variable",
+                Some(token.span),
+            ));
+        }
         let value = if matches!(self.peek().kind, TokenKind::Equal) {
             self.advance();
             Some(self.parse_expr()?)
@@ -5882,6 +5894,9 @@ impl Parser<'_> {
             let TokenKind::Variable(name) = token.kind else {
                 unreachable!("variable match checked above")
             };
+            if name.eq_ignore_ascii_case("this") {
+                return Err(Diagnostic::new("Cannot re-assign $this", Some(token.span)));
+            }
             Some(name)
         } else {
             None
