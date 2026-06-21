@@ -5028,13 +5028,7 @@ static PtnValue ptn_internal_call_user_callback_named(
     const char *const *arg_names,
     size_t line
 ) {
-    PtnTraceFrame *call_user_func_frame = runtime->trace_frame;
-    if (call_user_func_frame != NULL) {
-        runtime->trace_frame = call_user_func_frame->previous;
-    }
-    PtnValue result = ptn_internal_call_callback_impl_named(runtime, callback, argc, args, arg_names, line, 1);
-    runtime->trace_frame = call_user_func_frame;
-    return result;
+    return ptn_internal_call_callback_impl_named(runtime, callback, argc, args, arg_names, line, 1);
 }
 
 static int ptn_internal_call_callback_capturing_exception(

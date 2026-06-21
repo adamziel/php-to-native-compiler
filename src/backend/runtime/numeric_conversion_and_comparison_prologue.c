@@ -1193,7 +1193,7 @@ static PTN_UNUSED void ptn_runtime_unset_variable(PtnRuntime *runtime, const cha
 static PTN_UNUSED PtnValue ptn_trace_value_snapshot_depth(PtnValue value, size_t depth) {
     value = ptn_value_deref(value);
     if (value.type != PTN_ARRAY || depth > 64) {
-        return ptn_value_clone(value);
+        return ptn_value_deep_clone(value);
     }
 
     PtnValue snapshot = ptn_array_from_literal_entries(0, NULL);
