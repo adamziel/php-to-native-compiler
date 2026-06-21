@@ -6133,6 +6133,20 @@ static PTN_UNUSED PtnValue ptn_call_method(
     }
     if (
         receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_date_period(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists("DatePeriod", name)
+    ) {
+        return ptn_date_period_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
+        && ptn_internal_class_name_is_internal_iterator(receiver.as.object->class_name)
+        && ptn_internal_class_method_exists("InternalIterator", name)
+    ) {
+        return ptn_internal_iterator_call_method(runtime, receiver, name, argc, args, line);
+    }
+    if (
+        receiver.type == PTN_OBJECT
         && ptn_internal_class_name_is_dom(receiver.as.object->class_name)
         && ptn_internal_class_method_exists(receiver.as.object->class_name, name)
     ) {

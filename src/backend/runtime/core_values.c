@@ -1808,6 +1808,8 @@ static PTN_UNUSED int ptn_internal_class_name_is_return_type_will_change(const c
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_immutable(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_datetime_zone(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_date_interval(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_date_period(const char *class_name);
+static PTN_UNUSED int ptn_internal_class_name_is_internal_iterator(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_bcmath_number(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo(const char *class_name);
 static PTN_UNUSED int ptn_internal_class_name_is_pdo_statement(const char *class_name);
@@ -2729,6 +2731,22 @@ static PTN_UNUSED PtnValue ptn_datetime_zone_call_method(
     size_t line
 );
 static PTN_UNUSED PtnValue ptn_date_interval_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_date_period_call_method(
+    PtnRuntime *runtime,
+    PtnValue receiver,
+    const char *name,
+    size_t argc,
+    const PtnValue *args,
+    size_t line
+);
+static PTN_UNUSED PtnValue ptn_internal_iterator_call_method(
     PtnRuntime *runtime,
     PtnValue receiver,
     const char *name,

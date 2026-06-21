@@ -18473,6 +18473,80 @@ p=02-00-04 06:08:00 (unknown)\n"
 }
 
 #[test]
+fn compile_date_interval_create_from_date_string_to_native_binary() {
+    let root = temp_dir("ptn-native-date-interval-create-from-date-string");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("date-interval-create-from-date-string.php");
+    let output = root.join("date-interval-create-from-date-string-bin");
+    fs::write(
+        &input,
+        "<?php\n\
+$interval = DateInterval::createFromDateString(\"tomorrow\");\n\
+var_dump($interval instanceof DateInterval);\n\
+var_dump($interval->__serialize());\n\
+echo $interval->format(\"%R%y %m %d %h %i %s %f %a\"), \"\\n\";\n\
+foreach ([\"yesterday\", \"+2 weeks\", \"-3 hours\", \"next month\", \"1 year\", \"30 seconds\"] as $text) {\n\
+    $relative = DateInterval::createFromDateString($text);\n\
+    echo $text, \"=\", $relative->format(\"%R%y:%m:%d:%h:%i:%s:%a\"), \"\\n\";\n\
+}\n\
+$properties = [\n\
+    'start' => new DateTimeImmutable(\"2023-01-13 12:29:30\"),\n\
+    'end' => new DateTimeImmutable(\"2023-01-16 16:49:29\"),\n\
+    'current' => new DateTimeImmutable(\"2023-01-15 00:00:00\"),\n\
+    'interval' => DateInterval::createFromDateString(\"tomorrow\"),\n\
+    'recurrences' => 1,\n\
+    'include_start_date' => true,\n\
+    'include_end_date' => true,\n\
+];\n\
+$period = DatePeriod::__set_state($properties);\n\
+try {\n\
+    foreach ($period as &$item) {\n\
+        echo $item->format(DateTime::ISO8601), \"\\n\";\n\
+    }\n\
+    echo \"OK\\n\";\n\
+} catch (Throwable $e) {\n\
+    echo get_class($e), \": \", $e->getMessage(), \"\\n\";\n\
+}\n",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(
+        execution.status.success(),
+        "native exited with {:?}\nstderr:\n{}",
+        execution.status.code(),
+        String::from_utf8_lossy(&execution.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "bool(true)\n",
+            "array(2) {\n",
+            "  [\"from_string\"]=>\n",
+            "  bool(true)\n",
+            "  [\"date_string\"]=>\n",
+            "  string(8) \"tomorrow\"\n",
+            "}\n",
+            "+0 0 1 0 0 0 000000 (unknown)\n",
+            "yesterday=+0:0:-1:0:0:0:(unknown)\n",
+            "+2 weeks=+0:0:14:0:0:0:(unknown)\n",
+            "-3 hours=+0:0:0:-3:0:0:(unknown)\n",
+            "next month=+0:1:0:0:0:0:(unknown)\n",
+            "1 year=+1:0:0:0:0:0:(unknown)\n",
+            "30 seconds=+0:0:0:0:0:30:(unknown)\n",
+            "Error: An iterator cannot be used with foreach by reference\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_date_interval_create_from_date_string"));
+    assert!(c_source.contains("ptn_date_period_call_method"));
+}
+
+#[test]
 fn compile_date_diff_function_to_native_binary() {
     let root = temp_dir("ptn-native-date-diff-function");
     fs::create_dir_all(&root).unwrap();
