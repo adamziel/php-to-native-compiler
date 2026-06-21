@@ -13360,7 +13360,7 @@ static PTN_UNUSED PtnValue ptn_array_path_set_result_from_root_impl(
                 return ptn_null();
             }
             if (next_segment->append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             } else if (i + 2 == segment_count) {
                 return ptn_runtime_string_offset_set_result(
                     runtime,
@@ -13580,7 +13580,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
             if (segments[1].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
                 return;
             }
             ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
@@ -13592,7 +13592,7 @@ static PTN_UNUSED void ptn_runtime_globals_array_path_set_impl(
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
             if (segments[1].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             } else {
                 ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
                 ptn_reject_nested_string_offset_array_access(runtime, segments[1].value, line);
@@ -13655,7 +13655,7 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result_impl(
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
             if (segments[1].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
                 return ptn_null();
             }
             ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
@@ -13666,7 +13666,7 @@ static PTN_UNUSED PtnValue ptn_runtime_globals_array_path_set_result_impl(
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
             if (segments[1].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             } else {
                 ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[1], line);
                 ptn_reject_nested_string_offset_array_access(runtime, segments[1].value, line);
@@ -13754,7 +13754,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
     if (slot != NULL && segments[0].append) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             return;
         }
     }
@@ -13765,7 +13765,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
         }
         if (slot_value != NULL) {
             if (segments[0].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
                 return;
             }
             uint64_t pre_key_diagnostic_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
@@ -13787,7 +13787,7 @@ static PTN_UNUSED void ptn_runtime_array_path_set_impl(
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
             if (segments[0].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             } else {
                 ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
                 ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
@@ -14062,7 +14062,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_impl(
     if (slot != NULL && segments[0].append) {
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             return ptn_null();
         }
     }
@@ -14070,7 +14070,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_impl(
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
             if (segments[0].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
                 return ptn_null();
             }
             uint64_t pre_key_diagnostic_epoch = ptn_runtime_symbol_table_epoch_for_name(runtime, name);
@@ -14091,7 +14091,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_set_result_impl(
         PtnValue *slot_value = slot->type == PTN_REFERENCE ? &slot->as.reference->value : slot;
         if (slot_value->type == PTN_STRING) {
             if (segments[0].append) {
-                ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+                ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             } else {
                 ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
                 ptn_reject_nested_string_offset_array_access(runtime, segments[0].value, line);
@@ -14341,7 +14341,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
     PtnValue slot_value = ptn_value_deref(*slot);
     if (slot_value.type == PTN_STRING) {
         if (segments[0].append) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             return ptn_null();
         }
         int64_t offset = 0;
@@ -14360,7 +14360,7 @@ static PTN_UNUSED PtnValue ptn_runtime_array_path_read_for_assign_op(
             );
             return ptn_null();
         }
-        ptn_throw_exception(runtime, "Error", "Cannot use assign-op operators with string offsets");
+        ptn_throw_exception_at(runtime, "Error", "Cannot use assign-op operators with string offsets", runtime->source_path, line);
         return ptn_null();
     }
     if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {
@@ -14581,7 +14581,7 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
 
     PtnValue *target_value = target->type == PTN_REFERENCE ? &target->as.reference->value : target;
     if (target_value->type == PTN_STRING && segments[0].append) {
-        ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+        ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
         return;
     }
     if (target_value->type == PTN_STRING && segment_count > 1) {
@@ -14591,7 +14591,7 @@ static PTN_UNUSED void ptn_value_array_path_set_impl(
     }
     if (segment_count == 1 && target_value->type == PTN_STRING) {
         if (segments[0].append) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             return;
         }
         ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
@@ -14701,7 +14701,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
 
     PtnValue *target_value = target->type == PTN_REFERENCE ? &target->as.reference->value : target;
     if (target_value->type == PTN_STRING && segments[0].append) {
-        ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+        ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
         return ptn_null();
     }
     if (target_value->type == PTN_STRING && segment_count > 1) {
@@ -14711,7 +14711,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_set_result(
     }
     if (segment_count == 1 && target_value->type == PTN_STRING) {
         if (segments[0].append) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             return ptn_null();
         }
         ptn_array_path_emit_deferred_undefined_variable_warning(runtime, &segments[0], line);
@@ -14864,7 +14864,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
     PtnValue slot_value = ptn_value_deref(target);
     if (slot_value.type == PTN_STRING) {
         if (segments[0].append) {
-            ptn_throw_exception(runtime, "Error", "[] operator not supported for strings");
+            ptn_throw_exception_at(runtime, "Error", "[] operator not supported for strings", runtime->source_path, line);
             return ptn_null();
         }
         int64_t offset = 0;
@@ -14883,7 +14883,7 @@ static PTN_UNUSED PtnValue ptn_value_array_path_read_for_assign_op_impl(
             );
             return ptn_null();
         }
-        ptn_throw_exception(runtime, "Error", "Cannot use assign-op operators with string offsets");
+        ptn_throw_exception_at(runtime, "Error", "Cannot use assign-op operators with string offsets", runtime->source_path, line);
         return ptn_null();
     }
     if (ptn_arrayaccess_can_dispatch(runtime, slot_value, "offsetGet")) {

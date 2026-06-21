@@ -675,6 +675,17 @@ impl IncludeCollector {
                 self.path_env.remove(&target.array);
                 Ok(())
             }
+            IncDecTarget::ValueArrayDim {
+                array, dimensions, ..
+            } => {
+                self.collect_expr(array, source_file, source_dir)?;
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             IncDecTarget::PropertyArrayDim {
                 receiver,
                 dimensions,

@@ -23902,6 +23902,16 @@ fn collect_inc_dec_target_legacy_dollar_brace_deprecations(
                 }
             }
         }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_value_legacy_dollar_brace_deprecations(array, deprecations);
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_legacy_dollar_brace_deprecations(dimension, deprecations);
+                }
+            }
+        }
         IncDecTarget::PropertyArrayDim {
             receiver,
             dimensions,
@@ -24851,6 +24861,16 @@ fn collect_inc_dec_target_runtime_requirements(
             if variable_needs_request_context(array) {
                 requirements.request_context = true;
             }
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_value_runtime_requirements(dimension, functions, requirements);
+                }
+            }
+        }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            collect_value_runtime_requirements(array, functions, requirements);
             for dimension in dimensions {
                 if let Some(dimension) = dimension {
                     collect_value_runtime_requirements(dimension, functions, requirements);
@@ -27615,6 +27635,53 @@ fn emit_increment_statement(
         IncDecTarget::DynamicVariable { .. } | IncDecTarget::DynamicArrayDim { .. } => {
             unreachable!("parser restricts statement inc/dec targets")
         }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            let array_temp = values.emit_reference_candidate_value(out, array);
+            let path = emit_array_path_segments(out, values, dimensions);
+            let current_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&current_temp);
+            out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+            out.push_str(&array_temp);
+            out.push_str(", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            let result_temp = values.next_temp();
+            out.push_str("    PtnValue ");
+            out.push_str(&result_temp);
+            out.push_str(" = ");
+            out.push_str(inc_dec_runtime_function(op));
+            out.push_str("(&runtime, ");
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            out.push_str("    ptn_value_array_path_set_from_inc_dec(&runtime, &");
+            out.push_str(&array_temp);
+            out.push_str(", ");
+            out.push_str(&path.name);
+            out.push_str(", ");
+            out.push_str(&path.len.to_string());
+            out.push_str(", ");
+            out.push_str(&current_temp);
+            out.push_str(", ");
+            out.push_str(&result_temp);
+            out.push_str(", ");
+            out.push_str(&line.to_string());
+            out.push_str(");\n");
+            emit_value_cleanup(out, "    ", &current_temp);
+            emit_value_cleanup(out, "    ", &result_temp);
+            emit_value_cleanup(out, "    ", &array_temp);
+            for segment_temp in path.value_temps {
+                emit_value_cleanup(out, "    ", &segment_temp);
+            }
+        }
         IncDecTarget::ArrayDim {
             array, dimensions, ..
         } => {
@@ -28343,6 +28410,16 @@ fn inc_dec_target_mentions_variable(target: &IncDecTarget, name: &str) -> bool {
             array, dimensions, ..
         } => {
             array == name
+                || dimensions.iter().any(|dimension| {
+                    dimension
+                        .as_ref()
+                        .is_some_and(|dimension| value_mentions_variable(dimension, name))
+                })
+        }
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            value_mentions_variable(array, name)
                 || dimensions.iter().any(|dimension| {
                     dimension
                         .as_ref()
@@ -29543,6 +29620,9 @@ fn inc_dec_target_uses_this(target: &IncDecTarget) -> bool {
         IncDecTarget::Variable { .. }
         | IncDecTarget::ArrayDim { .. }
         | IncDecTarget::StaticProperty { .. } => false,
+        IncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => value_expr_uses_this(array) || dimensions.iter().flatten().any(value_expr_uses_this),
         IncDecTarget::DynamicVariable { name, .. } => value_expr_uses_this(name),
         IncDecTarget::DynamicArrayDim {
             name, dimensions, ..
@@ -35545,6 +35625,72 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &current_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
+
+                if let Some(old_temp) = old_temp {
+                    emit_value_cleanup(out, "    ", &result_temp);
+                    old_temp
+                } else {
+                    result_temp
+                }
+            }
+            IncDecTarget::ValueArrayDim {
+                array, dimensions, ..
+            } => {
+                let array_temp = self.emit_reference_candidate_value(out, array);
+                let path = emit_array_path_segments(out, self, dimensions);
+                let current_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&current_temp);
+                out.push_str(" = ptn_value_array_path_read_for_assign_op(&runtime, ");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+
+                let old_temp = if matches!(result, IncDecResult::Post) {
+                    let old_temp = self.next_temp();
+                    out.push_str("    PtnValue ");
+                    out.push_str(&old_temp);
+                    out.push_str(" = ptn_value_clone(ptn_value_deref(");
+                    out.push_str(&current_temp);
+                    out.push_str("));\n");
+                    Some(old_temp)
+                } else {
+                    None
+                };
+
+                let result_temp = self.next_temp();
+                out.push_str("    PtnValue ");
+                out.push_str(&result_temp);
+                out.push_str(" = ");
+                out.push_str(inc_dec_runtime_function(op));
+                out.push_str("(&runtime, ");
+                out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                out.push_str("    ptn_value_array_path_set_from_inc_dec(&runtime, &");
+                out.push_str(&array_temp);
+                out.push_str(", ");
+                out.push_str(&path.name);
+                out.push_str(", ");
+                out.push_str(&path.len.to_string());
+                out.push_str(", ");
+                out.push_str(&current_temp);
+                out.push_str(", ");
+                out.push_str(&result_temp);
+                out.push_str(", ");
+                out.push_str(&line.to_string());
+                out.push_str(");\n");
+                emit_value_cleanup(out, "    ", &current_temp);
+                emit_value_cleanup(out, "    ", &array_temp);
                 for segment_temp in path.value_temps {
                     emit_value_cleanup(out, "    ", &segment_temp);
                 }

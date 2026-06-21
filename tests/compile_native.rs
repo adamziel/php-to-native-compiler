@@ -50081,9 +50081,13 @@ var_dump($str);",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let expected_stdout = format!(
+        "Cannot assign an empty string to a string offset\nstring(4) \"abcd\"\nCannot access offset of type string on string\n[] operator not supported for strings\nCannot unset string offsets\nCannot use assign-op operators with string offsets\n\nWarning: Illegal string offset -5 in {} on line 9\nstring(4) \"abcd\"\n",
+        input.display()
+    );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Cannot assign an empty string to a string offset\nstring(4) \"abcd\"\nCannot access offset of type string on string\n[] operator not supported for strings\nCannot unset string offsets\nCannot use assign-op operators with string offsets\n\nWarning: Illegal string offset -5 in ptn on line 9\nstring(4) \"abcd\"\n"
+        expected_stdout
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }
@@ -50112,9 +50116,14 @@ var_dump($str);",
 
     let execution = Command::new(&output).output().unwrap();
     assert!(execution.status.success());
+    let expected_stdout = format!(
+        "Cannot use assign-op operators with string offsets\n\nWarning: Illegal string offset \"1str\" in {} on line 4\nCannot use assign-op operators with string offsets\nCannot access offset of type string on string\nCannot use string offset as an array\n\nWarning: Illegal string offset \"2x\" in {} on line 7\nCannot use string offset as an array\nCannot access offset of type string on string\nstring(4) \"abcd\"\n",
+        input.display(),
+        input.display()
+    );
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
-        "Cannot use assign-op operators with string offsets\n\nWarning: Illegal string offset \"1str\" in ptn on line 4\nCannot use assign-op operators with string offsets\nCannot access offset of type string on string\nCannot use string offset as an array\n\nWarning: Illegal string offset \"2x\" in ptn on line 7\nCannot use string offset as an array\nCannot access offset of type string on string\nstring(4) \"abcd\"\n"
+        expected_stdout
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
 }

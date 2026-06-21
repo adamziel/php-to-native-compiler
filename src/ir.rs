@@ -839,6 +839,11 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    ValueArrayDim {
+        array: Box<ValueExpr>,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     PropertyArrayDim {
         receiver: Box<ValueExpr>,
         name: String,
@@ -860,11 +865,6 @@ pub enum AssignmentTarget {
     DynamicStaticPropertyName {
         class_name: String,
         name: Box<ValueExpr>,
-        line: usize,
-    },
-    ValueArrayDim {
-        array: Box<ValueExpr>,
-        dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
     Property {
@@ -1140,6 +1140,11 @@ pub enum IncDecTarget {
     },
     ArrayDim {
         array: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
+    ValueArrayDim {
+        array: Box<ValueExpr>,
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
@@ -3788,6 +3793,22 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: target.span.line,
             },
+            AstIncDecTarget::ValueArrayDim {
+                array,
+                dimensions,
+                span,
+            } => IncDecTarget::ValueArrayDim {
+                array: Box::new(self.lower_expr(array)),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstIncDecTarget::PropertyArrayDim {
                 receiver,
                 name,
@@ -5633,6 +5654,19 @@ fn assertion_inc_dec_target_text(target: &AstIncDecTarget) -> String {
         AstIncDecTarget::DynamicVariable { .. } => "${...}".to_string(),
         AstIncDecTarget::DynamicArrayDim { .. } => "${...}[...]".to_string(),
         AstIncDecTarget::ArrayDim(target) => assertion_array_dim_target_text(target),
+        AstIncDecTarget::ValueArrayDim {
+            array, dimensions, ..
+        } => {
+            let mut text = assertion_expr_text(array);
+            for dimension in dimensions {
+                text.push('[');
+                if let Some(dimension) = dimension {
+                    text.push_str(&assertion_expr_text(dimension));
+                }
+                text.push(']');
+            }
+            text
+        }
         AstIncDecTarget::PropertyArrayDim {
             receiver,
             name,
