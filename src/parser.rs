@@ -10984,6 +10984,9 @@ fn collect_arrow_captures_from_assignment_target(
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
         AssignmentTarget::List(target) => {
             for element in &target.elements {
                 if let Some(key) = &element.key {
@@ -11082,10 +11085,20 @@ fn collect_arrow_captures_from_inc_dec_target(
                 }
             }
         }
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    collect_arrow_captures_from_expr(dimension, exclusions, seen, captures);
+                }
+            }
+        }
         IncDecTarget::Property { receiver, .. } => {
             collect_arrow_captures_from_expr(receiver, exclusions, seen, captures);
         }
         IncDecTarget::StaticProperty { .. } => {}
+        IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+            collect_arrow_captures_from_expr(name, exclusions, seen, captures);
+        }
     }
 }
 
@@ -17573,6 +17586,9 @@ fn validate_control_transfers_in_assignment_target(target: &AssignmentTarget) ->
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
         }
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
+        }
         AssignmentTarget::DynamicVariable { name, .. } => {
             validate_control_transfers_in_expr(name)?;
         }
@@ -17716,8 +17732,14 @@ fn validate_control_transfers_in_inc_dec_target(target: &IncDecTarget) -> Result
             validate_control_transfers_in_expr(receiver)?;
             validate_control_transfers_in_optional_exprs(dimensions)?;
         }
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            validate_control_transfers_in_optional_exprs(dimensions)?;
+        }
         IncDecTarget::Property { receiver, .. } => {
             validate_control_transfers_in_expr(receiver)?;
+        }
+        IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+            validate_control_transfers_in_expr(name)?;
         }
     }
     Ok(())
@@ -17801,6 +17823,7 @@ fn validate_recursive_reference_assignment_value(
         AssignmentTarget::DynamicProperty { .. } => return Ok(()),
         AssignmentTarget::StaticProperty { .. } => return Ok(()),
         AssignmentTarget::DynamicStaticProperty { .. } => return Ok(()),
+        AssignmentTarget::DynamicStaticPropertyName { .. } => return Ok(()),
         AssignmentTarget::List(_) => return Ok(()),
     };
     if let Some(diagnostic) = expr_array_literal_reference_to_variable(value, variable) {
@@ -18674,6 +18697,7 @@ fn assignment_target_contains_yield(target: &AssignmentTarget) -> bool {
         AssignmentTarget::DynamicProperty { receiver, name, .. } => {
             expr_contains_yield(receiver) || expr_contains_yield(name)
         }
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => expr_contains_yield(name),
         AssignmentTarget::List(list) => list_assignment_target_contains_yield(list),
         AssignmentTarget::Variable { .. }
         | AssignmentTarget::StaticPropertyArrayDim { .. }
@@ -18728,7 +18752,11 @@ fn inc_dec_target_contains_yield(target: &IncDecTarget) -> bool {
             dimensions,
             ..
         } => expr_contains_yield(receiver) || dimensions.iter().flatten().any(expr_contains_yield),
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            dimensions.iter().flatten().any(expr_contains_yield)
+        }
         IncDecTarget::Property { receiver, .. } => expr_contains_yield(receiver),
+        IncDecTarget::DynamicStaticPropertyName { name, .. } => expr_contains_yield(name),
         IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => false,
     }
 }
@@ -18933,10 +18961,21 @@ fn validate_anonymous_functions_in_inc_dec_target(
             }
             Ok(())
         }
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    validate_anonymous_functions_in_expr(dimension, functions)?;
+                }
+            }
+            Ok(())
+        }
         IncDecTarget::Property { receiver, .. } => {
             validate_anonymous_functions_in_expr(receiver, functions)
         }
         IncDecTarget::StaticProperty { .. } => Ok(()),
+        IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+            validate_anonymous_functions_in_expr(name, functions)
+        }
     }
 }
 
@@ -21106,10 +21145,17 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             dimensions,
             span,
         }),
-        AssignmentTarget::StaticPropertyArrayDim { span, .. } => Err(Diagnostic::new(
-            "increment/decrement expression target must be a variable, array offset, or property",
-            Some(span),
-        )),
+        AssignmentTarget::StaticPropertyArrayDim {
+            class_name,
+            name,
+            dimensions,
+            span,
+        } => Ok(IncDecTarget::StaticPropertyArrayDim {
+            class_name,
+            name,
+            dimensions,
+            span,
+        }),
         AssignmentTarget::Property {
             receiver,
             name,
@@ -21128,6 +21174,15 @@ fn inc_dec_target_from_expr(expr: Expr, op_span: SourceSpan) -> Result<IncDecTar
             name,
             span,
         }),
+        AssignmentTarget::DynamicStaticPropertyName {
+            class_name,
+            name,
+            span,
+        } => Ok(IncDecTarget::DynamicStaticPropertyName {
+            class_name,
+            name,
+            span,
+        }),
         _ => Err(Diagnostic::new(
             "increment/decrement expression target must be a variable, array offset, or property",
             Some(assignment_target_span(&target)),
@@ -21142,8 +21197,10 @@ fn inc_dec_target_span(target: &IncDecTarget) -> SourceSpan {
         IncDecTarget::DynamicArrayDim { span, .. } => *span,
         IncDecTarget::ArrayDim(target) => target.span,
         IncDecTarget::PropertyArrayDim { span, .. } => *span,
+        IncDecTarget::StaticPropertyArrayDim { span, .. } => *span,
         IncDecTarget::Property { span, .. } => *span,
         IncDecTarget::StaticProperty { span, .. } => *span,
+        IncDecTarget::DynamicStaticPropertyName { span, .. } => *span,
     }
 }
 
@@ -21279,6 +21336,25 @@ fn assignment_target_from_expr(expr: Expr) -> Result<AssignmentTarget> {
             name,
             span,
         }),
+        Expr::DynamicClassConstantFetch {
+            class_name: Some(class_name),
+            receiver: None,
+            name,
+            span,
+        } => match *name {
+            Expr::DynamicVariable {
+                name: property_name,
+                ..
+            } => Ok(AssignmentTarget::DynamicStaticPropertyName {
+                class_name,
+                name: property_name,
+                span,
+            }),
+            name => Err(Diagnostic::new(
+                "class constant fetch is not a writable target",
+                Some(name.span()),
+            )),
+        },
         Expr::ClassConstantFetch { span, .. } => Err(Diagnostic::new(
             "class constant fetch is not a writable target",
             Some(span),
@@ -21496,6 +21572,7 @@ fn assignment_target_span(target: &AssignmentTarget) -> SourceSpan {
         | AssignmentTarget::PropertyArrayDim { span, .. }
         | AssignmentTarget::StaticPropertyArrayDim { span, .. }
         | AssignmentTarget::DynamicStaticPropertyArrayDim { span, .. }
+        | AssignmentTarget::DynamicStaticPropertyName { span, .. }
         | AssignmentTarget::ValueArrayDim { span, .. }
         | AssignmentTarget::Property { span, .. }
         | AssignmentTarget::DynamicProperty { span, .. }
@@ -21640,6 +21717,7 @@ fn validate_coalesce_assignment_target(
         AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
         AssignmentTarget::DynamicStaticProperty { .. } => Ok(()),
+        AssignmentTarget::DynamicStaticPropertyName { .. } => Ok(()),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "null coalescing assignment currently supports variables and array/string offsets",
             Some(span),
@@ -21687,6 +21765,10 @@ fn validate_expression_assignment_target(
         AssignmentTarget::DynamicProperty { .. } => Ok(()),
         AssignmentTarget::StaticProperty { .. } => Ok(()),
         AssignmentTarget::DynamicStaticProperty { .. } => Ok(()),
+        AssignmentTarget::DynamicStaticPropertyName { .. } => Err(Diagnostic::new(
+            "compound assignment expressions currently support variables, array/string offsets, and properties",
+            Some(span),
+        )),
         AssignmentTarget::List(_) => Err(Diagnostic::new(
             "compound assignment expressions currently support variables, array/string offsets, and properties",
             Some(span),
@@ -21767,6 +21849,12 @@ fn validate_reference_assignment_target_source(
             return Ok(());
         }
         AssignmentTarget::DynamicStaticProperty { .. } => {
+            return Err(Diagnostic::new(
+                "unsupported by-reference assignment target",
+                Some(span),
+            ));
+        }
+        AssignmentTarget::DynamicStaticPropertyName { .. } => {
             return Err(Diagnostic::new(
                 "unsupported by-reference assignment target",
                 Some(span),
@@ -22170,9 +22258,19 @@ fn reject_standalone_list_expr_in_inc_dec_target(target: &IncDecTarget) -> Resul
                 }
             }
         }
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_standalone_list_expr(dimension)?;
+                }
+            }
+        }
         IncDecTarget::DynamicVariable { name, .. } => reject_standalone_list_expr(name)?,
         IncDecTarget::Property { receiver, .. } => {
             reject_standalone_list_expr(receiver)?;
+        }
+        IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+            reject_standalone_list_expr(name)?;
         }
         IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => {}
     }
@@ -22456,7 +22554,17 @@ fn reject_append_array_read_in_inc_dec_target(target: &IncDecTarget) -> Result<(
                 }
             }
         }
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+            for dimension in dimensions {
+                if let Some(dimension) = dimension {
+                    reject_append_array_read(dimension)?;
+                }
+            }
+        }
         IncDecTarget::Property { receiver, .. } => reject_append_array_read(receiver)?,
+        IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+            reject_append_array_read(name)?;
+        }
         IncDecTarget::Variable { .. }
         | IncDecTarget::DynamicVariable { .. }
         | IncDecTarget::StaticProperty { .. } => {}
@@ -22527,6 +22635,9 @@ fn reject_append_array_read_in_assignment_target(target: &AssignmentTarget) -> R
         AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => {}
         AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             reject_append_array_read(receiver)?;
+        }
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            reject_append_array_read(name)?;
         }
         AssignmentTarget::DynamicVariable { name, .. } => {
             reject_append_array_read(name)?;
@@ -23801,6 +23912,9 @@ fn assignment_target_uses_this_property(target: &AssignmentTarget, property_name
         AssignmentTarget::Variable { .. }
         | AssignmentTarget::StaticProperty { .. }
         | AssignmentTarget::DynamicStaticProperty { .. } => false,
+        AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+            expr_uses_this_property(name, property_name)
+        }
     }
 }
 
@@ -23835,6 +23949,13 @@ fn inc_dec_target_uses_this_property(target: &IncDecTarget, property_name: &str)
                     .iter()
                     .flatten()
                     .any(|dimension| expr_uses_this_property(dimension, property_name))
+        }
+        IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => dimensions
+            .iter()
+            .flatten()
+            .any(|dimension| expr_uses_this_property(dimension, property_name)),
+        IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+            expr_uses_this_property(name, property_name)
         }
         IncDecTarget::Variable { .. } | IncDecTarget::StaticProperty { .. } => false,
     }

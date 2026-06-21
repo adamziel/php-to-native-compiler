@@ -639,10 +639,21 @@ impl IncludeCollector {
                 }
                 Ok(())
             }
+            IncDecTarget::StaticPropertyArrayDim { dimensions, .. } => {
+                for dimension in dimensions {
+                    if let Some(dimension) = dimension {
+                        self.collect_expr(dimension, source_file, source_dir)?;
+                    }
+                }
+                Ok(())
+            }
             IncDecTarget::Property { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
             }
             IncDecTarget::StaticProperty { .. } => Ok(()),
+            IncDecTarget::DynamicStaticPropertyName { name, .. } => {
+                self.collect_expr(name, source_file, source_dir)
+            }
         }
     }
 
@@ -676,7 +687,8 @@ impl IncludeCollector {
             | AssignmentTarget::Property { .. }
             | AssignmentTarget::DynamicProperty { .. }
             | AssignmentTarget::StaticProperty { .. }
-            | AssignmentTarget::DynamicStaticProperty { .. } => {}
+            | AssignmentTarget::DynamicStaticProperty { .. }
+            | AssignmentTarget::DynamicStaticPropertyName { .. } => {}
         }
     }
 
@@ -1000,6 +1012,9 @@ impl IncludeCollector {
             }
             AssignmentTarget::DynamicStaticProperty { receiver, .. } => {
                 self.collect_expr(receiver, source_file, source_dir)
+            }
+            AssignmentTarget::DynamicStaticPropertyName { name, .. } => {
+                self.collect_expr(name, source_file, source_dir)
             }
             AssignmentTarget::Variable { .. } | AssignmentTarget::StaticProperty { .. } => Ok(()),
         }

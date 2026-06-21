@@ -658,6 +658,11 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
+    DynamicStaticPropertyName {
+        class_name: String,
+        name: Box<Expr>,
+        span: SourceSpan,
+    },
     ValueArrayDim {
         array: Box<Expr>,
         dimensions: Vec<Option<Expr>>,
@@ -755,6 +760,12 @@ pub enum IncDecTarget {
         dimensions: Vec<Option<Expr>>,
         span: SourceSpan,
     },
+    StaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<Option<Expr>>,
+        span: SourceSpan,
+    },
     Property {
         receiver: Box<Expr>,
         name: String,
@@ -763,6 +774,11 @@ pub enum IncDecTarget {
     StaticProperty {
         class_name: String,
         name: String,
+        span: SourceSpan,
+    },
+    DynamicStaticPropertyName {
+        class_name: String,
+        name: Box<Expr>,
         span: SourceSpan,
     },
 }

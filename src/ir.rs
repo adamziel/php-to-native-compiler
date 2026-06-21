@@ -848,6 +848,11 @@ pub enum AssignmentTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    DynamicStaticPropertyName {
+        class_name: String,
+        name: Box<ValueExpr>,
+        line: usize,
+    },
     ValueArrayDim {
         array: Box<ValueExpr>,
         dimensions: Vec<Option<ValueExpr>>,
@@ -1132,6 +1137,12 @@ pub enum IncDecTarget {
         dimensions: Vec<Option<ValueExpr>>,
         line: usize,
     },
+    StaticPropertyArrayDim {
+        class_name: String,
+        name: String,
+        dimensions: Vec<Option<ValueExpr>>,
+        line: usize,
+    },
     Property {
         receiver: Box<ValueExpr>,
         name: String,
@@ -1140,6 +1151,11 @@ pub enum IncDecTarget {
     StaticProperty {
         class_name: String,
         name: String,
+        line: usize,
+    },
+    DynamicStaticPropertyName {
+        class_name: String,
+        name: Box<ValueExpr>,
         line: usize,
     },
 }
@@ -3358,6 +3374,7 @@ fn assignment_target_contains_yield(target: &AstAssignmentTarget) -> bool {
         AstAssignmentTarget::DynamicStaticProperty { receiver, .. } => {
             expr_contains_yield(receiver)
         }
+        AstAssignmentTarget::DynamicStaticPropertyName { name, .. } => expr_contains_yield(name),
         AstAssignmentTarget::List(list) => list.elements.iter().any(|element| {
             element.key.as_ref().is_some_and(expr_contains_yield)
                 || match &element.target {
@@ -3536,6 +3553,15 @@ impl<'a> LoweringContext<'a> {
                 name: name.clone(),
                 line: span.line,
             },
+            AstAssignmentTarget::DynamicStaticPropertyName {
+                class_name,
+                name,
+                span,
+            } => AssignmentTarget::DynamicStaticPropertyName {
+                class_name: class_name.clone(),
+                name: Box::new(self.lower_expr(name)),
+                line: span.line,
+            },
             AstAssignmentTarget::List(target) => {
                 AssignmentTarget::List(self.lower_list_assignment_target(target))
             }
@@ -3599,6 +3625,24 @@ impl<'a> LoweringContext<'a> {
                     .collect(),
                 line: span.line,
             },
+            AstIncDecTarget::StaticPropertyArrayDim {
+                class_name,
+                name,
+                dimensions,
+                span,
+            } => IncDecTarget::StaticPropertyArrayDim {
+                class_name: class_name.clone(),
+                name: name.clone(),
+                dimensions: dimensions
+                    .iter()
+                    .map(|dimension| {
+                        dimension
+                            .as_ref()
+                            .map(|dimension| self.lower_expr(dimension))
+                    })
+                    .collect(),
+                line: span.line,
+            },
             AstIncDecTarget::Property {
                 receiver,
                 name,
@@ -3615,6 +3659,15 @@ impl<'a> LoweringContext<'a> {
             } => IncDecTarget::StaticProperty {
                 class_name: class_name.clone(),
                 name: name.clone(),
+                line: span.line,
+            },
+            AstIncDecTarget::DynamicStaticPropertyName {
+                class_name,
+                name,
+                span,
+            } => IncDecTarget::DynamicStaticPropertyName {
+                class_name: class_name.clone(),
+                name: Box::new(self.lower_expr(name)),
                 line: span.line,
             },
         }
@@ -3878,6 +3931,9 @@ impl<'a> LoweringContext<'a> {
                 | AssignmentTarget::DynamicProperty { .. }
                 | AssignmentTarget::StaticProperty { .. }
                 | AssignmentTarget::DynamicStaticProperty { .. } => (op, self.lower_expr(value)),
+                AssignmentTarget::DynamicStaticPropertyName { .. } => {
+                    unreachable!("parser rejects compound assignment expression targets")
+                }
                 AssignmentTarget::List(_) => {
                     unreachable!("parser rejects compound assignment expression targets")
                 }
@@ -5283,6 +5339,11 @@ fn assertion_assignment_target_text(target: &AstAssignmentTarget) -> String {
         AstAssignmentTarget::DynamicStaticProperty { receiver, name, .. } => {
             format!("{}::${name}", assertion_expr_text(receiver))
         }
+        AstAssignmentTarget::DynamicStaticPropertyName {
+            class_name, name, ..
+        } => {
+            format!("{class_name}::${{{}}}", assertion_expr_text(name))
+        }
         AstAssignmentTarget::List(_) => "list(...)".to_string(),
     }
 }
@@ -5361,12 +5422,33 @@ fn assertion_inc_dec_target_text(target: &AstIncDecTarget) -> String {
             }
             text
         }
+        AstIncDecTarget::StaticPropertyArrayDim {
+            class_name,
+            name,
+            dimensions,
+            ..
+        } => {
+            let mut text = format!("{class_name}::${name}");
+            for dimension in dimensions {
+                text.push('[');
+                if let Some(dimension) = dimension {
+                    text.push_str(&assertion_expr_text(dimension));
+                }
+                text.push(']');
+            }
+            text
+        }
         AstIncDecTarget::Property { receiver, name, .. } => {
             format!("{}->{name}", assertion_expr_text(receiver))
         }
         AstIncDecTarget::StaticProperty {
             class_name, name, ..
         } => format!("{class_name}::${name}"),
+        AstIncDecTarget::DynamicStaticPropertyName {
+            class_name, name, ..
+        } => {
+            format!("{class_name}::${{{}}}", assertion_expr_text(name))
+        }
     }
 }
 
