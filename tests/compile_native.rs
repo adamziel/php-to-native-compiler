@@ -35856,6 +35856,44 @@ echo $xml->asXML();
 }
 
 #[test]
+fn compile_simplexml_declared_entity_debug_to_native_binary() {
+    let root = temp_dir("ptn-native-simplexml-declared-entity-debug");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("simplexml-declared-entity-debug.php");
+    let output = root.join("simplexml-declared-entity-debug-bin");
+    fs::write(
+        &input,
+        r#"<?php
+$xml = <<<'XML'
+<?xml version='1.0'?>
+<!DOCTYPE sxe [
+<!ENTITY included-entity "This is text included from an entity">
+]>
+<sxe><elem3>&included-entity;</elem3></sxe>
+XML;
+
+$sxe = simplexml_load_string($xml);
+var_dump((string)$sxe->elem3);
+var_dump($sxe->elem3);
+"#,
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    let stdout = String::from_utf8(execution.stdout).unwrap();
+    assert!(stdout.contains("string(36) \"This is text included from an entity\"\n"));
+    assert!(stdout.contains("[\"included-entity\"]=>"));
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_internal_simplexml_load_string"));
+    assert!(c_source.contains("ptn_simplexml_debug_child_value"));
+}
+
+#[test]
 fn compile_libxml_xml_dom_boundary_to_native_binary() {
     let root = temp_dir("ptn-native-libxml-xml-dom-boundary");
     fs::create_dir_all(&root).unwrap();

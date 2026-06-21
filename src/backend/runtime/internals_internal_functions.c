@@ -78811,11 +78811,14 @@ static void ptn_xml_resolve_namespace_recursive(PtnXmlNode *node);
 static void ptn_dom_element_attach_attribute(PtnRuntime *runtime, PtnXmlNode *element, PtnXmlNode *attr, PtnXmlNode *replace, int preserve_replaced_name);
 static void ptn_xml_invalidate_entity_reference_declarations(PtnXmlNode *node);
 static void ptn_xml_mark_detached_entity_references(PtnXmlNode *node);
+static void ptn_xml_skip_ws(const char *data, size_t len, size_t *pos);
 static int ptn_xml_name_char(unsigned char byte);
 static int ptn_xml_name_is_valid_span(const char *data, size_t len);
+static char *ptn_xml_read_quoted(const char *data, size_t len, size_t *pos);
 static size_t ptn_xml_node_list_length(PtnXmlNodeListData *list);
 static PtnXmlNode *ptn_xml_node_list_item(PtnXmlNodeListData *list, size_t index);
 static void ptn_xml_node_list_push(PtnXmlNodeListData *list, PtnXmlNode *node);
+static char *ptn_xml_parser_decode_entities(PtnXmlParserData *parser, const char *data, size_t len, size_t *decoded_len);
 static PtnXmlReaderEvent *ptn_xml_reader_current_event(PtnXmlReaderData *data);
 static PtnXmlNode *ptn_xml_reader_current_element_for_attributes(PtnXmlReaderData *data);
 static PtnXmlNode *ptn_xml_reader_current_node(PtnXmlReaderData *data);
@@ -79373,6 +79376,68 @@ static void ptn_xml_entity_reference_append_predefined_child(PtnRuntime *runtime
     ptn_xml_append_child(ref, text);
 }
 
+static size_t ptn_xml_subset_declaration_end(const char *subset, size_t len, size_t pos) {
+    int quote = 0;
+    while (pos < len) {
+        char c = subset[pos++];
+        if (quote != 0) {
+            if (c == quote) {
+                quote = 0;
+            }
+            continue;
+        }
+        if (c == '\'' || c == '"') {
+            quote = c;
+            continue;
+        }
+        if (c == '>') {
+            break;
+        }
+    }
+    return pos;
+}
+
+static char *ptn_xml_subset_entity_replacement_text(const char *subset, const char *entity_name) {
+    if (subset == NULL || entity_name == NULL) {
+        return NULL;
+    }
+    size_t len = strlen(subset);
+    size_t entity_len = strlen(entity_name);
+    size_t pos = 0;
+    while (pos + strlen("<!ENTITY") <= len) {
+        const char *found = strstr(subset + pos, "<!ENTITY");
+        if (found == NULL) {
+            return NULL;
+        }
+        pos = (size_t)(found - subset) + strlen("<!ENTITY");
+        ptn_xml_skip_ws(subset, len, &pos);
+        if (pos < len && subset[pos] == '%') {
+            pos = ptn_xml_subset_declaration_end(subset, len, pos + 1);
+            continue;
+        }
+        size_t name_start = pos;
+        while (pos < len && ptn_xml_name_char((unsigned char)subset[pos])) {
+            pos++;
+        }
+        size_t name_len = pos - name_start;
+        if (name_len != entity_len || memcmp(subset + name_start, entity_name, entity_len) != 0) {
+            pos = ptn_xml_subset_declaration_end(subset, len, pos);
+            continue;
+        }
+        ptn_xml_skip_ws(subset, len, &pos);
+        if (pos >= len || (subset[pos] != '\'' && subset[pos] != '"')) {
+            return NULL;
+        }
+        char *raw = ptn_xml_read_quoted(subset, len, &pos);
+        size_t decoded_len = 0;
+        char *decoded = ptn_xml_parser_decode_entities(NULL, raw, strlen(raw), &decoded_len);
+        (void)decoded_len;
+        free(raw);
+        return decoded;
+    }
+    return NULL;
+}
+
 static void ptn_xml_entity_reference_append_declared_children(PtnRuntime *runtime, PtnXmlNode *ref) {
     if (ref == NULL || ref->child_count > 0) {
         return;
@@ -79381,41 +79446,21 @@ static void ptn_xml_entity_reference_append_declared_children(PtnRuntime *runtim
     if (doctype == NULL || doctype->internal_subset == NULL) {
         return;
     }
-    const char *cursor = doctype->internal_subset;
-    while ((cursor = strstr(cursor, "<!ENTITY")) != NULL) {
-        cursor += strlen("<!ENTITY");
-        while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
-            cursor++;
-        }
-        const char *name_start = cursor;
-        while (*cursor != '\0' && ptn_xml_name_char((unsigned char)*cursor)) {
-            cursor++;
-        }
-        if (cursor == name_start) {
-            continue;
-        }
-        char *name = ptn_duplicate_string_len(name_start, (size_t)(cursor - name_start));
-        while (*cursor != '\0' && isspace((unsigned char)*cursor)) {
-            cursor++;
-        }
-        char *value = NULL;
-        if (*cursor == '"' || *cursor == '\'') {
-            size_t value_pos = (size_t)(cursor - doctype->internal_subset);
-            value = ptn_xml_read_quoted(doctype->internal_subset, strlen(doctype->internal_subset), &value_pos);
-        }
-        PtnXmlNode *decl = ptn_xml_node_alloc(PTN_XML_NODE_ENTITY, name, "");
-        decl->modern_dom = ref->modern_dom;
-        free(name);
-        decl->owner_document = ptn_xml_document_for_node(ref);
-        if (value != NULL && value[0] != '\0') {
-            PtnXmlNode *text = ptn_xml_node_alloc(PTN_XML_NODE_TEXT, NULL, value);
-            text->modern_dom = ref->modern_dom;
-            text->owner_document = decl->owner_document;
-            ptn_xml_append_child(decl, text);
-        }
-        free(value);
-        ptn_xml_append_child(ref, decl);
+    char *replacement = ptn_xml_subset_entity_replacement_text(doctype->internal_subset, ref->name);
+    if (replacement == NULL) {
+        return;
     }
+    PtnXmlNode *decl = ptn_xml_node_alloc(PTN_XML_NODE_ENTITY_REFERENCE, ref->name == NULL ? "" : ref->name, "");
+    decl->owner_document = ptn_xml_document_for_node(ref);
+    ptn_xml_node_ensure_object(runtime, decl);
+
+    PtnXmlNode *text = ptn_xml_node_alloc(PTN_XML_NODE_TEXT, NULL, replacement);
+    text->owner_document = ptn_xml_document_for_node(ref);
+    ptn_xml_node_ensure_object(runtime, text);
+    ptn_xml_append_child(decl, text);
+
+    free(replacement);
+    ptn_xml_append_child(ref, decl);
 }
 
 static void ptn_xml_entity_reference_populate_children(PtnRuntime *runtime, PtnXmlNode *ref) {
@@ -121531,8 +121576,22 @@ static int ptn_simplexml_node_has_direct_text(PtnXmlNode *node) {
     return result;
 }
 
+static int ptn_simplexml_node_has_immediate_text(PtnXmlNode *node) {
+    for (size_t i = 0; node != NULL && i < node->child_count; i++) {
+        PtnXmlNode *child = node->children[i];
+        if (child != NULL &&
+            (child->type == PTN_XML_NODE_TEXT || child->type == PTN_XML_NODE_CDATA) &&
+            child->value != NULL &&
+            child->value[0] != '\0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static PtnValue ptn_simplexml_debug_child_value(PtnRuntime *runtime, PtnXmlNode *node, size_t group_count) {
-    if (group_count > 1 && ptn_simplexml_node_has_direct_text(node)) {
+    if ((group_count > 1 && ptn_simplexml_node_has_direct_text(node)) ||
+        (node != NULL && node->type == PTN_XML_NODE_ENTITY_REFERENCE && ptn_simplexml_node_has_immediate_text(node))) {
         PtnSimpleXmlData data;
         memset(&data, 0, sizeof(data));
         data.items = &node;
