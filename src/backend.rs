@@ -18469,8 +18469,6 @@ fn emit_instruction(
             compound_op,
             line,
         } => {
-            let path = emit_array_path_segments(out, values, dimensions);
-            let value_temp = values.emit_materialized_value(out, value);
             if let Some(op) = compound_op {
                 out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, \"");
                 out.push_str(&c_string(array));
@@ -18480,6 +18478,8 @@ fn emit_instruction(
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
 
+                let path = emit_array_path_segments(out, values, dimensions);
+                let value_temp = values.emit_materialized_value(out, value);
                 let base_temp = values.next_temp();
                 let container_temp = values.next_temp();
                 let split_temp = values.next_temp();
@@ -18520,14 +18520,8 @@ fn emit_instruction(
                 out.push_str(&(path.len.saturating_sub(1)).to_string());
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(") : ptn_runtime_array_path_read_for_assign_op(&runtime, \"");
-                out.push_str(&c_string(array));
-                out.push_str("\", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", ");
-                out.push_str(&line.to_string());
+                out.push_str(") : ptn_value_clone(");
+                out.push_str(&base_temp);
                 out.push_str(");\n");
                 let result_temp =
                     values.emit_compound_binary_value(out, &current_temp, &value_temp, *line, *op);
@@ -18567,7 +18561,12 @@ fn emit_instruction(
                 emit_value_cleanup(out, "    ", &value_temp);
                 emit_value_cleanup(out, "    ", &base_temp);
                 emit_value_cleanup(out, "    ", &container_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
             } else {
+                let path = emit_array_path_segments(out, values, dimensions);
+                let value_temp = values.emit_materialized_value(out, value);
                 let snapshot_temp = values.next_temp();
                 out.push_str("    PtnValue ");
                 out.push_str(&snapshot_temp);
@@ -18587,9 +18586,9 @@ fn emit_instruction(
                 out.push_str(");\n");
                 emit_value_cleanup(out, "    ", &snapshot_temp);
                 emit_value_cleanup(out, "    ", &value_temp);
-            }
-            for segment_temp in path.value_temps {
-                emit_value_cleanup(out, "    ", &segment_temp);
+                for segment_temp in path.value_temps {
+                    emit_value_cleanup(out, "    ", &segment_temp);
+                }
             }
         }
         Instruction::StoreArrayDimRef { target, source } => {
@@ -28669,8 +28668,6 @@ impl ValueEmitter {
         } = target
         {
             let name_temp = self.emit_dynamic_variable_name(out, name, *line);
-            let path = emit_array_path_segments(out, self, dimensions);
-            let value_temp = self.emit_materialized_value(out, value);
             if let Some(compound_op) = assignment_compound_binary_op(op) {
                 out.push_str("    ptn_runtime_array_warn_missing_base_for_assign_op(&runtime, ");
                 out.push_str(&name_temp);
@@ -28680,6 +28677,8 @@ impl ValueEmitter {
                 out.push_str(&line.to_string());
                 out.push_str(");\n");
 
+                let path = emit_array_path_segments(out, self, dimensions);
+                let value_temp = self.emit_materialized_value(out, value);
                 let base_temp = self.next_temp();
                 let container_temp = self.next_temp();
                 let split_temp = self.next_temp();
@@ -28720,14 +28719,8 @@ impl ValueEmitter {
                 out.push_str(&(path.len.saturating_sub(1)).to_string());
                 out.push_str(", ");
                 out.push_str(&line.to_string());
-                out.push_str(") : ptn_runtime_array_path_read_for_assign_op(&runtime, ");
-                out.push_str(&name_temp);
-                out.push_str(", ");
-                out.push_str(&path.name);
-                out.push_str(", ");
-                out.push_str(&path.len.to_string());
-                out.push_str(", ");
-                out.push_str(&line.to_string());
+                out.push_str(") : ptn_value_clone(");
+                out.push_str(&base_temp);
                 out.push_str(");\n");
 
                 let result_temp = self.emit_compound_binary_value(
@@ -28782,6 +28775,8 @@ impl ValueEmitter {
                 return result_temp;
             }
 
+            let path = emit_array_path_segments(out, self, dimensions);
+            let value_temp = self.emit_materialized_value(out, value);
             let snapshot_temp = self.next_temp();
             out.push_str("    PtnValue ");
             out.push_str(&snapshot_temp);

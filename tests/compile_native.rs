@@ -36089,10 +36089,13 @@ var_dump($a);",
     assert_eq!(
         String::from_utf8(execution.stdout).unwrap(),
         format!(
-            "{}\nWarning: Undefined array key 0 in ptn on line 2\nint(2)\n{}string(1) \"x\"\n{}\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in ptn on line 6\n\nWarning: Undefined array key \"\" in ptn on line 6\narray(1) {{\n  [\"\"]=>\n  int(1)\n}}\n",
+            "{}\nWarning: Undefined array key 0 in {} on line 2\nint(2)\n{}string(1) \"x\"\n{}\nDeprecated: Using null as an array offset is deprecated, use an empty string instead in {} on line 6\n\nWarning: Undefined array key \"\" in {} on line 6\narray(1) {{\n  [\"\"]=>\n  int(1)\n}}\n",
             undefined_variable_warning(&input, "items", 2),
+            input.display(),
             undefined_variable_warning(&input, "append", 4),
-            undefined_variable_warnings(&input, &[("a", 6), ("b", 6)])
+            undefined_variable_warnings(&input, &[("a", 6), ("b", 6)]),
+            input.display(),
+            input.display()
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
@@ -57885,7 +57888,8 @@ echo $items[\"count\"], \"\\n\";\n",
 
     let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
     assert!(c_source.contains("ptn_dynamic_variable_name(&runtime"));
-    assert!(c_source.contains("ptn_runtime_array_path_read_for_assign_op(&runtime, ptn_tmp_"));
+    assert!(c_source
+        .contains("ptn_runtime_array_path_read_overloaded_base_for_assign_op(&runtime, ptn_tmp_"));
     assert!(c_source.contains("ptn_runtime_array_path_set_from_assign_op(&runtime, ptn_tmp_"));
 }
 
