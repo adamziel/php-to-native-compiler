@@ -42562,6 +42562,10 @@ impl ValueEmitter {
             name.to_ascii_lowercase().as_str(),
             "natcasesort" | "natsort"
         );
+        let cursor_pointer_mutator = matches!(
+            name.to_ascii_lowercase().as_str(),
+            "end" | "next" | "prev" | "reset"
+        );
         let sort_flag_argument = arguments.len() == 2 && sort_mutator_with_flags;
         let helper = if arguments.len() == 1 || sort_flag_argument {
             if name.eq_ignore_ascii_case("array_pop") {
@@ -42630,6 +42634,9 @@ impl ValueEmitter {
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                 } else if natural_sort_mutator {
+                    out.push_str(", ");
+                    out.push_str(&line.to_string());
+                } else if cursor_pointer_mutator {
                     out.push_str(", ");
                     out.push_str(&line.to_string());
                 }

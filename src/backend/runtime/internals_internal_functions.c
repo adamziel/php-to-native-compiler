@@ -15153,6 +15153,32 @@ static PtnArray *ptn_internal_expect_mutable_array_path_arg(
     return ptn_internal_expect_array_arg(runtime, function_name, position, argument_name, null_value);
 }
 
+static void ptn_internal_array_pointer_object_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+);
+static PtnValue ptn_internal_object_pointer_current_value(PtnObject *object);
+static PtnValue ptn_internal_object_pointer_current_key(PtnObject *object);
+static PtnValue ptn_internal_object_pointer_next_value(PtnObject *object);
+static PtnValue ptn_internal_object_pointer_end_value(PtnObject *object);
+static PtnValue ptn_internal_object_pointer_prev_value(PtnObject *object);
+static PtnValue ptn_internal_object_pointer_reset_value(PtnObject *object);
+
+static PtnObject *ptn_internal_array_pointer_object_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line
+) {
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type != PTN_OBJECT) {
+        return NULL;
+    }
+    ptn_internal_array_pointer_object_deprecation(runtime, function_name, line);
+    return resolved.as.object;
+}
+
 static PTN_UNUSED PtnValue ptn_runtime_array_pop_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
@@ -15333,6 +15359,99 @@ static int ptn_array_user_compare_entries(
         );
 }
 
+static void ptn_array_user_sort_three_entries(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue callback,
+    PtnArrayEntry *entries,
+    int compare_keys,
+    int *bool_deprecation_emitted,
+    size_t line
+) {
+    PtnArrayEntry first = entries[0];
+    PtnArrayEntry second = entries[1];
+    PtnArrayEntry third = entries[2];
+    if (ptn_array_user_compare_entries(
+            runtime,
+            function_name,
+            callback,
+            &first,
+            &second,
+            compare_keys,
+            bool_deprecation_emitted,
+            line
+        ) <= 0) {
+        if (ptn_array_user_compare_entries(
+                runtime,
+                function_name,
+                callback,
+                &second,
+                &third,
+                compare_keys,
+                bool_deprecation_emitted,
+                line
+            ) <= 0) {
+            entries[0] = first;
+            entries[1] = second;
+            entries[2] = third;
+            return;
+        }
+        if (ptn_array_user_compare_entries(
+                runtime,
+                function_name,
+                callback,
+                &first,
+                &third,
+                compare_keys,
+                bool_deprecation_emitted,
+                line
+            ) <= 0) {
+            entries[0] = first;
+            entries[1] = third;
+            entries[2] = second;
+            return;
+        }
+        entries[0] = third;
+        entries[1] = first;
+        entries[2] = second;
+        return;
+    }
+
+    if (ptn_array_user_compare_entries(
+            runtime,
+            function_name,
+            callback,
+            &third,
+            &second,
+            compare_keys,
+            bool_deprecation_emitted,
+            line
+        ) <= 0) {
+        entries[0] = third;
+        entries[1] = second;
+        entries[2] = first;
+        return;
+    }
+    if (ptn_array_user_compare_entries(
+            runtime,
+            function_name,
+            callback,
+            &first,
+            &third,
+            compare_keys,
+            bool_deprecation_emitted,
+            line
+        ) <= 0) {
+        entries[0] = second;
+        entries[1] = first;
+        entries[2] = third;
+        return;
+    }
+    entries[0] = second;
+    entries[1] = third;
+    entries[2] = first;
+}
+
 static void ptn_array_destroy_entry_buffer(PtnArrayEntry *entries, size_t len) {
     if (entries == NULL) {
         return;
@@ -15373,23 +15492,35 @@ static void ptn_array_user_sort_entries(
     }
 
     ptn_array_retain(array);
-    for (size_t i = 1; i < source_len; i++) {
-        PtnArrayEntry moving = snapshot[i];
-        size_t j = i;
-        while (j > 0 && ptn_array_user_compare_entries(
-                runtime,
-                function_name,
-                callback,
-                &snapshot[j - 1],
-                &moving,
-                compare_keys,
-                &bool_deprecation_emitted,
-                line
-            ) > 0) {
-            snapshot[j] = snapshot[j - 1];
-            j--;
+    if (source_len == 3) {
+        ptn_array_user_sort_three_entries(
+            runtime,
+            function_name,
+            callback,
+            snapshot,
+            compare_keys,
+            &bool_deprecation_emitted,
+            line
+        );
+    } else {
+        for (size_t i = 1; i < source_len; i++) {
+            PtnArrayEntry moving = snapshot[i];
+            size_t j = i;
+            while (j > 0 && ptn_array_user_compare_entries(
+                    runtime,
+                    function_name,
+                    callback,
+                    &snapshot[j - 1],
+                    &moving,
+                    compare_keys,
+                    &bool_deprecation_emitted,
+                    line
+                ) > 0) {
+                snapshot[j] = snapshot[j - 1];
+                j--;
+            }
+            snapshot[j] = moving;
         }
-        snapshot[j] = moving;
     }
 
     ptn_array_destroy_entry_buffer(array->entries, array->len);
@@ -16208,7 +16339,11 @@ static PTN_UNUSED PtnValue ptn_runtime_array_unshift_path(
     return ptn_int(ptn_array_unshift_values(array, value_count, values));
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_next_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_next_variable(PtnRuntime *runtime, const char *name, PtnValue value, size_t line) {
+    PtnObject *object = ptn_internal_array_pointer_object_arg(runtime, "next", value, line);
+    if (object != NULL) {
+        return ptn_internal_object_pointer_next_value(object);
+    }
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "next",
@@ -16250,7 +16385,11 @@ static PTN_UNUSED PtnValue ptn_runtime_array_next_temporary(PtnRuntime *runtime,
     return result;
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_end_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_end_variable(PtnRuntime *runtime, const char *name, PtnValue value, size_t line) {
+    PtnObject *object = ptn_internal_array_pointer_object_arg(runtime, "end", value, line);
+    if (object != NULL) {
+        return ptn_internal_object_pointer_end_value(object);
+    }
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "end",
@@ -16292,7 +16431,11 @@ static PTN_UNUSED PtnValue ptn_runtime_array_end_temporary(PtnRuntime *runtime, 
     return result;
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_prev_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_prev_variable(PtnRuntime *runtime, const char *name, PtnValue value, size_t line) {
+    PtnObject *object = ptn_internal_array_pointer_object_arg(runtime, "prev", value, line);
+    if (object != NULL) {
+        return ptn_internal_object_pointer_prev_value(object);
+    }
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "prev",
@@ -16334,7 +16477,11 @@ static PTN_UNUSED PtnValue ptn_runtime_array_prev_temporary(PtnRuntime *runtime,
     return result;
 }
 
-static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime, const char *name, PtnValue value) {
+static PTN_UNUSED PtnValue ptn_runtime_array_reset_variable(PtnRuntime *runtime, const char *name, PtnValue value, size_t line) {
+    PtnObject *object = ptn_internal_array_pointer_object_arg(runtime, "reset", value, line);
+    if (object != NULL) {
+        return ptn_internal_object_pointer_reset_value(object);
+    }
     PtnArray *array = ptn_internal_expect_mutable_array_variable_arg(
         runtime,
         "reset",
@@ -19286,20 +19433,178 @@ static PtnValue ptn_array_custom_set_operation(
     return result;
 }
 
+static PtnArray *ptn_array_value_callback_sorted_snapshot(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *array,
+    PtnValue callback,
+    size_t line
+) {
+    PtnArray *sorted = ptn_array_clone(array);
+    ptn_array_user_sort_entries(runtime, function_name, sorted, callback, 0, 0, line);
+    return sorted;
+}
+
+static int ptn_array_sorted_value_callback_contains(
+    PtnRuntime *runtime,
+    PtnArray *array,
+    PtnValue value,
+    PtnValue callback,
+    size_t *cursor,
+    size_t line
+) {
+    size_t index = *cursor;
+    while (index < array->len) {
+        int candidate_order = ptn_array_user_compare(
+            runtime,
+            callback,
+            array->entries[index].value,
+            value,
+            line
+        );
+        if (candidate_order < 0) {
+            index++;
+            continue;
+        }
+        if (candidate_order == 0) {
+            *cursor = index;
+            return 1;
+        }
+        int value_order = ptn_array_user_compare(
+            runtime,
+            callback,
+            value,
+            array->entries[index].value,
+            line
+        );
+        *cursor = index;
+        return value_order == 0;
+    }
+    *cursor = index;
+    return 0;
+}
+
+static size_t ptn_array_index_for_existing_key(PtnArray *array, PtnArrayKey key) {
+    PtnArrayEntry *entry = ptn_array_entry_for_key(array, key);
+    if (entry == NULL) {
+        return SIZE_MAX;
+    }
+    return (size_t)(entry - array->entries);
+}
+
+static PtnValue ptn_array_value_callback_sorted_set_operation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnArray *source,
+    size_t array_count,
+    PtnArray **arrays,
+    PtnValue value_callback,
+    int keep_matches,
+    size_t line
+) {
+    PtnValue result = ptn_array_from_literal_entries(0, NULL);
+    PtnArray *sorted_source = ptn_array_value_callback_sorted_snapshot(
+        runtime,
+        function_name,
+        source,
+        value_callback,
+        line
+    );
+    PtnArray **sorted_arrays = NULL;
+    size_t *cursors = NULL;
+    unsigned char *keep = NULL;
+    if (array_count != 0) {
+        if (array_count > SIZE_MAX / sizeof(PtnArray *)) {
+            ptn_abort_out_of_memory();
+        }
+        sorted_arrays = calloc(array_count, sizeof(PtnArray *));
+        cursors = calloc(array_count, sizeof(size_t));
+        if (sorted_arrays == NULL || cursors == NULL) {
+            ptn_abort_out_of_memory();
+        }
+        for (size_t i = 0; i < array_count; i++) {
+            sorted_arrays[i] = ptn_array_value_callback_sorted_snapshot(
+                runtime,
+                function_name,
+                arrays[i],
+                value_callback,
+                line
+            );
+        }
+    }
+    if (source->len != 0) {
+        keep = calloc(source->len, sizeof(unsigned char));
+        if (keep == NULL) {
+            ptn_abort_out_of_memory();
+        }
+    }
+
+    for (size_t i = 0; i < sorted_source->len; i++) {
+        PtnArrayEntry *entry = &sorted_source->entries[i];
+        size_t matched_arrays = 0;
+        for (size_t array_index = 0; array_index < array_count; array_index++) {
+            int matched = ptn_array_sorted_value_callback_contains(
+                runtime,
+                sorted_arrays[array_index],
+                entry->value,
+                value_callback,
+                &cursors[array_index],
+                line
+            );
+            if (keep_matches && !matched) {
+                matched_arrays = 0;
+                break;
+            }
+            if (matched) {
+                matched_arrays++;
+                if (!keep_matches) {
+                    break;
+                }
+            }
+        }
+        int keep_entry = keep_matches ? matched_arrays == array_count : matched_arrays == 0;
+        if (keep_entry) {
+            size_t original_index = ptn_array_index_for_existing_key(source, entry->key);
+            if (original_index < source->len) {
+                keep[original_index] = 1;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < source->len; i++) {
+        if (!keep[i]) {
+            continue;
+        }
+        PtnArrayEntry *entry = &source->entries[i];
+        ptn_array_set_entry(
+            result.as.array,
+            ptn_array_key_clone(entry->key),
+            ptn_value_clone(ptn_array_reindexing_internal_value(entry->value))
+        );
+    }
+
+    free(keep);
+    for (size_t i = 0; i < array_count; i++) {
+        ptn_array_free(sorted_arrays[i]);
+    }
+    free(sorted_arrays);
+    free(cursors);
+    ptn_array_free(sorted_source);
+    return result;
+}
+
 static PtnValue ptn_internal_array_udiff(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     size_t array_count = argc - 2;
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_udiff", 1, "array", args[0]);
     PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_udiff", argc, NULL, args[argc - 1]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_udiff", array_count, args);
-    PtnValue result = ptn_array_custom_set_operation(
+    PtnValue result = ptn_array_value_callback_sorted_set_operation(
         runtime,
+        "array_udiff",
         source,
         array_count,
         arrays,
-        PTN_ARRAY_SET_VALUE_CALLBACK,
         value_callback,
-        PTN_ARRAY_SET_KEY_NONE,
-        ptn_null(),
         0,
         line
     );
@@ -19447,15 +19752,13 @@ static PtnValue ptn_internal_array_uintersect(PtnRuntime *runtime, size_t argc, 
     PtnArray *source = ptn_internal_expect_array_arg(runtime, "array_uintersect", 1, "array", args[0]);
     PtnValue value_callback = ptn_internal_expect_callback_arg(runtime, "array_uintersect", argc, NULL, args[argc - 1]);
     PtnArray **arrays = ptn_array_set_operation_array_args(runtime, "array_uintersect", array_count, args);
-    PtnValue result = ptn_array_custom_set_operation(
+    PtnValue result = ptn_array_value_callback_sorted_set_operation(
         runtime,
+        "array_uintersect",
         source,
         array_count,
         arrays,
-        PTN_ARRAY_SET_VALUE_CALLBACK,
         value_callback,
-        PTN_ARRAY_SET_KEY_NONE,
-        ptn_null(),
         1,
         line
     );
@@ -22036,15 +22339,12 @@ static void ptn_array_merge_recursive_into(
 );
 
 static PtnValue ptn_array_merge_recursive_copy_value(PtnValue value, int preserve_reference) {
-    if (preserve_reference) {
-        PtnValue deref = ptn_value_deref(value);
-        if (
-            value.type == PTN_REFERENCE
-            && deref.type != PTN_ARRAY
-            && value.as.reference->refcount > 1
-        ) {
-            return ptn_value_clone(value);
-        }
+    if (
+        preserve_reference &&
+        value.type == PTN_REFERENCE &&
+        value.as.reference->refcount > 1
+    ) {
+        return ptn_value_clone(value);
     }
     return ptn_value_clone_deref(value);
 }
@@ -22071,6 +22371,21 @@ static PtnValue *ptn_array_separate_recursive_entry_value(PtnArrayEntry *entry) 
     return &entry->value;
 }
 
+static int ptn_array_merge_recursive_collision_value_kept(PtnValue value) {
+    return ptn_value_deref(value).type != PTN_OBJECT;
+}
+
+static void ptn_array_merge_recursive_append_collision_value(
+    PtnRuntime *runtime,
+    PtnArray *target,
+    PtnValue value
+) {
+    if (!ptn_array_merge_recursive_collision_value_kept(value)) {
+        return;
+    }
+    ptn_array_merge_recursive_append(runtime, target, value, 0);
+}
+
 static void ptn_array_merge_recursive_collision(
     PtnRuntime *runtime,
     PtnArrayEntry *entry,
@@ -22095,17 +22410,17 @@ static void ptn_array_merge_recursive_collision(
         if (incoming_value.type == PTN_ARRAY) {
             ptn_array_merge_recursive_into(runtime, target, incoming_value.as.array, seen, line);
         } else {
-            ptn_array_merge_recursive_append(runtime, target, incoming, 0);
+            ptn_array_merge_recursive_append_collision_value(runtime, target, incoming);
         }
         return;
     }
 
     PtnValue merged = ptn_array_from_literal_entries(0, NULL);
-    ptn_array_merge_recursive_append(runtime, merged.as.array, existing, 0);
+    ptn_array_merge_recursive_append_collision_value(runtime, merged.as.array, existing);
     if (incoming_value.type == PTN_ARRAY) {
         ptn_array_merge_recursive_into(runtime, merged.as.array, incoming_value.as.array, seen, line);
     } else {
-        ptn_array_merge_recursive_append(runtime, merged.as.array, incoming, 0);
+        ptn_array_merge_recursive_append_collision_value(runtime, merged.as.array, incoming);
     }
     ptn_value_destroy(&entry->value);
     entry->value = merged;
@@ -22280,46 +22595,241 @@ static PtnValue ptn_internal_array_replace_recursive(PtnRuntime *runtime, size_t
     return result;
 }
 
+static void ptn_internal_array_pointer_object_deprecation(
+    PtnRuntime *runtime,
+    const char *function_name,
+    size_t line
+) {
+    char message[128];
+    int written = snprintf(
+        message,
+        sizeof(message),
+        "%s(): Calling %s() on an object is deprecated",
+        function_name,
+        function_name
+    );
+    if (written < 0 || (size_t)written >= sizeof(message)) {
+        ptn_abort_out_of_memory();
+    }
+    ptn_emit_runtime_deprecation(runtime, message, line);
+}
+
+static int ptn_internal_object_pointer_entry_visible(
+    PtnObject *object,
+    PtnArrayEntry *entry
+) {
+    if (object == NULL || entry == NULL) {
+        return 0;
+    }
+    if (entry->key.type != PTN_ARRAY_KEY_STRING) {
+        return 1;
+    }
+    const PtnObjectPropertyMetadata *metadata =
+        ptn_object_property_metadata(object, entry->key.as.string);
+    return metadata == NULL || metadata->read_visibility == PTN_PROPERTY_PUBLIC;
+}
+
+static size_t ptn_internal_object_pointer_next_visible_index(
+    PtnObject *object,
+    size_t start
+) {
+    if (object == NULL || object->properties == NULL) {
+        return 0;
+    }
+    PtnArray *properties = object->properties;
+    for (size_t i = start; i < properties->len; i++) {
+        if (ptn_internal_object_pointer_entry_visible(object, &properties->entries[i])) {
+            return i;
+        }
+    }
+    return properties->len;
+}
+
+static size_t ptn_internal_object_pointer_prev_visible_index(
+    PtnObject *object,
+    size_t start
+) {
+    if (object == NULL || object->properties == NULL || object->properties->len == 0) {
+        return 0;
+    }
+    PtnArray *properties = object->properties;
+    size_t cursor = start >= properties->len ? properties->len : start + 1;
+    while (cursor > 0) {
+        cursor--;
+        if (ptn_internal_object_pointer_entry_visible(object, &properties->entries[cursor])) {
+            return cursor;
+        }
+    }
+    return properties->len;
+}
+
+static PtnValue ptn_internal_object_pointer_current_value(PtnObject *object) {
+    PtnArray *properties = object->properties;
+    if (properties->current_index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_bool(0);
+    }
+    size_t index = ptn_internal_object_pointer_next_visible_index(object, properties->current_index);
+    if (index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_bool(0);
+    }
+    properties->current_index = index;
+    return ptn_value_share(properties->entries[index].value);
+}
+
+static PtnValue ptn_internal_object_pointer_current_key(PtnObject *object) {
+    PtnArray *properties = object->properties;
+    if (properties->current_index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_null();
+    }
+    size_t index = ptn_internal_object_pointer_next_visible_index(object, properties->current_index);
+    if (index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_null();
+    }
+    properties->current_index = index;
+    PtnArrayEntry *entry = &properties->entries[index];
+    const PtnObjectPropertyMetadata *metadata = entry->key.type == PTN_ARRAY_KEY_STRING
+        ? ptn_object_property_metadata(object, entry->key.as.string)
+        : NULL;
+    if (metadata != NULL && metadata->read_visibility == PTN_PROPERTY_PUBLIC) {
+        return ptn_owned_string(ptn_duplicate_string(metadata->display_name));
+    }
+    PtnArrayKey key = ptn_public_object_property_array_key(entry->key);
+    PtnValue result = ptn_array_key_value(key);
+    ptn_array_key_free(key);
+    return result;
+}
+
+static PtnValue ptn_internal_object_pointer_next_value(PtnObject *object) {
+    PtnArray *properties = object->properties;
+    if (properties->current_index >= properties->len) {
+        return ptn_bool(0);
+    }
+    size_t index = ptn_internal_object_pointer_next_visible_index(
+        object,
+        properties->current_index + 1
+    );
+    if (index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_bool(0);
+    }
+    properties->current_index = index;
+    return ptn_value_share(properties->entries[index].value);
+}
+
+static PtnValue ptn_internal_object_pointer_end_value(PtnObject *object) {
+    PtnArray *properties = object->properties;
+    size_t index = ptn_internal_object_pointer_prev_visible_index(
+        object,
+        properties->len == 0 ? 0 : properties->len - 1
+    );
+    if (index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_bool(0);
+    }
+    properties->current_index = index;
+    return ptn_value_share(properties->entries[index].value);
+}
+
+static PtnValue ptn_internal_object_pointer_prev_value(PtnObject *object) {
+    PtnArray *properties = object->properties;
+    if (properties->current_index == 0 || properties->current_index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_bool(0);
+    }
+    size_t index = ptn_internal_object_pointer_prev_visible_index(
+        object,
+        properties->current_index - 1
+    );
+    if (index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_bool(0);
+    }
+    properties->current_index = index;
+    return ptn_value_share(properties->entries[index].value);
+}
+
+static PtnValue ptn_internal_object_pointer_reset_value(PtnObject *object) {
+    PtnArray *properties = object->properties;
+    size_t index = ptn_internal_object_pointer_next_visible_index(object, 0);
+    if (index >= properties->len) {
+        properties->current_index = SIZE_MAX;
+        return ptn_bool(0);
+    }
+    properties->current_index = index;
+    return ptn_value_share(properties->entries[index].value);
+}
+
+static PtnArray *ptn_internal_array_pointer_array_arg(
+    PtnRuntime *runtime,
+    const char *function_name,
+    PtnValue value,
+    size_t line,
+    PtnObject **object_out
+) {
+    if (object_out != NULL) {
+        *object_out = NULL;
+    }
+    PtnValue resolved = ptn_value_deref(value);
+    if (resolved.type == PTN_OBJECT) {
+        if (object_out != NULL) {
+            *object_out = ptn_internal_array_pointer_object_arg(
+                runtime,
+                function_name,
+                resolved,
+                line
+            );
+        } else {
+            (void)ptn_internal_array_pointer_object_arg(runtime, function_name, resolved, line);
+        }
+        return NULL;
+    }
+    return ptn_internal_expect_array_arg(runtime, function_name, 1, "array", value);
+}
+
 static PtnValue ptn_internal_current(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "current", 1, "array", args[0]);
-    return ptn_array_current_value(array);
+    PtnObject *object = NULL;
+    PtnArray *array = ptn_internal_array_pointer_array_arg(runtime, "current", args[0], line, &object);
+    return object != NULL ? ptn_internal_object_pointer_current_value(object) : ptn_array_current_value(array);
 }
 
 static PtnValue ptn_internal_key(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "key", 1, "array", args[0]);
-    return ptn_array_current_key_value(array);
+    PtnObject *object = NULL;
+    PtnArray *array = ptn_internal_array_pointer_array_arg(runtime, "key", args[0], line, &object);
+    return object != NULL ? ptn_internal_object_pointer_current_key(object) : ptn_array_current_key_value(array);
 }
 
 static PtnValue ptn_internal_next(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "next", 1, "array", args[0]);
-    return ptn_array_next_value(array);
+    PtnObject *object = NULL;
+    PtnArray *array = ptn_internal_array_pointer_array_arg(runtime, "next", args[0], line, &object);
+    return object != NULL ? ptn_internal_object_pointer_next_value(object) : ptn_array_next_value(array);
 }
 
 static PtnValue ptn_internal_end(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "end", 1, "array", args[0]);
-    return ptn_array_end_value(array);
+    PtnObject *object = NULL;
+    PtnArray *array = ptn_internal_array_pointer_array_arg(runtime, "end", args[0], line, &object);
+    return object != NULL ? ptn_internal_object_pointer_end_value(object) : ptn_array_end_value(array);
 }
 
 static PtnValue ptn_internal_prev(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "prev", 1, "array", args[0]);
-    return ptn_array_prev_value(array);
+    PtnObject *object = NULL;
+    PtnArray *array = ptn_internal_array_pointer_array_arg(runtime, "prev", args[0], line, &object);
+    return object != NULL ? ptn_internal_object_pointer_prev_value(object) : ptn_array_prev_value(array);
 }
 
 static PtnValue ptn_internal_reset(PtnRuntime *runtime, size_t argc, const PtnValue *args, size_t line) {
     (void)argc;
-    (void)line;
-    PtnArray *array = ptn_internal_expect_array_arg(runtime, "reset", 1, "array", args[0]);
-    return ptn_array_reset_value(array);
+    PtnObject *object = NULL;
+    PtnArray *array = ptn_internal_array_pointer_array_arg(runtime, "reset", args[0], line, &object);
+    return object != NULL ? ptn_internal_object_pointer_reset_value(object) : ptn_array_reset_value(array);
 }
 
 static PtnStringOperand ptn_internal_expect_string_arg(
