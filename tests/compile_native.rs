@@ -26710,6 +26710,72 @@ var_dump($userConstant->getExtensionName(), $userConstant->getExtension());
 }
 
 #[test]
+fn compile_reflection_constant_namespace_metadata_to_native_binary() {
+    let root = temp_dir("ptn-native-reflection-constant-namespace-metadata");
+    fs::create_dir_all(&root).unwrap();
+    let input = root.join("reflection-constant-namespace-metadata.php");
+    let output = root.join("reflection-constant-namespace-metadata-bin");
+    fs::write(
+        &input,
+        "<?php
+namespace Foo {
+    const C = 42;
+}
+
+namespace {
+    const C = 43;
+
+    foreach ([\"C\", \"\\\\C\", \"Foo\\\\C\", \"\\\\Foo\\\\C\"] as $name) {
+        $reflection = new ReflectionConstant($name);
+        var_dump(
+            $reflection->getName(),
+            $reflection->inNamespace(),
+            $reflection->getNamespaceName(),
+            $reflection->getShortName()
+        );
+    }
+    var_dump(method_exists(\"ReflectionConstant\", \"inNamespace\"));
+    var_dump(in_array(\"getNamespaceName\", get_class_methods(\"ReflectionConstant\"), true));
+}
+",
+    )
+    .unwrap();
+
+    let compiled = compile_file(&input, &output, CompileOptions { emit_c: true }).unwrap();
+
+    let execution = Command::new(&output).output().unwrap();
+    assert!(execution.status.success());
+    assert_eq!(
+        String::from_utf8(execution.stdout).unwrap(),
+        concat!(
+            "string(1) \"C\"\n",
+            "bool(false)\n",
+            "string(0) \"\"\n",
+            "string(1) \"C\"\n",
+            "string(2) \"\\C\"\n",
+            "bool(false)\n",
+            "string(0) \"\"\n",
+            "string(1) \"C\"\n",
+            "string(5) \"Foo\\C\"\n",
+            "bool(true)\n",
+            "string(3) \"Foo\"\n",
+            "string(1) \"C\"\n",
+            "string(6) \"\\Foo\\C\"\n",
+            "bool(true)\n",
+            "string(3) \"Foo\"\n",
+            "string(1) \"C\"\n",
+            "bool(true)\n",
+            "bool(true)\n",
+        )
+    );
+    assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");
+
+    let c_source = fs::read_to_string(compiled.c_source.unwrap()).unwrap();
+    assert!(c_source.contains("ptn_reflection_constant_call_method"));
+    assert!(c_source.contains("getNamespaceName"));
+}
+
+#[test]
 fn compile_reflection_constant_rejects_missing_global_constants_to_native_binary() {
     let root = temp_dir("ptn-native-reflection-constant-missing");
     fs::create_dir_all(&root).unwrap();

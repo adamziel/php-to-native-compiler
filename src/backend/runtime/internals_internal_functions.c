@@ -90839,7 +90839,10 @@ static int ptn_reflection_constant_method_exists(const char *method_name) {
         || ptn_ascii_case_equal(method_name, "getAttributes")
         || ptn_ascii_case_equal(method_name, "getExtension")
         || ptn_ascii_case_equal(method_name, "getExtensionName")
-        || ptn_ascii_case_equal(method_name, "getName");
+        || ptn_ascii_case_equal(method_name, "getName")
+        || ptn_ascii_case_equal(method_name, "getNamespaceName")
+        || ptn_ascii_case_equal(method_name, "getShortName")
+        || ptn_ascii_case_equal(method_name, "inNamespace");
 }
 
 static int ptn_reflection_attribute_method_exists(const char *method_name) {
@@ -92018,6 +92021,9 @@ static PtnValue ptn_internal_class_method_names(PtnRuntime *runtime, const char 
             "getExtension",
             "getExtensionName",
             "getName",
+            "getNamespaceName",
+            "getShortName",
+            "inNamespace",
         };
         ptn_append_method_names(result, &index, names, sizeof(names) / sizeof(names[0]));
         return result;
@@ -94027,6 +94033,28 @@ static PTN_UNUSED PtnValue ptn_reflection_constant_call_method(
         return runtime->exceptions->active_exception != NULL
             ? ptn_null()
             : ptn_owned_string(ptn_duplicate_string(data->name));
+    }
+    if (ptn_ascii_case_equal(name, "getNamespaceName")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "getNamespaceName", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_class_string_before_last_namespace_separator(
+                ptn_symbol_name_without_leading_slash(data->name)
+            );
+    }
+    if (ptn_ascii_case_equal(name, "getShortName")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "getShortName", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_reflection_class_string_after_last_namespace_separator(
+                ptn_symbol_name_without_leading_slash(data->name)
+            );
+    }
+    if (ptn_ascii_case_equal(name, "inNamespace")) {
+        ptn_reflection_class_check_exact_arguments(runtime, "inNamespace", argc, 0);
+        return runtime->exceptions->active_exception != NULL
+            ? ptn_null()
+            : ptn_bool(strchr(ptn_symbol_name_without_leading_slash(data->name), '\\') != NULL);
     }
     if (ptn_ascii_case_equal(name, "getExtensionName")) {
         ptn_reflection_class_check_exact_arguments(runtime, "getExtensionName", argc, 0);
