@@ -63700,6 +63700,16 @@ try {
 } catch (Throwable $e) {
     echo $e::class, ": ", $e->getMessage(), "\n";
 }
+try {
+    new Uri\WhatWg\Url("https://exam\0ple.com");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
+try {
+    new Uri\WhatWg\Url("http://example.com:-1");
+} catch (Throwable $e) {
+    echo $e::class, ": ", $e->getMessage(), "\n";
+}
 "#,
     )
     .unwrap();
@@ -63736,7 +63746,9 @@ try {
             "Uri\\WhatWg\\InvalidUrlException: The specified host is malformed\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
             "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
-            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (HostMissing)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (DomainInvalidCodePoint)\n",
+            "Uri\\WhatWg\\InvalidUrlException: The specified URI is malformed (PortInvalid)\n",
         )
     );
     assert_eq!(String::from_utf8(execution.stderr).unwrap(), "");

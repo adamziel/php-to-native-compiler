@@ -23437,6 +23437,40 @@ static int ptn_uri_whatwg_parse_authority(
     return 1;
 }
 
+static const char *ptn_uri_whatwg_classify_parse_failure(PtnStringOperand input) {
+    const char *data = input.data;
+    size_t len = input.len;
+    const char *trimmed = data;
+    size_t trimmed_len = len;
+    ptn_uri_whatwg_trim(data, len, 0, &trimmed, &trimmed_len);
+
+    size_t first_delimiter = ptn_uri_find_remainder_delimiter(trimmed, trimmed_len, 0);
+    size_t colon = ptn_uri_find_byte(trimmed, first_delimiter, 0, ':');
+    if (colon >= first_delimiter ||
+        colon == 0 ||
+        !ptn_uri_validate_scheme_component(trimmed, colon) ||
+        colon + 2 >= trimmed_len ||
+        trimmed[colon + 1] != '/' ||
+        trimmed[colon + 2] != '/') {
+        return NULL;
+    }
+
+    PtnUriData *probe = ptn_uri_data_new();
+    probe->whatwg = 1;
+    probe->scheme = ptn_uri_duplicate_len(trimmed, colon);
+    size_t authority_start = colon + 3;
+    size_t authority_end = ptn_uri_find_remainder_delimiter(trimmed, trimmed_len, authority_start);
+    const char *reason = NULL;
+    int ok = ptn_uri_whatwg_parse_authority(
+        probe,
+        trimmed + authority_start,
+        authority_end - authority_start,
+        &reason
+    );
+    ptn_uri_data_free(probe);
+    return ok ? NULL : reason;
+}
+
 static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t path_len, int default_slash) {
     size_t encoded_len = 0;
     char *encoded = ptn_uri_whatwg_percent_encode_owned(
@@ -23460,7 +23494,11 @@ static void ptn_uri_whatwg_set_path(PtnUriData *result, const char *path, size_t
 
 static int ptn_uri_parse_whatwg(PtnStringOperand input, PtnUriData **result_out, const char **reason_out) {
 #ifdef PTN_USE_ADA_URL
-    return ptn_uri_ada_parse_whatwg(input, result_out, reason_out);
+    int ok = ptn_uri_ada_parse_whatwg(input, result_out, reason_out);
+    if (!ok && reason_out != NULL && (*reason_out == NULL || (*reason_out)[0] == '\0')) {
+        *reason_out = ptn_uri_whatwg_classify_parse_failure(input);
+    }
+    return ok;
 #else
     (void)input;
     *result_out = NULL;
