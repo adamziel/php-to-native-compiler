@@ -13809,16 +13809,18 @@ fn validate_interface_references(
         let mut seen_interfaces = HashSet::new();
         for interface_name in class.interfaces.clone() {
             if !seen_interfaces.insert(interface_name.to_ascii_lowercase()) {
-                let declaration_kind = if class.is_interface {
-                    "Interface"
-                } else {
-                    "Class"
-                };
+                let declaration_kind = class_declaration_kind(class);
                 return Err(Diagnostic::new(
                     format!(
                         "{declaration_kind} {} cannot implement previously implemented interface {interface_name}",
                         class.name
                     ),
+                    Some(class.span),
+                ));
+            }
+            if class.is_enum && interface_name.eq_ignore_ascii_case("Throwable") {
+                return Err(Diagnostic::new(
+                    format!("Enum {} cannot implement interface Throwable", class.name),
                     Some(class.span),
                 ));
             }
@@ -13849,6 +13851,16 @@ fn validate_interface_references(
         }
     }
     Ok(())
+}
+
+fn class_declaration_kind(class: &ClassDecl) -> &'static str {
+    if class.is_interface {
+        "Interface"
+    } else if class.is_enum {
+        "Enum"
+    } else {
+        "Class"
+    }
 }
 
 fn validate_interface_method_conflicts(classes: &[ClassDecl]) -> Result<()> {
@@ -13943,9 +13955,10 @@ fn validate_traversable_implementations(classes: &[ClassDecl]) -> Result<()> {
         if class_hierarchy_implements_interface(classes, class, "Iterator")
             && class_hierarchy_implements_interface(classes, class, "IteratorAggregate")
         {
+            let declaration_kind = class_declaration_kind(class);
             return Err(Diagnostic::new(
                 format!(
-                    "Class {} cannot implement both Iterator and IteratorAggregate at the same time",
+                    "{declaration_kind} {} cannot implement both Iterator and IteratorAggregate at the same time",
                     class.name
                 ),
                 Some(class.span),
@@ -13958,22 +13971,13 @@ fn validate_traversable_implementations(classes: &[ClassDecl]) -> Result<()> {
             && !class_hierarchy_implements_interface(classes, class, "Iterator")
             && !class_hierarchy_implements_interface(classes, class, "IteratorAggregate")
         {
+            let declaration_kind = class_declaration_kind(class);
             return Err(Diagnostic::new(
                 format!(
-                    "Class {} must implement interface Traversable as part of either Iterator or IteratorAggregate",
+                    "{declaration_kind} {} must implement interface Traversable as part of either Iterator or IteratorAggregate",
                     class.name
                 ),
-                Some(
-                    if class
-                        .interfaces
-                        .iter()
-                        .any(|interface| interface.eq_ignore_ascii_case("Traversable"))
-                    {
-                        class.span
-                    } else {
-                        SourceSpan::new(0, 0, 0, 0)
-                    },
-                ),
+                Some(SourceSpan::new(0, 0, 0, 0)),
             ));
         }
     }
@@ -16432,6 +16436,7 @@ fn validate_abstract_methods(classes: &[ClassDecl]) -> Result<()> {
         if !methods.is_empty() {
             return Err(abstract_methods_diagnostic(
                 &class.name,
+                class.is_enum,
                 &methods,
                 class.span,
             ));
@@ -16524,6 +16529,7 @@ fn trait_abstract_method_has_concrete_implementation(
 
 fn abstract_methods_diagnostic(
     class_name: &str,
+    is_enum: bool,
     methods: &[RequiredAbstractMethod],
     span: SourceSpan,
 ) -> Diagnostic {
@@ -16533,6 +16539,15 @@ fn abstract_methods_diagnostic(
         .map(|method| format!("{}::{}", method.class_name, method.method_name))
         .collect::<Vec<_>>()
         .join(", ");
+    if is_enum {
+        return Diagnostic::new(
+            format!(
+                "Enum {class_name} must implement {count} abstract method{} ({remaining})",
+                if count == 1 { "" } else { "s" }
+            ),
+            Some(span),
+        );
+    }
     Diagnostic::new(
         format!(
             "Class {class_name} contains {count} abstract method{} and must therefore be declared abstract or implement the remaining method{} ({remaining})",

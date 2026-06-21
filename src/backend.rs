@@ -15429,7 +15429,7 @@ fn class_has_concrete_method(class: &ClassDecl, method_name: &str, classes: &[Cl
 }
 
 fn abstract_methods_runtime_message(
-    class_name: &str,
+    class: &ClassDecl,
     methods: &[RuntimeAbstractMethodRequirement],
 ) -> String {
     let remaining = methods
@@ -15437,8 +15437,17 @@ fn abstract_methods_runtime_message(
         .map(|method| format!("{}::{}", method.declaring_class, method.method_name))
         .collect::<Vec<_>>()
         .join(", ");
+    if class.is_enum {
+        return format!(
+            "Enum {} must implement {} abstract method{} ({remaining})",
+            class.name,
+            methods.len(),
+            if methods.len() == 1 { "" } else { "s" },
+        );
+    }
     format!(
-        "Class {class_name} contains {} abstract method{} and must therefore be declared abstract or implement the remaining method{} ({remaining})",
+        "Class {} contains {} abstract method{} and must therefore be declared abstract or implement the remaining method{} ({remaining})",
+        class.name,
         methods.len(),
         if methods.len() == 1 { "" } else { "s" },
         if methods.len() == 1 { "" } else { "s" },
@@ -19898,7 +19907,7 @@ fn emit_class_declaration_validation(
         let message = if class.is_anonymous {
             anonymous_abstract_methods_runtime_message(&class.name, &abstract_methods)
         } else {
-            abstract_methods_runtime_message(&class.name, &abstract_methods)
+            abstract_methods_runtime_message(class, &abstract_methods)
         };
         out.push_str("        ptn_emit_fatal_error_at(&runtime, \"");
         out.push_str(&c_string(&message));
